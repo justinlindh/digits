@@ -194,7 +194,14 @@ func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 // fetchSHA256 downloads a .sha256 asset and returns the trimmed content.
 // Returns "" on any error.
 func (g *GitHubReleases) fetchSHA256(url string) string {
-	resp, err := g.client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return ""
+	}
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+	resp, err := g.client.Do(req)
 	if err != nil {
 		return ""
 	}
@@ -235,14 +242,22 @@ func parseTag(tag string) (component, version string, ok bool) {
 // from a list of release assets. Only recognizes known artifact patterns
 // (firmware .elf files and digitsd aarch64 binaries).
 func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
+	var binaryName string
 	for _, a := range assets {
 		if a.BrowserDownloadURL == "" {
 			continue
 		}
-		if strings.HasSuffix(a.Name, ".sha256") {
-			sha256URL = a.BrowserDownloadURL
-		} else if strings.HasSuffix(a.Name, ".elf") || strings.Contains(a.Name, "aarch64") {
+		if strings.HasSuffix(a.Name, ".elf") || strings.Contains(a.Name, "aarch64") {
 			binaryURL = a.BrowserDownloadURL
+			binaryName = a.Name
+		}
+	}
+	if binaryName != "" {
+		for _, a := range assets {
+			if a.Name == binaryName+".sha256" {
+				sha256URL = a.BrowserDownloadURL
+				break
+			}
 		}
 	}
 	return

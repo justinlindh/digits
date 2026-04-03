@@ -129,6 +129,8 @@ func main() {
 			}
 			handler.Releases = gh
 			slog.Info("updates: release index from GitHub", "repo", ghRepo)
+		} else {
+			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", ghRepo)
 		}
 	}
 
