@@ -74,32 +74,3 @@ jobs:
         env:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
           GITEA_URL: ${{ vars.GITEA_URL }}
-
-      - name: Update release index
-        if: success()
-        run: |
-          VERSION=$(git tag --sort=-creatordate | grep '^fw/v' | head -1 | sed 's|^fw/v||')
-          if [ -z "$VERSION" ]; then
-            echo "No fw/v tag found, skipping index update"
-            exit 0
-          fi
-          COMMIT=$(git rev-parse --short HEAD)
-          SHA256=$(cat "artifacts/firmware-${VERSION}.elf.sha256" 2>/dev/null || echo "")
-          if [ -z "$SHA256" ]; then
-            echo "No SHA256 found, skipping index update"
-            exit 0
-          fi
-          bash tools/update-releases-json.sh firmware "$VERSION" "$COMMIT" "$SHA256"
-          # Deploy updated releases.json and firmware binary to server
-          CONTAINER="${DEPLOY_CONTAINER:-digits-prod-signald-1}"
-          docker cp artifacts/releases.json "$CONTAINER":/data/updates/releases.json
-          docker cp "artifacts/firmware-${VERSION}.elf" "$CONTAINER":/data/updates/firmware.elf
-          git config user.name "Digits CI"
-          git config user.email "ci@digits.family"
-          git add artifacts/releases.json
-          git commit -m "ci: update releases.json for fw/v${VERSION} [skip ci]" || true
-          git push origin HEAD:main
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
-          DEPLOY_CONTAINER: ${{ vars.DEPLOY_CONTAINER }}
-        working-directory: .
