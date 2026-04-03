@@ -59,6 +59,7 @@ type daemonCallbacks struct {
 	pendingOffer     string
 	pendingCaller    string
 	pendingICE       []string // ICE candidates received before peerMgr is created
+	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
 	pairingCode      string   // current pairing code from server
@@ -110,12 +111,19 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	// Stop tones — mixer continues writing silence (DAC keepalive) until WebRTC audio arrives
 	d.mixer.StopTone()
 
-	iceCfg := owebrtc.NewICEConfig(nil) // LAN only for now
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
 		log.Printf("webrtc: %v", err)
 		return
+	}
+
+	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateFailed {
+			log.Println("webrtc: connection failed, hanging up")
+			d.ctrl.HandleSignal("hangup")
+		}
 	}
 
 	// Handle remote audio track
@@ -212,12 +220,19 @@ func (d *daemonCallbacks) AnswerCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 
-	iceCfg := owebrtc.NewICEConfig(nil) // LAN only for now
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
 		log.Printf("webrtc (answer): %v", err)
 		return
+	}
+
+	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		if state == webrtc.PeerConnectionStateFailed {
+			log.Println("webrtc: connection failed, hanging up")
+			d.ctrl.HandleSignal("hangup")
+		}
 	}
 
 	// Handle remote audio track — decode and feed into mixer.
@@ -813,6 +828,16 @@ func main() {
 	log.Println("digitsd ready")
 
 	sendDeviceInfo(sig, fwVersion, fwCommit)
+	requestICEServers(sig)
+
+	// Refresh ICE credentials periodically (TURN creds are time-limited)
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			requestICEServers(sig)
+		}
+	}()
 
 	// Check for updates on startup (non-blocking)
 	go func() {
@@ -996,6 +1021,19 @@ func main() {
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, statusReporter)
 
+			case sigclient.TypeICEServers:
+				cb.mu.Lock()
+				cb.iceServers = nil
+				for _, s := range msg.Servers {
+					cb.iceServers = append(cb.iceServers, owebrtc.ICEServerConfig{
+						URLs:       s.URLs,
+						Username:   s.Username,
+						Credential: s.Credential,
+					})
+				}
+				cb.mu.Unlock()
+				log.Printf("ice: cached %d server(s) from signald", len(msg.Servers))
+
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
 				
@@ -1049,9 +1087,17 @@ func main() {
 				}
 				log.Println("signal: reconnected")
 				sendDeviceInfo(sig, fwVersion, fwCommit)
+				requestICEServers(sig)
 				break
 			}
 		}
+	}
+}
+
+// requestICEServers asks signald for STUN/TURN server configs.
+func requestICEServers(sig *sigclient.Client) {
+	if err := sig.Send(&sigclient.Message{Type: sigclient.TypeRequestICE}); err != nil {
+		log.Printf("ice: request failed: %v", err)
 	}
 }
 
