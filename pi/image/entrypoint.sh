@@ -49,6 +49,22 @@ fi
 # Trust the mounted repo (owned by host user, not container root)
 git config --global --add safe.directory /digits
 
+# Register qemu-aarch64 binfmt if not already present (needed for chroot)
+if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
+    info "Registering qemu-aarch64 binfmt..."
+    # Mount binfmt_misc if needed
+    if ! mountpoint -q /proc/sys/fs/binfmt_misc 2>/dev/null; then
+        mount binfmt_misc -t binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
+    fi
+    # Register the interpreter
+    if [[ -d /proc/sys/fs/binfmt_misc ]]; then
+        echo ':qemu-aarch64:M::\x7fELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\xb7\x00:\xff\xff\xff\xff\xff\xff\xff\x00\xff\xff\xff\xff\xff\xff\xff\xff\xfe\xff\xff\xff:/usr/bin/qemu-aarch64-static:F' \
+            > /proc/sys/fs/binfmt_misc/register 2>/dev/null || true
+    fi
+    # Verify
+    [[ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]] || die "Failed to register qemu-aarch64 binfmt. Is the container running with --privileged?"
+fi
+
 # Cross-compile digitsd
 info "Cross-compiling digitsd for aarch64..."
 mkdir -p /digits/tools/build
