@@ -19,13 +19,20 @@
     }
   },
   "firmware": {
-    "latest": "1.0.0",
+    "latest": "1.1.0",
     "releases": {
       "1.0.0": {
         "version": "1.0.0",
         "commit": "07efedb",
         "sha256": "8e3710efb0d30709b5ec2c0593a9f13df98db134d52615da3d9ef6bb173940f2",
         "url": "https://github.com/justinlindh/digits/releases/download/fw/v1.0.0/firmware.elf",
+        "date": "2026-04-03"
+      },
+      "1.1.0": {
+        "version": "1.1.0",
+        "commit": "47d86b6",
+        "sha256": "f7db3167a5c6e1c22add68e0fc01b6700c7f81f364793acbb103ae2e36f381fd",
+        "url": "https://github.com/justinlindh/digits/releases/download/fw/v1.1.0/firmware-1.1.0.elf",
         "date": "2026-04-03"
       }
     }
