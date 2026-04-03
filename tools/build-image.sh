@@ -159,6 +159,7 @@ LOOP_DEV=""
 ROOTFS_MNT=""
 BOOT_MNT=""
 DATA_MNT=""
+USING_KPARTX=false
 
 cleanup() {
     local rc=$?
@@ -178,6 +179,7 @@ cleanup() {
 
     # Detach loop device
     if [[ -n "${LOOP_DEV:-}" ]]; then
+        $USING_KPARTX && { kpartx -d "$LOOP_DEV" 2>/dev/null || true; }
         info "Detaching loop device $LOOP_DEV"
         losetup -d "$LOOP_DEV" 2>/dev/null || true
     fi
@@ -191,6 +193,43 @@ cleanup() {
         warn "Build failed! Partial image may remain: ${OUTPUT_NAME}"
     fi
     exit $rc
+}
+
+# Ensure partition device nodes exist for a loop device.
+# Sets P_PREFIX so callers use ${P_PREFIX}1, ${P_PREFIX}2, etc.
+ensure_partitions() {
+    local loop="$1"
+    local loop_base
+    loop_base=$(basename "$loop")
+
+    partprobe "$loop" 2>/dev/null || true
+    sleep 1
+
+    if [[ -b "${loop}p1" ]]; then
+        P_PREFIX="${loop}p"
+        return
+    fi
+
+    if command -v kpartx &>/dev/null; then
+        info "Using kpartx for partition device nodes..."
+        kpartx -av "$loop"
+        USING_KPARTX=true
+        sleep 1
+        P_PREFIX="/dev/mapper/${loop_base}p"
+        [[ -b "${P_PREFIX}1" ]] || die "kpartx failed to create partition nodes"
+    else
+        die "Partition nodes not found and kpartx not available."
+    fi
+}
+
+# Detach loop device and clean up kpartx mappings
+detach_loop() {
+    if [[ -n "${LOOP_DEV:-}" ]]; then
+        $USING_KPARTX && { kpartx -d "$LOOP_DEV" 2>/dev/null || true; }
+        losetup -d "$LOOP_DEV" 2>/dev/null || true
+        LOOP_DEV=""
+        USING_KPARTX=false
+    fi
 }
 
 trap cleanup EXIT
@@ -307,7 +346,7 @@ hostside_mask_service() {
 
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
-require_cmd losetup parted e2fsck resize2fs mkfs.ext4 partprobe \
+require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
             qemu-aarch64-static gzip blkid rsync openssl
 
 # Verify we're on x86_64
@@ -383,13 +422,10 @@ info "Attaching image to loop device..."
 LOOP_DEV=$(losetup --find --show --partscan "$WORK_IMG")
 info "Loop device: $LOOP_DEV"
 
-sleep 1
-partprobe "$LOOP_DEV" 2>/dev/null || true
-sleep 1
-
-P1="${LOOP_DEV}p1"
-P2="${LOOP_DEV}p2"
-P3="${LOOP_DEV}p3"
+ensure_partitions "$LOOP_DEV"
+P1="${P_PREFIX}1"
+P2="${P_PREFIX}2"
+P3="${P_PREFIX}3"
 
 [[ -b "$P1" ]] || die "Boot partition not found at $P1"
 [[ -b "$P2" ]] || die "Root partition not found at $P2"
@@ -808,8 +844,7 @@ umount "$ROOTFS_MNT"
 
 # Detach loop device
 info "Detaching loop device..."
-losetup -d "$LOOP_DEV"
-LOOP_DEV=""
+detach_loop
 
 # Clean up mount point dirs
 rmdir "$ROOTFS_MNT" 2>/dev/null || true
@@ -821,9 +856,7 @@ info "Shrinking image..."
 
 # Re-attach for shrinking
 LOOP_DEV=$(losetup --find --show --partscan "$WORK_IMG")
-sleep 1
-partprobe "$LOOP_DEV" 2>/dev/null || true
-sleep 1
+ensure_partitions "$LOOP_DEV"
 
 # Get the end of the last partition (in bytes)
 LAST_SECTOR=$(parted -ms "$LOOP_DEV" unit s print | tail -1 | cut -d: -f3 | tr -d 's')
@@ -832,8 +865,7 @@ IMAGE_END_BYTES=$(( (LAST_SECTOR + 1) * 512 ))
 # Add 1MiB padding for safety
 IMAGE_END_BYTES=$(( IMAGE_END_BYTES + 1048576 ))
 
-losetup -d "$LOOP_DEV"
-LOOP_DEV=""
+detach_loop
 
 info "Truncating image to $(( IMAGE_END_BYTES / 1024 / 1024 )) MiB..."
 truncate -s "$IMAGE_END_BYTES" "$WORK_IMG"

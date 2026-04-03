@@ -25,6 +25,7 @@ images/
 *.img
 *.img.gz
 *.img.xz
+digits-pi-*
 
 # Site (lives in separate repo)
 site-astro/
