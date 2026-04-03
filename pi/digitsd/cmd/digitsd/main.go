@@ -809,7 +809,11 @@ func main() {
 	phone.RestoreVolume()
 	log.Println("digitsd ready")
 
-	sendDeviceInfo(sig, fwVersion, fwCommit)
+	_, err1 := os.Stat("/usr/local/bin/openocd")
+	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
+	flashCapable := err1 == nil && err2 == nil
+
+	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable)
 	requestICEServers(sig)
 
 	// Refresh ICE credentials periodically (TURN creds are time-limited)
@@ -1072,7 +1076,7 @@ func main() {
 					continue
 				}
 				log.Println("signal: reconnected")
-				sendDeviceInfo(sig, fwVersion, fwCommit)
+				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable)
 				requestICEServers(sig)
 				break
 			}
@@ -1087,17 +1091,18 @@ func requestICEServers(sig *sigclient.Client) {
 	}
 }
 
-func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string) {
+func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
 	if err := sig.Send(&sigclient.Message{
 		Type:            sigclient.TypeDeviceInfo,
 		PiVersion:       version.Version,
 		PiCommit:        version.Commit,
 		FirmwareVersion: fwVersion,
 		FirmwareCommit:  fwCommit,
+		FlashCapable:    flashCapable,
 	}); err != nil {
 		log.Printf("device_info: send failed: %v", err)
 	} else {
-		log.Printf("device_info: pi=%s(%s) fw=%s(%s)", version.Version, version.Commit, fwVersion, fwCommit)
+		log.Printf("device_info: pi=%s(%s) fw=%s(%s) flash_capable=%v", version.Version, version.Commit, fwVersion, fwCommit, flashCapable)
 	}
 }
 

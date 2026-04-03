@@ -79,6 +79,9 @@ type Message struct {
 	// Update status fields (update_status messages)
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
 	UpdateDetail string `json:"update_detail,omitempty"` // human-readable detail
+
+	// Flash capability (device_info messages)
+	FlashCapable bool `json:"flash_capable,omitempty"`
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.
