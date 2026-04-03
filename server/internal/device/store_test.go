@@ -70,8 +70,8 @@ func TestCreateAndGetByID(t *testing.T) {
 	if dev.ID == 0 {
 		t.Error("expected non-zero device ID")
 	}
-	if dev.LineID != lineID {
-		t.Errorf("LineID = %d, want %d", dev.LineID, lineID)
+	if dev.LineID == nil || *dev.LineID != lineID {
+		t.Errorf("LineID = %v, want %d", dev.LineID, lineID)
 	}
 	if dev.HardwareID != "hw-abc-123" {
 		t.Errorf("HardwareID = %q, want hw-abc-123", dev.HardwareID)
