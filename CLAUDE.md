@@ -15,19 +15,27 @@ scripts/        Firmware build/flash helpers
 docs/           Hardware notes, protocol specs, architecture
 ```
 
+## Prerequisites
+
+- **Go 1.26+**
+- **PostgreSQL** -- the server reads `DATABASE_URL` to connect. Migrations run automatically on startup (inline in `internal/db/db.go`).
+- **Cross-compile toolchain** (for digitsd): `sudo apt install gcc-aarch64-linux-gnu libasound2-dev:arm64 libopus-dev:arm64 libopusfile-dev:arm64 pkg-config`
+- **Pico SDK** (for firmware): set `PICO_SDK_PATH` to your checkout
+
 ## Build and test
 
 Server (from `server/`):
 ```
 make build          # builds bin/signald
+make run            # build + run the server
 make test           # go test ./...
-make e2e            # Playwright tests (needs running server)
+make e2e            # Playwright tests (needs running server via make run)
 go vet ./...
 ```
 
 digitsd (from `pi/digitsd/`):
 ```
-make build          # cross-compiles to linux/arm64 (needs aarch64-linux-gnu-gcc)
+make build          # cross-compiles to linux/arm64 (needs cross-compile toolchain above)
 make build-local    # native build
 make test
 ```
