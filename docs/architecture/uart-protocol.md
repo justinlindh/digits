@@ -10,7 +10,7 @@ Line-based ASCII protocol between RP2040 Pico and Pi Zero 2 W.
 - **Line terminator:** Pico expects `\r\n` (CRLF) on input, sends `\n` (LF) on output
 - **Max line length:** 256 bytes (including terminator)
 - **Encoding:** ASCII printable characters only
-- **Pi-side service:** `dtmf-uart.service` owns the serial port. All monitoring goes through `~/digits/pi/uart.log`. See Hard Rules below.
+- **Pi-side service:** `digitsd` owns the serial port. See Hard Rules below.
 
 ## Command Format
 
@@ -125,10 +125,9 @@ IDLE ──(off-hook)──→ DIAL_TONE ──(keypress)──→ DIALING ─�
 
 ## Hard Rules
 
-1. **Never steal the serial port from `dtmf-uart.service`.** The service owns `/dev/serial0`. Monitor via `tail -f ~/digits/pi/uart.log`.
-2. **To send a debug command:** Stop service → send command → read response → restart service immediately.
-3. **UART line endings:** Pico requires `\r\n`. Bash `printf 'PING\n'` won't work. Use Python serial or `printf 'PING\r\n'`.
-4. **Inject commands without stopping service:** Use `/tmp/ring_inject.py` for one-shot command injection.
+1. **Never steal the serial port from `digitsd`.** The daemon owns `/dev/serial0`. Use `journalctl -u digitsd` to monitor.
+2. **To send a debug command:** Stop the service (`systemctl stop digitsd`), send command, read response, restart immediately.
+3. **UART line endings:** Pico requires `\r\n`. Bash `printf 'PING\n'` won't work. Use `printf 'PING\r\n'` or a serial tool.
 
 ## Flow Examples
 
