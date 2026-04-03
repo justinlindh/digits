@@ -9,6 +9,8 @@ Each Digits endpoint combines:
 
 The goal is a self-hosted, private, retro-style calling system with modern encrypted transport under the hood.
 
+**Website:** [digits.family](https://digits.family) | **App:** [app.digits.family](https://app.digits.family)
+
 ## Architecture Summary
 
 A single phone unit is split into two cooperating processors:
