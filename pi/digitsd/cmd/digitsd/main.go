@@ -494,10 +494,11 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		result.PiAvailable, result.PiVersion,
 		result.FWAvailable, result.FWVersion)
 
+	fwSkipped := false
 	if result.FWAvailable {
 		if !flashCapable {
 			log.Println("updater: firmware update available but SWD flash not supported on this device, skipping")
-			reportStatus("failed", "Firmware update skipped: SWD flash not available on this device")
+			fwSkipped = true
 		} else {
 			reportStatus("downloading", "Downloading firmware "+result.FWVersion)
 			path, err := up.Download(result.FWURL, "firmware.elf", result.FWSHA256)
@@ -530,9 +531,13 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		}
 	}
 
-	// If only firmware was updated (no pi update), report success
-	if result.FWAvailable && !result.PiAvailable {
-		reportStatus("success", "Firmware updated to "+result.FWVersion)
+	// Report final status when pi binary wasn't replaced (no restart)
+	if !result.PiAvailable {
+		if result.FWAvailable && !fwSkipped {
+			reportStatus("success", "Firmware updated to "+result.FWVersion)
+		} else if fwSkipped {
+			reportStatus("up_to_date", "Pi is current; firmware update requires SWD wiring")
+		}
 	}
 }
 
