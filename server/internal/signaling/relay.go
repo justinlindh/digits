@@ -52,7 +52,7 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 	case TypeRequestICE:
 		r.handleRequestICE(from, msg)
 	case TypeDeviceInfo:
-		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit) {
+		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.FlashCapable) {
 			slog.Info("device_info", "number", from,
 				"pi_version", msg.PiVersion,
 				"fw_version", msg.FirmwareVersion)

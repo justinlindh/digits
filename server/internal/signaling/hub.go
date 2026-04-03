@@ -20,6 +20,7 @@ type Conn struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
+	FlashCapable    bool
 	LastSeen        time.Time
 }
 
@@ -131,6 +132,7 @@ type DeviceInfoSnapshot struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
+	FlashCapable    bool
 	LastSeen        time.Time
 }
 
@@ -147,6 +149,7 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 		PiCommit:        conn.PiCommit,
 		FirmwareVersion: conn.FirmwareVersion,
 		FirmwareCommit:  conn.FirmwareCommit,
+		FlashCapable:    conn.FlashCapable,
 		LastSeen:        conn.LastSeen,
 	}
 }
@@ -185,7 +188,7 @@ func (h *Hub) ClearUpdateStatus(number string) {
 }
 
 // UpdateDeviceInfo sets version info for a connected phone under the write lock.
-func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) bool {
+func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, flashCapable bool) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
@@ -196,6 +199,7 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) 
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
+	conn.FlashCapable = flashCapable
 	conn.LastSeen = time.Now()
 	return true
 }
