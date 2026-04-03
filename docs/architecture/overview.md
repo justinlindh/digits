@@ -130,6 +130,5 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 
 ### Next
 
-- TURN/STUN integration in digitsd -- server-side credential generation is built; client needs to request and use ICE servers from signald
-- Reconnect behavior on dropped WebRTC connections
-- Comfort noise generation during packet loss
+- TURN/STUN integration in digitsd -- server-side credential generation is built; client needs to request and use ICE servers from signald before creating peer connections (currently LAN-only)
+- Reconnect/ICE restart on dropped WebRTC connections
