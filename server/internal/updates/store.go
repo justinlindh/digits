@@ -18,7 +18,7 @@ type Release struct {
 	ReleasedAt time.Time `json:"-"`
 }
 
-// ReleaseIndex is the structure served at /api/updates/releases.json.
+// ReleaseIndex is the structure served at /api/updates/releases.
 type ReleaseIndex struct {
 	Pi       ComponentIndex `json:"pi"`
 	Firmware ComponentIndex `json:"firmware"`
