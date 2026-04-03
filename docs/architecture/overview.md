@@ -119,8 +119,10 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 
 ### Working
 
-- Bidirectional Opus/WebRTC audio on LAN
+- Bidirectional Opus/WebRTC audio across NAT (STUN/TURN)
 - End-to-end encrypted calls (DTLS-SRTP)
+- ICE server credential fetch from signald with periodic refresh
+- Connection failure detection (auto-hangup on ICE failure)
 - Mechanical bell, dial tone, ringback, and busy tone
 - Household linking via invite codes
 - Device pairing via one-time codes
@@ -130,5 +132,4 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 
 ### Next
 
-- TURN/STUN integration in digitsd -- server-side credential generation is built; client needs to request and use ICE servers from signald before creating peer connections (currently LAN-only)
-- Reconnect/ICE restart on dropped WebRTC connections
+- ICE restart on transient connection drops (currently hangs up; could attempt renegotiation)
