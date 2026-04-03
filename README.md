@@ -20,8 +20,8 @@ A single phone unit is split into two cooperating processors:
    - Talks to the Pi over UART using a simple line-based protocol
 
 2. **Pi Zero 2 W (userland/services)**
-   - Runs Python utilities and service logic
-   - Owns audio stack setup and end-to-end call/crypto control paths
+   - Runs `digitsd`, a Go daemon for VoIP, signaling, and audio
+   - Owns the WebRTC media endpoint, Opus codec, and call control
 
 3. **Raspberry Pi Codec Zero (DA7212)**
    - Pi Zero-sized audio pHAT with external electret mic input (3.5mm TRS jack), mono speaker output (screw terminal), and mainline kernel driver
@@ -29,18 +29,18 @@ A single phone unit is split into two cooperating processors:
 
 4. **Signaling Server (Go)**
    - WebSocket relay for SDP/ICE signaling between phones
-   - SQLite persistence, phone directory, call history
-   - Web UI dashboard (htmx + Tailwind)
+   - PostgreSQL persistence, household and line management
+   - Web app + admin dashboard
    - See `server/README.md` for details
 
 ## Project Structure
 
 ```text
 firmware/   RP2040 Pico firmware (C/CMake + Pico SDK)
-pi/         Pi Zero setup + Python test utilities
-server/     Go signaling server (WebSocket relay, web UI)
-docs/       Wiring notes, protocol documentation, planning docs
-scripts/    Build/flash helpers for Phase 0 bench workflow
+pi/         Pi Zero userland -- digitsd VoIP daemon, setup tools, image builder
+server/     Go signaling server (WebSocket relay, web app, admin panel)
+docs/       Hardware build guides, architecture, self-hosting
+scripts/    Build and flash helpers
 ```
 
 ## Firmware Build (RP2040 Pico)
@@ -112,14 +112,14 @@ See `server/README.md` for full configuration and usage.
 
 ## Documentation
 
-- Wiring details: [docs/wiring.md](docs/wiring.md)
-- UART protocol spec: [docs/uart-protocol.md](docs/uart-protocol.md)
-- Component datasheets: [docs/datasheets.md](docs/datasheets.md)
-- Self-hosting guide: [docs/self-hosting.md](docs/self-hosting.md)
-- Architecture: [docs/architecture/](docs/architecture/)
+- [Why Digits?](https://digits.family/why) -- the problem and vision
+- [How it works](https://digits.family/how-it-works) -- overview for parents and curious people
+- [Architecture](docs/architecture/overview.md) -- technical deep-dive: call path, data model, NAT traversal
+- [Build one](docs/build/components.md) -- BOM and hardware guide
+- [Wiring](docs/build/wiring.md) -- full electrical spec and GPIO map
+- [Self-hosting](docs/hosting/self-hosting.md) -- run your own signaling server
 
-- Service codes: [Service Codes](#service-codes)
-- Easter eggs: [Easter Eggs](#easter-eggs)
+See [docs/](docs/) for the full documentation index.
 
 ## Service Codes
 
