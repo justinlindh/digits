@@ -1,7 +1,15 @@
 {
   "pi": {
-    "latest": "",
-    "releases": {}
+    "latest": "1.0.0",
+    "releases": {
+      "1.0.0": {
+        "version": "1.0.0",
+        "commit": "4282e1c",
+        "sha256": "e5b4e19299606200845be3878dab4b852bbbbf9146351d449a45c7b15c915578",
+        "url": "https://github.com/justinlindh/digits/releases/download/pi/v1.0.0/digitsd-aarch64",
+        "date": "2026-04-03"
+      }
+    }
   },
   "firmware": {
     "latest": "1.0.0",
