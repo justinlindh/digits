@@ -65,8 +65,7 @@ int main(void) {
     while (true) {
         if (!banner_printed && stdio_usb_connected()) {
             printf("\n===========================\n");
-            printf(" Digits Firmware v0.1.0\n");
-            printf(" Phase 0 Bench Debug\n");
+            printf(" Digits Firmware %s (%s)\n", FIRMWARE_VERSION, FIRMWARE_COMMIT);
             printf("===========================\n");
             printf("All subsystems initialized.\n");
             printf("Type commands: RING:START RING:STOP RING:TEST LED:ON LED:OFF LED:BLINK PING\n");
