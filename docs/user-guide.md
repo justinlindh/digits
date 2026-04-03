@@ -1,4 +1,4 @@
-# Digits — Quick Start Guide
+# Digits -- Quick Start Guide
 
 **Welcome to your Digits phone.**  
 It's a real telephone. It makes real calls. That's it.
@@ -22,14 +22,14 @@ It's a real telephone. It makes real calls. That's it.
 
 ## 1. What's in the Box
 
-- **The phone** — a vintage-style desk telephone, fully assembled
-- **Power adapter** — 12V DC wall wart (the plug with the barrel connector)
-- **Your pairing code** — printed on the card tucked inside the box; keep it safe
+- **The phone** -- a vintage-style desk telephone, fully assembled
+- **Power adapter** -- 12V DC wall wart (the plug with the barrel connector)
+- **Your pairing code** -- printed on the card tucked inside the box; keep it safe
 
 **What you'll also need:**
 - A Wi-Fi network with internet access
 - A smartphone or laptop (just for the one-time setup)
-- Your phone number — assigned to you when you registered (format: `XXX-XXXX`)
+- Your phone number -- assigned to you when you registered (format: `XXX-XXXX`)
 
 ---
 
@@ -40,7 +40,7 @@ It's a real telephone. It makes real calls. That's it.
 3. Plug the other end into a wall outlet.
 4. The **red LED** on the front of the phone will blink briefly as the phone boots up.
 
-> **First boot takes about 30–60 seconds.** The phone is starting up its internal computer. Be patient — you'll know it's ready when the LED goes dark (idle, on-hook) and you hear a faint click from the ringer.
+> **First boot takes about 30–60 seconds.** The phone is starting up its internal computer. Be patient -- you'll know it's ready when the LED goes dark (idle, on-hook) and you hear a faint click from the ringer.
 
 ---
 
@@ -48,7 +48,7 @@ It's a real telephone. It makes real calls. That's it.
 
 The phone needs to know your Wi-Fi password before it can make calls. You'll do this once from your phone or laptop.
 
-### Step 1 — Connect to the phone's hotspot
+### Step 1 -- Connect to the phone's hotspot
 
 Your Digits phone creates its own temporary Wi-Fi network during setup. Look for a network named:
 
@@ -62,7 +62,7 @@ Connect to it from your smartphone or laptop. **No password is needed to join th
 
 > On most phones, you'll see a notification saying "Sign in to network" or "Captive portal detected." Tap it. If you don't see that, open a browser and go to **http://digits.local** or **http://192.168.4.1**.
 
-### Step 2 — Enter your Wi-Fi details
+### Step 2 -- Enter your Wi-Fi details
 
 A setup page will load automatically. You'll see:
 
@@ -78,13 +78,13 @@ A setup page will load automatically. You'll see:
 └─────────────────────────────────────┘
 ```
 
-- **Your network** — select your home Wi-Fi from the dropdown
-- **Wi-Fi password** — your home Wi-Fi password
-- **Pairing code** — the 6-digit code from the card in the box
+- **Your network** -- select your home Wi-Fi from the dropdown
+- **Wi-Fi password** -- your home Wi-Fi password
+- **Pairing code** -- the 6-digit code from the card in the box
 
 Tap **Connect**.
 
-### Step 3 — Wait for the reboot
+### Step 3 -- Wait for the reboot
 
 The phone saves your settings and reboots automatically. This takes about 30 seconds.
 
@@ -96,11 +96,11 @@ When it's done, reconnect your phone/laptop to your normal Wi-Fi. Your Digits ph
 
 ## 4. Making Your First Call
 
-1. **Pick up the handset** — lift it off the cradle
-2. **Listen for the dial tone** — a steady hum means the phone is ready
+1. **Pick up the handset** -- lift it off the cradle
+2. **Listen for the dial tone** -- a steady hum means the phone is ready
 3. **Dial the 7-digit number** of the person you want to call
    - Example: `271-0001` → dial `2710001`
-4. **Wait** — you'll hear a ringing sound while their phone rings
+4. **Wait** -- you'll hear a ringing sound while their phone rings
 5. **Talk!** When they pick up, you're connected
 
 > **That's it.** No apps, no logins, no hold music. Just a phone call.
@@ -109,17 +109,17 @@ When it's done, reconnect your phone/laptop to your normal Wi-Fi. Your Digits ph
 
 | Sound | Meaning |
 |-------|---------|
-| Steady hum | Dial tone — ready to dial |
+| Steady hum | Dial tone -- ready to dial |
 | Ringing (brrring... brrring...) | Their phone is ringing |
 | Busy signal (fast beeping) | They're already on a call |
-| Silence or error tone | Call couldn't connect — hang up and try again |
+| Silence or error tone | Call couldn't connect -- hang up and try again |
 
 ---
 
 ## 5. Receiving a Call
 
-1. **The bell rings** — your phone has a real mechanical bell
-2. **Pick up the handset** — that's it, you're connected
+1. **The bell rings** -- your phone has a real mechanical bell
+2. **Pick up the handset** -- that's it, you're connected
 3. **Talk!**
 
 Simple as that.
@@ -134,7 +134,7 @@ When you're done with a call (or if you pick up and decide not to dial):
 
 The call ends immediately. The phone returns to idle.
 
-> **Don't leave the handset off the cradle** — the other person will hear silence, and your phone won't be able to receive calls.
+> **Don't leave the handset off the cradle** -- the other person will hear silence, and your phone won't be able to receive calls.
 
 ---
 
@@ -142,7 +142,7 @@ The call ends immediately. The phone returns to idle.
 
 These are hidden codes you can dial (while off-hook) to control the phone. Think of them like shortcuts.
 
-Dial the code as if you were dialing a number — press the keys in sequence, wait a moment, and the phone responds.
+Dial the code as if you were dialing a number -- press the keys in sequence, wait a moment, and the phone responds.
 
 ### Volume Control
 
@@ -159,12 +159,12 @@ Dial `*#*` followed by any digit `0`–`9` to set the volume level. The setting 
 
 | Code | Also written as | What it does |
 |------|----------------|-------------|
-| `*#*8` | — | **Audio test** — records a 3-second clip and plays it back. Useful for checking mic/speaker. |
+| `*#*8` | -- | **Audio test** -- records a 3-second clip and plays it back. Useful for checking mic/speaker. |
 | `*#73887#` | `*#SETUP#` | **Re-enter Wi-Fi setup mode.** Use this if you change your Wi-Fi network or password. The phone reboots into setup mode. |
-| `*#*#` | — | **Safe shutdown.** Powers off the phone gracefully. Unplug after the LED goes dark. |
-| `*##*` | — | **Reboot.** Restarts the phone's software. Takes about 60 seconds. |
+| `*#*#` | -- | **Safe shutdown.** Powers off the phone gracefully. Unplug after the LED goes dark. |
+| `*##*` | -- | **Reboot.** Restarts the phone's software. Takes about 60 seconds. |
 
-> **Tip:** The `*#SETUP#` label is a mnemonic — `SETUP` = `73887` on a phone keypad. The shutdown (`*#*#`) and reboot (`*##*`) codes use `*` and `#` keys only.
+> **Tip:** The `*#SETUP#` label is a mnemonic -- `SETUP` = `73887` on a phone keypad. The shutdown (`*#*#`) and reboot (`*##*`) codes use `*` and `#` keys only.
 
 ---
 
@@ -184,13 +184,13 @@ The small red LED on the front of the phone tells you what the phone is doing:
 |-----------|---------|
 | Off | Phone is idle, ready to receive calls |
 | Solid on | Handset is off the cradle (dial tone, dialing, or in a call) |
-| Blinking | Incoming call — pick up the handset to answer |
+| Blinking | Incoming call -- pick up the handset to answer |
 
 ---
 
 ## 9. Privacy
 
-Your Digits phone was designed with privacy as a core principle — not a checkbox.
+Your Digits phone was designed with privacy as a core principle -- not a checkbox.
 
 **End-to-end encrypted calls**  
 All voice calls are encrypted directly between the two phones. Not even the Digits network can listen to your conversations.
@@ -199,7 +199,7 @@ All voice calls are encrypted directly between the two phones. Not even the Digi
 Calls are never recorded or stored. When a call ends, it's gone.
 
 **Hardware microphone disconnect**  
-When the handset is resting on the cradle, the microphone is **physically disconnected** from the circuit. This is not a software mute — there is no software that can override it. A phone in your room cannot listen when it's on the hook. That's a hardware guarantee.
+When the handset is resting on the cradle, the microphone is **physically disconnected** from the circuit. This is not a software mute -- there is no software that can override it. A phone in your room cannot listen when it's on the hook. That's a hardware guarantee.
 
 **No screen, no apps, no tracking**  
 There's nothing to tap, no account to log into, no data to harvest. The phone doesn't know your location, your contacts, or your habits. It makes calls. That's all.
@@ -210,16 +210,16 @@ There's nothing to tap, no account to log into, no data to harvest. The phone do
 
 ### I don't hear a dial tone when I pick up
 
-- Wait 60 seconds and try again — the phone may still be booting up
+- Wait 60 seconds and try again -- the phone may still be booting up
 - Check that the power adapter is fully plugged in (both ends)
-- Make sure your home Wi-Fi is working — try loading a webpage on another device
+- Make sure your home Wi-Fi is working -- try loading a webpage on another device
 - If the LED is blinking rapidly and not stopping, the phone may be having trouble connecting. Try rebooting: pick up the handset and dial `*##*`, then wait about 60 seconds
 
 ### The phone never got a dial tone after setup
 
 - The Wi-Fi password may have been entered incorrectly
 - Dial `*#73887#` to re-enter setup mode, then go through Wi-Fi setup again
-- Make sure you're connecting to a 2.4 GHz Wi-Fi network — the phone does not support 5 GHz only networks
+- Make sure you're connecting to a 2.4 GHz Wi-Fi network -- the phone does not support 5 GHz only networks
 
 ### I can't connect to the Digits-XXXX hotspot
 
@@ -246,7 +246,7 @@ There's nothing to tap, no account to log into, no data to harvest. The phone do
 
 ### The phone isn't ringing for incoming calls
 
-- Make sure the handset is fully on the cradle — if it's slightly off, the phone thinks you're already using it
+- Make sure the handset is fully on the cradle -- if it's slightly off, the phone thinks you're already using it
 - Check that the phone is powered on and the LED is off (idle state)
 
 ### I need to change my Wi-Fi network

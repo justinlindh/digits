@@ -1,4 +1,4 @@
-# Digits — Wiring Reference
+# Digits -- Wiring Reference
 
 Actual wiring as built on the ElectroCookie protoboard (Phase 3 bench integration).
 Last verified: 2026-03-22.
@@ -43,14 +43,14 @@ All module-to-board connections use JST-XH 2.54mm or DuPont connectors for servi
 | 3    | 5        | Keypad Row 1    | OUT       | 4, 5, 6                                     |
 | 4    | 6        | Keypad Row 2    | OUT       | 7, 8, 9                                     |
 | 5    | 7        | Keypad Row 3    | OUT       | *, 0, #                                     |
-| 6    | 9        | Keypad Col 0    | IN        | Internal pull-up. ⚠️ Adjacent to pin 8 (GND) — solder bridge risk. |
+| 6    | 9        | Keypad Col 0    | IN        | Internal pull-up. ⚠️ Adjacent to pin 8 (GND) -- solder bridge risk. |
 | 7    | 10       | Keypad Col 1    | IN        | Internal pull-up.                            |
 | 8    | 11       | Keypad Col 2    | IN        | Internal pull-up.                            |
 | 9    | 12       | Keypad Col 3    | IN        | Internal pull-up. Unused (4×3 keypad).       |
 | 10   | 14       | Hook switch     | IN        | Internal pull-up. HIGH = off-hook, LOW = on-hook. |
 | 11   | 15       | Ringer IN1      | OUT       | → L298N IN1 input.                          |
-| 12   | 16       | *(unused)*      | —         | Was Tone PWM A — now stubbed (tones on Pi).  |
-| 13   | 17       | *(unused)*      | —         | Was Tone PWM B — now stubbed. **NOT pin 18** (pin 18 = GND). |
+| 12   | 16       | *(unused)*      | --         | Was Tone PWM A -- now stubbed (tones on Pi).  |
+| 13   | 17       | *(unused)*      | --         | Was Tone PWM B -- now stubbed. **NOT pin 18** (pin 18 = GND). |
 | 14   | 19       | Status LED      | OUT       | → 220Ω resistor → red LED → GND rail. ~6-7mA at 3.3V. |
 | 15   | 20       | Ringer IN2      | OUT       | → L298N IN2 input.                          |
 
@@ -115,7 +115,7 @@ Sangyn 2500 phone: 4×3 matrix, 7-pin ribbon cable.
 ```
 
 - **Baud rate:** 115200, 8N1
-- **Level:** 3.3V native on both sides — no level shifter needed
+- **Level:** 3.3V native on both sides -- no level shifter needed
 - **Line endings:** Pico requires `\r\n`
 
 ## SWD Connection (Pi → Pico, for firmware flashing)
@@ -152,7 +152,7 @@ Sangyn 2500 phone: 4×3 matrix, 7-pin ribbon cable.
 - **Drive:** H-bridge alternates polarity at 20Hz (25ms half-period) to generate AC
 - **Output:** ~100V AC at secondary (step-up transformer)
 - **Wire colors:** Yellow = primary/low-voltage winding (L298N side). Red = secondary/high-voltage winding (bell side). Per Amazon listing: red=120V input, yellow=12V output. Used in reverse as step-up.
-- **Cadence:** US standard — 2s ring, 4s silence (6s cycle)
+- **Cadence:** US standard -- 2s ring, 4s silence (6s cycle)
 - **L298N 5V output:** NOT used for logic power (separate buck converter powers everything)
 
 **Previous design (retired):** NOYITO FR120N MOSFET + opto-isolator. Replaced by L298N which generates the AC waveform directly.
@@ -166,9 +166,9 @@ Sangyn 2500 phone: 4×3 matrix, 7-pin ribbon cable.
 - **Current:** ~6-7mA at 3.3V (well within Pico's 16mA per-pin max)
 - **Behavior:** OFF = idle/on-hook. ON = off-hook (dial tone, dialing, connected, busy). BLINK = ringing.
 
-## Pi Zero 2 W — Audio (Codec Zero / DA7212)
+## Pi Zero 2 W -- Audio (Codec Zero / DA7212)
 
-The Raspberry Pi Codec Zero HAT sits on top of the Pi via the 40-pin GPIO header. It uses I2C + I2S internally — no additional wiring needed for the HAT itself.
+The Raspberry Pi Codec Zero HAT sits on top of the Pi via the 40-pin GPIO header. It uses I2C + I2S internally -- no additional wiring needed for the HAT itself.
 
 | Pi GPIO | Phys Pin | Function   | Notes                          |
 |---------|----------|------------|--------------------------------|
@@ -182,7 +182,7 @@ The Raspberry Pi Codec Zero HAT sits on top of the Pi via the 40-pin GPIO header
 ### Earpiece
 
 - Earpiece (140Ω) connected to **Lineout** screw terminals on Codec Zero
-- ⚠️ NOT the "Speaker" terminals — those are for 8Ω speakers
+- ⚠️ NOT the "Speaker" terminals -- those are for 8Ω speakers
 
 ### Handset Microphone
 
@@ -243,7 +243,7 @@ Full mixer documentation: `pi/README-mixer.md`
 
 | Service                    | Purpose                                   | Status   |
 |----------------------------|-------------------------------------------|----------|
-| `digitsd.service`          | Main daemon — serial, tones, WebRTC, keepalive | Active |
+| `digitsd.service`          | Main daemon -- serial, tones, WebRTC, keepalive | Active |
 | `digits-mixer.service`    | Restore ALSA mixer state on boot          | Active   |
 | `digits-ap-check.service` | Boot-time check: AP mode vs normal boot   | Active (oneshot) |
 | `digits-ap.service`       | hostapd AP mode (setup only)              | Conditional |
