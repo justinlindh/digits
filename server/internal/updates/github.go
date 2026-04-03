@@ -1,0 +1,264 @@
+package updates
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ghRelease is a subset of the GitHub release API response.
+type ghRelease struct {
+	TagName     string    `json:"tag_name"`
+	PublishedAt string    `json:"published_at"`
+	Assets      []ghAsset `json:"assets"`
+}
+
+// ghAsset is a subset of the GitHub release asset API response.
+type ghAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+// httpError represents a non-2xx HTTP response.
+type httpError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *httpError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Body)
+}
+
+// GitHubReleases fetches and caches release metadata from a GitHub repository.
+type GitHubReleases struct {
+	owner   string
+	repo    string
+	apiBase string
+	token   string
+	client  *http.Client
+	ttl     time.Duration
+
+	mu        sync.RWMutex
+	cached    *ReleaseIndex
+	fetchedAt time.Time
+}
+
+// NewGitHubReleases creates a GitHubReleases that polls the given repo with
+// the specified cache TTL in seconds.
+func NewGitHubReleases(owner, repo string, ttlSeconds int) *GitHubReleases {
+	return &GitHubReleases{
+		owner:   owner,
+		repo:    repo,
+		apiBase: "https://api.github.com",
+		client:  &http.Client{Timeout: 15 * time.Second},
+		ttl:     time.Duration(ttlSeconds) * time.Second,
+	}
+}
+
+// SetToken sets an optional GitHub personal access token for authenticated requests.
+func (g *GitHubReleases) SetToken(token string) {
+	g.token = token
+}
+
+// ReleaseIndex returns the cached release index if fresh, otherwise fetches
+// from GitHub. On fetch error it returns stale cached data if available.
+func (g *GitHubReleases) ReleaseIndex() *ReleaseIndex {
+	g.mu.RLock()
+	if g.cached != nil && time.Since(g.fetchedAt) < g.ttl {
+		defer g.mu.RUnlock()
+		return g.cached
+	}
+	g.mu.RUnlock()
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Double-check after acquiring write lock.
+	if g.cached != nil && time.Since(g.fetchedAt) < g.ttl {
+		return g.cached
+	}
+
+	idx, err := g.fetch()
+	if err != nil {
+		slog.Error("failed to fetch GitHub releases", "error", err)
+		// Graceful degradation: return stale cache if available.
+		return g.cached
+	}
+
+	g.cached = idx
+	g.fetchedAt = time.Now()
+	return g.cached
+}
+
+// ServeReleases returns an HTTP handler that serves the release index as JSON.
+func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idx := g.ReleaseIndex()
+		if idx == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(idx)
+	}
+}
+
+// fetch retrieves releases from the GitHub API and builds a ReleaseIndex.
+// Note: fetches up to 100 releases (no pagination). If the repo exceeds 100
+// total releases across all tag types, older ones will be silently omitted.
+func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", g.apiBase, g.owner, g.repo)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, &httpError{StatusCode: resp.StatusCode, Body: string(body)}
+	}
+
+	var releases []ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decoding releases: %w", err)
+	}
+
+	idx := &ReleaseIndex{
+		Pi:       ComponentIndex{Releases: make(map[string]*Release)},
+		Firmware: ComponentIndex{Releases: make(map[string]*Release)},
+	}
+
+	for _, rel := range releases {
+		component, version, ok := parseTag(rel.TagName)
+		if !ok {
+			continue
+		}
+
+		binaryURL, sha256URL := classifyAssets(rel.Assets)
+		if binaryURL == "" {
+			continue // no downloadable binary
+		}
+
+		var sha256 string
+		if sha256URL != "" {
+			sha256 = g.fetchSHA256(sha256URL)
+		}
+
+		date := ""
+		if t, err := time.Parse(time.RFC3339, rel.PublishedAt); err == nil {
+			date = t.Format("2006-01-02")
+		}
+
+		r := &Release{
+			Version: version,
+			SHA256:  sha256,
+			URL:     binaryURL,
+			Date:    date,
+		}
+
+		var ci *ComponentIndex
+		switch component {
+		case "pi":
+			ci = &idx.Pi
+		case "firmware":
+			ci = &idx.Firmware
+		default:
+			continue
+		}
+
+		ci.Releases[version] = r
+		if ci.Latest == "" || compareSemver(version, ci.Latest) > 0 {
+			ci.Latest = version
+		}
+	}
+
+	return idx, nil
+}
+
+// fetchSHA256 downloads a .sha256 asset and returns the trimmed content.
+// Returns "" on any error.
+func (g *GitHubReleases) fetchSHA256(url string) string {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return ""
+	}
+	if g.token != "" {
+		req.Header.Set("Authorization", "Bearer "+g.token)
+	}
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 128))
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(body))
+}
+
+// parseTag parses a GitHub release tag into a component name and version.
+// Recognized prefixes: "fw/v" -> "firmware", "pi/v" -> "pi".
+// Returns ("", "", false) for unrecognized tags.
+func parseTag(tag string) (component, version string, ok bool) {
+	parts := strings.SplitN(tag, "/v", 2)
+	if len(parts) != 2 || parts[1] == "" {
+		return "", "", false
+	}
+
+	switch parts[0] {
+	case "fw":
+		return "firmware", parts[1], true
+	case "pi":
+		return "pi", parts[1], true
+	default:
+		return "", "", false
+	}
+}
+
+// classifyAssets finds the main binary asset URL and the .sha256 companion URL
+// from a list of release assets. Only recognizes known artifact patterns
+// (firmware .elf files and digitsd aarch64 binaries).
+func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
+	var binaryName string
+	for _, a := range assets {
+		if a.BrowserDownloadURL == "" {
+			continue
+		}
+		if strings.HasSuffix(a.Name, ".elf") || strings.Contains(a.Name, "aarch64") {
+			binaryURL = a.BrowserDownloadURL
+			binaryName = a.Name
+		}
+	}
+	if binaryName != "" {
+		for _, a := range assets {
+			if a.Name == binaryName+".sha256" {
+				sha256URL = a.BrowserDownloadURL
+				break
+			}
+		}
+	}
+	return
+}

@@ -1,37 +1,51 @@
-# Digits
+<p align="center">
+  <img src="docs/diagrams/img/03-system-overview.png" alt="Digits system overview" width="600">
+</p>
 
-Private encrypted phone network built from gutted vintage desk phones.
+<h1 align="center">Digits</h1>
+
+<p align="center">
+  Private encrypted phone network built from gutted vintage desk phones.
+</p>
+
+<p align="center">
+  <a href="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml/badge.svg" alt="Server CI"></a>
+  <a href="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml/badge.svg" alt="Commitlint"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=server-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=server-v*&label=server" alt="Server release"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=pi-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=pi-v*&label=pi" alt="Pi release"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=fw-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=fw-v*&label=firmware" alt="Firmware release"></a>
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
+  <img src="https://img.shields.io/badge/C-Pico_SDK-A8B9CC?logo=c&logoColor=white" alt="C / Pico SDK">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/justinlindh/digits" alt="MIT License"></a>
+</p>
+
+<p align="center">
+  <a href="https://digits.family">Website</a> &middot;
+  <a href="https://app.digits.family">App</a> &middot;
+  <a href="docs/">Docs</a>
+</p>
+
+---
 
 Each Digits endpoint combines:
-- **RP2040 Pico** for phone UX and real-time hardware control (hook switch, keypad, bell, tones, indicators)
-- **Raspberry Pi Zero 2 W** for Linux-side services (VoIP stack, crypto/session logic, higher-level orchestration)
-- **Raspberry Pi Codec Zero (DA7212)** for audio input/output on the Pi side
+- **RP2040 Pico** -- phone UX and real-time hardware control (hook switch, keypad, bell, tones, indicators)
+- **Raspberry Pi Zero 2 W** -- Linux-side services (VoIP stack, crypto/session logic, orchestration)
+- **Raspberry Pi Codec Zero (DA7212)** -- audio input/output on the Pi side
 
 The goal is a self-hosted, private, retro-style calling system with modern encrypted transport under the hood.
 
-**Website:** [digits.family](https://digits.family) | **App:** [app.digits.family](https://app.digits.family)
-
-## Architecture Summary
+## Architecture
 
 A single phone unit is split into two cooperating processors:
 
-1. **RP2040 Pico (firmware)**
-   - Handles low-level telephony interactions and timing-sensitive I/O
-   - Talks to the Pi over UART using a simple line-based protocol
+| Component | Role |
+|-----------|------|
+| **RP2040 Pico** (firmware) | Low-level telephony, timing-sensitive I/O, UART protocol to Pi |
+| **Pi Zero 2 W** (digitsd) | Go daemon for VoIP, signaling, WebRTC media, Opus codec, call control |
+| **Codec Zero** (DA7212) | Audio pHAT with mic input (3.5mm TRS), speaker output (screw terminal) |
+| **Signaling Server** (Go) | WebSocket relay for SDP/ICE, PostgreSQL persistence, web app + admin |
 
-2. **Pi Zero 2 W (userland/services)**
-   - Runs `digitsd`, a Go daemon for VoIP, signaling, and audio
-   - Owns the WebRTC media endpoint, Opus codec, and call control
-
-3. **Raspberry Pi Codec Zero (DA7212)**
-   - Pi Zero-sized audio pHAT with external electret mic input (3.5mm TRS jack), mono speaker output (screw terminal), and mainline kernel driver
-   - Provides analog audio path for handset earpiece and microphone
-
-4. **Signaling Server (Go)**
-   - WebSocket relay for SDP/ICE signaling between phones
-   - PostgreSQL persistence, household and line management
-   - Web app + admin dashboard
-   - See `server/README.md` for details
+See [Architecture deep-dive](docs/architecture/overview.md) for the full call path, data model, and NAT traversal.
 
 ## Project Structure
 
@@ -43,97 +57,51 @@ docs/       Hardware build guides, architecture, self-hosting
 scripts/    Build and flash helpers
 ```
 
-## Firmware Build (RP2040 Pico)
+## Quick Start
 
-From repo root:
+### Server
 
 ```bash
-export PICO_SDK_PATH=/absolute/path/to/pico-sdk
+cd server
+make build     # builds bin/signald
+make run       # build + run (defaults to :8080)
+make test      # go test ./...
+```
+
+Requires Go 1.26+ and PostgreSQL. The server reads `DATABASE_URL` and runs migrations automatically on startup.
+
+### Firmware (RP2040 Pico)
+
+```bash
+export PICO_SDK_PATH=/path/to/pico-sdk
 ./scripts/build.sh
+./scripts/flash.sh   # hold BOOTSEL, plug in USB, then run
 ```
 
-Notes:
-- `PICO_SDK_PATH` must point to a valid Pico SDK checkout.
-- Build artifacts are generated by the script in the firmware build directory.
-
-## Firmware Flash (UF2 via BOOTSEL)
-
-1. Hold **BOOTSEL** on the Pico while plugging in USB to enter USB mass-storage mode.
-2. Run:
+### Pi Daemon (digitsd)
 
 ```bash
-./scripts/flash.sh
+cd pi/digitsd
+make build          # cross-compiles to linux/arm64
+make build-local    # native build
+make test
 ```
 
-3. The script copies the UF2 to the mounted `RPI-RP2` drive.
-
-## USB Serial Debug
-
-Firmware USB serial debug output is available at:
-- **115200 baud**
-
-Use your preferred terminal tool (for example `screen`, `minicom`, `picocom`, or `tio`) against the Pico USB serial device.
-
-## Pi Zero 2 W Setup & Bench Tests
-
-From `pi/`:
-
-1. Configure audio codec:
-
-```bash
-# In /boot/firmware/config.txt:
-#dtparam=audio=on
-dtoverlay=
-dtoverlay=rpi-codeczero
-
-# Load ALSA profile:
-git clone https://github.com/raspberrypi/Pi-Codec
-sudo alsactl restore -f ~/Pi-Codec/Codec_Zero_StereoMIC_record_and_HP_playback.state
-```
-
-2. Run Phase 0 bench checks:
-
-```bash
-python3 test_audio.py
-python3 test_uart.py
-python3 test_loopback.py
-```
-
-These scripts validate the early hardware/software loop before full call stack integration.
-
-## Signaling Server
-
-```bash
-cd server && make build
-./signald  # defaults to :8080, SQLite at ./digits.db
-```
-
-See `server/README.md` for full configuration and usage.
-
-## Documentation
-
-- [Why Digits?](https://digits.family/why) -- the problem and vision
-- [How it works](https://digits.family/how-it-works) -- overview for parents and curious people
-- [Architecture](docs/architecture/overview.md) -- technical deep-dive: call path, data model, NAT traversal
-- [Build one](docs/build/components.md) -- BOM and hardware guide
-- [Wiring](docs/build/wiring.md) -- full electrical spec and GPIO map
-- [Self-hosting](docs/hosting/self-hosting.md) -- run your own signaling server
-
-See [docs/](docs/) for the full documentation index.
+Requires cross-compile toolchain: `gcc-aarch64-linux-gnu`, `libasound2-dev:arm64`, `libopus-dev:arm64`, `libopusfile-dev:arm64`.
 
 ## Service Codes
 
-Hidden codes entered on the keypad during an active call (off-hook with dial tone). Each code triggers immediately on the final keypress.
+Hidden codes entered on the keypad during an active call.
 
 | Code | Action | Details |
 |------|--------|---------|
-| `*#*0` – `*#*9` | Volume | Sets earpiece volume (0 = quiet, 9 = max). Persists across reboots. |
-| `*#*8` | Audio test | Records 5 seconds from the mic, plays it back through the earpiece. |
+| `*#*0` -- `*#*9` | Volume | Sets earpiece volume (0 = quiet, 9 = max). Persists across reboots. |
+| `*#*8` | Audio test | Records 5 s from mic, plays it back through earpiece. |
 | `*#*#` | Shutdown | Graceful power-off. Safe to unplug after LED goes dark. |
 | `*##*` | Reboot | Immediate reboot. |
-| `*#0*` | Force re-pair | Clears device token, reboots into pairing mode. Use when server-side pairing is lost. |
-| `*#73887#` | Wi-Fi setup | Removes Wi-Fi provisioning flag, reboots into AP mode for reconfiguration. (`*#SETUP#` on a phone keypad.) |
-| `*#00000#` | Factory reset | Wipes config, Wi-Fi, and contacts. Reboots into fresh AP + pairing mode. Use before shipping or transferring a phone. |
+| `*#0*` | Force re-pair | Clears device token, reboots into pairing mode. |
+| `*#73887#` | Wi-Fi setup | Reboots into AP mode for Wi-Fi reconfiguration. (`*#SETUP#` on keypad.) |
+| `*#00000#` | Factory reset | Wipes config, Wi-Fi, contacts. Fresh AP + pairing mode. |
 
 ### Confirmation feedback
 
@@ -144,13 +112,22 @@ Hidden codes entered on the keypad during an active call (off-hook with dial ton
 
 ## Easter Eggs
 
-Hidden sequences that play audio clips through the earpiece. Timing-aware -- each keypress must be within ~1.5 seconds of the last.
+Hidden sequences that play audio clips through the earpiece. Each keypress must be within ~1.5 s of the last.
 
 | Sequence | What plays |
 |----------|------------|
-| `5-5-4-2` | 🚿 Towelie from South Park: *"That's it! That's the melody to Funky Town!"* |
-| `0-0-0-0` | 🎤 Rick Astley: *"Never gonna give you up..."* |
-| `8-6-7-5-3-0-9` | 🎸 Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial -- no call placed) |
+| `5-5-4-2` | Towelie: *"That's it! That's the melody to Funky Town!"* |
+| `0-0-0-0` | Rick Astley: *"Never gonna give you up..."* |
+| `8-6-7-5-3-0-9` | Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial) |
+
+## Documentation
+
+- [Why Digits?](https://digits.family/why) -- the problem and vision
+- [How it works](https://digits.family/how-it-works) -- overview for parents and curious people
+- [Architecture](docs/architecture/overview.md) -- technical deep-dive
+- [Build one](docs/build/components.md) -- BOM and hardware guide
+- [Wiring](docs/build/wiring.md) -- electrical spec and GPIO map
+- [Self-hosting](docs/hosting/self-hosting.md) -- run your own signaling server
 
 ## License
 

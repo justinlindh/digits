@@ -478,74 +478,56 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		CurrentFWVersion: fwVersion,
 	})
 
-	var result *updater.CheckResult
-	var err error
-
-	if targetPi != "" || targetFW != "" {
-		log.Printf("updater: targeted update \u2014 pi=%q fw=%q", targetPi, targetFW)
-		result, err = up.CheckVersion(targetPi, targetFW)
-	} else {
-		result, err = up.Check()
-	}
+	log.Printf("updater: checking for updates (target pi=%q fw=%q)", targetPi, targetFW)
+	result, err := up.CheckVersion(targetPi, targetFW)
 	if err != nil {
 		log.Printf("updater: check failed: %v", err)
 		reportStatus("failed", fmt.Sprintf("Check failed: %v", err))
 		return
 	}
-	if !result.PiUpdateAvailable && !result.FWUpdateAvailable {
+	if !result.PiAvailable && !result.FWAvailable {
 		log.Println("updater: already up to date")
 		reportStatus("up_to_date", "Already running latest version")
 		return
 	}
-	log.Printf("updater: update available \u2014 pi=%v fw=%v (target: pi=%s fw=%s)",
-		result.PiUpdateAvailable, result.FWUpdateAvailable,
-		result.Manifest.PiVersion, result.Manifest.FirmwareVersion)
+	log.Printf("updater: update available -- pi=%v(%s) fw=%v(%s)",
+		result.PiAvailable, result.PiVersion,
+		result.FWAvailable, result.FWVersion)
 
-	if result.FWUpdateAvailable {
-		reportStatus("downloading", "Downloading firmware "+result.Manifest.FirmwareVersion)
-		var path string
-		if result.TargetFWURL != "" {
-			path, err = up.DownloadFromURL(result.TargetFWURL, "firmware.elf", result.Manifest.FirmwareSHA256)
-		} else {
-			path, err = up.DownloadArtifact("firmware.elf", result.Manifest.FirmwareSHA256)
-		}
+	if result.FWAvailable {
+		reportStatus("downloading", "Downloading firmware "+result.FWVersion)
+		path, err := up.Download(result.FWURL, "firmware.elf", result.FWSHA256)
 		if err != nil {
 			log.Printf("updater: firmware download failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Firmware download failed: %v", err))
 			return
 		}
-		reportStatus("applying", "Flashing firmware "+result.Manifest.FirmwareVersion)
+		reportStatus("applying", "Flashing firmware "+result.FWVersion)
 		if err := up.ApplyFirmwareUpdate(path); err != nil {
 			log.Printf("updater: firmware apply failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
 			return
 		}
 	}
-	if result.PiUpdateAvailable {
-		reportStatus("downloading", "Downloading digitsd "+result.Manifest.PiVersion)
-		var path string
-		if result.TargetPiURL != "" {
-			path, err = up.DownloadFromURL(result.TargetPiURL, "digitsd-aarch64", result.Manifest.PiSHA256)
-		} else {
-			path, err = up.DownloadArtifact("digitsd-aarch64", result.Manifest.PiSHA256)
-		}
+	if result.PiAvailable {
+		reportStatus("downloading", "Downloading digitsd "+result.PiVersion)
+		path, err := up.Download(result.PiURL, "digitsd-aarch64", result.PiSHA256)
 		if err != nil {
 			log.Printf("updater: pi download failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Download failed: %v", err))
 			return
 		}
-		reportStatus("rebooting", "Installing digitsd "+result.Manifest.PiVersion+" — restarting...")
+		reportStatus("rebooting", "Installing digitsd "+result.PiVersion+" -- restarting...")
 		if err := up.ApplyPiUpdate(path); err != nil {
 			log.Printf("updater: pi update failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Install failed: %v", err))
 			return
 		}
-		// ApplyPiUpdate calls os.Exit(0) on success — reportStatus("rebooting") is sent from there
 	}
 
 	// If only firmware was updated (no pi update), report success
-	if result.FWUpdateAvailable && !result.PiUpdateAvailable {
-		reportStatus("success", "Firmware updated to "+result.Manifest.FirmwareVersion)
+	if result.FWAvailable && !result.PiAvailable {
+		reportStatus("success", "Firmware updated to "+result.FWVersion)
 	}
 }
 

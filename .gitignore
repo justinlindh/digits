@@ -2,7 +2,6 @@
 firmware/build/
 tools/build/
 artifacts/*
-!artifacts/releases.json
 
 # Compiled binaries
 pi/digitsd/digitsd

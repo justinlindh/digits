@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -119,17 +119,19 @@ func main() {
 		log.Fatalf("create handler: %v", err)
 	}
 
-	// Update artifact endpoints
-	updatesDir := os.Getenv("DIGITS_UPDATES_DIR")
-	if updatesDir == "" {
-		updatesDir = "/data/updates"
-	}
-	if _, err := os.Stat(updatesDir); err == nil {
-		store := updates.NewStore(updatesDir)
-		handler.UpdateStore = store
-		slog.Info("updates: serving artifacts", "dir", updatesDir)
-
-		slog.Info("updates: release index from disk", "file", filepath.Join(updatesDir, "releases.json"))
+	// GitHub-backed release index
+	if ghRepo := os.Getenv("GITHUB_REPO"); ghRepo != "" {
+		parts := strings.SplitN(ghRepo, "/", 2)
+		if len(parts) == 2 {
+			gh := updates.NewGitHubReleases(parts[0], parts[1], 300) // 5 min cache
+			if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+				gh.SetToken(token)
+			}
+			handler.Releases = gh
+			slog.Info("updates: release index from GitHub", "repo", ghRepo)
+		} else {
+			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", ghRepo)
+		}
 	}
 
 	// Start server

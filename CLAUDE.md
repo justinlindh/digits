@@ -61,7 +61,11 @@ docs: update wiring notes
 
 ## Git workflow
 
-PRs required to merge into main on GitHub; no direct pushes. Use the PR template at `.github/pull_request_template.md`.
+Two remotes:
+- **gitea** -- primary development remote (ssh://git@192.168.1.199:2222/dumbot/digits.git)
+- **github** -- public mirror (git@github.com:justinlindh/digits.git)
+
+Push to gitea by default. Push to github intentionally. PRs required to merge into main on GitHub; no direct pushes. Use the PR template at `.github/pull_request_template.md`.
 
 ## CI
 

@@ -1,22 +1,8 @@
 package updates
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-func writeReleasesJSON(t *testing.T, dir string, idx *ReleaseIndex) {
-	t.Helper()
-	data, err := json.Marshal(idx)
-	if err != nil {
-		t.Fatalf("marshal releases.json: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "releases.json"), data, 0644); err != nil {
-		t.Fatalf("write releases.json: %v", err)
-	}
-}
 
 func sampleIndex(piLatest string) *ReleaseIndex {
 	return &ReleaseIndex{
@@ -32,59 +18,6 @@ func sampleIndex(piLatest string) *ReleaseIndex {
 				"0.5.0": {Version: "0.5.0", URL: "https://example.com/firmware.elf", Date: "2026-04-01"},
 			},
 		},
-	}
-}
-
-func TestReleaseIndex_FromDisk(t *testing.T) {
-	dir := t.TempDir()
-	writeReleasesJSON(t, dir, sampleIndex("1.0.0"))
-
-	s := NewStore(dir)
-	idx := s.ReleaseIndex()
-	if idx == nil {
-		t.Fatal("expected non-nil ReleaseIndex")
-	}
-	if idx.Pi.Latest != "1.0.0" {
-		t.Errorf("Pi.Latest = %q, want 1.0.0", idx.Pi.Latest)
-	}
-	if idx.Firmware.Latest != "0.5.0" {
-		t.Errorf("Firmware.Latest = %q, want 0.5.0", idx.Firmware.Latest)
-	}
-}
-
-func TestReleaseIndex_Missing(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStore(dir)
-	if idx := s.ReleaseIndex(); idx != nil {
-		t.Errorf("expected nil for missing releases.json, got %+v", idx)
-	}
-}
-
-func TestReleaseIndex_InvalidJSON(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "releases.json"), []byte("not json{{{"), 0644)
-	s := NewStore(dir)
-	if idx := s.ReleaseIndex(); idx != nil {
-		t.Errorf("expected nil for invalid JSON, got %+v", idx)
-	}
-}
-
-func TestReleaseIndex_HotReload(t *testing.T) {
-	dir := t.TempDir()
-	writeReleasesJSON(t, dir, sampleIndex("1.0.0"))
-
-	s := NewStore(dir)
-	idx1 := s.ReleaseIndex()
-	if idx1 == nil || idx1.Pi.Latest != "1.0.0" {
-		t.Fatalf("first read: expected 1.0.0, got %v", idx1)
-	}
-
-	// Overwrite with newer version
-	writeReleasesJSON(t, dir, sampleIndex("1.1.0"))
-
-	idx2 := s.ReleaseIndex()
-	if idx2 == nil || idx2.Pi.Latest != "1.1.0" {
-		t.Fatalf("second read: expected 1.1.0 after hot-reload, got %v", idx2)
 	}
 }
 
@@ -137,35 +70,5 @@ func TestCompareSemver(t *testing.T) {
 		if got != c.want {
 			t.Errorf("compareSemver(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
-	}
-}
-
-func TestStore_LatestManifest(t *testing.T) {
-	dir := t.TempDir()
-	manifest := `{"pi_version":"1.0.0","pi_commit":"abc123","firmware_version":"0.3.0","firmware_commit":"def456","pi_sha256":"aaa","firmware_sha256":"bbb"}`
-	os.WriteFile(filepath.Join(dir, "latest.json"), []byte(manifest), 0644)
-
-	s := NewStore(dir)
-	m, err := s.Latest()
-	if err != nil {
-		t.Fatalf("Latest() error: %v", err)
-	}
-	if m.PiVersion != "1.0.0" {
-		t.Errorf("PiVersion = %q, want 1.0.0", m.PiVersion)
-	}
-	if m.FirmwareVersion != "0.3.0" {
-		t.Errorf("FirmwareVersion = %q, want 0.3.0", m.FirmwareVersion)
-	}
-	if m.PiSHA256 != "aaa" {
-		t.Errorf("PiSHA256 = %q, want aaa", m.PiSHA256)
-	}
-}
-
-func TestStore_LatestMissing(t *testing.T) {
-	dir := t.TempDir()
-	s := NewStore(dir)
-	_, err := s.Latest()
-	if err == nil {
-		t.Fatal("expected error for missing latest.json")
 	}
 }
