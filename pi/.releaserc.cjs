@@ -14,6 +14,8 @@ const publishPlugin = isGitea
         { path: 'artifacts/digitsd-aarch64', label: 'digitsd (aarch64 Linux)' },
         { path: 'artifacts/digitsd-aarch64.sha256', label: 'digitsd SHA256 checksum' },
       ],
+      successComment: false,
+      failComment: false,
     }];
 
 module.exports = {

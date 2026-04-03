@@ -6,7 +6,7 @@ const publishPlugin = isGitea
       giteaUrl: process.env.GITEA_URL,
       assets: [],
     }]
-  : ['@semantic-release/github', { assets: [] }];
+  : ['@semantic-release/github', { assets: [], successComment: false, failComment: false }];
 
 module.exports = {
   branches: ['main'],
