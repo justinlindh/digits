@@ -7,9 +7,9 @@
 <p align="center">
   <a href="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml/badge.svg" alt="Server CI"></a>
   <a href="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml/badge.svg" alt="Commitlint"></a>
-  <a href="https://github.com/justinlindh/digits/releases?q=server-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=server-v*&label=server" alt="Server release"></a>
-  <a href="https://github.com/justinlindh/digits/releases?q=pi-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=pi-v*&label=pi" alt="Pi release"></a>
-  <a href="https://github.com/justinlindh/digits/releases?q=fw-v"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=fw-v*&label=firmware" alt="Firmware release"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=server%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=server/v*&label=server" alt="Server release"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=pi%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=pi/v*&label=pi" alt="Pi release"></a>
+  <a href="https://github.com/justinlindh/digits/releases?q=fw%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=fw/v*&label=firmware" alt="Firmware release"></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/C-Pico_SDK-A8B9CC?logo=c&logoColor=white" alt="C / Pico SDK">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/justinlindh/digits" alt="MIT License"></a>
