@@ -1,0 +1,315 @@
+package config
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadMissingFile(t *testing.T) {
+	c, err := Load("/tmp/digits-test-nonexistent-config-99999.json")
+	if err != nil {
+		t.Fatalf("expected no error for missing file, got: %v", err)
+	}
+	if c == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if c.ServerURL != "" || c.PhoneNumber != "" || c.DeviceToken != "" || c.PairingCode != "" {
+		t.Errorf("expected zero-value config for missing file, got: %+v", c)
+	}
+}
+
+func TestLoadValid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{
+		"server_url": "wss://digits.family/ws",
+		"pairing_code": "A7X9",
+		"phone_number": "3140001",
+		"device_token": "tok-abc123"
+	}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.ServerURL != "wss://digits.family/ws" {
+		t.Errorf("ServerURL = %q, want %q", c.ServerURL, "wss://digits.family/ws")
+	}
+	if c.PairingCode != "A7X9" {
+		t.Errorf("PairingCode = %q, want %q", c.PairingCode, "A7X9")
+	}
+	if c.PhoneNumber != "3140001" {
+		t.Errorf("PhoneNumber = %q, want %q", c.PhoneNumber, "3140001")
+	}
+	if c.DeviceToken != "tok-abc123" {
+		t.Errorf("DeviceToken = %q, want %q", c.DeviceToken, "tok-abc123")
+	}
+}
+
+func TestLoadPartialConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"server_url": "wss://digits.family/ws", "pairing_code": "B3Z1", "phone_number": "3140002"}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !c.NeedsPairing() {
+		t.Error("NeedsPairing should be true when pairing_code is set and device_token is empty")
+	}
+	if !c.IsConfigured() {
+		t.Error("IsConfigured should be true when server_url and pairing_code are set")
+	}
+}
+
+func TestLoadTokenPresent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"server_url": "wss://digits.family/ws", "device_token": "tok-xyz"}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.NeedsPairing() {
+		t.Error("NeedsPairing should be false when device_token is present")
+	}
+	if !c.IsConfigured() {
+		t.Error("IsConfigured should be true when server_url and device_token are set")
+	}
+}
+
+func TestLoadBadJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	if err := os.WriteFile(path, []byte("{bad json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bad JSON now falls back to backup/defaults instead of erroring
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("should not error (falls back to defaults): %v", err)
+	}
+	if c.ServerURL != "" {
+		t.Error("should return zero-value config on corrupt primary with no backup")
+	}
+}
+
+func TestLoadCorruptFallsBackToBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	bakPath := path + ".bak"
+
+	// Write corrupt primary (null bytes, simulating power loss)
+	if err := os.WriteFile(path, make([]byte, 100), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write valid backup
+	backup := `{"server_url": "wss://test/ws", "phone_number": "1234", "device_token": "tok-saved"}`
+	if err := os.WriteFile(bakPath, []byte(backup), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("should recover from backup: %v", err)
+	}
+	if c.DeviceToken != "tok-saved" {
+		t.Errorf("expected token from backup, got %q", c.DeviceToken)
+	}
+	if c.PhoneNumber != "1234" {
+		t.Errorf("expected phone from backup, got %q", c.PhoneNumber)
+	}
+
+	// Primary should be restored from backup
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("primary should be restored: %v", err)
+	}
+	var restored Config
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("restored primary should be valid JSON: %v", err)
+	}
+	if restored.DeviceToken != "tok-saved" {
+		t.Errorf("restored primary token = %q, want tok-saved", restored.DeviceToken)
+	}
+}
+
+func TestSaveCreatesBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	bakPath := path + ".bak"
+
+	// Write initial config
+	c := &Config{
+		ServerURL:   "wss://test/ws",
+		PhoneNumber: "1000",
+		DeviceToken: "tok-v1",
+		path:        path,
+	}
+	if err := c.Save(); err != nil {
+		t.Fatalf("first save: %v", err)
+	}
+
+	// Save again with updated token
+	c.DeviceToken = "tok-v2"
+	if err := c.Save(); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+
+	// Backup should have the v1 token
+	data, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("backup should exist: %v", err)
+	}
+	var bak Config
+	if err := json.Unmarshal(data, &bak); err != nil {
+		t.Fatalf("backup should be valid JSON: %v", err)
+	}
+	if bak.DeviceToken != "tok-v1" {
+		t.Errorf("backup token = %q, want tok-v1", bak.DeviceToken)
+	}
+
+	// Primary should have v2
+	data, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var primary Config
+	if err := json.Unmarshal(data, &primary); err != nil {
+		t.Fatal(err)
+	}
+	if primary.DeviceToken != "tok-v2" {
+		t.Errorf("primary token = %q, want tok-v2", primary.DeviceToken)
+	}
+}
+
+func TestIsCorrupt(t *testing.T) {
+	if isCorrupt([]byte("{}")) {
+		t.Error("valid JSON should not be corrupt")
+	}
+	if !isCorrupt(make([]byte, 4)) {
+		t.Error("all nulls should be corrupt")
+	}
+	nullInJSON := []byte{'{', 0, '}'}
+	if !isCorrupt(nullInJSON) {
+		t.Error("embedded null should be corrupt")
+	}
+	if isCorrupt([]byte{}) {
+		t.Error("empty should not be corrupt")
+	}
+}
+
+func TestSaveAndReload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subdir", "config.json")
+
+	c := &Config{
+		ServerURL:   "wss://test.local/ws",
+		PhoneNumber: "5550001",
+		PairingCode: "TEST",
+		path:        path,
+	}
+
+	if err := c.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	c2, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after save: %v", err)
+	}
+	if c2.ServerURL != c.ServerURL {
+		t.Errorf("ServerURL: got %q, want %q", c2.ServerURL, c.ServerURL)
+	}
+	if c2.PairingCode != c.PairingCode {
+		t.Errorf("PairingCode: got %q, want %q", c2.PairingCode, c.PairingCode)
+	}
+}
+
+func TestSetDeviceTokenClearsPairingCode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	initial := `{"server_url":"wss://x/ws","pairing_code":"XY12","phone_number":"1000001"}`
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.SetDeviceToken("tok-newtoken"); err != nil {
+		t.Fatalf("SetDeviceToken: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Config
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.DeviceToken != "tok-newtoken" {
+		t.Errorf("DeviceToken on disk = %q, want %q", saved.DeviceToken, "tok-newtoken")
+	}
+	if saved.PairingCode != "" {
+		t.Errorf("PairingCode should be cleared after SetDeviceToken, got %q", saved.PairingCode)
+	}
+}
+
+func TestCLIOverride(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"server_url": "wss://config.example.com/ws", "phone_number": "3140001"}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cliServerURL := "wss://override.example.com/ws"
+	cliNumber := "9990001"
+
+	effectiveURL := c.ServerURL
+	effectiveNumber := c.PhoneNumber
+
+	if cliServerURL != "" {
+		effectiveURL = cliServerURL
+	}
+	if cliNumber != "" {
+		effectiveNumber = cliNumber
+	}
+
+	if effectiveURL != "wss://override.example.com/ws" {
+		t.Errorf("CLI override for server_url failed: got %q", effectiveURL)
+	}
+	if effectiveNumber != "9990001" {
+		t.Errorf("CLI override for phone_number failed: got %q", effectiveNumber)
+	}
+}

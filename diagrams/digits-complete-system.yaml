@@ -1,0 +1,278 @@
+title: "Digits — Complete System Wiring"
+board: "raspberry_pi_pico"
+
+devices:
+  # === Pi Zero 2 W (UART to Pico + I2S/I2C to Codec Zero) ===
+  - name: "Pi Zero 2 W"
+    color: "#2196F3"
+    pins:
+      - {name: "GPIO15/RX", role: "UART_RX", side: "left"}
+      - {name: "GPIO14/TX", role: "UART_TX", side: "left"}
+      - {name: "GND", role: "GND", side: "left"}
+      - {name: "I2S/I2C", role: "GPIO", side: "right"}
+      - {name: "5V IN", role: "5V", side: "right"}
+
+  # === Codec Zero (DA7212 — pHAT, plugs onto Pi Zero 40-pin header) ===
+  - name: "Codec Zero pHAT (DA7212)"
+    color: "#00BCD4"
+    pins:
+      - {name: "40-pin HAT connector", role: "GPIO", side: "left"}
+      - {name: "MIC Tip (signal)", role: "GPIO", side: "right"}
+      - {name: "MIC Sleeve (GND)", role: "GND", side: "right"}
+      - {name: "SPKR OUT+ (screw)", role: "GPIO", side: "right"}
+      - {name: "SPKR OUT- (screw)", role: "GPIO", side: "right"}
+
+  # === RJ9 Port (soldered to base PCB, handset plugs in via standard RJ9 cable) ===
+  - name: "RJ9 Port (base)"
+    color: "#A1887F"
+    pins:
+      - {name: "Pin1 Mic+ (Black)", role: "GPIO", side: "left"}
+      - {name: "Pin2 Ear+ (Red)", role: "GPIO", side: "left"}
+      - {name: "Pin3 Ear- (Green)", role: "GPIO", side: "left"}
+      - {name: "Pin4 Mic- (Yellow)", role: "GPIO", side: "left"}
+      - {name: "→ Handset (RJ9 cable)", role: "GPIO", side: "right"}
+
+  # === 4x3 Keypad Matrix ===
+  - name: "4x3 Keypad"
+    color: "#9C27B0"
+    pins:
+      - {name: "Row 0", role: "GPIO", side: "left"}
+      - {name: "Row 1", role: "GPIO", side: "left"}
+      - {name: "Row 2", role: "GPIO", side: "left"}
+      - {name: "Row 3", role: "GPIO", side: "left"}
+      - {name: "Col 0", role: "GPIO", side: "left"}
+      - {name: "Col 1", role: "GPIO", side: "left"}
+      - {name: "Col 2", role: "GPIO", side: "left"}
+
+  # === Hook Switch (V-153-1C25 microswitch) ===
+  - name: "Hook Switch (V-153)"
+    color: "#FF9800"
+    pins:
+      - {name: "COM", role: "GPIO", side: "left"}
+      - {name: "GND", role: "GND", side: "left"}
+
+  # === Mic Kill Switch (Omron D2F-01F subminiature microswitch) ===
+  - name: "Mic Kill Switch (D2F-01F)"
+    color: "#E91E63"
+    pins:
+      - {name: "COM (mic in)", role: "GPIO", side: "left"}
+      - {name: "NO (mic out)", role: "GPIO", side: "right"}
+      - {name: "NC (floating)", role: "GPIO", side: "right"}
+
+  # === L298N H-Bridge (Bell Ringer Driver) ===
+  - type: "l298n"
+    name: "L298N Bell Driver"
+    color: "#F44336"
+
+  # === Transformer (kzfuli 1210KY 12V/120V step-up) ===
+  - name: "Transformer (1210KY)"
+    color: "#FF5722"
+    pins:
+      - {name: "Pri+ (yellow)", role: "GPIO", side: "left"}
+      - {name: "Pri- (yellow)", role: "GPIO", side: "left"}
+      - {name: "Sec+ (red) ⚡100V", role: "GPIO", side: "right"}
+      - {name: "Sec- (red) ⚡100V", role: "GPIO", side: "right"}
+
+  # === Bell Coil (3,910Ω) ===
+  - name: "Bell Coil (3.9kΩ)"
+    color: "#B71C1C"
+    pins:
+      - {name: "Lead 1", role: "GPIO", side: "left"}
+      - {name: "Lead 2", role: "GPIO", side: "left"}
+
+  # === Status LED ===
+  - name: "Status LED"
+    color: "#FFEB3B"
+    pins:
+      - {name: "Anode (220Ω)", role: "GPIO", side: "left"}
+      - {name: "Cathode", role: "GND", side: "left"}
+
+  # === 12V DC Power Supply (wall wart, routed through cord hole) ===
+  - name: "12V 2A PSU (wall wart)"
+    color: "#607D8B"
+    pins:
+      - {name: "12V+", role: "5V", side: "right"}
+      - {name: "GND", role: "GND", side: "right"}
+
+  # === Wago Splitter (12V distribution) ===
+  - name: "Wago 12V Splitter"
+    color: "#FFB300"
+    pins:
+      - {name: "12V IN", role: "5V", side: "left"}
+      - {name: "GND IN", role: "GND", side: "left"}
+      - {name: "12V → L298N", role: "5V", side: "right"}
+      - {name: "12V → Buck", role: "5V", side: "right"}
+      - {name: "GND → L298N", role: "GND", side: "right"}
+      - {name: "GND → Buck", role: "GND", side: "right"}
+
+  # === LM2596 Buck Converter (12V → 5V) ===
+  - name: "LM2596 Buck (12V→5V)"
+    color: "#4CAF50"
+    pins:
+      - {name: "VIN 12V", role: "5V", side: "left"}
+      - {name: "GND IN", role: "GND", side: "left"}
+      - {name: "VOUT 5V", role: "5V", side: "right"}
+      - {name: "GND OUT", role: "GND", side: "right"}
+
+  # === Wago 5V Splitter (distributes 5V to both boards) ===
+  - name: "Wago 5V Splitter"
+    color: "#81C784"
+    pins:
+      - {name: "5V IN", role: "5V", side: "left"}
+      - {name: "GND IN", role: "GND", side: "left"}
+      - {name: "5V → Pi Zero", role: "5V", side: "right"}
+      - {name: "5V → Pico VSYS", role: "5V", side: "right"}
+      - {name: "GND → Pi Zero", role: "GND", side: "right"}
+      - {name: "GND → Pico", role: "GND", side: "right"}
+
+connections:
+  # === UART: Pico ↔ Pi Zero ===
+  - board_pin: 1    # GP0 TX
+    device: "Pi Zero 2 W"
+    device_pin: "GPIO15/RX"
+
+  - board_pin: 2    # GP1 RX
+    device: "Pi Zero 2 W"
+    device_pin: "GPIO14/TX"
+
+  - board_pin: 3    # GND
+    device: "Pi Zero 2 W"
+    device_pin: "GND"
+
+  # === Keypad Matrix ===
+  - board_pin: 4    # GP2 Row 0
+    device: "4x3 Keypad"
+    device_pin: "Row 0"
+
+  - board_pin: 5    # GP3 Row 1
+    device: "4x3 Keypad"
+    device_pin: "Row 1"
+
+  - board_pin: 6    # GP4 Row 2
+    device: "4x3 Keypad"
+    device_pin: "Row 2"
+
+  - board_pin: 7    # GP5 Row 3
+    device: "4x3 Keypad"
+    device_pin: "Row 3"
+
+  - board_pin: 9    # GP6 Col 0
+    device: "4x3 Keypad"
+    device_pin: "Col 0"
+
+  - board_pin: 10   # GP7 Col 1
+    device: "4x3 Keypad"
+    device_pin: "Col 1"
+
+  - board_pin: 11   # GP8 Col 2
+    device: "4x3 Keypad"
+    device_pin: "Col 2"
+
+  # === Hook Switch ===
+  - board_pin: 14   # GP10
+    device: "Hook Switch (V-153)"
+    device_pin: "COM"
+
+  - board_pin: 13   # GND
+    device: "Hook Switch (V-153)"
+    device_pin: "GND"
+
+  # === L298N Bell Ringer ===
+  - board_pin: 15   # GP11 → IN1
+    device: "L298N Bell Driver"
+    device_pin: "IN1"
+
+  - board_pin: 20   # GP15 → IN2
+    device: "L298N Bell Driver"
+    device_pin: "IN2"
+
+  - board_pin: 18   # GND
+    device: "L298N Bell Driver"
+    device_pin: "GND"
+
+  # === Status LED ===
+  - board_pin: 19   # GP14
+    device: "Status LED"
+    device_pin: "Anode (220Ω)"
+
+  - board_pin: 23   # GND
+    device: "Status LED"
+    device_pin: "Cathode"
+
+  # === Power: Wago 5V Splitter → Pico VSYS ===
+  - board_pin: 39   # VSYS
+    device: "Wago 5V Splitter"
+    device_pin: "5V → Pico VSYS"
+
+  - board_pin: 38   # GND
+    device: "Wago 5V Splitter"
+    device_pin: "GND → Pico"
+
+  # === Device-to-Device: Pi Zero → Codec Zero (HAT) ===
+  - from: {device: "Pi Zero 2 W", device_pin: "I2S/I2C"}
+    to: {device: "Codec Zero pHAT (DA7212)", device_pin: "40-pin HAT connector"}
+
+  # === Device-to-Device: Codec Zero → RJ9 Port (earpiece, soldered) ===
+  - from: {device: "Codec Zero pHAT (DA7212)", device_pin: "SPKR OUT+ (screw)"}
+    to: {device: "RJ9 Port (base)", device_pin: "Pin2 Ear+ (Red)"}
+
+  - from: {device: "Codec Zero pHAT (DA7212)", device_pin: "SPKR OUT- (screw)"}
+    to: {device: "RJ9 Port (base)", device_pin: "Pin3 Ear- (Green)"}
+
+  # === Device-to-Device: RJ9 Port mic → D2F-01F kill switch → TRS plug → Codec Zero 3.5mm jack ===
+  # Mic signal actually flows RJ9 → D2F-01F → Codec, but pinviz directions are
+  # reversed here to avoid a cycle with the earpiece lines (Codec → RJ9).
+  - from: {device: "Codec Zero pHAT (DA7212)", device_pin: "MIC Tip (signal)"}
+    to: {device: "Mic Kill Switch (D2F-01F)", device_pin: "NO (mic out)"}
+
+  - from: {device: "Mic Kill Switch (D2F-01F)", device_pin: "COM (mic in)"}
+    to: {device: "RJ9 Port (base)", device_pin: "Pin1 Mic+ (Black)"}
+
+  # Mic GND: RJ9 Pin4 → Codec Zero MIC Sleeve (direct, not through kill switch)
+  # Omitted from diagram to avoid pinviz cycle detection
+  # In reality: Pin4 Mic- (Yellow) soldered directly to TRS sleeve → Codec Zero 3.5mm jack GND
+
+  # === Device-to-Device: L298N → Transformer → Bell ===
+  - from: {device: "L298N Bell Driver", device_pin: "OUT1"}
+    to: {device: "Transformer (1210KY)", device_pin: "Pri+ (yellow)"}
+
+  - from: {device: "L298N Bell Driver", device_pin: "OUT2"}
+    to: {device: "Transformer (1210KY)", device_pin: "Pri- (yellow)"}
+
+  - from: {device: "Transformer (1210KY)", device_pin: "Sec+ (red) ⚡100V"}
+    to: {device: "Bell Coil (3.9kΩ)", device_pin: "Lead 1"}
+
+  - from: {device: "Transformer (1210KY)", device_pin: "Sec- (red) ⚡100V"}
+    to: {device: "Bell Coil (3.9kΩ)", device_pin: "Lead 2"}
+
+  # === Device-to-Device: 12V PSU → Wago Splitter ===
+  - from: {device: "12V 2A PSU (wall wart)", device_pin: "12V+"}
+    to: {device: "Wago 12V Splitter", device_pin: "12V IN"}
+
+  - from: {device: "12V 2A PSU (wall wart)", device_pin: "GND"}
+    to: {device: "Wago 12V Splitter", device_pin: "GND IN"}
+
+  # === Wago Splitter → L298N ===
+  - from: {device: "Wago 12V Splitter", device_pin: "12V → L298N"}
+    to: {device: "L298N Bell Driver", device_pin: "12V"}
+
+  - from: {device: "Wago 12V Splitter", device_pin: "GND → L298N"}
+    to: {device: "L298N Bell Driver", device_pin: "5V"}
+
+  # === Wago Splitter → LM2596 Buck ===
+  - from: {device: "Wago 12V Splitter", device_pin: "12V → Buck"}
+    to: {device: "LM2596 Buck (12V→5V)", device_pin: "VIN 12V"}
+
+  - from: {device: "Wago 12V Splitter", device_pin: "GND → Buck"}
+    to: {device: "LM2596 Buck (12V→5V)", device_pin: "GND IN"}
+
+  # === Device-to-Device: LM2596 → Wago 5V Splitter ===
+  - from: {device: "LM2596 Buck (12V→5V)", device_pin: "VOUT 5V"}
+    to: {device: "Wago 5V Splitter", device_pin: "5V IN"}
+
+  - from: {device: "LM2596 Buck (12V→5V)", device_pin: "GND OUT"}
+    to: {device: "Wago 5V Splitter", device_pin: "GND IN"}
+
+  # === Wago 5V Splitter → Pi Zero ===
+  - from: {device: "Wago 5V Splitter", device_pin: "5V → Pi Zero"}
+    to: {device: "Pi Zero 2 W", device_pin: "5V IN"}

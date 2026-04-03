@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# ro-root — Remount root filesystem as read-only to restore power-cut protection
+#
+# Usage: sudo ro-root
+#
+# Run this after finishing maintenance with `rw-root`.
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    echo "ro-root: must run as root (sudo ro-root)" >&2
+    exit 1
+fi
+
+# Check current mount state
+if mount | grep -q "on / .*\bro\b"; then
+    echo "ro-root: root is already read-only, nothing to do"
+    exit 0
+fi
+
+echo "ro-root: syncing filesystems..."
+sync
+
+echo "ro-root: remounting / as read-only..."
+if ! mount -o remount,ro / 2>/dev/null; then
+    echo "ro-root: WARNING: Could not remount / as read-only." >&2
+    echo "         Some process may have open files on /. Check with: lsof / | grep -v /data" >&2
+    echo "         You can try: fuser -mv / to see what's using it." >&2
+    echo "         Root will return to read-only on next reboot." >&2
+    exit 1
+fi
+
+echo "ro-root: root filesystem is now READ-ONLY"
+echo "         Power cuts can no longer corrupt the root filesystem."

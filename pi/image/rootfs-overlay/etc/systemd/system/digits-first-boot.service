@@ -1,0 +1,20 @@
+[Unit]
+Description=Digits First-Boot Device Identity Initialization
+Documentation=https://github.com/digits/digits
+# Must complete before AP check decides boot mode
+Before=digits-ap-check.service
+# Ensure /data and bind mounts are ready
+After=local-fs.target
+# Only run if /data/.initialized does not exist
+ConditionPathExists=!/data/.initialized
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/digits-first-boot.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogIdentifier=digits-first-boot
+
+[Install]
+WantedBy=sysinit.target

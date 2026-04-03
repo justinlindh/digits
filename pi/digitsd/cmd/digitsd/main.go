@@ -1,0 +1,1075 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
+	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
+	"github.com/justinlindh/digits/pi/digitsd/internal/config"
+	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
+	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
+	"github.com/justinlindh/digits/pi/digitsd/internal/version"
+	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
+
+	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
+)
+
+func init() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+}
+
+var (
+	configPath  = flag.String("config", config.DefaultPath, "path to JSON config file")
+	signaldURL  = flag.String("signald", "", "signald WebSocket URL (overrides config file)")
+	numberFlag  = flag.String("number", "", "this phone's number, e.g. 3140001 (overrides config file)")
+	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
+	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
+	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
+	alsaDevice  = flag.String("alsa-playback", "plughw:1,0", "ALSA playback device (direct, no dmix)")
+)
+
+// daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
+type daemonCallbacks struct {
+	serial           *phone.SerialPort
+	sig              *sigclient.Client
+	mixer            *audio.Mixer
+	serviceCodes     *phone.ServiceCodeHandler
+	ctrl             *phone.Controller
+	mu               sync.Mutex
+	peerMgr          *owebrtc.PeerManager
+	pipeline         *audio.Pipeline
+	encoder          *codec.Encoder
+	decoder          *codec.Decoder
+	number           string
+	cfg              *config.Config
+	pendingOffer     string
+	pendingCaller    string
+	pendingICE       []string // ICE candidates received before peerMgr is created
+	debugMode        bool     // read from DIGITS_DEBUG env at startup
+	paired           atomic.Bool
+	pairingCode      string   // current pairing code from server
+}
+
+// --- phone.Callbacks implementation ---
+
+func (d *daemonCallbacks) SendTone(name string) {
+	// Map controller tone names to WAV file names.
+	switch strings.ToUpper(name) {
+	case "DIAL":
+		d.mixer.PlayLoop("tone_dial")
+	case "RINGBACK":
+		d.mixer.PlayLoop("tone_ringback")
+	case "BUSY":
+		d.mixer.PlayLoop("tone_busy")
+	case "REORDER":
+		d.mixer.PlayLoop("tone_reorder")
+	case "HOWLER":
+		d.mixer.PlayLoop("tone_howler")
+	case "INTERCEPT":
+		d.mixer.PlayOnce("intercept")
+	case "STOP":
+		d.mixer.StopTone()
+	case "STOPALL":
+		d.mixer.StopAll()
+	default:
+		log.Printf("tone: unknown %q", name)
+	}
+}
+
+// OncePlaying reports whether a one-shot tone is still playing.
+func (d *daemonCallbacks) OncePlaying() bool {
+	return d.mixer.OncePlaying()
+}
+
+func (d *daemonCallbacks) SendRing(start bool) {
+	d.serial.Ring(start)
+}
+
+func (d *daemonCallbacks) SendLED(mode string) {
+	d.serial.LED(mode)
+}
+
+func (d *daemonCallbacks) InitiateCall(targetNumber string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Stop tones — mixer continues writing silence (DAC keepalive) until WebRTC audio arrives
+	d.mixer.StopTone()
+
+	iceCfg := owebrtc.NewICEConfig(nil) // LAN only for now
+	var err error
+	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		log.Printf("webrtc: %v", err)
+		return
+	}
+
+	// Handle remote audio track
+	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			// Live playback — decode and feed into mixer
+			var frameCount int
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					log.Printf("makeCall remote track ended after %d frames", frameCount)
+					return
+				}
+				pcm, err := d.decoder.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				// Copy — Decode returns a slice of a reused internal buffer
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				d.mixer.FeedWebRTC(frame)
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind SDP send — candidates must not arrive before the offer.
+	sdpSent := make(chan struct{})
+	d.peerMgr.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		d.sig.Send(&sigclient.Message{ //nolint:errcheck
+			Type:      sigclient.TypeICE,
+			To:        targetNumber,
+			Candidate: candidate,
+		})
+	}
+
+	// Create offer (returns immediately — ICE trickles via OnICECandidate)
+	offer, err := d.peerMgr.CreateOffer()
+	if err != nil {
+		log.Printf("webrtc offer: %v", err)
+		close(sdpSent)
+		return
+	}
+
+	// Send call + SDP, then ungate ICE candidates
+	d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}) //nolint:errcheck
+	d.sig.Send(&sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer}) //nolint:errcheck
+	close(sdpSent)
+
+	// Start audio pipeline
+	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	if err := d.pipeline.Start(); err != nil {
+		log.Printf("audio pipeline: %v", err)
+		return
+	}
+
+	// Encode and send captured audio
+	go func() {
+		for frame := range d.pipeline.OutFrames() {
+			encoded, err := d.encoder.Encode(frame)
+			if err != nil {
+				continue
+			}
+			d.mu.Lock()
+			pm := d.peerMgr
+			d.mu.Unlock()
+			if pm != nil {
+				pm.LocalTrack().WriteSample(media.Sample{ //nolint:errcheck
+					Data:     encoded,
+					Duration: 20 * time.Millisecond,
+				})
+			}
+		}
+	}()
+
+	log.Printf("call initiated to %s", targetNumber)
+}
+
+func (d *daemonCallbacks) AnswerCall() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.pendingOffer == "" {
+		log.Println("answer: no pending offer")
+		return
+	}
+
+	// Stop tones — mixer continues writing silence (DAC keepalive)
+	d.mixer.StopTone()
+
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	d.pendingOffer = ""
+	d.pendingCaller = ""
+
+	iceCfg := owebrtc.NewICEConfig(nil) // LAN only for now
+	var err error
+	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		log.Printf("webrtc (answer): %v", err)
+		return
+	}
+
+	// Handle remote audio track — decode and feed into mixer.
+	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			var frameCount int
+
+			// Phase 1: Wait for pipeline (user picks up phone).
+			// Read and discard RTP packets to prevent buffering.
+			// Decode each to keep Opus decoder state in sync.
+			log.Printf("remote track active, waiting for answer...")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					log.Printf("pipeline ready, discarded %d pre-answer packets", discarded)
+					break
+				}
+
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					log.Printf("remote track ended while waiting for answer (%d packets discarded)", discarded)
+					return
+				}
+				d.decoder.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			// Phase 2: Drain stale packets until caught up to real-time.
+			// Decode each to maintain Opus state, but don't play.
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					log.Printf("remote track ended during drain")
+					return
+				}
+				d.decoder.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+
+				if readTime > 5*time.Millisecond {
+					log.Printf("drain complete: %d packets skipped in %s (last_seq=%d)",
+						drained-1, time.Since(drainStart).Round(time.Microsecond), lastSeq)
+					break
+				}
+			}
+
+			// Phase 3: Live playback loop — feed decoded PCM into mixer.
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					log.Printf("remote track ended after %d frames", frameCount)
+					return
+				}
+				recvTime := time.Now()
+				pcm, err := d.decoder.Decode(pkt.Payload)
+				if err != nil {
+					log.Printf("decode error: %v (pkt %d bytes)", err, len(pkt.Payload))
+					continue
+				}
+				// Copy — Decode returns a slice of a reused internal buffer
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				d.mixer.FeedWebRTC(frame)
+
+				if frameCount <= 10 || frameCount%50 == 0 {
+					log.Printf("FEED[%d]: seq=%d recv=%s",
+						frameCount, pkt.SequenceNumber,
+						recvTime.Format("15:04:05.000000"))
+				}
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind answer SDP send.
+	sdpSent := make(chan struct{})
+	d.peerMgr.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		d.sig.Send(&sigclient.Message{ //nolint:errcheck
+			Type:      sigclient.TypeICE,
+			To:        caller,
+			Candidate: candidate,
+		})
+	}
+
+	// Accept the offer and generate answer (returns immediately — ICE trickles via OnICECandidate)
+	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
+	if err != nil {
+		log.Printf("webrtc accept offer: %v", err)
+		close(sdpSent)
+		return
+	}
+
+	// Drain any ICE candidates that arrived before peerMgr was ready.
+	for _, candidate := range d.pendingICE {
+		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
+			log.Printf("webrtc add queued ICE candidate: %v", err)
+		}
+	}
+	log.Printf("drained %d queued ICE candidates", len(d.pendingICE))
+	d.pendingICE = nil
+
+	// Send answer SDP back to caller, then ungate ICE candidates
+	d.sig.Send(&sigclient.Message{ //nolint:errcheck
+		Type: sigclient.TypeAnswer,
+		To:   caller,
+		SDP:  answerSDP,
+	})
+	close(sdpSent)
+
+	// Start audio pipeline (capture only — playback goes through mixer)
+	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	if err := d.pipeline.Start(); err != nil {
+		log.Printf("audio pipeline (answer): %v", err)
+		return
+	}
+
+	// Encode and send captured audio
+	go func() {
+		for frame := range d.pipeline.OutFrames() {
+			encoded, err := d.encoder.Encode(frame)
+			if err != nil {
+				continue
+			}
+			d.mu.Lock()
+			pm := d.peerMgr
+			d.mu.Unlock()
+			if pm != nil {
+				pm.LocalTrack().WriteSample(media.Sample{ //nolint:errcheck
+					Data:     encoded,
+					Duration: 20 * time.Millisecond,
+				})
+			}
+		}
+	}()
+
+	log.Printf("answered call from %s", caller)
+}
+
+func (d *daemonCallbacks) HangupCall() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.pendingOffer = ""
+	d.pendingCaller = ""
+	d.pendingICE = nil
+
+	d.sig.Send(&sigclient.Message{Type: sigclient.TypeHangup}) //nolint:errcheck
+
+	if d.pipeline != nil {
+		d.pipeline.Stop()
+		d.pipeline = nil
+	}
+	if d.peerMgr != nil {
+		d.peerMgr.Close()
+		d.peerMgr = nil
+	}
+
+	log.Println("call ended")
+}
+
+// --- phone.SocketHandler implementation ---
+
+func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
+	// Test event injection (for automated testing without physical hardware).
+	// Only available when DIGITS_DEBUG=1 is set in the environment.
+	if strings.HasPrefix(cmd, "TEST:EVENT:") {
+		if !d.debugMode {
+			return "ERROR: TEST:EVENT not available in production"
+		}
+		event := cmd[11:]
+		log.Printf("test: injecting event %q", event)
+		if d.ctrl != nil {
+			d.ctrl.HandleEvent(event)
+		}
+		return "OK"
+	}
+
+	// Intercept tone commands (handled locally)
+	if strings.HasPrefix(cmd, "TONE:") {
+		tone := cmd[5:]
+		switch tone {
+		case "STOP":
+			d.mixer.StopTone()
+		case "DIAL":
+			d.mixer.PlayLoop("tone_dial")
+		case "RINGBACK":
+			d.mixer.PlayLoop("tone_ringback")
+		case "BUSY":
+			d.mixer.PlayLoop("tone_busy")
+		}
+		return "OK"
+	}
+
+	// Fire-and-forget commands
+	if strings.HasPrefix(cmd, "LED:") || cmd == "RING:STOP" || strings.HasPrefix(cmd, "HOOK:") {
+		d.serial.SendFire(cmd)
+		return "OK"
+	}
+
+	// All other commands: send and wait for response
+	resp, err := d.serial.SendCommand(cmd, 3*time.Second)
+	if err != nil {
+		return fmt.Sprintf("ERROR: %v", err)
+	}
+	return resp
+}
+
+// Default paths for SWD flash infrastructure on the Pi.
+const (
+	defaultFirmwarePath = "/data/digits/firmware.elf"
+	defaultSWDConfig    = "/data/digits/swd/digits-swd.cfg"
+	defaultOpenOCD      = "/usr/local/bin/openocd"
+)
+
+// statusFunc is a callback to report update progress back to the server.
+type statusFunc func(status, detail string)
+
+func runUpdate(serverURL, piVersion, fwVersion string, reportStatus statusFunc) {
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", reportStatus)
+}
+
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, reportStatus statusFunc) {
+	if reportStatus == nil {
+		reportStatus = func(string, string) {} // no-op
+	}
+
+	baseURL := strings.TrimSuffix(serverURL, "/ws")
+	baseURL = strings.Replace(baseURL, "wss://", "https://", 1)
+	baseURL = strings.Replace(baseURL, "ws://", "http://", 1)
+
+	up := updater.New(updater.Config{
+		ServerBaseURL:    baseURL,
+		CurrentPiVersion: piVersion,
+		CurrentFWVersion: fwVersion,
+	})
+
+	var result *updater.CheckResult
+	var err error
+
+	if targetPi != "" || targetFW != "" {
+		log.Printf("updater: targeted update \u2014 pi=%q fw=%q", targetPi, targetFW)
+		result, err = up.CheckVersion(targetPi, targetFW)
+	} else {
+		result, err = up.Check()
+	}
+	if err != nil {
+		log.Printf("updater: check failed: %v", err)
+		reportStatus("failed", fmt.Sprintf("Check failed: %v", err))
+		return
+	}
+	if !result.PiUpdateAvailable && !result.FWUpdateAvailable {
+		log.Println("updater: already up to date")
+		reportStatus("up_to_date", "Already running latest version")
+		return
+	}
+	log.Printf("updater: update available \u2014 pi=%v fw=%v (target: pi=%s fw=%s)",
+		result.PiUpdateAvailable, result.FWUpdateAvailable,
+		result.Manifest.PiVersion, result.Manifest.FirmwareVersion)
+
+	if result.FWUpdateAvailable {
+		reportStatus("downloading", "Downloading firmware "+result.Manifest.FirmwareVersion)
+		var path string
+		if result.TargetFWURL != "" {
+			path, err = up.DownloadFromURL(result.TargetFWURL, "firmware.elf", result.Manifest.FirmwareSHA256)
+		} else {
+			path, err = up.DownloadArtifact("firmware.elf", result.Manifest.FirmwareSHA256)
+		}
+		if err != nil {
+			log.Printf("updater: firmware download failed: %v", err)
+			reportStatus("failed", fmt.Sprintf("Firmware download failed: %v", err))
+			return
+		}
+		reportStatus("applying", "Flashing firmware "+result.Manifest.FirmwareVersion)
+		if err := up.ApplyFirmwareUpdate(path); err != nil {
+			log.Printf("updater: firmware apply failed: %v", err)
+			reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
+			return
+		}
+	}
+	if result.PiUpdateAvailable {
+		reportStatus("downloading", "Downloading digitsd "+result.Manifest.PiVersion)
+		var path string
+		if result.TargetPiURL != "" {
+			path, err = up.DownloadFromURL(result.TargetPiURL, "digitsd-aarch64", result.Manifest.PiSHA256)
+		} else {
+			path, err = up.DownloadArtifact("digitsd-aarch64", result.Manifest.PiSHA256)
+		}
+		if err != nil {
+			log.Printf("updater: pi download failed: %v", err)
+			reportStatus("failed", fmt.Sprintf("Download failed: %v", err))
+			return
+		}
+		reportStatus("rebooting", "Installing digitsd "+result.Manifest.PiVersion+" — restarting...")
+		if err := up.ApplyPiUpdate(path); err != nil {
+			log.Printf("updater: pi update failed: %v", err)
+			reportStatus("failed", fmt.Sprintf("Install failed: %v", err))
+			return
+		}
+		// ApplyPiUpdate calls os.Exit(0) on success — reportStatus("rebooting") is sent from there
+	}
+
+	// If only firmware was updated (no pi update), report success
+	if result.FWUpdateAvailable && !result.PiUpdateAvailable {
+		reportStatus("success", "Firmware updated to "+result.Manifest.FirmwareVersion)
+	}
+}
+
+func main() {
+	flag.Parse()
+
+	// --- Config file loading ---
+	// Load from JSON file, then let CLI flags override individual fields.
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+
+	// Effective server URL: CLI flag > config file > built-in default
+	effectiveServerURL := cfg.ServerURL
+	if *signaldURL != "" {
+		effectiveServerURL = *signaldURL // CLI flag wins
+	}
+	if effectiveServerURL == "" {
+		effectiveServerURL = "wss://localhost:8443/ws" // backward-compat default
+	}
+
+	// Effective phone number: CLI flag > config file
+	effectiveNumber := cfg.PhoneNumber
+	if *numberFlag != "" {
+		effectiveNumber = *numberFlag // CLI flag wins
+	}
+
+	if effectiveNumber == "" {
+		effectiveNumber = "unpaired"
+		log.Println("digitsd: no phone number configured — starting in pairing mode")
+	}
+
+	log.Printf("digitsd: server=%s number=%s config=%s", effectiveServerURL, effectiveNumber, *configPath)
+
+	// 1. Open serial port directly (log to both stdout and uart.log file)
+	uartLogPath := filepath.Join(filepath.Dir(*socketPath), "uart.log")
+	uartLogFile, err := os.OpenFile(uartLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("warning: cannot open uart log %s: %v (logging to stdout only)", uartLogPath, err)
+		uartLogFile = nil
+	}
+	var serialWriter io.Writer = os.Stdout
+	if uartLogFile != nil {
+		serialWriter = io.MultiWriter(os.Stdout, uartLogFile)
+		defer uartLogFile.Close()
+	}
+	serialLogger := log.New(serialWriter, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+	sp, err := phone.OpenSerial(*serialDev, 115200, serialLogger)
+	if err != nil {
+		log.Fatalf("serial: %v", err)
+	}
+	defer sp.Close()
+
+	// POST: verify Pico is alive
+	postRetries := 3
+	postOk := false
+	for i := 1; i <= postRetries; i++ {
+		if err := sp.Ping(); err == nil {
+			postOk = true
+			break
+		}
+		log.Printf("POST attempt %d/%d: no PONG", i, postRetries)
+		time.Sleep(1 * time.Second)
+	}
+	if postOk {
+		log.Println("POST: PASS — Pico UART healthy")
+	} else {
+		log.Println("POST: FAIL — Pico not responding.")
+		elfPath := defaultFirmwarePath
+		swdCfg := defaultSWDConfig
+		openocd := defaultOpenOCD
+		if _, errElf := os.Stat(elfPath); errElf == nil {
+			if _, errOcd := os.Stat(openocd); errOcd == nil {
+				log.Printf("POST: attempting auto-flash from %s", elfPath)
+				// Close serial port before SWD flash
+				sp.Close()
+				cmd := exec.Command("sudo", openocd,
+					"-f", swdCfg,
+					"-f", "target/rp2040.cfg",
+					"-c", fmt.Sprintf("program %s verify reset exit", elfPath))
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					log.Printf("POST: auto-flash failed: %v", err)
+				} else {
+					log.Println("POST: auto-flash succeeded")
+				}
+				// Re-open serial port
+				time.Sleep(2 * time.Second)
+				sp, err = phone.OpenSerial(*serialDev, 115200, serialLogger)
+				if err != nil {
+					log.Fatalf("serial re-open after flash: %v", err)
+				}
+				if err := sp.Ping(); err == nil {
+					log.Println("POST: PASS after auto-flash")
+					postOk = true
+				} else {
+					log.Printf("POST: FAIL after auto-flash: %v", err)
+				}
+			} else {
+				log.Printf("POST: openocd not found at %s", openocd)
+			}
+		} else {
+			log.Printf("POST: no firmware at %s, skipping auto-flash", elfPath)
+		}
+		if !postOk {
+			log.Println("POST: Continuing without Pico. Phone will not function.")
+		}
+	}
+
+	// Query firmware version (best-effort)
+	var fwVersion, fwCommit string
+	if postOk {
+		if v, c, err := sp.QueryVersion(); err != nil {
+			log.Printf("firmware version: %v", err)
+		} else {
+			fwVersion, fwCommit = v, c
+			log.Printf("firmware: version=%s commit=%s", fwVersion, fwCommit)
+		}
+	}
+
+	// 2. Open ALSA playback (direct hardware, no dmix)
+	pbCfg := audio.Config{
+		Device:     *alsaDevice,
+		SampleRate: 48000,
+		Channels:   1,
+		FrameSize:  960,
+	}
+	pb, err := audio.NewPlayback(pbCfg)
+	if err != nil {
+		log.Fatalf("alsa playback: %v", err)
+	}
+	defer pb.Close()
+
+	// 3. Create mixer and load tones
+	mixer := audio.NewMixer(pb)
+	if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
+		log.Fatalf("mixer load tones: %v", err)
+	}
+	// Load pairing voice prompts (subdirectory)
+	pairingDir := filepath.Join(*toneDir, "pairing")
+	if _, err := os.Stat(pairingDir); err == nil {
+		if err := mixer.LoadTonesFromDir(pairingDir); err != nil {
+			log.Printf("WARNING: could not load pairing tones: %v", err)
+		}
+	}
+	mixer.Start()
+	defer mixer.Stop()
+
+	// Debug: capture raw PCM output if CAPTURE_PCM is set
+	if capPath := os.Getenv("CAPTURE_PCM"); capPath != "" {
+		if err := mixer.EnableCapture(capPath); err != nil {
+			log.Printf("WARNING: PCM capture failed: %v", err)
+		} else {
+			defer mixer.DisableCapture()
+		}
+	}
+
+	deviceID, err := config.LoadOrCreateDeviceID()
+	if err != nil {
+		log.Printf("WARNING: device ID unavailable: %v", err)
+	}
+
+	// 4. Create signaling client
+	sig := sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID)
+
+	// 5. Create Opus encoder and decoder
+	enc, err := codec.NewEncoder(48000, 1, 24000)
+	if err != nil {
+		log.Fatalf("codec encoder: %v", err)
+	}
+	dec, err := codec.NewDecoder(48000, 1)
+	if err != nil {
+		log.Fatalf("codec decoder: %v", err)
+	}
+
+	// 6. Create service code handler
+	svcCodes := phone.NewServiceCodeHandler()
+	svcCodes.SetVolumeCallback(func(level int) {
+		if err := phone.SetVolume(level); err != nil {
+			log.Printf("volume: %v", err)
+		}
+	})
+	svcCodes.SetShutdownCallback(func() {
+		log.Println("service code: executing shutdown")
+		exec.Command("sudo", "shutdown", "-h", "now").Run()
+	})
+	svcCodes.SetRebootCallback(func() {
+		log.Println("service code: executing reboot")
+		exec.Command("sudo", "reboot").Run()
+	})
+	svcCodes.SetSetupCallback(func() {
+		log.Println("service code: *#SETUP# (*#73887#) → removing wifi-configured flag, rebooting")
+		err := os.Remove(phone.WifiConfiguredFlag)
+		switch {
+		case err == nil:
+			log.Printf("service code setup: removed %s — Pi will boot into AP mode", phone.WifiConfiguredFlag)
+		case os.IsNotExist(err):
+			log.Printf("service code setup: %s already absent — Pi will boot into AP mode", phone.WifiConfiguredFlag)
+		default:
+			log.Printf("service code setup: remove %s: %v", phone.WifiConfiguredFlag, err)
+		}
+		exec.Command("sudo", "reboot").Run()
+	})
+
+	svcCodes.SetRepairCallback(func() {
+		log.Println("service code: *#0* → clearing device token, rebooting into pairing mode")
+		if cfg != nil {
+			cfg.DeviceToken = ""
+			cfg.PairingCode = ""
+			if err := cfg.Save(); err != nil {
+				log.Printf("service code repair: save config: %v", err)
+			}
+		}
+		log.Println("service code repair: rebooting")
+		exec.Command("sudo", "reboot").Run()
+	})
+
+	svcCodes.SetUpdateCallback(func() {
+		log.Println("service code: *#UPDATE# (*#873283#) — checking for updates")
+		go runUpdate(effectiveServerURL, version.Version, fwVersion, nil)
+	})
+
+	svcCodes.SetFactoryResetCallback(func() {
+		log.Println("service code: *#00000# → FACTORY RESET")
+		// 1. Remove config
+		os.Remove(config.DefaultPath)
+		os.Remove(config.DefaultPath + ".bak")
+		// 2. Remove Wi-Fi provisioning flag (boot into AP mode)
+		os.Remove(phone.WifiConfiguredFlag)
+		log.Println("service code factory reset: all data cleared, rebooting")
+		exec.Command("sudo", "reboot").Run()
+	})
+
+	// 6b. Create easter egg detector
+	easterEggs := phone.NewEasterEggDetector([]phone.EasterEgg{
+		{Name: "Funky Town", Trigger: "5542", Clip: "funkytown"},
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) {
+		log.Printf("phone: playing easter egg clip: %s", clip)
+		mixer.StopTone()
+		mixer.PlayOnce(clip)
+	})
+
+	// 7. Create callbacks
+	cb := &daemonCallbacks{
+		serial:       sp,
+		sig:          sig,
+		mixer:        mixer,
+		serviceCodes: svcCodes,
+		encoder:      enc,
+		decoder:      dec,
+		number:       effectiveNumber,
+		cfg:          cfg,
+		debugMode:    os.Getenv("DIGITS_DEBUG") == "1",
+	}
+	if cfg.DeviceToken != "" {
+		cb.paired.Store(true)
+	}
+
+	// 8. Create phone Controller
+	ctrl := phone.NewController(cb)
+	cb.ctrl = ctrl
+
+	// 9. Start socket server (backward compat for debugging + latclient auto-answer)
+	sockSrv, err := phone.NewSocketServer(*socketPath, cb)
+	if err != nil {
+		log.Fatalf("socket server: %v", err)
+	}
+	defer sockSrv.Close()
+
+	// 10. Connect signaling client
+	if err := sig.Connect(); err != nil {
+		log.Fatalf("signald connect: %v", err)
+	}
+
+	// 11. Ready
+	phone.RestoreVolume()
+	log.Println("digitsd ready")
+
+	sendDeviceInfo(sig, fwVersion, fwCommit)
+
+	// Check for updates on startup (non-blocking)
+	go func() {
+		time.Sleep(10 * time.Second) // let things settle
+		runUpdate(effectiveServerURL, version.Version, fwVersion, nil)
+	}()
+
+	// OS signal handling
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Main select loop
+	for {
+		select {
+		case <-quit:
+			log.Println("digitsd shutting down")
+			mixer.Stop()
+			sig.Close()
+			return
+
+		case event := <-sp.Events():
+			// Unpaired phone: play pairing voice sequence instead of dial tone
+			if event == "HOOK:OFF" && !cb.paired.Load() && cb.pairingCode != "" {
+				mixer.StopAll()
+				mixer.PlayOnce("pairing_silence")
+				mixer.PlayOnce("pairing_welcome")
+				for _, ch := range cb.pairingCode {
+					mixer.PlayOnce("spoken_" + string(ch))
+				}
+				mixer.PlayOnce("pairing_expires")
+				log.Printf("phone: playing pairing code %s via voice", cb.pairingCode)
+				sp.LED("ON")
+				continue // skip normal controller handling
+			}
+
+			// Handle DTMF tone playback for key presses
+			if strings.HasPrefix(event, "KEY:") && len(event) > 4 {
+				key := string(event[4])
+				dtmfName := dtmfToneName(key)
+				if dtmfName != "" {
+					// Stop dial tone on first key
+					if mixer.Active() == "tone_dial" {
+						mixer.StopTone()
+					}
+					mixer.PlayOnce(dtmfName)
+				}
+				// Check easter eggs, then service codes
+				if !easterEggs.AddKey(key) {
+					svcCodes.AddKey(key)
+				}
+			}
+
+			// Intercept dial easter eggs (e.g. 867-5309) before FSM processes them
+			if strings.HasPrefix(event, "DIAL:") && len(event) > 5 {
+				number := event[5:]
+				if egg, ok := phone.DialEasterEggs[number]; ok {
+					log.Printf("phone: dial easter egg: %s (%s)", egg.Name, number)
+					mixer.StopTone()
+					mixer.PlayOnce(egg.Clip)
+					continue // don't place the call
+				}
+			}
+
+			// Forward all events to the FSM controller
+			ctrl.HandleEvent(event)
+
+			// Hang-up: kill ALL audio immediately
+			if event == "HOOK:ON" {
+				mixer.StopAll()
+				easterEggs.Reset()
+				svcCodes.Reset()
+				svcCodes.Reset()
+			}
+
+		case msg := <-sig.Inbox():
+			log.Printf("signal rx: type=%s from=%s", msg.Type, msg.From)
+			switch msg.Type {
+			case sigclient.TypeRing:
+				cb.mu.Lock()
+				cb.pendingCaller = msg.From
+				cb.mu.Unlock()
+				ctrl.HandleSignal("ring")
+			case sigclient.TypeAnswer:
+				// Set remote description from the answer SDP before poking the FSM.
+				cb.mu.Lock()
+				if cb.peerMgr != nil && msg.SDP != "" {
+					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
+						log.Printf("webrtc set answer: %v", err)
+					} else {
+						log.Printf("webrtc: set remote answer from %s (%d bytes)", msg.From, len(msg.SDP))
+					}
+				}
+				cb.mu.Unlock()
+				ctrl.HandleSignal("answer")
+			case sigclient.TypeHangup:
+				ctrl.HandleSignal("hangup")
+			case sigclient.TypeBusy:
+				ctrl.HandleSignal("busy")
+			case sigclient.TypeError:
+				log.Printf("signal error: %s", msg.Error)
+				// Number not reachable — emulate real phone: ringback → SIT → busy
+				go func() {
+					// 1. Brief silence (call setup delay, ~1s)
+					time.Sleep(1 * time.Second)
+					if ctrl.State() != phone.StateCALLING {
+						return
+					}
+					// 2. Ringback for ~8s (simulates 1-2 rings)
+					log.Println("playing ringback (number unreachable)")
+					mixer.PlayLoop("tone_ringback")
+					time.Sleep(8 * time.Second)
+					if ctrl.State() != phone.StateCALLING {
+						return
+					}
+					// 3. SIT tones + "number not in service" announcement
+					log.Println("playing disconnected announcement")
+					mixer.StopTone()
+					mixer.PlayOnce("disconnected")
+					// Wait for announcement to finish (poll rather than guess duration)
+					for mixer.OncePlaying() {
+						time.Sleep(200 * time.Millisecond)
+						if ctrl.State() != phone.StateCALLING {
+							return
+						}
+					}
+					// 4. Brief silence, then reorder tone (fast busy) until hang-up
+					time.Sleep(500 * time.Millisecond)
+					if ctrl.State() != phone.StateCALLING {
+						return
+					}
+					log.Println("playing reorder tone")
+					mixer.PlayLoop("tone_busy")
+				}()
+			case sigclient.TypeSDP:
+				cb.mu.Lock()
+				if cb.peerMgr != nil {
+					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
+						log.Printf("webrtc set answer: %v", err)
+					}
+				} else {
+					cb.pendingOffer = msg.SDP
+					// Also capture caller from SDP message if not already set by ring
+					if cb.pendingCaller == "" && msg.From != "" {
+						cb.pendingCaller = msg.From
+						log.Printf("set pendingCaller from SDP: %s", msg.From)
+					}
+					log.Printf("stored pending SDP offer from %s (%d bytes)", msg.From, len(msg.SDP))
+				}
+				cb.mu.Unlock()
+			case sigclient.TypeICE:
+				cb.mu.Lock()
+				if cb.peerMgr != nil {
+					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
+						log.Printf("webrtc add ICE candidate: %v", err)
+					}
+				} else {
+					// Queue ICE candidates until peerMgr is ready (e.g. during RINGING before answer)
+					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
+					log.Printf("queued ICE candidate (peerMgr not ready, total queued: %d)", len(cb.pendingICE))
+				}
+				cb.mu.Unlock()
+			case sigclient.TypeUpdateTrigger:
+				log.Printf("signal: received update trigger from server (target_pi=%q target_fw=%q)",
+					msg.TargetPiVersion, msg.TargetFWVersion)
+				statusReporter := func(status, detail string) {
+					sig.Send(&sigclient.Message{ //nolint:errcheck
+						Type:         sigclient.TypeUpdateStatus,
+						UpdateStatus: status,
+						UpdateDetail: detail,
+					})
+				}
+				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
+					msg.TargetPiVersion, msg.TargetFWVersion, statusReporter)
+
+			case sigclient.TypePairingCode:
+				cb.pairingCode = msg.PairingCode
+				
+				log.Printf("PAIRING REQUIRED: code %q — pick up handset to hear it",
+					msg.PairingCode)
+
+			case sigclient.TypePaired:
+				if msg.DeviceToken != "" && cb.cfg != nil {
+					cb.cfg.DeviceToken = msg.DeviceToken
+					cb.cfg.PairingCode = ""
+					if msg.Number != "" {
+						cb.cfg.PhoneNumber = msg.Number
+						cb.number = msg.Number
+					}
+					if err := cb.cfg.Save(); err != nil {
+						log.Printf("signal: paired — failed to save config: %v", err)
+					} else {
+						log.Printf("signal: paired as %s — config saved to %s", msg.Number, cb.cfg.Path())
+					}
+					cb.paired.Store(true)
+					cb.pairingCode = ""
+					mixer.StopAll()
+					mixer.PlayOnce("tone_dial")
+					// Restart to reconnect with the assigned phone number
+					log.Printf("signal: restarting to register as %s", msg.Number)
+					go func() {
+						time.Sleep(2 * time.Second) // let dial tone play briefly
+						os.Exit(0)                  // systemd will restart us
+					}()
+				}
+
+			default:
+				log.Printf("signal: unhandled message type %q", msg.Type)
+			}
+
+		case <-sig.Done():
+			backoff := 3 * time.Second
+			for {
+				log.Printf("signal: connection lost, reconnecting in %s...", backoff)
+				time.Sleep(backoff)
+				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID)
+				cb.mu.Lock()
+				cb.sig = sig
+				cb.mu.Unlock()
+				if err := sig.Connect(); err != nil {
+					log.Printf("signal: reconnect failed: %v", err)
+					if backoff < 60*time.Second {
+						backoff *= 2
+					}
+					continue
+				}
+				log.Println("signal: reconnected")
+				sendDeviceInfo(sig, fwVersion, fwCommit)
+				break
+			}
+		}
+	}
+}
+
+func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string) {
+	if err := sig.Send(&sigclient.Message{
+		Type:            sigclient.TypeDeviceInfo,
+		PiVersion:       version.Version,
+		PiCommit:        version.Commit,
+		FirmwareVersion: fwVersion,
+		FirmwareCommit:  fwCommit,
+	}); err != nil {
+		log.Printf("device_info: send failed: %v", err)
+	} else {
+		log.Printf("device_info: pi=%s(%s) fw=%s(%s)", version.Version, version.Commit, fwVersion, fwCommit)
+	}
+}
+
+// dtmfToneName maps a keypad character to a WAV file name.
+func dtmfToneName(key string) string {
+	switch key {
+	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		return "dtmf_" + key
+	case "*":
+		return "dtmf_star"
+	case "#":
+		return "dtmf_hash"
+	default:
+		return ""
+	}
+}

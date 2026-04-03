@@ -1,0 +1,16 @@
+[Unit]
+Description=Digits Wi-Fi Setup Captive Portal
+Documentation=https://github.com/digits/digits
+After=digits-dnsmasq-ap.service
+Requires=digits-dnsmasq-ap.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/digits-setup
+Restart=on-failure
+RestartSec=5
+# Run as root to bind to port 80
+User=root
+
+[Install]
+WantedBy=multi-user.target

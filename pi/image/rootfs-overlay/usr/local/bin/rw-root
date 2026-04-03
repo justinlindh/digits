@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# rw-root — Temporarily remount root filesystem as read-write for maintenance
+#
+# Usage: sudo rw-root
+#
+# Run `ro-root` when done to restore read-only protection.
+# This only affects the current session — the next reboot reverts to read-only.
+
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then
+    echo "rw-root: must run as root (sudo rw-root)" >&2
+    exit 1
+fi
+
+# Check current mount state
+if mount | grep -q "on / .*\brw\b"; then
+    echo "rw-root: root is already read-write, nothing to do"
+    exit 0
+fi
+
+echo "rw-root: remounting / as read-write..."
+mount -o remount,rw /
+
+echo "rw-root: root filesystem is now READ-WRITE"
+echo "         Run 'sudo ro-root' when done to restore protection."
+echo ""
+echo "WARNING: Changes to / will persist across reboots but will NOT"
+echo "         survive a full OS reflash. Mutable data belongs in /data."

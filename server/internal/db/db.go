@@ -1,0 +1,207 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+
+	_ "github.com/lib/pq"
+)
+
+type Database struct {
+	DB *sql.DB
+}
+
+func Open(databaseURL string) (*Database, error) {
+	db, err := sql.Open("postgres", databaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("ping db: %w", err)
+	}
+	d := &Database{DB: db}
+	if err := d.migrate(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return d, nil
+}
+
+func (d *Database) Close() error {
+	return d.DB.Close()
+}
+
+func (d *Database) migrate() error {
+	migrations := []string{
+		`CREATE TABLE IF NOT EXISTS schema_version (
+			version INT PRIMARY KEY,
+			applied_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		// v1: core phone/call tables (migrated from SQLite)
+		`CREATE TABLE IF NOT EXISTS phones (
+			id          SERIAL PRIMARY KEY,
+			number      TEXT NOT NULL UNIQUE,
+			name        TEXT NOT NULL DEFAULT '',
+			device_id   TEXT NOT NULL DEFAULT '',
+			created_at  TIMESTAMPTZ DEFAULT NOW(),
+			updated_at  TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS calls (
+			id          SERIAL PRIMARY KEY,
+			caller      TEXT NOT NULL,
+			callee      TEXT NOT NULL,
+			status      TEXT NOT NULL DEFAULT 'initiated',
+			started_at  TIMESTAMPTZ DEFAULT NOW(),
+			answered_at TIMESTAMPTZ,
+			ended_at    TIMESTAMPTZ,
+			duration_s  INTEGER DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		)`,
+		// v2: user accounts + auth
+		`CREATE TABLE IF NOT EXISTS users (
+			id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			email       TEXT NOT NULL UNIQUE,
+			name        TEXT NOT NULL DEFAULT '',
+			google_id   TEXT UNIQUE,
+			created_at  TIMESTAMPTZ DEFAULT NOW(),
+			last_login_at TIMESTAMPTZ
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			token_hash  TEXT NOT NULL UNIQUE,
+			expires_at  TIMESTAMPTZ NOT NULL,
+			created_at  TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS magic_links (
+			id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			email       TEXT NOT NULL,
+			token_hash  TEXT NOT NULL UNIQUE,
+			expires_at  TIMESTAMPTZ NOT NULL,
+			used        BOOLEAN DEFAULT FALSE,
+			created_at  TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token_hash)`,
+		// v3: households + members
+		`CREATE TABLE IF NOT EXISTS households (
+			id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			name       TEXT NOT NULL,
+			created_at TIMESTAMPTZ DEFAULT NOW()
+		)`,
+		`CREATE TABLE IF NOT EXISTS household_members (
+			user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+			role         TEXT NOT NULL DEFAULT 'admin',
+			created_at   TIMESTAMPTZ DEFAULT NOW(),
+			PRIMARY KEY (user_id, household_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_household_members_household ON household_members(household_id)`,
+		// v3b: link phones to households
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS household_id UUID REFERENCES households(id)`,
+		`CREATE INDEX IF NOT EXISTS idx_phones_household ON phones(household_id)`,
+		`ALTER TABLE households ADD COLUMN IF NOT EXISTS call_history_enabled BOOLEAN NOT NULL DEFAULT false`,
+		// v4: phone pairing
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS pairing_code TEXT`,
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS pairing_code_expires_at TIMESTAMPTZ`,
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS paired_at TIMESTAMPTZ`,
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS hardware_id TEXT UNIQUE`,
+		`CREATE INDEX IF NOT EXISTS idx_phones_pairing_code ON phones(pairing_code) WHERE pairing_code IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_phones_hardware_id ON phones(hardware_id) WHERE hardware_id IS NOT NULL`,
+		// v5: household linking
+		`CREATE TABLE IF NOT EXISTS household_links (
+			id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			household_a_id   UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+			household_b_id   UUID REFERENCES households(id) ON DELETE CASCADE,
+			status           TEXT NOT NULL DEFAULT 'pending',
+			invite_code      TEXT NOT NULL UNIQUE,
+			invited_by       UUID NOT NULL REFERENCES users(id),
+			accepted_by      UUID REFERENCES users(id),
+			created_at       TIMESTAMPTZ DEFAULT NOW(),
+			accepted_at      TIMESTAMPTZ,
+			revoked_at       TIMESTAMPTZ,
+			revoked_by       UUID REFERENCES users(id),
+			CHECK (household_b_id IS NULL OR household_a_id < household_b_id)
+		)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_household_links_invite_code_pending ON household_links(invite_code) WHERE status = 'pending'`,
+		`CREATE INDEX IF NOT EXISTS idx_household_links_a ON household_links(household_a_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_household_links_b ON household_links(household_b_id) WHERE household_b_id IS NOT NULL`,
+		// v5b: contacts + contact_invites
+		`CREATE TABLE IF NOT EXISTS contacts (
+			id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			phone_id          INT NOT NULL REFERENCES phones(id) ON DELETE CASCADE,
+			contact_phone_id  INT NOT NULL REFERENCES phones(id) ON DELETE CASCADE,
+			name              TEXT NOT NULL DEFAULT '',
+			created_at        TIMESTAMPTZ DEFAULT NOW(),
+			UNIQUE(phone_id, contact_phone_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_contacts_phone_id ON contacts(phone_id)`,
+		`CREATE TABLE IF NOT EXISTS contact_invites (
+			id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			from_phone_id         INT NOT NULL REFERENCES phones(id) ON DELETE CASCADE,
+			to_phone_id           INT NOT NULL REFERENCES phones(id) ON DELETE CASCADE,
+			from_name             TEXT NOT NULL DEFAULT '',
+			to_name               TEXT,
+			status                TEXT NOT NULL DEFAULT 'pending',
+			invited_by_user_id    UUID REFERENCES users(id),
+			responded_by_user_id  UUID REFERENCES users(id),
+			created_at            TIMESTAMPTZ DEFAULT NOW(),
+			responded_at          TIMESTAMPTZ
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_contact_invites_to_phone_pending ON contact_invites(to_phone_id) WHERE status = 'pending'`,
+		`ALTER TABLE phones ADD COLUMN IF NOT EXISTS device_token TEXT`,
+		// v6: lines + devices (replaces phones, contacts, contact_invites)
+		`CREATE TABLE IF NOT EXISTS lines (
+			id           SERIAL PRIMARY KEY,
+			number       TEXT NOT NULL UNIQUE,
+			name         TEXT NOT NULL DEFAULT '',
+			household_id UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+			created_at   TIMESTAMPTZ DEFAULT NOW(),
+			updated_at   TIMESTAMPTZ DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_lines_household ON lines(household_id);
+
+		CREATE TABLE IF NOT EXISTS devices (
+			id                     SERIAL PRIMARY KEY,
+			line_id                INT NOT NULL REFERENCES lines(id) ON DELETE CASCADE,
+			hardware_id            TEXT UNIQUE,
+			device_id              TEXT NOT NULL DEFAULT '',
+			device_token           TEXT,
+			pairing_code           TEXT,
+			pairing_code_expires_at TIMESTAMPTZ,
+			paired_at              TIMESTAMPTZ,
+			created_at             TIMESTAMPTZ DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS idx_devices_line ON devices(line_id);
+		CREATE INDEX IF NOT EXISTS idx_devices_pairing_code ON devices(pairing_code) WHERE pairing_code IS NOT NULL;
+		CREATE INDEX IF NOT EXISTS idx_devices_hardware_id ON devices(hardware_id) WHERE hardware_id IS NOT NULL;
+
+		INSERT INTO lines (id, number, name, household_id, created_at, updated_at)
+		SELECT id, number, name, household_id, created_at, updated_at
+		FROM phones
+		WHERE number IS NOT NULL AND number != '' AND household_id IS NOT NULL;
+
+		INSERT INTO devices (line_id, hardware_id, device_id, device_token, pairing_code, pairing_code_expires_at, paired_at, created_at)
+		SELECT p.id, p.hardware_id, p.device_id, p.device_token, p.pairing_code, p.pairing_code_expires_at, p.paired_at, p.created_at
+		FROM phones p
+		WHERE p.id IN (SELECT id FROM lines);
+
+		SELECT setval('lines_id_seq', COALESCE((SELECT MAX(id) FROM lines), 1));
+		SELECT setval('devices_id_seq', COALESCE((SELECT MAX(id) FROM devices), 1));
+
+		DROP TABLE IF EXISTS contact_invites;
+		DROP TABLE IF EXISTS contacts;
+		DROP TABLE IF EXISTS phones`,
+	}
+	for _, m := range migrations {
+		if _, err := d.DB.Exec(m); err != nil {
+			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
+		}
+	}
+	return nil
+}

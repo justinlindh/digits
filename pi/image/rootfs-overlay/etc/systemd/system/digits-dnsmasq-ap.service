@@ -1,0 +1,15 @@
+[Unit]
+Description=Digits AP mode DHCP/DNS (dnsmasq)
+Documentation=https://github.com/digits/digits
+After=digits-ap.service
+Requires=digits-ap.service
+
+[Service]
+Type=simple
+# Run dnsmasq in foreground with AP config only (no-daemon)
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/dnsmasq.d/digits-ap.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

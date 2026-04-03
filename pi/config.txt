@@ -1,0 +1,31 @@
+# Digits Pi Zero 2 W — config.txt
+# Deploy to: /boot/firmware/config.txt
+#
+# If this file is ever found empty after a reboot, copy it back:
+#   sudo cp ~/digits/pi/config.txt /boot/firmware/config.txt && sudo reboot
+#
+# When switching from WM8960 HAT to Codec Zero:
+#   Comment out dtoverlay=wm8960-soundcard
+#   Uncomment dtoverlay=rpi-codeczero
+
+# Core
+arm_64bit=1
+dtoverlay=dwc2
+
+# I2C (for audio codec)
+dtparam=i2c_arm=on
+
+# UART (Pico <-> Pi comms on GPIO14/15)
+# Move Bluetooth to mini-UART, freeing PL011 (ttyAMA0) for our use
+enable_uart=1
+dtoverlay=miniuart-bt
+
+# Audio: WM8960 HAT
+dtparam=audio=off
+dtoverlay=wm8960-soundcard
+
+# Audio: Codec Zero (DA7212) — uncomment when swapping HATs
+#dtoverlay=rpi-codeczero
+
+# Misc
+dtparam=pwr_led_trigger=none

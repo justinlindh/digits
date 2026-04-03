@@ -1,0 +1,51 @@
+digraph DigitsPhoneFSM {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=11, style=filled, shape=Mrecord, penwidth=1.5];
+    edge [fontname="Helvetica", fontsize=9];
+    label="Digits Phone FSM — Derived from firmware/src/phone_fsm.c";
+    labelloc="t";
+    fontsize=14;
+
+    start [shape=circle, label="", width=0.25, fillcolor=black, color=black];
+
+    IDLE [label="{IDLE|LED: off\nTone: off\nRinger: off}", fillcolor="#e8f5e9", color="#43a047"];
+    DIAL_TONE [label="{DIAL_TONE|LED: on\nTone: dial (350+440 Hz)}", fillcolor="#e3f2fd", color="#1e88e5"];
+    DIALING [label="{DIALING|LED: off\nCollecting digits\nTimeout: 30s / 5s}", fillcolor="#fff3e0", color="#fb8c00"];
+    RINGING [label="{RINGING|LED: blink\nRinger: on\nSends RING:ACK}", fillcolor="#fce4ec", color="#e53935"];
+    CONNECTED [label="{CONNECTED|LED: on\nTone: off\nRinger: off}", fillcolor="#e8eaf6", color="#5c6bc0"];
+    BUSY [label="{BUSY|LED: off\nTone: busy (480+620 Hz)}", fillcolor="#efebe9", color="#8d6e63"];
+
+    start -> IDLE [label="phone_fsm_init()"];
+
+    // Normal outbound call flow
+    IDLE -> DIAL_TONE [label="off-hook detected", color="#1e88e5"];
+    DIAL_TONE -> DIALING [label="first keypress", color="#fb8c00"];
+    DIALING -> DIALING [label="keys 2-6\nsends KEY:<d>", color="#fb8c00", style=dashed];
+    DIALING -> BUSY [label="30s timeout\n(partial digits)", color="#8d6e63"];
+
+    // Incoming call — RING:START is unconditional
+    IDLE -> RINGING [label="RING:START", color="#e53935"];
+    DIAL_TONE -> RINGING [label="RING:START", color="#e53935", style=dashed];
+    DIALING -> RINGING [label="RING:START", color="#e53935", style=dashed];
+    CONNECTED -> RINGING [label="RING:START", color="#e53935", style=dashed];
+    BUSY -> RINGING [label="RING:START\n⚠ unconditional", color="red", penwidth=2.5];
+
+    // Answer
+    RINGING -> CONNECTED [label="off-hook\n(answer)", color="#5c6bc0"];
+
+    // Ring cancelled
+    RINGING -> IDLE [label="RING:STOP\n(caller hung up)", color="#43a047"];
+
+    // On-hook → IDLE
+    DIAL_TONE -> IDLE [label="on-hook", color="#999999", style=dotted];
+    DIALING -> IDLE [label="on-hook", color="#999999", style=dotted];
+    CONNECTED -> IDLE [label="on-hook\n(hang up)", color="#43a047"];
+    BUSY -> IDLE [label="on-hook", color="#999999", style=dotted];
+
+    // Notes
+    dialing_note [shape=note, fillcolor="#fffde7", label="On 7th digit:\n• Sends DIAL:<num> via UART\n• Plays TONE_RINGBACK\n• State stays DIALING\n• s_dial_sent = true"];
+    DIALING -> dialing_note [style=dotted, arrowhead=none];
+
+    pi_note [shape=note, fillcolor="#f3e5f5", label="Pi-side audio (dtmf_uart.py)\nNot a separate FSM.\nReacts to UART messages:\nHOOK:OFF → dial tone\nKEY:<d> → DTMF beep\nDIAL:<num> → ringback → busy\nHOOK:ON → silence all"];
+}

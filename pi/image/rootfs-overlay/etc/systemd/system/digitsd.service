@@ -1,0 +1,26 @@
+[Unit]
+Description=Digits Phone Daemon
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=digits
+Group=digits
+ExecStart=/usr/local/bin/digitsd \
+    -alsa-playback plughw:0,0 \
+    -config /data/digits/config.json \
+    -serial /dev/serial0 \
+    -tones /data/digits/tones \
+    -socket /data/digits/uart.sock
+
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Allow serial port access + audio + GPIO
+SupplementaryGroups=dialout audio gpio i2c spi
+
+[Install]
+WantedBy=multi-user.target

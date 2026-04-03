@@ -1,0 +1,17 @@
+{
+  "name": "digits-e2e",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for Digits web application",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.0"
+  }
+}

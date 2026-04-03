@@ -1,0 +1,34 @@
+name: Server CI
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'server/**'
+      - '.gitea/workflows/server-ci.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: server/go.sum
+
+      - name: Build
+        working-directory: server
+        run: go build -o bin/signald ./cmd/signald/
+
+      - name: Test
+        working-directory: server
+        run: go test -race -count=1 ./...
+
+      - name: Vet
+        working-directory: server
+        run: go vet ./...

@@ -1,0 +1,62 @@
+@startuml
+
+title Digits Phone FSM\n(Derived from firmware/src/phone_fsm.c)
+
+skinparam backgroundColor white
+skinparam state {
+    BackgroundColor #f5f5f5
+    BorderColor #333333
+    FontSize 11
+}
+
+[*] --> IDLE : phone_fsm_init()
+
+state IDLE : LED: off | Tone: off | Ringer: off
+state DIAL_TONE : LED: on | Tone: DIAL (350+440 Hz)
+state DIALING : LED: off | Collecting digits\nTimeout: 30s bench / 5s prod
+state RINGING : LED: blink | Ringer: on\nSends RING:ACK via UART
+state CONNECTED : LED: on | Tone: off | Ringer: off
+state BUSY : LED: off | Tone: BUSY (480+620 Hz)
+
+IDLE --> DIAL_TONE : off-hook detected
+DIAL_TONE --> DIALING : first keypress
+DIALING --> DIALING : keys 2-6 (sends KEY:d)
+DIALING --> BUSY : timeout (partial digits)
+
+IDLE --> RINGING : RING:START (incoming)
+DIAL_TONE --> RINGING : RING:START
+DIALING --> RINGING : RING:START
+CONNECTED --> RINGING : RING:START
+BUSY -[#red,bold]-> RINGING : RING:START (unconditional)
+
+RINGING --> CONNECTED : off-hook (answer)
+RINGING --> IDLE : RING:STOP (caller hung up)
+
+DIAL_TONE --> IDLE : on-hook
+DIALING --> IDLE : on-hook
+CONNECTED --> IDLE : on-hook (hang up)
+BUSY --> IDLE : on-hook
+
+note right of DIALING
+  On 7th digit:
+  sends DIAL:<number> via UART
+  plays TONE_RINGBACK
+  state stays DIALING
+end note
+
+note bottom of RINGING
+  RING:START is unconditional
+  in process_pi_command()
+  (no guard on current state)
+end note
+
+note as PiNote
+  <b>Pi-side Audio (dtmf_uart.py)</b>
+  Not a separate FSM. Event-driven:
+  HOOK:OFF -> dial tone audio
+  KEY:<d> -> DTMF beep + stop dial tone
+  DIAL:<num> -> 3s silence -> ringback -> 60s -> busy
+  HOOK:ON -> kill all audio + bump dial_generation
+end note
+
+@enduml

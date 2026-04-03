@@ -1,0 +1,33 @@
+{
+	auto_https disable_redirects
+	local_certs
+}
+
+https:// {
+	tls internal {
+		on_demand
+	}
+
+	# WebSocket upgrade for signaling
+	@ws {
+		path /ws
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @ws {
+		reverse_proxy signald:8080
+	}
+
+	# Admin dashboard
+	@admin {
+		path /admin /admin/*
+	}
+	handle @admin {
+		reverse_proxy admind:9090
+	}
+
+	# All other requests (test client, API)
+	handle {
+		reverse_proxy signald:8080
+	}
+}

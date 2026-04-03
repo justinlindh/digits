@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Digits Test Client</title>
+    <style>
+        body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #e94560; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background: #0a3d0a; }
+        .disconnected { background: #3d0a0a; }
+        .ringing { background: #3d3d0a; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; }
+        .call-btn { background: #0a3d0a; color: white; }
+        .hangup-btn { background: #3d0a0a; color: white; }
+        .answer-btn { background: #0a0a3d; color: white; }
+        #log { background: #111; padding: 10px; height: 400px; overflow-y: auto; font-size: 12px; border-radius: 5px; }
+        .log-entry { margin: 2px 0; }
+        .log-tx { color: #4ecdc4; }
+        .log-rx { color: #ff6b6b; }
+        .log-info { color: #95a5a6; }
+        input { padding: 10px; font-size: 16px; background: #333; color: #eee; border: 1px solid #555; border-radius: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>📞 Digits Test Client</h1>
+
+    <div id="statusBar" class="status disconnected">Disconnected</div>
+
+    <div>
+        <label>My Number: </label>
+        <input id="myNumber" value="3140002" />
+        <button onclick="connect()" class="call-btn">Connect</button>
+    </div>
+
+    <div style="margin-top: 15px;">
+        <label>Call: </label>
+        <input id="targetNumber" value="3140001" />
+        <button onclick="makeCall()" class="call-btn">📞 Call</button>
+        <button onclick="answerCall()" class="answer-btn">✅ Answer</button>
+        <button onclick="hangup()" class="hangup-btn">🔴 Hang Up</button>
+    </div>
+
+    <div style="margin-top: 10px;">
+        <label>Audio: </label>
+        <span id="audioStatus">No audio</span>
+    </div>
+
+    <h3>Log</h3>
+    <div id="log"></div>
+
+    <audio id="remoteAudio" autoplay></audio>
+    <audio id="ringAudio" loop></audio>
+
+    <script>
+    let ws = null;
+    let pc = null;
+    let localStream = null;
+    let pendingCaller = null;
+    let pendingICECandidates = []; // Buffer ICE candidates received before remote description
+    let ringCtx = null;  // Web Audio context for ring tone
+    let ringOsc1 = null;
+    let ringOsc2 = null;
+    let ringGain = null;
+    let ringInterval = null;
+
+    // US phone ring: 440+480 Hz, 2s on / 4s off
+    function startRinging() {
+        stopRinging();
+        ringCtx = new (window.AudioContext || window.webkitAudioContext)();
+        ringGain = ringCtx.createGain();
+        ringGain.gain.value = 0;
+        ringGain.connect(ringCtx.destination);
+
+        ringOsc1 = ringCtx.createOscillator();
+        ringOsc1.frequency.value = 440;
+        ringOsc1.connect(ringGain);
+        ringOsc1.start();
+
+        ringOsc2 = ringCtx.createOscillator();
+        ringOsc2.frequency.value = 480;
+        ringOsc2.connect(ringGain);
+        ringOsc2.start();
+
+        // 2s on, 4s off pattern
+        let on = true;
+        ringGain.gain.value = 0.15;
+        ringInterval = setInterval(() => {
+            on = !on;
+            ringGain.gain.value = on ? 0.15 : 0;
+        }, on ? 2000 : 4000);
+
+        // More precise: 2s on, then 4s off
+        clearInterval(ringInterval);
+        function ringCycle() {
+            ringGain.gain.value = 0.15;
+            ringInterval = setTimeout(() => {
+                ringGain.gain.value = 0;
+                ringInterval = setTimeout(ringCycle, 4000);
+            }, 2000);
+        }
+        ringCycle();
+    }
+
+    function stopRinging() {
+        if (ringInterval) { clearTimeout(ringInterval); ringInterval = null; }
+        if (ringOsc1) { ringOsc1.stop(); ringOsc1 = null; }
+        if (ringOsc2) { ringOsc2.stop(); ringOsc2 = null; }
+        if (ringCtx) { ringCtx.close(); ringCtx = null; }
+        ringGain = null;
+    }
+
+    function log(msg, cls = 'log-info') {
+        const el = document.getElementById('log');
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + cls;
+        entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+        el.appendChild(entry);
+        el.scrollTop = el.scrollHeight;
+    }
+
+    function setStatus(text, cls) {
+        const bar = document.getElementById('statusBar');
+        bar.textContent = text;
+        bar.className = 'status ' + cls;
+    }
+
+    function connect() {
+        const number = document.getElementById('myNumber').value;
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = proto + '//' + location.host + '/ws';
+
+        log('Connecting to ' + url + ' as ' + number + '...');
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+            log('WebSocket connected', 'log-tx');
+            const msg = { type: 'register', number: number };
+            ws.send(JSON.stringify(msg));
+            log('TX: register ' + number, 'log-tx');
+            setStatus('Connected as ' + number, 'connected');
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            log('RX: ' + JSON.stringify(msg), 'log-rx');
+            handleMessage(msg);
+        };
+
+        ws.onclose = () => {
+            log('WebSocket closed');
+            setStatus('Disconnected', 'disconnected');
+        };
+
+        ws.onerror = (err) => {
+            log('WebSocket error: ' + err);
+        };
+    }
+
+    function send(msg) {
+        log('TX: ' + JSON.stringify(msg), 'log-tx');
+        ws.send(JSON.stringify(msg));
+    }
+
+    async function handleMessage(msg) {
+        switch (msg.type) {
+            case 'ring':
+                pendingCaller = msg.from;
+                setStatus('📞 Incoming call from ' + msg.from, 'ringing');
+                log('RING from ' + msg.from + ' — click Answer to pick up');
+                startRinging();
+                break;
+
+            case 'sdp':
+                if (pc && msg.sdp) {
+                    const desc = new RTCSessionDescription({ type: pc.signalingState === 'have-local-offer' ? 'answer' : 'offer', sdp: msg.sdp });
+                    await pc.setRemoteDescription(desc);
+                    log('Set remote description: ' + desc.type);
+                    await drainPendingICE();
+
+                    if (desc.type === 'offer') {
+                        // Store for when we click Answer
+                        pc._pendingOffer = true;
+                    }
+                } else if (!pc && msg.sdp) {
+                    // Incoming offer before we created PC — store it
+                    pendingOffer = msg.sdp;
+                    pendingCaller = msg.from;
+                }
+                break;
+
+            case 'ice':
+                if (pc && pc.remoteDescription) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate({ candidate: msg.candidate, sdpMid: '0', sdpMLineIndex: 0 }));
+                    } catch (e) {
+                        log('ICE error: ' + e);
+                    }
+                } else {
+                    // Buffer until remote description is set
+                    pendingICECandidates.push(msg.candidate);
+                    log('Buffered ICE candidate (no remote desc yet, total: ' + pendingICECandidates.length + ')');
+                }
+                break;
+
+            case 'answer':
+                if (pc && msg.sdp) {
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: msg.sdp }));
+                    log('Call answered!');
+                    await drainPendingICE();
+                    setStatus('🔊 Connected to ' + (msg.from || 'peer'), 'connected');
+                }
+                break;
+
+            case 'hangup':
+                log('Remote hung up');
+                stopRinging();
+                cleanup();
+                setStatus('Connected as ' + document.getElementById('myNumber').value, 'connected');
+                break;
+
+            case 'busy':
+                log('Remote is busy');
+                cleanup();
+                break;
+
+            case 'error':
+                log('Server error: ' + msg.error);
+                break;
+        }
+    }
+
+    let pendingOffer = null;
+
+    async function drainPendingICE() {
+        if (!pc || !pc.remoteDescription) return;
+        const candidates = pendingICECandidates.splice(0);
+        for (const c of candidates) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate({ candidate: c, sdpMid: '0', sdpMLineIndex: 0 }));
+            } catch (e) {
+                log('ICE drain error: ' + e);
+            }
+        }
+        if (candidates.length > 0) {
+            log('Drained ' + candidates.length + ' buffered ICE candidates');
+        }
+    }
+
+    async function setupPeerConnection() {
+        pc = new RTCPeerConnection({ iceServers: [] }); // LAN only
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                send({ type: 'ice', to: document.getElementById('targetNumber').value || pendingCaller, candidate: event.candidate.candidate });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            log('Got remote audio track!');
+            document.getElementById('remoteAudio').srcObject = event.streams[0];
+            document.getElementById('audioStatus').textContent = '🔊 Receiving audio';
+        };
+
+        pc.onconnectionstatechange = () => {
+            log('Connection state: ' + pc.connectionState);
+            switch (pc.connectionState) {
+                case 'connected':
+                    setStatus('🔊 In call', 'connected');
+                    break;
+                case 'disconnected':
+                    setStatus('⚠️ Connection lost...', 'ringing');
+                    break;
+                case 'failed':
+                case 'closed':
+                    log('Call ended (peer connection ' + pc.connectionState + ')');
+                    stopRinging();
+                    cleanup();
+                    setStatus('Connected as ' + document.getElementById('myNumber').value, 'connected');
+                    break;
+            }
+        };
+
+        // Get microphone
+        try {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+                log('Microphone acquired');
+                document.getElementById('audioStatus').textContent = '🎤 Mic active';
+            } else {
+                // No getUserMedia (insecure context) — add receive-only transceiver
+                pc.addTransceiver('audio', { direction: 'recvonly' });
+                log('⚠️ No mic access (HTTPS required). Receive-only mode.');
+                log('TIP: chrome://flags/#unsafely-treat-insecure-origin-as-secure → add this URL → relaunch');
+                document.getElementById('audioStatus').textContent = '🔇 No mic (HTTP) — receive only';
+            }
+        } catch (e) {
+            // getUserMedia exists but was denied or failed
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+            log('Mic error: ' + e + ' — falling back to receive-only');
+            document.getElementById('audioStatus').textContent = '🔇 Mic denied — receive only';
+        }
+    }
+
+    async function makeCall() {
+        const target = document.getElementById('targetNumber').value;
+        log('Calling ' + target + '...');
+
+        await setupPeerConnection();
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        send({ type: 'call', to: target });
+        send({ type: 'sdp', to: target, sdp: offer.sdp });
+
+        setStatus('Calling ' + target + '...', 'ringing');
+    }
+
+    async function answerCall() {
+        if (!pendingCaller) {
+            log('No incoming call to answer');
+            return;
+        }
+
+        log('Answering call from ' + pendingCaller);
+        stopRinging();
+        await setupPeerConnection();
+
+        if (pendingOffer) {
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: pendingOffer }));
+            await drainPendingICE();
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            send({ type: 'answer', to: pendingCaller, sdp: answer.sdp });
+            pendingOffer = null;
+            setStatus('🔊 Connected to ' + pendingCaller, 'connected');
+        }
+    }
+
+    function hangup() {
+        const target = document.getElementById('targetNumber').value || pendingCaller;
+        if (target) {
+            send({ type: 'hangup', to: target });
+        }
+        cleanup();
+        setStatus('Connected as ' + document.getElementById('myNumber').value, 'connected');
+    }
+
+    function cleanup() {
+        stopRinging();
+        if (pc) {
+            pc.close();
+            pc = null;
+        }
+        if (localStream) {
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = null;
+        }
+        pendingCaller = null;
+        pendingOffer = null;
+        pendingICECandidates = [];
+        document.getElementById('audioStatus').textContent = 'No audio';
+    }
+    </script>
+</body>
+</html>

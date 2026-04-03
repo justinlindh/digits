@@ -1,0 +1,27 @@
+# Production Caddyfile for Digits
+# Usage: DOMAIN=digits.family docker compose up
+# Requires: ports 80+443 open, DNS A record pointing to this server
+{$DOMAIN} {
+    # WebSocket upgrade for signaling
+    @ws {
+        path /ws
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    handle @ws {
+        reverse_proxy signald:8080
+    }
+
+    # Admin dashboard
+    @admin {
+        path /admin /admin/*
+    }
+    handle @admin {
+        reverse_proxy admind:9090
+    }
+
+    # All other requests
+    handle {
+        reverse_proxy signald:8080
+    }
+}

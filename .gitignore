@@ -1,0 +1,47 @@
+# Build output
+firmware/build/
+tools/build/
+artifacts/*
+!artifacts/releases.json
+
+# Compiled binaries
+pi/digitsd/digitsd
+pi/digits-setup/digits-setup
+server/bin/
+
+# rnnoise test binaries (keep lib/ and rnnoise.h)
+pi/rnnoise/rnnoise_rp_arm64
+pi/rnnoise/rnnoise_bench
+pi/rnnoise/rnnoise_rp
+pi/rnnoise/rnnoise_loop
+
+# Secrets / env
+server/.env
+server/.env.*
+server/certs/
+
+# Media / images
+images/
+*.img
+*.img.gz
+*.img.xz
+
+# Site (lives in separate repo)
+site-astro/
+
+# Node
+node_modules/
+
+# Worktrees
+.worktrees/
+
+# Superpowers
+.superpowers/
+
+# Claude Code
+.claude/
+
+# Misc
+__pycache__/
+*.pyc
+*.png

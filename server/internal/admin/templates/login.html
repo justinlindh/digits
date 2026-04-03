@@ -1,0 +1,23 @@
+{{define "content"}}
+<div class="max-w-sm mx-auto mt-20">
+    <h1 class="text-2xl font-bold text-center mb-8">Digits Admin</h1>
+    {{if .Error}}
+    <div class="bg-red-900/50 border border-red-700 text-red-200 px-4 py-2 rounded mb-4">{{.Error}}</div>
+    {{end}}
+    <form method="POST" action="/admin/login" class="space-y-4">
+        <div>
+            <label for="username" class="block text-sm text-gray-400 mb-1">Username</label>
+            <input type="text" name="username" id="username" required autofocus
+                   class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:border-indigo-500 focus:outline-none">
+        </div>
+        <div>
+            <label for="password" class="block text-sm text-gray-400 mb-1">Password</label>
+            <input type="password" name="password" id="password" required
+                   class="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-gray-100 focus:border-indigo-500 focus:outline-none">
+        </div>
+        <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded">
+            Sign In
+        </button>
+    </form>
+</div>
+{{end}}

@@ -1,0 +1,97 @@
+services:
+  signald:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      SIGNALD_ADDR: ":8080"
+      DATABASE_URL: "postgres://${DB_USER:-digits}:${DB_PASSWORD:-changeme}@user-db:5432/digits?sslmode=disable"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-noreply@digits.family}"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      GOOGLE_REDIRECT_URL: "https://app.digits.family/auth/google/callback"
+      COOKIE_DOMAIN: ".digits.family"
+      BASE_URL: "https://app.digits.family"
+      ADMIN_SECRET: "${ADMIN_SECRET}"
+      DEV_MODE: "false"
+      LOG_FORMAT: "json"
+      SIGNALD_TURN_ENABLED: "${SIGNALD_TURN_ENABLED:-false}"
+      SIGNALD_TURN_SECRET: "${SIGNALD_TURN_SECRET:-}"
+      SIGNALD_TURN_DOMAIN: "${SIGNALD_TURN_DOMAIN:-}"
+    ports:
+      - "8090:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      user-db:
+        condition: service_healthy
+    volumes:
+      - updates_data:/data/updates
+
+  admind:
+    build:
+      context: .
+      dockerfile: cmd/admind/Dockerfile
+    restart: unless-stopped
+    environment:
+      ADMIN_ADDR: ":9090"
+      ADMIN_DATABASE_URL: "postgres://${ADMIN_DB_USER:-digits_admin}:${ADMIN_DB_PASSWORD:-changeme}@admin-db:5432/digits_admin?sslmode=disable"
+      ADMIN_STATS_URL: "http://signald:8080/internal/stats"
+      ADMIN_STATS_SECRET: "${ADMIN_SECRET}"
+      ADMIN_INITIAL_USER: "${ADMIN_INITIAL_USER:-admin}"
+      ADMIN_INITIAL_SECRET: "${ADMIN_INITIAL_SECRET}"
+      LOG_FORMAT: "json"
+    ports:
+      - "9094:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      admin-db:
+        condition: service_healthy
+      signald:
+        condition: service_started
+
+  user-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: digits
+      POSTGRES_USER: digits
+      POSTGRES_PASSWORD: "${DB_PASSWORD:-digits}"
+    volumes:
+      - user_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digits"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  admin-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: digits_admin
+      POSTGRES_USER: digits_admin
+      POSTGRES_PASSWORD: "${ADMIN_DB_PASSWORD:-digits_admin}"
+    volumes:
+      - admin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digits_admin"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  user_pgdata:
+  admin_pgdata:
+  updates_data:
