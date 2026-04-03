@@ -15,21 +15,15 @@ import (
 	"time"
 )
 
-type Manifest struct {
-	PiVersion       string `json:"pi_version"`
-	PiCommit        string `json:"pi_commit"`
-	PiSHA256        string `json:"pi_sha256"`
-	FirmwareVersion string `json:"firmware_version"`
-	FirmwareCommit  string `json:"firmware_commit"`
-	FirmwareSHA256  string `json:"firmware_sha256"`
-}
-
 type CheckResult struct {
-	PiUpdateAvailable bool
-	FWUpdateAvailable bool
-	Manifest          *Manifest
-	TargetPiURL       string // set by CheckVersion for targeted downloads
-	TargetFWURL       string // set by CheckVersion for targeted downloads
+	PiAvailable bool
+	PiVersion   string
+	PiSHA256    string
+	PiURL       string
+	FWAvailable bool
+	FWVersion   string
+	FWSHA256    string
+	FWURL       string
 }
 
 type Config struct {
@@ -66,30 +60,6 @@ func New(cfg Config) *Updater {
 	}
 }
 
-// Check queries the server for the latest version manifest.
-func (u *Updater) Check() (*CheckResult, error) {
-	resp, err := u.client.Get(u.cfg.ServerBaseURL + "/api/updates/latest")
-	if err != nil {
-		return nil, fmt.Errorf("check update: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("check update: status %d", resp.StatusCode)
-	}
-
-	var m Manifest
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
-	}
-
-	return &CheckResult{
-		PiUpdateAvailable: m.PiVersion != u.cfg.CurrentPiVersion,
-		FWUpdateAvailable: m.FirmwareVersion != u.cfg.CurrentFWVersion,
-		Manifest:          &m,
-	}, nil
-}
-
 // ReleaseIndex mirrors the server's release index structure.
 type ReleaseIndex struct {
 	Pi       ComponentIndex `json:"pi"`
@@ -111,13 +81,10 @@ type Release struct {
 	Date    string `json:"date,omitempty"`
 }
 
-// CheckVersion queries the release index and builds a result for specific target versions.
-// Empty target means "no update for that component".
+// CheckVersion queries the release index and builds a result.
+// If targetPi/targetFW are empty, the latest version is used.
+// If the resolved version matches the current version, that component is skipped.
 func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) {
-	if targetPi == "" && targetFW == "" {
-		return u.Check() // fall back to latest
-	}
-
 	resp, err := u.client.Get(u.cfg.ServerBaseURL + "/api/updates/releases")
 	if err != nil {
 		return nil, fmt.Errorf("fetch releases: %w", err)
@@ -133,37 +100,46 @@ func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) 
 		return nil, fmt.Errorf("parse releases: %w", err)
 	}
 
-	result := &CheckResult{Manifest: &Manifest{}}
+	result := &CheckResult{}
 
-	if targetPi != "" && targetPi != u.cfg.CurrentPiVersion {
-		rel, ok := idx.Pi.Releases[targetPi]
+	// Resolve Pi target
+	piTarget := targetPi
+	if piTarget == "" {
+		piTarget = idx.Pi.Latest
+	}
+	if piTarget != "" && piTarget != u.cfg.CurrentPiVersion {
+		rel, ok := idx.Pi.Releases[piTarget]
 		if !ok {
-			return nil, fmt.Errorf("pi version %s not found in release index", targetPi)
+			return nil, fmt.Errorf("pi version %s not found in release index", piTarget)
 		}
-		result.PiUpdateAvailable = true
-		result.Manifest.PiVersion = rel.Version
-		result.Manifest.PiCommit = rel.Commit
-		result.Manifest.PiSHA256 = rel.SHA256
-		result.TargetPiURL = rel.URL
+		result.PiAvailable = true
+		result.PiVersion = rel.Version
+		result.PiSHA256 = rel.SHA256
+		result.PiURL = rel.URL
 	}
 
-	if targetFW != "" && targetFW != u.cfg.CurrentFWVersion {
-		rel, ok := idx.Firmware.Releases[targetFW]
+	// Resolve FW target
+	fwTarget := targetFW
+	if fwTarget == "" {
+		fwTarget = idx.Firmware.Latest
+	}
+	if fwTarget != "" && fwTarget != u.cfg.CurrentFWVersion {
+		rel, ok := idx.Firmware.Releases[fwTarget]
 		if !ok {
-			return nil, fmt.Errorf("firmware version %s not found in release index", targetFW)
+			return nil, fmt.Errorf("firmware version %s not found in release index", fwTarget)
 		}
-		result.FWUpdateAvailable = true
-		result.Manifest.FirmwareVersion = rel.Version
-		result.Manifest.FirmwareCommit = rel.Commit
-		result.Manifest.FirmwareSHA256 = rel.SHA256
-		result.TargetFWURL = rel.URL
+		result.FWAvailable = true
+		result.FWVersion = rel.Version
+		result.FWSHA256 = rel.SHA256
+		result.FWURL = rel.URL
 	}
 
 	return result, nil
 }
 
-// DownloadFromURL downloads an artifact from a specific URL, verifies SHA256.
-func (u *Updater) DownloadFromURL(url, localName, expectedSHA string) (string, error) {
+// Download downloads an artifact from a URL, verifies SHA256, and writes it
+// atomically to the staging directory.
+func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	if err := os.MkdirAll(u.cfg.StagingDir, 0755); err != nil {
 		return "", fmt.Errorf("create staging dir: %w", err)
 	}
@@ -206,50 +182,6 @@ func (u *Updater) DownloadFromURL(url, localName, expectedSHA string) (string, e
 	return destPath, nil
 }
 
-// DownloadArtifact downloads a named artifact to staging dir, verifies SHA256.
-func (u *Updater) DownloadArtifact(name, expectedSHA string) (string, error) {
-	if err := os.MkdirAll(u.cfg.StagingDir, 0755); err != nil {
-		return "", fmt.Errorf("create staging dir: %w", err)
-	}
-	destPath := filepath.Join(u.cfg.StagingDir, name)
-
-	resp, err := u.client.Get(u.cfg.ServerBaseURL + "/api/updates/download/" + name)
-	if err != nil {
-		return "", fmt.Errorf("download %s: %w", name, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %s: status %d", name, resp.StatusCode)
-	}
-
-	f, err := os.Create(destPath + ".tmp")
-	if err != nil {
-		return "", fmt.Errorf("create temp: %w", err)
-	}
-
-	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
-		f.Close()
-		os.Remove(destPath + ".tmp")
-		return "", fmt.Errorf("download write: %w", err)
-	}
-	f.Close()
-
-	gotSHA := hex.EncodeToString(h.Sum(nil))
-	if expectedSHA != "" && gotSHA != expectedSHA {
-		os.Remove(destPath + ".tmp")
-		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", gotSHA, expectedSHA)
-	}
-
-	if err := os.Rename(destPath+".tmp", destPath); err != nil {
-		return "", fmt.Errorf("rename: %w", err)
-	}
-
-	log.Printf("updater: downloaded %s (sha256=%s)", name, gotSHA)
-	return destPath, nil
-}
-
 // ApplyPiUpdate replaces the digitsd binary and exits (systemd restarts).
 // Staging dir and binary path are on the same filesystem (/data), so rename is atomic.
 func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
@@ -260,7 +192,7 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 		return fmt.Errorf("rename: %w", err)
 	}
 
-	log.Println("updater: Pi binary updated — exiting for restart")
+	log.Println("updater: Pi binary updated -- exiting for restart")
 	os.Exit(0)
 	return nil // unreachable
 }

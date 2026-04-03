@@ -7,58 +7,139 @@ import (
 	"testing"
 )
 
-func TestCheckUpdate_NewVersionAvailable(t *testing.T) {
-	manifest := Manifest{
-		PiVersion:       "1.1.0",
-		FirmwareVersion: "1.1.0",
-	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(manifest)
+func newTestServer(idx ReleaseIndex) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/updates/releases" {
+			json.NewEncoder(w).Encode(idx)
+			return
+		}
+		http.NotFound(w, r)
 	}))
+}
+
+func TestCheckVersion_TargetedUpdate(t *testing.T) {
+	idx := ReleaseIndex{
+		Pi: ComponentIndex{
+			Latest: "1.1.0",
+			Releases: map[string]*Release{
+				"1.0.0": {Version: "1.0.0", URL: "https://example.com/pi/1.0.0", SHA256: "aaa"},
+				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: "bbb"},
+			},
+		},
+		Firmware: ComponentIndex{
+			Latest: "0.5.0",
+			Releases: map[string]*Release{
+				"0.5.0": {Version: "0.5.0", URL: "https://example.com/fw/0.5.0", SHA256: "ccc"},
+			},
+		},
+	}
+	srv := newTestServer(idx)
 	defer srv.Close()
 
 	u := New(Config{
 		ServerBaseURL:    srv.URL,
 		CurrentPiVersion: "1.0.0",
-		CurrentFWVersion: "1.0.0",
+		CurrentFWVersion: "0.5.0",
 	})
 
-	result, err := u.Check()
+	result, err := u.CheckVersion("1.1.0", "")
 	if err != nil {
-		t.Fatalf("Check() error: %v", err)
+		t.Fatalf("CheckVersion() error: %v", err)
 	}
-	if !result.PiUpdateAvailable {
+	if !result.PiAvailable {
 		t.Error("expected Pi update available")
 	}
-	if !result.FWUpdateAvailable {
-		t.Error("expected FW update available")
+	if result.FWAvailable {
+		t.Error("expected no FW update")
+	}
+	if result.PiURL != "https://example.com/pi/1.1.0" {
+		t.Errorf("PiURL = %q, want https://example.com/pi/1.1.0", result.PiURL)
 	}
 }
 
-func TestCheckUpdate_AlreadyCurrent(t *testing.T) {
-	manifest := Manifest{
-		PiVersion:       "1.0.0",
-		FirmwareVersion: "1.0.0",
+func TestCheckVersion_EmptyTargetsUsesLatest(t *testing.T) {
+	idx := ReleaseIndex{
+		Pi: ComponentIndex{
+			Latest: "1.1.0",
+			Releases: map[string]*Release{
+				"1.1.0": {Version: "1.1.0", URL: "https://example.com/pi/1.1.0", SHA256: "bbb"},
+			},
+		},
+		Firmware: ComponentIndex{
+			Latest: "0.5.0",
+			Releases: map[string]*Release{
+				"0.5.0": {Version: "0.5.0", URL: "https://example.com/fw/0.5.0", SHA256: "ccc"},
+			},
+		},
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(manifest)
-	}))
+	srv := newTestServer(idx)
 	defer srv.Close()
 
 	u := New(Config{
 		ServerBaseURL:    srv.URL,
 		CurrentPiVersion: "1.0.0",
-		CurrentFWVersion: "1.0.0",
+		CurrentFWVersion: "0.4.0",
 	})
 
-	result, err := u.Check()
+	result, err := u.CheckVersion("", "")
 	if err != nil {
-		t.Fatalf("Check() error: %v", err)
+		t.Fatalf("CheckVersion() error: %v", err)
 	}
-	if result.PiUpdateAvailable {
-		t.Error("expected no Pi update")
+	if !result.PiAvailable {
+		t.Error("expected Pi update available (latest is newer)")
 	}
-	if result.FWUpdateAvailable {
-		t.Error("expected no FW update")
+	if !result.FWAvailable {
+		t.Error("expected FW update available (latest is newer)")
+	}
+}
+
+func TestCheckVersion_AlreadyCurrent(t *testing.T) {
+	idx := ReleaseIndex{
+		Pi: ComponentIndex{
+			Latest:   "1.0.0",
+			Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}},
+		},
+		Firmware: ComponentIndex{
+			Latest:   "0.5.0",
+			Releases: map[string]*Release{"0.5.0": {Version: "0.5.0"}},
+		},
+	}
+	srv := newTestServer(idx)
+	defer srv.Close()
+
+	u := New(Config{
+		ServerBaseURL:    srv.URL,
+		CurrentPiVersion: "1.0.0",
+		CurrentFWVersion: "0.5.0",
+	})
+
+	result, err := u.CheckVersion("", "")
+	if err != nil {
+		t.Fatalf("CheckVersion() error: %v", err)
+	}
+	if result.PiAvailable {
+		t.Error("expected no Pi update (already current)")
+	}
+	if result.FWAvailable {
+		t.Error("expected no FW update (already current)")
+	}
+}
+
+func TestCheckVersion_UnknownVersion(t *testing.T) {
+	idx := ReleaseIndex{
+		Pi: ComponentIndex{
+			Latest:   "1.0.0",
+			Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}},
+		},
+		Firmware: ComponentIndex{Latest: "", Releases: map[string]*Release{}},
+	}
+	srv := newTestServer(idx)
+	defer srv.Close()
+
+	u := New(Config{ServerBaseURL: srv.URL, CurrentPiVersion: "1.0.0"})
+
+	_, err := u.CheckVersion("9.9.9", "")
+	if err == nil {
+		t.Error("expected error for unknown version")
 	}
 }
