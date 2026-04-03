@@ -35,14 +35,5 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--model claude-opus-4-6 --allowedTools "Bash(make build)" --allowedTools "Bash(make test)" --allowedTools "Bash(make build-local)" --allowedTools "Bash(go vet ./...)" --allowedTools "Bash(go test ./...)" --allowedTools "Bash(npm run lint)" --allowedTools "mcp__github"'
+          claude_args: '--model claude-opus-4-6 --allowedTools "Bash(make build)" --allowedTools "Bash(make test)" --allowedTools "Bash(make build-local)" --allowedTools "Bash(go vet ./...)" --allowedTools "Bash(go test ./...)" --allowedTools "Bash(npm run lint)" --allowedTools "mcp__github" --append-system-prompt "If the user''s comment is just @claude with no other instructions, review the PR: read the full diff, post inline comments on anything incorrect, risky, or improvable, use GitHub suggestion blocks for concrete fixes, and comment on the PR with a short summary. If the user gives specific instructions, follow those instead."'
           use_sticky_comment: "true"
-
-          prompt: |
-            If the user's comment is just "@claude" with no other instructions, review the PR:
-            - Read the full diff
-            - Post inline comments on anything incorrect, risky, or improvable
-            - Use GitHub suggestion blocks for concrete fixes
-            - Comment on the PR with a short summary of your findings
-
-            If the user gives specific instructions, follow those instead.
