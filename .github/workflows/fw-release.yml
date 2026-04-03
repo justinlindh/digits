@@ -1,0 +1,97 @@
+name: Firmware Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no publish)"
+        required: false
+        default: "false"
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - ".github/workflows/fw-release.yml"
+      - "firmware/.releaserc-full.cjs"
+      - "firmware/.releaserc-tagonly.cjs"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Pico SDK build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi cmake libnewlib-arm-none-eabi
+          # Install Pico SDK
+          git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git /tmp/pico-sdk
+          cd /tmp/pico-sdk && git submodule update --init
+          echo "PICO_SDK_PATH=/tmp/pico-sdk" >> "$GITHUB_ENV"
+
+      - name: Install semantic-release
+        run: |
+          npm install --no-save \
+            semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/exec \
+            @semantic-release/github
+
+      - name: Run semantic-release
+        run: |
+          CAN_BUILD=false
+          if command -v arm-none-eabi-gcc >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
+            CAN_BUILD=true
+          fi
+
+          if [ "$CAN_BUILD" = "true" ]; then
+            echo "Build toolchain available -- full release with firmware build"
+            RELEASERC="./.releaserc-full.cjs"
+          else
+            echo "::warning::Build toolchain not available -- tag-only release"
+            RELEASERC="./.releaserc-tagonly.cjs"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx semantic-release --extends "$RELEASERC" --dry-run
+          else
+            npx semantic-release --extends "$RELEASERC"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release index
+        if: success()
+        run: |
+          VERSION=$(git tag --sort=-creatordate | grep '^fw/v' | head -1 | sed 's|^fw/v||')
+          if [ -z "$VERSION" ] || [ ! -f artifacts/firmware.elf.sha256 ]; then
+            echo "No new release or no artifacts, skipping index update"
+            exit 0
+          fi
+          COMMIT=$(git rev-parse --short HEAD)
+          SHA256=$(cat artifacts/firmware.elf.sha256)
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/fw/v${VERSION}/firmware.elf"
+          bash tools/update-releases-json.sh firmware "$VERSION" "$COMMIT" "$SHA256" "$DOWNLOAD_URL"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/releases.json
+          git commit -m "ci: update releases.json for fw/v${VERSION} [skip ci]" || true
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: .

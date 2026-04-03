@@ -1,88 +1,10 @@
 {
   "pi": {
-    "latest": "1.3.1",
-    "releases": {
-      "1.0.0": {
-        "version": "1.0.0",
-        "commit": "a542748",
-        "sha256": "024046ef807daf9ee7b6d2a2e950c4b2ac78feb03c0c9f5d24c65a81abfc58c7",
-        "date": "2026-04-02",
-        "url": ""
-      },
-      "1.1.0": {
-        "version": "1.1.0",
-        "commit": "84cc092",
-        "sha256": "5caae50bca58daf65aa58c95b8421a214da6f5cf9c294bc16963544d49985a61",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.2.0": {
-        "version": "1.2.0",
-        "commit": "f502255",
-        "sha256": "68845a95445073c615920893b56d8e7f0e9cff56322cd691103a333c536fd4c1",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.2.1": {
-        "version": "1.2.1",
-        "commit": "8e5b923",
-        "sha256": "b2cb56273ed4f67efd6ca16152e9222352bb68a3bf5227f19a3b9a6ae681080e",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.2.2": {
-        "version": "1.2.2",
-        "commit": "50ac581",
-        "sha256": "bd2933717ab62f4e139cf0fed1d7e4ddee95c9e2b29c4240ec511194a868a5e8",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.2.3": {
-        "version": "1.2.3",
-        "commit": "0bf665d",
-        "sha256": "963b49b7ff2a77a8dc05356454b6de13887196466553ed84ba6a6ccf856491bd",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.2.4": {
-        "version": "1.2.4",
-        "commit": "0438db9",
-        "sha256": "6e88de8751bf09932eba842e4649f938ed2c41cb0f714b8ce6009ed972c00f1b",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      },
-      "1.3.1": {
-        "version": "1.3.1",
-        "commit": "3a03141",
-        "sha256": "9896241df8147e14f608a65c402668569cd3e8902bbb541936737217a8cba6df",
-        "url": "https://app.digits.family/api/updates/download/digitsd-aarch64",
-        "date": "2026-04-03"
-      }
-    }
+    "latest": "",
+    "releases": {}
   },
   "firmware": {
-    "latest": "1.1.5",
-    "releases": {
-      "1.0.0": {
-        "version": "1.0.0",
-        "commit": "a542748",
-        "sha256": "",
-        "date": "2026-04-02"
-      },
-      "1.1.4": {
-        "version": "1.1.4",
-        "commit": "eb22367",
-        "sha256": "fd8d7c23258f29d6da5ba48f96301959ed046acf8d2e349611018612041003b7",
-        "url": "",
-        "date": "2026-04-03"
-      },
-      "1.1.5": {
-        "version": "1.1.5",
-        "commit": "1d01b8c",
-        "sha256": "c440ace32e7c78decf0c656a57a1b08050934a59dad149b96b22db68f36df6e9",
-        "url": "",
-        "date": "2026-04-03"
-      }
-    }
+    "latest": "",
+    "releases": {}
   }
 }
