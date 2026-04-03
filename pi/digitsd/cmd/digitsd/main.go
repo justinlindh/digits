@@ -861,7 +861,16 @@ func main() {
 				}
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
-					svcCodes.AddKey(key)
+					if svcCodes.AddKey(key) {
+						// Service code fired — double beep + reset to idle
+						mixer.StopAll()
+						mixer.PlayOnce("dtmf_star")
+						time.Sleep(120 * time.Millisecond)
+						mixer.PlayOnce("dtmf_star")
+						time.Sleep(120 * time.Millisecond)
+						ctrl.Reset()
+						log.Printf("phone: service code %q handled, reset to idle", key)
+					}
 				}
 			}
 

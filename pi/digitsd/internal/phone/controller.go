@@ -67,6 +67,15 @@ func (c *Controller) State() State {
 	return c.state
 }
 
+// Reset forces the controller back to IDLE with no pending digits.
+// Used after service codes to return the phone to a clean state.
+func (c *Controller) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state = StateIDLE
+	c.digits = ""
+}
+
 // HandleEvent processes UART events from the Pico (e.g. "HOOK:OFF", "KEY:5", "DIAL:5551234").
 func (c *Controller) HandleEvent(event string) {
 	c.mu.Lock()
