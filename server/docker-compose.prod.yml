@@ -17,6 +17,7 @@ services:
       COOKIE_DOMAIN: ".digits.family"
       BASE_URL: "https://app.digits.family"
       ADMIN_SECRET: "${ADMIN_SECRET}"
+      GITHUB_REPO: "justinlindh/digits"
       DEV_MODE: "false"
       LOG_FORMAT: "json"
       SIGNALD_TURN_ENABLED: "${SIGNALD_TURN_ENABLED:-false}"
@@ -32,8 +33,6 @@ services:
     depends_on:
       user-db:
         condition: service_healthy
-    volumes:
-      - updates_data:/data/updates
 
   admind:
     build:
@@ -94,4 +93,3 @@ services:
 volumes:
   user_pgdata:
   admin_pgdata:
-  updates_data:

@@ -73,7 +73,7 @@ type Handler struct {
 	authLimiter    *ratelimit.Limiter
 	pairingLimiter *ratelimit.Limiter
 	// Updates
-	UpdateStore *updates.Store
+	Releases *updates.GitHubReleases
 }
 
 type HandlerConfig struct {
@@ -174,12 +174,10 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
 	mux.HandleFunc("GET /ws", h.handleWS)
 
-	// Update artifact endpoints (unauthenticated — phones fetch these)
-	if h.UpdateStore != nil {
-		mux.HandleFunc("GET /api/updates/latest", h.UpdateStore.ServeManifest())
-		mux.HandleFunc("GET /api/updates/releases", h.UpdateStore.ServeReleases())
-		mux.HandleFunc("GET /api/updates/download/", h.UpdateStore.ServeArtifact())
-		slog.Info("updates: serving artifact endpoints")
+	// Update release index endpoint (unauthenticated — phones fetch this)
+	if h.Releases != nil {
+		mux.HandleFunc("GET /api/updates/releases", h.Releases.ServeReleases())
+		slog.Info("updates: serving release index from GitHub")
 	}
 	mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "static/test-client.html")
@@ -588,8 +586,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	var latestPi, latestFw string
 	var piReleases, fwReleases []updates.Release
-	if h.UpdateStore != nil {
-		if idx := h.UpdateStore.ReleaseIndex(); idx != nil {
+	if h.Releases != nil {
+		if idx := h.Releases.ReleaseIndex(); idx != nil {
 			latestPi = idx.Pi.Latest
 			latestFw = idx.Firmware.Latest
 			piReleases = idx.SortedReleases("pi")
