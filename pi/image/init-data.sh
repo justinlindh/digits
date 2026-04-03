@@ -83,7 +83,7 @@ if [[ ! -f "$CONFIG_JSON" ]]; then
     info "Creating placeholder config.json..."
     cat > "$CONFIG_JSON" << 'EOF'
 {
-  "server_url": "",
+  "server_url": "wss://app.digits.family/ws",
   "pairing_code": "",
   "wifi_ssid": "",
   "wifi_configured": false
