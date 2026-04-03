@@ -81,7 +81,8 @@ type Release struct {
 	Date    string `json:"date,omitempty"`
 }
 
-// CheckVersion queries the release index and builds a result.
+// CheckVersion queries the release index from /api/updates/releases and
+// compares available versions against the currently running versions.
 // If targetPi/targetFW are empty, the latest version is used.
 // If the resolved version matches the current version, that component is skipped.
 func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) {
