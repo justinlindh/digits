@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# build-docker.sh — Build a Digits Pi SD card image using Docker
+# build-docker.sh -- Build a Digits Pi SD card image using Docker
 #
-# This wraps the entire image build process in a privileged Docker
-# container so you don't need to install qemu, parted, cross-compilers,
-# or any other dependencies on your host machine.
-#
-# Prerequisites: Docker
+# Wraps the entire image build process in a privileged Docker container.
+# Only requires Docker on your machine.
 #
 # Usage:
-#   ./pi/image/build-docker.sh [--dev] <raspios-lite.img.xz>
+#   ./pi/image/build-docker.sh [--dev] [raspios-lite.img.xz]
 #
-# The base image file must be in the current directory or an absolute path.
+# If no base image is provided, a known-good Raspberry Pi OS Lite image
+# is downloaded automatically and cached in a Docker volume for reuse.
+#
 # Output: digits-pi-YYYYMMDD.img.gz in the current directory.
 set -euo pipefail
 
@@ -19,41 +18,48 @@ info() { echo "==> $*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CACHE_VOLUME="digits-image-cache"
 
 # Parse args
 DEV_FLAG=""
-ARGS=()
+SOURCE_IMAGE=""
 for arg in "$@"; do
     if [[ "$arg" == "--dev" ]]; then
         DEV_FLAG="--dev"
     else
-        ARGS+=("$arg")
+        SOURCE_IMAGE="$arg"
     fi
 done
-
-SOURCE_IMAGE="${ARGS[0]:-}"
-[[ -n "$SOURCE_IMAGE" ]] || die "Usage: $0 [--dev] <raspios-lite.img|.img.xz>"
-
-# Resolve to absolute path
-if [[ "$SOURCE_IMAGE" != /* ]]; then
-    SOURCE_IMAGE="$(pwd)/$SOURCE_IMAGE"
-fi
-[[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
-
-IMAGE_DIR="$(dirname "$SOURCE_IMAGE")"
-IMAGE_NAME="$(basename "$SOURCE_IMAGE")"
 
 # Build the Docker image
 info "Building digits-image-builder Docker image..."
 docker build -t digits-image-builder "$SCRIPT_DIR"
 
-# Run the build
+# Set up volume mounts
+DOCKER_ARGS=(
+    --rm --privileged
+    -v "$REPO_DIR":/digits
+    -v "$CACHE_VOLUME":/cache
+    -w /digits
+)
+ENTRYPOINT_ARGS=()
+[[ -n "$DEV_FLAG" ]] && ENTRYPOINT_ARGS+=("$DEV_FLAG")
+
+if [[ -n "$SOURCE_IMAGE" ]]; then
+    # User provided a base image -- mount its directory
+    if [[ "$SOURCE_IMAGE" != /* ]]; then
+        SOURCE_IMAGE="$(pwd)/$SOURCE_IMAGE"
+    fi
+    [[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
+
+    IMAGE_DIR="$(dirname "$SOURCE_IMAGE")"
+    IMAGE_NAME="$(basename "$SOURCE_IMAGE")"
+    DOCKER_ARGS+=(-v "$IMAGE_DIR":/images)
+    ENTRYPOINT_ARGS+=("/images/$IMAGE_NAME")
+fi
+# If no SOURCE_IMAGE, entrypoint.sh downloads to /cache automatically
+
 info "Starting image build (privileged container)..."
-docker run --rm --privileged \
-    -v "$REPO_DIR":/digits \
-    -v "$IMAGE_DIR":/images \
-    -w /digits \
-    digits-image-builder \
-    $DEV_FLAG "/images/$IMAGE_NAME"
+docker run "${DOCKER_ARGS[@]}" digits-image-builder "${ENTRYPOINT_ARGS[@]}"
 
 info "Done! Output image is in the current directory."

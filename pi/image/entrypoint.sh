@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# entrypoint.sh — Docker entrypoint for Digits Pi image builder
+# entrypoint.sh -- Docker entrypoint for Digits Pi image builder
 #
 # Cross-compiles the Go binaries, then runs build-image.sh.
-# The repo must be mounted at /digits and the base Pi OS image
-# must be available inside the container.
+# The repo must be mounted at /digits. If no base image is provided,
+# downloads a known-good Raspberry Pi OS Lite image to /cache.
 set -euo pipefail
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
-# Parse args: [--dev] <image-file>
+# Known-good base image
+BASE_IMAGE_URL="https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz"
+BASE_IMAGE_NAME="2024-11-19-raspios-bookworm-arm64-lite.img.xz"
+# Set to empty string to skip verification
+BASE_IMAGE_SHA256=""
+CACHE_DIR="/cache"
+
+# Parse args: [--dev] [image-file]
 DEV_FLAG=""
 if [[ "${1:-}" == "--dev" ]]; then
     DEV_FLAG="--dev"
@@ -17,8 +24,27 @@ if [[ "${1:-}" == "--dev" ]]; then
 fi
 
 SOURCE_IMAGE="${1:-}"
-[[ -n "$SOURCE_IMAGE" ]] || die "Usage: entrypoint.sh [--dev] <raspios-lite.img|.img.xz>"
-[[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
+
+# If no image provided, download to cache
+if [[ -z "$SOURCE_IMAGE" ]]; then
+    mkdir -p "$CACHE_DIR"
+    SOURCE_IMAGE="${CACHE_DIR}/${BASE_IMAGE_NAME}"
+
+    if [[ -f "$SOURCE_IMAGE" ]]; then
+        info "Using cached base image: $SOURCE_IMAGE"
+    else
+        info "Downloading Raspberry Pi OS Lite (Bookworm arm64)..."
+        curl -L --progress-bar -o "$SOURCE_IMAGE" "$BASE_IMAGE_URL"
+    fi
+
+    # Verify integrity (if hash is configured)
+    if [[ -n "$BASE_IMAGE_SHA256" ]]; then
+        info "Verifying SHA256..."
+        echo "$BASE_IMAGE_SHA256  $SOURCE_IMAGE" | sha256sum -c - || die "SHA256 mismatch -- delete $SOURCE_IMAGE and retry"
+    fi
+else
+    [[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
+fi
 
 # Trust the mounted repo (owned by host user, not container root)
 git config --global --add safe.directory /digits

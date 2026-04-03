@@ -7,24 +7,27 @@ Build a flashable SD card image for Digits Pi phones from a stock Raspberry Pi O
 The easiest way to build. Only requires Docker on your machine.
 
 ```bash
-# 1. Download Raspberry Pi OS Lite (Bookworm, 64-bit)
-wget https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2024-11-19/2024-11-19-raspios-bookworm-arm64-lite.img.xz
+# Build the image (downloads Pi OS automatically on first run)
+./pi/image/build-docker.sh
 
-# 2. Build the image
-./pi/image/build-docker.sh 2024-11-19-raspios-bookworm-arm64-lite.img.xz
-
-# 3. Flash to SD card
+# Flash to SD card
 gunzip -c digits-pi-*.img.gz | sudo dd of=/dev/sdX bs=4M status=progress
 ```
 
-The Docker container handles everything: cross-compiling the Go binaries, setting up QEMU for ARM64 chroot, partitioning, and packaging. No host dependencies needed beyond Docker.
+The Docker container handles everything: downloading the base Pi OS image, cross-compiling the Go binaries, setting up QEMU for ARM64 chroot, partitioning, and packaging. No host dependencies needed beyond Docker.
+
+The base Pi OS image is cached in a Docker volume (`digits-image-cache`) so it's only downloaded once. You can also provide your own:
+
+```bash
+./pi/image/build-docker.sh path/to/raspios-lite.img.xz
+```
 
 ### Dev mode
 
 Adds SSH access with user `dev` / password `digits` for debugging:
 
 ```bash
-./pi/image/build-docker.sh --dev 2024-11-19-raspios-bookworm-arm64-lite.img.xz
+./pi/image/build-docker.sh --dev
 ```
 
 ## Manual Build (No Docker)
