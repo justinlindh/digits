@@ -35,7 +35,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: '--model claude-opus-4-6'
+          claude_args: '--model claude-opus-4-6 --allowedTools "Bash(make build)" --allowedTools "Bash(make test)" --allowedTools "Bash(make build-local)" --allowedTools "Bash(go vet ./...)" --allowedTools "Bash(go test ./...)" --allowedTools "Bash(npm run lint)" --allowedTools "mcp__github"'
 
           prompt: |
             You are working on Digits, a private encrypted phone network built from vintage desk phones.
@@ -48,12 +48,3 @@ jobs:
             - Server web UI uses htmx + Tailwind, templates in internal/web/templates/
             - Firmware is C with Pico SDK conventions
             - PRs target main and should use the PR template at .github/pull_request_template.md
-
-          allowed_tools: |
-            Bash(make build)
-            Bash(make test)
-            Bash(make build-local)
-            Bash(go vet ./...)
-            Bash(go test ./...)
-            Bash(npm run lint)
-            mcp__github
