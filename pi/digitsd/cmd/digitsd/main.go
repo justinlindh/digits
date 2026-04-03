@@ -459,11 +459,11 @@ const (
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
 
-func runUpdate(serverURL, piVersion, fwVersion string, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", reportStatus)
+func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
 }
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, reportStatus statusFunc) {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if reportStatus == nil {
 		reportStatus = func(string, string) {} // no-op
 	}
@@ -495,18 +495,23 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		result.FWAvailable, result.FWVersion)
 
 	if result.FWAvailable {
-		reportStatus("downloading", "Downloading firmware "+result.FWVersion)
-		path, err := up.Download(result.FWURL, "firmware.elf", result.FWSHA256)
-		if err != nil {
-			log.Printf("updater: firmware download failed: %v", err)
-			reportStatus("failed", fmt.Sprintf("Firmware download failed: %v", err))
-			return
-		}
-		reportStatus("applying", "Flashing firmware "+result.FWVersion)
-		if err := up.ApplyFirmwareUpdate(path); err != nil {
-			log.Printf("updater: firmware apply failed: %v", err)
-			reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
-			return
+		if !flashCapable {
+			log.Println("updater: firmware update available but SWD flash not supported on this device, skipping")
+			reportStatus("failed", "Firmware update skipped: SWD flash not available on this device")
+		} else {
+			reportStatus("downloading", "Downloading firmware "+result.FWVersion)
+			path, err := up.Download(result.FWURL, "firmware.elf", result.FWSHA256)
+			if err != nil {
+				log.Printf("updater: firmware download failed: %v", err)
+				reportStatus("failed", fmt.Sprintf("Firmware download failed: %v", err))
+				return
+			}
+			reportStatus("applying", "Flashing firmware "+result.FWVersion)
+			if err := up.ApplyFirmwareUpdate(path); err != nil {
+				log.Printf("updater: firmware apply failed: %v", err)
+				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
+				return
+			}
 		}
 	}
 	if result.PiAvailable {
@@ -734,6 +739,11 @@ func main() {
 		exec.Command("sudo", "reboot").Run()
 	})
 
+	// Detect SWD flash capability early (needed by update callbacks and device_info).
+	_, err1 := os.Stat("/usr/local/bin/openocd")
+	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
+	flashCapable := err1 == nil && err2 == nil
+
 	svcCodes.SetRepairCallback(func() {
 		log.Println("service code: *#0* → clearing device token, rebooting into pairing mode")
 		if cfg != nil {
@@ -749,7 +759,7 @@ func main() {
 
 	svcCodes.SetUpdateCallback(func() {
 		log.Println("service code: *#UPDATE# (*#873283#) — checking for updates")
-		go runUpdate(effectiveServerURL, version.Version, fwVersion, nil)
+		go runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable, nil)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
@@ -809,10 +819,6 @@ func main() {
 	phone.RestoreVolume()
 	log.Println("digitsd ready")
 
-	_, err1 := os.Stat("/usr/local/bin/openocd")
-	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
-	flashCapable := err1 == nil && err2 == nil
-
 	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable)
 	requestICEServers(sig)
 
@@ -828,7 +834,7 @@ func main() {
 	// Check for updates on startup (non-blocking)
 	go func() {
 		time.Sleep(10 * time.Second) // let things settle
-		runUpdate(effectiveServerURL, version.Version, fwVersion, nil)
+		runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable, nil)
 	}()
 
 	// OS signal handling
@@ -1009,7 +1015,7 @@ func main() {
 					})
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, statusReporter)
+					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable, statusReporter)
 
 			case sigclient.TypeICEServers:
 				cb.mu.Lock()
