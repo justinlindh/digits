@@ -15,15 +15,17 @@ GIT_COMMIT="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 
 echo "=== Building digitsd aarch64 v${VERSION} (commit ${GIT_COMMIT}) ==="
 
+ARTIFACT="digitsd-${VERSION}-aarch64"
+
 cd "${REPO_DIR}/pi/digitsd"
 export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig"
 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go build \
     -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=${VERSION} \
               -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=${GIT_COMMIT}" \
-    -o "${OUT_DIR}/digitsd-aarch64" \
+    -o "${OUT_DIR}/${ARTIFACT}" \
     ./cmd/digitsd/
 
-sha256sum "${OUT_DIR}/digitsd-aarch64" | awk '{print $1}' > "${OUT_DIR}/digitsd-aarch64.sha256"
+sha256sum "${OUT_DIR}/${ARTIFACT}" | awk '{print $1}' > "${OUT_DIR}/${ARTIFACT}.sha256"
 
-echo "Built: ${OUT_DIR}/digitsd-aarch64"
-echo "SHA256: $(cat "${OUT_DIR}/digitsd-aarch64.sha256")"
+echo "Built: ${OUT_DIR}/${ARTIFACT}"
+echo "SHA256: $(cat "${OUT_DIR}/${ARTIFACT}.sha256")"

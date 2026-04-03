@@ -5,14 +5,14 @@ const publishPlugin = isGitea
   ? ['@saithodev/semantic-release-gitea', {
       giteaUrl: process.env.GITEA_URL,
       assets: [
-        { path: '../artifacts/firmware.elf', label: 'Pico firmware (ELF)' },
-        { path: '../artifacts/firmware.elf.sha256', label: 'Firmware SHA256 checksum' },
+        { path: '../artifacts/firmware-*.elf', label: 'Pico firmware (ELF)' },
+        { path: '../artifacts/firmware-*.elf.sha256', label: 'Firmware SHA256 checksum' },
       ],
     }]
   : ['@semantic-release/github', {
       assets: [
-        { path: '../artifacts/firmware.elf', label: 'Pico firmware (ELF)' },
-        { path: '../artifacts/firmware.elf.sha256', label: 'Firmware SHA256 checksum' },
+        { path: '../artifacts/firmware-*.elf', label: 'Pico firmware (ELF)' },
+        { path: '../artifacts/firmware-*.elf.sha256', label: 'Firmware SHA256 checksum' },
       ],
       successComment: false,
       failComment: false,

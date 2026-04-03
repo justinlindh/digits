@@ -25,18 +25,20 @@ cmake .. \
     -DDIGITS_COMMIT="${GIT_COMMIT}"
 make -j"$(nproc)"
 
+ARTIFACT="firmware-${VERSION}.elf"
+
 # Support either digits.elf or firmware.elf output name
 if [ -f digits.elf ]; then
-    cp digits.elf "${OUT_DIR}/firmware.elf"
+    cp digits.elf "${OUT_DIR}/${ARTIFACT}"
 elif [ -f firmware.elf ]; then
-    cp firmware.elf "${OUT_DIR}/firmware.elf"
+    cp firmware.elf "${OUT_DIR}/${ARTIFACT}"
 else
     echo "ERROR: Could not find firmware ELF output" >&2
     ls -la .
     exit 1
 fi
 
-sha256sum "${OUT_DIR}/firmware.elf" | awk '{print $1}' > "${OUT_DIR}/firmware.elf.sha256"
+sha256sum "${OUT_DIR}/${ARTIFACT}" | awk '{print $1}' > "${OUT_DIR}/${ARTIFACT}.sha256"
 
-echo "Built: ${OUT_DIR}/firmware.elf"
-echo "SHA256: $(cat "${OUT_DIR}/firmware.elf.sha256")"
+echo "Built: ${OUT_DIR}/${ARTIFACT}"
+echo "SHA256: $(cat "${OUT_DIR}/${ARTIFACT}.sha256")"

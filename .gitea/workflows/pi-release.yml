@@ -65,13 +65,13 @@ jobs:
         if: success()
         run: |
           VERSION=$(git tag --sort=-creatordate | grep '^pi/v' | head -1 | sed 's|^pi/v||')
-          if [ -z "$VERSION" ] || [ ! -f artifacts/digitsd-aarch64 ]; then
+          if [ -z "$VERSION" ] || [ ! -f "artifacts/digitsd-${VERSION}-aarch64" ]; then
             echo "No new release or binary, skipping deploy"
             exit 0
           fi
           # Copy binary into the running server's updates volume
           CONTAINER="${DEPLOY_CONTAINER:-digits-prod-signald-1}"
-          docker cp artifacts/digitsd-aarch64 "$CONTAINER":/data/updates/digitsd-aarch64
+          docker cp "artifacts/digitsd-${VERSION}-aarch64" "$CONTAINER":/data/updates/digitsd-aarch64
           echo "Deployed digitsd-aarch64 to server updates volume"
         env:
           DEPLOY_CONTAINER: ${{ vars.DEPLOY_CONTAINER }}
@@ -85,7 +85,7 @@ jobs:
             exit 0
           fi
           COMMIT=$(git rev-parse --short HEAD)
-          SHA256=$(cat artifacts/digitsd-aarch64.sha256 2>/dev/null || echo "")
+          SHA256=$(cat "artifacts/digitsd-${VERSION}-aarch64.sha256" 2>/dev/null || echo "")
           if [ -z "$SHA256" ]; then
             echo "No SHA256 found, skipping index update"
             exit 0

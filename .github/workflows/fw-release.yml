@@ -78,13 +78,13 @@ jobs:
         if: success()
         run: |
           VERSION=$(git tag --sort=-creatordate | grep '^fw/v' | head -1 | sed 's|^fw/v||')
-          if [ -z "$VERSION" ] || [ ! -f artifacts/firmware.elf.sha256 ]; then
+          if [ -z "$VERSION" ] || [ ! -f "artifacts/firmware-${VERSION}.elf.sha256" ]; then
             echo "No new release or no artifacts, skipping index update"
             exit 0
           fi
           COMMIT=$(git rev-parse --short HEAD)
-          SHA256=$(cat artifacts/firmware.elf.sha256)
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/fw/v${VERSION}/firmware.elf"
+          SHA256=$(cat "artifacts/firmware-${VERSION}.elf.sha256")
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/fw/v${VERSION}/firmware-${VERSION}.elf"
           bash tools/update-releases-json.sh firmware "$VERSION" "$COMMIT" "$SHA256" "$DOWNLOAD_URL"
 
           git config user.name "github-actions[bot]"

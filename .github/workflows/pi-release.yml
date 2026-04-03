@@ -72,13 +72,13 @@ jobs:
         if: success()
         run: |
           VERSION=$(git tag --sort=-creatordate | grep '^pi/v' | head -1 | sed 's|^pi/v||')
-          if [ -z "$VERSION" ] || [ ! -f artifacts/digitsd-aarch64.sha256 ]; then
+          if [ -z "$VERSION" ] || [ ! -f "artifacts/digitsd-${VERSION}-aarch64.sha256" ]; then
             echo "No new release or no artifacts, skipping index update"
             exit 0
           fi
           COMMIT=$(git rev-parse --short HEAD)
-          SHA256=$(cat artifacts/digitsd-aarch64.sha256)
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/pi/v${VERSION}/digitsd-aarch64"
+          SHA256=$(cat "artifacts/digitsd-${VERSION}-aarch64.sha256")
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/pi/v${VERSION}/digitsd-${VERSION}-aarch64"
           bash tools/update-releases-json.sh pi "$VERSION" "$COMMIT" "$SHA256" "$DOWNLOAD_URL"
 
           git config user.name "github-actions[bot]"

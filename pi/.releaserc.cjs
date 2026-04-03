@@ -5,14 +5,14 @@ const publishPlugin = isGitea
   ? ['@saithodev/semantic-release-gitea', {
       giteaUrl: process.env.GITEA_URL,
       assets: [
-        { path: 'artifacts/digitsd-aarch64', label: 'digitsd (aarch64 Linux)' },
-        { path: 'artifacts/digitsd-aarch64.sha256', label: 'digitsd SHA256 checksum' },
+        { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
+        { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
       ],
     }]
   : ['@semantic-release/github', {
       assets: [
-        { path: 'artifacts/digitsd-aarch64', label: 'digitsd (aarch64 Linux)' },
-        { path: 'artifacts/digitsd-aarch64.sha256', label: 'digitsd SHA256 checksum' },
+        { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
+        { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
       ],
       successComment: false,
       failComment: false,

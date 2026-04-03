@@ -84,7 +84,7 @@ jobs:
             exit 0
           fi
           COMMIT=$(git rev-parse --short HEAD)
-          SHA256=$(cat artifacts/firmware.elf.sha256 2>/dev/null || echo "")
+          SHA256=$(cat "artifacts/firmware-${VERSION}.elf.sha256" 2>/dev/null || echo "")
           if [ -z "$SHA256" ]; then
             echo "No SHA256 found, skipping index update"
             exit 0
@@ -93,7 +93,7 @@ jobs:
           # Deploy updated releases.json and firmware binary to server
           CONTAINER="${DEPLOY_CONTAINER:-digits-prod-signald-1}"
           docker cp artifacts/releases.json "$CONTAINER":/data/updates/releases.json
-          docker cp artifacts/firmware.elf "$CONTAINER":/data/updates/firmware.elf
+          docker cp "artifacts/firmware-${VERSION}.elf" "$CONTAINER":/data/updates/firmware.elf
           git config user.name "Digits CI"
           git config user.email "ci@digits.family"
           git add artifacts/releases.json
