@@ -217,7 +217,7 @@ func volumeToALSA(level int) int {
 // Persists the level to /data/digits/volume and saves full mixer state.
 func SetVolume(level int) error {
 	alsaVal := volumeToALSA(level)
-	cmd := exec.Command("amixer", "-c", "1", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	cmd := exec.Command("amixer", "-c", "0", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -227,7 +227,7 @@ func SetVolume(level int) error {
 		log.Printf("volume: persist failed: %v", err)
 	}
 	// Save full mixer state
-	cmd = exec.Command("sudo", "alsactl", "store", "1", "-f", mixerStateFile)
+	cmd = exec.Command("sudo", "alsactl", "store", "0", "-f", mixerStateFile)
 	cmd.Run() // best-effort
 	log.Printf("volume: %d/9 (Lineout=%d, persisted)", level, alsaVal)
 	return nil
@@ -245,7 +245,7 @@ func RestoreVolume() {
 		}
 	}
 	alsaVal := volumeToALSA(level)
-	cmd := exec.Command("amixer", "-c", "1", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	cmd := exec.Command("amixer", "-c", "0", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("volume restore: amixer: %s: %v", strings.TrimSpace(string(out)), err)
 		return
