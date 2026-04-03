@@ -173,7 +173,7 @@
                 </label>
                 {{end}}
               </div>
-              <button type="button" id="pi-install-btn" onclick="triggerPiUpdate()"
+              <button type="button" id="pi-install-btn" onclick="triggerComponentUpdate('pi', 'target_pi_version')"
                       class="w-full px-4 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded transition-colors">
                 Install Pi Software
               </button>
@@ -222,7 +222,7 @@
                 </label>
                 {{end}}
               </div>
-              <button type="button" id="fw-install-btn" onclick="triggerFwUpdate()"
+              <button type="button" id="fw-install-btn" onclick="triggerComponentUpdate('fw', 'target_fw_version')"
                       class="w-full px-4 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded transition-colors">
                 Install Firmware
               </button>
@@ -267,20 +267,12 @@
         }
         document.querySelectorAll('.version-option input:checked').forEach(highlightVersion);
 
-        function triggerPiUpdate() {
-          var btn = document.getElementById('pi-install-btn');
-          var piRadio = document.querySelector('input[name="target_pi_version"]:checked');
+        function triggerComponentUpdate(prefix, paramName) {
+          var btn = document.getElementById(prefix + '-install-btn');
+          var radio = document.querySelector('input[name="' + paramName + '"]:checked');
           var body = new URLSearchParams();
-          if (piRadio) body.append('target_pi_version', piRadio.value);
-          startUpdate('pi', btn, body);
-        }
-
-        function triggerFwUpdate() {
-          var btn = document.getElementById('fw-install-btn');
-          var fwRadio = document.querySelector('input[name="target_fw_version"]:checked');
-          var body = new URLSearchParams();
-          if (fwRadio) body.append('target_fw_version', fwRadio.value);
-          startUpdate('fw', btn, body);
+          if (radio) body.append(paramName, radio.value);
+          startUpdate(prefix, btn, body);
         }
 
         function startUpdate(prefix, btn, body) {
