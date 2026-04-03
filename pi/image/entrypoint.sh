@@ -87,6 +87,11 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 
 info "Binaries ready in tools/build/"
 
-# Run the image builder
-cd /digits
-exec bash tools/build-image.sh $DEV_FLAG "$SOURCE_IMAGE"
+# Run the image builder in a working directory, then copy output back
+BUILD_WD="/build"
+mkdir -p "$BUILD_WD"
+cd "$BUILD_WD"
+bash /digits/tools/build-image.sh $DEV_FLAG "$SOURCE_IMAGE"
+
+# Copy the output image to the mounted repo (accessible from host)
+cp -v "$BUILD_WD"/digits-pi-*.img.gz /digits/
