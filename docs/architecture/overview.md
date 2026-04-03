@@ -101,7 +101,7 @@ Digits uses WebRTC for media transport. DTLS-SRTP provides end-to-end encryption
 - **Decode:** Opus decoder on the receiving Pi
 - **Playback:** Mixed with local tones via audio mixer, output to ALSA
 
-Typical one-way end-to-end latency: 75--90ms.
+Typical one-way end-to-end latency: 75-90ms.
 
 ## NAT Traversal
 
