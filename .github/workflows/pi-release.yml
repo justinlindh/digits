@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.ADMIN_PAT }}
 
       - uses: actions/setup-node@v6
         with:
@@ -86,5 +87,3 @@ jobs:
           git add artifacts/releases.json
           git commit -m "ci: update releases.json for pi/v${VERSION} [skip ci]" || true
           git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
