@@ -59,10 +59,10 @@ func (s *Store) GenerateCode(hardwareID string) (string, error) {
 	expiresAt := time.Now().Add(CodeTTL)
 
 	// Upsert: insert device row if it doesn't exist, or update the pairing code.
-	// New devices get line_id=0 as a placeholder until pairing completes.
+	// New devices get line_id=NULL until pairing completes and a line is created.
 	_, err = s.db.Exec(`
 		INSERT INTO devices (line_id, hardware_id, pairing_code, pairing_code_expires_at)
-		VALUES (0, $1, $2, $3)
+		VALUES (NULL, $1, $2, $3)
 		ON CONFLICT (hardware_id) DO UPDATE
 		SET pairing_code = $2, pairing_code_expires_at = $3
 	`, hardwareID, newCode, expiresAt)
