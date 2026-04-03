@@ -15,7 +15,7 @@ var ErrNotFound = errors.New("device not found")
 // Device represents a physical handset paired to a line.
 type Device struct {
 	ID                   int64
-	LineID               int64
+	LineID               *int64
 	HardwareID           string
 	DeviceID             string
 	DeviceToken          *string

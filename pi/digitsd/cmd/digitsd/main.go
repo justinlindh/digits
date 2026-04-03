@@ -887,14 +887,18 @@ func main() {
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
 					if svcCodes.AddKey(key) {
-						// Service code fired — double beep + reset to idle
-						mixer.StopAll()
-						mixer.PlayOnce("dtmf_star")
-						time.Sleep(120 * time.Millisecond)
-						mixer.PlayOnce("dtmf_star")
-						time.Sleep(120 * time.Millisecond)
-						ctrl.Reset()
-						log.Printf("phone: service code %q handled, reset to idle", key)
+						// Service code fired — pause, double beep, then back to dial tone
+						go func() {
+							mixer.StopAll()
+							time.Sleep(250 * time.Millisecond)
+							mixer.PlayOnce("dtmf_star")
+							time.Sleep(150 * time.Millisecond)
+							mixer.PlayOnce("dtmf_star")
+							time.Sleep(300 * time.Millisecond)
+							ctrl.Reset()
+							mixer.PlayLoop("tone_dial")
+							log.Printf("phone: service code handled, reset to dial tone")
+						}()
 					}
 				}
 			}
