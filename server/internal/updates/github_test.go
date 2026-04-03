@@ -25,15 +25,15 @@ func TestGitHubReleases_BuildsIndex(t *testing.T) {
 			TagName:     "pi/v1.1.0",
 			PublishedAt: "2026-03-15T00:00:00Z",
 			Assets: []ghAsset{
-				{Name: "digitsd", BrowserDownloadURL: "https://example.com/digitsd-1.1.0"},
-				{Name: "digitsd.sha256", BrowserDownloadURL: "SHA256_PI_URL"},
+				{Name: "digitsd-1.1.0-aarch64", BrowserDownloadURL: "https://example.com/digitsd-1.1.0"},
+				{Name: "digitsd-1.1.0-aarch64.sha256", BrowserDownloadURL: "SHA256_PI_URL"},
 			},
 		},
 		{
 			TagName:     "pi/v1.0.0",
 			PublishedAt: "2026-03-10T00:00:00Z",
 			Assets: []ghAsset{
-				{Name: "digitsd", BrowserDownloadURL: "https://example.com/digitsd-1.0.0"},
+				{Name: "digitsd-1.0.0-aarch64", BrowserDownloadURL: "https://example.com/digitsd-1.0.0"},
 				// no sha256 asset
 			},
 		},

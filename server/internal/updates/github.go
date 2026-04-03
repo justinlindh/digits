@@ -109,6 +109,8 @@ func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
 }
 
 // fetch retrieves releases from the GitHub API and builds a ReleaseIndex.
+// Note: fetches up to 100 releases (no pagination). If the repo exceeds 100
+// total releases across all tag types, older ones will be silently omitted.
 func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", g.apiBase, g.owner, g.repo)
 
@@ -230,7 +232,8 @@ func parseTag(tag string) (component, version string, ok bool) {
 }
 
 // classifyAssets finds the main binary asset URL and the .sha256 companion URL
-// from a list of release assets.
+// from a list of release assets. Only recognizes known artifact patterns
+// (firmware .elf files and digitsd aarch64 binaries).
 func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 	for _, a := range assets {
 		if a.BrowserDownloadURL == "" {
@@ -238,7 +241,7 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 		}
 		if strings.HasSuffix(a.Name, ".sha256") {
 			sha256URL = a.BrowserDownloadURL
-		} else {
+		} else if strings.HasSuffix(a.Name, ".elf") || strings.Contains(a.Name, "aarch64") {
 			binaryURL = a.BrowserDownloadURL
 		}
 	}
