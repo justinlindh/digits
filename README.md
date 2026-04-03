@@ -144,13 +144,13 @@ Hidden codes entered on the keypad during an active call (off-hook with dial ton
 
 ## Easter Eggs
 
-Hidden sequences that play audio clips through the earpiece. Timing-aware — each keypress must be within ~1.5 seconds of the last.
+Hidden sequences that play audio clips through the earpiece. Timing-aware -- each keypress must be within ~1.5 seconds of the last.
 
 | Sequence | What plays |
 |----------|------------|
 | `5-5-4-2` | 🚿 Towelie from South Park: *"That's it! That's the melody to Funky Town!"* |
 | `0-0-0-0` | 🎤 Rick Astley: *"Never gonna give you up..."* |
-| `8-6-7-5-3-0-9` | 🎸 Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial — no call placed) |
+| `8-6-7-5-3-0-9` | 🎸 Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial -- no call placed) |
 
 ## License
 

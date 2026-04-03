@@ -1,4 +1,4 @@
-# Digits — UART Protocol Specification
+# Digits -- UART Protocol Specification
 
 Line-based ASCII protocol between RP2040 Pico and Pi Zero 2 W.
 
@@ -27,19 +27,19 @@ Commands use colon-separated tokens (no spaces). All uppercase.
 | Command         | Response       | Description                                       |
 |-----------------|----------------|---------------------------------------------------|
 | `RING:START`    | `RING:ACK`     | Start ringing (enters RINGING state). Flushes any pending hook event first. |
-| `RING:STOP`     | `RING:DONE`    | Stop ringing. Works from any state — always stops ringer hardware. Cleans up LED. |
+| `RING:STOP`     | `RING:DONE`    | Stop ringing. Works from any state -- always stops ringer hardware. Cleans up LED. |
 | `RING:TEST`     | `RING:TEST:ACK`| **Bypass FSM entirely.** Drives ringer + blinks LED regardless of hook state. Use `RING:STOP` to stop. For bench testing. |
-| `TONE:DIAL`     | —              | Play dial tone                                    |
-| `TONE:RINGBACK` | —              | Play ringback tone                                |
-| `TONE:STOP`     | —              | Stop all tones                                    |
+| `TONE:DIAL`     | --              | Play dial tone                                    |
+| `TONE:RINGBACK` | --              | Play ringback tone                                |
+| `TONE:STOP`     | --              | Stop all tones                                    |
 
 ### LED Control
 
 | Command      | Response | Description          |
 |--------------|----------|----------------------|
-| `LED:ON`     | —        | LED steady on        |
-| `LED:OFF`    | —        | LED off              |
-| `LED:BLINK`  | —        | LED blinking         |
+| `LED:ON`     | --        | LED steady on        |
+| `LED:OFF`    | --        | LED off              |
+| `LED:BLINK`  | --        | LED blinking         |
 
 ### Hook Override (Debug)
 
@@ -165,7 +165,7 @@ Pico→Pi: HOOK:OFF
 ```
 Pi→Pico: RING:TEST
          RING:TEST:ACK
-(bell rings, LED blinks — hook state irrelevant)
+(bell rings, LED blinks -- hook state irrelevant)
 Pi→Pico: RING:STOP
          RING:DONE
 ```
