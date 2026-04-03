@@ -1,0 +1,27 @@
+# cmdline-ro.txt.fragment — Additions to /boot/firmware/cmdline.txt
+#
+# Add `ro` to the kernel command line to mount root read-only at boot.
+# The image builder appends this to the existing cmdline.txt.
+#
+# If applying manually:
+#   1. Mount the boot partition (vfat, /boot/firmware)
+#   2. Edit cmdline.txt — it must be a single line with no newlines
+#   3. Add `ro` after `rootwait`
+#   4. Remove `fsck.repair=yes` if present (can't fsck a ro root at boot)
+#
+# Example transformation:
+#
+#   BEFORE:
+#   console=serial0,115200 console=tty1 root=PARTUUID=... rootfstype=ext4 fsck.repair=yes rootwait quiet
+#
+#   AFTER:
+#   console=serial0,115200 console=tty1 root=PARTUUID=... rootfstype=ext4 rootwait ro quiet
+#
+# NOTE: Do NOT use raspi-config overlay — it has a Bookworm bug that makes
+#       all partitions read-only. The `ro` flag here only affects the root
+#       filesystem (p2). /data (p3) remains read-write.
+#
+# The image builder uses sed to apply this:
+#   sed -i 's/fsck\.repair=yes //g; s/rootwait/rootwait ro/' /boot/firmware/cmdline.txt
+
+ro

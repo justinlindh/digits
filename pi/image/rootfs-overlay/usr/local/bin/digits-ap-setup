@@ -1,0 +1,31 @@
+#!/bin/bash
+# digits-ap-setup: Configure wlan0 with a static IP for AP mode.
+# Called by digits-ap-check when /data/wifi-configured does not exist.
+#
+# Sets wlan0 to 192.168.4.1/24 so hostapd + dnsmasq can serve the captive portal.
+
+set -euo pipefail
+
+LOG_TAG="digits-ap-setup"
+
+log() {
+    echo "$LOG_TAG: $*" | tee /dev/kmsg 2>/dev/null || true
+    logger -t "$LOG_TAG" "$*" 2>/dev/null || true
+}
+
+IFACE="wlan0"
+AP_IP="192.168.4.1"
+AP_PREFIX="24"
+
+log "Configuring $IFACE with static IP $AP_IP/$AP_PREFIX for AP mode"
+
+# Bring interface up (may already be up)
+ip link set "$IFACE" up || true
+
+# Flush any existing addresses
+ip addr flush dev "$IFACE" || true
+
+# Assign static IP
+ip addr add "${AP_IP}/${AP_PREFIX}" dev "$IFACE"
+
+log "$IFACE configured: $AP_IP/$AP_PREFIX"

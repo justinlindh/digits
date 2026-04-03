@@ -1,0 +1,54 @@
+name: Server Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no publish)"
+        required: false
+        default: "false"
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".gitea/workflows/server-release.yml"
+
+jobs:
+  release:
+    runs-on: linux
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate release prerequisites
+        run: |
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "::error::GITEA_TOKEN secret is not set"
+            exit 1
+          fi
+          echo "Prerequisites OK"
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+
+      - name: Install semantic-release
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @saithodev/semantic-release-gitea
+
+      - name: Run semantic-release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx semantic-release --dry-run
+          else
+            npx semantic-release
+          fi
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_URL: ${{ vars.GITEA_URL }}

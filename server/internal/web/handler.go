@@ -1,0 +1,1274 @@
+package web
+
+import (
+	"embed"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"log/slog"
+	"net"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/household"
+	"github.com/justinlindh/digits/server/internal/httputil"
+	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/pairing"
+	"github.com/justinlindh/digits/server/internal/ratelimit"
+	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/updates"
+	"github.com/justinlindh/digits/server/internal/version"
+)
+
+//go:embed templates/*.html
+var templateFS embed.FS
+
+//go:embed static
+var staticFS embed.FS
+
+// TemplateFS returns the embedded template filesystem for external template parsing.
+func TemplateFS() embed.FS {
+	return templateFS
+}
+
+type Handler struct {
+	upgrader websocket.Upgrader
+	lineStore   *line.Store
+	deviceStore *device.Store
+	hub      *signaling.Hub
+	tracker  *calls.Tracker
+	relay    *signaling.Relay
+	// Per-page template sets to avoid {{define}} name conflicts
+	tmplDashboard   *template.Template
+	tmplPhones      *template.Template
+	tmplCalls       *template.Template
+	tmplSettings    *template.Template
+	tmplOnboard     *template.Template
+	tmplPhoneDetail *template.Template
+	tmplLinks       *template.Template
+	cfg             HandlerConfig
+	// Auth
+	authStore    *auth.Store
+	authHandlers *auth.Handlers
+	googleAuth   *auth.GoogleAuth
+	// Household
+	householdStore *household.Store
+	// Pairing
+	pairingStore *pairing.Store
+	// Household links
+	linkStore *household.LinkStore
+	// Email
+	emailSender email.Sender
+	baseURL     string // app URL, e.g. https://app.digits.family
+	// Admin
+	adminSecret string
+	// Rate limiters
+	authLimiter    *ratelimit.Limiter
+	pairingLimiter *ratelimit.Limiter
+	// Updates
+	UpdateStore *updates.Store
+}
+
+type HandlerConfig struct {
+	Addr string
+}
+
+func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+	parse := func(pages ...string) (*template.Template, error) {
+		return template.New("").ParseFS(templateFS, pages...)
+	}
+
+	tmplDashboard, err := parse("templates/layout.html", "templates/dashboard.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplPhones, err := parse("templates/layout.html", "templates/phones.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplCalls, err := parse("templates/layout.html", "templates/calls.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplSettings, err := parse("templates/layout.html", "templates/settings.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplOnboard, err := parse("templates/layout.html", "templates/onboard.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplPhoneDetail, err := parse("templates/layout.html", "templates/phone-detail.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplLinks, err := parse("templates/layout.html", "templates/links.html")
+	if err != nil {
+		return nil, err
+	}
+
+	u := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				// Non-browser clients (e.g. Pi daemon) send no Origin; allow them.
+				return true
+			}
+			return origin == baseURL
+		},
+	}
+
+	return &Handler{
+		upgrader:        u,
+		lineStore:       lineStore,
+		deviceStore:     deviceStore,
+		hub:             hub,
+		tracker:         tracker,
+		relay:           relay,
+		tmplDashboard:   tmplDashboard,
+		tmplPhones:      tmplPhones,
+		tmplCalls:       tmplCalls,
+		tmplSettings:    tmplSettings,
+		tmplOnboard:     tmplOnboard,
+		tmplPhoneDetail: tmplPhoneDetail,
+		tmplLinks:       tmplLinks,
+		cfg:             cfg,
+		authStore:       authStore,
+		authHandlers:    authHandlers,
+		googleAuth:      googleAuth,
+		householdStore:  householdStore,
+		pairingStore:    pairingStore,
+		linkStore:       linkStore,
+		emailSender:     emailSender,
+		baseURL:         baseURL,
+		adminSecret:     adminSecret,
+		authLimiter:     ratelimit.New(5, time.Minute),
+		pairingLimiter:  ratelimit.New(5, time.Minute),
+	}, nil
+}
+
+func (h *Handler) Router() http.Handler {
+	mux := http.NewServeMux()
+
+	// Static assets — no auth required
+	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
+
+	// Health check — no auth required
+	mux.HandleFunc("GET /healthz", httputil.Healthz())
+
+	// Public routes — no auth required
+	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
+	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
+	mux.Handle("GET /auth/magic/{token}", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
+	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
+	mux.Handle("GET /auth/google/login", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
+	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
+	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
+	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
+	mux.HandleFunc("GET /ws", h.handleWS)
+
+	// Update artifact endpoints (unauthenticated — phones fetch these)
+	if h.UpdateStore != nil {
+		mux.HandleFunc("GET /api/updates/latest", h.UpdateStore.ServeManifest())
+		mux.HandleFunc("GET /api/updates/releases", h.UpdateStore.ServeReleases())
+		mux.HandleFunc("GET /api/updates/download/", h.UpdateStore.ServeArtifact())
+		slog.Info("updates: serving artifact endpoints")
+	}
+	mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "static/test-client.html")
+	})
+
+	// Protected routes — require valid session
+	protected := http.NewServeMux()
+	protected.HandleFunc("GET /", h.handleDashboard)
+	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
+	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
+	protected.HandleFunc("GET /phones", h.handlePhonesGet)
+	protected.HandleFunc("POST /phones", h.handlePhonesPost)
+	protected.Handle("POST /phones/pair", h.pairingLimiter.Middleware(http.HandlerFunc(h.handlePhonesPairPost)))
+	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
+	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
+	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
+	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
+	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
+	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
+	protected.HandleFunc("GET /calls", h.handleCalls)
+	protected.HandleFunc("GET /settings", h.handleSettings)
+	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
+	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
+	protected.HandleFunc("GET /links", h.handleLinksGet)
+	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
+	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
+	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
+	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
+	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+
+	// Onboarding gate: redirect users without a household to /onboard
+	// Only active when householdStore is set (nil means feature disabled)
+	var protectedHandler http.Handler = h.authStore.RequireAuth(protected)
+	if h.householdStore != nil {
+		protectedHandler = h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Don't gate the onboard routes themselves
+			if r.URL.Path == "/onboard" || strings.HasPrefix(r.URL.Path, "/auth/") {
+				protected.ServeHTTP(w, r)
+				return
+			}
+			user := auth.UserFromContext(r.Context())
+			if user != nil {
+				if h.householdStore.NeedsOnboarding(user.ID) {
+					http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+					return
+				}
+			}
+			protected.ServeHTTP(w, r)
+		}))
+	}
+	mux.Handle("/", protectedHandler)
+
+	// Wrap with root-domain redirect before security headers.
+	return rootDomainRedirect(h.baseURL, securityHeadersMiddleware(mux))
+}
+
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'")
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// rootDomainRedirect redirects requests arriving on the bare root domain
+// (e.g. digits.family) to the app URL (e.g. https://app.digits.family).
+func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
+	if appURL == "" {
+		return next
+	}
+	appHost := appURL
+	if i := strings.Index(appURL, "://"); i >= 0 {
+		appHost = appURL[i+3:]
+	}
+	if i := strings.Index(appHost, "/"); i >= 0 {
+		appHost = appHost[:i]
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqHost := r.Host
+		if h, _, err := net.SplitHostPort(r.Host); err == nil {
+			reqHost = h
+		}
+		appHostStripped := appHost
+		if h, _, err := net.SplitHostPort(appHost); err == nil {
+			appHostStripped = h
+		}
+
+		if reqHost == appHostStripped || reqHost == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Don't redirect WebSocket or API paths
+		if strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		target := appURL + r.URL.RequestURI()
+		http.Redirect(w, r, target, http.StatusMovedPermanently)
+	})
+}
+
+// ---- Onboarding ----
+
+type onboardData struct {
+	Page               string
+	CallHistoryEnabled bool
+	HouseholdName      string
+	SuggestedName      string
+	Version            string
+}
+
+func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	suggested := "My Family"
+	if user != nil && user.Name != "" {
+		suggested = user.Name + "'s Family"
+	}
+	renderWith(w, h.tmplOnboard, "layout.html", onboardData{
+		Page:               "onboard",
+		Version:            version.Version,
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		SuggestedName:      suggested,
+	})
+}
+
+func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	if h.householdStore == nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = "My Family"
+	}
+	_, err := h.householdStore.Create(name, user.ID)
+	if err != nil {
+		slog.Error("create household failed", "err", err)
+		http.Error(w, "failed to create household", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// ---- Dashboard ----
+
+type dashboardData struct {
+	Page               string
+	Version            string
+	CallHistoryEnabled bool
+	HouseholdName      string
+	Stats              dashStats
+	Lines              []lineRow
+}
+
+type dashStats struct {
+	TotalLines   int
+	OnlineLines  int
+	ActiveCalls  int
+	CallsToday   int
+}
+
+type activePair struct {
+	Caller string
+	Callee string
+}
+
+func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	active := h.tracker.Active()
+	recent, _ := h.tracker.Recent(10)
+
+	ld := h.buildLinesData(r, "")
+
+	data := dashboardData{
+		Page:               "dashboard",
+		Version:            version.Version,
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdName:      h.householdNameFromContext(r),
+		Stats: dashStats{
+			TotalLines:   len(ld.Lines),
+			OnlineLines:  countOnline(ld.Lines),
+			ActiveCalls:  len(active),
+			CallsToday:   countCallsToday(recent),
+		},
+		Lines: ld.Lines,
+	}
+	renderWith(w, h.tmplDashboard, "layout.html", data)
+}
+
+func countOnline(lines []lineRow) int {
+	n := 0
+	for _, l := range lines {
+		if l.Online {
+			n++
+		}
+	}
+	return n
+}
+
+func countCallsToday(allCalls []calls.Call) int {
+	today := time.Now().Truncate(24 * time.Hour)
+	count := 0
+	for _, c := range allCalls {
+		if c.StartedAt.After(today) {
+			count++
+		}
+	}
+	return count
+}
+
+// ---- Lines (Phones) ----
+
+type linesData struct {
+	Page               string
+	Version            string
+	CallHistoryEnabled bool
+	HouseholdName      string
+	Lines              []lineRow
+	Error              string
+	PairError          string
+}
+
+type lineRow struct {
+	Line   line.Line
+	Online bool
+}
+
+func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
+	var lines []line.Line
+
+	// Scope to household if user has one and householdStore is available
+	if r != nil && h.householdStore != nil {
+		user := auth.UserFromContext(r.Context())
+		if user != nil {
+			households, err := h.householdStore.GetForUser(user.ID)
+			if err == nil && len(households) > 0 {
+				lines, _ = h.lineStore.ListByHousehold(households[0].ID)
+			}
+		}
+	}
+
+	// Fall back to global list if household lookup failed or feature disabled
+	if lines == nil {
+		lines, _ = h.lineStore.List()
+	}
+
+	online := h.hub.OnlineNumbers()
+	onlineSet := make(map[string]bool, len(online))
+	for _, n := range online {
+		onlineSet[n] = true
+	}
+	rows := make([]lineRow, len(lines))
+	for i, l := range lines {
+		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
+	}
+	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg}
+}
+
+func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
+	renderWith(w, h.tmplPhones, "layout.html", h.buildLinesData(r, ""))
+}
+
+func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	number := strings.TrimSpace(r.FormValue("number"))
+	name := strings.TrimSpace(r.FormValue("name"))
+
+	// Get user's household to associate the new line
+	var householdID string
+	if h.householdStore != nil {
+		user := auth.UserFromContext(r.Context())
+		if user != nil {
+			households, err := h.householdStore.GetForUser(user.ID)
+			if err == nil && len(households) > 0 {
+				householdID = households[0].ID
+			}
+		}
+	}
+
+	if err := line.ValidateNumber(number); err != nil {
+		data := h.buildLinesData(r, err.Error())
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+
+	_, err := h.lineStore.Add(number, name, householdID)
+	data := h.buildLinesData(r, "")
+	if err != nil {
+		data = h.buildLinesData(r, err.Error())
+	}
+
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhones, "phones-table", data)
+		return
+	}
+	if err != nil {
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	code := strings.TrimSpace(r.FormValue("code"))
+	number := strings.TrimSpace(r.FormValue("number"))
+	name := strings.TrimSpace(r.FormValue("name"))
+
+	if err := line.ValidateNumber(number); err != nil {
+		data := h.buildLinesData(r, "")
+		data.PairError = "invalid phone number: " + err.Error()
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+
+	if h.pairingStore == nil {
+		data := h.buildLinesData(r, "")
+		data.PairError = "pairing is not enabled"
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+
+	// Get user's household
+	var householdID string
+	if h.householdStore != nil {
+		user := auth.UserFromContext(r.Context())
+		if user != nil {
+			households, err := h.householdStore.GetForUser(user.ID)
+			if err == nil && len(households) > 0 {
+				householdID = households[0].ID
+			}
+		}
+	}
+	if householdID == "" {
+		data := h.buildLinesData(r, "")
+		data.PairError = "no household found — please complete onboarding first"
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+
+	token, hwID, err := h.pairingStore.ClaimDevice(code, number, name, householdID)
+	if err != nil {
+		data := h.buildLinesData(r, "")
+		data.PairError = err.Error()
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
+	}
+
+	if hwID != "" {
+		if err := h.hub.SendToHardware(hwID, &signaling.Message{
+			Type:        signaling.TypePaired,
+			DeviceToken: token,
+			Number:      number,
+		}); err != nil {
+			slog.Warn("could not notify device of pairing", "hardware_id", hwID, "err", err)
+		}
+	}
+
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+type lineDetailData struct {
+	Page                  string
+	Version               string
+	CallHistoryEnabled    bool
+	HouseholdName         string
+	Line                  line.Line
+	Online                bool
+	Devices               []device.Device
+	DeviceInfo            *signaling.DeviceInfoSnapshot
+	LatestPiVersion       string
+	LatestFirmwareVersion string
+	PiReleases            []updates.Release
+	FWReleases            []updates.Release
+}
+
+func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	online := h.hub.Get(number) != nil
+
+	var devices []device.Device
+	if h.deviceStore != nil {
+		devices, _ = h.deviceStore.ListByLine(ln.ID)
+	}
+
+	var latestPi, latestFw string
+	var piReleases, fwReleases []updates.Release
+	if h.UpdateStore != nil {
+		if idx := h.UpdateStore.ReleaseIndex(); idx != nil {
+			latestPi = idx.Pi.Latest
+			latestFw = idx.Firmware.Latest
+			piReleases = idx.SortedReleases("pi")
+			fwReleases = idx.SortedReleases("firmware")
+		}
+	}
+
+	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
+		Page:                  "phones",
+		Version:               version.Version,
+		CallHistoryEnabled:    h.callHistoryEnabled(r),
+		HouseholdName:         h.householdNameFromContext(r),
+		Line:                  *ln,
+		Online:                online,
+		Devices:               devices,
+		DeviceInfo:            h.hub.DeviceInfo(number),
+		LatestPiVersion:       latestPi,
+		LatestFirmwareVersion: latestFw,
+		PiReleases:            piReleases,
+		FWReleases:            fwReleases,
+	})
+}
+
+func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	online := h.hub.Get(number) != nil
+	renderWith(w, h.tmplPhones, "phone-edit-row", lineRow{Line: *ln, Online: online})
+}
+
+func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.Error(w, "line not found", http.StatusNotFound)
+		return
+	}
+
+	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	data := h.buildLinesData(r, "")
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhones, "phones-table", data)
+		return
+	}
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	r.ParseForm()
+	targetPi := strings.TrimSpace(r.FormValue("target_pi_version"))
+	targetFW := strings.TrimSpace(r.FormValue("target_fw_version"))
+
+	// Clear any stale status before sending new trigger
+	h.hub.ClearUpdateStatus(number)
+
+	msg := &signaling.Message{
+		Type:            signaling.TypeUpdateTrigger,
+		TargetPiVersion: targetPi,
+		TargetFWVersion: targetFW,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("update trigger failed", "number", number, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("update trigger sent", "number", number, "target_pi", targetPi, "target_fw", targetFW)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+		} else {
+			json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	status := h.hub.GetUpdateStatus(number)
+	w.Header().Set("Content-Type", "application/json")
+	if status == nil {
+		json.NewEncoder(w).Encode(map[string]string{"status": ""})
+		return
+	}
+	json.NewEncoder(w).Encode(status)
+}
+
+func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln, err := h.lineStore.GetByNumber(number)
+	if err == nil {
+		h.lineStore.Delete(ln.ID)
+	}
+	data := h.buildLinesData(r, "")
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhones, "phones-table", data)
+		return
+	}
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+// ---- Calls ----
+
+type callsData struct {
+	Page               string
+	Version            string
+	CallHistoryEnabled bool
+	HouseholdName      string
+	Calls              []calls.Call
+}
+
+func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
+	if !h.callHistoryEnabled(r) {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	var recent []calls.Call
+
+	// Scope call log to the user's household lines
+	user := auth.UserFromContext(r.Context())
+	if user != nil && h.lineStore != nil {
+		households, err := h.householdStore.GetForUser(user.ID)
+		if err != nil {
+			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if len(households) > 0 {
+			lines, err := h.lineStore.ListByHousehold(households[0].ID)
+			if err != nil {
+				slog.Error("list lines for household failed", "household_id", households[0].ID, "err", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if len(lines) > 0 {
+				numbers := make([]string, len(lines))
+				for i, l := range lines {
+					numbers[i] = l.Number
+				}
+				recentCalls, err := h.tracker.RecentForPhones(numbers, 100)
+				if err != nil {
+					slog.Error("query recent calls failed", "err", err)
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+					return
+				}
+				recent = recentCalls
+			}
+		}
+	}
+	if recent == nil {
+		recent = []calls.Call{}
+	}
+
+	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Calls: recent})
+}
+
+// ---- Settings ----
+
+type settingsData struct {
+	Page               string
+	Version            string
+	CallHistoryEnabled bool
+	HouseholdName      string
+	User               *auth.User
+	Household          *household.Household
+	Saved              bool
+}
+
+func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	var hh *household.Household
+	if user != nil {
+		households, _ := h.householdStore.GetForUser(user.ID)
+		if len(households) > 0 {
+			hh = households[0]
+		}
+	}
+	hhName := ""
+	if hh != nil {
+		hhName = hh.Name
+	}
+	renderWith(w, h.tmplSettings, "layout.html", settingsData{
+		Page:               "settings",
+		Version:            version.Version,
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdName:      hhName,
+		User:               user,
+		Household:          hh,
+		Saved:              r.URL.Query().Get("saved") == "1",
+	})
+}
+
+func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	households, _ := h.householdStore.GetForUser(user.ID)
+	if len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	r.ParseForm()
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name != "" {
+		h.householdStore.UpdateName(households[0].ID, name)
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+// ---- Links (Connected Families) ----
+
+type linksData struct {
+	Page            string
+	Version         string
+	CallHistoryEnabled bool
+	HouseholdName   string
+	LinkedFamilies  []linkedFamilyRow
+	PendingInvites  []linkRow
+	CreatedCode     string
+	Accepted        bool
+	Revoked         bool
+	Conflicts       string
+	Error           string
+}
+
+type linkedFamilyRow struct {
+	ID          string
+	Name        string
+	Lines       []line.Line
+	Status      string
+	AcceptedAt  *time.Time
+}
+
+type linkRow struct {
+	ID             string
+	OtherHousehold string
+	InviteCode     string
+	Status         string
+	CreatedAt      time.Time
+	AcceptedAt     *time.Time
+}
+
+func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	myHousehold := households[0]
+
+	data := linksData{
+		Page:               "links",
+		Version:            version.Version,
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdName:      myHousehold.Name,
+		CreatedCode:        r.URL.Query().Get("created"),
+		Accepted:           r.URL.Query().Get("accepted") == "1",
+		Revoked:            r.URL.Query().Get("revoked") == "1",
+		Conflicts:          r.URL.Query().Get("conflicts"),
+		Error:              r.URL.Query().Get("error"),
+	}
+
+	// Active links — build connected family directory
+	activeLinks, err := h.linkStore.GetLinkedHouseholds(myHousehold.ID)
+	if err != nil {
+		slog.Error("get linked households failed", "err", err)
+	}
+	for _, l := range activeLinks {
+		otherID := l.HouseholdAID
+		if otherID == myHousehold.ID && l.HouseholdBID != nil {
+			otherID = *l.HouseholdBID
+		}
+		otherName := otherID
+		if other, err := h.householdStore.GetByID(otherID); err == nil {
+			otherName = other.Name
+		}
+
+		// Look up the other household's lines
+		otherLines, err := h.lineStore.ListByHousehold(otherID)
+		if err != nil {
+			slog.Error("list lines for linked household failed", "household_id", otherID, "err", err)
+		}
+
+		data.LinkedFamilies = append(data.LinkedFamilies, linkedFamilyRow{
+			ID:         l.ID,
+			Name:       otherName,
+			Lines:      otherLines,
+			Status:     l.Status,
+			AcceptedAt: l.AcceptedAt,
+		})
+	}
+
+	// Pending invites sent by this household
+	pending, err := h.linkStore.GetPendingForHousehold(myHousehold.ID)
+	if err != nil {
+		slog.Error("get pending links failed", "err", err)
+	}
+	for _, l := range pending {
+		data.PendingInvites = append(data.PendingInvites, linkRow{
+			ID:         l.ID,
+			InviteCode: l.InviteCode,
+			Status:     l.Status,
+			CreatedAt:  l.CreatedAt,
+		})
+	}
+
+	renderWith(w, h.tmplLinks, "layout.html", data)
+}
+
+func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	myHousehold := households[0]
+
+	link, err := h.linkStore.CreateInvite(myHousehold.ID, user.ID)
+	if err != nil {
+		slog.Error("create invite failed", "err", err)
+		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	// Send email notification to the creating user with the invite code
+	if h.emailSender != nil && user.Email != "" {
+		subj, body := email.HouseholdInviteEmail(myHousehold.Name, link.InviteCode, h.baseURL)
+		if err := h.emailSender.Send(user.Email, subj, body); err != nil {
+			slog.Error("send invite email failed", "err", err)
+		}
+	}
+
+	http.Redirect(w, r, "/links?created="+link.InviteCode, http.StatusSeeOther)
+}
+
+func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	myHousehold := households[0]
+
+	r.ParseForm()
+	code := strings.TrimSpace(strings.ToUpper(r.FormValue("code")))
+	if code == "" {
+		http.Redirect(w, r, "/links?error=invite+code+required", http.StatusSeeOther)
+		return
+	}
+
+	link, err := h.linkStore.AcceptInvite(code, user.ID, myHousehold.ID)
+	if err != nil {
+		slog.Error("accept invite failed", "err", err)
+		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	// Check for number conflicts between the two households
+	bID := ""
+	if link.HouseholdBID != nil {
+		bID = *link.HouseholdBID
+	}
+	conflicts, _ := h.linkStore.FindNumberConflicts(link.HouseholdAID, bID)
+	if len(conflicts) > 0 {
+		var names []string
+		for _, c := range conflicts {
+			names = append(names, c.Number)
+		}
+		slog.Warn("number conflicts on link accept", "conflicts", names)
+		http.Redirect(w, r, "/links?accepted=1&conflicts="+strings.Join(names, ","), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/links?accepted=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := h.linkStore.RevokeLink(id, user.ID); err != nil {
+		slog.Error("revoke link failed", "link_id", id, "err", err)
+		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/links?revoked=1", http.StatusSeeOther)
+}
+
+// ---- Internal Stats ----
+
+func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
+	if h.adminSecret == "" || r.Header.Get("X-Admin-Secret") != h.adminSecret {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	lineCount := 0
+	if h.lineStore != nil {
+		lines, _ := h.lineStore.List()
+		lineCount = len(lines)
+	}
+
+	onlineCount := 0
+	if h.hub != nil {
+		onlineCount = len(h.hub.OnlineNumbers())
+	}
+
+	activeCallCount := 0
+	if h.tracker != nil {
+		activeCallCount = len(h.tracker.Active())
+	}
+
+	totalUsers := 0
+	if h.authStore != nil {
+		totalUsers, _ = h.authStore.CountUsers()
+	}
+
+	totalHouseholds := 0
+	if h.householdStore != nil {
+		totalHouseholds, _ = h.householdStore.CountHouseholds()
+	}
+
+	totalLinks := 0
+	if h.linkStore != nil {
+		totalLinks, _ = h.linkStore.CountActiveLinks()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"total_users":      totalUsers,
+		"total_households": totalHouseholds,
+		"total_lines":      lineCount,
+		"online_lines":     onlineCount,
+		"active_calls":     activeCallCount,
+		"total_links":      totalLinks,
+	})
+}
+
+// ---- API ----
+
+func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
+	lines, _ := h.lineStore.List()
+	online := h.hub.OnlineNumbers()
+	active := h.tracker.Active()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"total_lines":  len(lines),
+		"online_lines": len(online),
+		"active_calls": len(active),
+	})
+}
+
+func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
+	active := h.tracker.Active()
+	pairs := make([]activePair, len(active))
+	for i, a := range active {
+		pairs[i] = activePair{Caller: a.Caller, Callee: a.Callee}
+	}
+
+	// Return HTML for htmx, JSON for API clients
+	if isHTMX(r) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if len(pairs) == 0 {
+			fmt.Fprint(w, `<div class="px-4 py-8 text-center text-[#8b949e] text-sm">No active calls</div>`)
+			return
+		}
+		for _, p := range pairs {
+			fmt.Fprintf(w, `<div class="px-4 py-3 border-b border-[#21262d] last:border-0"><div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] animate-pulse shrink-0"></span><span class="font-mono text-sm text-[#e6edf3]">%s</span><span class="text-[#8b949e] text-xs">→</span><span class="font-mono text-sm text-[#e6edf3]">%s</span></div></div>`, template.HTMLEscapeString(p.Caller), template.HTMLEscapeString(p.Callee))
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pairs)
+}
+
+// ---- WebSocket ----
+
+func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
+	ws, err := h.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		slog.Error("websocket upgrade failed", "err", err)
+		return
+	}
+
+	// Wait for register message
+	ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_, data, err := ws.ReadMessage()
+	if err != nil {
+		slog.Error("websocket no register message", "err", err)
+		ws.Close()
+		return
+	}
+	ws.SetReadDeadline(time.Time{})
+
+	msg, err := signaling.ParseMessage(data)
+	if err != nil || msg.Type != signaling.TypeRegister || msg.Number == "" {
+		slog.Warn("invalid register message")
+		ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
+			Type:  signaling.TypeError,
+			Error: "must send register message first",
+		}))
+		ws.Close()
+		return
+	}
+
+	// If hardware ID is provided and pairing is enabled, check pairing status
+	if msg.HardwareID != "" && h.pairingStore != nil {
+		paired, err := h.pairingStore.IsPaired(msg.HardwareID)
+		if err != nil {
+			slog.Error("pairing check failed", "hardware_id", msg.HardwareID, "err", err)
+		}
+		if !paired {
+			code, err := h.pairingStore.GenerateCode(msg.HardwareID)
+			if err != nil {
+				slog.Error("generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
+			} else {
+				ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
+					Type:        signaling.TypePairingCode,
+					PairingCode: code,
+				}))
+			}
+		}
+	}
+
+	conn := &signaling.Conn{
+		WS:         ws,
+		HardwareID: msg.HardwareID,
+		Send:       make(chan []byte, 32),
+	}
+	h.hub.Register(msg.Number, conn)
+	number := msg.Number
+
+	// Write pump
+	go func() {
+		defer ws.Close()
+		for data := range conn.Send {
+			if err := ws.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				return
+			}
+			if err := ws.WriteMessage(websocket.TextMessage, data); err != nil {
+				slog.Error("websocket write failed", "number", number, "err", err)
+				return
+			}
+		}
+	}()
+
+	// Read pump (blocks until disconnect)
+	defer h.hub.Unregister(number, conn)
+	for {
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				slog.Error("websocket read failed", "number", number, "err", err)
+			}
+			break
+		}
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			slog.Warn("bad websocket message", "number", number, "err", err)
+			continue
+		}
+		h.relay.HandleMessage(number, msg)
+	}
+}
+
+// ---- Helpers ----
+
+func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
+	if h.householdStore == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	enabled := r.FormValue("enabled") == "true"
+	if err := h.householdStore.SetCallHistoryEnabled(households[0].ID, enabled); err != nil {
+		slog.Error("set call history failed", "err", err)
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+// householdContext returns the household name and call-history flag for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool) {
+	if h.householdStore == nil {
+		return "", false
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return "", false
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		return "", false
+	}
+	return households[0].Name, households[0].CallHistoryEnabled
+}
+
+func (h *Handler) callHistoryEnabled(r *http.Request) bool {
+	_, ch := h.householdContext(r)
+	return ch
+}
+
+func (h *Handler) householdNameFromContext(r *http.Request) string {
+	name, _ := h.householdContext(r)
+	return name
+}
+
+func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"version": version.Version,
+		"commit":  version.Commit,
+	})
+}
+
+func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, name, data); err != nil {
+		slog.Error("template render failed", "template", name, "err", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+func isHTMX(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
+func mustMarshal(msg *signaling.Message) []byte {
+	data, _ := msg.Marshal()
+	return data
+}
+

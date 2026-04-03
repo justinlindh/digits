@@ -1,0 +1,174 @@
+{{template "layout.html" .}}
+
+{{define "title"}}Lines{{end}}
+
+{{define "content"}}
+<div class="p-4 md:p-8">
+  <div class="mb-6 md:mb-8">
+    <h1 class="text-xl font-semibold text-[#e6edf3]">Lines</h1>
+    <p class="text-sm text-[#8b949e] mt-1">Manage your phone lines</p>
+  </div>
+
+  <!-- Pair a Device form -->
+  <div class="bg-[#161b22] border border-[#21262d] rounded-lg mb-6">
+    <div class="px-4 py-3 border-b border-[#21262d]">
+      <h2 class="text-sm font-medium text-[#e6edf3]">Pair a Device</h2>
+      <p class="text-xs text-[#8b949e] mt-0.5">Enter the 6-digit code from the handset</p>
+    </div>
+    <form method="POST" action="/phones/pair" class="p-4">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1.5">Pairing Code</label>
+          <input type="text"
+                 name="code"
+                 placeholder="123456"
+                 pattern="\d{6}"
+                 maxlength="6"
+                 required
+                 class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono text-center focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1.5">Line Number</label>
+          <input type="text"
+                 name="number"
+                 placeholder="3140001"
+                 pattern="\d{7}"
+                 maxlength="7"
+                 required
+                 class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1.5">Line Name</label>
+          <input type="text"
+                 name="name"
+                 placeholder="Kitchen Phone"
+                 required
+                 class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="submit"
+                class="w-full md:w-auto px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-sm rounded transition-colors">
+          Pair
+        </button>
+      </div>
+    </form>
+    {{if .PairError}}
+    <div class="mx-4 mb-4 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
+      {{.PairError}}
+    </div>
+    {{end}}
+  </div>
+
+  <!-- Lines list -->
+  {{template "phones-table" .}}
+</div>
+{{end}}
+
+{{define "phones-table"}}
+<div id="phones-table" class="bg-[#161b22] border border-[#21262d] rounded-lg">
+  <div class="px-4 py-3 border-b border-[#21262d] flex items-center justify-between">
+    <h2 class="text-sm font-medium text-[#e6edf3]">Your Lines</h2>
+    <span class="text-xs text-[#8b949e]">{{len .Lines}} total</span>
+  </div>
+  {{if .Lines}}
+  <!-- Desktop table -->
+  <div class="hidden md:block">
+    <table class="w-full">
+      <thead>
+        <tr class="border-b border-[#21262d]">
+          <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Number</th>
+          <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Label</th>
+          <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Status</th>
+          <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Added</th>
+          <th class="text-right px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-[#21262d]">
+        {{range .Lines}}
+        <tr class="hover:bg-[#1c2128] group">
+          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+          <td class="px-4 py-3 text-sm text-[#c9d1d9]"><a href="/phones/{{.Line.Number}}" class="hover:text-[#58a6ff] transition-colors">{{.Line.Name}}</a></td>
+          <td class="px-4 py-3">
+            {{if .Online}}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>online
+              </span>
+            {{else}}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+                <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>offline
+              </span>
+            {{end}}
+          </td>
+          <td class="px-4 py-3 text-xs text-[#8b949e]">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</td>
+          <td class="px-4 py-3 text-right">
+            <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML"
+                class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors">Edit</button>
+              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{.Line.Number}}?"
+                class="text-xs text-[#8b949e] hover:text-[#f85149] transition-colors">Delete</button>
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <!-- Mobile card list -->
+  <div class="md:hidden divide-y divide-[#21262d]">
+    {{range .Lines}}
+    <a href="/phones/{{.Line.Number}}" class="block px-4 py-3 hover:bg-[#1c2128] transition-colors">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
+          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{.Line.Number}}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          {{if .Online}}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>on
+            </span>
+          {{else}}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>off
+            </span>
+          {{end}}
+          <svg class="w-4 h-4 text-[#484f58]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+          </svg>
+        </div>
+      </div>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <div class="px-4 py-12 text-center">
+    <svg class="w-8 h-8 text-[#484f58] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+    </svg>
+    <p class="text-sm text-[#8b949e]">No lines registered</p>
+    <p class="text-xs text-[#484f58] mt-1">Pair a device above to get started</p>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "phone-edit-row"}}
+<tr>
+  <td class="px-4 py-2 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+  <td class="px-4 py-2" colspan="3">
+    <form hx-post="/phones/{{.Line.Number}}/edit"
+          hx-target="#phones-table"
+          hx-swap="outerHTML"
+          class="flex gap-2">
+      <input type="text"
+             name="name"
+             value="{{.Line.Name}}"
+             class="bg-[#0d1117] border border-[#58a6ff] rounded px-2 py-1 text-sm text-[#e6edf3] focus:outline-none w-48">
+      <button type="submit" class="text-xs px-3 py-1 bg-[#238636] hover:bg-[#2ea043] text-white rounded transition-colors">Save</button>
+      <a href="/phones" class="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#2d333b] text-[#c9d1d9] rounded transition-colors">Cancel</a>
+    </form>
+  </td>
+  <td></td>
+</tr>
+{{end}}

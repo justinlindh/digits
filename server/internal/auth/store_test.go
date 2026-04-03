@@ -1,0 +1,297 @@
+package auth
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"github.com/justinlindh/digits/server/internal/db"
+)
+
+// testDB creates a Store connected to the test database, running migrations first.
+// Tests are skipped if TEST_DATABASE_URL is not set.
+func testDB(t *testing.T) *Store {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set — skipping DB tests")
+	}
+	// Use db.Open to ensure migrations run (creates tables)
+	database, err := db.Open(dsn)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	s := NewStoreFromDB(database.DB)
+	t.Cleanup(func() {
+		database.DB.Exec("DELETE FROM sessions")
+		database.DB.Exec("DELETE FROM magic_links")
+		database.DB.Exec("DELETE FROM users")
+		database.Close()
+	})
+	return s
+}
+
+func TestCreateAndGetUser(t *testing.T) {
+	s := testDB(t)
+
+	u, err := s.CreateUser("test@example.com", "Test User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if u.Email != "test@example.com" {
+		t.Errorf("email = %q, want test@example.com", u.Email)
+	}
+	if u.Name != "Test User" {
+		t.Errorf("name = %q, want Test User", u.Name)
+	}
+	if u.ID == "" {
+		t.Error("ID should not be empty")
+	}
+	if u.GoogleID != nil {
+		t.Errorf("GoogleID should be nil, got %v", u.GoogleID)
+	}
+
+	// GetUserByEmail
+	got, err := s.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	if got.ID != u.ID {
+		t.Errorf("ID mismatch: got %s, want %s", got.ID, u.ID)
+	}
+
+	// GetUserByID
+	got2, err := s.GetUserByID(u.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got2.Email != u.Email {
+		t.Errorf("email mismatch via ID lookup")
+	}
+}
+
+func TestGetUserByEmail_NotFound(t *testing.T) {
+	s := testDB(t)
+	_, err := s.GetUserByEmail("nobody@example.com")
+	if err == nil {
+		t.Error("expected error for missing user, got nil")
+	}
+}
+
+func TestCreateUserWithGoogleID(t *testing.T) {
+	s := testDB(t)
+	gid := "google-sub-123"
+	u, err := s.CreateUser("google@example.com", "Google User", &gid)
+	if err != nil {
+		t.Fatalf("CreateUser with GoogleID: %v", err)
+	}
+	if u.GoogleID == nil || *u.GoogleID != gid {
+		t.Errorf("GoogleID = %v, want %q", u.GoogleID, gid)
+	}
+
+	// GetUserByGoogleID
+	got, err := s.GetUserByGoogleID(gid)
+	if err != nil {
+		t.Fatalf("GetUserByGoogleID: %v", err)
+	}
+	if got.ID != u.ID {
+		t.Errorf("ID mismatch via google lookup")
+	}
+}
+
+func TestLinkGoogleID(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("link@example.com", "Link User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if err := s.LinkGoogleID(u.ID, "new-google-id"); err != nil {
+		t.Fatalf("LinkGoogleID: %v", err)
+	}
+
+	got, err := s.GetUserByGoogleID("new-google-id")
+	if err != nil {
+		t.Fatalf("GetUserByGoogleID after link: %v", err)
+	}
+	if got.ID != u.ID {
+		t.Errorf("ID mismatch after linking google ID")
+	}
+}
+
+func TestUpdateLastLogin(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("login@example.com", "Login User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	if err := s.UpdateLastLogin(u.ID); err != nil {
+		t.Fatalf("UpdateLastLogin: %v", err)
+	}
+
+	got, err := s.GetUserByID(u.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.LastLoginAt == nil {
+		t.Error("LastLoginAt should be set after UpdateLastLogin")
+	}
+}
+
+func TestCreateAndValidateSession(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("session@test.com", "Session User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	token, sess, err := s.CreateSession(u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if token == "" {
+		t.Error("token should not be empty")
+	}
+	if sess.UserID != u.ID {
+		t.Errorf("session UserID = %s, want %s", sess.UserID, u.ID)
+	}
+	if sess.ID == "" {
+		t.Error("session ID should not be empty")
+	}
+
+	// Validate the session
+	got, err := s.ValidateSession(token)
+	if err != nil {
+		t.Fatalf("ValidateSession: %v", err)
+	}
+	if got.UserID != u.ID {
+		t.Errorf("validated session user mismatch")
+	}
+	if got.ID != sess.ID {
+		t.Errorf("validated session ID mismatch")
+	}
+}
+
+func TestValidateSession_Invalid(t *testing.T) {
+	s := testDB(t)
+	_, err := s.ValidateSession("totally-fake-token")
+	if err == nil {
+		t.Error("expected error for invalid token, got nil")
+	}
+}
+
+func TestDeleteSession(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("delete@test.com", "Delete User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	token, _, err := s.CreateSession(u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := s.DeleteSession(token); err != nil {
+		t.Fatalf("DeleteSession: %v", err)
+	}
+
+	_, err = s.ValidateSession(token)
+	if err == nil {
+		t.Error("session should be invalid after deletion")
+	}
+}
+
+func TestRefreshSession(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("refresh@test.com", "Refresh User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	token, sess, err := s.CreateSession(u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	originalExpiry := sess.ExpiresAt
+
+	if err := s.RefreshSession(token, 48*time.Hour); err != nil {
+		t.Fatalf("RefreshSession: %v", err)
+	}
+
+	got, err := s.ValidateSession(token)
+	if err != nil {
+		t.Fatalf("ValidateSession after refresh: %v", err)
+	}
+	if !got.ExpiresAt.After(originalExpiry) {
+		t.Errorf("refreshed expiry %v should be after original %v", got.ExpiresAt, originalExpiry)
+	}
+}
+
+func TestCreateAndValidateMagicLink(t *testing.T) {
+	s := testDB(t)
+
+	token, err := s.CreateMagicLink("magic@test.com", 15*time.Minute)
+	if err != nil {
+		t.Fatalf("CreateMagicLink: %v", err)
+	}
+	if token == "" {
+		t.Error("magic link token should not be empty")
+	}
+
+	// First use should succeed
+	email, err := s.ValidateMagicLink(token)
+	if err != nil {
+		t.Fatalf("ValidateMagicLink: %v", err)
+	}
+	if email != "magic@test.com" {
+		t.Errorf("email = %q, want magic@test.com", email)
+	}
+
+	// Second use should fail (single-use enforcement)
+	_, err = s.ValidateMagicLink(token)
+	if err == nil {
+		t.Error("expected error on reuse of magic link, got nil")
+	}
+}
+
+func TestValidateMagicLink_InvalidToken(t *testing.T) {
+	s := testDB(t)
+	_, err := s.ValidateMagicLink("fake-magic-token")
+	if err == nil {
+		t.Error("expected error for invalid magic link token, got nil")
+	}
+}
+
+func TestCleanupExpired(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser("cleanup@test.com", "Cleanup User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	// Create a session and then force-expire it
+	token, _, err := s.CreateSession(u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	hash := hashToken(token)
+	s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
+
+	// Create a magic link and force-expire it
+	mlToken, err := s.CreateMagicLink("cleanup@test.com", 15*time.Minute)
+	if err != nil {
+		t.Fatalf("CreateMagicLink: %v", err)
+	}
+	mlHash := hashToken(mlToken)
+	s.db.Exec(`UPDATE magic_links SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, mlHash)
+
+	if err := s.CleanupExpired(); err != nil {
+		t.Fatalf("CleanupExpired: %v", err)
+	}
+
+	// Session should be gone (validate returns error)
+	_, err = s.ValidateSession(token)
+	if err == nil {
+		t.Error("expired session should be invalid after cleanup")
+	}
+}

@@ -1,0 +1,8 @@
+bin/
+/signald
+*.db
+/admind
+.env.prod
+.env.prod.bak
+.env.local
+scripts/deploy.sh

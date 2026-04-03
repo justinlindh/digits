@@ -1,0 +1,69 @@
+#!/bin/bash
+# digits-ap-check: Run at boot to decide between AP mode and normal Wi-Fi mode.
+# Called by digits-ap-check.service (Before=network-pre.target).
+#
+# NOTE: Root filesystem is read-only. Use systemctl start/stop only, never enable/disable.
+
+set -euo pipefail
+
+WIFI_CONFIGURED_FLAG="/data/wifi-configured"
+NM_CONN_SRC="/data/wifi/digits-wifi.nmconnection"
+NM_CONN_DST="/etc/NetworkManager/system-connections/digits-wifi.nmconnection"
+LOG_TAG="digits-ap-check"
+
+log() {
+    echo "$LOG_TAG: $*" | tee /dev/kmsg 2>/dev/null || true
+    logger -t "$LOG_TAG" "$*" 2>/dev/null || true
+}
+
+if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+    log "Wi-Fi configured — starting normal boot"
+
+    # Stop AP services
+    systemctl stop digits-ap.service digits-dnsmasq-ap.service digits-setup.service 2>/dev/null || true
+
+    # Unblock WiFi radio
+    rfkill unblock wifi || true
+
+    # Copy NM connection to where NetworkManager expects it.
+    # /etc is on ro root, so we need a tmpfs or remount. Use a tmpfs bind mount.
+    if [ -f "$NM_CONN_SRC" ]; then
+        # Remount rw briefly to copy the connection file
+        mount -o remount,rw / 2>/dev/null || true
+        cp "$NM_CONN_SRC" "$NM_CONN_DST" 2>/dev/null || true
+        chmod 600 "$NM_CONN_DST" 2>/dev/null || true
+        mount -o remount,ro / 2>/dev/null || true
+        log "Copied NM connection file"
+    else
+        log "WARNING: No NM connection file found at $NM_CONN_SRC"
+    fi
+
+    # Let NetworkManager handle everything (wpa_supplicant runs under NM via D-Bus)
+    log "Wi-Fi client mode — NetworkManager will connect"
+else
+    log "Wi-Fi not configured — entering AP mode"
+
+    # Kill NetworkManager — it fights hostapd for wlan0 and re-blocks rfkill
+    systemctl stop NetworkManager.service 2>/dev/null || true
+
+    # Stop wpa_supplicant so it doesn't fight hostapd
+    systemctl stop "wpa_supplicant@wlan0.service" 2>/dev/null || true
+    systemctl stop wpa_supplicant.service 2>/dev/null || true
+
+    # Unblock WiFi radio
+    rfkill unblock wifi || true
+    sleep 1
+
+    # Configure wlan0 with static IP for AP mode
+    /usr/local/bin/digits-ap-setup
+
+    # Stop digitsd in AP mode
+    systemctl stop digitsd.service 2>/dev/null || true
+
+    # Start AP services (--no-block to avoid deadlock with network.target)
+    systemctl start --no-block digits-ap.service
+    systemctl start --no-block digits-dnsmasq-ap.service
+    systemctl start --no-block digits-setup.service
+
+    log "AP mode started — SSID: $(grep '^ssid=' /etc/hostapd/digits-ap.conf | cut -d= -f2)"
+fi

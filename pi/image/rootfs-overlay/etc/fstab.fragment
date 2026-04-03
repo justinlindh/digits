@@ -1,0 +1,37 @@
+# fstab.fragment — Append these lines to /etc/fstab on the Pi rootfs
+#
+# IMPORTANT: Replace PARTUUID values with actual PARTUUIDs from your image.
+# Get them via: blkid /dev/mmcblk0p1 /dev/mmcblk0p2 /dev/mmcblk0p3
+#
+# The image builder (build-image.sh) will substitute these automatically.
+# If applying manually:
+#   sudo blkid /dev/mmcblk0p3   # note PARTUUID for p3
+#   Edit /etc/fstab, replace PARTUUID-OF-P1, PARTUUID-OF-P2, PARTUUID-OF-P3
+#
+# NOTE: Do NOT use raspi-config overlay — it has a Bookworm bug that makes
+#       all partitions read-only. We use kernel cmdline `ro` + bind mounts.
+
+# ── Boot partition (read-only) ────────────────────────────────────────────────
+PARTUUID=PARTUUID-OF-P1  /boot/firmware  vfat    defaults,ro,noatime               0  2
+
+# ── Root filesystem (read-only) ───────────────────────────────────────────────
+PARTUUID=PARTUUID-OF-P2  /               ext4    defaults,ro,noatime               0  1
+
+# ── Writable data partition (journaled ext4) ──────────────────────────────────
+PARTUUID=PARTUUID-OF-P3  /data           ext4    defaults,rw,noatime,x-systemd.automount  0  2
+
+# ── Bind mounts from /data to expected locations ─────────────────────────────
+# These are ordered after /data — systemd respects mount ordering via After=
+# See also: etc/systemd/system/data-*.mount for explicit unit files
+#
+# /var/log → /data/log
+/data/log  /var/log  none  bind,x-systemd.requires=/data  0  0
+
+# /tmp → /data/tmp
+/data/tmp  /tmp      none  bind,x-systemd.requires=/data  0  0
+
+# /etc/ssh → /data/ssh
+/data/ssh  /etc/ssh  none  bind,x-systemd.requires=/data  0  0
+
+# /home/digits → /data/digits
+/data/digits  /home/digits  none  bind,x-systemd.requires=/data  0  0

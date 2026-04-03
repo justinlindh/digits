@@ -1,0 +1,114 @@
+services:
+  signald:
+    build: .
+    restart: unless-stopped
+    environment:
+      SIGNALD_ADDR: ":8080"
+      DATABASE_URL: "postgres://digits:digits@user-db:5432/digits?sslmode=disable"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASS: "${SMTP_PASS:-}"
+      SMTP_FROM: "${SMTP_FROM:-noreply@digits.family}"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+      GOOGLE_REDIRECT_URL: "${GOOGLE_REDIRECT_URL:-https://localhost:8443/auth/google/callback}"
+      BASE_URL: "${BASE_URL:-https://localhost:8443}"
+      ADMIN_SECRET: "${ADMIN_SECRET}"
+      DEV_MODE: "${DEV_MODE:-false}"
+      LOG_FORMAT: "${LOG_FORMAT:-text}"
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      user-db:
+        condition: service_healthy
+
+  admind:
+    build:
+      context: .
+      dockerfile: cmd/admind/Dockerfile
+    restart: unless-stopped
+    environment:
+      ADMIN_ADDR: ":9090"
+      ADMIN_DATABASE_URL: "postgres://digits_admin:digits_admin@admin-db:5432/digits_admin?sslmode=disable"
+      ADMIN_STATS_URL: "http://signald:8080/internal/stats"
+      ADMIN_STATS_SECRET: "${ADMIN_SECRET}"
+      ADMIN_INITIAL_USER: "${ADMIN_INITIAL_USER:-admin}"
+      ADMIN_INITIAL_SECRET: "${ADMIN_INITIAL_SECRET:-}"
+      LOG_FORMAT: "${LOG_FORMAT:-text}"
+    expose:
+      - "9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:9090/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      admin-db:
+        condition: service_healthy
+      signald:
+        condition: service_started
+
+  user-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: digits
+      POSTGRES_USER: digits
+      POSTGRES_PASSWORD: digits
+    volumes:
+      - user_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digits"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  admin-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: digits_admin
+      POSTGRES_USER: digits_admin
+      POSTGRES_PASSWORD: digits_admin
+    volumes:
+      - admin_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digits_admin"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - signald
+      - admind
+
+  smtp4dev:
+    image: rnwood/smtp4dev:v3
+    restart: unless-stopped
+    ports:
+      - "5000:80"
+    expose:
+      - "25"
+    profiles:
+      - dev
+
+volumes:
+  user_pgdata:
+  admin_pgdata:
+  caddy_data:
+  caddy_config:

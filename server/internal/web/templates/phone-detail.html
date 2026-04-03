@@ -1,0 +1,371 @@
+{{template "layout.html" .}}
+
+{{define "title"}}{{.Line.Name}} — Line Detail{{end}}
+
+{{define "content"}}
+<div class="p-4 md:p-8">
+  <div class="mb-6">
+    <a href="/phones" class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors flex items-center gap-1 mb-4">
+      <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+      Back to Lines
+    </a>
+    <div class="flex items-center gap-3">
+      <h1 class="text-xl font-semibold text-[#e6edf3]">{{.Line.Name}}</h1>
+      {{if .Online}}
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
+          online
+        </span>
+      {{else}}
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
+          offline
+        </span>
+      {{end}}
+    </div>
+    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+    <!-- Line details card -->
+    <div class="bg-[#161b22] border border-[#21262d] rounded-lg md:row-span-2">
+      <div class="px-4 py-3 border-b border-[#21262d]">
+        <h2 class="text-sm font-medium text-[#e6edf3]">Details</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Line Number</label>
+          <span class="text-sm font-mono text-[#e6edf3]">{{.Line.Number}}</span>
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Line Name</label>
+          <span class="text-sm text-[#e6edf3]">{{.Line.Name}}</span>
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Added</label>
+          <span class="text-sm text-[#c9d1d9]">{{.Line.CreatedAt.Format "January 2, 2006"}}</span>
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Status</label>
+          {{if .Online}}
+            <span class="text-sm text-[#3fb950]">Online</span>
+          {{else}}
+            <span class="text-sm text-[#8b949e]">Offline</span>
+          {{end}}
+        </div>
+        {{if .Devices}}
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Devices</label>
+          <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
+        </div>
+        {{end}}
+        <div class="pt-2 border-t border-[#21262d]">
+          <form method="POST" action="/phones/{{.Line.Number}}/delete"
+                onsubmit="return confirm('Delete line {{.Line.Name}} ({{.Line.Number}})? This cannot be undone.')">
+            <button type="submit"
+                    class="px-4 py-2 bg-[#3a1a1a] hover:bg-[#4a2020] border border-[#6a2020] text-[#f85149] text-sm rounded transition-colors">
+              Delete Line
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hardware & Software card -->
+    <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
+      <div class="px-4 py-3 border-b border-[#21262d]">
+        <h2 class="text-sm font-medium text-[#e6edf3]">Hardware & Software</h2>
+      </div>
+      <div class="p-4 space-y-4">
+        {{if .DeviceInfo}}
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs text-[#8b949e] mb-1">Pi Software</label>
+            <span class="text-sm font-mono text-[#e6edf3]">{{if .DeviceInfo.PiVersion}}{{.DeviceInfo.PiVersion}}{{else}}<span class="text-[#484f58] italic">unknown</span>{{end}}</span>
+            {{if .DeviceInfo.PiCommit}}
+            <span class="text-xs font-mono text-[#484f58] ml-1">({{.DeviceInfo.PiCommit}})</span>
+            {{end}}
+            {{if and .LatestPiVersion (ne .DeviceInfo.PiVersion .LatestPiVersion)}}
+            <div class="mt-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#2a1f0b] text-[#d29922] border border-[#d29922]/30">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3l9.5 16.5H2.5L12 3z"/></svg>
+                {{.LatestPiVersion}} available
+              </span>
+            </div>
+            {{else if .LatestPiVersion}}
+            <div class="mt-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                up to date
+              </span>
+            </div>
+            {{end}}
+          </div>
+          <div>
+            <label class="block text-xs text-[#8b949e] mb-1">Firmware</label>
+            <span class="text-sm font-mono text-[#e6edf3]">{{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="text-[#484f58] italic">unknown</span>{{end}}</span>
+            {{if .DeviceInfo.FirmwareCommit}}
+            <span class="text-xs font-mono text-[#484f58] ml-1">({{.DeviceInfo.FirmwareCommit}})</span>
+            {{end}}
+            {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
+            <div class="mt-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#2a1f0b] text-[#d29922] border border-[#d29922]/30">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M12 3l9.5 16.5H2.5L12 3z"/></svg>
+                {{.LatestFirmwareVersion}} available
+              </span>
+            </div>
+            {{else if .LatestFirmwareVersion}}
+            <div class="mt-1">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+                <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                up to date
+              </span>
+            </div>
+            {{end}}
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs text-[#8b949e] mb-1">Last Check-in</label>
+          <span class="text-sm text-[#c9d1d9]">{{.DeviceInfo.LastSeen.Format "Jan 2, 2006 3:04 PM"}}</span>
+        </div>
+        {{if .Online}}
+        <!-- Version picker -->
+        <div class="pt-3 border-t border-[#21262d]" id="version-picker">
+          <button onclick="document.getElementById('version-panel').classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')" type="button"
+                  class="w-full flex items-center justify-between px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm rounded transition-colors">
+            <span>Update Device</span>
+            <svg class="w-4 h-4 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+
+          <div id="version-panel" class="hidden mt-3 space-y-4">
+            {{if or .PiReleases .FWReleases}}
+            <div id="update-form">
+              <!-- Pi Software versions -->
+              {{if .PiReleases}}
+              <div class="mb-4">
+                <label class="block text-xs font-medium text-[#8b949e] mb-2">Pi Software Version</label>
+                <div class="space-y-1 max-h-48 overflow-y-auto">
+                  {{range .PiReleases}}
+                  <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border border-transparent">
+                    <input type="radio" name="target_pi_version" value="{{.Version}}"
+                           {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}checked{{end}}{{end}}
+                           onchange="highlightVersion(this)" class="accent-[#1f6feb]">
+                    <div class="flex-1 flex items-center gap-2">
+                      <span class="text-sm font-mono text-[#e6edf3]">{{.Version}}</span>
+                      {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/30">latest</span>
+                      {{end}}{{end}}
+                      {{if $.DeviceInfo.PiVersion}}{{if eq .Version $.DeviceInfo.PiVersion}}
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a3a25] text-[#3fb950] border border-[#3fb950]/30">installed</span>
+                      {{end}}{{end}}
+                    </div>
+                    {{if .Date}}
+                    <span class="text-xs text-[#484f58]">{{.Date}}</span>
+                    {{end}}
+                  </label>
+                  {{end}}
+                </div>
+              </div>
+              {{end}}
+
+              <!-- Firmware versions -->
+              {{if .FWReleases}}
+              <div class="mb-4">
+                <label class="block text-xs font-medium text-[#8b949e] mb-2">Firmware Version</label>
+                <div class="space-y-1 max-h-48 overflow-y-auto">
+                  {{range .FWReleases}}
+                  <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border border-transparent">
+                    <input type="radio" name="target_fw_version" value="{{.Version}}"
+                           {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}checked{{end}}{{end}}
+                           onchange="highlightVersion(this)" class="accent-[#1f6feb]">
+                    <div class="flex-1 flex items-center gap-2">
+                      <span class="text-sm font-mono text-[#e6edf3]">{{.Version}}</span>
+                      {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/30">latest</span>
+                      {{end}}{{end}}
+                      {{if $.DeviceInfo.FirmwareVersion}}{{if eq .Version $.DeviceInfo.FirmwareVersion}}
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a3a25] text-[#3fb950] border border-[#3fb950]/30">installed</span>
+                      {{end}}{{end}}
+                    </div>
+                    {{if .Date}}
+                    <span class="text-xs text-[#484f58]">{{.Date}}</span>
+                    {{end}}
+                  </label>
+                  {{end}}
+                </div>
+              </div>
+              {{end}}
+
+              <button type="button" id="install-btn" onclick="triggerUpdate()"
+                      class="w-full px-4 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded transition-colors">
+                Install Selected Versions
+              </button>
+              <!-- Update progress indicator -->
+              <div id="update-progress" class="hidden mt-3">
+                <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
+                  <div id="progress-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
+                  <span id="progress-text" class="text-sm text-[#c9d1d9]">Sending update command...</span>
+                </div>
+              </div>
+            </div>
+            {{else}}
+            <p class="text-sm text-[#8b949e]">No releases available in the release index.</p>
+            <button type="button" onclick="triggerUpdate()" class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+              Check for Updates
+            </button>
+            {{end}}
+          </div>
+        </div>
+        <script>
+        var phoneNumber = '{{$.Line.Number}}';
+        var pollTimer = null;
+
+        function highlightVersion(radio) {
+          var name = radio.name;
+          document.querySelectorAll('input[name="' + name + '"]').forEach(function(r) {
+            var label = r.closest('.version-option');
+            if (r.checked) {
+              label.classList.remove('border-transparent');
+              label.classList.add('bg-[#1f6feb]/10', 'border-[#1f6feb]/40');
+            } else {
+              label.classList.add('border-transparent');
+              label.classList.remove('bg-[#1f6feb]/10', 'border-[#1f6feb]/40');
+            }
+          });
+        }
+        document.querySelectorAll('.version-option input:checked').forEach(highlightVersion);
+
+        function triggerUpdate() {
+          var btn = document.getElementById('install-btn');
+          var progress = document.getElementById('update-progress');
+          var progressText = document.getElementById('progress-text');
+          var spinner = document.getElementById('progress-spinner');
+          if (btn) btn.disabled = true;
+          if (btn) btn.classList.add('opacity-50', 'cursor-not-allowed');
+          if (progress) progress.classList.remove('hidden');
+          if (progressText) progressText.textContent = 'Sending update command...';
+
+          var piRadio = document.querySelector('input[name="target_pi_version"]:checked');
+          var fwRadio = document.querySelector('input[name="target_fw_version"]:checked');
+          var body = new URLSearchParams();
+          if (piRadio) body.append('target_pi_version', piRadio.value);
+          if (fwRadio) body.append('target_fw_version', fwRadio.value);
+
+          fetch('/phones/' + phoneNumber + '/update', {
+            method: 'POST',
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (data.error) {
+              showResult('failed', 'Failed to send: ' + data.error);
+              return;
+            }
+            if (progressText) progressText.textContent = 'Update triggered — waiting for device...';
+            startPolling();
+          })
+          .catch(function(err) {
+            showResult('failed', 'Network error: ' + err.message);
+          });
+        }
+
+        function startPolling() {
+          if (pollTimer) clearInterval(pollTimer);
+          var attempts = 0;
+          pollTimer = setInterval(function() {
+            attempts++;
+            if (attempts > 120) { // 2 minutes max
+              clearInterval(pollTimer);
+              showResult('failed', 'Timed out waiting for update status');
+              return;
+            }
+            fetch('/phones/' + phoneNumber + '/update-status')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (!data.status) return; // no status yet
+              var progressText = document.getElementById('progress-text');
+              var spinner = document.getElementById('progress-spinner');
+              switch (data.status) {
+                case 'downloading':
+                  if (progressText) progressText.textContent = 'Downloading update... ' + (data.detail || '');
+                  break;
+                case 'applying':
+                  if (progressText) progressText.textContent = 'Applying update... ' + (data.detail || '');
+                  break;
+                case 'rebooting':
+                  if (progressText) progressText.textContent = 'Rebooting device...';
+                  break;
+                case 'success':
+                  clearInterval(pollTimer);
+                  showResult('success', data.detail || 'Update installed successfully');
+                  // Reload page after a moment to show new version info
+                  setTimeout(function() { location.reload(); }, 2000);
+                  break;
+                case 'up_to_date':
+                  clearInterval(pollTimer);
+                  showResult('success', data.detail || 'Already up to date');
+                  break;
+                case 'failed':
+                  clearInterval(pollTimer);
+                  showResult('failed', data.detail || 'Update failed');
+                  break;
+              }
+            })
+            .catch(function() {}); // ignore poll errors
+          }, 1000);
+        }
+
+        function showResult(type, message) {
+          var progress = document.getElementById('update-progress');
+          var spinner = document.getElementById('progress-spinner');
+          var progressText = document.getElementById('progress-text');
+          var btn = document.getElementById('install-btn');
+          if (spinner) spinner.classList.add('hidden');
+          if (progress) progress.classList.remove('hidden');
+          if (type === 'success') {
+            if (progressText) {
+              progressText.textContent = message;
+              progressText.className = 'text-sm text-[#3fb950]';
+            }
+            if (progress) progress.querySelector('div').classList.add('border-[#3fb950]/30');
+          } else {
+            if (progressText) {
+              progressText.textContent = message;
+              progressText.className = 'text-sm text-[#f85149]';
+            }
+            if (progress) progress.querySelector('div').classList.add('border-[#f85149]/30');
+            // Re-enable button on failure
+            if (btn) btn.disabled = false;
+            if (btn) btn.classList.remove('opacity-50', 'cursor-not-allowed');
+          }
+        }
+        </script>
+        {{end}}
+        {{else}}
+          {{if .Online}}
+          <p class="text-sm text-[#8b949e]">Waiting for version report...</p>
+          <p class="text-xs text-[#484f58]">Device is online but hasn't reported version info yet.</p>
+          <div class="pt-3 border-t border-[#21262d]">
+            <form method="POST" action="/phones/{{.Line.Number}}/update">
+              <button type="submit"
+                      class="px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm rounded transition-colors">
+                Check for Updates
+              </button>
+            </form>
+          </div>
+          {{else}}
+          <p class="text-sm text-[#8b949e]">Device is offline</p>
+          <p class="text-xs text-[#484f58]">Version info is available when the device is connected.</p>
+          {{end}}
+        {{end}}
+      </div>
+    </div>
+
+  </div>
+</div>
+{{end}}

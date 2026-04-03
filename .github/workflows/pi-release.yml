@@ -1,0 +1,90 @@
+name: Pi Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no publish)"
+        required: false
+        default: "false"
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "pi/**"
+      - ".github/workflows/pi-release.yml"
+      - "pi/.releaserc.cjs"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: pi/digitsd/go.sum
+
+      - name: Install aarch64 cross-compiler and libraries
+        run: |
+          sudo dpkg --add-architecture arm64
+          # Pin existing Ubuntu sources to amd64 only
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo sed -i 's/^Architectures:.*/Architectures: amd64/' /etc/apt/sources.list.d/ubuntu.sources
+            grep -q '^Architectures:' /etc/apt/sources.list.d/ubuntu.sources || \
+              sudo sed -i '/^Types:/a Architectures: amd64' /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          # Add arm64 package sources
+          printf 'Types: deb\nURIs: http://ports.ubuntu.com/\nSuites: %s %s-updates\nComponents: main restricted universe\nArchitectures: arm64\n' \
+            "$(lsb_release -cs)" "$(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/arm64.sources
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libopus-dev:arm64 libopusfile-dev:arm64 pkg-config
+
+      - name: Install semantic-release
+        run: |
+          npm install --no-save \
+            semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/exec \
+            @semantic-release/github
+
+      - name: Run semantic-release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx semantic-release --extends ./pi/.releaserc.cjs --dry-run
+          else
+            npx semantic-release --extends ./pi/.releaserc.cjs
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release index
+        if: success()
+        run: |
+          VERSION=$(git tag --sort=-creatordate | grep '^pi/v' | head -1 | sed 's|^pi/v||')
+          if [ -z "$VERSION" ] || [ ! -f "artifacts/digitsd-${VERSION}-aarch64.sha256" ]; then
+            echo "No new release or no artifacts, skipping index update"
+            exit 0
+          fi
+          COMMIT=$(git rev-parse --short HEAD)
+          SHA256=$(cat "artifacts/digitsd-${VERSION}-aarch64.sha256")
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/pi/v${VERSION}/digitsd-${VERSION}-aarch64"
+          bash tools/update-releases-json.sh pi "$VERSION" "$COMMIT" "$SHA256" "$DOWNLOAD_URL"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/releases.json
+          git commit -m "ci: update releases.json for pi/v${VERSION} [skip ci]" || true
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

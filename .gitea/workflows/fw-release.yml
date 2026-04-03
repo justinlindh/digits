@@ -1,0 +1,105 @@
+name: Firmware Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no publish)"
+        required: false
+        default: "false"
+        type: boolean
+  push:
+    branches: [main]
+    paths:
+      - "firmware/**"
+      - ".gitea/workflows/fw-release.yml"
+      - "firmware/.releaserc-full.cjs"
+      - "firmware/.releaserc-tagonly.cjs"
+
+jobs:
+  release:
+    runs-on: linux
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate release prerequisites
+        run: |
+          if [ -z "$GITEA_TOKEN" ]; then
+            echo "::error::GITEA_TOKEN secret is not set"
+            exit 1
+          fi
+          echo "Prerequisites OK"
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+
+      - name: Install semantic-release
+        run: |
+          npm install --no-save \
+            semantic-release \
+            @semantic-release/commit-analyzer \
+            @semantic-release/release-notes-generator \
+            @semantic-release/exec \
+            @saithodev/semantic-release-gitea
+
+      - name: Run semantic-release
+        run: |
+          # Check if we can actually build firmware
+          CAN_BUILD=false
+          if command -v arm-none-eabi-gcc >/dev/null 2>&1 && command -v cmake >/dev/null 2>&1; then
+            CAN_BUILD=true
+          fi
+
+          if [ "$CAN_BUILD" = "true" ]; then
+            echo "Build toolchain available — running full release with firmware build"
+            RELEASERC="./.releaserc-full.cjs"
+          else
+            echo "::warning::Build toolchain not available — tag-only release"
+            RELEASERC="./.releaserc-tagonly.cjs"
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npx semantic-release --extends "$RELEASERC" --dry-run
+          else
+            npx semantic-release --extends "$RELEASERC"
+          fi
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GITEA_URL: ${{ vars.GITEA_URL }}
+
+      - name: Update release index
+        if: success()
+        run: |
+          VERSION=$(git tag --sort=-creatordate | grep '^fw/v' | head -1 | sed 's|^fw/v||')
+          if [ -z "$VERSION" ]; then
+            echo "No fw/v tag found, skipping index update"
+            exit 0
+          fi
+          COMMIT=$(git rev-parse --short HEAD)
+          SHA256=$(cat "artifacts/firmware-${VERSION}.elf.sha256" 2>/dev/null || echo "")
+          if [ -z "$SHA256" ]; then
+            echo "No SHA256 found, skipping index update"
+            exit 0
+          fi
+          bash tools/update-releases-json.sh firmware "$VERSION" "$COMMIT" "$SHA256"
+          # Deploy updated releases.json and firmware binary to server
+          CONTAINER="${DEPLOY_CONTAINER:-digits-prod-signald-1}"
+          docker cp artifacts/releases.json "$CONTAINER":/data/updates/releases.json
+          docker cp "artifacts/firmware-${VERSION}.elf" "$CONTAINER":/data/updates/firmware.elf
+          git config user.name "Digits CI"
+          git config user.email "ci@digits.family"
+          git add artifacts/releases.json
+          git commit -m "ci: update releases.json for fw/v${VERSION} [skip ci]" || true
+          git push origin HEAD:main
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+          DEPLOY_CONTAINER: ${{ vars.DEPLOY_CONTAINER }}
+        working-directory: .
