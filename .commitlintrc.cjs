@@ -5,7 +5,7 @@ module.exports = {
     'scope-enum': [
       2,
       'always',
-      ['pi', 'firmware', 'server', 'image', 'docs', 'ci'],
+      ['pi', 'digitsd', 'firmware', 'server', 'image', 'docs', 'ci'],
     ],
     'scope-empty': [1, 'never'],
   },
