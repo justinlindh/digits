@@ -36,15 +36,4 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: '--model claude-opus-4-6 --allowedTools "Bash(make build)" --allowedTools "Bash(make test)" --allowedTools "Bash(make build-local)" --allowedTools "Bash(go vet ./...)" --allowedTools "Bash(go test ./...)" --allowedTools "Bash(npm run lint)" --allowedTools "mcp__github"'
-
-          prompt: |
-            You are working on Digits, a private encrypted phone network built from vintage desk phones.
-
-            Key rules:
-            - Use conventional commits. Valid scopes: pi, digitsd, firmware, server, image, docs, ci
-            - Never use em dashes in any written copy
-            - Never add Co-Authored-By trailers to commits
-            - Go style: raw SQL with database/sql (no ORM), errors returned not panicked
-            - Server web UI uses htmx + Tailwind, templates in internal/web/templates/
-            - Firmware is C with Pico SDK conventions
-            - PRs target main and should use the PR template at .github/pull_request_template.md
+          use_sticky_comment: "true"
