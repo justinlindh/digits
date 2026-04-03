@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/diagrams/img/03-system-overview.png" alt="Digits system overview" width="600">
-</p>
-
 <h1 align="center">Digits</h1>
 
 <p align="center">
