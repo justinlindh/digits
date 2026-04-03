@@ -8,12 +8,12 @@ This guide walks you through running your own Digits server. If you can run Dock
 
 ## Prerequisites
 
-- **Linux server** — any x86_64 VPS or dedicated box. 1GB RAM minimum, 2GB recommended.
-- **Docker Engine 24+** — [install docs](https://docs.docker.com/engine/install/)
-- **Docker Compose v2** — bundled with Docker Desktop; for Linux: `apt install docker-compose-plugin`
-- **Domain name** — pointed at your server's public IP (A record). Caddy handles TLS automatically.
-- **SMTP credentials** — for sending magic-link login emails. Any provider works (Postmark, Mailgun, Gmail SMTP, etc.)
-- **Google OAuth (optional)** — if you want Google sign-in alongside magic links
+- **Linux server** -- any x86_64 VPS or dedicated box. 1GB RAM minimum, 2GB recommended.
+- **Docker Engine 24+** -- [install docs](https://docs.docker.com/engine/install/)
+- **Docker Compose v2** -- bundled with Docker Desktop; for Linux: `apt install docker-compose-plugin`
+- **Domain name** -- pointed at your server's public IP (A record). Caddy handles TLS automatically.
+- **SMTP credentials** -- for sending magic-link login emails. Any provider works (Postmark, Mailgun, Gmail SMTP, etc.)
+- **Google OAuth (optional)** -- if you want Google sign-in alongside magic links
 
 ---
 
@@ -116,7 +116,7 @@ Caddy will obtain and renew a Let's Encrypt certificate automatically. No certbo
           └─────────────┘       └─────────────┘
 ```
 
-**Privacy separation:** `admind` connects *only* to `admin-db`. It has no access to `user-db` and cannot read user data, households, or call records. The admin panel shows aggregate stats fetched via an internal HTTP endpoint on `signald` — no direct DB access across the boundary. This is intentional and enforced at the network level via Docker Compose service isolation.
+**Privacy separation:** `admind` connects *only* to `admin-db`. It has no access to `user-db` and cannot read user data, households, or call records. The admin panel shows aggregate stats fetched via an internal HTTP endpoint on `signald` -- no direct DB access across the boundary. This is intentional and enforced at the network level via Docker Compose service isolation.
 
 ---
 
@@ -169,9 +169,9 @@ If your server uses a self-signed cert (dev only), add `-insecure` to skip TLS v
 
 ### Pairing Flow
 
-1. In the admin panel (`/admin`), create a household and add a phone number.
+1. In the admin panel (`/admin`), create a household and add a line.
 2. The system generates a pairing code.
-3. On the Pi, the pairing code is exchanged automatically on first connect — no screen needed.
+3. On the Pi, the pairing code is exchanged automatically on first connect -- no screen needed.
 4. Once paired, the phone registers itself and is ready to dial.
 
 ---
@@ -230,7 +230,7 @@ Caddy handles zero-downtime for its own config reloads. The Go services will hav
 | Phone won't connect | Wrong WebSocket URL or TLS error | Verify `-signald` flag on the Pi points to `wss://your-domain.com/ws`. Check `journalctl -u digitsd` on the Pi. |
 | Admin panel shows 0 users | `ADMIN_STATS_SECRET` mismatch | `ADMIN_SECRET` in `.env` must match in both signald and admind. Restart both services after fixing. |
 | Google OAuth "redirect_uri mismatch" | Callback URL not registered | Add `https://your-domain.com/auth/google/callback` to authorized redirect URIs in Google Cloud Console. Verify `GOOGLE_REDIRECT_URL` in `.env` matches exactly. |
-| Caddy returns 502 | Backend not ready | `docker compose ps` — check signald/admind are healthy. `docker compose logs caddy` for upstream errors. |
+| Caddy returns 502 | Backend not ready | `docker compose ps` -- check signald/admind are healthy. `docker compose logs caddy` for upstream errors. |
 | Database migration fails on startup | Dirty schema state | Check `docker compose logs signald` for migration errors. Usually safe to re-run after fixing the underlying issue. |
 
 ---
