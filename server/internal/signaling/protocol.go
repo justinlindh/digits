@@ -20,6 +20,7 @@ const (
 	TypeDeviceInfo  = "device_info" // Phone → Server: version info on connect
 	TypeUpdateTrigger   = "update_trigger"    // Server → Phone: check and apply updates
 	TypeUpdateStatus    = "update_status"     // Phone → Server: update progress report
+	TypeICERestart      = "ice_restart"       // Bidirectional: ICE restart offer with new credentials
 )
 
 // ICEServer represents a STUN or TURN server configuration.

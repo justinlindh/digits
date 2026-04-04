@@ -36,6 +36,10 @@ const (
 
 	// TypeUpdateStatus is sent to the server to report update progress.
 	TypeUpdateStatus = "update_status"
+
+	// TypeICERestart is sent by either peer to initiate an ICE restart.
+	// Carries a new SDP offer with rotated ICE credentials.
+	TypeICERestart = "ice_restart"
 )
 
 // ContactEntry represents a single contact in a sync payload.

@@ -122,7 +122,8 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 - Bidirectional Opus/WebRTC audio across NAT (STUN/TURN)
 - End-to-end encrypted calls (DTLS-SRTP)
 - ICE server credential fetch from signald with periodic refresh
-- Connection failure detection (auto-hangup on ICE failure)
+- ICE restart on transient connection drops (caller-initiated, single attempt with 15s timeout)
+- Connection failure detection (hangup after failed ICE restart)
 - Mechanical bell, dial tone, ringback, and busy tone
 - Household linking via invite codes
 - Device pairing via one-time codes
@@ -131,5 +132,3 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 - RNNoise background noise suppression
 
 ### Next
-
-- ICE restart on transient connection drops (currently hangs up; could attempt renegotiation)

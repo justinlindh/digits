@@ -199,6 +199,7 @@ After SDP/ICE exchange, audio flows peer-to-peer via WebRTC DTLS-SRTP.
 | `paired`          | Server -> Phone | `device_token`                       | Device successfully paired           |
 | `update_trigger`  | Server -> Phone | `target_pi_version`, `target_fw_version` | Trigger OTA update on device     |
 | `update_status`   | Phone -> Server | `update_status`, `update_detail`     | Report update progress               |
+| `ice_restart`     | Bidirectional  | `to`, `from`, `sdp`                  | ICE restart offer with new credentials |
 
 ## Architecture
 

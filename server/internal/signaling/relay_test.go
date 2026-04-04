@@ -172,6 +172,42 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 	}
 }
 
+func TestRelayICERestartForwarded(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+
+	// Phone 1 sends ICE restart to Phone 2
+	relay.HandleMessage("3140001", &Message{
+		Type: TypeICERestart,
+		To:   "3140002",
+		SDP:  "v=0\r\nrestart-offer\r\n",
+	})
+
+	select {
+	case data := <-conn2.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeICERestart {
+			t.Fatalf("expected ice_restart, got %s", msg.Type)
+		}
+		if msg.From != "3140001" {
+			t.Fatalf("expected from 3140001, got %s", msg.From)
+		}
+		if msg.SDP != "v=0\r\nrestart-offer\r\n" {
+			t.Fatalf("unexpected SDP: %q", msg.SDP)
+		}
+	default:
+		t.Fatal("phone 2 did not receive ice_restart")
+	}
+}
+
 func TestHubOnlineNumbers(t *testing.T) {
 	hub := NewHub()
 	conn1 := &Conn{Send: make(chan []byte, 1)}
