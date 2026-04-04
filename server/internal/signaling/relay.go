@@ -45,6 +45,8 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 		r.forward(msg)
 	case TypeICE:
 		r.forward(msg)
+	case TypeICERestart:
+		r.forward(msg)
 	case TypeAnswer:
 		r.handleAnswer(from, msg)
 	case TypeHangup:

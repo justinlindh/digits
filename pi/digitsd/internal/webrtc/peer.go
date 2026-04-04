@@ -151,6 +151,45 @@ func (m *PeerManager) LocalTrack() *webrtc.TrackLocalStaticSample {
 	return m.track
 }
 
+// CreateRestartOffer creates a new SDP offer with ICE restart requested.
+// The existing PeerConnection and media tracks are preserved; only ICE
+// credentials are rotated so connectivity can be re-established.
+func (m *PeerManager) CreateRestartOffer() (string, error) {
+	offer, err := m.pc.CreateOffer(&webrtc.OfferOptions{ICERestart: true})
+	if err != nil {
+		return "", fmt.Errorf("create restart offer: %w", err)
+	}
+
+	if err := m.pc.SetLocalDescription(offer); err != nil {
+		return "", fmt.Errorf("set local description (restart): %w", err)
+	}
+
+	return offer.SDP, nil
+}
+
+// AcceptRestartOffer processes an incoming ICE restart offer on an existing
+// PeerConnection. It sets the remote description, creates an answer, and
+// sets the local description. ICE candidates trickle via OnICECandidate.
+func (m *PeerManager) AcceptRestartOffer(offerSDP string) (string, error) {
+	if err := m.pc.SetRemoteDescription(webrtc.SessionDescription{
+		Type: webrtc.SDPTypeOffer,
+		SDP:  offerSDP,
+	}); err != nil {
+		return "", fmt.Errorf("set remote description (restart offer): %w", err)
+	}
+
+	answer, err := m.pc.CreateAnswer(nil)
+	if err != nil {
+		return "", fmt.Errorf("create restart answer: %w", err)
+	}
+
+	if err := m.pc.SetLocalDescription(answer); err != nil {
+		return "", fmt.Errorf("set local description (restart answer): %w", err)
+	}
+
+	return answer.SDP, nil
+}
+
 // Close closes the underlying PeerConnection.
 func (m *PeerManager) Close() error {
 	return m.pc.Close()

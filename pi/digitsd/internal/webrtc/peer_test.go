@@ -74,3 +74,53 @@ func TestPeerManager_OfferAnswer(t *testing.T) {
 	}
 	// If we get here without error, SDP exchange succeeded
 }
+
+func TestPeerManager_ICERestart(t *testing.T) {
+	// Set up a normal call, then perform an ICE restart
+	caller, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer caller.Close()
+
+	callee, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer callee.Close()
+
+	// Initial SDP exchange
+	offer, err := caller.CreateOffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := callee.AcceptOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caller.SetAnswer(answer); err != nil {
+		t.Fatal(err)
+	}
+
+	// ICE restart: caller creates restart offer, callee accepts
+	restartOffer, err := caller.CreateRestartOffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restartOffer == "" {
+		t.Fatal("empty restart offer")
+	}
+
+	restartAnswer, err := callee.AcceptRestartOffer(restartOffer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restartAnswer == "" {
+		t.Fatal("empty restart answer")
+	}
+
+	if err := caller.SetAnswer(restartAnswer); err != nil {
+		t.Fatal(err)
+	}
+	// If we get here without error, ICE restart SDP exchange succeeded
+}

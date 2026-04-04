@@ -63,6 +63,10 @@ type daemonCallbacks struct {
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
 	pairingCode      string   // current pairing code from server
+	callPeer         string   // number of the remote party during an active call
+	isCaller         bool     // true if we initiated the current call
+	isRestartingICE  bool     // true while an ICE restart is in progress
+	restartTimer     *time.Timer // timeout for ICE restart attempt
 }
 
 // --- phone.Callbacks implementation ---
@@ -119,11 +123,12 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 		return
 	}
 
+	d.callPeer = targetNumber
+	d.isCaller = true
+	d.isRestartingICE = false
+
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateFailed {
-			log.Println("webrtc: connection failed, hanging up")
-			d.ctrl.HandleSignal("hangup")
-		}
+		d.handleConnectionStateChange(state)
 	}
 
 	// Handle remote audio track
@@ -220,6 +225,10 @@ func (d *daemonCallbacks) AnswerCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 
+	d.callPeer = caller
+	d.isCaller = false
+	d.isRestartingICE = false
+
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
@@ -229,10 +238,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	}
 
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		if state == webrtc.PeerConnectionStateFailed {
-			log.Println("webrtc: connection failed, hanging up")
-			d.ctrl.HandleSignal("hangup")
-		}
+		d.handleConnectionStateChange(state)
 	}
 
 	// Handle remote audio track — decode and feed into mixer.
@@ -387,6 +393,13 @@ func (d *daemonCallbacks) HangupCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 	d.pendingICE = nil
+	d.callPeer = ""
+	d.isCaller = false
+	d.isRestartingICE = false
+	if d.restartTimer != nil {
+		d.restartTimer.Stop()
+		d.restartTimer = nil
+	}
 
 	d.sig.Send(&sigclient.Message{Type: sigclient.TypeHangup}) //nolint:errcheck
 
@@ -400,6 +413,102 @@ func (d *daemonCallbacks) HangupCall() {
 	}
 
 	log.Println("call ended")
+}
+
+// handleConnectionStateChange is called (without d.mu held) when the WebRTC
+// peer connection state changes.  On transient failures the original caller
+// attempts a single ICE restart before giving up.
+func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectionState) {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
+		d.mu.Lock()
+		wasRestarting := d.isRestartingICE
+		d.isRestartingICE = false
+		if d.restartTimer != nil {
+			d.restartTimer.Stop()
+			d.restartTimer = nil
+		}
+		d.mu.Unlock()
+		if wasRestarting {
+			log.Println("webrtc: ICE restart succeeded — connection recovered")
+		}
+
+	case webrtc.PeerConnectionStateFailed:
+		d.mu.Lock()
+		alreadyRestarting := d.isRestartingICE
+		isCaller := d.isCaller
+		d.mu.Unlock()
+
+		if alreadyRestarting {
+			// Restart already attempted and still failed — give up.
+			log.Println("webrtc: ICE restart failed, hanging up")
+			d.ctrl.HandleSignal("hangup")
+			return
+		}
+
+		if isCaller {
+			// Original caller initiates the ICE restart.
+			log.Println("webrtc: connection failed, attempting ICE restart")
+			d.attemptICERestart()
+		} else {
+			// Callee waits for the caller's restart offer with a timeout.
+			log.Println("webrtc: connection failed, waiting for ICE restart from caller")
+			d.mu.Lock()
+			d.isRestartingICE = true
+			d.restartTimer = time.AfterFunc(15*time.Second, func() {
+				d.mu.Lock()
+				restarting := d.isRestartingICE
+				d.mu.Unlock()
+				if restarting {
+					log.Println("webrtc: timed out waiting for ICE restart, hanging up")
+					d.ctrl.HandleSignal("hangup")
+				}
+			})
+			d.mu.Unlock()
+		}
+	}
+}
+
+// attemptICERestart creates a new SDP offer with rotated ICE credentials
+// and sends it to the remote peer.  A timeout fires if the connection
+// does not recover within 15 seconds.
+func (d *daemonCallbacks) attemptICERestart() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.peerMgr == nil {
+		log.Println("ice-restart: no peer manager, hanging up")
+		go d.ctrl.HandleSignal("hangup")
+		return
+	}
+
+	d.isRestartingICE = true
+
+	offer, err := d.peerMgr.CreateRestartOffer()
+	if err != nil {
+		log.Printf("ice-restart: create offer failed: %v", err)
+		d.isRestartingICE = false
+		go d.ctrl.HandleSignal("hangup")
+		return
+	}
+
+	peer := d.callPeer
+	d.restartTimer = time.AfterFunc(15*time.Second, func() {
+		d.mu.Lock()
+		restarting := d.isRestartingICE
+		d.mu.Unlock()
+		if restarting {
+			log.Println("webrtc: ICE restart timed out, hanging up")
+			d.ctrl.HandleSignal("hangup")
+		}
+	})
+
+	log.Printf("ice-restart: sending restart offer to %s (%d bytes)", peer, len(offer))
+	d.sig.Send(&sigclient.Message{ //nolint:errcheck
+		Type: sigclient.TypeICERestart,
+		To:   peer,
+		SDP:  offer,
+	})
 }
 
 // --- phone.SocketHandler implementation ---
@@ -1021,6 +1130,46 @@ func main() {
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable, statusReporter)
+
+			case sigclient.TypeICERestart:
+				cb.mu.Lock()
+				pm := cb.peerMgr
+				peer := cb.callPeer
+				cb.mu.Unlock()
+				if pm == nil {
+					log.Println("ice-restart: no active peer connection, ignoring")
+					break
+				}
+				log.Printf("ice-restart: received restart offer from %s (%d bytes)", msg.From, len(msg.SDP))
+				answerSDP, err := pm.AcceptRestartOffer(msg.SDP)
+				if err != nil {
+					log.Printf("ice-restart: accept offer failed: %v", err)
+					break
+				}
+				cb.mu.Lock()
+				cb.isRestartingICE = true
+				if cb.restartTimer != nil {
+					cb.restartTimer.Stop()
+				}
+				cb.restartTimer = time.AfterFunc(15*time.Second, func() {
+					cb.mu.Lock()
+					restarting := cb.isRestartingICE
+					cb.mu.Unlock()
+					if restarting {
+						log.Println("webrtc: ICE restart timed out after accepting offer, hanging up")
+						ctrl.HandleSignal("hangup")
+					}
+				})
+				cb.mu.Unlock()
+				if peer == "" {
+					peer = msg.From
+				}
+				log.Printf("ice-restart: sending restart answer to %s (%d bytes)", peer, len(answerSDP))
+				sig.Send(&sigclient.Message{ //nolint:errcheck
+					Type: sigclient.TypeSDP,
+					To:   peer,
+					SDP:  answerSDP,
+				})
 
 			case sigclient.TypeICEServers:
 				cb.mu.Lock()

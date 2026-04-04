@@ -139,6 +139,23 @@ func TestParseContactsUpdatedNudge(t *testing.T) {
 	}
 }
 
+func TestParseICERestartMessage(t *testing.T) {
+	raw := `{"type":"ice_restart","from":"3140001","to":"3140002","sdp":"v=0\r\n"}`
+	msg, err := ParseMessage([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if msg.Type != TypeICERestart {
+		t.Errorf("expected type %q, got %q", TypeICERestart, msg.Type)
+	}
+	if msg.From != "3140001" {
+		t.Errorf("expected from %q, got %q", "3140001", msg.From)
+	}
+	if msg.SDP != "v=0\r\n" {
+		t.Errorf("expected SDP %q, got %q", "v=0\r\n", msg.SDP)
+	}
+}
+
 func TestParseSyncRequest(t *testing.T) {
 	msg := &Message{Type: TypeSync}
 	data, err := msg.Marshal()
