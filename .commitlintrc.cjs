@@ -1,6 +1,7 @@
 // .commitlintrc.cjs — Conventional commit rules for Digits
 module.exports = {
   extends: ['@commitlint/config-conventional'],
+  ignores: [(message) => /^Merge\b/.test(message)],
   rules: {
     'scope-enum': [
       2,
