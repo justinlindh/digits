@@ -91,7 +91,18 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 // ICE candidates are NOT gathered inline — they trickle via OnICECandidate.
 // The caller MUST send the returned SDP before ICE candidates reach the remote peer.
 func (m *PeerManager) CreateOffer() (string, error) {
-	offer, err := m.pc.CreateOffer(nil)
+	return m.createOffer(nil)
+}
+
+// CreateRestartOffer creates a new SDP offer with ICE restart requested.
+// The existing PeerConnection and media tracks are preserved; only ICE
+// credentials are rotated so connectivity can be re-established.
+func (m *PeerManager) CreateRestartOffer() (string, error) {
+	return m.createOffer(&webrtc.OfferOptions{ICERestart: true})
+}
+
+func (m *PeerManager) createOffer(opts *webrtc.OfferOptions) (string, error) {
+	offer, err := m.pc.CreateOffer(opts)
 	if err != nil {
 		return "", fmt.Errorf("create offer: %w", err)
 	}
@@ -106,6 +117,7 @@ func (m *PeerManager) CreateOffer() (string, error) {
 // AcceptOffer sets the remote description from an incoming offer SDP, creates an
 // answer, and sets the local description. ICE candidates trickle via OnICECandidate.
 // The caller MUST send the returned answer SDP before forwarding ICE candidates.
+// Also used to accept ICE restart offers on an existing PeerConnection.
 func (m *PeerManager) AcceptOffer(offerSDP string) (string, error) {
 	if err := m.pc.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
@@ -165,29 +177,6 @@ func (m *PeerManager) CreateRestartOffer() (string, error) {
 	}
 
 	return offer.SDP, nil
-}
-
-// AcceptRestartOffer processes an incoming ICE restart offer on an existing
-// PeerConnection. It sets the remote description, creates an answer, and
-// sets the local description. ICE candidates trickle via OnICECandidate.
-func (m *PeerManager) AcceptRestartOffer(offerSDP string) (string, error) {
-	if err := m.pc.SetRemoteDescription(webrtc.SessionDescription{
-		Type: webrtc.SDPTypeOffer,
-		SDP:  offerSDP,
-	}); err != nil {
-		return "", fmt.Errorf("set remote description (restart offer): %w", err)
-	}
-
-	answer, err := m.pc.CreateAnswer(nil)
-	if err != nil {
-		return "", fmt.Errorf("create restart answer: %w", err)
-	}
-
-	if err := m.pc.SetLocalDescription(answer); err != nil {
-		return "", fmt.Errorf("set local description (restart answer): %w", err)
-	}
-
-	return answer.SDP, nil
 }
 
 // Close closes the underlying PeerConnection.

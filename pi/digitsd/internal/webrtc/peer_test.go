@@ -111,7 +111,7 @@ func TestPeerManager_ICERestart(t *testing.T) {
 		t.Fatal("empty restart offer")
 	}
 
-	restartAnswer, err := callee.AcceptRestartOffer(restartOffer)
+	restartAnswer, err := callee.AcceptOffer(restartOffer)
 	if err != nil {
 		t.Fatal(err)
 	}

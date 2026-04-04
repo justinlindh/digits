@@ -28,6 +28,10 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
+// iceRestartTimeout is how long to wait for an ICE restart to succeed
+// before giving up and hanging up the call.
+const iceRestartTimeout = 15 * time.Second
+
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 }
@@ -415,9 +419,9 @@ func (d *daemonCallbacks) HangupCall() {
 	log.Println("call ended")
 }
 
-// handleConnectionStateChange is called (without d.mu held) when the WebRTC
-// peer connection state changes.  On transient failures the original caller
-// attempts a single ICE restart before giving up.
+// handleConnectionStateChange is called (without d.mu held) from a pion
+// goroutine when the WebRTC peer connection state changes.  On transient
+// failures the original caller attempts a single ICE restart before giving up.
 func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectionState) {
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
@@ -430,7 +434,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		}
 		d.mu.Unlock()
 		if wasRestarting {
-			log.Println("webrtc: ICE restart succeeded — connection recovered")
+			log.Println("webrtc: ICE restart succeeded -- connection recovered")
 		}
 
 	case webrtc.PeerConnectionStateFailed:
@@ -440,38 +444,26 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		d.mu.Unlock()
 
 		if alreadyRestarting {
-			// Restart already attempted and still failed — give up.
 			log.Println("webrtc: ICE restart failed, hanging up")
-			d.ctrl.HandleSignal("hangup")
+			go d.ctrl.HandleSignal("hangup")
 			return
 		}
 
 		if isCaller {
-			// Original caller initiates the ICE restart.
 			log.Println("webrtc: connection failed, attempting ICE restart")
 			d.attemptICERestart()
 		} else {
-			// Callee waits for the caller's restart offer with a timeout.
 			log.Println("webrtc: connection failed, waiting for ICE restart from caller")
 			d.mu.Lock()
 			d.isRestartingICE = true
-			d.restartTimer = time.AfterFunc(15*time.Second, func() {
-				d.mu.Lock()
-				restarting := d.isRestartingICE
-				d.mu.Unlock()
-				if restarting {
-					log.Println("webrtc: timed out waiting for ICE restart, hanging up")
-					d.ctrl.HandleSignal("hangup")
-				}
-			})
+			d.startRestartTimeout()
 			d.mu.Unlock()
 		}
 	}
 }
 
 // attemptICERestart creates a new SDP offer with rotated ICE credentials
-// and sends it to the remote peer.  A timeout fires if the connection
-// does not recover within 15 seconds.
+// and sends it to the remote peer.  Must NOT be called with d.mu held.
 func (d *daemonCallbacks) attemptICERestart() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -493,7 +485,20 @@ func (d *daemonCallbacks) attemptICERestart() {
 	}
 
 	peer := d.callPeer
-	d.restartTimer = time.AfterFunc(15*time.Second, func() {
+	d.startRestartTimeout()
+
+	log.Printf("ice-restart: sending restart offer to %s (%d bytes)", peer, len(offer))
+	d.sig.Send(&sigclient.Message{ //nolint:errcheck
+		Type: sigclient.TypeICERestart,
+		To:   peer,
+		SDP:  offer,
+	})
+}
+
+// startRestartTimeout sets a timer that hangs up the call if the ICE restart
+// does not complete within iceRestartTimeout.  Must be called with d.mu held.
+func (d *daemonCallbacks) startRestartTimeout() {
+	d.restartTimer = time.AfterFunc(iceRestartTimeout, func() {
 		d.mu.Lock()
 		restarting := d.isRestartingICE
 		d.mu.Unlock()
@@ -501,13 +506,6 @@ func (d *daemonCallbacks) attemptICERestart() {
 			log.Println("webrtc: ICE restart timed out, hanging up")
 			d.ctrl.HandleSignal("hangup")
 		}
-	})
-
-	log.Printf("ice-restart: sending restart offer to %s (%d bytes)", peer, len(offer))
-	d.sig.Send(&sigclient.Message{ //nolint:errcheck
-		Type: sigclient.TypeICERestart,
-		To:   peer,
-		SDP:  offer,
 	})
 }
 
@@ -1141,7 +1139,7 @@ func main() {
 					break
 				}
 				log.Printf("ice-restart: received restart offer from %s (%d bytes)", msg.From, len(msg.SDP))
-				answerSDP, err := pm.AcceptRestartOffer(msg.SDP)
+				answerSDP, err := pm.AcceptOffer(msg.SDP)
 				if err != nil {
 					log.Printf("ice-restart: accept offer failed: %v", err)
 					break
@@ -1151,15 +1149,7 @@ func main() {
 				if cb.restartTimer != nil {
 					cb.restartTimer.Stop()
 				}
-				cb.restartTimer = time.AfterFunc(15*time.Second, func() {
-					cb.mu.Lock()
-					restarting := cb.isRestartingICE
-					cb.mu.Unlock()
-					if restarting {
-						log.Println("webrtc: ICE restart timed out after accepting offer, hanging up")
-						ctrl.HandleSignal("hangup")
-					}
-				})
+				cb.startRestartTimeout()
 				cb.mu.Unlock()
 				if peer == "" {
 					peer = msg.From
