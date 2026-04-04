@@ -81,3 +81,4 @@ Mirrored workflows on both Gitea (`.gitea/workflows/`) and GitHub (`.github/work
 - Firmware: C with Pico SDK conventions
 - Never use em dashes in any written copy
 - Never add Co-Authored-By trailers to commits
+- Never include Claude Code session links (claude.ai/code/session_*) in commits, PRs, or any other content

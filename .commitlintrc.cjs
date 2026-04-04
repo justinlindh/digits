@@ -8,5 +8,6 @@ module.exports = {
       ['pi', 'digitsd', 'firmware', 'server', 'image', 'docs', 'ci'],
     ],
     'scope-empty': [1, 'never'],
+    'subject-case': [0],
   },
 };
