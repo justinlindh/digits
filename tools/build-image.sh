@@ -649,6 +649,15 @@ info "Configuring read-only root filesystem..."
 
 CMDLINE="${BOOT_MNT}/cmdline.txt"
 if [[ -f "$CMDLINE" ]]; then
+    # Remove Raspbian firstboot init — its initramfs resize script matches
+    # "firstboot" in cmdline and expands p2 to fill the disk, destroying p3.
+    # Our digits-first-boot.service handles identity/SSH setup instead.
+    sed -i 's| init=/usr/lib/raspberrypi-sys-mods/firstboot||' "$CMDLINE"
+    # Remove quiet (no splash screen, want to see boot messages)
+    sed -i 's/ quiet//g' "$CMDLINE"
+    # Remove splash
+    sed -i 's/ splash//g' "$CMDLINE"
+    sed -i 's/ plymouth.ignore-serial-consoles//g' "$CMDLINE"
     # Remove fsck.repair=yes (incompatible with ro root)
     sed -i 's/fsck\.repair=yes //g' "$CMDLINE"
     # Remove serial console (conflicts with disable-bt UART for Pico)
