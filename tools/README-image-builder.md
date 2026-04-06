@@ -95,6 +95,10 @@ gunzip -c digits-pi-*.img.gz | sudo dd of=/dev/sdX bs=4M status=progress
 11. **Enables services** -- first-boot, AP check, mixer restore, digitsd
 12. **Shrinks and compresses** the final image
 
+## SD Card Requirements
+
+The final image is ~7 GB uncompressed. An **8 GB microSD card** is the minimum recommended size. Larger cards work fine but the extra space goes unused.
+
 ## Partition Layout
 
 | Partition | Mount Point | Filesystem | Mode | Size |
