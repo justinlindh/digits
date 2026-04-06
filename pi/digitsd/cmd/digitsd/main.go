@@ -921,7 +921,7 @@ func main() {
 	}
 
 	// 8. Create phone Controller
-	ctrl := phone.NewController(cb)
+	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
 
 	// 9. Start socket server (backward compat for debugging + latclient auto-answer)

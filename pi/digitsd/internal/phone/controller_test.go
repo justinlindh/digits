@@ -47,7 +47,7 @@ func waitForTone(cb *mockCallbacks, tone string) {
 
 func TestController_OutgoingCallFlow(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	// Pick up handset
 	c.HandleEvent("HOOK:OFF")
@@ -121,7 +121,7 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 // 2. Full incoming call flow: ring signal → HOOK:OFF → hangup signal
 func TestController_IncomingCallFlow(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	// Incoming ring
 	c.HandleSignal("ring")
@@ -173,7 +173,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 // 3. KEY in IDLE is ignored — no state change, no callbacks
 func TestController_IgnoreKeyInIdle(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	c.HandleEvent("KEY:5")
 
@@ -188,7 +188,7 @@ func TestController_IgnoreKeyInIdle(t *testing.T) {
 // 4. Hang up during DIALING → IDLE, no HangupCall
 func TestController_HangupDuringDialing(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	c.HandleEvent("HOOK:OFF") // → DIAL_TONE
 	c.HandleEvent("KEY:5")    // → DIALING
@@ -205,7 +205,7 @@ func TestController_HangupDuringDialing(t *testing.T) {
 // 5. Hang up during CALLING → IDLE, HangupCall IS called
 func TestController_HangupDuringCalling(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")    // → DIAL_TONE
 	c.HandleEvent("KEY:5")       // → DIALING
@@ -223,7 +223,7 @@ func TestController_HangupDuringCalling(t *testing.T) {
 // 6. Busy signal during CALLING → SendTone("STOP"), stays in CALLING or logs
 func TestController_BusySignal(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -262,7 +262,7 @@ func (m *mockContactChecker) IsContact(number string) bool {
 // Test: dialing an allowed contact proceeds normally
 func TestController_DialAllowedContact(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5551234": true}})
 
 	c.HandleEvent("HOOK:OFF")
@@ -281,7 +281,7 @@ func TestController_DialAllowedContact(t *testing.T) {
 // Test: dialing a blocked number gets rejection tones, not a call
 func TestController_DialBlockedContact(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5559999": true}})
 
 	c.HandleEvent("HOOK:OFF")
@@ -310,7 +310,7 @@ func TestController_DialBlockedContact(t *testing.T) {
 // Test: no ContactChecker set = all calls allowed (backward compat)
 func TestController_NoContactChecker_AllowsAll(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 	// No SetContactChecker call
 
 	c.HandleEvent("HOOK:OFF")
@@ -326,10 +326,31 @@ func TestController_NoContactChecker_AllowsAll(t *testing.T) {
 	}
 }
 
-// 7. Incoming ring signal while CONNECTED → stays CONNECTED, ignored
+// 7. Self-dial → immediate busy tone, no call initiated
+func TestController_SelfDial(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "5551234")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("DIAL:5551234") // own number
+
+	if c.State() != StateCALLING {
+		t.Fatalf("expected CALLING, got %s", c.State())
+	}
+	if len(cb.calls) != 0 {
+		t.Errorf("expected no InitiateCall for self-dial, got %v", cb.calls)
+	}
+	lastTone := cb.tones[len(cb.tones)-1]
+	if lastTone != "BUSY" {
+		t.Errorf("expected BUSY tone for self-dial, got %s", lastTone)
+	}
+}
+
+// 8. Incoming ring signal while CONNECTED → stays CONNECTED, ignored
 func TestController_IncomingWhileBusy(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb)
+	c := NewController(cb, "")
 
 	// Set up CONNECTED state via outgoing call flow
 	c.HandleEvent("HOOK:OFF")
