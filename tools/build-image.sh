@@ -481,6 +481,7 @@ chroot "$ROOTFS_MNT" /bin/bash -c "
     DEBIAN_FRONTEND=noninteractive apt-get purge -y --auto-remove ${PURGE_LIST} 2>/dev/null || true
     DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
     apt-get clean
+    rm -f /etc/ssh/sshd_config.d/rename_user.conf
 "
 
 # ── step 6: install required packages (chroot — apt-get only) ───────────────
