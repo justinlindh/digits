@@ -1,23 +1,4 @@
 // Pi (digitsd) semantic-release config — runs from repo root
-const isGitea = !!process.env.GITEA_URL;
-
-const publishPlugin = isGitea
-  ? ['@saithodev/semantic-release-gitea', {
-      giteaUrl: process.env.GITEA_URL,
-      assets: [
-        { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
-        { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
-      ],
-    }]
-  : ['@semantic-release/github', {
-      assets: [
-        { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
-        { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
-      ],
-      successComment: false,
-      failComment: false,
-    }];
-
 module.exports = {
   branches: ['main'],
   tagFormat: 'pi/v${version}',
@@ -38,6 +19,13 @@ module.exports = {
     ['@semantic-release/exec', {
       prepareCmd: 'bash tools/build-pi.sh ${nextRelease.version}',
     }],
-    publishPlugin,
+    ['@semantic-release/github', {
+      assets: [
+        { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
+        { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
+      ],
+      successComment: false,
+      failComment: false,
+    }],
   ],
 };
