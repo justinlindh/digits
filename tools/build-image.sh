@@ -812,6 +812,17 @@ ln -s /run/NetworkManager/resolv.conf "${ROOTFS_MNT}/etc/resolv.conf"
 truncate -s 0 "${ROOTFS_MNT}/etc/machine-id" 2>/dev/null || true
 rm -f "${ROOTFS_MNT}/var/lib/dbus/machine-id" 2>/dev/null || true
 
+# Create timesyncd state directory (needed for read-only root — systemd's
+# StateDirectory=timesync can't create it when / is mounted ro)
+TIMESYNC_UID=$(awk -F: '/^systemd-timesync:/{print $3}' "${ROOTFS_MNT}/etc/passwd")
+TIMESYNC_GID=$(awk -F: '/^systemd-timesync:/{print $4}' "${ROOTFS_MNT}/etc/passwd")
+if [[ -n "$TIMESYNC_UID" ]]; then
+    install -d -m 755 -o "$TIMESYNC_UID" -g "$TIMESYNC_GID" "${ROOTFS_MNT}/var/lib/systemd/timesync"
+    info "  Created /var/lib/systemd/timesync (uid=$TIMESYNC_UID)"
+else
+    info "  WARNING: systemd-timesync user not found, skipping timesync dir"
+fi
+
 # Set rfkill state file to unblocked
 echo -n '0' > "${ROOTFS_MNT}/var/lib/systemd/rfkill/platform-3f300000.mmcnr:wlan" 2>/dev/null || true
 
