@@ -25,21 +25,21 @@ while True:
         break
     if not cmd:
         continue
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(sock_path)
         s.settimeout(2)
         s.sendall((cmd + "\n").encode())
         resp = s.recv(4096).decode().strip()
-        s.close()
         print(resp)
     except socket.timeout:
         print("(no response)")
     except Exception as e:
         print(f"error: {e}")
+    finally:
+        s.close()
 PYEOF
 )
 
-sshpass -p digits scp -q <(echo "$SCRIPT") "$HOST:/tmp/uart-term.py" 2>/dev/null \
-    || sshpass -p digits ssh "$HOST" "cat > /tmp/uart-term.py" <<< "$SCRIPT"
+sshpass -p digits ssh "$HOST" "cat > /tmp/uart-term.py" <<< "$SCRIPT"
 sshpass -p digits ssh -t "$HOST" sudo python3 -u /tmp/uart-term.py "$SOCK"
