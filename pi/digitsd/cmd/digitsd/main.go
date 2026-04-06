@@ -43,7 +43,7 @@ var (
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
 	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
-	alsaDevice  = flag.String("alsa-playback", "plughw:1,0", "ALSA playback device (direct, no dmix)")
+	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -768,8 +768,17 @@ func main() {
 	}
 
 	// 2. Open ALSA playback (direct hardware, no dmix)
+	pbDev := *alsaDevice
+	if pbDev == "" {
+		dev, err := audio.CodecDeviceName()
+		if err != nil {
+			log.Fatalf("alsa: %v", err)
+		}
+		pbDev = dev
+		log.Printf("alsa playback: auto-detected %s", pbDev)
+	}
 	pbCfg := audio.Config{
-		Device:     *alsaDevice,
+		Device:     pbDev,
 		SampleRate: 48000,
 		Channels:   1,
 		FrameSize:  960,
