@@ -578,6 +578,10 @@ info "Copying Digits binaries..."
 install -m 755 "${BUILD_DIR}/digitsd" "${ROOTFS_MNT}/usr/local/bin/digitsd"
 install -m 755 "${BUILD_DIR}/digits-setup" "${ROOTFS_MNT}/usr/local/bin/digits-setup"
 
+# Also copy digitsd to /data for the OTA updater (replaces binary in-place)
+mkdir -p "${DATA_MNT}/digits/digitsd"
+install -m 755 "${BUILD_DIR}/digitsd" "${DATA_MNT}/digits/digitsd/digitsd"
+
 # ── step 13: copy rootfs overlay (host-side) ────────────────────────────────
 
 info "Copying rootfs overlay..."

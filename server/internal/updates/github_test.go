@@ -159,6 +159,35 @@ func TestGitHubReleases_APIError(t *testing.T) {
 	}
 }
 
+func TestClassifyAssets_SHA256NotPickedAsBinary(t *testing.T) {
+	// GitHub doesn't guarantee asset order — .sha256 might come last and
+	// its name also contains "aarch64", so it must be explicitly skipped.
+	assets := []ghAsset{
+		{Name: "digitsd-1.0.0-aarch64.sha256", BrowserDownloadURL: "https://example.com/digitsd.sha256"},
+		{Name: "digitsd-1.0.0-aarch64", BrowserDownloadURL: "https://example.com/digitsd"},
+	}
+	binaryURL, sha256URL := classifyAssets(assets)
+	if binaryURL != "https://example.com/digitsd" {
+		t.Errorf("binaryURL = %q, want the binary not the checksum", binaryURL)
+	}
+	if sha256URL != "https://example.com/digitsd.sha256" {
+		t.Errorf("sha256URL = %q, want the .sha256 URL", sha256URL)
+	}
+
+	// Also test reversed order (sha256 after binary)
+	assets2 := []ghAsset{
+		{Name: "digitsd-1.0.0-aarch64", BrowserDownloadURL: "https://example.com/digitsd"},
+		{Name: "digitsd-1.0.0-aarch64.sha256", BrowserDownloadURL: "https://example.com/digitsd.sha256"},
+	}
+	binaryURL2, sha256URL2 := classifyAssets(assets2)
+	if binaryURL2 != "https://example.com/digitsd" {
+		t.Errorf("reversed: binaryURL = %q, want the binary", binaryURL2)
+	}
+	if sha256URL2 != "https://example.com/digitsd.sha256" {
+		t.Errorf("reversed: sha256URL = %q, want the .sha256 URL", sha256URL2)
+	}
+}
+
 func TestParseTag(t *testing.T) {
 	cases := []struct {
 		tag           string
