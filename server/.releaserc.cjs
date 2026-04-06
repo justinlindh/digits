@@ -1,13 +1,4 @@
 // Server semantic-release config — runs from server/ working directory
-const isGitea = !!process.env.GITEA_URL;
-
-const publishPlugin = isGitea
-  ? ['@saithodev/semantic-release-gitea', {
-      giteaUrl: process.env.GITEA_URL,
-      assets: [],
-    }]
-  : ['@semantic-release/github', { assets: [], successComment: false, failComment: false }];
-
 module.exports = {
   branches: ['main'],
   tagFormat: 'server/v${version}',
@@ -21,6 +12,6 @@ module.exports = {
       ],
     }],
     '@semantic-release/release-notes-generator',
-    publishPlugin,
+    ['@semantic-release/github', { assets: [], successComment: false, failComment: false }],
   ],
 };
