@@ -11,6 +11,7 @@ type CallTracker interface {
 	OnCallInitiated(from, to string) error
 	OnCallAnswered(caller, callee string) error
 	OnCallEnded(caller, callee string) error
+	InCall(a, b string) bool
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -46,7 +47,7 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 	case TypeICE:
 		r.forward(msg)
 	case TypeICERestart:
-		r.forward(msg)
+		r.handleICERestart(from, msg)
 	case TypeAnswer:
 		r.handleAnswer(from, msg)
 	case TypeHangup:
@@ -100,6 +101,15 @@ func (r *Relay) handleCall(from string, msg *Message) {
 		Type: TypeRing,
 		From: from,
 	})
+}
+
+func (r *Relay) handleICERestart(from string, msg *Message) {
+	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
+		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
+		r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
+		return
+	}
+	r.forward(msg)
 }
 
 func (r *Relay) handleAnswer(from string, msg *Message) {
