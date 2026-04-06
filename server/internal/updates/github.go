@@ -247,6 +247,9 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 		if a.BrowserDownloadURL == "" {
 			continue
 		}
+		if strings.HasSuffix(a.Name, ".sha256") {
+			continue
+		}
 		if strings.HasSuffix(a.Name, ".elf") || strings.Contains(a.Name, "aarch64") {
 			binaryURL = a.BrowserDownloadURL
 			binaryName = a.Name

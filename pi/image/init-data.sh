@@ -60,8 +60,9 @@ trap cleanup EXIT
 
 info "Creating /data directory structure at $MOUNT_POINT..."
 
-# digits/ — digitsd binary, config, tones
+# digits/ — digitsd binary, config, tones, updater staging
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits"
+install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/digitsd"
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/tones"
 
 # wifi/ — wpa_supplicant.conf written by setup portal
