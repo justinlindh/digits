@@ -6,8 +6,16 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
+)
+
+const (
+	// pongTimeout is how long the client waits for a pong (or any read)
+	// before considering the connection dead. Must be greater than the
+	// server's ping interval (30s).
+	pongTimeout = 45 * time.Second
 )
 
 // Client connects to a signald WebSocket server and manages message I/O.
@@ -67,6 +75,14 @@ func (c *Client) Connect() error {
 		conn.Close()
 		return fmt.Errorf("signal: send register: %w", err)
 	}
+
+	// Reset read deadline on each server ping so Cloudflare/proxy
+	// idle timeouts don't kill the connection.
+	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+		return nil
+	})
 
 	go c.readPump()
 	return nil
