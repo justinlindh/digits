@@ -1,40 +1,61 @@
 package audio
 
 import (
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestFindCodecCard(t *testing.T) {
-	// Only run on devices that have the Codec Zero
-	f, err := os.ReadFile("/proc/asound/cards")
-	if err != nil || !strings.Contains(string(f), "[Zero") {
-		t.Skip("Codec Zero not present, skipping")
+func TestFindCodecCardIn(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{
+			name:  "card 0",
+			input: " 0 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n                      RPi Codec Zero\n",
+			want:  0,
+		},
+		{
+			name:  "card 1 with HDMI first",
+			input: " 0 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi\n                      vc4-hdmi\n 1 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n                      RPi Codec Zero\n",
+			want:  1,
+		},
+		{
+			name:  "card 2",
+			input: " 0 [foo            ]: bar\n 1 [baz            ]: qux\n 2 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n",
+			want:  2,
+		},
+		{
+			name:    "no codec zero",
+			input:   " 0 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty",
+			input:   "",
+			wantErr: true,
+		},
 	}
 
-	card, err := FindCodecCard()
-	if err != nil {
-		t.Fatalf("FindCodecCard() error: %v", err)
-	}
-	if card < 0 {
-		t.Errorf("FindCodecCard() = %d, want >= 0", card)
-	}
-}
-
-func TestCodecDeviceName(t *testing.T) {
-	f, err := os.ReadFile("/proc/asound/cards")
-	if err != nil || !strings.Contains(string(f), "[Zero") {
-		t.Skip("Codec Zero not present, skipping")
-	}
-
-	dev, err := CodecDeviceName()
-	if err != nil {
-		t.Fatalf("CodecDeviceName() error: %v", err)
-	}
-	if !strings.HasPrefix(dev, "plughw:") {
-		t.Errorf("CodecDeviceName() = %q, want plughw:N,0 format", dev)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findCodecCardIn(strings.NewReader(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got card %d", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got card %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -53,6 +74,9 @@ func TestDefaultCaptureConfig(t *testing.T) {
 
 func TestDefaultPlaybackConfig(t *testing.T) {
 	cfg := DefaultPlaybackConfig()
+	if cfg.Device != "default" {
+		t.Errorf("Device = %q, want %q", cfg.Device, "default")
+	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)
 	}
@@ -65,7 +89,6 @@ func TestDefaultPlaybackConfig(t *testing.T) {
 }
 
 func TestExtractChannel_Right(t *testing.T) {
-	// Stereo interleaved: [L0,R0, L1,R1, L2,R2]
 	interleaved := []int16{100, 200, 300, 400, 500, 600}
 	got := ExtractChannel(interleaved, 2, 1)
 	want := []int16{200, 400, 600}

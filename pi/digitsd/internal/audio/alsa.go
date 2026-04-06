@@ -11,6 +11,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"strings"
 	"unsafe"
@@ -29,6 +31,25 @@ type Config struct {
 	FrameSize  int // samples per frame per channel (960 = 20ms at 48kHz)
 }
 
+// findCodecCardIn scans ALSA card list output for the Codec Zero (DA7212)
+// and returns its card number. The input should be the contents of
+// /proc/asound/cards. Lines look like:
+//
+//	 0 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero
+func findCodecCardIn(r io.Reader) (int, error) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "RPi Codec Zero") || strings.Contains(line, "RPi_Codec_Zero") {
+			var num int
+			if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &num); err == nil {
+				return num, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("Codec Zero card not found in /proc/asound/cards")
+}
+
 // FindCodecCard scans /proc/asound/cards for the Codec Zero (DA7212) and
 // returns its ALSA card number. Returns an error if not found.
 func FindCodecCard() (int, error) {
@@ -37,18 +58,7 @@ func FindCodecCard() (int, error) {
 		return 0, fmt.Errorf("open /proc/asound/cards: %w", err)
 	}
 	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "[Zero") {
-			var num int
-			if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &num); err == nil {
-				return num, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("Codec Zero card not found in /proc/asound/cards")
+	return findCodecCardIn(f)
 }
 
 // CodecDeviceName returns "plughw:N,0" for the Codec Zero card.
@@ -61,10 +71,12 @@ func CodecDeviceName() (string, error) {
 }
 
 // DefaultCaptureConfig returns config for the DA7212 codec: stereo capture at 48kHz.
+// Uses plughw to bypass dmix (which is playback-only).
 func DefaultCaptureConfig() Config {
 	dev, err := CodecDeviceName()
 	if err != nil {
-		dev = "plughw:1,0" // fallback
+		log.Printf("WARNING: codec detection failed, falling back to plughw:1,0: %v", err)
+		dev = "plughw:1,0"
 	}
 	return Config{
 		Device:     dev,
@@ -74,14 +86,11 @@ func DefaultCaptureConfig() Config {
 	}
 }
 
-// DefaultPlaybackConfig returns config for mono playback at 48kHz on the Codec Zero.
+// DefaultPlaybackConfig returns config for mono playback via dmix at 48kHz.
+// Uses "default" ALSA device for playback (dmix software mixing).
 func DefaultPlaybackConfig() Config {
-	dev, err := CodecDeviceName()
-	if err != nil {
-		dev = "plughw:1,0" // fallback
-	}
 	return Config{
-		Device:     dev,
+		Device:     "default",
 		SampleRate: 48000,
 		Channels:   1,
 		FrameSize:  960,

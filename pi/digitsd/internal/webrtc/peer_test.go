@@ -1,6 +1,11 @@
 package owebrtc
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/pion/webrtc/v4"
+)
 
 func TestICEConfig_NoServers(t *testing.T) {
 	cfg := NewICEConfig(nil)
@@ -75,8 +80,29 @@ func TestPeerManager_OfferAnswer(t *testing.T) {
 	// If we get here without error, SDP exchange succeeded
 }
 
+// waitGatherComplete blocks until ICE gathering is complete or timeout.
+func waitGatherComplete(t *testing.T, pm *PeerManager) {
+	t.Helper()
+	done := make(chan struct{}, 1)
+	pm.pc.OnICEGatheringStateChange(func(state webrtc.ICEGatheringState) {
+		if state == webrtc.ICEGatheringStateComplete {
+			select {
+			case done <- struct{}{}:
+			default:
+			}
+		}
+	})
+	if pm.pc.ICEGatheringState() == webrtc.ICEGatheringStateComplete {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ICE gathering to complete")
+	}
+}
+
 func TestPeerManager_ICERestart(t *testing.T) {
-	// Set up a normal call, then perform an ICE restart
 	caller, err := NewPeerManager(NewICEConfig(nil))
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +128,10 @@ func TestPeerManager_ICERestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Wait for both sides to finish gathering before restart
+	waitGatherComplete(t, caller)
+	waitGatherComplete(t, callee)
+
 	// ICE restart: caller creates restart offer, callee accepts
 	restartOffer, err := caller.CreateRestartOffer()
 	if err != nil {
@@ -122,5 +152,4 @@ func TestPeerManager_ICERestart(t *testing.T) {
 	if err := caller.SetAnswer(restartAnswer); err != nil {
 		t.Fatal(err)
 	}
-	// If we get here without error, ICE restart SDP exchange succeeded
 }
