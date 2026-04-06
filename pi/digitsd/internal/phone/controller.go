@@ -41,14 +41,17 @@ type Controller struct {
 	state          State
 	cb             Callbacks
 	digits         string
+	ownNumber      string
 	contactChecker ContactChecker
 }
 
 // NewController creates a new Controller starting in StateIDLE.
-func NewController(cb Callbacks) *Controller {
+// ownNumber is this phone's number; dialing it will produce a busy tone.
+func NewController(cb Callbacks, ownNumber string) *Controller {
 	return &Controller{
-		state: StateIDLE,
-		cb:    cb,
+		state:     StateIDLE,
+		cb:        cb,
+		ownNumber: ownNumber,
 	}
 }
 
@@ -192,6 +195,15 @@ func (c *Controller) onKey(digit string) {
 func (c *Controller) onDial(number string) {
 	if c.state != StateDIALING {
 		log.Printf("phone: DIAL event ignored in state %s", c.state)
+		return
+	}
+
+	// Self-call: dialing your own number gets an immediate busy tone,
+	// just like a real POTS line.
+	if c.ownNumber != "" && number == c.ownNumber {
+		log.Printf("phone: self-call detected — busy tone")
+		c.state = StateCALLING
+		c.cb.SendTone("BUSY")
 		return
 	}
 
