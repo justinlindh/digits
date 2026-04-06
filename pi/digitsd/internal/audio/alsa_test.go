@@ -1,15 +1,45 @@
 package audio
 
 import (
+	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
+func TestFindCodecCard(t *testing.T) {
+	// Only run on devices that have the Codec Zero
+	f, err := os.ReadFile("/proc/asound/cards")
+	if err != nil || !strings.Contains(string(f), "[Zero") {
+		t.Skip("Codec Zero not present, skipping")
+	}
+
+	card, err := FindCodecCard()
+	if err != nil {
+		t.Fatalf("FindCodecCard() error: %v", err)
+	}
+	if card < 0 {
+		t.Errorf("FindCodecCard() = %d, want >= 0", card)
+	}
+}
+
+func TestCodecDeviceName(t *testing.T) {
+	f, err := os.ReadFile("/proc/asound/cards")
+	if err != nil || !strings.Contains(string(f), "[Zero") {
+		t.Skip("Codec Zero not present, skipping")
+	}
+
+	dev, err := CodecDeviceName()
+	if err != nil {
+		t.Fatalf("CodecDeviceName() error: %v", err)
+	}
+	if !strings.HasPrefix(dev, "plughw:") {
+		t.Errorf("CodecDeviceName() = %q, want plughw:N,0 format", dev)
+	}
+}
+
 func TestDefaultCaptureConfig(t *testing.T) {
 	cfg := DefaultCaptureConfig()
-	if cfg.Device != "plughw:1,0" {
-		t.Errorf("Device = %q, want %q", cfg.Device, "plughw:1,0")
-	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)
 	}
@@ -23,9 +53,6 @@ func TestDefaultCaptureConfig(t *testing.T) {
 
 func TestDefaultPlaybackConfig(t *testing.T) {
 	cfg := DefaultPlaybackConfig()
-	if cfg.Device != "default" {
-		t.Errorf("Device = %q, want %q", cfg.Device, "default")
-	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)
 	}
