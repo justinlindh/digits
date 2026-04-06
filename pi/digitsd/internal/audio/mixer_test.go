@@ -8,6 +8,8 @@ import (
 )
 
 // mockWriter captures written periods for testing without ALSA hardware.
+// Includes a small sleep to simulate ALSA blocking (~1ms per period)
+// so time.Sleep-based test synchronization works reliably.
 type mockWriter struct {
 	periods [][]int16
 }
@@ -16,6 +18,7 @@ func (m *mockWriter) WriteFrame(samples []int16) error {
 	cp := make([]int16, len(samples))
 	copy(cp, samples)
 	m.periods = append(m.periods, cp)
+	time.Sleep(1 * time.Millisecond)
 	return nil
 }
 

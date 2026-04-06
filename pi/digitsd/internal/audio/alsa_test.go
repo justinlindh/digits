@@ -2,14 +2,65 @@ package audio
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
+func TestFindCodecCardIn(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{
+			name:  "card 0",
+			input: " 0 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n                      RPi Codec Zero\n",
+			want:  0,
+		},
+		{
+			name:  "card 1 with HDMI first",
+			input: " 0 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi\n                      vc4-hdmi\n 1 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n                      RPi Codec Zero\n",
+			want:  1,
+		},
+		{
+			name:  "card 2",
+			input: " 0 [foo            ]: bar\n 1 [baz            ]: qux\n 2 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero\n",
+			want:  2,
+		},
+		{
+			name:    "no codec zero",
+			input:   " 0 [vc4hdmi        ]: vc4-hdmi - vc4-hdmi\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty",
+			input:   "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := findCodecCardIn(strings.NewReader(tt.input))
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got card %d", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got card %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultCaptureConfig(t *testing.T) {
 	cfg := DefaultCaptureConfig()
-	if cfg.Device != "plughw:1,0" {
-		t.Errorf("Device = %q, want %q", cfg.Device, "plughw:1,0")
-	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)
 	}
@@ -38,7 +89,6 @@ func TestDefaultPlaybackConfig(t *testing.T) {
 }
 
 func TestExtractChannel_Right(t *testing.T) {
-	// Stereo interleaved: [L0,R0, L1,R1, L2,R2]
 	interleaved := []int16{100, 200, 300, 400, 500, 600}
 	got := ExtractChannel(interleaved, 2, 1)
 	want := []int16{200, 400, 600}

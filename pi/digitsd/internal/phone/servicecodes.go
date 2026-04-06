@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 )
 
 // ServiceCodeHandler processes hidden service codes entered via the keypad.
@@ -213,11 +215,23 @@ func volumeToALSA(level int) int {
 	return 20 + (level * (58 - 20) / 9)
 }
 
+// codecCard returns the Codec Zero ALSA card number as a string for use
+// in amixer/alsactl commands. Falls back to "0" if detection fails.
+func codecCard() string {
+	card, err := audio.FindCodecCard()
+	if err != nil {
+		log.Printf("WARNING: codec detection failed for volume control, assuming card 0: %v", err)
+		return "0"
+	}
+	return fmt.Sprintf("%d", card)
+}
+
 // SetVolume sets Lineout volume. Level 0-9 maps to ALSA 20-58.
 // Persists the level to /data/digits/volume and saves full mixer state.
 func SetVolume(level int) error {
 	alsaVal := volumeToALSA(level)
-	cmd := exec.Command("amixer", "-c", "0", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	card := codecCard()
+	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -227,7 +241,7 @@ func SetVolume(level int) error {
 		log.Printf("volume: persist failed: %v", err)
 	}
 	// Save full mixer state
-	cmd = exec.Command("sudo", "alsactl", "store", "0", "-f", mixerStateFile)
+	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
 	cmd.Run() // best-effort
 	log.Printf("volume: %d/9 (Lineout=%d, persisted)", level, alsaVal)
 	return nil
@@ -245,7 +259,8 @@ func RestoreVolume() {
 		}
 	}
 	alsaVal := volumeToALSA(level)
-	cmd := exec.Command("amixer", "-c", "0", "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	card := codecCard()
+	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Printf("volume restore: amixer: %s: %v", strings.TrimSpace(string(out)), err)
 		return

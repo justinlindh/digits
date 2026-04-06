@@ -67,6 +67,8 @@ Two remotes:
 
 Push to gitea by default. Push to github intentionally. PRs required to merge into main on GitHub; no direct pushes. Use the PR template at `.github/pull_request_template.md`.
 
+**Never force push.** Always push new commits on top of existing branches. No `--force`, no `--force-with-lease`, no amending pushed commits.
+
 ## CI
 
 Mirrored workflows on both Gitea (`.gitea/workflows/`) and GitHub (`.github/workflows/`):
@@ -82,3 +84,4 @@ Mirrored workflows on both Gitea (`.gitea/workflows/`) and GitHub (`.github/work
 - Never use em dashes in any written copy
 - Never add Co-Authored-By trailers to commits
 - Never include Claude Code session links (claude.ai/code/session_*) in commits, PRs, or any other content
+- Don't leave "was removed" or "was here" comments when deleting code; just delete it
