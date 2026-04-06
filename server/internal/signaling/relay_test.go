@@ -8,10 +8,16 @@ type mockTracker struct {
 	initiated []string
 	answered  []string
 	ended     []string
+	calls     map[string]bool // "a→b" keys for active calls
+}
+
+func newMockTracker() *mockTracker {
+	return &mockTracker{calls: make(map[string]bool)}
 }
 
 func (m *mockTracker) OnCallInitiated(from, to string) error {
 	m.initiated = append(m.initiated, from+"→"+to)
+	m.calls[from+"→"+to] = true
 	return nil
 }
 func (m *mockTracker) OnCallAnswered(caller, callee string) error {
@@ -20,7 +26,12 @@ func (m *mockTracker) OnCallAnswered(caller, callee string) error {
 }
 func (m *mockTracker) OnCallEnded(caller, callee string) error {
 	m.ended = append(m.ended, caller+"→"+callee)
+	delete(m.calls, caller+"→"+callee)
+	delete(m.calls, callee+"→"+caller)
 	return nil
+}
+func (m *mockTracker) InCall(a, b string) bool {
+	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
 
 type mockCallAuthorizer struct {
@@ -33,7 +44,7 @@ func (m *mockCallAuthorizer) CanCall(fromNumber, toNumber string) (bool, error) 
 
 func TestRelayCallFlow(t *testing.T) {
 	hub := NewHub()
-	tracker := &mockTracker{}
+	tracker := newMockTracker()
 	relay := NewRelay(hub, tracker, nil)
 
 	// Register two mock connections
@@ -85,7 +96,7 @@ func TestRelayCallToOfflinePhone(t *testing.T) {
 
 func TestRelayCallAuthorizationIntegration(t *testing.T) {
 	hub := NewHub()
-	tracker := &mockTracker{}
+	tracker := newMockTracker()
 
 	// 3140001 and 3140002 are authorized; 3140003 is NOT authorized to be called by 3140001
 	authorizer := &mockCallAuthorizer{
@@ -174,12 +185,17 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 
 func TestRelayICERestartForwarded(t *testing.T) {
 	hub := NewHub()
-	relay := NewRelay(hub, nil, nil)
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
 	hub.Register("3140001", conn1)
 	hub.Register("3140002", conn2)
+
+	// Establish an active call first
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
 
 	// Phone 1 sends ICE restart to Phone 2
 	relay.HandleMessage("3140001", &Message{
@@ -205,6 +221,50 @@ func TestRelayICERestartForwarded(t *testing.T) {
 		}
 	default:
 		t.Fatal("phone 2 did not receive ice_restart")
+	}
+}
+
+func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+
+	// Phone 1 sends ICE restart without an active call
+	relay.HandleMessage("3140001", &Message{
+		Type: TypeICERestart,
+		To:   "3140002",
+		SDP:  "v=0\r\nrestart-offer\r\n",
+	})
+
+	// Sender should get an error
+	select {
+	case data := <-conn1.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeError {
+			t.Fatalf("expected error, got %s", msg.Type)
+		}
+		if msg.Error != "no active call" {
+			t.Fatalf("expected 'no active call', got %q", msg.Error)
+		}
+	default:
+		t.Fatal("sender did not receive error for ice_restart without active call")
+	}
+
+	// Target should not have received anything
+	select {
+	case data := <-conn2.Send:
+		msg, _ := ParseMessage(data)
+		t.Fatalf("target should not receive anything, got: %+v", msg)
+	default:
+		// correct
 	}
 }
 

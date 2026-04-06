@@ -93,6 +93,14 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 	return err
 }
 
+func (t *Tracker) InCall(a, b string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	_, fwd := t.active[callKey(a, b)]
+	_, rev := t.active[callKey(b, a)]
+	return fwd || rev
+}
+
 func (t *Tracker) Active() []activeCall {
 	t.mu.Lock()
 	defer t.mu.Unlock()
