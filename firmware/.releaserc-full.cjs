@@ -1,23 +1,4 @@
 // Firmware semantic-release config — full build with artifacts
-const isGitea = !!process.env.GITEA_URL;
-
-const publishPlugin = isGitea
-  ? ['@saithodev/semantic-release-gitea', {
-      giteaUrl: process.env.GITEA_URL,
-      assets: [
-        { path: '../artifacts/firmware-*.elf', label: 'Pico firmware (ELF)' },
-        { path: '../artifacts/firmware-*.elf.sha256', label: 'Firmware SHA256 checksum' },
-      ],
-    }]
-  : ['@semantic-release/github', {
-      assets: [
-        { path: '../artifacts/firmware-*.elf', label: 'Pico firmware (ELF)' },
-        { path: '../artifacts/firmware-*.elf.sha256', label: 'Firmware SHA256 checksum' },
-      ],
-      successComment: false,
-      failComment: false,
-    }];
-
 module.exports = {
   branches: ['main'],
   tagFormat: 'fw/v${version}',
@@ -38,6 +19,13 @@ module.exports = {
     ['@semantic-release/exec', {
       prepareCmd: 'bash ../tools/build-firmware.sh ${nextRelease.version}',
     }],
-    publishPlugin,
+    ['@semantic-release/github', {
+      assets: [
+        { path: '../artifacts/firmware-*.elf', label: 'Pico firmware (ELF)' },
+        { path: '../artifacts/firmware-*.elf.sha256', label: 'Firmware SHA256 checksum' },
+      ],
+      successComment: false,
+      failComment: false,
+    }],
   ],
 };
