@@ -225,38 +225,6 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 	return nil // unreachable
 }
 
-// copyFile copies src to dst atomically using a temp file + rename.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	tmp := dst + ".tmp"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-
-	if err := os.Chmod(tmp, 0755); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-
-	return os.Rename(tmp, dst)
-}
-
 // ApplyFirmwareUpdate moves the ELF to the flash path and runs the flash script.
 // Staging dir and firmware path are on the same filesystem (/data), so rename is atomic.
 func (u *Updater) ApplyFirmwareUpdate(stagedELF string) error {
