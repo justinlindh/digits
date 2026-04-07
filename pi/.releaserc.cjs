@@ -9,7 +9,10 @@ module.exports = {
         { scope: 'pi', type: 'fix', release: 'patch' },
         { scope: 'pi', type: 'perf', release: 'patch' },
         { scope: 'pi', breaking: true, release: 'major' },
-        { scope: '!pi', release: false },
+        { scope: 'digitsd', type: 'feat', release: 'minor' },
+        { scope: 'digitsd', type: 'fix', release: 'patch' },
+        { scope: 'digitsd', type: 'perf', release: 'patch' },
+        { scope: 'digitsd', breaking: true, release: 'major' },
       ],
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
