@@ -116,6 +116,12 @@ Hidden sequences that play audio clips through the earpiece. Each keypress must 
 | `0-0-0-0` | Rick Astley: *"Never gonna give you up..."* |
 | `8-6-7-5-3-0-9` | Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial) |
 
+## Hardware
+
+A custom carrier PCB is in pre-production that replaces the hand-wired protoboard with a single drop-in board. It integrates power regulation (12V to 5V), the Pico socket, Pi+Codec Zero header, and all off-board connectors (keypad, hook switch, bell ringer, handset audio, LED). Designed in KiCad, sized to fit the original Sangyn phone mounting posts.
+
+Status: boards ordered, components sourced, pending assembly and validation.
+
 ## Documentation
 
 - [Why Digits?](https://digits.family/why) -- the problem and vision

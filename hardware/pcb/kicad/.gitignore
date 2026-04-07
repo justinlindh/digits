@@ -1,0 +1,13 @@
+# KiCad lock files (created while KiCad has project open)
+*.lck
+
+# KiCad auto-backups
+*-backups/
+
+# KiCad local history
+.history/
+
+# Autorouter intermediate files
+*.dsn
+*.ses
+*.rules
