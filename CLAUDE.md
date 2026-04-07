@@ -46,6 +46,20 @@ PICO_SDK_PATH=/path/to/pico-sdk ./scripts/build.sh
 ./scripts/flash.sh  # copies UF2 to mounted Pico
 ```
 
+## Production deployment
+
+The server runs on the GPU box via Docker Compose. All commands from `server/`:
+
+```
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d      # start
+docker compose -f docker-compose.prod.yml --env-file .env.prod down        # stop
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f     # tail logs
+```
+
+The project name is `digits-prod` (set via `COMPOSE_PROJECT_NAME` in `.env.prod`). Do not omit `--env-file .env.prod` or use a bare `docker compose up` -- that creates a separate `server-*` set of containers and volumes, disconnected from production data.
+
+Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot).
+
 ## Commit conventions
 
 Conventional commits enforced by commitlint. Scope is required (warning if empty, error if invalid).
