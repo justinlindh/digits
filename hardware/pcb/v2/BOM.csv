@@ -1,0 +1,18 @@
+Quantity,Manufacturer Part Number,Manufacturer,Description,Reference,Source
+1,LM2596S-5.0/NOPB,Texas Instruments,5V 3A Step-Down Regulator TO-263-5,U1,DigiKey
+1,SB540-E3/73,Vishay,Schottky Diode 5A 40V DO-201AD,D1,Amazon
+1,7447471330,Wurth Elektronik,33uH 3.6A Radial Inductor 10mm,L1,DigiKey
+1,EEU-FC1E681,Panasonic,680uF 25V Electrolytic Radial 10mm,C1,DigiKey
+1,UVR1E221MPD,Nichicon,220uF 25V Electrolytic Radial 8mm,C2,DigiKey
+1,K104K15X7RF5TL2,Vishay,100nF Ceramic Disc Cap,C3,DigiKey
+1,CFR-25JB-52-220R,Yageo,220 Ohm 1/4W Axial Resistor,R1,DigiKey
+1,PJ-002A,CUI Devices,DC Barrel Jack 2.1x5.5mm Horizontal,J3,DigiKey
+1,B7B-ZR(LF)(SN),JST,ZH 7-Pin Header 1.5mm Vertical,J4,DigiKey
+1,B2B-ZR(LF)(SN),JST,ZH 2-Pin Header 1.5mm Vertical,J6,DigiKey
+1,B4B-ZR(LF)(SN),JST,ZH 4-Pin Header 1.5mm Vertical,J8,DigiKey
+1,SM03B-SRSS-TB(LF)(SN),JST,SH 3-Pin Header 1.0mm Horizontal,J2,DigiKey
+1,1935161,Phoenix Contact,2-Pos Screw Terminal 5mm Pitch,J7,DigiKey
+1,SSW-120-02-G-D,Samtec,2x20 Female Header 2.54mm,J1,DigiKey
+1,Generic 2.54mm male header,Various,Breakaway pin headers (1x2 1x3 1x4),J5 J9 J10,On hand
+3,M3 screws + standoffs,Various,M3 mounting hardware,H1 H2 H3,On hand
+1,TBD - 6x6mm tact switch with lever,TBD,Hook switch 8.6mm lever height,SW1,TBD
