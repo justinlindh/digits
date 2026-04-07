@@ -167,7 +167,10 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 		os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("download write: %w", err)
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		os.Remove(destPath + ".tmp")
+		return "", fmt.Errorf("flush download: %w", err)
+	}
 
 	gotSHA := hex.EncodeToString(h.Sum(nil))
 	if expectedSHA != "" && gotSHA != expectedSHA {
