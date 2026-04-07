@@ -19,7 +19,7 @@ docs/           Hardware notes, protocol specs, architecture
 
 - **Go 1.26+**
 - **PostgreSQL** -- the server reads `DATABASE_URL` to connect. Migrations run automatically on startup (inline in `internal/db/db.go`).
-- **Cross-compile toolchain** (for digitsd): `sudo apt install gcc-aarch64-linux-gnu libasound2-dev:arm64 libopus-dev:arm64 libopusfile-dev:arm64 pkg-config`
+- **Docker** (for digitsd cross-compile): `make build` uses a Docker container, no host cross-compile toolchain needed
 - **Pico SDK** (for firmware): set `PICO_SDK_PATH` to your checkout
 
 ## Build and test
@@ -35,8 +35,8 @@ go vet ./...
 
 digitsd (from `pi/digitsd/`):
 ```
-make build          # cross-compiles to linux/arm64 (needs cross-compile toolchain above)
-make build-local    # native build
+make build          # cross-compiles to linux/arm64 via Docker
+make build-local    # native build (requires local cross-compile libs)
 make test
 ```
 
