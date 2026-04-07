@@ -571,6 +571,10 @@ func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, report
 }
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
+	// When a specific component is targeted, don't auto-upgrade the other.
+	// A targeted trigger with only target_pi set should not also install firmware.
+	targeted := targetPi != "" || targetFW != ""
+
 	if reportStatus == nil {
 		reportStatus = func(string, string) {} // no-op
 	}
@@ -592,6 +596,17 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 		reportStatus("failed", fmt.Sprintf("Check failed: %v", err))
 		return
 	}
+	// When a specific component is targeted, suppress the other so we don't
+	// accidentally install firmware when the user only clicked "Install Pi Software".
+	if targeted {
+		if targetPi == "" {
+			result.PiAvailable = false
+		}
+		if targetFW == "" {
+			result.FWAvailable = false
+		}
+	}
+
 	if !result.PiAvailable && !result.FWAvailable {
 		log.Println("updater: already up to date")
 		reportStatus("up_to_date", "Already running latest version")
