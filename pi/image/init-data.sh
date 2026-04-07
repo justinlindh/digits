@@ -60,7 +60,7 @@ trap cleanup EXIT
 
 info "Creating /data directory structure at $MOUNT_POINT..."
 
-# digits/ — digitsd binary, config, tones, updater staging
+# digits/ — config, tones, updater staging
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits"
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/tones"
 
