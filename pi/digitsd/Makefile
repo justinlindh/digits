@@ -1,18 +1,25 @@
-BINARY   = digitsd
-PI_HOST ?= digits@<pi-ip>
-PI_DIR   = ~/digits/digitsd
-GOOS     = linux
-GOARCH   = arm64
+BINARY      = digitsd
+PI_HOST    ?= digits@<pi-ip>
+PI_DIR      = ~/digits/digitsd
+BUILDER_IMG = digitsd-builder
 
 VERSION ?= dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS  = -X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$(VERSION) \
            -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$(COMMIT)
+REPO_ROOT   = $(shell git rev-parse --show-toplevel)
 
-.PHONY: build build-local deploy run test clean
+.PHONY: build build-local builder deploy run test clean
 
-build:
-	CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=$(GOOS) GOARCH=$(GOARCH) \
+builder:
+	@docker build -q -t $(BUILDER_IMG) -f Dockerfile.builder .
+
+build: builder
+	@mkdir -p bin
+	docker run --rm \
+		-v $(REPO_ROOT):/src -w /src/pi/digitsd \
+		-v digitsd-gomodcache:/go/pkg/mod \
+		$(BUILDER_IMG) \
 		go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/digitsd
 
 build-local:
