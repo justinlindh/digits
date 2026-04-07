@@ -28,9 +28,10 @@ validate_nmconnection() {
         log "VALIDATE: file empty: $file"
         return 1
     fi
-    # Check for null bytes (sign of filesystem corruption)
-    if tr -d '\0' < "$file" | wc -c | grep -q '^0$'; then
-        log "VALIDATE: file is all null bytes: $file"
+    # Check for null bytes (sign of filesystem corruption).
+    # A valid nmconnection file is plain text and should never contain nulls.
+    if grep -Pq '\x00' "$file"; then
+        log "VALIDATE: file contains null bytes: $file"
         return 1
     fi
     # Must contain key NM connection sections
