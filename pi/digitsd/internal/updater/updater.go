@@ -56,7 +56,7 @@ func New(cfg Config) *Updater {
 	}
 	return &Updater{
 		cfg:    cfg,
-		client: &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -191,58 +191,38 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 	}
 
 	// Remount rootfs read-write so we can replace the binary.
-	if err := exec.Command("mount", "-o", "remount,rw", "/").Run(); err != nil {
+	if err := exec.Command("sudo", "mount", "-o", "remount,rw", "/").Run(); err != nil {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 
-	// Copy staged binary to destination (cross-filesystem, can't use rename).
-	if err := copyFile(stagedBinary, u.cfg.BinaryPath); err != nil {
-		// Best-effort restore ro before returning.
-		exec.Command("mount", "-o", "remount,ro", "/").Run()
+	// Copy staged binary via sudo using tmp+mv to avoid "text file busy" on the
+	// running executable. Direct cp fails because the kernel won't let you
+	// overwrite an open binary.
+	tmpDst := u.cfg.BinaryPath + ".tmp"
+	if err := exec.Command("sudo", "cp", stagedBinary, tmpDst).Run(); err != nil {
+		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
 		return fmt.Errorf("copy binary: %w", err)
+	}
+	if err := exec.Command("sudo", "chmod", "0755", tmpDst).Run(); err != nil {
+		exec.Command("sudo", "rm", "-f", tmpDst).Run()
+		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		return fmt.Errorf("chmod binary: %w", err)
+	}
+	if err := exec.Command("sudo", "mv", tmpDst, u.cfg.BinaryPath).Run(); err != nil {
+		exec.Command("sudo", "rm", "-f", tmpDst).Run()
+		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		return fmt.Errorf("rename binary: %w", err)
 	}
 	os.Remove(stagedBinary)
 
 	// Restore read-only rootfs.
-	if err := exec.Command("mount", "-o", "remount,ro", "/").Run(); err != nil {
+	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
 		log.Printf("updater: WARNING: failed to remount ro: %v", err)
 	}
 
 	log.Println("updater: Pi binary updated -- exiting for restart")
 	os.Exit(0)
 	return nil // unreachable
-}
-
-// copyFile copies src to dst atomically using a temp file + rename.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	tmp := dst + ".tmp"
-	out, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := out.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-
-	if err := os.Chmod(tmp, 0755); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-
-	return os.Rename(tmp, dst)
 }
 
 // ApplyFirmwareUpdate moves the ELF to the flash path and runs the flash script.

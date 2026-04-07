@@ -310,7 +310,7 @@
             attempts++;
             if (attempts > 120) {
               clearInterval(window[timerVar]);
-              showResult(prefix, 'failed', 'Timed out waiting for update status');
+              showResult(prefix, 'failed', 'Timed out; please retry');
               return;
             }
             fetch('/phones/' + phoneNumber + '/update-status')
