@@ -8,7 +8,7 @@ Everything you need to build a Digits phone from scratch.
 - [Wiring](build/wiring.md) -- full electrical spec, GPIO map, connectors
 - [Datasheets](build/datasheets.md) -- component reference sheets
 - [Hardware kill switch](build/hardware-kill-switch.md) -- mic privacy circuit
-- [Teardown notes](build/teardown/notes.md) -- Sangyn 2500 disassembly reference
+- [Teardown photos](build/teardown/photos/) -- Sangyn 2500 disassembly reference photos
 
 ## How It Works
 
