@@ -24,6 +24,7 @@ type Configurator interface {
 type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
+	ReadFile(name string) ([]byte, error)
 }
 
 // Rebooter abstracts the system reboot.
@@ -40,6 +41,10 @@ func (OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
 
 func (OSFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(name, data, perm)
+}
+
+func (OSFileSystem) ReadFile(name string) ([]byte, error) {
+	return os.ReadFile(name)
 }
 
 // SystemRebooter calls `systemctl reboot`.
@@ -105,6 +110,15 @@ method=auto
 	nmPath := filepath.Join(wpaDir, "digits-wifi.nmconnection")
 	if err := fs.WriteFile(nmPath, []byte(nmConn), 0600); err != nil {
 		return fmt.Errorf("write nmconnection: %w", err)
+	}
+
+	// Read back and verify the file was written correctly
+	readBack, err := fs.ReadFile(nmPath)
+	if err != nil {
+		return fmt.Errorf("verify nmconnection: read-back failed: %w", err)
+	}
+	if string(readBack) != nmConn {
+		return fmt.Errorf("verify nmconnection: read-back mismatch (wrote %d bytes, read %d bytes)", len(nmConn), len(readBack))
 	}
 
 	// Set wifi-configured flag
