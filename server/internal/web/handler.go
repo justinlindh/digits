@@ -1154,6 +1154,12 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	const (
+		wsPingInterval = 30 * time.Second
+		wsPongTimeout  = 45 * time.Second
+		wsWriteTimeout = 10 * time.Second
+	)
+
 	conn := &signaling.Conn{
 		WS:         ws,
 		HardwareID: msg.HardwareID,
@@ -1162,16 +1168,38 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	h.hub.Register(msg.Number, conn)
 	number := msg.Number
 
-	// Write pump
+	// Configure pong handler to extend read deadline on each pong
+	ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+	ws.SetPongHandler(func(string) error {
+		ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+		return nil
+	})
+
+	// Write pump with periodic pings
 	go func() {
+		ticker := time.NewTicker(wsPingInterval)
+		defer ticker.Stop()
 		defer ws.Close()
-		for data := range conn.Send {
-			if err := ws.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
-				return
-			}
-			if err := ws.WriteMessage(websocket.TextMessage, data); err != nil {
-				slog.Error("websocket write failed", "number", number, "err", err)
-				return
+		for {
+			select {
+			case data, ok := <-conn.Send:
+				if !ok {
+					return
+				}
+				if err := ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
+					return
+				}
+				if err := ws.WriteMessage(websocket.TextMessage, data); err != nil {
+					slog.Error("websocket write failed", "number", number, "err", err)
+					return
+				}
+			case <-ticker.C:
+				if err := ws.SetWriteDeadline(time.Now().Add(wsWriteTimeout)); err != nil {
+					return
+				}
+				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
 			}
 		}
 	}()
