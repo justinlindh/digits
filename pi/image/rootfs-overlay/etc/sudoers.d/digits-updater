@@ -1,2 +1,7 @@
-# Allow the digits service user to remount rootfs for OTA updates.
+# Allow the digits service user to perform OTA updates:
+#   - remount rootfs rw/ro for binary replacement
+#   - run openocd for SWD firmware flashing
+#   - stop/start digitsd service
 digits ALL=(root) NOPASSWD: /usr/bin/mount -o remount\,rw /, /usr/bin/mount -o remount\,ro /
+digits ALL=(root) NOPASSWD: /usr/bin/openocd
+digits ALL=(root) NOPASSWD: /usr/bin/systemctl stop digitsd.service, /usr/bin/systemctl start digitsd.service
