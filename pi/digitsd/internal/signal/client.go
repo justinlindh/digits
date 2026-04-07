@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	// pongTimeout is how long the client waits for a pong (or any read)
+	// pingTimeout is how long the client waits between server pings
 	// before considering the connection dead. Must be greater than the
 	// server's ping interval (30s).
-	pongTimeout = 45 * time.Second
+	pingTimeout = 45 * time.Second
 )
 
 // Client connects to a signald WebSocket server and manages message I/O.
@@ -78,10 +78,10 @@ func (c *Client) Connect() error {
 
 	// Reset read deadline on each server ping so Cloudflare/proxy
 	// idle timeouts don't kill the connection.
-	c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongTimeout))
-		return nil
+	c.conn.SetReadDeadline(time.Now().Add(pingTimeout))
+	c.conn.SetPingHandler(func(appData string) error {
+		c.conn.SetReadDeadline(time.Now().Add(pingTimeout))
+		return c.conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
 	})
 
 	go c.readPump()
