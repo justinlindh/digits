@@ -1,0 +1,2 @@
+# Allow the digits service user to remount rootfs for OTA updates.
+digits ALL=(root) NOPASSWD: /usr/bin/mount -o remount\,rw /, /usr/bin/mount -o remount\,ro /

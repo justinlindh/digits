@@ -880,7 +880,7 @@ func main() {
 	})
 
 	// Detect SWD flash capability early (needed by update callbacks and device_info).
-	_, err1 := os.Stat("/usr/local/bin/openocd")
+	_, err1 := os.Stat("/usr/bin/openocd")
 	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
 	flashCapable := err1 == nil && err2 == nil
 

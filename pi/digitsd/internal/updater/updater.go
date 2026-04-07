@@ -191,20 +191,20 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 	}
 
 	// Remount rootfs read-write so we can replace the binary.
-	if err := exec.Command("mount", "-o", "remount,rw", "/").Run(); err != nil {
+	if err := exec.Command("sudo", "mount", "-o", "remount,rw", "/").Run(); err != nil {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 
 	// Copy staged binary to destination (cross-filesystem, can't use rename).
 	if err := copyFile(stagedBinary, u.cfg.BinaryPath); err != nil {
 		// Best-effort restore ro before returning.
-		exec.Command("mount", "-o", "remount,ro", "/").Run()
+		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
 		return fmt.Errorf("copy binary: %w", err)
 	}
 	os.Remove(stagedBinary)
 
 	// Restore read-only rootfs.
-	if err := exec.Command("mount", "-o", "remount,ro", "/").Run(); err != nil {
+	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
 		log.Printf("updater: WARNING: failed to remount ro: %v", err)
 	}
 
