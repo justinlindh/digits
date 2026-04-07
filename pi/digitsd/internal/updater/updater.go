@@ -195,15 +195,23 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 
-	// Copy staged binary to destination via sudo (digitsd runs as unprivileged
-	// user, but /usr/local/bin is owned by root).
-	if err := exec.Command("sudo", "cp", stagedBinary, u.cfg.BinaryPath).Run(); err != nil {
+	// Copy staged binary via sudo using tmp+mv to avoid "text file busy" on the
+	// running executable. Direct cp fails because the kernel won't let you
+	// overwrite an open binary.
+	tmpDst := u.cfg.BinaryPath + ".tmp"
+	if err := exec.Command("sudo", "cp", stagedBinary, tmpDst).Run(); err != nil {
 		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
 		return fmt.Errorf("copy binary: %w", err)
 	}
-	if err := exec.Command("sudo", "chmod", "0755", u.cfg.BinaryPath).Run(); err != nil {
+	if err := exec.Command("sudo", "chmod", "0755", tmpDst).Run(); err != nil {
+		exec.Command("sudo", "rm", "-f", tmpDst).Run()
 		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
 		return fmt.Errorf("chmod binary: %w", err)
+	}
+	if err := exec.Command("sudo", "mv", tmpDst, u.cfg.BinaryPath).Run(); err != nil {
+		exec.Command("sudo", "rm", "-f", tmpDst).Run()
+		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		return fmt.Errorf("rename binary: %w", err)
 	}
 	os.Remove(stagedBinary)
 
