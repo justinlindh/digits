@@ -11,9 +11,9 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 | Ref | V1 Part | V1 Package | V2 Part | V2 Package | JLCPCB # | Reason |
 |-----|---------|------------|---------|------------|-----------|--------|
 | D1 | SB540 | DO-201AD (THT) | SS54 | SMA (DO-214AC) | C22452 | SMD Schottky, same 5A/40V spec |
-| L1 | Wurth 33uH radial | 10mm THT | Sunlord SWPA6045S330MT | 6.0x6.0x4.5mm SMD | C167293 | Shielded SMD power inductor, 33uH 3A |
+| L1 | Wurth 33uH radial | 10mm THT | Sunlord SWPA6045S330MT | 6.0x6.0x4.5mm SMD | C9400 | Shielded SMD power inductor, 33uH 3A |
 | C1 | Panasonic 680uF 25V | Radial THT | DMBJ RVT1E681M1010 | SMD 10x10mm | C976031 | SMD aluminum electrolytic |
-| C2 | Nichicon 220uF 25V | Radial THT | DMBJ RVT1E221M0811 | SMD 8x10mm | C2891572 | SMD aluminum electrolytic |
+| C2 | Nichicon 220uF 25V | Radial THT | DMBJ RVT1E221M0811 | SMD 8x10mm | C2895286 | SMD aluminum electrolytic |
 | C3 | Vishay 100nF disc | THT | Samsung CL21B104KBCNNNC | 0805 | C49678 | Standard 0805 MLCC |
 | R1 | Yageo 220Ω 1/4W | Axial THT | Yageo RC0805FR-07220RL | 0805 | C17557 | Standard 0805 resistor |
 
@@ -21,8 +21,8 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 
 | Ref | Part | Package | JLCPCB # | Purpose |
 |-----|------|---------|-----------|---------|
-| U2 | DRV8871DDAR | SOIC-8 | C115180 | On-board H-bridge, replaces external L298N module |
-| R2 | 0.22Ω 1% | 2512 | C137950 | DRV8871 current-sense resistor (I_LIMIT ≈ 1.36A) |
+| U2 | DRV8871DDAR | SOIC-8 | C75864 | On-board H-bridge, replaces external L298N module |
+| R2 | 0.22Ω 1% | 2512 | C146886 | DRV8871 current-sense resistor (I_LIMIT ≈ 1.36A) |
 | C4 | 100nF 50V MLCC | 0805 | C49678 | DRV8871 VCC decoupling |
 | TP1-TP6 | Test points | SMD pad | — | +5V, +12V, GND, UART_TX, UART_RX, SW_NODE |
 
@@ -152,3 +152,60 @@ J1 (B.Cu side), J2, J3, J4, J6, J7, J8, J9, J10, SW1
 - UART protocol: `docs/architecture/uart-protocol.md`
 - DRV8871 datasheet: https://www.ti.com/lit/ds/symlink/drv8871.pdf
 - LM2596 datasheet: https://www.ti.com/lit/ds/symlink/lm2596.pdf
+
+---
+
+## KiCad ↔ JLCPCB Part Mapping
+
+### Setup: Install Bouni's kicad-jlcpcb-tools plugin
+
+This plugin lets you search JLCPCB's parts database directly from KiCad's PCB editor, assign LCSC part numbers to footprints, and generate BOM + CPL files in JLCPCB's required format.
+
+**Install via KiCad Plugin and Content Manager:**
+1. Open KiCad → Plugin and Content Manager
+2. Add custom repository: `https://raw.githubusercontent.com/Bouni/bouni-kicad-repository/main/repository.json`
+3. Install "JLCPCB Tools"
+4. Access from PCB Editor → Tools → External Plugins → JLCPCB Tools
+
+**Alternative: JLCPCB KiCad Library (CDFER)**
+Pre-built symbols + footprints with LCSC numbers already assigned:
+1. Add repo: `https://raw.githubusercontent.com/CDFER/cd_fer-kicad-repository/main/repository.json`
+2. Install via Plugin and Content Manager
+3. Use these symbols directly in schematic — LCSC numbers auto-populate
+
+### Direct Component Mapping Table
+
+Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using the JLCPCB Tools plugin):
+
+| Ref | KiCad Symbol | KiCad Footprint | LCSC Part # | JLCPCB Link | Verified Stock |
+|-----|-------------|-----------------|-------------|-------------|----------------|
+| U1 | Regulator_Switching:LM2596S-5 | Package_TO_SOT_SMD:TO-263-5 | C347421 | [Link](https://jlcpcb.com/partdetail/C347421) | 99,717 |
+| D1 | Diode:SS54 | Diode_SMD:D_SMA | C22452 | [Link](https://jlcpcb.com/partdetail/C22452) | 1,470,233 |
+| L1 | Inductor_SMD:33uH | Inductor_SMD:L_12x12mm_H8mm | C9400 | [Link](https://jlcpcb.com/partdetail/C9400) | 44,740 |
+| C1 | Device:CP1 | Capacitor_SMD:CP_Elec_10x10.5 | C976031 | [Link](https://jlcpcb.com/partdetail/C976031) | 12,651 |
+| C2 | Device:CP1 | Capacitor_SMD:CP_Elec_8x10.5 | C2895286 | [Link](https://jlcpcb.com/partdetail/C2895286) | 2,864 |
+| C3 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | [Link](https://jlcpcb.com/partdetail/C49678) | 13,893,007 |
+| R1 | Device:R | Resistor_SMD:R_0805_2012Metric | C17557 | [Link](https://jlcpcb.com/partdetail/C17557) | 864,653 |
+| U2 | Motor_Driver:DRV8871 | Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm | C75864 | [Link](https://jlcpcb.com/partdetail/C75864) | 6,376 |
+| R2 | Device:R | Resistor_SMD:R_2512_6332Metric | C146886 | [Link](https://jlcpcb.com/partdetail/C146886) | 32 ⚠️ |
+| C4 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | 13,893,007 |
+
+### ⚠️ Low Stock Alert
+
+**R2 (C146886)** — Only 32 in stock. Consider alternatives:
+- Order early before stock depletes
+- Search for alternative 220mΩ 2512 resistors via the JLCPCB Tools plugin
+- If out of stock at order time, this one part can be hand-soldered (2512 is large enough)
+
+### Generating JLCPCB Production Files
+
+With the plugin installed:
+1. Open PCB in KiCad PCB Editor
+2. Tools → External Plugins → JLCPCB Tools
+3. Assign LCSC numbers (see table above) to each footprint
+4. Click "Generate Fabrication Data"
+5. Output: `jlcpcb/production_files/` with:
+   - Gerber ZIP
+   - BOM CSV (JLCPCB format)
+   - CPL/pick-and-place file
+6. Upload all three to JLCPCB order page
