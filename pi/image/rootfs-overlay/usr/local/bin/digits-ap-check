@@ -16,6 +16,48 @@ log() {
     logger -t "$LOG_TAG" "$*" 2>/dev/null || true
 }
 
+# Validate that an nmconnection file is not corrupt.
+# Returns 0 if valid, 1 if missing/corrupt.
+validate_nmconnection() {
+    local file="$1"
+    if [ ! -f "$file" ]; then
+        log "VALIDATE: file missing: $file"
+        return 1
+    fi
+    if [ ! -s "$file" ]; then
+        log "VALIDATE: file empty: $file"
+        return 1
+    fi
+    # Check for null bytes (sign of filesystem corruption).
+    # A valid nmconnection file is plain text and should never contain nulls.
+    if grep -Pq '\x00' "$file"; then
+        log "VALIDATE: file contains null bytes: $file"
+        return 1
+    fi
+    # Must contain key NM connection sections
+    if ! grep -q '^\[connection\]' "$file" || ! grep -q '^\[wifi\]' "$file"; then
+        log "VALIDATE: file missing required [connection] or [wifi] sections: $file"
+        return 1
+    fi
+    return 0
+}
+
+# Clear wifi-configured state so the device falls back to AP mode.
+reset_wifi_config() {
+    log "Resetting wifi config -- will enter AP mode"
+    rm -f "$WIFI_CONFIGURED_FLAG"
+    rm -f "$NM_CONN_SRC"
+}
+
+if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+    # Validate the config file before trusting it
+    if ! validate_nmconnection "$NM_CONN_SRC"; then
+        log "WARNING: Wi-Fi config is corrupt or missing -- falling back to AP mode"
+        reset_wifi_config
+        # Fall through to the AP mode block below
+    fi
+fi
+
 if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
     log "Wi-Fi configured — starting normal boot"
 

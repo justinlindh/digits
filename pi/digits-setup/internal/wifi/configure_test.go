@@ -35,6 +35,14 @@ func (m *mockFS) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
+func (m *mockFS) ReadFile(name string) ([]byte, error) {
+	f, ok := m.files[name]
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+	return f.data, nil
+}
+
 // mockRebooter records if reboot was scheduled.
 type mockRebooter struct {
 	called bool
@@ -155,6 +163,38 @@ func TestConfigureVisibleNetworkNoScanSSID(t *testing.T) {
 	nmStr := string(nm.data)
 	if strings.Contains(nmStr, "hidden=") {
 		t.Errorf("visible network should not have hidden=, got: %s", nmStr)
+	}
+}
+
+// corruptingFS writes null bytes instead of actual data, simulating filesystem corruption.
+type corruptingFS struct {
+	mockFS
+}
+
+func (c *corruptingFS) WriteFile(name string, data []byte, perm os.FileMode) error {
+	corrupt := make([]byte, len(data))
+	c.files[name] = mockFile{data: corrupt, perm: perm}
+	return nil
+}
+
+func TestConfigureCorruptWrite(t *testing.T) {
+	fs := &corruptingFS{mockFS: *newMockFS()}
+	rebooter := &mockRebooter{}
+
+	req := ConfigRequest{
+		SSID:     "MyNetwork",
+		Password: "secret123",
+	}
+
+	err := ConfigureWithDeps(req, fs, rebooter)
+	if err == nil {
+		t.Fatal("expected error for corrupt write")
+	}
+	if !strings.Contains(err.Error(), "read-back mismatch") {
+		t.Errorf("error = %q, want read-back mismatch", err.Error())
+	}
+	if rebooter.called {
+		t.Error("reboot should not be scheduled on corrupt write")
 	}
 }
 
