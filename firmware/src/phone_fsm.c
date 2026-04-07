@@ -182,6 +182,12 @@ static void process_pi_command(const char *cmd) {
     } else if (strcmp(cmd, "HOOK:RELEASE") == 0) {
         hook_clear_force();
         uart_proto_send("HOOK:RELEASED");
+    } else if (strcmp(cmd, "HOOK:INVERT:ON") == 0) {
+        hook_set_inverted(true);
+        uart_proto_send("HOOK:INVERT:ON");
+    } else if (strcmp(cmd, "HOOK:INVERT:OFF") == 0) {
+        hook_set_inverted(false);
+        uart_proto_send("HOOK:INVERT:OFF");
     } else if (strcmp(cmd, "KEYTEST") == 0) {
         s_keytest_mode = true;
         set_state(PHONE_STATE_IDLE);
