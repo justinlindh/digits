@@ -18,9 +18,12 @@ static bool s_event_off_hook = false;
 static bool s_force_mode = false;
 static bool s_forced_state = false;
 
+// Invert mode: when true, LOW = off-hook (PCB carrier board tactile switch).
+static bool s_inverted = false;
+
 static bool read_physical_off_hook(void) {
-    // HIGH = off-hook, LOW = on-hook
-    return (gpio_get(HOOK_PIN) != 0);
+    bool raw = (gpio_get(HOOK_PIN) != 0);
+    return s_inverted ? !raw : raw;
 }
 
 void hook_init(void) {
@@ -119,4 +122,22 @@ void hook_clear_force(void) {
 
 bool hook_is_forced(void) {
     return s_force_mode;
+}
+
+void hook_set_inverted(bool inverted) {
+    if (inverted == s_inverted) {
+        return;
+    }
+    s_inverted = inverted;
+
+    // Re-sync debounce state with the new interpretation.
+    bool physical = read_physical_off_hook();
+    s_raw_last = physical;
+    s_off_hook = physical;
+    s_stable_since = get_absolute_time();
+    s_event_pending = false;
+}
+
+bool hook_is_inverted(void) {
+    return s_inverted;
 }

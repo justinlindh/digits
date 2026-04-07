@@ -48,6 +48,8 @@ Commands use colon-separated tokens (no spaces). All uppercase.
 | `HOOK:FORCE:ON`  | `HOOK:FORCED:ON_HOOK` | Override hook to on-hook (handset down). Physical pin ignored. |
 | `HOOK:FORCE:OFF` | `HOOK:FORCED:OFF_HOOK`| Override hook to off-hook (handset up). Physical pin ignored. |
 | `HOOK:RELEASE`   | `HOOK:RELEASED`       | Clear override, return to physical pin reading.  |
+| `HOOK:INVERT:ON` | `HOOK:INVERT:ON`      | Invert hook sense (LOW=off-hook). For PCB carrier boards.    |
+| `HOOK:INVERT:OFF`| `HOOK:INVERT:OFF`     | Normal hook sense (HIGH=off-hook). Default for protoboards.  |
 
 ### System / Debug
 
