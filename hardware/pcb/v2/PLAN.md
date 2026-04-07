@@ -22,7 +22,7 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 | Ref | Part | Package | JLCPCB # | Purpose |
 |-----|------|---------|-----------|---------|
 | U2 | DRV8871DDAR | SOIC-8 | C75864 | On-board H-bridge, replaces external L298N module |
-| R2 | 0.22Ω 1% | 2512 | C146886 | DRV8871 current-sense resistor (I_LIMIT ≈ 0.91A) |
+| R2 | 0.1Ω 1% | 2512 | C160587 | DRV8871 current-sense resistor (I_LIMIT ≈ 2.0A) |
 | C4 | 100nF 50V MLCC | 0805 | C49678 | DRV8871 VCC decoupling |
 | TP1-TP6 | Test points | SMD pad | — | +5V, +12V, GND, UART_TX, UART_RX, SW_NODE |
 
@@ -58,7 +58,7 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 ### DRV8871 H-Bridge (U2) — replaces L298N module
 
 The DRV8871DDAR is a 3.6A, 6.5–45V H-bridge in SOIC-8. It needs only:
-- R2: current-sense resistor on ISEN pin (0.22Ω → I_LIMIT ≈ 200mV / 0.22Ω ≈ 0.9A peak)
+- R2: current-sense resistor on ISEN pin (0.1Ω → I_LIMIT ≈ 200mV / 0.1Ω ≈ 0.9A peak)
 - C4: 100nF decoupling cap on VCC
 
 **Connections:**
@@ -187,14 +187,14 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | C3 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | [Link](https://jlcpcb.com/partdetail/C49678) | 13,893,007 |
 | R1 | Device:R | Resistor_SMD:R_0805_2012Metric | C17557 | [Link](https://jlcpcb.com/partdetail/C17557) | 864,653 |
 | U2 | Motor_Driver:DRV8871 | Package_SO:SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm | C75864 | [Link](https://jlcpcb.com/partdetail/C75864) | 6,376 |
-| R2 | Device:R | Resistor_SMD:R_2512_6332Metric | C146886 | [Link](https://jlcpcb.com/partdetail/C146886) | 32 ⚠️ |
+| R2 | Device:R | Resistor_SMD:R_2512_6332Metric | C160587 | [Link](https://jlcpcb.com/partdetail/C160587) | 32 ⚠️ |
 | C4 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | 13,893,007 |
 
 ### ⚠️ Low Stock Alert
 
-**R2 (C146886)** — Only 32 in stock. Consider alternatives:
+**R2 (C160587)** — Only 32 in stock. Consider alternatives:
 - Order early before stock depletes
-- Search for alternative 220mΩ 2512 resistors via the JLCPCB Tools plugin
+- Search for alternative 100mΩ 2512 resistors via the JLCPCB Tools plugin
 - If out of stock at order time, this one part can be hand-soldered (2512 is large enough)
 
 ### Generating JLCPCB Production Files
@@ -218,7 +218,7 @@ With the plugin installed:
 U2 (DRV8871) VCC must have a low-impedance PCB trace to C1 (680uF on +12V rail) for transformer inductive kickback absorption. C4 (100nF) alone is insufficient. If layout requires long trace to C1, add a local 10uF MLCC near U2 VCC.
 
 ### Bell Volume — First Board Test
-The DRV8871 current limit (0.91A with R2=0.22Ω) may reduce bell volume compared to v1's L298N (no current limiting). If bell is too quiet on first assembled board:
+The DRV8871 current limit (2.0A with R2=0.1Ω) may reduce bell volume compared to v1's L298N (no current limiting). If bell is too quiet on first assembled board:
 - Replace R2 with 0.1Ω → I_LIMIT = 2.0A
 - DRV8871 is rated for 3.6A peak, so this is safe
 

@@ -7,7 +7,7 @@ Quantity,Manufacturer Part Number,Manufacturer,Description,Reference,Package,JLC
 1,CC0805KRX7R9BB104,YAGEO,100nF 50V X7R MLCC,C3,0805,C49678,SMT,JLCPCB,Yes (13893007 in stock) Basic
 1,0805W8F2200T5E,UNI-ROYAL,220 Ohm 1% 0805,R1,0805,C17557,SMT,JLCPCB,Yes (864653 in stock) Basic
 1,DRV8871DDAR,Texas Instruments,3.6A H-Bridge Motor Driver,U2,SO-8-EP,C75864,SMT,JLCPCB,Yes (6376 in stock)
-1,CR2512JR220E04R,Ever Ohms,220mΩ 5% 1W Current Sense,R2,2512,C146886,SMT,JLCPCB,Yes (32 in stock) LOW STOCK
+1,100mΩ 2W Alloy,Various,100mΩ 1% 2W Current Sense,R2,2512,C160587,SMT,JLCPCB,Yes (65255 in stock)
 1,CC0805KRX7R9BB104,YAGEO,100nF 50V MLCC (DRV8871 decoupling),C4,0805,C49678,SMT,JLCPCB,Yes (same as C3)
 1,PJ-002A,CUI Devices,DC Barrel Jack 2.1x5.5mm,J3,THT,-,Hand solder,DigiKey,-
 1,B7B-ZR(LF)(SN),JST,ZH 7-Pin Header 1.5mm Vertical,J4,THT,-,Hand solder,DigiKey,-
