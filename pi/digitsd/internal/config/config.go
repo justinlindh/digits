@@ -33,6 +33,12 @@ type Config struct {
 	// successful pairing exchange. If non-empty, pairing is complete.
 	DeviceToken string `json:"device_token,omitempty"`
 
+	// HookInverted inverts the hook switch sense on the Pico firmware.
+	// Set to true for PCB carrier boards with on-board tactile switch
+	// (LOW = off-hook). Leave false for protoboard builds with V-153-1C25
+	// microswitch (HIGH = off-hook).
+	HookInverted bool `json:"hook_inverted,omitempty"`
+
 	// path is the file the config was loaded from; used by Save.
 	path string
 }

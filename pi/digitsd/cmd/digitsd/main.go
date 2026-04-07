@@ -767,6 +767,25 @@ func main() {
 		}
 	}
 
+	// Configure hook inversion for PCB carrier boards
+	if postOk && cfg.HookInverted {
+		const hookInvertCmd = "HOOK:INVERT:ON"
+		var hookOk bool
+		for i := 1; i <= 3; i++ {
+			resp, err := sp.SendCommand(hookInvertCmd, 2*time.Second)
+			if err == nil && resp == hookInvertCmd {
+				log.Printf("hook invert: configured (%s)", resp)
+				hookOk = true
+				break
+			}
+			log.Printf("hook invert: attempt %d/3 failed (resp=%q err=%v)", i, resp, err)
+			time.Sleep(500 * time.Millisecond)
+		}
+		if !hookOk {
+			log.Fatal("hook invert: failed after 3 attempts — refusing to run with wrong hook polarity")
+		}
+	}
+
 	// 2. Open ALSA playback (direct hardware, no dmix)
 	pbDev := *alsaDevice
 	if pbDev == "" {

@@ -4,7 +4,7 @@
 # Takes an official Raspberry Pi OS Lite (Bookworm, 64-bit) image and
 # customizes it with Digits software, services, and configuration.
 #
-# Usage: sudo ./tools/build-image.sh [--dev] <raspios-lite.img|.img.xz>
+# Usage: sudo ./tools/build-image.sh [--dev] [--pcb] <raspios-lite.img|.img.xz>
 #
 # Prerequisites:
 #   - x86_64 Linux host
@@ -140,11 +140,25 @@ info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
+# PCB mode: pass --pcb to configure for PCB carrier board (inverted hook switch)
 DEV_MODE=false
-if [[ "${1:-}" == "--dev" ]]; then
-    DEV_MODE=true
+PCB_MODE=false
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --dev)
+            DEV_MODE=true
+            info "DEV MODE: SSH will be enabled with user 'dev' / password 'digits'"
+            ;;
+        --pcb)
+            PCB_MODE=true
+            info "PCB MODE: hook_inverted will be set in config.json"
+            ;;
+        *)
+            die "Unknown flag: $1"
+            ;;
+    esac
     shift
-    info "DEV MODE: SSH will be enabled with user 'dev' / password 'digits'"
+done
 fi
 
 require_cmd() {
@@ -353,7 +367,7 @@ require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
 
 INPUT_IMG="${1:-}"
-[[ -n "$INPUT_IMG" ]] || die "Usage: $0 [--dev] <raspios-lite.img|.img.xz>"
+[[ -n "$INPUT_IMG" ]] || die "Usage: $0 [--dev] [--pcb] <raspios-lite.img|.img.xz>"
 [[ -f "$INPUT_IMG" ]] || die "Input image not found: $INPUT_IMG"
 
 # Verify pre-built binaries exist
@@ -613,7 +627,11 @@ fi
 # ── step 15: initialize /data partition (host-side) ─────────────────────────
 
 info "Initializing /data directory structure..."
-bash "$INIT_DATA" "$DATA_MNT"
+if [[ "$PCB_MODE" == true ]]; then
+    bash "$INIT_DATA" --pcb "$DATA_MNT"
+else
+    bash "$INIT_DATA" "$DATA_MNT"
+fi
 
 # ── step 16: configure boot (host-side) ─────────────────────────────────────
 

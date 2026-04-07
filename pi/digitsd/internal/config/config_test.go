@@ -279,6 +279,43 @@ func TestSetDeviceTokenClearsPairingCode(t *testing.T) {
 	}
 }
 
+func TestHookInvertedDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Existing config without hook_inverted field defaults to false
+	data := `{"server_url": "wss://digits.family/ws", "device_token": "tok-abc"}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if c.HookInverted {
+		t.Error("HookInverted should default to false when not in config")
+	}
+}
+
+func TestHookInvertedTrue(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"server_url": "wss://digits.family/ws", "device_token": "tok-abc", "hook_inverted": true}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !c.HookInverted {
+		t.Error("HookInverted should be true when set in config")
+	}
+}
+
 func TestCLIOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
