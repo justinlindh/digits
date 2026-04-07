@@ -1,0 +1,12 @@
+~*.lck
+*.lck
+*-backups/
+*backups/
+.history/
+*.dsn
+*.ses
+*.rules
+DRC.rpt
+ERC.rpt
+digits-pcb (Copy)/
+.claire/
