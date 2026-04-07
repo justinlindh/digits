@@ -166,8 +166,107 @@ The keypad ribbon is a flat flex cable. A proper FPC zero-insertion-force connec
 
 ## Reference
 
-- Full wiring spec: `docs/build/wiring.md`
-- Component list: `docs/build/components.md`
-- Datasheets: `docs/build/datasheets.md`
-- Teardown photos: `docs/build/teardown/photos/`
-- UART protocol: `docs/architecture/uart-protocol.md`
+### 6.1 -- Self-check
+
+- Run DRC in KiCad -- fix all errors, review all warnings
+- Run ERC (Electrical Rule Check) in the schematic editor -- fix all errors
+- Visually check that every connector is accessible from a board edge
+- Verify the Pi Zero header and Pico header don't overlap physically
+
+### 6.2 -- Export for review
+
+Export and commit these to `hardware/pcb/`:
+
+- Schematic PDF (File -> Plot from schematic editor)
+- PCB 3D view screenshot (View -> 3D Viewer, take a screenshot)
+- Board outline dimensions screenshot
+- Gerber files (File -> Fabrication Outputs -> Gerbers)
+
+Review checklist:
+- Every net matches `docs/build/wiring.md`
+- Component orientation and polarity are correct
+- Power trace widths are adequate for current
+- Mounting holes align with physical measurements
+- No physical overlap between Pi stack and Pico
+
+### 6.3 -- Iterate
+
+Expect 2-3 rounds of review before ordering.
+
+---
+
+## Phase 7: Order Boards (DONE -- ordered from JLCPCB)
+
+### 7.1 -- Generate manufacturing files
+
+- File -> Fabrication Outputs -> Gerbers (use JLCPCB preset)
+- File -> Fabrication Outputs -> Drill Files
+- KiCad has built-in presets for JLCPCB, PCBWay, and OSH Park
+
+### 7.1b -- Pre-order checklist (DO NOT SKIP)
+
+Before generating Gerbers and ordering, resolve these deferred items:
+
+- [ ] **Hook switch part selection:** Source a 6x6mm tactile switch with snap-on lever matching original specs (8.6mm released, 2.4mm pressed, ~6.2mm travel). Verify pin spacing matches the `SW_Push_6mm` footprint -- update footprint if different.
+- [ ] **Hook switch firmware change:** Invert hook sense in firmware (GP10 LOW = on-hook instead of HIGH). One-line change in `firmware/src/hook.c`.
+- [ ] **Inductor part selection:** Pick a specific 33uH inductor and verify its physical footprint matches what's assigned.
+- [ ] **Capacitor sizing:** Verify 680uF and 220uF electrolytic cap footprint diameters match chosen parts (cap diameters vary by voltage rating and brand).
+- [x] **Test fit:** Print the PCB layout at 1:1 scale on paper, place it inside the phone body, and verify mounting holes align and nothing collides with the bell, hook lever, or phone body walls.
+
+### 7.2 -- Upload and order
+
+- JLCPCB: upload the Gerber zip
+- Options: 2-layer board, 1.6mm thickness, HASL finish, green solder mask (all defaults)
+- 5 boards: ~$2-5 + ~$5-15 shipping
+- Turnaround: ~5 days fabrication + shipping
+
+### 7.3 -- Order components
+
+Source from LCSC (JLCPCB's parts house), DigiKey, or Mouser. A detailed BOM with specific part numbers will be generated at this stage.
+
+---
+
+## Phase 8: Assemble and Test
+
+1. Solder components onto one board
+2. Power up with bench supply or 12V wall wart -- check 5V output before plugging in Pi/Pico
+3. Plug in the Pico, verify UART communication (`PING`/`PONG`)
+4. Plug in the Pi+Codec stack, verify boot and audio
+5. Test each connector: keypad, hook switch, ringer, LED
+6. Compare behavior to existing protoboard build
+7. Note any issues for v2 revision
+
+---
+
+## Reference: Current Wiring Summary
+
+Full wiring spec: `docs/build/wiring.md`
+Component list: `docs/build/components.md`
+Datasheets: `docs/build/datasheets.md`
+Teardown photos: `docs/build/teardown/photos/`
+UART protocol: `docs/architecture/uart-protocol.md`
+
+### SMD conversion for PCBA assembly
+
+The v1 board is almost entirely through-hole. Only U1 (LM2596S-5, TO-263-5) and J2 (JST SH, SMD horizontal) are surface-mount. This makes automated assembly expensive -- THT assembly costs ~2-3x more per component than SMD at services like JLCPCB.
+
+**Components to convert to SMD equivalents:**
+
+| Ref | Current (THT) | SMD Replacement | Package |
+|-----|---------------|-----------------|---------|
+| C1 | 680uF radial electrolytic | SMD aluminum electrolytic or polymer | 10x10mm or 8x8mm |
+| C2 | 220uF radial electrolytic | SMD aluminum electrolytic | 6.3x7.7mm |
+| C3 | 100nF ceramic disc | MLCC | 0805 |
+| R1 | 220 ohm axial | Thick film resistor | 0805 |
+| D1 | 1N5824 DO-201AD | SS54 or equivalent | SMA/SMB |
+| L1 | 33uH radial (Fastron) | SMD power inductor | 10x10mm or 12x12mm |
+
+**Components that stay THT** (connectors are inherently through-hole):
+J1 (2x20 header), J3 (barrel jack), J4-J10 (JST/pin headers), J7 (screw terminal), SW1 (tactile switch).
+
+**Cost impact estimate (JLCPCB turnkey):**
+- v1 all-THT: ~$8-14/board at 5 units, ~$5-8 at 50 units
+- v2 SMD passives + THT connectors: ~$5-8/board at 5 units, ~$3-5 at 50 units
+- All prices exclude Pico module (~$4, hand-soldered or consignment)
+
+The entire LM2596 reference design (U1, C1, C2, D1, L1) has well-documented SMD equivalents. This is the highest-impact conversion since it's 6 components in one cluster.
