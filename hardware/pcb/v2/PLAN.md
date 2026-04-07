@@ -11,7 +11,7 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 | Ref | V1 Part | V1 Package | V2 Part | V2 Package | JLCPCB # | Reason |
 |-----|---------|------------|---------|------------|-----------|--------|
 | D1 | SB540 | DO-201AD (THT) | SS54 | SMA (DO-214AC) | C22452 | SMD Schottky, same 5A/40V spec |
-| L1 | Wurth 33uH radial | 10mm THT | Sunlord SWPA6045S330MT | 6.0x6.0x4.5mm SMD | C9400 | Shielded SMD power inductor, 33uH 3A |
+| L1 | Wurth 33uH radial | 10mm THT | CDRH127 33uH (shielded) | 12.3x12.3mm SMD | C9400 | Shielded SMD power inductor, 33uH 3A |
 | C1 | Panasonic 680uF 25V | Radial THT | DMBJ RVT1E681M1010 | SMD 10x10mm | C976031 | SMD aluminum electrolytic |
 | C2 | Nichicon 220uF 25V | Radial THT | DMBJ RVT1E221M0811 | SMD 8x10mm | C2895286 | SMD aluminum electrolytic |
 | C3 | Vishay 100nF disc | THT | Samsung CL21B104KBCNNNC | 0805 | C49678 | Standard 0805 MLCC |
@@ -22,7 +22,7 @@ Goal: revise the v1 carrier board to maximize JLCPCB SMT assembly. Replace throu
 | Ref | Part | Package | JLCPCB # | Purpose |
 |-----|------|---------|-----------|---------|
 | U2 | DRV8871DDAR | SOIC-8 | C75864 | On-board H-bridge, replaces external L298N module |
-| R2 | 0.22Ω 1% | 2512 | C146886 | DRV8871 current-sense resistor (I_LIMIT ≈ 1.36A) |
+| R2 | 0.22Ω 1% | 2512 | C146886 | DRV8871 current-sense resistor (I_LIMIT ≈ 0.91A) |
 | C4 | 100nF 50V MLCC | 0805 | C49678 | DRV8871 VCC decoupling |
 | TP1-TP6 | Test points | SMD pad | — | +5V, +12V, GND, UART_TX, UART_RX, SW_NODE |
 
@@ -209,3 +209,18 @@ With the plugin installed:
    - BOM CSV (JLCPCB format)
    - CPL/pick-and-place file
 6. Upload all three to JLCPCB order page
+
+---
+
+## Independent Review Notes (2026-04-07)
+
+### DRV8871 VCC Decoupling Layout Requirement
+U2 (DRV8871) VCC must have a low-impedance PCB trace to C1 (680uF on +12V rail) for transformer inductive kickback absorption. C4 (100nF) alone is insufficient. If layout requires long trace to C1, add a local 10uF MLCC near U2 VCC.
+
+### Bell Volume — First Board Test
+The DRV8871 current limit (0.91A with R2=0.22Ω) may reduce bell volume compared to v1's L298N (no current limiting). If bell is too quiet on first assembled board:
+- Replace R2 with 0.1Ω → I_LIMIT = 2.0A
+- DRV8871 is rated for 3.6A peak, so this is safe
+
+### DRV8871 Sleep Mode Behavior
+When IN1=IN2=0 (silent window), DRV8871 enters sleep mode. 50µs wake-up latency on first toggle — 0.2% of the 25ms half-period. Completely imperceptible. No firmware change needed.
