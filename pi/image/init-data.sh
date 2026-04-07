@@ -11,7 +11,7 @@
 #
 # Creates:
 #   /data/
-#   ├── digits/           # digitsd binary, config, tones
+#   ├── digits/           # config and tones (binary lives on read-only rootfs)
 #   │   ├── config.json   # placeholder — filled by captive portal
 #   │   └── tones/        # audio tone files
 #   ├── wifi/             # wpa_supplicant.conf (written by setup portal)
@@ -66,9 +66,8 @@ trap cleanup EXIT
 
 info "Creating /data directory structure at $MOUNT_POINT..."
 
-# digits/ — digitsd binary, config, tones, updater staging
+# digits/ — config, tones, updater staging
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits"
-install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/digitsd"
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/tones"
 
 # wifi/ — wpa_supplicant.conf written by setup portal

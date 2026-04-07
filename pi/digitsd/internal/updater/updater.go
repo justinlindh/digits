@@ -32,7 +32,7 @@ type Config struct {
 	CurrentFWVersion string
 	StagingDir       string // default: /data/digits/staging
 	FlashScript      string // default: /usr/local/bin/flash-pico.sh
-	BinaryPath       string // default: /data/digits/digitsd/digitsd
+	BinaryPath       string // default: /usr/local/bin/digitsd
 	FirmwarePath     string // default: /data/digits/firmware.elf
 }
 
@@ -49,7 +49,7 @@ func New(cfg Config) *Updater {
 		cfg.FlashScript = "/usr/local/bin/flash-pico.sh"
 	}
 	if cfg.BinaryPath == "" {
-		cfg.BinaryPath = "/data/digits/digitsd/digitsd"
+		cfg.BinaryPath = "/usr/local/bin/digitsd"
 	}
 	if cfg.FirmwarePath == "" {
 		cfg.FirmwarePath = "/data/digits/firmware.elf"
@@ -183,19 +183,66 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	return destPath, nil
 }
 
-// ApplyPiUpdate replaces the digitsd binary and exits (systemd restarts).
-// Staging dir and binary path are on the same filesystem (/data), so rename is atomic.
+// ApplyPiUpdate replaces the digitsd binary on the read-only rootfs and exits
+// (systemd restarts). Temporarily remounts / as rw for the copy, then restores ro.
 func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 	if err := os.Chmod(stagedBinary, 0755); err != nil {
 		return fmt.Errorf("chmod: %w", err)
 	}
-	if err := os.Rename(stagedBinary, u.cfg.BinaryPath); err != nil {
-		return fmt.Errorf("rename: %w", err)
+
+	// Remount rootfs read-write so we can replace the binary.
+	if err := exec.Command("mount", "-o", "remount,rw", "/").Run(); err != nil {
+		return fmt.Errorf("remount rw: %w", err)
+	}
+
+	// Copy staged binary to destination (cross-filesystem, can't use rename).
+	if err := copyFile(stagedBinary, u.cfg.BinaryPath); err != nil {
+		// Best-effort restore ro before returning.
+		exec.Command("mount", "-o", "remount,ro", "/").Run()
+		return fmt.Errorf("copy binary: %w", err)
+	}
+	os.Remove(stagedBinary)
+
+	// Restore read-only rootfs.
+	if err := exec.Command("mount", "-o", "remount,ro", "/").Run(); err != nil {
+		log.Printf("updater: WARNING: failed to remount ro: %v", err)
 	}
 
 	log.Println("updater: Pi binary updated -- exiting for restart")
 	os.Exit(0)
 	return nil // unreachable
+}
+
+// copyFile copies src to dst atomically using a temp file + rename.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	tmp := dst + ".tmp"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	if err := os.Chmod(tmp, 0755); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+
+	return os.Rename(tmp, dst)
 }
 
 // ApplyFirmwareUpdate moves the ELF to the flash path and runs the flash script.
