@@ -1,0 +1,15 @@
+Quantity,Manufacturer Part Number,Manufacturer,Description,Reference
+1,LM2596S-5.0/NOPB,Texas Instruments,5V 3A Step-Down Regulator TO-263-5,U1
+1,1N5824-E3/54,Vishay,Schottky Diode 5A 40V DO-201AD,D1
+1,ELC10D330E,Panasonic,33uH 3.5A Radial Inductor 10mm,L1
+1,UVR1E681MHD,Nichicon,680uF 25V Electrolytic Radial 10mm,C1
+1,UVR1E221MPD,Nichicon,220uF 25V Electrolytic Radial 8mm,C2
+1,K104K15X7RF5TL2,Vishay,100nF Ceramic Disc Cap,C3
+1,CFR-25JB-52-220R,Yageo,220 Ohm 1/4W Axial Resistor,R1
+1,PJ-002A,CUI Devices,DC Barrel Jack 2.1x5.5mm Horizontal,J3
+1,B7B-ZR(LF)(SN),JST,ZH 7-Pin Header 1.5mm Vertical,J4
+1,B2B-ZR(LF)(SN),JST,ZH 2-Pin Header 1.5mm Vertical,J6
+1,B4B-ZR(LF)(SN),JST,ZH 4-Pin Header 1.5mm Vertical,J8
+1,SM03B-SRSS-TB(LF)(SN),JST,SH 3-Pin Header 1.0mm Horizontal,J2
+1,1935161,Phoenix Contact,2-Pos Screw Terminal 5mm Pitch,J7
+1,SSW-120-02-G-D,Samtec,2x20 Female Header 2.54mm,J1
