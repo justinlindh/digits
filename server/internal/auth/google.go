@@ -77,7 +77,11 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "failed to read user info", http.StatusInternalServerError)
+		return
+	}
 
 	var info struct {
 		ID    string `json:"id"`
