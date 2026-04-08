@@ -44,8 +44,8 @@ var (
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
 	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
-	alsaDevice   = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
-	showVersion  = flag.Bool("version", false, "print version and exit")
+	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
+	showVersion = flag.Bool("version", false, "print version and exit")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
