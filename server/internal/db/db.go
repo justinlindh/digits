@@ -201,6 +201,8 @@ func (d *Database) migrate() error {
 		`ALTER TABLE devices ALTER COLUMN line_id DROP NOT NULL`,
 		// v8: household timezone
 		`ALTER TABLE households ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
+		// v9: device last-seen timestamp
+		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
