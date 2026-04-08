@@ -225,6 +225,34 @@ func HashToken(token string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// AuthStatus returns the pairing and token status for a device.
+// Returns (paired, tokenValid, error).
+// If the device doesn't exist, returns (false, false, nil).
+// If paired and token is provided, validates it against the stored hash.
+func (s *Store) AuthStatus(hardwareID, token string) (paired bool, tokenValid bool, err error) {
+	var pairedAt sql.NullTime
+	var storedHash sql.NullString
+	err = s.db.QueryRow(
+		`SELECT paired_at, device_token FROM devices WHERE hardware_id = $1`,
+		hardwareID,
+	).Scan(&pairedAt, &storedHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("auth status: %w", err)
+	}
+	if !pairedAt.Valid {
+		return false, false, nil
+	}
+	if token == "" || !storedHash.Valid {
+		return true, false, nil
+	}
+	candidate := HashToken(token)
+	valid := subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1
+	return true, valid, nil
+}
+
 // ValidateToken checks if the given plaintext token matches the stored hash
 // for the device with the given hardware ID. Uses constant-time comparison.
 func (s *Store) ValidateToken(hardwareID, token string) (bool, error) {

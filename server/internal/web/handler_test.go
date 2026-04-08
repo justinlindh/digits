@@ -1,7 +1,6 @@
 package web
 
 import (
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -11,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gorilla/websocket"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -299,20 +296,6 @@ func TestNotFound(t *testing.T) {
 	}
 }
 
-// readWSMessage reads one JSON message from the WebSocket with a timeout.
-func readWSMessage(t *testing.T, ws *websocket.Conn) signaling.Message {
-	t.Helper()
-	ws.SetReadDeadline(time.Now().Add(3 * time.Second))
-	_, data, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatalf("read ws message: %v", err)
-	}
-	var msg signaling.Message
-	if err := json.Unmarshal(data, &msg); err != nil {
-		t.Fatalf("unmarshal ws message: %v", err)
-	}
-	return msg
-}
 
 // setupPairedDevice creates a paired device via the pairing flow and returns
 // the hardware ID and plaintext device token.
@@ -368,7 +351,7 @@ func TestWSRegister_MissingHardwareID(t *testing.T) {
 		Number: "1001",
 	})
 
-	msg := readWSMessage(t, ws)
+	msg := recvMsg(t, ws)
 	if msg.Type != signaling.TypeError {
 		t.Fatalf("expected error message, got %q", msg.Type)
 	}
@@ -391,7 +374,7 @@ func TestWSRegister_PairedDevice_MissingToken(t *testing.T) {
 		HardwareID: hwID,
 	})
 
-	msg := readWSMessage(t, ws)
+	msg := recvMsg(t, ws)
 	if msg.Type != signaling.TypeError {
 		t.Fatalf("expected error message, got %q", msg.Type)
 	}
@@ -415,7 +398,7 @@ func TestWSRegister_PairedDevice_WrongToken(t *testing.T) {
 		DeviceToken: "wrong-token-value",
 	})
 
-	msg := readWSMessage(t, ws)
+	msg := recvMsg(t, ws)
 	if msg.Type != signaling.TypeError {
 		t.Fatalf("expected error message, got %q", msg.Type)
 	}
