@@ -12,6 +12,7 @@ type CallTracker interface {
 	OnCallAnswered(caller, callee string) error
 	OnCallEnded(caller, callee string) error
 	InCall(a, b string) bool
+	Busy(number string) bool
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -94,6 +95,10 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	}
 
 	if r.Tracker != nil {
+		if r.Tracker.Busy(from) || r.Tracker.Busy(msg.To) {
+			r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			return
+		}
 		r.Tracker.OnCallInitiated(from, msg.To)
 	}
 

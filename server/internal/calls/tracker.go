@@ -93,6 +93,17 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 	return err
 }
 
+func (t *Tracker) Busy(number string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, c := range t.active {
+		if c.Caller == number || c.Callee == number {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
