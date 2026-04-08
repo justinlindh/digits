@@ -23,6 +23,7 @@ type Device struct {
 	PairingCodeExpiresAt *time.Time
 	PairedAt             *time.Time
 	CreatedAt            time.Time
+	LastSeenAt           *time.Time
 }
 
 // Store provides CRUD operations for devices.
@@ -42,10 +43,10 @@ func (s *Store) Create(lineID int64, hardwareID string) (*Device, error) {
 		INSERT INTO devices (line_id, hardware_id)
 		VALUES ($1, $2)
 		RETURNING id, line_id, hardware_id, device_id, device_token,
-		          pairing_code, pairing_code_expires_at, paired_at, created_at
+		          pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 	`, lineID, hardwareID).Scan(
 		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt,
+		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create device: %w", err)
@@ -58,12 +59,12 @@ func (s *Store) GetByID(id int64) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRow(`
 		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at
+		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE id = $1
 	`, id).Scan(
 		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt,
+		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -79,12 +80,12 @@ func (s *Store) GetByHardwareID(hwID string) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRow(`
 		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at
+		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE hardware_id = $1
 	`, hwID).Scan(
 		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt,
+		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -99,7 +100,7 @@ func (s *Store) GetByHardwareID(hwID string) (*Device, error) {
 func (s *Store) ListByLine(lineID int64) ([]Device, error) {
 	rows, err := s.db.Query(`
 		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at
+		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE line_id = $1
 		ORDER BY created_at
@@ -114,7 +115,7 @@ func (s *Store) ListByLine(lineID int64) ([]Device, error) {
 		var d Device
 		if err := rows.Scan(
 			&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt,
+			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan device: %w", err)
 		}
@@ -186,13 +187,13 @@ func (s *Store) GetByPairingCode(code string) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRow(`
 		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at
+		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE pairing_code = $1
 		  AND pairing_code_expires_at > NOW()
 	`, code).Scan(
 		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt,
+		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
