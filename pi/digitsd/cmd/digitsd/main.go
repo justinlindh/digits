@@ -569,10 +569,10 @@ const (
 type statusFunc func(status, detail string)
 
 func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus, nil)
 }
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, onFWFlashed func()) {
 	// When a specific component is targeted, don't auto-upgrade the other.
 	// A targeted trigger with only target_pi set should not also install firmware.
 	targeted := targetPi != "" || targetFW != ""
@@ -636,6 +636,9 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 				log.Printf("updater: firmware apply failed: %v", err)
 				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
 				return
+			}
+			if onFWFlashed != nil {
+				onFWFlashed()
 			}
 		}
 	}
@@ -1269,7 +1272,15 @@ func main() {
 					})
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
+					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, func() {
+						if v, c, err := sp.QueryVersion(); err != nil {
+							log.Printf("updater: re-query firmware version after flash: %v", err)
+						} else {
+							fwVersion, fwCommit = v, c
+							log.Printf("updater: firmware version after flash: %s (%s)", fwVersion, fwCommit)
+							sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+						}
+					})
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()
