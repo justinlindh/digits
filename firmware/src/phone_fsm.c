@@ -198,27 +198,39 @@ static void process_pi_command(const char *cmd) {
     } else if (strcmp(cmd, "KEYDUMP") == 0) {
         // Raw GPIO state dump for all keypad pins
         char buf[128];
-        // Read row pins (outputs — show what we're driving)
-        snprintf(buf, sizeof(buf), "ROWS: R0/GP2=%d R1/GP3=%d R2/GP4=%d R3/GP5=%d",
-                 gpio_get(2), gpio_get(3), gpio_get(4), gpio_get(5));
+        static const uint8_t row_gpios[] = {
+            KEYPAD_ROW0, KEYPAD_ROW1, KEYPAD_ROW2, KEYPAD_ROW3,
+        };
+        static const uint8_t col_gpios[] = {
+            KEYPAD_COL0, KEYPAD_COL1, KEYPAD_COL2, KEYPAD_COL3,
+        };
+        // Read row pins (outputs -- show what we're driving)
+        snprintf(buf, sizeof(buf), "ROWS: R0/GP%d=%d R1/GP%d=%d R2/GP%d=%d R3/GP%d=%d",
+                 row_gpios[0], gpio_get(row_gpios[0]),
+                 row_gpios[1], gpio_get(row_gpios[1]),
+                 row_gpios[2], gpio_get(row_gpios[2]),
+                 row_gpios[3], gpio_get(row_gpios[3]));
         uart_proto_send(buf);
         printf("%s\n", buf);
-        // Read col pins (inputs — show what we're sensing)
-        snprintf(buf, sizeof(buf), "COLS: C0/GP6=%d C1/GP7=%d C2/GP8=%d C3/GP9=%d",
-                 gpio_get(6), gpio_get(7), gpio_get(8), gpio_get(9));
+        // Read col pins (inputs -- show what we're sensing)
+        snprintf(buf, sizeof(buf), "COLS: C0/GP%d=%d C1/GP%d=%d C2/GP%d=%d C3/GP%d=%d",
+                 col_gpios[0], gpio_get(col_gpios[0]),
+                 col_gpios[1], gpio_get(col_gpios[1]),
+                 col_gpios[2], gpio_get(col_gpios[2]),
+                 col_gpios[3], gpio_get(col_gpios[3]));
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Now drive each row LOW and read columns
         for (int row = 0; row < 4; ++row) {
-            uint8_t rpin = 2 + row;  // GP2-GP5
-            gpio_put(rpin, 0);
-            sleep_us(50);  // generous settle
+            gpio_put(row_gpios[row], 0);
+            sleep_us(50);
             snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW: C0=%d C1=%d C2=%d C3=%d",
-                     row, rpin,
-                     gpio_get(6), gpio_get(7), gpio_get(8), gpio_get(9));
+                     row, row_gpios[row],
+                     gpio_get(col_gpios[0]), gpio_get(col_gpios[1]),
+                     gpio_get(col_gpios[2]), gpio_get(col_gpios[3]));
             uart_proto_send(buf);
             printf("%s\n", buf);
-            gpio_put(rpin, 1);
+            gpio_put(row_gpios[row], 1);
             sleep_us(50);
         }
         stdio_flush();

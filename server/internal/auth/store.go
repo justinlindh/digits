@@ -2,12 +2,12 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"time"
 
+	"github.com/justinlindh/digits/server/internal/device"
 	_ "github.com/lib/pq"
 )
 
@@ -134,7 +134,7 @@ func (s *Store) CreateSession(userID string, ttl time.Duration) (string, *Sessio
 	if err != nil {
 		return "", nil, err
 	}
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	sess := &Session{}
 	err = s.db.QueryRow(
 		`INSERT INTO sessions (user_id, token_hash, expires_at)
@@ -150,7 +150,7 @@ func (s *Store) CreateSession(userID string, ttl time.Duration) (string, *Sessio
 
 // ValidateSession looks up a session by its raw token and checks it hasn't expired.
 func (s *Store) ValidateSession(token string) (*Session, error) {
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	sess := &Session{}
 	err := s.db.QueryRow(
 		`SELECT id, user_id, expires_at, created_at FROM sessions
@@ -168,14 +168,14 @@ func (s *Store) ValidateSession(token string) (*Session, error) {
 
 // DeleteSession removes a session by its raw token (used for logout).
 func (s *Store) DeleteSession(token string) error {
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE token_hash = $1`, hash)
 	return err
 }
 
 // RefreshSession extends the expiry of an active session.
 func (s *Store) RefreshSession(token string, ttl time.Duration) error {
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	_, err := s.db.Exec(
 		`UPDATE sessions SET expires_at = $1 WHERE token_hash = $2 AND expires_at > NOW()`,
 		time.Now().Add(ttl), hash,
@@ -190,7 +190,7 @@ func (s *Store) CreateMagicLink(email string, ttl time.Duration) (string, error)
 	if err != nil {
 		return "", err
 	}
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	_, err = s.db.Exec(
 		`INSERT INTO magic_links (email, token_hash, expires_at) VALUES ($1, $2, $3)`,
 		email, hash, time.Now().Add(ttl),
@@ -205,7 +205,7 @@ func (s *Store) CreateMagicLink(email string, ttl time.Duration) (string, error)
 // Returns the associated email on success. Returns an error if the token
 // is invalid, expired, or has already been used.
 func (s *Store) ValidateMagicLink(token string) (string, error) {
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	var email string
 	err := s.db.QueryRow(
 		`UPDATE magic_links SET used = TRUE
@@ -247,8 +247,3 @@ func randomToken(bytes int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// hashToken returns the hex-encoded SHA-256 hash of the token.
-func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}

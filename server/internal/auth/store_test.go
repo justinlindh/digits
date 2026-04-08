@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/device"
 )
 
 // testDB creates a Store connected to the test database, running migrations first.
@@ -274,7 +275,7 @@ func TestCleanupExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	hash := hashToken(token)
+	hash := device.HashToken(token)
 	s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
@@ -282,7 +283,7 @@ func TestCleanupExpired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
-	mlHash := hashToken(mlToken)
+	mlHash := device.HashToken(mlToken)
 	s.db.Exec(`UPDATE magic_links SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, mlHash)
 
 	if err := s.CleanupExpired(); err != nil {

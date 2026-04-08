@@ -20,7 +20,8 @@ func (a *Authorizer) CanCall(fromNumber, toNumber string) (bool, error) {
         SELECT EXISTS (
             SELECT 1 FROM caller, callee WHERE caller.household_id = callee.household_id
             UNION ALL
-            SELECT 1 FROM caller, callee
+            SELECT 1 FROM caller
+            JOIN callee ON true
             JOIN household_links hl ON hl.status = 'active'
               AND (
                 (hl.household_a_id = caller.household_id AND hl.household_b_id = callee.household_id)
