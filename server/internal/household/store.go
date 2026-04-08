@@ -11,6 +11,7 @@ type Household struct {
 	ID                 string
 	Name               string
 	CallHistoryEnabled bool
+	Timezone           string
 	CreatedAt          time.Time
 }
 
@@ -42,9 +43,9 @@ func (s *Store) Create(name, ownerUserID string) (*Household, error) {
 
 	h := &Household{}
 	err = tx.QueryRow(
-		`INSERT INTO households (name) VALUES ($1) RETURNING id, name, created_at`,
+		`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
 		name,
-	).Scan(&h.ID, &h.Name, &h.CreatedAt)
+	).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("insert household: %w", err)
 	}
@@ -67,9 +68,9 @@ func (s *Store) Create(name, ownerUserID string) (*Household, error) {
 func (s *Store) GetByID(id string) (*Household, error) {
 	h := &Household{}
 	err := s.db.QueryRow(
-		`SELECT id, name, call_history_enabled, created_at FROM households WHERE id = $1`,
+		`SELECT id, name, call_history_enabled, timezone, created_at FROM households WHERE id = $1`,
 		id,
-	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.CreatedAt)
+	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("household not found")
 	}
@@ -82,7 +83,7 @@ func (s *Store) GetByID(id string) (*Household, error) {
 // GetForUser returns all households the given user belongs to.
 func (s *Store) GetForUser(userID string) ([]*Household, error) {
 	rows, err := s.db.Query(
-		`SELECT h.id, h.name, h.call_history_enabled, h.created_at
+		`SELECT h.id, h.name, h.call_history_enabled, h.timezone, h.created_at
 		 FROM households h
 		 JOIN household_members m ON m.household_id = h.id
 		 WHERE m.user_id = $1
@@ -97,7 +98,7 @@ func (s *Store) GetForUser(userID string) ([]*Household, error) {
 	var households []*Household
 	for rows.Next() {
 		h := &Household{}
-		if err := rows.Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan household: %w", err)
 		}
 		households = append(households, h)
@@ -176,6 +177,16 @@ func (s *Store) UpdateName(householdID, name string) error {
 	return nil
 }
 
+// Location returns the parsed *time.Location for this household's timezone.
+// Falls back to time.UTC if the timezone string is invalid.
+func (h *Household) Location() *time.Location {
+	loc, err := time.LoadLocation(h.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 // SetCallHistoryEnabled toggles call history for a household.
 func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
 	_, err := s.db.Exec(
@@ -184,6 +195,21 @@ func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
 	)
 	if err != nil {
 		return fmt.Errorf("set call history: %w", err)
+	}
+	return nil
+}
+
+// SetTimezone updates the IANA timezone for a household.
+func (s *Store) SetTimezone(householdID, tz string) error {
+	if _, err := time.LoadLocation(tz); err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	_, err := s.db.Exec(
+		`UPDATE households SET timezone = $1 WHERE id = $2`,
+		tz, householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("set timezone: %w", err)
 	}
 	return nil
 }
