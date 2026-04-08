@@ -1131,6 +1131,15 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 
 // ---- WebSocket ----
 
+// wsReject sends an error message to the WebSocket client and closes the connection.
+func wsReject(ws *websocket.Conn, errMsg string) {
+	ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
+		Type:  signaling.TypeError,
+		Error: errMsg,
+	}))
+	ws.Close()
+}
+
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -1151,19 +1160,24 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	msg, err := signaling.ParseMessage(data)
 	if err != nil || msg.Type != signaling.TypeRegister || msg.Number == "" {
 		slog.Warn("invalid register message")
-		ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
-			Type:  signaling.TypeError,
-			Error: "must send register message first",
-		}))
-		ws.Close()
+		wsReject(ws, "must send register message first")
 		return
 	}
 
-	// If hardware ID is provided and pairing is enabled, check pairing status
-	if msg.HardwareID != "" && h.pairingStore != nil {
-		paired, err := h.pairingStore.IsPaired(msg.HardwareID)
+	// Require hardware ID for all connections
+	if msg.HardwareID == "" {
+		slog.Warn("ws register without hardware_id", "number", msg.Number)
+		wsReject(ws, "hardware_id required")
+		return
+	}
+
+	// Check pairing and token status
+	if h.pairingStore != nil {
+		paired, tokenValid, err := h.deviceStore.AuthStatus(msg.HardwareID, msg.DeviceToken)
 		if err != nil {
-			slog.Error("pairing check failed", "hardware_id", msg.HardwareID, "err", err)
+			slog.Error("device auth check failed", "hardware_id", msg.HardwareID, "err", err)
+			wsReject(ws, "internal error")
+			return
 		}
 		if !paired {
 			code, err := h.pairingStore.GenerateCode(msg.HardwareID)
@@ -1175,6 +1189,15 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 					PairingCode: code,
 				}))
 			}
+			// Continue to register so the device can receive the TypePaired message
+		} else if msg.DeviceToken == "" {
+			slog.Warn("ws register without device_token", "hardware_id", msg.HardwareID)
+			wsReject(ws, "device_token required")
+			return
+		} else if !tokenValid {
+			slog.Warn("ws invalid device_token", "hardware_id", msg.HardwareID)
+			wsReject(ws, "invalid device_token")
+			return
 		}
 	}
 

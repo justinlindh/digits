@@ -23,6 +23,7 @@ type Client struct {
 	url             string
 	number          string
 	hardwareID      string
+	deviceToken     string
 	conn            *websocket.Conn
 	inbox           chan *Message
 	done            chan struct{}
@@ -31,13 +32,14 @@ type Client struct {
 }
 
 // NewClient creates a new Client. Call Connect() to establish the connection.
-func NewClient(url, number, hardwareID string) *Client {
+func NewClient(url, number, hardwareID, deviceToken string) *Client {
 	return &Client{
-		url:        url,
-		number:     number,
-		hardwareID: hardwareID,
-		inbox:      make(chan *Message, 32),
-		done:       make(chan struct{}),
+		url:         url,
+		number:      number,
+		hardwareID:  hardwareID,
+		deviceToken: deviceToken,
+		inbox:       make(chan *Message, 32),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -62,7 +64,7 @@ func (c *Client) Connect() error {
 	c.conn = conn
 
 	// Send registration
-	reg := &Message{Type: TypeRegister, Number: c.number, HardwareID: c.hardwareID}
+	reg := &Message{Type: TypeRegister, Number: c.number, HardwareID: c.hardwareID, DeviceToken: c.deviceToken}
 	data, err := reg.Marshal()
 	if err != nil {
 		conn.Close()

@@ -863,7 +863,7 @@ func main() {
 	}
 
 	// 4. Create signaling client
-	sig := sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID)
+	sig := sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 
 	// 5. Create Opus encoder and decoder
 	enc, err := codec.NewEncoder(48000, 1, 24000)
@@ -1367,7 +1367,7 @@ func main() {
 			for {
 				log.Printf("signal: connection lost, reconnecting in %s...", backoff)
 				time.Sleep(backoff)
-				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID)
+				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 				cb.mu.Lock()
 				cb.sig = sig
 				cb.mu.Unlock()
