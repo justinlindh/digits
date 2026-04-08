@@ -47,7 +47,7 @@ func TestClient_ConnectAndRegister(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id")
+	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id", "")
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestClient_ReceiveMessages(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id")
+	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id", "")
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestClient_SendMessage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id")
+	c := NewClient(wsURL(ts), "+15550001111", "test-hw-id", "")
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
