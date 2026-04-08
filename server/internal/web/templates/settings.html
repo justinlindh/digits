@@ -62,6 +62,108 @@
   </div>
   {{end}}
 
+  <!-- Timezone -->
+  {{if .Household}}
+  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#21262d]">
+      <h2 class="text-sm font-medium text-[#e6edf3]">Timezone</h2>
+    </div>
+    <div class="p-4">
+      <form action="/settings/timezone" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
+        <div class="flex-1">
+          <label for="timezone" class="block text-xs text-[#8b949e] mb-1">Display timezone</label>
+          <select id="timezone" name="timezone"
+            class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+            <optgroup label="Americas">
+              <option value="Pacific/Honolulu">Honolulu (HST)</option>
+              <option value="America/Anchorage">Anchorage (AKST)</option>
+              <option value="America/Los_Angeles">Los Angeles (PST)</option>
+              <option value="America/Phoenix">Phoenix (MST)</option>
+              <option value="America/Denver">Denver (MST)</option>
+              <option value="America/Chicago">Chicago (CST)</option>
+              <option value="America/New_York">New York (EST)</option>
+              <option value="America/Toronto">Toronto (EST)</option>
+              <option value="America/Vancouver">Vancouver (PST)</option>
+              <option value="America/Mexico_City">Mexico City (CST)</option>
+              <option value="America/Sao_Paulo">Sao Paulo (BRT)</option>
+              <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+            </optgroup>
+            <optgroup label="Europe">
+              <option value="Europe/London">London (GMT)</option>
+              <option value="Europe/Paris">Paris (CET)</option>
+              <option value="Europe/Berlin">Berlin (CET)</option>
+              <option value="Europe/Amsterdam">Amsterdam (CET)</option>
+              <option value="Europe/Rome">Rome (CET)</option>
+              <option value="Europe/Madrid">Madrid (CET)</option>
+              <option value="Europe/Stockholm">Stockholm (CET)</option>
+              <option value="Europe/Helsinki">Helsinki (EET)</option>
+              <option value="Europe/Moscow">Moscow (MSK)</option>
+              <option value="Europe/Istanbul">Istanbul (TRT)</option>
+            </optgroup>
+            <optgroup label="Asia">
+              <option value="Asia/Dubai">Dubai (GST)</option>
+              <option value="Asia/Kolkata">Kolkata (IST)</option>
+              <option value="Asia/Bangkok">Bangkok (ICT)</option>
+              <option value="Asia/Singapore">Singapore (SGT)</option>
+              <option value="Asia/Shanghai">Shanghai (CST)</option>
+              <option value="Asia/Hong_Kong">Hong Kong (HKT)</option>
+              <option value="Asia/Tokyo">Tokyo (JST)</option>
+              <option value="Asia/Seoul">Seoul (KST)</option>
+            </optgroup>
+            <optgroup label="Oceania">
+              <option value="Australia/Perth">Perth (AWST)</option>
+              <option value="Australia/Brisbane">Brisbane (AEST)</option>
+              <option value="Australia/Sydney">Sydney (AEST)</option>
+              <option value="Australia/Melbourne">Melbourne (AEST)</option>
+              <option value="Pacific/Auckland">Auckland (NZST)</option>
+            </optgroup>
+            <optgroup label="Africa">
+              <option value="Africa/Cairo">Cairo (EET)</option>
+              <option value="Africa/Lagos">Lagos (WAT)</option>
+              <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+            </optgroup>
+            <optgroup label="Other">
+              <option value="UTC">UTC</option>
+            </optgroup>
+          </select>
+        </div>
+        <button type="submit"
+          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+          Save
+        </button>
+      </form>
+      <p class="text-xs text-[#8b949e] mt-2">
+        Timestamps in the app will display in this timezone.
+      </p>
+    </div>
+    <script>
+    (function() {
+      var select = document.getElementById('timezone');
+      var current = '{{.Household.Timezone}}';
+      // Set current value
+      for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === current) {
+          select.selectedIndex = i;
+          break;
+        }
+      }
+      // Auto-detect: if still UTC, suggest browser timezone
+      if (current === 'UTC') {
+        try {
+          var detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          for (var j = 0; j < select.options.length; j++) {
+            if (select.options[j].value === detected) {
+              select.selectedIndex = j;
+              break;
+            }
+          }
+        } catch(e) {}
+      }
+    })();
+    </script>
+  </div>
+  {{end}}
+
   <!-- Privacy -->
   {{if .Household}}
   <div class="bg-[#161b22] border border-[#21262d] rounded-lg">

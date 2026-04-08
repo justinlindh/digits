@@ -201,6 +201,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
+	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -1254,6 +1255,31 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	enabled := r.FormValue("enabled") == "true"
 	if err := h.householdStore.SetCallHistoryEnabled(households[0].ID, enabled); err != nil {
 		slog.Error("set call history failed", "err", err)
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request) {
+	if h.householdStore == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	households, _ := h.householdStore.GetForUser(user.ID)
+	if len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	r.ParseForm()
+	tz := strings.TrimSpace(r.FormValue("timezone"))
+	if tz != "" {
+		if err := h.householdStore.SetTimezone(households[0].ID, tz); err != nil {
+			slog.Warn("set timezone failed", "err", err)
+		}
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
