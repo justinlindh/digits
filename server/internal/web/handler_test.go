@@ -1,6 +1,8 @@
 package web
 
 import (
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +10,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -291,5 +296,159 @@ func TestNotFound(t *testing.T) {
 	// Unauthenticated: redirects to login; authenticated: the dashboard handler returns 404 for unknown paths
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// readWSMessage reads one JSON message from the WebSocket with a timeout.
+func readWSMessage(t *testing.T, ws *websocket.Conn) signaling.Message {
+	t.Helper()
+	ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_, data, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("read ws message: %v", err)
+	}
+	var msg signaling.Message
+	if err := json.Unmarshal(data, &msg); err != nil {
+		t.Fatalf("unmarshal ws message: %v", err)
+	}
+	return msg
+}
+
+// setupPairedDevice creates a paired device via the pairing flow and returns
+// the hardware ID and plaintext device token.
+func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, token string) {
+	t.Helper()
+
+	hardwareID = fmt.Sprintf("test-hw-%d", time.Now().UnixNano())
+	number := fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
+
+	// Create a household for the line
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		user, err = authStore.CreateUser("test@example.com", "Test User", nil)
+		if err != nil {
+			t.Fatalf("create user: %v", err)
+		}
+	}
+	hh, err := householdStore.Create("Test Household", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+
+	// Generate pairing code (creates the device row)
+	code, err := pairingStore.GenerateCode(hardwareID)
+	if err != nil {
+		t.Fatalf("generate code: %v", err)
+	}
+
+	// Claim the device (pairs it, sets hashed token)
+	token, _, err = pairingStore.ClaimDevice(code, number, "Test Phone", hh.ID)
+	if err != nil {
+		t.Fatalf("claim device: %v", err)
+	}
+
+	t.Cleanup(func() {
+		database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
+		database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	return hardwareID, token
+}
+
+func TestWSRegister_MissingHardwareID(t *testing.T) {
+	h, _, _ := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:   signaling.TypeRegister,
+		Number: "1001",
+	})
+
+	msg := readWSMessage(t, ws)
+	if msg.Type != signaling.TypeError {
+		t.Fatalf("expected error message, got %q", msg.Type)
+	}
+	if msg.Error != "hardware_id required" {
+		t.Errorf("expected 'hardware_id required', got %q", msg.Error)
+	}
+}
+
+func TestWSRegister_PairedDevice_MissingToken(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:       signaling.TypeRegister,
+		Number:     "1001",
+		HardwareID: hwID,
+	})
+
+	msg := readWSMessage(t, ws)
+	if msg.Type != signaling.TypeError {
+		t.Fatalf("expected error message, got %q", msg.Type)
+	}
+	if msg.Error != "device_token required" {
+		t.Errorf("expected 'device_token required', got %q", msg.Error)
+	}
+}
+
+func TestWSRegister_PairedDevice_WrongToken(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      "1001",
+		HardwareID:  hwID,
+		DeviceToken: "wrong-token-value",
+	})
+
+	msg := readWSMessage(t, ws)
+	if msg.Type != signaling.TypeError {
+		t.Fatalf("expected error message, got %q", msg.Type)
+	}
+	if msg.Error != "invalid device_token" {
+		t.Errorf("expected 'invalid device_token', got %q", msg.Error)
+	}
+}
+
+func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      "1001",
+		HardwareID:  hwID,
+		DeviceToken: token,
+	})
+
+	// The connection should stay open. If there was an auth error, we'd get
+	// an error message. Try reading with a short deadline; no error message
+	// means auth succeeded.
+	ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_, _, err := ws.ReadMessage()
+	if err == nil {
+		t.Fatal("expected no message (timeout), but got one")
+	}
+	// A timeout (deadline exceeded) means no error was sent, which is success.
+	if !strings.Contains(err.Error(), "i/o timeout") {
+		t.Fatalf("expected timeout error, got: %v", err)
 	}
 }
