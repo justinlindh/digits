@@ -565,6 +565,7 @@ type lineDetailData struct {
 	Online                bool
 	Devices               []device.Device
 	DeviceInfo            *signaling.DeviceInfoSnapshot
+	LastSeenAt            *time.Time
 	LatestPiVersion       string
 	LatestFirmwareVersion string
 	PiReleases            []updates.Release
@@ -585,6 +586,13 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		devices, _ = h.deviceStore.ListByLine(ln.ID)
 	}
 
+	var lastSeenAt *time.Time
+	for _, d := range devices {
+		if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
+			lastSeenAt = d.LastSeenAt
+		}
+	}
+
 	var latestPi, latestFw string
 	var piReleases, fwReleases []updates.Release
 	if h.Releases != nil {
@@ -598,10 +606,12 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	hhName, callHistory, loc := h.householdContext(r)
 
-	devInfo := h.hub.DeviceInfo(number)
-	if devInfo != nil {
-		devInfo.LastSeen = devInfo.LastSeen.In(loc)
+	if lastSeenAt != nil {
+		t := lastSeenAt.In(loc)
+		lastSeenAt = &t
 	}
+
+	devInfo := h.hub.DeviceInfo(number)
 
 	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
 		Page:                  "phones",
@@ -612,6 +622,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		Online:                online,
 		Devices:               devices,
 		DeviceInfo:            devInfo,
+		LastSeenAt:            lastSeenAt,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
