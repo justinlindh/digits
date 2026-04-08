@@ -285,6 +285,14 @@ func (c *Controller) onSignalAnswer() {
 }
 
 func (c *Controller) onSignalHangup() {
+	if c.state == StateRINGING {
+		// Caller hung up before we answered - stop ringing and return to idle.
+		log.Println("phone: caller hung up during ring - stopping ring")
+		c.state = StateIDLE
+		c.cb.SendRing(false)
+		c.cb.SendLED("OFF")
+		return
+	}
 	if c.state != StateCONNECTED {
 		log.Printf("phone: hangup signal ignored in state %s (not CONNECTED)", c.state)
 		return
