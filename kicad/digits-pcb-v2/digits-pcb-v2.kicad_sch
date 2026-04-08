@@ -6978,6 +6978,17 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C347421"
+			(at 0 0 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "3e71e401-f6e2-4c73-ae11-530a8258092c")
 		)
@@ -7067,6 +7078,17 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C22452"
+			(at 0 0 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "a4f63ad7-34d4-4276-bf33-681090e52369")
 		)
@@ -7140,6 +7162,17 @@
 		)
 		(property "Description" "Unpolarized capacitor"
 			(at 104.14 30.48 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C49678"
+			(at 0 0 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -7551,6 +7584,17 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C17557"
+			(at 34.29 121.92 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "1"
 			(uuid "12b957af-101d-4105-8030-8927413aa58a")
 		)
@@ -7624,6 +7668,17 @@
 		)
 		(property "Description" "Polarized capacitor"
 			(at 92.71 143.51 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C976031"
+			(at 0 0 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
@@ -8662,6 +8717,17 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C9400"
+			(at 0 0 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(pin "2"
 			(uuid "4d74a526-b34d-4049-92d8-65e14eb40202")
 		)
@@ -8735,6 +8801,17 @@
 		)
 		(property "Description" "Polarized capacitor"
 			(at 129.54 157.48 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C2895286"
+			(at 0 0 0)
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
