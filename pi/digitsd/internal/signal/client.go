@@ -121,6 +121,9 @@ func (c *Client) Send(msg *Message) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.conn == nil {
+		return fmt.Errorf("signal: not connected")
+	}
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		return fmt.Errorf("signal: write: %w", err)
 	}
