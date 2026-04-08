@@ -177,6 +177,16 @@ func (s *Store) UpdateName(householdID, name string) error {
 	return nil
 }
 
+// Location returns the parsed *time.Location for this household's timezone.
+// Falls back to time.UTC if the timezone string is invalid.
+func (h *Household) Location() *time.Location {
+	loc, err := time.LoadLocation(h.Timezone)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
 // SetCallHistoryEnabled toggles call history for a household.
 func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
 	_, err := s.db.Exec(
@@ -185,6 +195,21 @@ func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
 	)
 	if err != nil {
 		return fmt.Errorf("set call history: %w", err)
+	}
+	return nil
+}
+
+// SetTimezone updates the IANA timezone for a household.
+func (s *Store) SetTimezone(householdID, tz string) error {
+	if _, err := time.LoadLocation(tz); err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	_, err := s.db.Exec(
+		`UPDATE households SET timezone = $1 WHERE id = $2`,
+		tz, householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("set timezone: %w", err)
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package household
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
 )
@@ -179,6 +180,72 @@ func TestAddMember(t *testing.T) {
 	}
 	if role != "admin" {
 		t.Errorf("updated role = %q, want admin", role)
+	}
+}
+
+func TestSetTimezone(t *testing.T) {
+	s, database := testStore(t)
+	userID := createTestUser(t, database, "tz@example.com")
+
+	h, err := s.Create("TZ Family", userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Default should be UTC
+	got, err := s.GetByID(h.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Timezone != "UTC" {
+		t.Errorf("default timezone = %q, want UTC", got.Timezone)
+	}
+
+	// Set valid timezone
+	if err := s.SetTimezone(h.ID, "America/Denver"); err != nil {
+		t.Fatalf("SetTimezone: %v", err)
+	}
+	got, err = s.GetByID(h.ID)
+	if err != nil {
+		t.Fatalf("GetByID after set: %v", err)
+	}
+	if got.Timezone != "America/Denver" {
+		t.Errorf("timezone = %q, want America/Denver", got.Timezone)
+	}
+}
+
+func TestSetTimezone_Invalid(t *testing.T) {
+	s, database := testStore(t)
+	userID := createTestUser(t, database, "badtz@example.com")
+
+	h, err := s.Create("Bad TZ Family", userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	err = s.SetTimezone(h.ID, "Not/A/Timezone")
+	if err == nil {
+		t.Error("expected error for invalid timezone, got nil")
+	}
+}
+
+func TestHouseholdLocation(t *testing.T) {
+	h := &Household{Timezone: "America/New_York"}
+	loc := h.Location()
+	if loc.String() != "America/New_York" {
+		t.Errorf("Location() = %q, want America/New_York", loc.String())
+	}
+
+	h2 := &Household{Timezone: ""}
+	loc2 := h2.Location()
+	if loc2 != time.UTC {
+		t.Errorf("Location() for empty timezone = %q, want UTC", loc2.String())
+	}
+
+	h3 := &Household{Timezone: "Fake/Zone"}
+	loc3 := h3.Location()
+	if loc3 != time.UTC {
+		t.Errorf("Location() for invalid timezone = %q, want UTC", loc3.String())
 	}
 }
 
