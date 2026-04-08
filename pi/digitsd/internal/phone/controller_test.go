@@ -347,7 +347,36 @@ func TestController_SelfDial(t *testing.T) {
 	}
 }
 
-// 8. Incoming ring signal while CONNECTED → stays CONNECTED, ignored
+// 8. Caller hangs up while ringing → ring stops, return to IDLE
+func TestController_CallerHangupDuringRing(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleSignal("ring")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", c.State())
+	}
+
+	c.HandleSignal("hangup")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after caller hangup during ring, got %s", c.State())
+	}
+	// Ring must have been stopped
+	lastRing := cb.rings[len(cb.rings)-1]
+	if lastRing != false {
+		t.Error("expected SendRing(false) when caller hangs up during ring")
+	}
+	lastLED := cb.leds[len(cb.leds)-1]
+	if lastLED != "OFF" {
+		t.Error("expected SendLED(OFF) when caller hangs up during ring")
+	}
+	// No HangupCall — there was no active WebRTC session
+	if cb.hangups != 0 {
+		t.Errorf("expected 0 HangupCall (no active call), got %d", cb.hangups)
+	}
+}
+
+// 9. Incoming ring signal while CONNECTED → stays CONNECTED, ignored
 func TestController_IncomingWhileBusy(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
