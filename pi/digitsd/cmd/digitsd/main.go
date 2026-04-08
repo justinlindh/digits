@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -980,10 +981,32 @@ func main() {
 		mixer.PlayLoop("tone_dial")
 	})
 
-	// Detect SWD flash capability early (needed by update callbacks and device_info).
-	_, err1 := os.Stat("/usr/bin/openocd")
+	// Detect SWD flash capability. Start with file existence checks; if the
+	// required binaries are present, probe the SWD bus in the background to
+	// confirm the Pico is actually wired up.
+	var flashCapable atomic.Bool
+	_, err1 := os.Stat(defaultOpenOCD)
 	_, err2 := os.Stat("/usr/local/bin/flash-pico.sh")
-	flashCapable := err1 == nil && err2 == nil
+	swdFilesPresent := err1 == nil && err2 == nil
+
+	if swdFilesPresent {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "sudo", defaultOpenOCD,
+				"-f", defaultSWDConfig,
+				"-f", "target/rp2040.cfg",
+				"-c", "init; shutdown")
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Printf("swd probe: Pico not detected on SWD bus: %v (output: %s)", err, out)
+			} else {
+				log.Println("swd probe: Pico detected on SWD bus, enabling flash capability")
+				flashCapable.Store(true)
+			}
+			sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+		}()
+	}
 
 	svcCodes.SetRepairCallback(func() {
 		log.Println("service code: *#0* → clearing device token, rebooting into pairing mode")
@@ -1000,7 +1023,7 @@ func main() {
 
 	svcCodes.SetUpdateCallback(func() {
 		log.Println("service code: *#UPDATE# (*#873283#) — checking for updates")
-		go runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable, nil)
+		go runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
@@ -1060,7 +1083,7 @@ func main() {
 	phone.RestoreVolume()
 	log.Println("digitsd ready")
 
-	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable)
+	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 	requestICEServers(sig)
 
 	// Refresh ICE credentials periodically (TURN creds are time-limited)
@@ -1075,7 +1098,7 @@ func main() {
 	// Check for updates on startup (non-blocking)
 	go func() {
 		time.Sleep(10 * time.Second) // let things settle
-		runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable, nil)
+		runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
 	}()
 
 	// OS signal handling
@@ -1246,7 +1269,7 @@ func main() {
 					})
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable, statusReporter)
+					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()
@@ -1345,7 +1368,7 @@ func main() {
 					continue
 				}
 				log.Println("signal: reconnected")
-				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable)
+				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 				requestICEServers(sig)
 				break
 			}
