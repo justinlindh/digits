@@ -10,7 +10,7 @@ type PipelineConfig struct {
 	SampleRate  int
 	FrameMs     int
 	OpusBitrate int
-	MicChannel  int  // 0=left, 1=right. DA7212: right=external mic.
+	MicChannel  int  // 0=left, 1=right. DA7212: Mic 1 routed to Mixin Left.
 	Denoise     bool
 }
 
@@ -20,7 +20,7 @@ func DefaultPipelineConfig() PipelineConfig {
 		SampleRate:  48000,
 		FrameMs:     20,
 		OpusBitrate: 24000,
-		MicChannel:  1, // External mic is on Mixin Right
+		MicChannel:  0, // Mic 1 routed to Mixin Left in digits_mixer.state
 		Denoise:     true,
 	}
 }

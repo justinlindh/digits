@@ -43,7 +43,8 @@ var (
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
 	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
-	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
+	alsaDevice   = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
+	showVersion  = flag.Bool("version", false, "print version and exit")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -666,6 +667,11 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 func main() {
 	flag.Parse()
 
+	if *showVersion {
+		fmt.Println(version.String())
+		os.Exit(0)
+	}
+
 	// --- Config file loading ---
 	// Load from JSON file, then let CLI flags override individual fields.
 	cfg, err := config.Load(*configPath)
@@ -866,11 +872,23 @@ func main() {
 	}
 
 	// 6. Create service code handler
+	// doubleBeep plays two short DTMF star tones as an audible confirmation.
+	doubleBeep := func() {
+		mixer.PlayOnce("dtmf_star")
+		time.Sleep(150 * time.Millisecond)
+		mixer.PlayOnce("dtmf_star")
+		time.Sleep(300 * time.Millisecond)
+	}
+
 	svcCodes := phone.NewServiceCodeHandler()
 	svcCodes.SetVolumeCallback(func(level int) {
 		if err := phone.SetVolume(level); err != nil {
 			log.Printf("volume: %v", err)
 		}
+		mixer.StopAll()
+		time.Sleep(250 * time.Millisecond)
+		doubleBeep()
+		mixer.PlayLoop("tone_dial")
 	})
 	svcCodes.SetShutdownCallback(func() {
 		log.Println("service code: executing shutdown")
@@ -892,6 +910,74 @@ func main() {
 			log.Printf("service code setup: remove %s: %v", phone.WifiConfiguredFlag, err)
 		}
 		exec.Command("sudo", "reboot").Run()
+	})
+
+	svcCodes.SetAudioTestCallback(func() {
+		log.Println("service code: *#TEST# → audio test (record 5s, playback)")
+		mixer.StopAll()
+
+		doubleBeep()
+		for mixer.OncePlaying() {
+			time.Sleep(50 * time.Millisecond)
+		}
+
+		// Open capture AFTER beeps so there's no startup delay
+		pipCfg := audio.DefaultPipelineConfig()
+		pipCfg.Denoise = false // raw mic -- hear exactly what the hardware picks up
+		pip := audio.NewPipeline(pipCfg)
+		if err := pip.Start(); err != nil {
+			log.Printf("audio test: pipeline start: %v", err)
+			mixer.PlayLoop("tone_dial")
+			return
+		}
+
+		const sampleRate = 48000
+		const seconds = 5
+		recorded := make([]int16, 0, sampleRate*seconds)
+
+		deadline := time.After(time.Duration(seconds) * time.Second)
+	capture:
+		for {
+			select {
+			case frame := <-pip.OutFrames():
+				recorded = append(recorded, frame...)
+			case <-deadline:
+				break capture
+			}
+		}
+		pip.Stop()
+		// Drain any frames buffered between deadline and Stop
+		for {
+			select {
+			case frame := <-pip.OutFrames():
+				recorded = append(recorded, frame...)
+			default:
+				goto drained
+			}
+		}
+	drained:
+
+		var maxAmp int32
+		for _, s := range recorded {
+			a := int32(s)
+			if a < 0 {
+				a = -a
+			}
+			if a > maxAmp {
+				maxAmp = a
+			}
+		}
+		log.Printf("audio test: captured %d samples (%.1fs), peak=%d, playing back", len(recorded), float64(len(recorded))/float64(sampleRate), maxAmp)
+		mixer.PlayOnceSamples(recorded)
+		time.Sleep(100 * time.Millisecond)
+		for mixer.OncePlaying() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		doubleBeep()
+		log.Println("audio test: complete")
+
+		// Resume dial tone
+		mixer.PlayLoop("tone_dial")
 	})
 
 	// Detect SWD flash capability early (needed by update callbacks and device_info).
@@ -1034,18 +1120,7 @@ func main() {
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
 					if svcCodes.AddKey(key) {
-						// Service code fired — pause, double beep, then back to dial tone
 						ctrl.Reset()
-						go func() {
-							mixer.StopAll()
-							time.Sleep(250 * time.Millisecond)
-							mixer.PlayOnce("dtmf_star")
-							time.Sleep(150 * time.Millisecond)
-							mixer.PlayOnce("dtmf_star")
-							time.Sleep(300 * time.Millisecond)
-							mixer.PlayLoop("tone_dial")
-							log.Printf("phone: service code handled, reset to dial tone")
-						}()
 						continue // skip forwarding to controller
 					}
 				}

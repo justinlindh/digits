@@ -4,7 +4,7 @@ PI_DIR      = ~/digits/digitsd
 BUILDER_IMG = digitsd-builder
 
 VERSION ?= dev
-COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet 2>/dev/null || echo -dirty)
 LDFLAGS  = -X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$(VERSION) \
            -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$(COMMIT)
 REPO_ROOT   = $(shell git rev-parse --show-toplevel)
