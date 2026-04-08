@@ -92,7 +92,7 @@ Hidden codes entered on the keypad during an active call.
 | Code | Action | Details |
 |------|--------|---------|
 | `*#*0` -- `*#*9` | Volume | Sets earpiece volume (0 = quiet, 9 = max). Persists across reboots. |
-| `*#*8` | Audio test | Records 5 s from mic, plays it back through earpiece. |
+| `*#8378#` | Audio test | Records 5 s from mic, plays it back through earpiece. (`*#TEST#` on keypad.) |
 | `*#*#` | Shutdown | Graceful power-off. Safe to unplug after LED goes dark. |
 | `*##*` | Reboot | Immediate reboot. |
 | `*#0*` | Force re-pair | Clears device token, reboots into pairing mode. |

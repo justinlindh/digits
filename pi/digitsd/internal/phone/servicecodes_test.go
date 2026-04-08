@@ -44,18 +44,38 @@ func TestServiceCodeVolume(t *testing.T) {
 }
 
 func TestServiceCodeAudioTest(t *testing.T) {
-	called := false
 	h := NewServiceCodeHandler()
-	h.SetAudioTestCallback(func() { called = true })
+	h.SetAudioTestCallback(func() {})
 
-	for _, k := range "*#*8" {
+	code := "*#8378#"
+	var triggered bool
+	for i, k := range code {
+		result := h.AddKey(string(k))
+		if result && i < len(code)-1 {
+			t.Fatalf("triggered too early at index %d", i)
+		}
+		if result {
+			triggered = true
+		}
+	}
+	if !triggered {
+		t.Error("*#8378# (*#TEST#) should trigger audio test")
+	}
+}
+
+func TestServiceCodeVolume8Works(t *testing.T) {
+	var gotLevel int
+	h := NewServiceCodeHandler()
+	h.SetVolumeCallback(func(level int) { gotLevel = level })
+
+	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	// Audio test callback is called in a goroutine, so give it a moment
-	// Actually, check returns true synchronously
-	if !called {
-		// The callback is called in a goroutine, so it may not have run yet
-		// For testing purposes, just check the return value
+	if !h.AddKey("8") {
+		t.Error("*#*8 should trigger volume")
+	}
+	if gotLevel != 8 {
+		t.Errorf("expected level 8, got %d", gotLevel)
 	}
 }
 
