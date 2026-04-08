@@ -40,6 +40,7 @@ node_modules/
 
 # Claude Code
 .claude/
+CLAUDE.local.md
 
 # Misc
 __pycache__/
