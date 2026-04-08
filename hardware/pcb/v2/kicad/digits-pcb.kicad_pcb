@@ -128,7 +128,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "Capacitor_THT:CP_Radial_D10.0mm_P5.00mm"
+	(footprint "Capacitor_SMD:CP_Elec_10x10.5"
 		(layer "F.Cu")
 		(uuid "034a0793-dc66-46cd-b93f-7d1a86bd1ea5")
 		(at 27.5 64.96)
@@ -6430,7 +6430,7 @@
 			)
 		)
 	)
-	(footprint "Diode_THT:D_DO-201AD_P12.70mm_Horizontal"
+	(footprint "Diode_SMD:D_SMA"
 		(layer "F.Cu")
 		(uuid "57edb3de-3b63-4d5a-92b1-e704c028b721")
 		(at 18 55.46)
@@ -6447,7 +6447,7 @@
 				)
 			)
 		)
-		(property "Value" "1N5824"
+		(property "Value" "SS54"
 			(at 6.35 3.72 0)
 			(layer "F.Fab")
 			(uuid "6a43c6e9-b692-4338-8254-5fe6f4af41b6")
@@ -6735,7 +6735,7 @@
 			)
 		)
 	)
-	(footprint "Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm"
+	(footprint "Capacitor_SMD:C_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "629e6b3b-23ec-4bc4-ad31-394bbfd601ee")
 		(at 85.14 22.76)
@@ -8192,7 +8192,7 @@
 			)
 		)
 	)
-	(footprint "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm"
+	(footprint "Capacitor_SMD:CP_Elec_8x6.5"
 		(layer "F.Cu")
 		(uuid "b97a84bd-f1a3-4ea3-a9ff-ff0483391d5d")
 		(at 29.5 47.96)
@@ -12644,7 +12644,7 @@
 			)
 		)
 	)
-	(footprint "Inductor_THT:L_Radial_D10.0mm_P5.00mm_Fastron_07P"
+	(footprint "Inductor_SMD:L_12x12mm_H8mm"
 		(layer "F.Cu")
 		(uuid "f12d4289-bf5b-4d09-90ba-feb6fd692235")
 		(at 17 64.96)
@@ -12797,7 +12797,7 @@
 			)
 		)
 	)
-	(footprint "Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"
+	(footprint "Resistor_SMD:R_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "f46abc80-f9c8-4cd4-b7f1-5f5e14497697")
 		(at 61.69 40.46)
