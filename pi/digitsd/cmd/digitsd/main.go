@@ -44,8 +44,8 @@ var (
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
 	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
-	alsaDevice   = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
-	showVersion  = flag.Bool("version", false, "print version and exit")
+	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
+	showVersion = flag.Bool("version", false, "print version and exit")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -561,8 +561,8 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 // Default paths for SWD flash infrastructure on the Pi.
 const (
 	defaultFirmwarePath = "/data/digits/firmware.elf"
-	defaultSWDConfig    = "/data/digits/swd/digits-swd.cfg"
-	defaultOpenOCD      = "/usr/local/bin/openocd"
+	defaultSWDConfig    = "/usr/local/share/digits/swd/digits-swd.cfg"
+	defaultOpenOCD      = "/usr/bin/openocd"
 )
 
 // statusFunc is a callback to report update progress back to the server.
@@ -648,7 +648,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 			return
 		}
 		reportStatus("rebooting", "Installing digitsd "+result.PiVersion+" -- restarting...")
-		if err := up.ApplyPiUpdate(path); err != nil {
+		if err := up.ApplyPiUpdate(path, result.PiVersion); err != nil {
 			log.Printf("updater: pi update failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Install failed: %v", err))
 			return

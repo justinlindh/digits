@@ -201,6 +201,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
+	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -564,6 +565,7 @@ type lineDetailData struct {
 	Online                bool
 	Devices               []device.Device
 	DeviceInfo            *signaling.DeviceInfoSnapshot
+	LastSeenAt            *time.Time
 	LatestPiVersion       string
 	LatestFirmwareVersion string
 	PiReleases            []updates.Release
@@ -584,6 +586,13 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		devices, _ = h.deviceStore.ListByLine(ln.ID)
 	}
 
+	var lastSeenAt *time.Time
+	for _, d := range devices {
+		if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
+			lastSeenAt = d.LastSeenAt
+		}
+	}
+
 	var latestPi, latestFw string
 	var piReleases, fwReleases []updates.Release
 	if h.Releases != nil {
@@ -595,15 +604,25 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	hhName, callHistory, loc := h.householdContext(r)
+
+	if lastSeenAt != nil {
+		t := lastSeenAt.In(loc)
+		lastSeenAt = &t
+	}
+
+	devInfo := h.hub.DeviceInfo(number)
+
 	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
-		CallHistoryEnabled:    h.callHistoryEnabled(r),
-		HouseholdName:         h.householdNameFromContext(r),
+		CallHistoryEnabled:    callHistory,
+		HouseholdName:         hhName,
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
-		DeviceInfo:            h.hub.DeviceInfo(number),
+		DeviceInfo:            devInfo,
+		LastSeenAt:            lastSeenAt,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
@@ -718,7 +737,8 @@ type callsData struct {
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	if !h.callHistoryEnabled(r) {
+	hhName, callHistory, loc := h.householdContext(r)
+	if !callHistory {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -726,7 +746,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 
 	// Scope call log to the user's household lines
 	user := auth.UserFromContext(r.Context())
-	if user != nil && h.lineStore != nil {
+	if user != nil && h.lineStore != nil && h.householdStore != nil {
 		households, err := h.householdStore.GetForUser(user.ID)
 		if err != nil {
 			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
@@ -759,7 +779,11 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		recent = []calls.Call{}
 	}
 
-	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Calls: recent})
+	for i := range recent {
+		recent[i].StartedAt = recent[i].StartedAt.In(loc)
+	}
+
+	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
 }
 
 // ---- Settings ----
@@ -777,7 +801,7 @@ type settingsData struct {
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	var hh *household.Household
-	if user != nil {
+	if user != nil && h.householdStore != nil {
 		households, _ := h.householdStore.GetForUser(user.ID)
 		if len(households) > 0 {
 			hh = households[0]
@@ -1167,11 +1191,21 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	h.hub.Register(msg.Number, conn)
 	number := msg.Number
+	if msg.HardwareID != "" && h.deviceStore != nil {
+		if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
+			slog.Warn("touch last seen on connect failed", "hardware_id", msg.HardwareID, "err", err)
+		}
+	}
 
 	// Configure pong handler to extend read deadline on each pong
 	ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+		if msg.HardwareID != "" && h.deviceStore != nil {
+			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
+				slog.Warn("touch last seen on pong failed", "hardware_id", msg.HardwareID, "err", err)
+			}
+		}
 		return nil
 	})
 
@@ -1206,6 +1240,13 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocks until disconnect)
 	defer h.hub.Unregister(number, conn)
+	defer func() {
+		if msg.HardwareID != "" && h.deviceStore != nil {
+			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
+				slog.Warn("touch last seen on disconnect failed", "hardware_id", msg.HardwareID, "err", err)
+			}
+		}
+	}()
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
@@ -1247,30 +1288,62 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
-// householdContext returns the household name and call-history flag for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool) {
+func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request) {
 	if h.householdStore == nil {
-		return "", false
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	households, _ := h.householdStore.GetForUser(user.ID)
+	if len(households) == 0 {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	r.ParseForm()
+	tz := strings.TrimSpace(r.FormValue("timezone"))
+	if tz != "" {
+		if err := h.householdStore.SetTimezone(households[0].ID, tz); err != nil {
+			slog.Warn("set timezone failed", "err", err)
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+// householdContext returns the household name, call-history flag, and timezone location for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
+	if h.householdStore == nil {
+		return "", false, time.UTC
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return "", false, time.UTC
 	}
 	households, err := h.householdStore.GetForUser(user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false
+		return "", false, time.UTC
 	}
-	return households[0].Name, households[0].CallHistoryEnabled
+	return households[0].Name, households[0].CallHistoryEnabled, households[0].Location()
 }
 
 func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch := h.householdContext(r)
+	_, ch, _ := h.householdContext(r)
 	return ch
 }
 
 func (h *Handler) householdNameFromContext(r *http.Request) string {
-	name, _ := h.householdContext(r)
+	name, _, _ := h.householdContext(r)
 	return name
+}
+
+func (h *Handler) householdTimezone(r *http.Request) *time.Location {
+	_, _, loc := h.householdContext(r)
+	return loc
 }
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {

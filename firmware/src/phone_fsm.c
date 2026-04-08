@@ -210,7 +210,7 @@ static void process_pi_command(const char *cmd) {
         printf("%s\n", buf);
         // Now drive each row LOW and read columns
         for (int row = 0; row < 4; ++row) {
-            uint8_t rpin = (row < 2) ? (2 + row) : (2 + row);  // GP2-GP5
+            uint8_t rpin = 2 + row;  // GP2-GP5
             gpio_put(rpin, 0);
             sleep_us(50);  // generous settle
             snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW: C0=%d C1=%d C2=%d C3=%d",
