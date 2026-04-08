@@ -199,6 +199,8 @@ func (d *Database) migrate() error {
 		DROP TABLE IF EXISTS phones`,
 		// v7: allow devices to exist before pairing (line_id NULL until paired)
 		`ALTER TABLE devices ALTER COLUMN line_id DROP NOT NULL`,
+		// v8: household timezone
+		`ALTER TABLE households ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC'`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

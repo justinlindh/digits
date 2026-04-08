@@ -71,6 +71,9 @@ func TestCreate(t *testing.T) {
 	if got.Name != h.Name {
 		t.Errorf("name mismatch: got %q, want %q", got.Name, h.Name)
 	}
+	if got.Timezone != "UTC" {
+		t.Errorf("default timezone = %q, want UTC", got.Timezone)
+	}
 }
 
 func TestGetForUser(t *testing.T) {
