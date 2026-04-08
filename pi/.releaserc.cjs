@@ -13,12 +13,19 @@ module.exports = {
         { scope: 'digitsd', type: 'fix', release: 'patch' },
         { scope: 'digitsd', type: 'perf', release: 'patch' },
         { scope: 'digitsd', breaking: true, release: 'major' },
+        { release: false },
       ],
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
       },
     }],
-    '@semantic-release/release-notes-generator',
+    ['@semantic-release/release-notes-generator', {
+      parserOpts: {
+        headerPattern: /^(\w*)(?:\((pi|digitsd)\))?: (.*)$/,
+        headerCorrespondence: ['type', 'scope', 'subject'],
+        noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
+      },
+    }],
     ['@semantic-release/exec', {
       prepareCmd: 'bash tools/build-pi.sh ${nextRelease.version}',
     }],
