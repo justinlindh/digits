@@ -88,6 +88,9 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	if r.CallAuthorizer != nil {
 		allowed, err := r.CallAuthorizer.CanCall(from, msg.To)
 		if err != nil || !allowed {
+			if err != nil {
+				slog.Error("call authorization failed", "from", from, "to", msg.To, "err", err)
+			}
 			r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
 			return
 		}
