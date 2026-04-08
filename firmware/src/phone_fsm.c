@@ -244,7 +244,7 @@ static void process_key(char key) {
     snprintf(key_msg, sizeof(key_msg), "KEY:%c", key);
     uart_proto_send(key_msg);
 
-    if (s_digits_len < DIAL_DIGITS_REQUIRED) {
+    if (key >= '0' && key <= '9' && s_digits_len < DIAL_DIGITS_REQUIRED) {
         s_digits[s_digits_len++] = key;
         s_digits[s_digits_len] = '\0';
     }

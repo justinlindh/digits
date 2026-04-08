@@ -302,6 +302,16 @@ func (m *Mixer) PlayOnce(name string) {
 	m.onceQueue = append(m.onceQueue, samples)
 }
 
+// PlayOnceSamples queues raw PCM samples for one-shot playback.
+func (m *Mixer) PlayOnceSamples(samples []int16) {
+	if len(samples) == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onceQueue = append(m.onceQueue, samples)
+}
+
 // FeedWebRTC sends decoded PCM from a WebRTC remote track into the mixer.
 // Non-blocking: drops the frame if the render loop isn't keeping up.
 // Call from the WebRTC track reader goroutine.
