@@ -648,7 +648,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 			return
 		}
 		reportStatus("rebooting", "Installing digitsd "+result.PiVersion+" -- restarting...")
-		if err := up.ApplyPiUpdate(path); err != nil {
+		if err := up.ApplyPiUpdate(path, result.PiVersion); err != nil {
 			log.Printf("updater: pi update failed: %v", err)
 			reportStatus("failed", fmt.Sprintf("Install failed: %v", err))
 			return

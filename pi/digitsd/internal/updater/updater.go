@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -32,7 +33,7 @@ type Config struct {
 	CurrentFWVersion string
 	StagingDir       string // default: /data/digits/staging
 	FlashScript      string // default: /usr/local/bin/flash-pico.sh
-	BinaryPath       string // default: /usr/local/bin/digitsd
+	BinaryPath       string // default: os.Executable() result
 	FirmwarePath     string // default: /data/digits/firmware.elf
 }
 
@@ -49,8 +50,14 @@ func New(cfg Config) *Updater {
 		cfg.FlashScript = "/usr/local/bin/flash-pico.sh"
 	}
 	if cfg.BinaryPath == "" {
-		cfg.BinaryPath = "/usr/local/bin/digitsd"
+		exe, err := os.Executable()
+		if err != nil {
+			cfg.BinaryPath = "/usr/local/bin/digitsd"
+		} else {
+			cfg.BinaryPath = exe
+		}
 	}
+	log.Printf("updater: BinaryPath=%s", cfg.BinaryPath)
 	if cfg.FirmwarePath == "" {
 		cfg.FirmwarePath = "/data/digits/firmware.elf"
 	}
@@ -188,7 +195,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 
 // ApplyPiUpdate replaces the digitsd binary on the read-only rootfs and exits
 // (systemd restarts). Temporarily remounts / as rw for the copy, then restores ro.
-func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
+func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 	if err := os.Chmod(stagedBinary, 0755); err != nil {
 		return fmt.Errorf("chmod: %w", err)
 	}
@@ -217,6 +224,18 @@ func (u *Updater) ApplyPiUpdate(stagedBinary string) error {
 		return fmt.Errorf("rename binary: %w", err)
 	}
 	os.Remove(stagedBinary)
+
+	// Verify the installed binary reports the expected version.
+	if expectedVersion != "" {
+		out, err := exec.Command(u.cfg.BinaryPath, "-version").CombinedOutput()
+		if err != nil {
+			log.Printf("updater: WARNING: version check failed: %v", err)
+		} else if !strings.Contains(string(out), expectedVersion) {
+			log.Printf("updater: WARNING: installed binary reports %q, expected %q", strings.TrimSpace(string(out)), expectedVersion)
+		} else {
+			log.Printf("updater: verified installed version: %s", strings.TrimSpace(string(out)))
+		}
+	}
 
 	// Restore read-only rootfs.
 	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
