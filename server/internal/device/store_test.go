@@ -1,6 +1,8 @@
 package device
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"testing"
 	"time"
@@ -266,5 +268,82 @@ func TestPairingCode(t *testing.T) {
 	}
 	if completed.PairedAt == nil {
 		t.Error("expected PairedAt to be set after CompletePairing")
+	}
+}
+
+// hashToken hashes a plaintext token with SHA-256, matching the server's storage format.
+func hashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+func TestValidateToken_Correct(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Token Household")
+	lineID := createTestLine(t, database, "5551110001", hhID)
+
+	dev, err := s.Create(lineID, "hw-token-001")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Simulate what pairing does: store hashed token, mark as paired
+	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
+	hashed := hashToken(plaintext)
+	_, err = database.DB.Exec(
+		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
+		hashed, dev.ID,
+	)
+	if err != nil {
+		t.Fatalf("set hashed token: %v", err)
+	}
+
+	valid, err := s.ValidateToken("hw-token-001", plaintext)
+	if err != nil {
+		t.Fatalf("ValidateToken: %v", err)
+	}
+	if !valid {
+		t.Error("expected ValidateToken to return true for correct token")
+	}
+}
+
+func TestValidateToken_Wrong(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Token Wrong Household")
+	lineID := createTestLine(t, database, "5551110002", hhID)
+
+	dev, err := s.Create(lineID, "hw-token-002")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
+	hashed := hashToken(plaintext)
+	_, err = database.DB.Exec(
+		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
+		hashed, dev.ID,
+	)
+	if err != nil {
+		t.Fatalf("set hashed token: %v", err)
+	}
+
+	valid, err := s.ValidateToken("hw-token-002", "wrong-token")
+	if err != nil {
+		t.Fatalf("ValidateToken: %v", err)
+	}
+	if valid {
+		t.Error("expected ValidateToken to return false for wrong token")
+	}
+}
+
+func TestValidateToken_NonExistent(t *testing.T) {
+	s, _ := testStore(t)
+
+	valid, err := s.ValidateToken("hw-does-not-exist", "any-token")
+	if err != nil {
+		t.Fatalf("ValidateToken: %v", err)
+	}
+	if valid {
+		t.Error("expected ValidateToken to return false for non-existent hardware ID")
 	}
 }

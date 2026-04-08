@@ -1,7 +1,10 @@
 package device
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -214,4 +217,26 @@ func (s *Store) GetByPairingCode(code string) (*Device, error) {
 		return nil, fmt.Errorf("get device by pairing code: %w", err)
 	}
 	return d, nil
+}
+
+// ValidateToken checks if the given plaintext token matches the stored hash
+// for the device with the given hardware ID. Uses constant-time comparison.
+func (s *Store) ValidateToken(hardwareID, token string) (bool, error) {
+	var storedHash sql.NullString
+	err := s.db.QueryRow(
+		`SELECT device_token FROM devices WHERE hardware_id = $1 AND paired_at IS NOT NULL`,
+		hardwareID,
+	).Scan(&storedHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("validate token: %w", err)
+	}
+	if !storedHash.Valid {
+		return false, nil
+	}
+	h := sha256.Sum256([]byte(token))
+	candidate := hex.EncodeToString(h[:])
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1, nil
 }
