@@ -15,7 +15,13 @@ module.exports = {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
       },
     }],
-    '@semantic-release/release-notes-generator',
+    ['@semantic-release/release-notes-generator', {
+      parserOpts: {
+        headerPattern: /^(\w*)(?:\((firmware)\))?: (.*)$/,
+        headerCorrespondence: ['type', 'scope', 'subject'],
+        noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
+      },
+    }],
     ['@semantic-release/exec', {
       prepareCmd: 'bash ../tools/build-firmware.sh ${nextRelease.version}',
     }],
