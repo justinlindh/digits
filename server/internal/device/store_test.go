@@ -1,8 +1,6 @@
 package device
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"os"
 	"testing"
 	"time"
@@ -271,12 +269,6 @@ func TestPairingCode(t *testing.T) {
 	}
 }
 
-// hashToken hashes a plaintext token with SHA-256, matching the server's storage format.
-func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}
-
 func TestValidateToken_Correct(t *testing.T) {
 	s, database := testStore(t)
 	hhID := createTestHousehold(t, database, "Token Household")
@@ -289,7 +281,7 @@ func TestValidateToken_Correct(t *testing.T) {
 
 	// Simulate what pairing does: store hashed token, mark as paired
 	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
-	hashed := hashToken(plaintext)
+	hashed := HashToken(plaintext)
 	_, err = database.DB.Exec(
 		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
 		hashed, dev.ID,
@@ -318,7 +310,7 @@ func TestValidateToken_Wrong(t *testing.T) {
 	}
 
 	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
-	hashed := hashToken(plaintext)
+	hashed := HashToken(plaintext)
 	_, err = database.DB.Exec(
 		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
 		hashed, dev.ID,

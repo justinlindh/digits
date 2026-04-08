@@ -219,6 +219,12 @@ func (s *Store) GetByPairingCode(code string) (*Device, error) {
 	return d, nil
 }
 
+// HashToken returns the SHA-256 hex hash of a plaintext device token.
+func HashToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
 // ValidateToken checks if the given plaintext token matches the stored hash
 // for the device with the given hardware ID. Uses constant-time comparison.
 func (s *Store) ValidateToken(hardwareID, token string) (bool, error) {
@@ -236,7 +242,6 @@ func (s *Store) ValidateToken(hardwareID, token string) (bool, error) {
 	if !storedHash.Valid {
 		return false, nil
 	}
-	h := sha256.Sum256([]byte(token))
-	candidate := hex.EncodeToString(h[:])
+	candidate := HashToken(token)
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1, nil
 }

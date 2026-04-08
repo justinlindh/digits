@@ -2,13 +2,14 @@ package pairing
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/device"
 )
 
 const (
@@ -117,7 +118,7 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 	}
 
 	token := randomHex(32)
-	tokenHash := hashToken(token)
+	tokenHash := device.HashToken(token)
 
 	// Update device: set line_id, device_token (hashed), mark as paired, clear pairing code
 	res, err := s.db.Exec(`
@@ -192,11 +193,6 @@ func (s *Store) RegenerateCode(hardwareID string) (string, error) {
 		return s.GenerateCode(hardwareID)
 	}
 	return code, nil
-}
-
-func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
 }
 
 func randomHex(n int) string {

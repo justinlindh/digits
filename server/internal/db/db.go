@@ -204,7 +204,14 @@ func (d *Database) migrate() error {
 		// v9: device last-seen timestamp
 		`ALTER TABLE devices ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`,
 		// v10: hash existing plaintext device tokens with SHA-256
-		`UPDATE devices SET device_token = encode(sha256(device_token::bytea), 'hex') WHERE device_token IS NOT NULL AND length(device_token) = 64`,
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 10) THEN
+        UPDATE devices SET device_token = encode(sha256(device_token::bytea), 'hex')
+        WHERE device_token IS NOT NULL;
+        INSERT INTO schema_version (version) VALUES (10);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
