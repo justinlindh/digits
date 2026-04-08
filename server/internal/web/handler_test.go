@@ -39,6 +39,8 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	relay := signaling.NewRelay(hub, tracker, nil)
 
 	authStore := auth.NewStoreFromDB(database.DB)
+	householdStore := household.NewStore(database.DB)
+	pairingStore := pairing.NewStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
 	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout.html", "templates/login.html")
@@ -49,7 +51,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, nil, nil, nil, nil, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -206,48 +208,8 @@ func TestAPIStatusReturnsJSON(t *testing.T) {
 	}
 }
 
-// setupHandlerWithHousehold is like setupHandler but wires in a real householdStore.
-func setupHandlerWithHousehold(t *testing.T) (*Handler, *db.Database, *auth.Store) {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	database, err := db.Open(dsn)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { database.Close() })
-
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
-	hub := signaling.NewHub()
-	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil)
-
-	authStore := auth.NewStoreFromDB(database.DB)
-	householdStore := household.NewStore(database.DB)
-	pairingStore := pairing.NewStore(database.DB)
-
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout.html", "templates/login.html")
-	if err != nil {
-		t.Fatalf("parse login template: %v", err)
-	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
-
-	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
-		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
-	return h, database, authStore
-}
-
 func TestSettingsTimezonePost(t *testing.T) {
-	h, database, authStore := setupHandlerWithHousehold(t)
+	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 
 	user, _ := authStore.GetUserByEmail("test@example.com")
@@ -285,7 +247,7 @@ func TestSettingsTimezonePost(t *testing.T) {
 }
 
 func TestSettingsTimezonePost_Invalid(t *testing.T) {
-	h, database, authStore := setupHandlerWithHousehold(t)
+	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 
 	user, _ := authStore.GetUserByEmail("test@example.com")

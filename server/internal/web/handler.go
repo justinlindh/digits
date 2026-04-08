@@ -596,17 +596,18 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	hhName, callHistory, loc := h.householdContext(r)
+
 	devInfo := h.hub.DeviceInfo(number)
 	if devInfo != nil {
-		loc := h.householdTimezone(r)
 		devInfo.LastSeen = devInfo.LastSeen.In(loc)
 	}
 
 	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
-		CallHistoryEnabled:    h.callHistoryEnabled(r),
-		HouseholdName:         h.householdNameFromContext(r),
+		CallHistoryEnabled:    callHistory,
+		HouseholdName:         hhName,
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
@@ -725,7 +726,8 @@ type callsData struct {
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	if !h.callHistoryEnabled(r) {
+	hhName, callHistory, loc := h.householdContext(r)
+	if !callHistory {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -733,7 +735,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 
 	// Scope call log to the user's household lines
 	user := auth.UserFromContext(r.Context())
-	if user != nil && h.lineStore != nil {
+	if user != nil && h.lineStore != nil && h.householdStore != nil {
 		households, err := h.householdStore.GetForUser(user.ID)
 		if err != nil {
 			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
@@ -766,12 +768,11 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		recent = []calls.Call{}
 	}
 
-	loc := h.householdTimezone(r)
 	for i := range recent {
 		recent[i].StartedAt = recent[i].StartedAt.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Calls: recent})
+	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
 }
 
 // ---- Settings ----
@@ -1279,6 +1280,8 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	if tz != "" {
 		if err := h.householdStore.SetTimezone(households[0].ID, tz); err != nil {
 			slog.Warn("set timezone failed", "err", err)
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
 		}
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
