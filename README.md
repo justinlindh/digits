@@ -12,7 +12,7 @@
   <a href="https://github.com/justinlindh/digits/releases?q=fw%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=fw/v*&label=firmware" alt="Firmware release"></a>
   <img src="https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white" alt="Go 1.26">
   <img src="https://img.shields.io/badge/C-Pico_SDK-A8B9CC?logo=c&logoColor=white" alt="C / Pico SDK">
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/justinlindh/digits" alt="MIT License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="AGPL-3.0 License"></a>
 </p>
 
 <p align="center">
@@ -133,4 +133,4 @@ Status: boards ordered, components sourced, pending assembly and validation.
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)
