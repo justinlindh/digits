@@ -18,11 +18,10 @@ import (
 //
 //	*#*#     → shutdown
 //	*##*     → reboot
+//	*#8378#  → *#TEST# — audio test (records clip, plays back)
 //	*#73887# → *#SETUP# — Wi-Fi re-provisioning (removes /data/wifi-configured, reboots)
 //
 // Volume codes: *#*N where N=0-9
-//
-//	*#*8 → audio test (special)
 type ServiceCodeHandler struct {
 	buffer      string
 	onVolume    func(level int)
@@ -49,7 +48,7 @@ func (h *ServiceCodeHandler) SetVolumeCallback(fn func(level int)) {
 	h.onVolume = fn
 }
 
-// SetAudioTestCallback sets the function called for *#*8.
+// SetAudioTestCallback sets the function called for *#8378# (*#TEST#).
 func (h *ServiceCodeHandler) SetAudioTestCallback(fn func()) {
 	h.onAudioTest = fn
 }
@@ -142,6 +141,20 @@ func (h *ServiceCodeHandler) check() bool {
 	}
 
 
+	// --- 7-character codes ---
+
+	if len(h.buffer) >= 7 {
+		last7 := h.buffer[len(h.buffer)-7:]
+		if last7 == "*#8378#" {
+			log.Println("service code: *#8378# (*#TEST#) → audio test")
+			if h.onAudioTest != nil {
+				go h.onAudioTest()
+			}
+			h.buffer = ""
+			return true
+		}
+	}
+
 	// --- 4-character codes ---
 
 	if len(h.buffer) < 4 {
@@ -178,12 +191,6 @@ func (h *ServiceCodeHandler) check() bool {
 		ch := last4[3]
 		if ch >= '0' && ch <= '9' {
 			level := int(ch - '0')
-			if level == 8 && h.onAudioTest != nil {
-				log.Println("service code: *#*8 → audio test")
-				go h.onAudioTest()
-				h.buffer = ""
-				return true
-			}
 			if h.onVolume != nil {
 				log.Printf("service code: *#*%d → volume %d", level, level)
 				h.onVolume(level)

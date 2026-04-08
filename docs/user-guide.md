@@ -159,12 +159,12 @@ Dial `*#*` followed by any digit `0`–`9` to set the volume level. The setting 
 
 | Code | Also written as | What it does |
 |------|----------------|-------------|
-| `*#*8` | -- | **Audio test** -- records a 3-second clip and plays it back. Useful for checking mic/speaker. |
+| `*#8378#` | `*#TEST#` | **Audio test** -- records a 3-second clip and plays it back. Useful for checking mic/speaker. |
 | `*#73887#` | `*#SETUP#` | **Re-enter Wi-Fi setup mode.** Use this if you change your Wi-Fi network or password. The phone reboots into setup mode. |
 | `*#*#` | -- | **Safe shutdown.** Powers off the phone gracefully. Unplug after the LED goes dark. |
 | `*##*` | -- | **Reboot.** Restarts the phone's software. Takes about 60 seconds. |
 
-> **Tip:** The `*#SETUP#` label is a mnemonic -- `SETUP` = `73887` on a phone keypad. The shutdown (`*#*#`) and reboot (`*##*`) codes use `*` and `#` keys only.
+> **Tip:** The `*#SETUP#` and `*#TEST#` labels are mnemonics -- `SETUP` = `73887` and `TEST` = `8378` on a phone keypad. The shutdown (`*#*#`) and reboot (`*##*`) codes use `*` and `#` keys only.
 
 ---
 
@@ -241,7 +241,7 @@ There's nothing to tap, no account to log into, no data to harvest. The phone do
 ### The call sounds bad / echoey
 
 - Try adjusting the volume with `*#*5` or `*#*6` (a lower volume can reduce echo)
-- Run the audio test: dial `*#*8` while off-hook, speak into the handset, and listen to the playback. If it sounds distorted, the volume may be too high.
+- Run the audio test: dial `*#8378#` (`*#TEST#`) while off-hook, speak into the handset, and listen to the playback. If it sounds distorted, the volume may be too high.
 - Move the phone away from the Wi-Fi router if they're right next to each other
 
 ### The phone isn't ringing for incoming calls
@@ -266,7 +266,7 @@ Dial `*#73887#` (or `*#SETUP#`) while off-hook. The phone will reboot into setup
 │  HANG UP        Place handset on cradle         │
 ├─────────────────────────────────────────────────┤
 │  VOLUME         *#*0 (mute) ... *#*9 (max)      │
-│  AUDIO TEST     *#*8                            │
+│  AUDIO TEST     *#8378#  (*#TEST#)              │
 │  WI-FI SETUP    *#73887#  (*#SETUP#)            │
 │  REBOOT         *##*                            │
 │  SHUTDOWN       *#*#                            │
