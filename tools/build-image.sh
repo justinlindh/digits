@@ -159,7 +159,6 @@ while [[ "${1:-}" == --* ]]; do
     esac
     shift
 done
-fi
 
 require_cmd() {
     for cmd in "$@"; do
