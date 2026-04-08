@@ -595,6 +595,12 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	devInfo := h.hub.DeviceInfo(number)
+	if devInfo != nil {
+		loc := h.householdTimezone(r)
+		devInfo.LastSeen = devInfo.LastSeen.In(loc)
+	}
+
 	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
@@ -603,7 +609,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
-		DeviceInfo:            h.hub.DeviceInfo(number),
+		DeviceInfo:            devInfo,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
@@ -757,6 +763,11 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if recent == nil {
 		recent = []calls.Call{}
+	}
+
+	loc := h.householdTimezone(r)
+	for i := range recent {
+		recent[i].StartedAt = recent[i].StartedAt.In(loc)
 	}
 
 	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Calls: recent})
@@ -1247,30 +1258,35 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
-// householdContext returns the household name and call-history flag for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool) {
+// householdContext returns the household name, call-history flag, and timezone location for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
 	if h.householdStore == nil {
-		return "", false
+		return "", false, time.UTC
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false
+		return "", false, time.UTC
 	}
 	households, err := h.householdStore.GetForUser(user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false
+		return "", false, time.UTC
 	}
-	return households[0].Name, households[0].CallHistoryEnabled
+	return households[0].Name, households[0].CallHistoryEnabled, households[0].Location()
 }
 
 func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch := h.householdContext(r)
+	_, ch, _ := h.householdContext(r)
 	return ch
 }
 
 func (h *Handler) householdNameFromContext(r *http.Request) string {
-	name, _ := h.householdContext(r)
+	name, _, _ := h.householdContext(r)
 	return name
+}
+
+func (h *Handler) householdTimezone(r *http.Request) *time.Location {
+	_, _, loc := h.householdContext(r)
+	return loc
 }
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
