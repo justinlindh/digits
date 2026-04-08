@@ -1163,6 +1163,22 @@ func main() {
 				}
 			}
 
+			// Pico rebooted (e.g. external flash, power cycle): re-query
+			// firmware version and report it to the server.
+			if event == "STATUS:READY" {
+				log.Println("pico: detected reboot, re-querying firmware version")
+				if v, c, err := sp.QueryVersion(); err != nil {
+					log.Printf("pico: version query after reboot: %v", err)
+				} else if v != fwVersion || c != fwCommit {
+					fwVersion, fwCommit = v, c
+					log.Printf("pico: firmware version changed: %s (%s)", fwVersion, fwCommit)
+					sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+				} else {
+					log.Printf("pico: firmware version unchanged: %s (%s)", fwVersion, fwCommit)
+				}
+				continue
+			}
+
 			// Forward all events to the FSM controller
 			ctrl.HandleEvent(event)
 
