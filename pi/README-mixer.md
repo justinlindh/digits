@@ -26,7 +26,7 @@ Digital audio (aplay) → DAC → Mixout (switches 87/94) → Lineout (switch 29
 
 | Control | Current Setting | Notes |
 |---------|----------------|-------|
-| `Mic 1 Volume` | 5 | External electret mic via 3.5mm TRS jack |
+| `Mic 1 Volume` | 7 | External electret mic via 3.5mm TRS jack (max preamp gain) |
 | `Mixin PGA Volume` | L=7, R=5 | Pre-ADC gain |
 | `ADC Volume` | 114 | Analog-to-digital converter level |
 | `DAC Volume` | 111 (-0.75dB) | Digital-to-analog converter level |

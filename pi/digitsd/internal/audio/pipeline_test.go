@@ -13,8 +13,8 @@ func TestPipelineConfig(t *testing.T) {
 	if cfg.OpusBitrate != 24000 {
 		t.Errorf("OpusBitrate: got %d, want 24000", cfg.OpusBitrate)
 	}
-	if cfg.MicChannel != 1 {
-		t.Errorf("MicChannel: got %d, want 1", cfg.MicChannel)
+	if cfg.MicChannel != 0 {
+		t.Errorf("MicChannel: got %d, want 0", cfg.MicChannel)
 	}
 	if !cfg.Denoise {
 		t.Error("Denoise: got false, want true")
