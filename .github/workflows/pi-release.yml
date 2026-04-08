@@ -48,7 +48,21 @@ jobs:
           printf 'Types: deb\nURIs: http://ports.ubuntu.com/\nSuites: %s %s-updates\nComponents: main restricted universe\nArchitectures: arm64\n' \
             "$(lsb_release -cs)" "$(lsb_release -cs)" | sudo tee /etc/apt/sources.list.d/arm64.sources
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libopus-dev:arm64 libopusfile-dev:arm64 pkg-config
+          # libopusfile-dev:arm64 can't be installed via apt (libssl3t64 conflict),
+          # so install other deps normally, then extract opusfile from downloaded debs
+          sudo apt-get install -y gcc-aarch64-linux-gnu libasound2-dev:arm64 libopus-dev:arm64 libogg-dev:arm64 pkg-config
+          # Create opusfile pkg-config entry
+          sudo bash -c 'printf "prefix=/usr\nexec_prefix=\${prefix}\nlibdir=\${prefix}/lib/aarch64-linux-gnu\nincludedir=\${prefix}/include\n\nName: opusfile\nDescription: opusfile for cross-compilation\nVersion: 0.12\nRequires: opus\nLibs: -L\${libdir} -lopusfile\nCflags: -I\${includedir}/opus\n" \
+            > /usr/lib/aarch64-linux-gnu/pkgconfig/opusfile.pc'
+          # Extract opusfile headers and libs from downloaded debs
+          apt-get download libopusfile-dev libopusfile0:arm64
+          dpkg-deb -x libopusfile-dev*.deb /tmp/opusfile-dev
+          dpkg-deb -x libopusfile0*.deb /tmp/opusfile-lib
+          sudo cp /tmp/opusfile-dev/usr/include/opus/opusfile.h /usr/include/opus/
+          sudo cp /tmp/opusfile-lib/usr/lib/aarch64-linux-gnu/libopusfile.so* /usr/lib/aarch64-linux-gnu/
+          sudo ln -sf libopusfile.so.0 /usr/lib/aarch64-linux-gnu/libopusfile.so
+          sudo ldconfig
+          rm -rf /tmp/opusfile-dev /tmp/opusfile-lib *.deb
 
       - name: Install semantic-release
         run: |
