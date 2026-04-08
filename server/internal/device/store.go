@@ -181,6 +181,18 @@ func (s *Store) CompletePairing(id int64) error {
 	return nil
 }
 
+// TouchLastSeen updates last_seen_at to NOW() for the device with the given hardware ID.
+func (s *Store) TouchLastSeen(hardwareID string) error {
+	_, err := s.db.Exec(
+		`UPDATE devices SET last_seen_at = NOW() WHERE hardware_id = $1`,
+		hardwareID,
+	)
+	if err != nil {
+		return fmt.Errorf("touch last seen: %w", err)
+	}
+	return nil
+}
+
 // GetByPairingCode returns the device with the given pairing code, provided
 // the code has not yet expired. Returns ErrNotFound if no matching device exists.
 func (s *Store) GetByPairingCode(code string) (*Device, error) {
