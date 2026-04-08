@@ -21,7 +21,6 @@ type Conn struct {
 	FirmwareVersion string
 	FirmwareCommit  string
 	FlashCapable    bool
-	LastSeen        time.Time
 }
 
 type Hub struct {
@@ -133,7 +132,6 @@ type DeviceInfoSnapshot struct {
 	FirmwareVersion string
 	FirmwareCommit  string
 	FlashCapable    bool
-	LastSeen        time.Time
 }
 
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
@@ -150,7 +148,6 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 		FirmwareVersion: conn.FirmwareVersion,
 		FirmwareCommit:  conn.FirmwareCommit,
 		FlashCapable:    conn.FlashCapable,
-		LastSeen:        conn.LastSeen,
 	}
 }
 
@@ -200,7 +197,6 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, 
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.FlashCapable = flashCapable
-	conn.LastSeen = time.Now()
 	return true
 }
 

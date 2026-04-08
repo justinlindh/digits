@@ -133,10 +133,12 @@
             {{end}}
           </div>
         </div>
+        {{if $.LastSeenAt}}
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Last Check-in</label>
-          <span class="text-sm text-[#c9d1d9]">{{.DeviceInfo.LastSeen.Format "Jan 2, 2006 3:04 PM"}}</span>
+          <span class="text-sm text-[#c9d1d9]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
         </div>
+        {{end}}
         {{if .Online}}
         <!-- Per-component update sections -->
         <div class="pt-3 border-t border-[#21262d] space-y-3">
@@ -386,7 +388,13 @@
           </div>
           {{else}}
           <p class="text-sm text-[#8b949e]">Device is offline</p>
-          <p class="text-xs text-[#484f58]">Version info is available when the device is connected.</p>
+          {{if $.LastSeenAt}}
+          <div class="mt-2">
+            <label class="block text-xs text-[#8b949e] mb-1">Last seen</label>
+            <span class="text-sm text-[#c9d1d9]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
+          </div>
+          {{end}}
+          <p class="text-xs text-[#484f58] mt-2">Version info is available when the device is connected.</p>
           {{end}}
         {{end}}
       </div>

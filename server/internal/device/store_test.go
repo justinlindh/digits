@@ -175,6 +175,47 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestTouchLastSeen(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "LastSeen Household")
+	lineID := createTestLine(t, database, "5558880001", hhID)
+
+	dev, err := s.Create(lineID, "hw-lastseen-001")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Initially nil
+	if dev.LastSeenAt != nil {
+		t.Errorf("expected LastSeenAt to be nil initially, got %v", dev.LastSeenAt)
+	}
+
+	// Touch it
+	if err := s.TouchLastSeen("hw-lastseen-001"); err != nil {
+		t.Fatalf("TouchLastSeen: %v", err)
+	}
+
+	got, err := s.GetByID(dev.ID)
+	if err != nil {
+		t.Fatalf("GetByID after touch: %v", err)
+	}
+	if got.LastSeenAt == nil {
+		t.Fatal("expected LastSeenAt to be set after TouchLastSeen")
+	}
+	if time.Since(*got.LastSeenAt) > 5*time.Second {
+		t.Errorf("LastSeenAt too old: %v", got.LastSeenAt)
+	}
+}
+
+func TestTouchLastSeen_UnknownHardware(t *testing.T) {
+	s, _ := testStore(t)
+
+	// Should not error for unknown hardware ID (just no rows affected)
+	if err := s.TouchLastSeen("does-not-exist"); err != nil {
+		t.Errorf("TouchLastSeen for unknown hardware: %v", err)
+	}
+}
+
 func TestPairingCode(t *testing.T) {
 	s, database := testStore(t)
 	hhID := createTestHousehold(t, database, "Pairing Household")
