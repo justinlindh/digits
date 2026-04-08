@@ -2,7 +2,7 @@ state.Zero {
 	control.1 {
 		iface MIXER
 		name 'Mic 1 Volume'
-		value 5
+		value 7
 		comment {
 			access 'read write'
 			type INTEGER
