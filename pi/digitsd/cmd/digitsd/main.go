@@ -1035,6 +1035,7 @@ func main() {
 				if !easterEggs.AddKey(key) {
 					if svcCodes.AddKey(key) {
 						// Service code fired — pause, double beep, then back to dial tone
+						ctrl.Reset()
 						go func() {
 							mixer.StopAll()
 							time.Sleep(250 * time.Millisecond)
@@ -1042,10 +1043,10 @@ func main() {
 							time.Sleep(150 * time.Millisecond)
 							mixer.PlayOnce("dtmf_star")
 							time.Sleep(300 * time.Millisecond)
-							ctrl.Reset()
 							mixer.PlayLoop("tone_dial")
 							log.Printf("phone: service code handled, reset to dial tone")
 						}()
+						continue // skip forwarding to controller
 					}
 				}
 			}
