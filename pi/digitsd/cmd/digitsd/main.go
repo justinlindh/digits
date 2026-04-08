@@ -561,8 +561,8 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 // Default paths for SWD flash infrastructure on the Pi.
 const (
 	defaultFirmwarePath = "/data/digits/firmware.elf"
-	defaultSWDConfig    = "/data/digits/swd/digits-swd.cfg"
-	defaultOpenOCD      = "/usr/local/bin/openocd"
+	defaultSWDConfig    = "/usr/local/share/digits/swd/digits-swd.cfg"
+	defaultOpenOCD      = "/usr/bin/openocd"
 )
 
 // statusFunc is a callback to report update progress back to the server.
