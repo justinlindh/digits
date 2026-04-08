@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math/big"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/device"
 )
 
 const (
@@ -116,14 +118,15 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 	}
 
 	token := randomHex(32)
+	tokenHash := device.HashToken(token)
 
-	// Update device: set line_id, device_token, mark as paired, clear pairing code
+	// Update device: set line_id, device_token (hashed), mark as paired, clear pairing code
 	res, err := s.db.Exec(`
 		UPDATE devices
 		SET line_id = $2, device_token = $3,
 		    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
 		WHERE id = $1 AND paired_at IS NULL
-	`, deviceID, lineID, token)
+	`, deviceID, lineID, tokenHash)
 	if err != nil {
 		return "", "", fmt.Errorf("claim device: %w", err)
 	}

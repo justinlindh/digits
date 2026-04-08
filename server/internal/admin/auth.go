@@ -2,12 +2,12 @@ package admin
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/justinlindh/digits/server/internal/device"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -60,7 +60,7 @@ func (s *AuthStore) CreateSession(adminID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("generate token: %w", err)
 	}
-	tokenHash := hashToken(token)
+	tokenHash := device.HashToken(token)
 	expires := time.Now().Add(24 * time.Hour)
 
 	_, err = s.db.DB.Exec(
@@ -74,7 +74,7 @@ func (s *AuthStore) CreateSession(adminID string) (string, error) {
 }
 
 func (s *AuthStore) ValidateSession(token string) (string, error) {
-	tokenHash := hashToken(token)
+	tokenHash := device.HashToken(token)
 	var adminID string
 	err := s.db.DB.QueryRow(
 		"SELECT admin_id FROM admin_sessions WHERE token_hash = $1 AND expires_at > NOW()",
@@ -99,7 +99,3 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func hashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}
