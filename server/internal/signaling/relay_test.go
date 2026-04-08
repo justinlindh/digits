@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,16 @@ func (m *mockTracker) OnCallEnded(caller, callee string) error {
 	delete(m.calls, callee+"→"+caller)
 	return nil
 }
+func (m *mockTracker) Busy(number string) bool {
+	for k := range m.calls {
+		a, b, _ := strings.Cut(k, "→")
+		if a == number || b == number {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *mockTracker) InCall(a, b string) bool {
 	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
