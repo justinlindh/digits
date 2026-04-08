@@ -194,6 +194,64 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 	}
 }
 
+func TestRelayBusySignal(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	conn3 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+	hub.Register("3140003", conn3)
+
+	// Phone 1 calls Phone 2 (establishes active call)
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	// Phone 3 calls Phone 2 (busy) -- should get busy signal
+	relay.HandleMessage("3140003", &Message{Type: TypeCall, To: "3140002"})
+
+	select {
+	case data := <-conn3.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeBusy {
+			t.Fatalf("expected busy, got: %+v", msg)
+		}
+	default:
+		t.Fatal("phone 3 did not receive busy signal")
+	}
+
+	// Phone 1 tries to call Phone 3 while already on a call -- should also get busy
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140003"})
+
+	select {
+	case data := <-conn1.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeBusy {
+			t.Fatalf("expected busy for caller already in call, got: %+v", msg)
+		}
+	default:
+		t.Fatal("phone 1 did not receive busy signal when already in a call")
+	}
+
+	// Phone 3 should not have received anything from the second call attempt
+	select {
+	case data := <-conn3.Send:
+		msg, _ := ParseMessage(data)
+		t.Fatalf("phone 3 should not have received anything, got: %+v", msg)
+	default:
+		// correct
+	}
+}
+
 func TestRelayICERestartForwarded(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()

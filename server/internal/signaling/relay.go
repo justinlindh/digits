@@ -95,7 +95,7 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	}
 
 	if r.Tracker != nil {
-		if r.Tracker.Busy(msg.To) {
+		if r.Tracker.Busy(from) || r.Tracker.Busy(msg.To) {
 			r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
