@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -40,6 +41,14 @@ type mockCallAuthorizer struct {
 
 func (m *mockCallAuthorizer) CanCall(fromNumber, toNumber string) (bool, error) {
 	return m.allowed[[2]string{fromNumber, toNumber}], nil
+}
+
+type errorCallAuthorizer struct {
+	err error
+}
+
+func (m *errorCallAuthorizer) CanCall(fromNumber, toNumber string) (bool, error) {
+	return false, m.err
 }
 
 func TestRelayCallFlow(t *testing.T) {
@@ -180,6 +189,43 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 		t.Fatalf("phone 3 should not have received anything, got: %+v", msg)
 	default:
 		// correct: nothing delivered to phone 3
+	}
+}
+
+func TestRelayCallDeniedOnAuthorizerError(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+
+	authorizer := &errorCallAuthorizer{err: errors.New("db connection failed")}
+	relay := NewRelay(hub, tracker, authorizer)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+
+	select {
+	case data := <-conn1.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeError || msg.Error != "not_authorized" {
+			t.Fatalf("expected not_authorized error, got: %+v", msg)
+		}
+	default:
+		t.Fatal("caller did not receive error when authorizer fails")
+	}
+
+	// Callee should not receive a ring
+	select {
+	case data := <-conn2.Send:
+		msg, _ := ParseMessage(data)
+		t.Fatalf("callee should not have received anything, got: %+v", msg)
+	default:
+		// correct
 	}
 }
 
