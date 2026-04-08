@@ -789,7 +789,7 @@ type settingsData struct {
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	var hh *household.Household
-	if user != nil {
+	if user != nil && h.householdStore != nil {
 		households, _ := h.householdStore.GetForUser(user.ID)
 		if len(households) > 0 {
 			hh = households[0]

@@ -14,7 +14,9 @@ import (
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
@@ -201,6 +203,119 @@ func TestAPIStatusReturnsJSON(t *testing.T) {
 	}
 	if !strings.Contains(w.Header().Get("Content-Type"), "application/json") {
 		t.Errorf("expected JSON content type")
+	}
+}
+
+// setupHandlerWithHousehold is like setupHandler but wires in a real householdStore.
+func setupHandlerWithHousehold(t *testing.T) (*Handler, *db.Database, *auth.Store) {
+	t.Helper()
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	database, err := db.Open(dsn)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	lineStore := line.NewStore(database)
+	deviceStore := device.NewStore(database)
+	hub := signaling.NewHub()
+	tracker := calls.New(database)
+	relay := signaling.NewRelay(hub, tracker, nil)
+
+	authStore := auth.NewStoreFromDB(database.DB)
+	householdStore := household.NewStore(database.DB)
+	pairingStore := pairing.NewStore(database.DB)
+
+	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
+	emailSender := email.NewNoopSender()
+	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout.html", "templates/login.html")
+	if err != nil {
+		t.Fatalf("parse login template: %v", err)
+	}
+	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
+
+	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
+		Addr:        ":8443",
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	return h, database, authStore
+}
+
+func TestSettingsTimezonePost(t *testing.T) {
+	h, database, authStore := setupHandlerWithHousehold(t)
+	cookie := addSessionCookie(t, authStore)
+
+	user, _ := authStore.GetUserByEmail("test@example.com")
+	householdStore := h.householdStore
+	hh, err := householdStore.Create("TZ Test Family", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	form := url.Values{"timezone": {"America/Chicago"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/timezone", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303 redirect, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/settings?saved=1" {
+		t.Errorf("redirect location = %q, want /settings?saved=1", loc)
+	}
+
+	got, err := householdStore.GetByID(hh.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Timezone != "America/Chicago" {
+		t.Errorf("timezone = %q, want America/Chicago", got.Timezone)
+	}
+}
+
+func TestSettingsTimezonePost_Invalid(t *testing.T) {
+	h, database, authStore := setupHandlerWithHousehold(t)
+	cookie := addSessionCookie(t, authStore)
+
+	user, _ := authStore.GetUserByEmail("test@example.com")
+	householdStore := h.householdStore
+	hh, err := householdStore.Create("TZ Invalid Family", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	form := url.Values{"timezone": {"Fake/Zone"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/timezone", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303 redirect, got %d", w.Code)
+	}
+
+	got, err := householdStore.GetByID(hh.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Timezone != "UTC" {
+		t.Errorf("timezone = %q, want UTC (invalid should be rejected)", got.Timezone)
 	}
 }
 
