@@ -676,13 +676,15 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 info "  Copying required tools to recovery/bin/..."
 mkdir -p "${RECOVERY_MNT}/bin"
 for tool in hostapd ip dnsmasq; do
-    TOOL_PATH=$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null || true)
+    # Use readlink -f inside chroot to resolve symlinks to the real binary
+    TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
     if [[ -z "$TOOL_PATH" ]]; then
         warn "  Tool not found in rootfs: $tool -- skipping"
         continue
     fi
     if [[ -f "${ROOTFS_MNT}${TOOL_PATH}" ]]; then
         install -m 755 "${ROOTFS_MNT}${TOOL_PATH}" "${RECOVERY_MNT}/bin/${tool}"
+        info "  Copied $tool (${TOOL_PATH})"
     else
         warn "  Tool path ${TOOL_PATH} not found on rootfs for: $tool -- skipping"
     fi

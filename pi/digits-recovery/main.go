@@ -164,12 +164,76 @@ func pipeCommands(cmd1, cmd2 *exec.Cmd) error {
 	return nil
 }
 
+// startAP brings up wlan0 in AP mode with hostapd and dnsmasq.
+// Uses tools from the recovery partition's bin/ directory.
+func startAP(recoveryDir string) error {
+	// Bring up wlan0
+	if err := exec.Command("ip", "link", "set", "wlan0", "up").Run(); err != nil {
+		return fmt.Errorf("ip link set wlan0 up: %w", err)
+	}
+	// Flush and assign static IP
+	exec.Command("ip", "addr", "flush", "dev", "wlan0").Run()
+	if err := exec.Command("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run(); err != nil {
+		return fmt.Errorf("ip addr add: %w", err)
+	}
+
+	// Write hostapd config (minimal, open network)
+	hostapdConf := "/tmp/recovery-hostapd.conf"
+	os.WriteFile(hostapdConf, []byte(`interface=wlan0
+driver=nl80211
+ssid=Digits-Recovery
+hw_mode=g
+channel=6
+auth_algs=1
+wpa=0
+country_code=US
+ieee80211d=1
+`), 0644)
+
+	// Write dnsmasq config (DHCP + captive portal DNS)
+	dnsmasqConf := "/tmp/recovery-dnsmasq.conf"
+	os.WriteFile(dnsmasqConf, []byte(`interface=wlan0
+bind-interfaces
+dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m
+address=/#/192.168.4.1
+no-resolv
+domain-needed
+`), 0644)
+
+	// Start hostapd
+	hostapd := exec.Command("hostapd", "-B", hostapdConf)
+	hostapd.Stdout = os.Stdout
+	hostapd.Stderr = os.Stderr
+	if err := hostapd.Run(); err != nil {
+		return fmt.Errorf("hostapd: %w", err)
+	}
+
+	// Start dnsmasq
+	dnsmasq := exec.Command("dnsmasq", "-C", dnsmasqConf)
+	dnsmasq.Stdout = os.Stdout
+	dnsmasq.Stderr = os.Stderr
+	if err := dnsmasq.Run(); err != nil {
+		return fmt.Errorf("dnsmasq: %w", err)
+	}
+
+	log.Println("recovery: AP mode started (SSID: Digits-Recovery)")
+	return nil
+}
+
 func main() {
 	hostname, _ := os.Hostname()
 
+	recoveryDir := envOr("RECOVERY_DIR", "/mnt/recovery")
+
+	// Start AP mode so users can connect
+	if err := startAP(recoveryDir); err != nil {
+		log.Printf("recovery: WARNING: AP setup failed: %v", err)
+		log.Println("recovery: continuing anyway (HTTP server may not be reachable)")
+	}
+
 	srv := &recoveryServer{
 		counterPath: envOr("BOOT_COUNTER_PATH", "/data/digits/boot-counter"),
-		recoveryDir: envOr("RECOVERY_DIR", "/mnt/recovery"),
+		recoveryDir: recoveryDir,
 		rootfsDev:   envOr("ROOTFS_DEV", "/dev/mmcblk0p2"),
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),
 		hostname:    hostname,
