@@ -2,8 +2,9 @@ package phone
 
 import (
 	"bufio"
+	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -98,7 +99,7 @@ func (w *LogWatcher) tailLoop(f *os.File) {
 		select {
 		case w.events <- event:
 		default:
-			log.Printf("logwatch: events channel full, dropping event: %s", event)
+			slog.Error(fmt.Sprintf("logwatch: events channel full, dropping event: %s", event))
 		}
 	}
 }

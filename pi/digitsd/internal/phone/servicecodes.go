@@ -2,7 +2,7 @@ package phone
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -106,7 +106,7 @@ func (h *ServiceCodeHandler) check() bool {
 	if len(h.buffer) >= 9 {
 		last9 := h.buffer[len(h.buffer)-9:]
 		if last9 == "*#873283#" {
-			log.Println("service code: *#873283# (*#UPDATE#) → check for updates")
+			slog.Info("service code: *#873283# (*#UPDATE#) → check for updates")
 			if h.onUpdate != nil {
 				go h.onUpdate()
 			}
@@ -121,7 +121,7 @@ func (h *ServiceCodeHandler) check() bool {
 		last8 := h.buffer[len(h.buffer)-8:]
 		switch last8 {
 		case "*#00000#":
-			log.Println("service code: *#00000# → factory reset")
+			slog.Info("service code: *#00000# → factory reset")
 			if h.onFactoryReset != nil {
 				go h.onFactoryReset()
 			}
@@ -129,11 +129,11 @@ func (h *ServiceCodeHandler) check() bool {
 			return true
 		}
 		if last8 == "*#73887#" {
-			log.Println("service code: *#73887# (*#SETUP#) → Wi-Fi re-provisioning")
+			slog.Info("service code: *#73887# (*#SETUP#) → Wi-Fi re-provisioning")
 			if h.onSetup != nil {
 				go h.onSetup()
 			} else {
-				log.Println("service code: *#73887# triggered but no setup callback registered — ignoring")
+				slog.Info("service code: *#73887# triggered but no setup callback registered — ignoring")
 			}
 			h.buffer = ""
 			return true
@@ -146,7 +146,7 @@ func (h *ServiceCodeHandler) check() bool {
 	if len(h.buffer) >= 7 {
 		last7 := h.buffer[len(h.buffer)-7:]
 		if last7 == "*#8378#" {
-			log.Println("service code: *#8378# (*#TEST#) → audio test")
+			slog.Info("service code: *#8378# (*#TEST#) → audio test")
 			if h.onAudioTest != nil {
 				go h.onAudioTest()
 			}
@@ -164,21 +164,21 @@ func (h *ServiceCodeHandler) check() bool {
 
 	switch last4 {
 	case "*#0*":
-		log.Println("service code: *#0* → force re-pair")
+		slog.Info("service code: *#0* → force re-pair")
 		if h.onRepair != nil {
 			go h.onRepair()
 		}
 		h.buffer = ""
 		return true
 	case "*#*#":
-		log.Println("service code: *#*# → shutdown")
+		slog.Info("service code: *#*# → shutdown")
 		if h.onShutdown != nil {
 			go h.onShutdown()
 		}
 		h.buffer = ""
 		return true
 	case "*##*":
-		log.Println("service code: *##* → reboot")
+		slog.Info("service code: *##* → reboot")
 		if h.onReboot != nil {
 			go h.onReboot()
 		}
@@ -192,7 +192,7 @@ func (h *ServiceCodeHandler) check() bool {
 		if ch >= '0' && ch <= '9' {
 			level := int(ch - '0')
 			if h.onVolume != nil {
-				log.Printf("service code: *#*%d → volume %d", level, level)
+				slog.Info(fmt.Sprintf("service code: *#*%d → volume %d", level, level))
 				h.onVolume(level)
 			}
 			h.buffer = ""
@@ -227,7 +227,7 @@ func volumeToALSA(level int) int {
 func codecCard() string {
 	card, err := audio.FindCodecCard()
 	if err != nil {
-		log.Printf("WARNING: codec detection failed for volume control, assuming card 0: %v", err)
+		slog.Error(fmt.Sprintf("codec detection failed for volume control, assuming card 0: %v", err))
 		return "0"
 	}
 	return fmt.Sprintf("%d", card)
@@ -245,12 +245,12 @@ func SetVolume(level int) error {
 	// Persist volume level
 	os.MkdirAll(filepath.Dir(volumeFile), 0755)
 	if err := os.WriteFile(volumeFile, []byte(fmt.Sprintf("%d\n", level)), 0644); err != nil {
-		log.Printf("volume: persist failed: %v", err)
+		slog.Error(fmt.Sprintf("volume: persist failed: %v", err))
 	}
 	// Save full mixer state
 	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
 	cmd.Run() // best-effort
-	log.Printf("volume: %d/9 (Lineout=%d, persisted)", level, alsaVal)
+	slog.Info(fmt.Sprintf("volume: %d/9 (Lineout=%d, persisted)", level, alsaVal))
 	return nil
 }
 
@@ -269,8 +269,8 @@ func RestoreVolume() {
 	card := codecCard()
 	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("volume restore: amixer: %s: %v", strings.TrimSpace(string(out)), err)
+		slog.Error(fmt.Sprintf("volume restore: amixer: %s: %v", strings.TrimSpace(string(out)), err))
 		return
 	}
-	log.Printf("volume restored: %d/9 (Lineout=%d)", level, alsaVal)
+	slog.Info(fmt.Sprintf("volume restored: %d/9 (Lineout=%d)", level, alsaVal))
 }

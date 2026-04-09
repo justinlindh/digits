@@ -1,7 +1,8 @@
 package audio
 
 import (
-	"log"
+	"fmt"
+	"log/slog"
 	"sync"
 )
 
@@ -62,7 +63,7 @@ func (p *Pipeline) Start() error {
 	if p.cfg.Denoise {
 		d, err := NewDenoiser()
 		if err != nil {
-			log.Printf("audio: denoiser unavailable, running without denoise: %v", err)
+			slog.Error(fmt.Sprintf("audio: denoiser unavailable, running without denoise: %v", err))
 			p.denoiser = nil
 		} else {
 			p.denoiser = d
@@ -102,7 +103,7 @@ func (p *Pipeline) captureLoop() {
 
 		stereo, err := p.capture.ReadFrame()
 		if err != nil {
-			log.Printf("audio: capture read error: %v", err)
+			slog.Error(fmt.Sprintf("audio: capture read error: %v", err))
 			continue
 		}
 

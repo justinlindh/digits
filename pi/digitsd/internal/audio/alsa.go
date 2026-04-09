@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"unsafe"
@@ -75,7 +75,7 @@ func CodecDeviceName() (string, error) {
 func DefaultCaptureConfig() Config {
 	dev, err := CodecDeviceName()
 	if err != nil {
-		log.Printf("WARNING: codec detection failed, falling back to plughw:1,0: %v", err)
+		slog.Error(fmt.Sprintf("codec detection failed, falling back to plughw:1,0: %v", err))
 		dev = "plughw:1,0"
 	}
 	return Config{
