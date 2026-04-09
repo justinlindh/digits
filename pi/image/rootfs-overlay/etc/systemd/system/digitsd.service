@@ -8,7 +8,7 @@ Type=simple
 User=digits
 Group=digits
 ExecStart=/usr/local/bin/digitsd \
-    -alsa-playback plughw:0,0 \
+    -alsa-playback plughw:CARD=Zero,DEV=0 \
     -config /data/digits/config.json \
     -serial /dev/serial0 \
     -tones /data/digits/tones \

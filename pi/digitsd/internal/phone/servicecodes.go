@@ -222,15 +222,10 @@ func volumeToALSA(level int) int {
 	return 20 + (level * (58 - 20) / 9)
 }
 
-// codecCard returns the Codec Zero ALSA card number as a string for use
-// in amixer/alsactl commands. Falls back to "0" if detection fails.
+// codecCard returns the Codec Zero ALSA card name for use in
+// amixer/alsactl commands (which accept -c <name>).
 func codecCard() string {
-	card, err := audio.FindCodecCard()
-	if err != nil {
-		slog.Warn("codec detection failed for volume control, assuming card 0", "error", err)
-		return "0"
-	}
-	return fmt.Sprintf("%d", card)
+	return audio.CodecCardName
 }
 
 // SetVolume sets Lineout volume. Level 0-9 maps to ALSA 20-58.
