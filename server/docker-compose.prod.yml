@@ -2,6 +2,9 @@ services:
   signald:
     build:
       context: .
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
+        COMMIT: ${BUILD_COMMIT:-unknown}
     restart: unless-stopped
     environment:
       SIGNALD_ADDR: ":8080"
