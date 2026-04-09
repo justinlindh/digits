@@ -297,15 +297,15 @@ func (c *Controller) onSignalHangup() {
 		log.Printf("phone: hangup signal ignored in state %s (not CONNECTED)", c.state)
 		return
 	}
-	// Full POTS remote-hangup sequence:
+	// POTS remote-hangup sequence (Bellcore GR-506-CORE permanent signal treatment):
 	//   1. Tear down call, brief silence (~1s, CO processing delay)
-	//   2. Reorder tone (fast busy, 480+620 Hz) for ~10s
-	//   3. Intercept voice message ("If you'd like to make a call...")
-	//   4. Howler tone (loud multi-freq) until user hangs up
+	//   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
+	//   3. Howler/ROH tone (loud multi-freq) for ~3 min
+	//   4. Line lockout (silence until user hangs up)
 	c.state = StateREMOTE_HANGUP
 	c.cb.HangupCall()
 	c.cb.SendTone("STOPALL")
-	log.Println("phone: remote hangup — starting POTS off-hook sequence")
+	log.Println("phone: remote hangup -- starting POTS off-hook sequence")
 	go func() {
 		// Helper to check we're still in REMOTE_HANGUP state
 		stillOffHook := func() bool {
@@ -320,31 +320,25 @@ func (c *Controller) onSignalHangup() {
 			return
 		}
 
-		// 2. Reorder tone for ~10 seconds
-		log.Println("phone: remote hangup — reorder tone")
+		// 2. Reorder tone for ~45 seconds
+		log.Println("phone: remote hangup -- reorder tone")
 		c.cb.SendTone("REORDER")
-		time.Sleep(10 * time.Second)
+		time.Sleep(45 * time.Second)
 		if !stillOffHook() {
 			return
 		}
 
-		// 3. Intercept voice message
-		log.Println("phone: remote hangup — intercept message")
-		c.cb.SendTone("STOP")
-		c.cb.SendTone("INTERCEPT")
-		for c.cb.OncePlaying() {
-			time.Sleep(200 * time.Millisecond)
-			if !stillOffHook() {
-				return
-			}
-		}
-		if !stillOffHook() {
-			return
-		}
-
-		// 4. Howler tone until hang-up
-		log.Println("phone: remote hangup — howler tone")
+		// 3. Howler tone for ~3 minutes
+		log.Println("phone: remote hangup -- howler tone")
 		c.cb.SendTone("HOWLER")
+		time.Sleep(3 * time.Minute)
+		if !stillOffHook() {
+			return
+		}
+
+		// 4. Line lockout -- silence until hang-up
+		log.Println("phone: remote hangup -- line lockout")
+		c.cb.SendTone("STOP")
 	}()
 }
 
