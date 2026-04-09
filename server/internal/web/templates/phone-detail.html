@@ -359,16 +359,31 @@
         </script>
 
         {{if .Online}}
-        <div class="mt-6 pt-4 border-t border-[#f8514930]">
-          <h4 class="text-sm font-medium text-[#f85149] mb-2">Danger Zone</h4>
-          <p class="text-xs text-[#8b949e] mb-3">Factory reset erases all settings and restores the device to its original state. You will need physical access to the device to complete the reset.</p>
-          <button id="factory-reset-btn"
-                  onclick="triggerFactoryReset()"
-                  class="px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm rounded transition-colors">
-            Factory Reset
-          </button>
-          <div id="factory-reset-progress" class="hidden mt-2">
-            <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#f85149]/30">
+        <div class="mt-4 pt-4 border-t border-[#f8514930]">
+          <div id="factory-reset-default">
+            <button type="button" onclick="showFactoryResetConfirm()"
+                    class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#da3633]/40 text-[#f85149] text-sm rounded transition-colors">
+              Factory Reset
+            </button>
+            <p class="text-xs text-[#484f58] mt-2">Erases all settings and restores the device to its original state.</p>
+          </div>
+
+          <div id="factory-reset-confirm" class="hidden">
+            <p class="text-sm text-[#c9d1d9] mb-3">This will erase all settings and require physical access to the device to complete. Continue?</p>
+            <div class="flex gap-3">
+              <button type="button" onclick="doFactoryReset()"
+                      class="px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm font-medium rounded transition-colors">
+                Confirm
+              </button>
+              <button type="button" onclick="cancelFactoryReset()"
+                      class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <div id="factory-reset-progress" class="hidden">
+            <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
               <div id="factory-reset-spinner" class="w-4 h-4 border-2 border-[#f85149] border-t-transparent rounded-full animate-spin"></div>
               <span id="factory-reset-text" class="text-sm text-[#c9d1d9]">Sending reset command...</span>
             </div>
@@ -376,41 +391,40 @@
         </div>
 
         <script>
-        function triggerFactoryReset() {
-          if (!confirm('This will erase all settings and restore the device to its original state. You will need to physically connect to the device Wi-Fi AP to complete the reset.\n\nAre you sure?')) {
-            return;
-          }
-          var btn = document.getElementById('factory-reset-btn');
-          var progress = document.getElementById('factory-reset-progress');
-          var text = document.getElementById('factory-reset-text');
-          var spinner = document.getElementById('factory-reset-spinner');
-          btn.disabled = true;
-          btn.classList.add('opacity-50', 'cursor-not-allowed');
-          progress.classList.remove('hidden');
-
+        function showFactoryResetConfirm() {
+          document.getElementById('factory-reset-default').classList.add('hidden');
+          document.getElementById('factory-reset-confirm').classList.remove('hidden');
+        }
+        function cancelFactoryReset() {
+          document.getElementById('factory-reset-confirm').classList.add('hidden');
+          document.getElementById('factory-reset-default').classList.remove('hidden');
+        }
+        function doFactoryReset() {
+          document.getElementById('factory-reset-confirm').classList.add('hidden');
+          document.getElementById('factory-reset-progress').classList.remove('hidden');
           fetch('/phones/' + phoneNumber + '/factory-reset', {
             method: 'POST',
             headers: {'Accept': 'application/json'}
           })
           .then(function(r) { return r.json(); })
           .then(function(data) {
+            var spinner = document.getElementById('factory-reset-spinner');
+            var text = document.getElementById('factory-reset-text');
             spinner.classList.add('hidden');
             if (data.error) {
               text.textContent = 'Failed: ' + data.error;
               text.className = 'text-sm text-[#f85149]';
-              btn.disabled = false;
-              btn.classList.remove('opacity-50', 'cursor-not-allowed');
             } else {
               text.textContent = 'Reset signal sent. Device is rebooting into recovery mode.';
               text.className = 'text-sm text-[#e3b341]';
             }
           })
           .catch(function(err) {
+            var spinner = document.getElementById('factory-reset-spinner');
+            var text = document.getElementById('factory-reset-text');
             spinner.classList.add('hidden');
             text.textContent = 'Error: ' + err.message;
             text.className = 'text-sm text-[#f85149]';
-            btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
           });
         }
         </script>
