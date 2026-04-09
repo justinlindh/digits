@@ -78,7 +78,7 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 
 	// OnConnectionStateChange: connection state changed
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		slog.Info(fmt.Sprintf("webrtc: connection state changed to %s", state))
+		slog.Info("webrtc: connection state changed", "state", state)
 		if m.OnConnectionState != nil {
 			m.OnConnectionState(state)
 		}

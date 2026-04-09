@@ -3,7 +3,6 @@ package contacts
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -47,7 +46,7 @@ func (c *Cache) Update(entries []Entry) {
 
 	if c.path != "" {
 		if err := c.Save(); err != nil {
-			slog.Error(fmt.Sprintf("contacts: save failed: %v", err))
+			slog.Error("contacts: save failed", "error", err)
 		}
 	}
 }

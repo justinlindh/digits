@@ -44,7 +44,7 @@ func main() {
 	}
 	ws, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
-		slog.Error(fmt.Sprintf("dial signald: %v", err))
+		slog.Error("dial signald", "error", err)
 		os.Exit(1)
 	}
 	defer ws.Close()
@@ -52,13 +52,13 @@ func main() {
 	// Register with signald (required before any signaling)
 	regMsg, _ := json.Marshal(sigclient.Message{Type: sigclient.TypeRegister, Number: *number})
 	ws.WriteMessage(websocket.TextMessage, regMsg)
-	slog.Info(fmt.Sprintf("registered with signald as %s", *number))
+	slog.Info("registered with signald", "number", *number)
 
 	// Create WebRTC peer connection
 	config := webrtc.Configuration{}
 	pc, err := webrtc.NewPeerConnection(config)
 	if err != nil {
-		slog.Error(fmt.Sprintf("create peer connection: %v", err))
+		slog.Error("create peer connection", "error", err)
 		os.Exit(1)
 	}
 	defer pc.Close()
@@ -70,12 +70,12 @@ func main() {
 		webrtc.WithRTPSequenceNumber(1),
 	)
 	if err != nil {
-		slog.Error(fmt.Sprintf("create track: %v", err))
+		slog.Error("create track", "error", err)
 		os.Exit(1)
 	}
 	rtpSender, err := pc.AddTrack(track)
 	if err != nil {
-		slog.Error(fmt.Sprintf("add track: %v", err))
+		slog.Error("add track", "error", err)
 		os.Exit(1)
 	}
 	// Drain RTCP — required by pion to prevent buffer backpressure
@@ -91,7 +91,7 @@ func main() {
 	// Opus encoder
 	enc, err := codec.NewEncoder(48000, 1, 24000)
 	if err != nil {
-		slog.Error(fmt.Sprintf("encoder: %v", err))
+		slog.Error("encoder init failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -116,18 +116,18 @@ func main() {
 	})
 
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-		slog.Info(fmt.Sprintf("connection state: %s", s))
+		slog.Info("connection state changed", "state", s)
 	})
 
 	// Create offer
 	gatherDone := webrtc.GatheringCompletePromise(pc)
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
-		slog.Error(fmt.Sprintf("create offer: %v", err))
+		slog.Error("create offer", "error", err)
 		os.Exit(1)
 	}
 	if err := pc.SetLocalDescription(offer); err != nil {
-		slog.Error(fmt.Sprintf("set local desc: %v", err))
+		slog.Error("set local desc", "error", err)
 		os.Exit(1)
 	}
 
@@ -158,14 +158,14 @@ func main() {
 	mu.Lock()
 	ws.WriteMessage(websocket.TextMessage, offerData)
 	mu.Unlock()
-	slog.Info(fmt.Sprintf("sent call + offer to %s", *target))
+	slog.Info("sent call + offer", "target", *target)
 
 	// Read signaling messages
 	go func() {
 		for {
 			_, msgData, err := ws.ReadMessage()
 			if err != nil {
-				slog.Error(fmt.Sprintf("ws read: %v", err))
+				slog.Error("ws read", "error", err)
 				return
 			}
 			var msg sigclient.Message
@@ -181,13 +181,13 @@ func main() {
 					SDP:  msg.SDP,
 				}
 				if err := pc.SetRemoteDescription(answer); err != nil {
-					slog.Error(fmt.Sprintf("set remote desc: %v", err))
+					slog.Error("set remote desc", "error", err)
 				}
 
 			case sigclient.TypeICE:
 				var candidate webrtc.ICECandidateInit
 				if err := json.Unmarshal([]byte(msg.Candidate), &candidate); err != nil {
-					slog.Error(fmt.Sprintf("parse ICE: %v", err))
+					slog.Error("parse ICE", "error", err)
 					continue
 				}
 				pc.AddICECandidate(candidate) //nolint:errcheck
@@ -203,7 +203,7 @@ func main() {
 	slog.Info("Injecting HOOK:OFF on Pi via socket...")
 	injectCmd := `ssh digits@<pi-ip> 'python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.connect(\"/home/digits/digits/pi/uart.sock\"); s.send(b\"TEST:EVENT:HOOK:OFF\n\"); print(s.recv(64)); s.close()"'`
 	out, err := exec.Command("bash", "-c", injectCmd).CombinedOutput()
-	slog.Info(fmt.Sprintf("HOOK:OFF inject result: %s (err: %v)", strings.TrimSpace(string(out)), err))
+	slog.Info("HOOK:OFF inject result", "output", strings.TrimSpace(string(out)), "error", err)
 
 	// Now wait for WebRTC connection (Pi creates PeerManager on answer, sends back SDP)
 	slog.Info("waiting for WebRTC connection...")
@@ -253,11 +253,11 @@ func main() {
 		track.WriteSample(media.Sample{Data: pkt, Duration: time.Duration(frameMs) * time.Millisecond}) //nolint:errcheck
 		warmupFrames++
 		if warmupFrames == 1 {
-			slog.Info(fmt.Sprintf("WARMUP[1]: seq=1 wallclock=%s", time.Now().Format("15:04:05.000000")))
+			slog.Info("WARMUP", "frame", 1, "seq", 1, "wallclock", time.Now().Format("15:04:05.000000"))
 		}
 	}
-	slog.Info(fmt.Sprintf("WARMUP[%d]: seq=%d wallclock=%s (last warmup)", warmupFrames, warmupFrames, time.Now().Format("15:04:05.000000")))
-	slog.Info(fmt.Sprintf("Warmup done (%d frames). Starting measurement phase.", warmupFrames))
+	slog.Info("WARMUP (last)", "frame", warmupFrames, "seq", warmupFrames, "wallclock", time.Now().Format("15:04:05.000000"))
+	slog.Info("warmup done, starting measurement phase", "frames", warmupFrames)
 	fmt.Println()
 
 	// Now measure: send frames and log precise wallclock times.
@@ -279,7 +279,7 @@ func main() {
 
 		pkt, err := enc.Encode(pcm)
 		if err != nil {
-			slog.Error(fmt.Sprintf("encode: %v", err))
+			slog.Error("encode failed", "error", err)
 			continue
 		}
 
@@ -289,7 +289,7 @@ func main() {
 			Duration: time.Duration(frameMs) * time.Millisecond,
 		})
 		if err != nil {
-			slog.Error(fmt.Sprintf("write sample: %v", err))
+			slog.Error("write sample", "error", err)
 			continue
 		}
 
@@ -298,14 +298,13 @@ func main() {
 
 		totalFrame := warmupFrames + frameNum
 		if frameNum <= 5 || frameNum%50 == 0 {
-			slog.Info(fmt.Sprintf("SEND[%d]: seq=%d elapsed=%s wallclock=%s",
-				frameNum, totalFrame, elapsed.Round(time.Millisecond),
-				sendTime.Format("15:04:05.000000")))
+			slog.Info("SEND", "frame", frameNum, "seq", totalFrame,
+				"elapsed", elapsed.Round(time.Millisecond),
+				"wallclock", sendTime.Format("15:04:05.000000"))
 		}
 	}
 
-	slog.Info(fmt.Sprintf("=== DONE — sent %d frames (after %d warmup) in %v ===",
-		frameNum, warmupFrames, time.Since(startTime).Round(time.Millisecond)))
+	slog.Info("done", "frames_sent", frameNum, "warmup_frames", warmupFrames, "duration", time.Since(startTime).Round(time.Millisecond))
 	slog.Info("Now check Pi logs: ssh digits@<pi-ip> 'cat /tmp/digitsd.log'")
 
 	// Graceful close

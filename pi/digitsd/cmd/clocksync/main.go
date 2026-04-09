@@ -41,11 +41,11 @@ func main() {
 func runServer(addr string) {
 	conn, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		slog.Error(fmt.Sprintf("%v", err))
+		slog.Error("listen failed", "error", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
-	slog.Info(fmt.Sprintf("clocksync server listening on %s", addr))
+	slog.Info("clocksync server listening", "addr", addr)
 
 	buf := make([]byte, 64)
 	for {
@@ -68,7 +68,7 @@ func runServer(addr string) {
 func runClient(addr string, count int) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
-		slog.Error(fmt.Sprintf("%v", err))
+		slog.Error("dial failed", "error", err)
 		os.Exit(1)
 	}
 	defer conn.Close()

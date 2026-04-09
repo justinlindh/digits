@@ -1,7 +1,6 @@
 package phone
 
 import (
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -82,7 +81,7 @@ func (d *EasterEggDetector) AddKey(key string) bool {
 		tLen := len(e.Trigger)
 		if len(seq) >= tLen && seq[len(seq)-tLen:] == e.Trigger {
 			d.buf = d.buf[:0]
-			slog.Info(fmt.Sprintf("phone: 🎶 Easter egg: %s detected!", e.Name))
+			slog.Info("phone: easter egg detected", "name", e.Name)
 			if d.play != nil {
 				clip := e.Clip
 				go d.play(clip)

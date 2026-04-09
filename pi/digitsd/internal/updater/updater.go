@@ -57,7 +57,7 @@ func New(cfg Config) *Updater {
 			cfg.BinaryPath = exe
 		}
 	}
-	slog.Info(fmt.Sprintf("updater: BinaryPath=%s", cfg.BinaryPath))
+	slog.Info("updater: configured", "binary_path", cfg.BinaryPath)
 	if cfg.FirmwarePath == "" {
 		cfg.FirmwarePath = "/data/digits/firmware.elf"
 	}
@@ -189,7 +189,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 		return "", fmt.Errorf("rename: %w", err)
 	}
 
-	slog.Info(fmt.Sprintf("updater: downloaded %s from %s (sha256=%s)", localName, url, gotSHA))
+	slog.Info("updater: downloaded", "file", localName, "url", url, "sha256", gotSHA)
 	return destPath, nil
 }
 
@@ -229,17 +229,17 @@ func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 	if expectedVersion != "" {
 		out, err := exec.Command(u.cfg.BinaryPath, "-version").CombinedOutput()
 		if err != nil {
-			slog.Error(fmt.Sprintf("updater: version check failed: %v", err))
+			slog.Warn("updater: version check failed", "error", err)
 		} else if !strings.Contains(string(out), expectedVersion) {
-			slog.Error(fmt.Sprintf("updater: installed binary reports %q, expected %q", strings.TrimSpace(string(out)), expectedVersion))
+			slog.Warn("updater: installed binary version mismatch", "got", strings.TrimSpace(string(out)), "expected", expectedVersion)
 		} else {
-			slog.Info(fmt.Sprintf("updater: verified installed version: %s", strings.TrimSpace(string(out))))
+			slog.Info("updater: verified installed version", "version", strings.TrimSpace(string(out)))
 		}
 	}
 
 	// Restore read-only rootfs.
 	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
-		slog.Error(fmt.Sprintf("updater: failed to remount ro: %v", err))
+		slog.Warn("updater: failed to remount ro", "error", err)
 	}
 
 	slog.Info("updater: Pi binary updated -- exiting for restart")

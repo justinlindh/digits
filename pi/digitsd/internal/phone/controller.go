@@ -1,7 +1,6 @@
 package phone
 
 import (
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -106,7 +105,7 @@ func (c *Controller) HandleEvent(event string) {
 	case event == "PONG":
 		// Keepalive response, ignore
 	default:
-		slog.Info(fmt.Sprintf("phone: unhandled event: %q", event))
+		slog.Info("phone: unhandled event", "event", event)
 	}
 }
 
@@ -125,7 +124,7 @@ func (c *Controller) HandleSignal(msgType string) {
 	case "busy":
 		c.onSignalBusy()
 	default:
-		slog.Info(fmt.Sprintf("phone: unhandled signal: %q", msgType))
+		slog.Info("phone: unhandled signal", "type", msgType)
 	}
 }
 
@@ -147,7 +146,7 @@ func (c *Controller) onHookOff() {
 		c.cb.SendLED("ON")
 		c.cb.AnswerCall()
 	default:
-		slog.Info(fmt.Sprintf("phone: HOOK:OFF ignored in state %s", c.state))
+		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
 	}
 }
 
@@ -183,19 +182,19 @@ func (c *Controller) onKey(digit string) {
 		// Reset dial buffer when we see 4+ chars starting with *#* so the FSM
 		// doesn't try to dial the service code as a phone number.
 		if len(c.digits) >= 4 && len(c.digits) <= 5 && strings.HasPrefix(c.digits, "*#*") {
-			slog.Debug(fmt.Sprintf("phone: service code %q handled by bridge, resetting", c.digits))
+			slog.Debug("phone: service code handled by bridge, resetting", "code", c.digits)
 			c.digits = ""
 			c.state = StateDIALTONE
 			// Service code detected — reset to dial tone without re-sending tone
 		}
 	default:
-		slog.Debug(fmt.Sprintf("phone: KEY:%s ignored in state %s", digit, c.state))
+		slog.Debug("phone: key ignored", "digit", digit, "state", c.state)
 	}
 }
 
 func (c *Controller) onDial(number string) {
 	if c.state != StateDIALING {
-		slog.Info(fmt.Sprintf("phone: DIAL event ignored in state %s", c.state))
+		slog.Info("phone: DIAL event ignored", "state", c.state)
 		return
 	}
 
@@ -211,7 +210,7 @@ func (c *Controller) onDial(number string) {
 	// Contact filter: if checker is set and number is not a contact,
 	// play rejection sequence (mimics unreachable number) instead of calling.
 	if c.contactChecker != nil && !c.contactChecker.IsContact(number) {
-		slog.Info(fmt.Sprintf("phone: number %s not in contacts — rejecting", number))
+		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone("RINGBACK")
 		// Rejection sequence runs async (same as server-side "not connected" error)
@@ -268,7 +267,7 @@ func (c *Controller) onDial(number string) {
 
 func (c *Controller) onSignalRing() {
 	if c.state != StateIDLE {
-		slog.Info(fmt.Sprintf("phone: ring signal ignored in state %s (not IDLE)", c.state))
+		slog.Info("phone: ring signal ignored (not IDLE)", "state", c.state)
 		return
 	}
 	c.state = StateRINGING
@@ -278,7 +277,7 @@ func (c *Controller) onSignalRing() {
 
 func (c *Controller) onSignalAnswer() {
 	if c.state != StateCALLING {
-		slog.Info(fmt.Sprintf("phone: answer signal ignored in state %s (not CALLING)", c.state))
+		slog.Info("phone: answer signal ignored (not CALLING)", "state", c.state)
 		return
 	}
 	c.state = StateCONNECTED
@@ -295,7 +294,7 @@ func (c *Controller) onSignalHangup() {
 		return
 	}
 	if c.state != StateCONNECTED {
-		slog.Info(fmt.Sprintf("phone: hangup signal ignored in state %s (not CONNECTED)", c.state))
+		slog.Info("phone: hangup signal ignored (not CONNECTED)", "state", c.state)
 		return
 	}
 	// POTS remote-hangup sequence (Bellcore GR-506-CORE permanent signal treatment):
@@ -345,7 +344,7 @@ func (c *Controller) onSignalHangup() {
 
 func (c *Controller) onSignalBusy() {
 	if c.state != StateCALLING {
-		slog.Info(fmt.Sprintf("phone: busy signal ignored in state %s (not CALLING)", c.state))
+		slog.Info("phone: busy signal ignored (not CALLING)", "state", c.state)
 		return
 	}
 	slog.Info("phone: busy signal received -- call rejected")

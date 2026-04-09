@@ -75,7 +75,7 @@ func CodecDeviceName() (string, error) {
 func DefaultCaptureConfig() Config {
 	dev, err := CodecDeviceName()
 	if err != nil {
-		slog.Error(fmt.Sprintf("codec detection failed, falling back to plughw:1,0: %v", err))
+		slog.Warn("codec detection failed, falling back to plughw:1,0", "error", err)
 		dev = "plughw:1,0"
 	}
 	return Config{

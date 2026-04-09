@@ -42,7 +42,7 @@ func NewSocketServer(path string, handler SocketHandler) (*SocketServer, error) 
 	}
 
 	go s.acceptLoop()
-	slog.Info(fmt.Sprintf("socket server: listening on %s", path))
+	slog.Info("socket server: listening", "path", path)
 	return s, nil
 }
 
@@ -60,7 +60,7 @@ func (s *SocketServer) acceptLoop() {
 			case <-s.stop:
 				return
 			default:
-				slog.Error(fmt.Sprintf("socket: accept error: %v", err))
+				slog.Error("socket: accept error", "error", err)
 				continue
 			}
 		}

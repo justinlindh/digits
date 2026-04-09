@@ -192,7 +192,7 @@ func (h *ServiceCodeHandler) check() bool {
 		if ch >= '0' && ch <= '9' {
 			level := int(ch - '0')
 			if h.onVolume != nil {
-				slog.Info(fmt.Sprintf("service code: *#*%d → volume %d", level, level))
+				slog.Info("service code: volume set", "code", fmt.Sprintf("*#*%d", level), "level", level)
 				h.onVolume(level)
 			}
 			h.buffer = ""
@@ -227,7 +227,7 @@ func volumeToALSA(level int) int {
 func codecCard() string {
 	card, err := audio.FindCodecCard()
 	if err != nil {
-		slog.Error(fmt.Sprintf("codec detection failed for volume control, assuming card 0: %v", err))
+		slog.Warn("codec detection failed for volume control, assuming card 0", "error", err)
 		return "0"
 	}
 	return fmt.Sprintf("%d", card)
@@ -245,12 +245,12 @@ func SetVolume(level int) error {
 	// Persist volume level
 	os.MkdirAll(filepath.Dir(volumeFile), 0755)
 	if err := os.WriteFile(volumeFile, []byte(fmt.Sprintf("%d\n", level)), 0644); err != nil {
-		slog.Error(fmt.Sprintf("volume: persist failed: %v", err))
+		slog.Error("volume: persist failed", "error", err)
 	}
 	// Save full mixer state
 	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
 	cmd.Run() // best-effort
-	slog.Info(fmt.Sprintf("volume: %d/9 (Lineout=%d, persisted)", level, alsaVal))
+	slog.Info("volume: set and persisted", "level", level, "max", 9, "lineout", alsaVal)
 	return nil
 }
 
@@ -269,8 +269,8 @@ func RestoreVolume() {
 	card := codecCard()
 	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
-		slog.Error(fmt.Sprintf("volume restore: amixer: %s: %v", strings.TrimSpace(string(out)), err))
+		slog.Error("volume restore: amixer failed", "output", strings.TrimSpace(string(out)), "error", err)
 		return
 	}
-	slog.Info(fmt.Sprintf("volume restored: %d/9 (Lineout=%d)", level, alsaVal))
+	slog.Info("volume restored", "level", level, "max", 9, "lineout", alsaVal)
 }

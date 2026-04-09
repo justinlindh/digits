@@ -98,19 +98,19 @@ func (c *Client) readPump() {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				slog.Error(fmt.Sprintf("signal: read: %v", err))
+				slog.Error("signal: read error", "error", err)
 			}
 			return
 		}
 		msg, err := ParseMessage(data)
 		if err != nil {
-			slog.Error(fmt.Sprintf("signal: parse message: %v", err))
+			slog.Error("signal: parse message", "error", err)
 			continue
 		}
 		select {
 		case c.inbox <- msg:
 		default:
-			slog.Error(fmt.Sprintf("signal: inbox full, dropping message type=%s", msg.Type))
+			slog.Error("signal: inbox full, dropping message", "type", msg.Type)
 		}
 	}
 }
