@@ -1,22 +1,14 @@
 [Unit]
 Description=Digits Recovery Mode (AP + Factory Reset Server)
-ConditionPathExists=/run/digits-recovery-mode
+DefaultDependencies=no
 After=local-fs.target systemd-modules-load.service
-Before=digitsd.service
-Conflicts=digitsd.service digits-ap.service digits-dnsmasq-ap.service NetworkManager.service
+Before=digitsd.service digits-ap-check.service
 
 [Service]
-Type=simple
-ExecStartPre=/bin/mount /recovery
-ExecStart=/usr/local/bin/digits-recovery
-ExecStopPost=-/bin/umount /recovery
-ExecStopPost=-/bin/rm -f /run/digits-recovery-mode
-Environment=RECOVERY_DIR=/recovery
-Environment=BOOT_COUNTER_PATH=/data/digits/boot-counter
-Restart=on-failure
-RestartSec=3
+Type=oneshot
+ExecStart=/usr/local/bin/digits-recovery-check
 StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=sysinit.target
