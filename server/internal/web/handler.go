@@ -197,6 +197,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
+	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
@@ -638,6 +639,12 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		PiReleases:            piReleases,
 		FWReleases:            fwReleases,
 	})
+}
+
+func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	online := h.hub.Get(number) != nil
+	renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
 }
 
 func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {

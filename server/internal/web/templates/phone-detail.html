@@ -13,17 +13,9 @@
     </a>
     <div class="flex items-center gap-3">
       <h1 class="text-xl font-semibold text-[#e6edf3]">{{.Line.Name}}</h1>
-      {{if .Online}}
-        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
-          online
-        </span>
-      {{else}}
-        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
-          offline
-        </span>
-      {{end}}
+      <div id="status-badge" hx-get="/phones/{{.Line.Number}}/online" hx-trigger="every 10s" hx-swap="innerHTML">
+        {{template "phone-status" .}}
+      </div>
     </div>
     <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
   </div>
@@ -49,11 +41,13 @@
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Status</label>
-          {{if .Online}}
-            <span class="text-sm text-[#3fb950]">Online</span>
-          {{else}}
-            <span class="text-sm text-[#8b949e]">Offline</span>
-          {{end}}
+          <span id="status-detail">
+            {{if .Online}}
+              <span class="text-sm text-[#3fb950]">Online</span>
+            {{else}}
+              <span class="text-sm text-[#8b949e]">Offline</span>
+            {{end}}
+          </span>
         </div>
         {{if .Devices}}
         <div>
@@ -402,4 +396,25 @@
 
   </div>
 </div>
+{{end}}
+
+{{define "phone-status"}}
+{{if .Online}}
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
+    online
+  </span>
+{{else}}
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
+    offline
+  </span>
+{{end}}
+<span id="status-detail" hx-swap-oob="innerHTML">
+  {{if .Online}}
+    <span class="text-sm text-[#3fb950]">Online</span>
+  {{else}}
+    <span class="text-sm text-[#8b949e]">Offline</span>
+  {{end}}
+</span>
 {{end}}
