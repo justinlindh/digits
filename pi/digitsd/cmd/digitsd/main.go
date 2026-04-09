@@ -1369,7 +1369,7 @@ func main() {
 				slog.Info("received restart command", "mode", mode)
 				switch mode {
 				case "service":
-					sig.Send(&sigclient.Message{
+					sig.Send(&sigclient.Message{ //nolint:errcheck
 						Type:         sigclient.TypeUpdateStatus,
 						UpdateStatus: "restarting",
 						UpdateDetail: "Service restart requested",
@@ -1380,7 +1380,7 @@ func main() {
 						os.Exit(0)
 					}()
 				case "reboot":
-					sig.Send(&sigclient.Message{
+					sig.Send(&sigclient.Message{ //nolint:errcheck
 						Type:         sigclient.TypeUpdateStatus,
 						UpdateStatus: "rebooting",
 						UpdateDetail: "Device reboot requested",
