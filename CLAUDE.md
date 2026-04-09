@@ -76,7 +76,7 @@ Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot
 
 ## Commit conventions
 
-Conventional commits enforced by commitlint. Scope is required (warning if empty, error if invalid).
+Conventional commits enforced by commitlint. Scope is required (warning if empty, error if invalid). **ALL commits must follow this format, including merge commits.** Do not use bare `merge:` or `Merge branch` messages. Use `chore(<scope>): merge ...` instead.
 
 Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`
 
@@ -85,6 +85,7 @@ Examples:
 fix(server): handle NULL line_id in device lookup
 feat(digitsd): add volume service code
 docs: update wiring notes
+chore(server): merge main into feature branch
 ```
 
 ## Git workflow
