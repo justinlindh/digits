@@ -532,7 +532,7 @@ func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
 	checkIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
 
 	if err := line.ValidateNumber(number); err != nil {
-		fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s %s</span>`, xIcon, template.HTMLEscapeString(err.Error()))
+		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s %s</span>`, xIcon, template.HTMLEscapeString(err.Error()))
 		return
 	}
 
@@ -552,11 +552,11 @@ func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if taken {
-		fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s Already in use</span>`, xIcon)
+		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s Already in use</span>`, xIcon)
 		return
 	}
 
-	fmt.Fprintf(w, `<span class="text-[#3fb950] text-xs">%s Available</span>`, checkIcon)
+	_, _ = fmt.Fprintf(w, `<span class="text-[#3fb950] text-xs">%s Available</span>`, checkIcon)
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
