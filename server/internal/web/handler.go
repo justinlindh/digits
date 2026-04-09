@@ -155,6 +155,11 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	}, nil
 }
 
+// Hub returns the signaling hub (used in tests).
+func (h *Handler) Hub() *signaling.Hub {
+	return h.hub
+}
+
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
