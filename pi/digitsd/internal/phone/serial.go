@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.bug.st/serial"
@@ -17,7 +18,7 @@ type SerialPort struct {
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
 
 	mu     sync.Mutex
-	respCh chan string // single-slot response channel for command/response pairs
+	respCh atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	stop   chan struct{}
 	logger *log.Logger
 }
@@ -56,8 +57,8 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	defer sp.mu.Unlock()
 
 	ch := make(chan string, 1)
-	sp.respCh = ch
-	defer func() { sp.respCh = nil }()
+	sp.respCh.Store(&ch)
+	defer sp.respCh.Store(nil)
 
 	sp.logger.Printf("TX: %s", cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
@@ -127,6 +128,28 @@ func (sp *SerialPort) Close() error {
 	return sp.port.Close()
 }
 
+// isUnsolicitedEvent returns true for messages the Pico sends on its own
+// (not in response to a command). These must always be delivered to the
+// events channel, even when a synchronous command is in flight, so that
+// e.g. a STATUS:READY boot message doesn't get swallowed by a pending
+// VERSION query.
+func isUnsolicitedEvent(line string) bool {
+	switch {
+	case line == "HOOK:OFF" || line == "HOOK:ON":
+		return true
+	case line == "STATUS:READY":
+		return true
+	case strings.HasPrefix(line, "KEY:"):
+		return true
+	case strings.HasPrefix(line, "DIAL:"):
+		return true
+	case strings.HasPrefix(line, "FSM:"):
+		return true
+	default:
+		return false
+	}
+}
+
 func (sp *SerialPort) readLoop() {
 	buf := make([]byte, 256)
 	var lineBuf strings.Builder
@@ -160,16 +183,27 @@ func (sp *SerialPort) readLoop() {
 
 				sp.logger.Printf("RX: %s", line)
 
-				// If there's a pending command waiting for response, deliver to it
-				if sp.respCh != nil {
+				// Unsolicited Pico events (hook, keypad, boot) always go to
+				// the events channel, never to a pending command response.
+				if isUnsolicitedEvent(line) {
 					select {
-					case sp.respCh <- line:
+					case sp.events <- line:
+					default:
+						sp.logger.Printf("serial: events full, dropping: %s", line)
+					}
+					continue
+				}
+
+				// Command response: deliver to pending command if one is waiting.
+				if chp := sp.respCh.Load(); chp != nil {
+					select {
+					case *chp <- line:
 						continue
 					default:
 					}
 				}
 
-				// Otherwise, deliver as event
+				// No pending command — deliver as event (shouldn't normally happen).
 				select {
 				case sp.events <- line:
 				default:

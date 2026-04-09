@@ -568,11 +568,21 @@ const (
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
 
+// updateInProgress guards against concurrent firmware update runs.
+// The startup update goroutine and server-triggered updates both check this
+// to avoid racing (e.g. double-flashing the Pico).
+var updateInProgress atomic.Bool
+
 func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus, nil)
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
 }
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, onFWFlashed func()) {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
+	if !updateInProgress.CompareAndSwap(false, true) {
+		log.Println("updater: skipping -- another update is already in progress")
+		return
+	}
+	defer updateInProgress.Store(false)
 	// When a specific component is targeted, don't auto-upgrade the other.
 	// A targeted trigger with only target_pi set should not also install firmware.
 	targeted := targetPi != "" || targetFW != ""
@@ -636,9 +646,6 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 				log.Printf("updater: firmware apply failed: %v", err)
 				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
 				return
-			}
-			if onFWFlashed != nil {
-				onFWFlashed()
 			}
 		}
 	}
@@ -1288,15 +1295,7 @@ func main() {
 					})
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, func() {
-						if v, c, err := sp.QueryVersion(); err != nil {
-							log.Printf("updater: re-query firmware version after flash: %v", err)
-						} else {
-							fwVersion, fwCommit = v, c
-							log.Printf("updater: firmware version after flash: %s (%s)", fwVersion, fwCommit)
-							sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-						}
-					})
+					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()
