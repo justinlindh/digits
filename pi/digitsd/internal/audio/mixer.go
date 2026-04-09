@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -77,7 +77,7 @@ func (m *Mixer) Start() {
 	m.running = true
 	m.stopCh = make(chan struct{})
 	go m.renderLoop(m.stopCh)
-	log.Println("mixer: render loop started")
+	slog.Info("mixer: render loop started")
 }
 
 // Stop halts the render loop. Blocks until the goroutine has exited.
@@ -92,7 +92,7 @@ func (m *Mixer) Stop() {
 	m.running = false
 	m.mu.Unlock()
 	// Wait for render loop to drain — it exits on next select check
-	log.Println("mixer: render loop stopped")
+	slog.Info("mixer: render loop stopped")
 }
 
 // renderLoop is the single goroutine that writes to hardware.
@@ -171,7 +171,7 @@ func (m *Mixer) EnableCapture(path string) error {
 	}
 	m.captureFile = f
 	m.capturePath = path
-	log.Printf("mixer: PCM capture → %s", path)
+	slog.Info("mixer: PCM capture started", "path", path)
 	return nil
 }
 
@@ -181,7 +181,7 @@ func (m *Mixer) DisableCapture() {
 	defer m.mu.Unlock()
 	if m.captureFile != nil {
 		m.captureFile.Close()
-		log.Printf("mixer: PCM capture stopped (%s)", m.capturePath)
+		slog.Info("mixer: PCM capture stopped", "path", m.capturePath)
 		m.captureFile = nil
 		m.capturePath = ""
 	}
@@ -222,7 +222,7 @@ func (m *Mixer) LoadTonesFromDir(dir string) error {
 			return fmt.Errorf("load %s: %w", e.Name(), err)
 		}
 		m.LoadTone(name, samples)
-		log.Printf("mixer: loaded %s (%d samples, %.1fs)", name, len(samples), float64(len(samples))/48000)
+		slog.Info("mixer: loaded tone", "name", name, "samples", len(samples), "duration_s", fmt.Sprintf("%.1f", float64(len(samples))/48000))
 	}
 	return nil
 }
@@ -234,7 +234,7 @@ func (m *Mixer) PlayLoop(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		log.Printf("mixer: unknown tone %q", name)
+		slog.Warn("mixer: unknown tone", "name", name)
 		return
 	}
 	m.loopSamples = samples
@@ -296,7 +296,7 @@ func (m *Mixer) PlayOnce(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		log.Printf("mixer: unknown tone %q", name)
+		slog.Warn("mixer: unknown tone", "name", name)
 		return
 	}
 	m.onceQueue = append(m.onceQueue, samples)

@@ -3,7 +3,7 @@ package signal
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -98,19 +98,19 @@ func (c *Client) readPump() {
 		_, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				log.Printf("signal: read: %v", err)
+				slog.Error("signal: read error", "error", err)
 			}
 			return
 		}
 		msg, err := ParseMessage(data)
 		if err != nil {
-			log.Printf("signal: parse message: %v", err)
+			slog.Error("signal: parse message", "error", err)
 			continue
 		}
 		select {
 		case c.inbox <- msg:
 		default:
-			log.Printf("signal: inbox full, dropping message type=%s", msg.Type)
+			slog.Error("signal: inbox full, dropping message", "type", msg.Type)
 		}
 	}
 }

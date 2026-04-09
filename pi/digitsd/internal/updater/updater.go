@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -57,7 +57,7 @@ func New(cfg Config) *Updater {
 			cfg.BinaryPath = exe
 		}
 	}
-	log.Printf("updater: BinaryPath=%s", cfg.BinaryPath)
+	slog.Info("updater: configured", "binary_path", cfg.BinaryPath)
 	if cfg.FirmwarePath == "" {
 		cfg.FirmwarePath = "/data/digits/firmware.elf"
 	}
@@ -189,7 +189,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 		return "", fmt.Errorf("rename: %w", err)
 	}
 
-	log.Printf("updater: downloaded %s from %s (sha256=%s)", localName, url, gotSHA)
+	slog.Info("updater: downloaded", "file", localName, "url", url, "sha256", gotSHA)
 	return destPath, nil
 }
 
@@ -229,20 +229,20 @@ func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 	if expectedVersion != "" {
 		out, err := exec.Command(u.cfg.BinaryPath, "-version").CombinedOutput()
 		if err != nil {
-			log.Printf("updater: WARNING: version check failed: %v", err)
+			slog.Warn("updater: version check failed", "error", err)
 		} else if !strings.Contains(string(out), expectedVersion) {
-			log.Printf("updater: WARNING: installed binary reports %q, expected %q", strings.TrimSpace(string(out)), expectedVersion)
+			slog.Warn("updater: installed binary version mismatch", "got", strings.TrimSpace(string(out)), "expected", expectedVersion)
 		} else {
-			log.Printf("updater: verified installed version: %s", strings.TrimSpace(string(out)))
+			slog.Info("updater: verified installed version", "version", strings.TrimSpace(string(out)))
 		}
 	}
 
 	// Restore read-only rootfs.
 	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
-		log.Printf("updater: WARNING: failed to remount ro: %v", err)
+		slog.Warn("updater: failed to remount ro", "error", err)
 	}
 
-	log.Println("updater: Pi binary updated -- exiting for restart")
+	slog.Info("updater: Pi binary updated -- exiting for restart")
 	os.Exit(0)
 	return nil // unreachable
 }
@@ -264,6 +264,6 @@ func (u *Updater) ApplyFirmwareUpdate(stagedELF string) error {
 		return fmt.Errorf("flash script: %w", err)
 	}
 
-	log.Println("updater: firmware update applied successfully")
+	slog.Info("updater: firmware update applied successfully")
 	return nil
 }

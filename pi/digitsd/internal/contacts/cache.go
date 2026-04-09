@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 )
@@ -46,7 +46,7 @@ func (c *Cache) Update(entries []Entry) {
 
 	if c.path != "" {
 		if err := c.Save(); err != nil {
-			log.Printf("contacts: save failed: %v", err)
+			slog.Error("contacts: save failed", "error", err)
 		}
 	}
 }
