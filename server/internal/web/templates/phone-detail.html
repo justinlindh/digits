@@ -547,7 +547,18 @@
       status.className = 'text-sm text-[#3fb950]';
     } else {
       status.className = 'text-sm text-[#f85149]';
-      // Keep progress visible so user sees the error
+      // Add a "try again" link below the error
+      var retryLink = document.createElement('a');
+      retryLink.textContent = 'Try again';
+      retryLink.href = '#';
+      retryLink.className = 'text-sm text-[#58a6ff] hover:underline ml-2';
+      retryLink.onclick = function(e) {
+        e.preventDefault();
+        document.getElementById('restart-progress').classList.add('hidden');
+        document.getElementById('restart-buttons').classList.remove('hidden');
+        restartMode = null;
+      };
+      status.parentNode.appendChild(retryLink);
     }
   }
   </script>
