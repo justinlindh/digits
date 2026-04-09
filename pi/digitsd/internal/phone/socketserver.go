@@ -3,7 +3,7 @@ package phone
 import (
 	"bufio"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -42,7 +42,7 @@ func NewSocketServer(path string, handler SocketHandler) (*SocketServer, error) 
 	}
 
 	go s.acceptLoop()
-	log.Printf("socket server: listening on %s", path)
+	slog.Info("socket server: listening", "path", path)
 	return s, nil
 }
 
@@ -60,7 +60,7 @@ func (s *SocketServer) acceptLoop() {
 			case <-s.stop:
 				return
 			default:
-				log.Printf("socket: accept error: %v", err)
+				slog.Error("socket: accept error", "error", err)
 				continue
 			}
 		}
