@@ -8,7 +8,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -57,7 +57,7 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("config: %s not found, using defaults", path)
+			slog.Info(fmt.Sprintf("config: %s not found, using defaults", path))
 			return c, nil
 		}
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
@@ -65,19 +65,19 @@ func Load(path string) (*Config, error) {
 
 	// Try parsing the primary config
 	if err := json.Unmarshal(data, c); err != nil {
-		log.Printf("config: %s is corrupt (%v), trying backup", path, err)
+		slog.Error(fmt.Sprintf("config: %s is corrupt (%v), trying backup", path, err))
 		return loadBackup(path)
 	}
 
 	// Sanity check: a zero-length or all-null file parses as empty JSON
 	// but is likely corrupt. Check if file had actual content.
 	if isCorrupt(data) {
-		log.Printf("config: %s contains null bytes (power loss?), trying backup", path)
+		slog.Error(fmt.Sprintf("config: %s contains null bytes (power loss?), trying backup", path))
 		return loadBackup(path)
 	}
 
-	log.Printf("config: loaded from %s (server_url=%q, phone_number=%q, has_token=%v, has_pairing_code=%v)",
-		path, c.ServerURL, c.PhoneNumber, c.DeviceToken != "", c.PairingCode != "")
+	slog.Info(fmt.Sprintf("config: loaded from %s (server_url=%q, phone_number=%q, has_token=%v, has_pairing_code=%v)",
+		path, c.ServerURL, c.PhoneNumber, c.DeviceToken != "", c.PairingCode != ""))
 	return c, nil
 }
 
@@ -89,28 +89,28 @@ func loadBackup(path string) (*Config, error) {
 
 	data, err := os.ReadFile(bakPath)
 	if err != nil {
-		log.Printf("config: backup %s also unavailable: %v — using defaults", bakPath, err)
+		slog.Error(fmt.Sprintf("config: backup %s also unavailable: %v — using defaults", bakPath, err))
 		return c, nil
 	}
 
 	if isCorrupt(data) {
-		log.Printf("config: backup %s also corrupt — using defaults", bakPath)
+		slog.Error(fmt.Sprintf("config: backup %s also corrupt — using defaults", bakPath))
 		return c, nil
 	}
 
 	if err := json.Unmarshal(data, c); err != nil {
-		log.Printf("config: backup %s also unparseable: %v — using defaults", bakPath, err)
+		slog.Error(fmt.Sprintf("config: backup %s also unparseable: %v — using defaults", bakPath, err))
 		return c, nil
 	}
 
-	log.Printf("config: RECOVERED from backup %s (server_url=%q, phone_number=%q, has_token=%v)",
-		bakPath, c.ServerURL, c.PhoneNumber, c.DeviceToken != "")
+	slog.Info(fmt.Sprintf("config: RECOVERED from backup %s (server_url=%q, phone_number=%q, has_token=%v)",
+		bakPath, c.ServerURL, c.PhoneNumber, c.DeviceToken != ""))
 
 	// Restore the primary file from the good backup
 	if err := atomicWrite(path, data, 0600); err != nil {
-		log.Printf("config: failed to restore primary from backup: %v", err)
+		slog.Error(fmt.Sprintf("config: failed to restore primary from backup: %v", err))
 	} else {
-		log.Printf("config: restored primary %s from backup", path)
+		slog.Info(fmt.Sprintf("config: restored primary %s from backup", path))
 	}
 
 	return c, nil
@@ -149,7 +149,7 @@ func (c *Config) Save() error {
 	if existing, err := os.ReadFile(c.path); err == nil && !isCorrupt(existing) {
 		bakPath := c.path + ".bak"
 		if err := atomicWrite(bakPath, existing, 0600); err != nil {
-			log.Printf("config: backup write failed: %v", err)
+			slog.Error(fmt.Sprintf("config: backup write failed: %v", err))
 		}
 	}
 
@@ -158,7 +158,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("config: atomic write %s: %w", c.path, err)
 	}
 
-	log.Printf("config: saved to %s", c.path)
+	slog.Info(fmt.Sprintf("config: saved to %s", c.path))
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -724,7 +725,7 @@ func main() {
 		serialWriter = io.MultiWriter(os.Stdout, uartLogFile)
 		defer uartLogFile.Close()
 	}
-	serialLogger := log.New(serialWriter, "", log.Ldate|log.Ltime|log.Lmicroseconds)
+	serialLogger := slog.New(slog.NewTextHandler(serialWriter, nil))
 	sp, err := phone.OpenSerial(*serialDev, 115200, serialLogger)
 	if err != nil {
 		log.Fatalf("serial: %v", err)

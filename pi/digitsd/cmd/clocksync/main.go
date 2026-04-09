@@ -13,9 +13,10 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"net"
+	"os"
 	"time"
 )
 
@@ -40,10 +41,11 @@ func main() {
 func runServer(addr string) {
 	conn, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(fmt.Sprintf("%v", err))
+		os.Exit(1)
 	}
 	defer conn.Close()
-	log.Printf("clocksync server listening on %s", addr)
+	slog.Info(fmt.Sprintf("clocksync server listening on %s", addr))
 
 	buf := make([]byte, 64)
 	for {
@@ -66,7 +68,8 @@ func runServer(addr string) {
 func runClient(addr string, count int) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(fmt.Sprintf("%v", err))
+		os.Exit(1)
 	}
 	defer conn.Close()
 
