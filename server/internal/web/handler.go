@@ -198,6 +198,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
+	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
@@ -734,6 +735,40 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		slog.Error("update status: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+
+	h.hub.ClearUpdateStatus(number)
+
+	msg := &signaling.Message{
+		Type: signaling.TypeFactoryReset,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("factory reset trigger failed", "number", number, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("factory reset triggered", "number", number)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": sendErr}); err != nil {
+				slog.Error("factory reset: json encode failed", "err", err)
+			}
+		} else {
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "triggered"}); err != nil {
+				slog.Error("factory reset: json encode failed", "err", err)
+			}
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
