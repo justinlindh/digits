@@ -66,12 +66,6 @@
     {{end}}
   </div>
 
-  {{if .Error}}
-  <div class="mb-6 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
-    {{.Error}}
-  </div>
-  {{end}}
-
   <!-- Lines list -->
   {{template "phones-table" .}}
 </div>
@@ -83,6 +77,11 @@
     <h2 class="text-sm font-medium text-[#e6edf3]">Your Lines</h2>
     <span class="text-xs text-[#8b949e]">{{len .Lines}} total</span>
   </div>
+  {{if .Error}}
+  <div class="mx-4 mt-3 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
+    {{.Error}}
+  </div>
+  {{end}}
   {{if .Lines}}
   <!-- Desktop table -->
   <div class="hidden md:block">
