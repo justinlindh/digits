@@ -9,12 +9,21 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/lib/pq"
 )
 
 // ErrNotFound is returned when a line cannot be found.
 var ErrNotFound = errors.New("line not found")
 
+// ErrNumberTaken is returned when a line number is already in use.
+var ErrNumberTaken = errors.New("line number is already in use")
+
 var numberRegex = regexp.MustCompile(`^\d{7}$`)
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pq.Error
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
 
 // ValidateNumber checks that num is exactly 7 digits (with optional hyphen after 3rd digit).
 func ValidateNumber(num string) error {
@@ -60,15 +69,27 @@ func NewStore(database *db.Database) *Store {
 }
 
 // Add inserts a new line for the given household and returns it.
+// Returns ErrNumberTaken if the number is already in use.
 func (s *Store) Add(number, name, householdID string) (*Line, error) {
+	taken, err := s.NumberExists(number)
+	if err != nil {
+		return nil, fmt.Errorf("add line: %w", err)
+	}
+	if taken {
+		return nil, ErrNumberTaken
+	}
+
 	l := &Line{}
-	err := s.db.QueryRow(
+	err = s.db.QueryRow(
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, number, name, household_id, created_at, updated_at`,
 		number, name, householdID,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrNumberTaken
+		}
 		return nil, fmt.Errorf("add line: %w", err)
 	}
 	return l, nil
@@ -154,12 +175,24 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 }
 
 // Update modifies the number and name of the line with the given ID.
+// Returns ErrNumberTaken if the number is already in use by another line.
 func (s *Store) Update(id int64, number, name string) error {
+	taken, err := s.NumberExistsExcluding(number, id)
+	if err != nil {
+		return fmt.Errorf("update line: %w", err)
+	}
+	if taken {
+		return ErrNumberTaken
+	}
+
 	res, err := s.db.Exec(
 		`UPDATE lines SET number = $1, name = $2, updated_at = NOW() WHERE id = $3`,
 		number, name, id,
 	)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrNumberTaken
+		}
 		return fmt.Errorf("update line: %w", err)
 	}
 	n, _ := res.RowsAffected()
@@ -206,6 +239,16 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 		return false, fmt.Errorf("number exists excluding: %w", err)
 	}
 	return count > 0, nil
+}
+
+// NumberExistsExcludingNumber reports whether the given number is in use by any
+// line other than the one with excludeNumber. Used for availability checks where
+// only the current number (not ID) is known.
+func (s *Store) NumberExistsExcludingNumber(number, excludeNumber string) (bool, error) {
+	if number == excludeNumber {
+		return false, nil
+	}
+	return s.NumberExists(number)
 }
 
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.

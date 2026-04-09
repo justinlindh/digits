@@ -28,6 +28,8 @@ import (
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
+const msgNumberTaken = "This number is already in use"
+
 //go:embed templates/*.html
 var templateFS embed.FS
 
@@ -200,6 +202,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
 	protected.HandleFunc("POST /phones", h.handlePhonesPost)
 	protected.Handle("POST /phones/pair", h.pairingLimiter.Middleware(http.HandlerFunc(h.handlePhonesPairPost)))
+	protected.HandleFunc("GET /phones/check-number", h.handleCheckNumber)
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
@@ -498,20 +501,68 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.lineStore.Add(number, name, householdID)
-	data := h.buildLinesData(r, "")
 	if err != nil {
-		data = h.buildLinesData(r, err.Error())
-	}
+		errMsg := "Failed to add line"
+		if errors.Is(err, line.ErrNumberTaken) {
+			errMsg = msgNumberTaken
+		}
+		data := h.buildLinesData(r, errMsg)
 
-	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
-		return
-	}
-	if err != nil {
+		if isHTMX(r) {
+			renderWith(w, h.tmplPhones, "phones-table", data)
+			return
+		}
 		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
+
+	if isHTMX(r) {
+		data := h.buildLinesData(r, "")
+		renderWith(w, h.tmplPhones, "phones-table", data)
+		return
+	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
+	number := strings.TrimSpace(r.URL.Query().Get("number"))
+	exclude := strings.TrimSpace(r.URL.Query().Get("exclude"))
+
+	// Too short to validate yet, return empty response
+	if len(number) < 7 {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	xIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>`
+	checkIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
+
+	if err := line.ValidateNumber(number); err != nil {
+		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s %s</span>`, xIcon, template.HTMLEscapeString(err.Error()))
+		return
+	}
+
+	var taken bool
+	var err error
+
+	if exclude != "" {
+		taken, err = h.lineStore.NumberExistsExcludingNumber(number, exclude)
+	} else {
+		taken, err = h.lineStore.NumberExists(number)
+	}
+
+	if err != nil {
+		slog.Error("check number failed", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if taken {
+		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s Already in use</span>`, xIcon)
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, `<span class="text-[#3fb950] text-xs">%s Available</span>`, checkIcon)
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
@@ -557,8 +608,12 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 
 	token, hwID, err := h.pairingStore.ClaimDevice(code, number, name, householdID)
 	if err != nil {
+		pairErr := err.Error()
+		if errors.Is(err, line.ErrNumberTaken) {
+			pairErr = msgNumberTaken
+		}
 		data := h.buildLinesData(r, "")
-		data.PairError = err.Error()
+		data.PairError = pairErr
 		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
@@ -681,6 +736,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	newNumber := strings.TrimSpace(r.FormValue("number"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -688,8 +744,31 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	updateNumber := number
+	if newNumber != "" {
+		if err := line.ValidateNumber(newNumber); err != nil {
+			data := h.buildLinesData(r, err.Error())
+			if isHTMX(r) {
+				renderWith(w, h.tmplPhones, "phones-table", data)
+				return
+			}
+			renderWith(w, h.tmplPhones, "layout.html", data)
+			return
+		}
+		updateNumber = newNumber
+	}
+
+	if err := h.lineStore.Update(ln.ID, updateNumber, name); err != nil {
+		errMsg := "Failed to update line"
+		if errors.Is(err, line.ErrNumberTaken) {
+			errMsg = msgNumberTaken
+		}
+		data := h.buildLinesData(r, errMsg)
+		if isHTMX(r) {
+			renderWith(w, h.tmplPhones, "phones-table", data)
+			return
+		}
+		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
 

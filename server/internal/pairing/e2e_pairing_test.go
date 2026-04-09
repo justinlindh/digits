@@ -10,6 +10,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/household"
+	"github.com/justinlindh/digits/server/internal/line"
 )
 
 // TestE2EPairingFlow exercises the full pairing lifecycle:
@@ -107,8 +108,8 @@ func TestE2EPairingFlow(t *testing.T) {
 
 	// Step 7: Try to claim with duplicate number — should fail
 	_, _, err = pairingStore.ClaimDevice(code2, "5559876", "Dupe Number", hh.ID)
-	if !errors.Is(err, ErrNumberTaken) {
-		t.Fatalf("expected ErrNumberTaken for duplicate number, got: %v", err)
+	if !errors.Is(err, line.ErrNumberTaken) {
+		t.Fatalf("expected line.ErrNumberTaken for duplicate number, got: %v", err)
 	}
 
 	// Step 8: Claim second phone with unique number — should succeed
