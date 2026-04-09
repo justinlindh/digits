@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 )
@@ -38,7 +38,7 @@ func (s *Store) RequireAuth(next http.Handler) http.Handler {
 		}
 		// Refresh session TTL on activity
 		if err := s.RefreshSession(cookie.Value, SessionTTL); err != nil {
-			log.Printf("auth: failed to refresh session: %v", err)
+			slog.Warn("auth: failed to refresh session", "error", err)
 		}
 
 		user, err := s.GetUserByID(sess.UserID)

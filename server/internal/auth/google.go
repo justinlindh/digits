@@ -3,7 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"golang.org/x/oauth2"
@@ -110,13 +110,13 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Link Google ID to existing account
 			if err := g.store.LinkGoogleID(user.ID, info.ID); err != nil {
-				log.Printf("auth: failed to link google ID for user %s: %v", user.ID, err)
+				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
 			}
 		}
 	}
 
 	if err := g.store.UpdateLastLogin(user.ID); err != nil {
-		log.Printf("auth: failed to update last login for user %s: %v", user.ID, err)
+		slog.Warn("auth: failed to update last login for user", "user_id", user.ID, "error", err)
 	}
 
 	// Create session

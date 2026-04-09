@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"net"
 	"time"
@@ -43,7 +44,7 @@ func runServer(addr string) {
 		log.Fatal(err)
 	}
 	defer func() { _ = conn.Close() }()
-	log.Printf("clocksync server listening on %s", addr)
+	slog.Info("clocksync server listening", "addr", addr)
 
 	buf := make([]byte, 64)
 	for {
@@ -60,7 +61,7 @@ func runServer(addr string) {
 		copy(resp, buf[:n])
 		binary.LittleEndian.PutUint64(resp[n:], uint64(now))
 		if _, err := conn.WriteTo(resp, remote); err != nil {
-			log.Printf("writeto %s: %v", remote, err)
+			slog.Warn("writeto failed", "remote", remote, "error", err)
 		}
 	}
 }
@@ -81,7 +82,7 @@ func runClient(addr string, count int) {
 		buf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(buf, uint64(sendUs))
 		if _, err := conn.Write(buf); err != nil {
-			log.Printf("write probe %d: %v", i+1, err)
+			slog.Warn("write probe failed", "probe", i+1, "error", err)
 			continue
 		}
 
