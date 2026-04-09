@@ -13,6 +13,7 @@ type CallTracker interface {
 	OnCallEnded(caller, callee string) error
 	InCall(a, b string) bool
 	Busy(number string) bool
+	PeerOf(number string) string
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -128,6 +129,12 @@ func (r *Relay) handleAnswer(from string, msg *Message) {
 }
 
 func (r *Relay) handleHangup(from string, msg *Message) {
+	// Resolve peer if client didn't specify a To field
+	if msg.To == "" && r.Tracker != nil {
+		if peer := r.Tracker.PeerOf(from); peer != "" {
+			msg.To = peer
+		}
+	}
 	if r.Tracker != nil {
 		r.Tracker.OnCallEnded(from, msg.To)
 	}
