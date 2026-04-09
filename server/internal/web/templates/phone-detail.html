@@ -39,16 +39,6 @@
           <label class="block text-xs text-[#8b949e] mb-1">Added</label>
           <span class="text-sm text-[#c9d1d9]">{{.Line.CreatedAt.Format "January 2, 2006"}}</span>
         </div>
-        <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Status</label>
-          <span id="status-detail">
-            {{if .Online}}
-              <span class="text-sm text-[#3fb950]">Online</span>
-            {{else}}
-              <span class="text-sm text-[#8b949e]">Offline</span>
-            {{end}}
-          </span>
-        </div>
         {{if .Devices}}
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Devices</label>
@@ -572,11 +562,4 @@
     offline
   </span>
 {{end}}
-<span id="status-detail" hx-swap-oob="innerHTML">
-  {{if .Online}}
-    <span class="text-sm text-[#3fb950]">Online</span>
-  {{else}}
-    <span class="text-sm text-[#8b949e]">Offline</span>
-  {{end}}
-</span>
 {{end}}
