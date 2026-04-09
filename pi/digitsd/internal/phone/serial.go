@@ -60,7 +60,7 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	sp.respCh.Store(&ch)
 	defer sp.respCh.Store(nil)
 
-	sp.logger.Info(fmt.Sprintf("TX: %s", cmd))
+	sp.logger.Info("TX", "cmd", cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
 		return "", fmt.Errorf("serial write: %w", err)
 	}
@@ -77,7 +77,7 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	sp.logger.Info(fmt.Sprintf("TX: %s", cmd))
+	sp.logger.Info("TX", "cmd", cmd)
 	sp.port.Write([]byte(cmd + "\r\n"))
 }
 
@@ -181,7 +181,7 @@ func (sp *SerialPort) readLoop() {
 					continue
 				}
 
-				sp.logger.Info(fmt.Sprintf("RX: %s", line))
+				sp.logger.Info("RX", "line", line)
 
 				// Unsolicited Pico events (hook, keypad, boot) always go to
 				// the events channel, never to a pending command response.
@@ -189,7 +189,7 @@ func (sp *SerialPort) readLoop() {
 					select {
 					case sp.events <- line:
 					default:
-						sp.logger.Error(fmt.Sprintf("serial: events full, dropping: %s", line))
+						sp.logger.Warn("serial: events full, dropping", "line", line)
 					}
 					continue
 				}
@@ -207,7 +207,7 @@ func (sp *SerialPort) readLoop() {
 				select {
 				case sp.events <- line:
 				default:
-					sp.logger.Error(fmt.Sprintf("serial: events full, dropping: %s", line))
+					sp.logger.Warn("serial: events full, dropping", "line", line)
 				}
 			} else {
 				lineBuf.WriteByte(ch)

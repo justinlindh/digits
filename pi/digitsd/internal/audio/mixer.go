@@ -234,7 +234,7 @@ func (m *Mixer) PlayLoop(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		slog.Error("mixer: unknown tone", "name", name)
+		slog.Warn("mixer: unknown tone", "name", name)
 		return
 	}
 	m.loopSamples = samples
@@ -296,7 +296,7 @@ func (m *Mixer) PlayOnce(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		slog.Error("mixer: unknown tone", "name", name)
+		slog.Warn("mixer: unknown tone", "name", name)
 		return
 	}
 	m.onceQueue = append(m.onceQueue, samples)

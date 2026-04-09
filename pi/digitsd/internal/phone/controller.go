@@ -105,7 +105,7 @@ func (c *Controller) HandleEvent(event string) {
 	case event == "PONG":
 		// Keepalive response, ignore
 	default:
-		slog.Info("phone: unhandled event", "event", event)
+		slog.Warn("phone: unhandled event", "event", event)
 	}
 }
 
@@ -124,7 +124,7 @@ func (c *Controller) HandleSignal(msgType string) {
 	case "busy":
 		c.onSignalBusy()
 	default:
-		slog.Info("phone: unhandled signal", "type", msgType)
+		slog.Warn("phone: unhandled signal", "type", msgType)
 	}
 }
 
@@ -201,7 +201,7 @@ func (c *Controller) onDial(number string) {
 	// Self-call: dialing your own number gets an immediate busy tone,
 	// just like a real POTS line.
 	if c.ownNumber != "" && number == c.ownNumber {
-		slog.Info("phone: self-call detected — busy tone")
+		slog.Info("phone: self-call detected, busy tone")
 		c.state = StateCALLING
 		c.cb.SendTone("BUSY")
 		return

@@ -34,7 +34,6 @@ import (
 const iceRestartTimeout = 15 * time.Second
 
 
-
 var (
 	configPath  = flag.String("config", config.DefaultPath, "path to JSON config file")
 	signaldURL  = flag.String("signald", "", "signald WebSocket URL (overrides config file)")
