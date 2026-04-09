@@ -14,7 +14,7 @@ OVERLAY_SRC = $(REPO_ROOT)/pi/image/rootfs-overlay
 TONES_SRC   = $(REPO_ROOT)/pi/tones
 
 # Files from rootfs-overlay that are only used by the image builder (not deployed via embed)
-OVERLAY_EXCLUDE = boot/firmware/cmdline-ro.txt.fragment etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root
+OVERLAY_EXCLUDE = boot/firmware/cmdline-ro.txt.fragment etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater
 
 .PHONY: build build-local builder deploy run test clean embed clean-embed
 

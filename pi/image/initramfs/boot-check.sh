@@ -1,6 +1,13 @@
 #!/bin/sh
 # boot-check.sh -- initramfs hook: increment boot counter, enter recovery if threshold reached.
 #
+# The boot counter lives on the data partition (/data/digits/boot-counter) rather
+# than the boot partition. The data partition is journaled ext4 and already writable,
+# avoiding risky remounts of the FAT32 boot partition at runtime.
+#
+# If the data partition cannot be mounted, we enter recovery mode as a safety
+# fallback -- a corrupt data partition likely means the device needs a reset.
+#
 # Installed to /etc/initramfs-tools/scripts/init-premount/boot-check
 # Runs before rootfs is mounted.
 
@@ -8,72 +15,79 @@ PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case "$1" in prereqs) prereqs; exit 0;; esac
 
-BOOT_DEV="/dev/mmcblk0p1"
-BOOT_MNT="/tmp/boot-check"
-COUNTER_FILE="boot-counter"
+DATA_DEV="/dev/mmcblk0p4"
+DATA_MNT="/tmp/data-check"
+COUNTER_FILE="digits/boot-counter"
 THRESHOLD=3
 
 RECOVERY_DEV="/dev/mmcblk0p3"
 RECOVERY_MNT="/tmp/recovery"
 RECOVERY_BIN="digits-recovery"
 
-# Mount boot partition
-mkdir -p "$BOOT_MNT"
-mount -t vfat "$BOOT_DEV" "$BOOT_MNT" 2>/dev/null
+# Mount data partition
+mkdir -p "$DATA_MNT"
+mount -t ext4 "$DATA_DEV" "$DATA_MNT" 2>/dev/null
 if [ $? -ne 0 ]; then
-    echo "boot-check: cannot mount boot partition, continuing normal boot"
+    echo "boot-check: cannot mount data partition, entering recovery mode"
+    # Data partition failure is itself a reason to enter recovery
+    mkdir -p "$RECOVERY_MNT"
+    mount -t ext4 -o ro "$RECOVERY_DEV" "$RECOVERY_MNT" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "boot-check: cannot mount recovery either, continuing normal boot"
+        exit 0
+    fi
+    if [ -x "$RECOVERY_MNT/$RECOVERY_BIN" ]; then
+        export PATH="$RECOVERY_MNT/bin:$PATH"
+        export RECOVERY_DIR="$RECOVERY_MNT"
+        export BOOT_COUNTER_PATH=""
+        exec "$RECOVERY_MNT/$RECOVERY_BIN"
+    fi
+    umount "$RECOVERY_MNT"
     exit 0
 fi
 
 # Read and increment counter
 COUNT=0
-if [ -f "$BOOT_MNT/$COUNTER_FILE" ]; then
-    COUNT=$(cat "$BOOT_MNT/$COUNTER_FILE" 2>/dev/null)
-    # Ensure it's a number
+if [ -f "$DATA_MNT/$COUNTER_FILE" ]; then
+    COUNT=$(cat "$DATA_MNT/$COUNTER_FILE" 2>/dev/null)
     case "$COUNT" in
         ''|*[!0-9]*) COUNT=0 ;;
     esac
 fi
 
 COUNT=$((COUNT + 1))
-echo "$COUNT" > "$BOOT_MNT/$COUNTER_FILE"
+echo "$COUNT" > "$DATA_MNT/$COUNTER_FILE"
 sync
 
 echo "boot-check: boot attempt $COUNT (threshold=$THRESHOLD)"
 
 if [ "$COUNT" -lt "$THRESHOLD" ]; then
-    umount "$BOOT_MNT"
+    umount "$DATA_MNT"
     exit 0
 fi
 
 # Threshold reached -- enter recovery mode
 echo "boot-check: threshold reached, entering recovery mode"
-umount "$BOOT_MNT"
 
 mkdir -p "$RECOVERY_MNT"
 mount -t ext4 -o ro "$RECOVERY_DEV" "$RECOVERY_MNT" 2>/dev/null
 if [ $? -ne 0 ]; then
     echo "boot-check: cannot mount recovery partition, continuing normal boot"
+    umount "$DATA_MNT"
     exit 0
 fi
 
 if [ ! -x "$RECOVERY_MNT/$RECOVERY_BIN" ]; then
     echo "boot-check: recovery binary not found, continuing normal boot"
     umount "$RECOVERY_MNT"
+    umount "$DATA_MNT"
     exit 0
 fi
 
-# Set up minimal networking for AP mode
-# The recovery binary handles AP setup itself using tools from the recovery partition
 export PATH="$RECOVERY_MNT/bin:$PATH"
-export BOOT_COUNTER_PATH="$BOOT_MNT/$COUNTER_FILE"
+export BOOT_COUNTER_PATH="$DATA_MNT/$COUNTER_FILE"
 export RECOVERY_DIR="$RECOVERY_MNT"
 
-# Re-mount boot so recovery binary can clear counter
-mount -t vfat "$BOOT_DEV" "$BOOT_MNT" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "boot-check: WARNING: cannot remount boot for counter access"
-fi
-
 # Hand off to recovery binary (does not return)
+# Data partition stays mounted so recovery can read/clear the counter
 exec "$RECOVERY_MNT/$RECOVERY_BIN"

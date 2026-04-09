@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const DefaultPath = "/boot/firmware/boot-counter"
+const DefaultPath = "/data/digits/boot-counter"
 
 func Read(path string) (int, error) {
 	data, err := os.ReadFile(path)

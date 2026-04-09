@@ -168,7 +168,7 @@ func main() {
 	hostname, _ := os.Hostname()
 
 	srv := &recoveryServer{
-		counterPath: envOr("BOOT_COUNTER_PATH", "/boot/firmware/boot-counter"),
+		counterPath: envOr("BOOT_COUNTER_PATH", "/data/digits/boot-counter"),
 		recoveryDir: envOr("RECOVERY_DIR", "/mnt/recovery"),
 		rootfsDev:   envOr("ROOTFS_DEV", "/dev/mmcblk0p2"),
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),

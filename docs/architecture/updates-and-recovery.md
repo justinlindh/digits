@@ -70,12 +70,12 @@ Recovery mode is a minimal environment that runs before the main rootfs is mount
 
 Recovery mode activates in two situations:
 
-- **Boot failure:** The initramfs maintains a boot counter on the boot partition. If the counter reaches 3 consecutive failed boots, recovery mode starts automatically.
+- **Boot failure:** The initramfs maintains a boot counter on the data partition. If the counter reaches 3 consecutive failed boots, recovery mode starts automatically. If the data partition cannot be mounted at all, recovery mode starts as a safety fallback.
 - **Factory reset request:** When a factory reset is initiated (via web UI or service code), `digitsd` sets the boot counter to the threshold value and reboots. The initramfs sees the counter at threshold and enters recovery mode.
 
 ### Boot Counter
 
-The counter lives on the boot partition (FAT32, `/boot/firmware`). On each boot attempt the initramfs increments it before mounting the rootfs. If the rootfs mounts and `digitsd` starts successfully, the counter is reset to zero. If the system hangs or crashes before the reset, the next boot attempt sees the elevated counter.
+The counter lives on the data partition (`/data/digits/boot-counter`), which is journaled ext4 and already writable. On each boot attempt the initramfs mounts the data partition, increments the counter, and continues. If `digitsd` starts successfully, it resets the counter to zero. If the system hangs or crashes before the reset, the next boot attempt sees the elevated counter.
 
 ### Recovery Binary
 
@@ -93,7 +93,7 @@ The recovery binary and factory images live on the recovery partition and are ne
 
 | Partition | Label    | Filesystem | Size     | Mount             | Purpose                                                      |
 |-----------|----------|------------|----------|-------------------|--------------------------------------------------------------|
-| p1        | boot     | FAT32      | ~512 MB  | `/boot/firmware`  | Kernel, initramfs, `config.txt`, boot counter                |
+| p1        | boot     | FAT32      | ~512 MB  | `/boot/firmware`  | Kernel, initramfs, `config.txt`                              |
 | p2        | rootfs   | ext4       | ~3.5 GB  | `/` (read-only)   | Main OS                                                      |
 | p3        | recovery | ext4       | ~1.5 GB  | Not mounted       | Factory images + recovery binary                             |
 | p4        | data     | ext4       | ~10 GB   | `/data` (read-write) | All mutable state                                         |
@@ -130,10 +130,7 @@ To test recovery mode without waiting for three actual boot failures:
 
 ```bash
 # Set the boot counter to the threshold manually
-# (mount the boot partition and write the counter file)
-sudo mount /boot/firmware -o remount,rw
-echo "3" | sudo tee /boot/firmware/boot-counter
-sudo mount /boot/firmware -o remount,ro
+echo "3" > /data/digits/boot-counter
 sudo reboot
 ```
 

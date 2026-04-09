@@ -570,6 +570,7 @@ type statusFunc func(status, detail string)
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
+
 func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
 	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
 }
