@@ -1,0 +1,64 @@
+name: Lint
+
+on:
+  push:
+    branches: [main, 'feature/**']
+    paths:
+      - 'server/**'
+      - 'pi/digitsd/**'
+      - 'pi/digits-setup/**'
+      - '.golangci.yml'
+      - '.github/workflows/golangci-lint.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'pi/digitsd/**'
+      - 'pi/digits-setup/**'
+      - '.golangci.yml'
+      - '.github/workflows/golangci-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  lint-server:
+    name: lint-server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache-dependency-path: server/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+          working-directory: server
+
+  lint-digitsd:
+    name: lint-digitsd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache-dependency-path: pi/digitsd/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+          working-directory: pi/digitsd
+
+  lint-digits-setup:
+    name: lint-digits-setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+          cache-dependency-path: pi/digits-setup/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+          working-directory: pi/digits-setup
