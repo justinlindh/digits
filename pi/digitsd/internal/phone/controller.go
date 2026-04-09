@@ -298,15 +298,15 @@ func (c *Controller) onSignalHangup() {
 		slog.Info(fmt.Sprintf("phone: hangup signal ignored in state %s (not CONNECTED)", c.state))
 		return
 	}
-	// Full POTS remote-hangup sequence:
+	// POTS remote-hangup sequence (Bellcore GR-506-CORE permanent signal treatment):
 	//   1. Tear down call, brief silence (~1s, CO processing delay)
-	//   2. Reorder tone (fast busy, 480+620 Hz) for ~10s
-	//   3. Intercept voice message ("If you'd like to make a call...")
-	//   4. Howler tone (loud multi-freq) until user hangs up
+	//   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
+	//   3. Howler/ROH tone (loud multi-freq) for ~3 min
+	//   4. Line lockout (silence until user hangs up)
 	c.state = StateREMOTE_HANGUP
 	c.cb.HangupCall()
 	c.cb.SendTone("STOPALL")
-	slog.Info("phone: remote hangup — starting POTS off-hook sequence")
+	slog.Info("phone: remote hangup -- starting POTS off-hook sequence")
 	go func() {
 		// Helper to check we're still in REMOTE_HANGUP state
 		stillOffHook := func() bool {
@@ -321,31 +321,25 @@ func (c *Controller) onSignalHangup() {
 			return
 		}
 
-		// 2. Reorder tone for ~10 seconds
-		slog.Info("phone: remote hangup — reorder tone")
+		// 2. Reorder tone for ~45 seconds
+		slog.Info("phone: remote hangup -- reorder tone")
 		c.cb.SendTone("REORDER")
-		time.Sleep(10 * time.Second)
+		time.Sleep(45 * time.Second)
 		if !stillOffHook() {
 			return
 		}
 
-		// 3. Intercept voice message
-		slog.Info("phone: remote hangup — intercept message")
-		c.cb.SendTone("STOP")
-		c.cb.SendTone("INTERCEPT")
-		for c.cb.OncePlaying() {
-			time.Sleep(200 * time.Millisecond)
-			if !stillOffHook() {
-				return
-			}
-		}
-		if !stillOffHook() {
-			return
-		}
-
-		// 4. Howler tone until hang-up
-		slog.Info("phone: remote hangup — howler tone")
+		// 3. Howler tone for ~3 minutes
+		slog.Info("phone: remote hangup -- howler tone")
 		c.cb.SendTone("HOWLER")
+		time.Sleep(3 * time.Minute)
+		if !stillOffHook() {
+			return
+		}
+
+		// 4. Line lockout -- silence until hang-up
+		slog.Info("phone: remote hangup -- line lockout")
+		c.cb.SendTone("STOP")
 	}()
 }
 
@@ -354,7 +348,7 @@ func (c *Controller) onSignalBusy() {
 		slog.Info(fmt.Sprintf("phone: busy signal ignored in state %s (not CALLING)", c.state))
 		return
 	}
-	slog.Info("phone: busy signal received — call rejected")
-	c.cb.SendTone("STOP")
-	// Stay in CALLING — caller should hang up
+	slog.Info("phone: busy signal received -- call rejected")
+	c.cb.SendTone("BUSY")
+	// Stay in CALLING -- caller should hang up
 }

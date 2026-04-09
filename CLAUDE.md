@@ -81,6 +81,8 @@ PRs required to merge into main. No direct pushes. Use the PR template at `.gith
 
 **Never force push.** Always push new commits on top of existing branches. No `--force`, no `--force-with-lease`, no amending pushed commits.
 
+When addressing PR review comments, always reply to each comment on GitHub (via `gh api`) acknowledging the feedback and noting what was changed. Do this at the same time as pushing the fix.
+
 ## CI
 
 GitHub Actions workflows (`.github/workflows/`):
