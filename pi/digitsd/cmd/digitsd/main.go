@@ -567,10 +567,6 @@ type statusFunc func(status, detail string)
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
-func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
-}
-
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Warn("updater: skipping, another update is already in progress")
@@ -1034,7 +1030,7 @@ func main() {
 
 	svcCodes.SetUpdateCallback(func() {
 		slog.Info("service code: *#UPDATE# (*#873283#), checking for updates")
-		go runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
@@ -1106,12 +1102,6 @@ func main() {
 		for range ticker.C {
 			requestICEServers(sig)
 		}
-	}()
-
-	// Check for updates on startup (non-blocking)
-	go func() {
-		time.Sleep(10 * time.Second) // let things settle
-		runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
 	}()
 
 	// OS signal handling
