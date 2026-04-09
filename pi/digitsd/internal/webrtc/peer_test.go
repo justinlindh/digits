@@ -35,7 +35,7 @@ func TestPeerManager_CreateOffer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	offer, err := mgr.CreateOffer()
 	if err != nil {
@@ -55,13 +55,13 @@ func TestPeerManager_OfferAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer caller.Close()
+	defer func() { _ = caller.Close() }()
 
 	callee, err := NewPeerManager(NewICEConfig(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer callee.Close()
+	defer func() { _ = callee.Close() }()
 
 	offer, err := caller.CreateOffer()
 	if err != nil {
@@ -107,13 +107,13 @@ func TestPeerManager_ICERestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer caller.Close()
+	defer func() { _ = caller.Close() }()
 
 	callee, err := NewPeerManager(NewICEConfig(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer callee.Close()
+	defer func() { _ = callee.Close() }()
 
 	// Initial SDP exchange
 	offer, err := caller.CreateOffer()

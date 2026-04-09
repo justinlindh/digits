@@ -25,13 +25,13 @@ type SocketServer struct {
 
 // NewSocketServer creates and starts a Unix socket server.
 func NewSocketServer(path string, handler SocketHandler) (*SocketServer, error) {
-	os.Remove(path) // clean up stale socket
+	_ = os.Remove(path) // clean up stale socket
 	listener, err := net.Listen("unix", path)
 	if err != nil {
 		return nil, err
 	}
 	if err := os.Chmod(path, 0600); err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return nil, fmt.Errorf("chmod socket %s: %w", path, err)
 	}
 
@@ -49,7 +49,7 @@ func NewSocketServer(path string, handler SocketHandler) (*SocketServer, error) 
 // Close shuts down the socket server.
 func (s *SocketServer) Close() {
 	close(s.stop)
-	s.listener.Close()
+	_ = s.listener.Close()
 }
 
 func (s *SocketServer) acceptLoop() {
@@ -69,8 +69,11 @@ func (s *SocketServer) acceptLoop() {
 }
 
 func (s *SocketServer) handleConn(conn net.Conn) {
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	defer func() { _ = conn.Close() }()
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		slog.Warn("socket: set deadline", "error", err)
+		return
+	}
 
 	scanner := bufio.NewScanner(conn)
 	if !scanner.Scan() {
@@ -78,10 +81,14 @@ func (s *SocketServer) handleConn(conn net.Conn) {
 	}
 	cmd := strings.TrimSpace(scanner.Text())
 	if cmd == "" {
-		conn.Write([]byte("\n"))
+		if _, err := conn.Write([]byte("\n")); err != nil {
+			slog.Warn("socket: write", "error", err)
+		}
 		return
 	}
 
 	resp := s.handler.HandleSocketCommand(cmd)
-	conn.Write([]byte(resp + "\n"))
+	if _, err := conn.Write([]byte(resp + "\n")); err != nil {
+		slog.Warn("socket: write response", "error", err)
+	}
 }

@@ -32,7 +32,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
@@ -151,7 +151,7 @@ func TestDeletePhone(t *testing.T) {
 		t.Fatalf("add test line: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/delete", nil)
@@ -221,8 +221,8 @@ func TestSettingsTimezonePost(t *testing.T) {
 		t.Fatalf("create household: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	form := url.Values{"timezone": {"America/Chicago"}}
@@ -259,8 +259,8 @@ func TestSettingsTimezonePost_Invalid(t *testing.T) {
 		t.Fatalf("create household: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	form := url.Values{"timezone": {"Fake/Zone"}}
@@ -331,10 +331,10 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	}
 
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
-		database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	return hardwareID, token
@@ -557,7 +557,7 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	// The connection should stay open. If there was an auth error, we'd get
 	// an error message. Try reading with a short deadline; no error message
 	// means auth succeeded.
-	ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, _, err := ws.ReadMessage()
 	if err == nil {
 		t.Fatal("expected no message (timeout), but got one")

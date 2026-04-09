@@ -50,13 +50,13 @@ func TestGitHubReleases_BuildsIndex(t *testing.T) {
 		switch r.URL.Path {
 		case "/repos/test-owner/test-repo/releases":
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(releases)
+			_ = json.NewEncoder(w).Encode(releases)
 		default:
 			// Serve SHA256 content based on URL query or path
 			if r.URL.String() == "/sha256fw" {
-				w.Write([]byte(sha256fw + "\n"))
+				_, _ = w.Write([]byte(sha256fw + "\n"))
 			} else if r.URL.String() == "/sha256pi" {
-				w.Write([]byte(sha256pi + "\n"))
+				_, _ = w.Write([]byte(sha256pi + "\n"))
 			} else {
 				http.NotFound(w, r)
 			}
@@ -115,7 +115,7 @@ func TestGitHubReleases_CachesTTL(t *testing.T) {
 		if r.URL.Path == "/repos/test-owner/test-repo/releases" {
 			callCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode([]ghRelease{
+			_ = json.NewEncoder(w).Encode([]ghRelease{
 				{
 					TagName:     "fw/v1.0.0",
 					PublishedAt: "2026-03-01T00:00:00Z",
@@ -145,7 +145,7 @@ func TestGitHubReleases_CachesTTL(t *testing.T) {
 func TestGitHubReleases_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte("rate limited"))
+		_, _ = w.Write([]byte("rate limited"))
 	}))
 	defer srv.Close()
 

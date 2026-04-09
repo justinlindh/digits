@@ -171,7 +171,7 @@ func (m *Mixer) EnableCapture(path string) error {
 	}
 	m.captureFile = f
 	m.capturePath = path
-	slog.Info("mixer: PCM capture started", "path", path)
+	slog.Info("mixer: PCM capture enabled", "path", path)
 	return nil
 }
 
@@ -180,7 +180,9 @@ func (m *Mixer) DisableCapture() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.captureFile != nil {
-		m.captureFile.Close()
+		if err := m.captureFile.Close(); err != nil {
+			slog.Warn("mixer: close capture file failed", "path", m.capturePath, "error", err)
+		}
 		slog.Info("mixer: PCM capture stopped", "path", m.capturePath)
 		m.captureFile = nil
 		m.capturePath = ""
@@ -222,7 +224,7 @@ func (m *Mixer) LoadTonesFromDir(dir string) error {
 			return fmt.Errorf("load %s: %w", e.Name(), err)
 		}
 		m.LoadTone(name, samples)
-		slog.Info("mixer: loaded tone", "name", name, "samples", len(samples), "duration_s", fmt.Sprintf("%.1f", float64(len(samples))/48000))
+		slog.Info("mixer: loaded tone", "name", name, "samples", len(samples), "duration_s", float64(len(samples))/48000)
 	}
 	return nil
 }
@@ -335,7 +337,11 @@ func loadWAV(path string) ([]int16, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			slog.Warn("close WAV failed", "path", path, "error", cerr)
+		}
+	}()
 
 	// Read RIFF header
 	var riffHdr [12]byte

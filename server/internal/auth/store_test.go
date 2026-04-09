@@ -24,10 +24,10 @@ func testDB(t *testing.T) *Store {
 	}
 	s := NewStoreFromDB(database.DB)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM sessions")
-		database.DB.Exec("DELETE FROM magic_links")
-		database.DB.Exec("DELETE FROM users")
-		database.Close()
+		_, _ = database.DB.Exec("DELETE FROM sessions")
+		_, _ = database.DB.Exec("DELETE FROM magic_links")
+		_, _ = database.DB.Exec("DELETE FROM users")
+		_ = database.Close()
 	})
 	return s
 }
@@ -276,7 +276,7 @@ func TestCleanupExpired(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	hash := device.HashToken(token)
-	s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
+	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
 	mlToken, err := s.CreateMagicLink("cleanup@test.com", 15*time.Minute)
@@ -284,7 +284,7 @@ func TestCleanupExpired(t *testing.T) {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
 	mlHash := device.HashToken(mlToken)
-	s.db.Exec(`UPDATE magic_links SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, mlHash)
+	_, _ = s.db.Exec(`UPDATE magic_links SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, mlHash)
 
 	if err := s.CleanupExpired(); err != nil {
 		t.Fatalf("CleanupExpired: %v", err)

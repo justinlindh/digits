@@ -41,7 +41,7 @@ func main() {
 	}
 
 	f, _ := os.Create("/tmp/pipeline_output.raw")
-	binary.Write(f, binary.LittleEndian, output)
-	f.Close()
+	_ = binary.Write(f, binary.LittleEndian, output)
+	_ = f.Close()
 	fmt.Printf("Opus roundtrip: %d → %d samples\n", len(input), len(output))
 }

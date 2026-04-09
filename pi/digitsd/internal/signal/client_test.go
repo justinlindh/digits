@@ -29,7 +29,7 @@ func TestClient_ConnectAndRegister(t *testing.T) {
 			t.Errorf("upgrade: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		_, data, err := conn.ReadMessage()
 		if err != nil {
@@ -51,7 +51,7 @@ func TestClient_ConnectAndRegister(t *testing.T) {
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	select {
 	case msg := <-registered:
@@ -74,7 +74,7 @@ func TestClient_ReceiveMessages(t *testing.T) {
 			t.Errorf("upgrade: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Consume the register message
 		if _, _, err := conn.ReadMessage(); err != nil {
@@ -97,7 +97,7 @@ func TestClient_ReceiveMessages(t *testing.T) {
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	select {
 	case msg := <-c.Inbox():
@@ -122,7 +122,7 @@ func TestClient_SendMessage(t *testing.T) {
 			t.Errorf("upgrade: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// Consume register
 		if _, _, err := conn.ReadMessage(); err != nil {
@@ -149,7 +149,7 @@ func TestClient_SendMessage(t *testing.T) {
 	if err := c.Connect(); err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// Small delay to let register complete before sending
 	time.Sleep(50 * time.Millisecond)

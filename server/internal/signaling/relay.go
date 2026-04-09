@@ -14,6 +14,7 @@ type CallTracker interface {
 	ClearByNumber(number string)
 	InCall(a, b string) bool
 	Busy(number string) bool
+	PeerOf(number string) string
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -84,7 +85,7 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 func (r *Relay) handleCall(from string, msg *Message) {
 	target := r.Hub.Get(msg.To)
 	if target == nil {
-		r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
+		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
 	}
 
@@ -95,20 +96,20 @@ func (r *Relay) handleCall(from string, msg *Message) {
 			if err != nil {
 				slog.Error("call authorization failed", "from", from, "to", msg.To, "err", err)
 			}
-			r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
+			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
 			return
 		}
 	}
 
 	if r.Tracker != nil {
 		if r.Tracker.Busy(from) || r.Tracker.Busy(msg.To) {
-			r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		r.Tracker.OnCallInitiated(from, msg.To)
+		_ = r.Tracker.OnCallInitiated(from, msg.To)
 	}
 
-	r.Hub.SendTo(msg.To, &Message{
+	_ = r.Hub.SendTo(msg.To, &Message{
 		Type: TypeRing,
 		From: from,
 	})
@@ -117,7 +118,7 @@ func (r *Relay) handleCall(from string, msg *Message) {
 func (r *Relay) handleICERestart(from string, msg *Message) {
 	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
-		r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
+		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
 	r.forward(msg)
@@ -125,14 +126,20 @@ func (r *Relay) handleICERestart(from string, msg *Message) {
 
 func (r *Relay) handleAnswer(from string, msg *Message) {
 	if r.Tracker != nil {
-		r.Tracker.OnCallAnswered(msg.To, from)
+		_ = r.Tracker.OnCallAnswered(msg.To, from)
 	}
 	r.forward(msg)
 }
 
 func (r *Relay) handleHangup(from string, msg *Message) {
+	// Resolve peer if client didn't specify a To field
+	if msg.To == "" && r.Tracker != nil {
+		if peer := r.Tracker.PeerOf(from); peer != "" {
+			msg.To = peer
+		}
+	}
 	if r.Tracker != nil {
-		r.Tracker.OnCallEnded(from, msg.To)
+		_ = r.Tracker.OnCallEnded(from, msg.To)
 	}
 	r.forward(msg)
 }

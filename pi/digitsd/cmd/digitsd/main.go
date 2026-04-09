@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -33,6 +34,9 @@ import (
 // before giving up and hanging up the call.
 const iceRestartTimeout = 15 * time.Second
 
+func init() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+}
 
 var (
 	configPath  = flag.String("config", config.DefaultPath, "path to JSON config file")
@@ -122,7 +126,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
-		slog.Error("webrtc", "error", err)
+		slog.Error("webrtc: new peer manager failed", "error", err)
 		return
 	}
 
@@ -142,7 +146,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Debug("makeCall remote track ended", "frames", frameCount)
+					slog.Info("makeCall remote track ended", "frames", frameCount)
 					return
 				}
 				pcm, err := d.decoder.Decode(pkt.Payload)
@@ -172,7 +176,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	// Create offer (returns immediately — ICE trickles via OnICECandidate)
 	offer, err := d.peerMgr.CreateOffer()
 	if err != nil {
-		slog.Error("webrtc offer", "error", err)
+		slog.Error("webrtc: create offer failed", "error", err)
 		close(sdpSent)
 		return
 	}
@@ -185,7 +189,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	// Start audio pipeline
 	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
 	if err := d.pipeline.Start(); err != nil {
-		slog.Error("audio pipeline", "error", err)
+		slog.Error("audio pipeline start failed", "error", err)
 		return
 	}
 
@@ -236,7 +240,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
-		slog.Error("webrtc (answer)", "error", err)
+		slog.Error("webrtc (answer): new peer manager failed", "error", err)
 		return
 	}
 
@@ -252,20 +256,20 @@ func (d *daemonCallbacks) AnswerCall() {
 			// Phase 1: Wait for pipeline (user picks up phone).
 			// Read and discard RTP packets to prevent buffering.
 			// Decode each to keep Opus decoder state in sync.
-			slog.Debug("remote track active, waiting for answer")
+			slog.Info("remote track active, waiting for answer")
 			var discarded int
 			for {
 				d.mu.Lock()
 				pip := d.pipeline
 				d.mu.Unlock()
 				if pip != nil {
-					slog.Debug("pipeline ready", "discarded_packets", discarded)
+					slog.Info("pipeline ready", "discarded_packets", discarded)
 					break
 				}
 
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Debug("remote track ended while waiting for answer", "discarded_packets", discarded)
+					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
 					return
 				}
 				d.decoder.Decode(pkt.Payload) //nolint:errcheck
@@ -282,7 +286,7 @@ func (d *daemonCallbacks) AnswerCall() {
 				pkt, _, err := track.ReadRTP()
 				readTime := time.Since(start)
 				if err != nil {
-					slog.Debug("remote track ended during drain")
+					slog.Info("remote track ended during drain")
 					return
 				}
 				d.decoder.Decode(pkt.Payload) //nolint:errcheck
@@ -290,7 +294,7 @@ func (d *daemonCallbacks) AnswerCall() {
 				lastSeq = pkt.SequenceNumber
 
 				if readTime > 5*time.Millisecond {
-					slog.Debug("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
 					break
 				}
 			}
@@ -299,13 +303,13 @@ func (d *daemonCallbacks) AnswerCall() {
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Debug("remote track ended", "frames", frameCount)
+					slog.Info("remote track ended", "frames", frameCount)
 					return
 				}
 				recvTime := time.Now()
 				pcm, err := d.decoder.Decode(pkt.Payload)
 				if err != nil {
-					slog.Debug("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
+					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
 					continue
 				}
 				// Copy — Decode returns a slice of a reused internal buffer
@@ -315,7 +319,7 @@ func (d *daemonCallbacks) AnswerCall() {
 				d.mixer.FeedWebRTC(frame)
 
 				if frameCount <= 10 || frameCount%50 == 0 {
-					slog.Debug("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
+					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
 				}
 			}
 		}()
@@ -335,7 +339,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	// Accept the offer and generate answer (returns immediately — ICE trickles via OnICECandidate)
 	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
 	if err != nil {
-		slog.Error("webrtc accept offer", "error", err)
+		slog.Error("webrtc: accept offer failed", "error", err)
 		close(sdpSent)
 		return
 	}
@@ -343,10 +347,10 @@ func (d *daemonCallbacks) AnswerCall() {
 	// Drain any ICE candidates that arrived before peerMgr was ready.
 	for _, candidate := range d.pendingICE {
 		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
-			slog.Warn("webrtc add queued ICE candidate", "error", err)
+			slog.Warn("webrtc: add queued ICE candidate failed", "error", err)
 		}
 	}
-	slog.Debug("drained queued ICE candidates", "count", len(d.pendingICE))
+	slog.Info("drained queued ICE candidates", "count", len(d.pendingICE))
 	d.pendingICE = nil
 
 	// Send answer SDP back to caller, then ungate ICE candidates
@@ -360,7 +364,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	// Start audio pipeline (capture only — playback goes through mixer)
 	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
 	if err := d.pipeline.Start(); err != nil {
-		slog.Error("audio pipeline (answer)", "error", err)
+		slog.Error("audio pipeline (answer) start failed", "error", err)
 		return
 	}
 
@@ -408,7 +412,9 @@ func (d *daemonCallbacks) HangupCall() {
 		d.pipeline = nil
 	}
 	if d.peerMgr != nil {
-		d.peerMgr.Close()
+		if err := d.peerMgr.Close(); err != nil {
+			slog.Warn("peerMgr close failed", "error", err)
+		}
 		d.peerMgr = nil
 	}
 
@@ -430,7 +436,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		}
 		d.mu.Unlock()
 		if wasRestarting {
-			slog.Info("webrtc: ICE restart succeeded, connection recovered")
+			slog.Info("webrtc: ICE restart succeeded -- connection recovered")
 		}
 
 	case webrtc.PeerConnectionStateFailed:
@@ -440,7 +446,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		d.mu.Unlock()
 
 		if alreadyRestarting {
-			slog.Error("webrtc: ICE restart failed, hanging up")
+			slog.Warn("webrtc: ICE restart failed, hanging up")
 			go d.ctrl.HandleSignal("hangup")
 			return
 		}
@@ -499,7 +505,7 @@ func (d *daemonCallbacks) startRestartTimeout() {
 		restarting := d.isRestartingICE
 		d.mu.Unlock()
 		if restarting {
-			slog.Error("webrtc: ICE restart timed out, hanging up")
+			slog.Warn("webrtc: ICE restart timed out, hanging up")
 			d.ctrl.HandleSignal("hangup")
 		}
 	})
@@ -515,7 +521,7 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 			return "ERROR: TEST:EVENT not available in production"
 		}
 		event := cmd[11:]
-		slog.Debug("test: injecting event", "event", event)
+		slog.Info("test: injecting event", "event", event)
 		if d.ctrl != nil {
 			d.ctrl.HandleEvent(event)
 		}
@@ -569,7 +575,7 @@ var updateInProgress atomic.Bool
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if !updateInProgress.CompareAndSwap(false, true) {
-		slog.Warn("updater: skipping, another update is already in progress")
+		slog.Info("updater: skipping -- another update is already in progress")
 		return
 	}
 	defer updateInProgress.Store(false)
@@ -619,7 +625,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	fwSkipped := false
 	if result.FWAvailable {
 		if !flashCapable {
-			slog.Warn("updater: firmware update available but SWD flash not supported on this device, skipping")
+			slog.Info("updater: firmware update available but SWD flash not supported on this device, skipping")
 			fwSkipped = true
 		} else {
 			reportStatus("downloading", "Downloading firmware "+result.FWVersion)
@@ -675,8 +681,7 @@ func main() {
 	// Load from JSON file, then let CLI flags override individual fields.
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		slog.Error("config", "error", err)
-		os.Exit(1)
+		log.Fatalf("config: %v", err)
 	}
 
 	// Effective server URL: CLI flag > config file > built-in default
@@ -696,10 +701,10 @@ func main() {
 
 	if effectiveNumber == "" {
 		effectiveNumber = "unpaired"
-		slog.Info("digitsd: no phone number configured, starting in pairing mode")
+		slog.Info("digitsd: no phone number configured -- starting in pairing mode")
 	}
 
-	slog.Info("digitsd", "server", effectiveServerURL, "number", effectiveNumber, "config", *configPath)
+	slog.Info("digitsd starting", "server", effectiveServerURL, "number", effectiveNumber, "config", *configPath)
 
 	// 1. Open serial port directly (log to both stdout and uart.log file)
 	uartLogPath := filepath.Join(filepath.Dir(*socketPath), "uart.log")
@@ -711,15 +716,16 @@ func main() {
 	var serialWriter io.Writer = os.Stdout
 	if uartLogFile != nil {
 		serialWriter = io.MultiWriter(os.Stdout, uartLogFile)
-		defer uartLogFile.Close()
+		defer func() { _ = uartLogFile.Close() }()
 	}
-	serialLogger := slog.New(slog.NewTextHandler(serialWriter, nil))
+	serialLogger := slog.New(slog.NewTextHandler(serialWriter, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 	sp, err := phone.OpenSerial(*serialDev, 115200, serialLogger)
 	if err != nil {
-		slog.Error("serial", "error", err)
-		os.Exit(1)
+		log.Fatalf("serial: %v", err)
 	}
-	defer sp.Close()
+	defer func() { _ = sp.Close() }()
 
 	// POST: verify Pico is alive
 	postRetries := 3
@@ -729,13 +735,13 @@ func main() {
 			postOk = true
 			break
 		}
-		slog.Warn("POST attempt: no PONG", "attempt", i, "max", postRetries)
+		slog.Warn("POST: no PONG", "attempt", i, "max", postRetries)
 		time.Sleep(1 * time.Second)
 	}
 	if postOk {
-		slog.Info("POST: PASS, Pico UART healthy")
+		slog.Info("POST: PASS -- Pico UART healthy")
 	} else {
-		slog.Error("POST: FAIL, Pico not responding")
+		slog.Warn("POST: FAIL -- Pico not responding")
 		elfPath := defaultFirmwarePath
 		swdCfg := defaultSWDConfig
 		openocd := defaultOpenOCD
@@ -743,7 +749,9 @@ func main() {
 			if _, errOcd := os.Stat(openocd); errOcd == nil {
 				slog.Info("POST: attempting auto-flash", "path", elfPath)
 				// Close serial port before SWD flash
-				sp.Close()
+				if err := sp.Close(); err != nil {
+					slog.Warn("POST: close serial failed", "error", err)
+				}
 				cmd := exec.Command("sudo", openocd,
 					"-f", swdCfg,
 					"-f", "target/rp2040.cfg",
@@ -759,20 +767,19 @@ func main() {
 				time.Sleep(2 * time.Second)
 				sp, err = phone.OpenSerial(*serialDev, 115200, serialLogger)
 				if err != nil {
-					slog.Error("serial re-open after flash", "error", err)
-					os.Exit(1)
+					log.Fatalf("serial re-open after flash: %v", err)
 				}
 				if err := sp.Ping(); err == nil {
 					slog.Info("POST: PASS after auto-flash")
 					postOk = true
 				} else {
-					slog.Error("POST: FAIL after auto-flash", "error", err)
+					slog.Warn("POST: FAIL after auto-flash", "error", err)
 				}
 			} else {
 				slog.Warn("POST: openocd not found", "path", openocd)
 			}
 		} else {
-			slog.Warn("POST: no firmware, skipping auto-flash", "path", elfPath)
+			slog.Info("POST: no firmware at path, skipping auto-flash", "path", elfPath)
 		}
 		if !postOk {
 			slog.Warn("POST: Continuing without Pico. Phone will not function.")
@@ -783,10 +790,10 @@ func main() {
 	var fwVersion, fwCommit string
 	if postOk {
 		if v, c, err := sp.QueryVersion(); err != nil {
-			slog.Warn("firmware version", "error", err)
+			slog.Warn("firmware version query failed", "error", err)
 		} else {
 			fwVersion, fwCommit = v, c
-			slog.Info("firmware", "version", fwVersion, "commit", fwCommit)
+			slog.Info("firmware version", "version", fwVersion, "commit", fwCommit)
 		}
 	}
 
@@ -797,16 +804,15 @@ func main() {
 		for i := 1; i <= 3; i++ {
 			resp, err := sp.SendCommand(hookInvertCmd, 2*time.Second)
 			if err == nil && resp == hookInvertCmd {
-				slog.Info("hook invert: configured", "response", resp)
+				slog.Info("hook invert: configured", "resp", resp)
 				hookOk = true
 				break
 			}
-			slog.Warn("hook invert: attempt failed", "attempt", i, "max", 3, "response", resp, "error", err)
+			slog.Warn("hook invert: attempt failed", "attempt", i, "resp", resp, "error", err)
 			time.Sleep(500 * time.Millisecond)
 		}
 		if !hookOk {
-			slog.Error("hook invert: failed after 3 attempts, refusing to run with wrong hook polarity")
-			os.Exit(1)
+			log.Fatal("hook invert: failed after 3 attempts — refusing to run with wrong hook polarity")
 		}
 	}
 
@@ -815,8 +821,7 @@ func main() {
 	if pbDev == "" {
 		dev, err := audio.CodecDeviceName()
 		if err != nil {
-			slog.Error("alsa", "error", err)
-			os.Exit(1)
+			log.Fatalf("alsa: %v", err)
 		}
 		pbDev = dev
 		slog.Info("alsa playback: auto-detected", "device", pbDev)
@@ -829,16 +834,14 @@ func main() {
 	}
 	pb, err := audio.NewPlayback(pbCfg)
 	if err != nil {
-		slog.Error("alsa playback", "error", err)
-		os.Exit(1)
+		log.Fatalf("alsa playback: %v", err)
 	}
 	defer pb.Close()
 
 	// 3. Create mixer and load tones
 	mixer := audio.NewMixer(pb)
 	if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
-		slog.Error("mixer load tones", "error", err)
-		os.Exit(1)
+		log.Fatalf("mixer load tones: %v", err)
 	}
 	// Load pairing voice prompts (subdirectory)
 	pairingDir := filepath.Join(*toneDir, "pairing")
@@ -870,13 +873,11 @@ func main() {
 	// 5. Create Opus encoder and decoder
 	enc, err := codec.NewEncoder(48000, 1, 24000)
 	if err != nil {
-		slog.Error("codec encoder", "error", err)
-		os.Exit(1)
+		log.Fatalf("codec encoder: %v", err)
 	}
 	dec, err := codec.NewDecoder(48000, 1)
 	if err != nil {
-		slog.Error("codec decoder", "error", err)
-		os.Exit(1)
+		log.Fatalf("codec decoder: %v", err)
 	}
 
 	// 6. Create service code handler
@@ -891,7 +892,7 @@ func main() {
 	svcCodes := phone.NewServiceCodeHandler()
 	svcCodes.SetVolumeCallback(func(level int) {
 		if err := phone.SetVolume(level); err != nil {
-			slog.Error("volume", "error", err)
+			slog.Warn("volume set failed", "error", err)
 		}
 		mixer.StopAll()
 		time.Sleep(250 * time.Millisecond)
@@ -900,28 +901,28 @@ func main() {
 	})
 	svcCodes.SetShutdownCallback(func() {
 		slog.Info("service code: executing shutdown")
-		exec.Command("sudo", "shutdown", "-h", "now").Run()
+		_ = exec.Command("sudo", "shutdown", "-h", "now").Run()
 	})
 	svcCodes.SetRebootCallback(func() {
 		slog.Info("service code: executing reboot")
-		exec.Command("sudo", "reboot").Run()
+		_ = exec.Command("sudo", "reboot").Run()
 	})
 	svcCodes.SetSetupCallback(func() {
-		slog.Info("service code: *#SETUP# (*#73887#), removing wifi-configured flag, rebooting")
+		slog.Info("service code: *#SETUP# (*#73887#) -> removing wifi-configured flag, rebooting")
 		err := os.Remove(phone.WifiConfiguredFlag)
 		switch {
 		case err == nil:
-			slog.Info("service code setup: removed flag, Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
+			slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
 		case os.IsNotExist(err):
-			slog.Info("service code setup: flag already absent, Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
+			slog.Info("service code setup: wifi flag already absent -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
 		default:
-			slog.Error("service code setup: remove flag", "path", phone.WifiConfiguredFlag, "error", err)
+			slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err)
 		}
-		exec.Command("sudo", "reboot").Run()
+		_ = exec.Command("sudo", "reboot").Run()
 	})
 
 	svcCodes.SetAudioTestCallback(func() {
-		slog.Info("service code: *#TEST#, audio test (record 5s, playback)")
+		slog.Info("service code: *#TEST# -> audio test (record 5s, playback)")
 		mixer.StopAll()
 
 		doubleBeep()
@@ -934,7 +935,7 @@ func main() {
 		pipCfg.Denoise = false // raw mic -- hear exactly what the hardware picks up
 		pip := audio.NewPipeline(pipCfg)
 		if err := pip.Start(); err != nil {
-			slog.Error("audio test: pipeline start", "error", err)
+			slog.Error("audio test: pipeline start failed", "error", err)
 			mixer.PlayLoop("tone_dial")
 			return
 		}
@@ -975,7 +976,7 @@ func main() {
 				maxAmp = a
 			}
 		}
-		slog.Info("audio test: captured samples, playing back", "samples", len(recorded), "duration_s", fmt.Sprintf("%.1f", float64(len(recorded))/float64(sampleRate)), "peak", maxAmp)
+		slog.Info("audio test: captured, playing back", "samples", len(recorded), "duration_s", float64(len(recorded))/float64(sampleRate), "peak", maxAmp)
 		mixer.PlayOnceSamples(recorded)
 		time.Sleep(100 * time.Millisecond)
 		for mixer.OncePlaying() {
@@ -1016,32 +1017,32 @@ func main() {
 	}
 
 	svcCodes.SetRepairCallback(func() {
-		slog.Info("service code: *#0*, clearing device token, rebooting into pairing mode")
+		slog.Info("service code: *#0* -> clearing device token, rebooting into pairing mode")
 		if cfg != nil {
 			cfg.DeviceToken = ""
 			cfg.PairingCode = ""
 			if err := cfg.Save(); err != nil {
-				slog.Error("service code repair: save config", "error", err)
+				slog.Warn("service code repair: save config failed", "error", err)
 			}
 		}
 		slog.Info("service code repair: rebooting")
-		exec.Command("sudo", "reboot").Run()
+		_ = exec.Command("sudo", "reboot").Run()
 	})
 
 	svcCodes.SetUpdateCallback(func() {
-		slog.Info("service code: *#UPDATE# (*#873283#), checking for updates")
+		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
 		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
-		slog.Info("service code: *#00000#, FACTORY RESET")
+		slog.Info("service code: *#00000# -> FACTORY RESET")
 		// 1. Remove config
-		os.Remove(config.DefaultPath)
-		os.Remove(config.DefaultPath + ".bak")
+		_ = os.Remove(config.DefaultPath)
+		_ = os.Remove(config.DefaultPath + ".bak")
 		// 2. Remove Wi-Fi provisioning flag (boot into AP mode)
-		os.Remove(phone.WifiConfiguredFlag)
+		_ = os.Remove(phone.WifiConfiguredFlag)
 		slog.Info("service code factory reset: all data cleared, rebooting")
-		exec.Command("sudo", "reboot").Run()
+		_ = exec.Command("sudo", "reboot").Run()
 	})
 
 	// 6b. Create easter egg detector
@@ -1077,15 +1078,13 @@ func main() {
 	// 9. Start socket server (backward compat for debugging + latclient auto-answer)
 	sockSrv, err := phone.NewSocketServer(*socketPath, cb)
 	if err != nil {
-		slog.Error("socket server", "error", err)
-		os.Exit(1)
+		log.Fatalf("socket server: %v", err)
 	}
 	defer sockSrv.Close()
 
 	// 10. Connect signaling client
 	if err := sig.Connect(); err != nil {
-		slog.Error("signald connect", "error", err)
-		os.Exit(1)
+		log.Fatalf("signald connect: %v", err)
 	}
 
 	// 11. Ready
@@ -1114,7 +1113,9 @@ func main() {
 		case <-quit:
 			slog.Info("digitsd shutting down")
 			mixer.Stop()
-			sig.Close()
+			if err := sig.Close(); err != nil {
+				slog.Warn("sig close failed", "error", err)
+			}
 			return
 
 		case event := <-sp.Events():
@@ -1168,13 +1169,13 @@ func main() {
 			if event == "STATUS:READY" {
 				slog.Info("pico: detected reboot, re-querying firmware version")
 				if v, c, err := sp.QueryVersion(); err != nil {
-					slog.Warn("pico: version query after reboot", "error", err)
+					slog.Warn("pico: version query after reboot failed", "error", err)
 				} else if v != fwVersion || c != fwCommit {
 					fwVersion, fwCommit = v, c
 					slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
 					sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 				} else {
-					slog.Debug("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
+					slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 				}
 				continue
 			}
@@ -1191,7 +1192,7 @@ func main() {
 			}
 
 		case msg := <-sig.Inbox():
-			slog.Debug("signal rx", "type", msg.Type, "from", msg.From)
+			slog.Info("signal rx", "type", msg.Type, "from", msg.From)
 			switch msg.Type {
 			case sigclient.TypeRing:
 				cb.mu.Lock()
@@ -1203,9 +1204,9 @@ func main() {
 				cb.mu.Lock()
 				if cb.peerMgr != nil && msg.SDP != "" {
 					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc set answer", "error", err)
+						slog.Error("webrtc: set answer failed", "error", err)
 					} else {
-						slog.Debug("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
+						slog.Info("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
 					}
 				}
 				cb.mu.Unlock()
@@ -1215,8 +1216,8 @@ func main() {
 			case sigclient.TypeBusy:
 				ctrl.HandleSignal("busy")
 			case sigclient.TypeError:
-				slog.Error("signal error", "error", msg.Error)
-				// Number not reachable — emulate real phone: ringback → SIT → busy
+				slog.Warn("signal error", "error", msg.Error)
+				// Number not reachable -- emulate real phone: ringback -> SIT -> busy
 				go func() {
 					// 1. Brief silence (call setup delay, ~1s)
 					time.Sleep(1 * time.Second)
@@ -1253,28 +1254,28 @@ func main() {
 				cb.mu.Lock()
 				if cb.peerMgr != nil {
 					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc set answer", "error", err)
+						slog.Error("webrtc: set answer failed", "error", err)
 					}
 				} else {
 					cb.pendingOffer = msg.SDP
 					// Also capture caller from SDP message if not already set by ring
 					if cb.pendingCaller == "" && msg.From != "" {
 						cb.pendingCaller = msg.From
-						slog.Debug("set pendingCaller from SDP", "from", msg.From)
+						slog.Info("set pendingCaller from SDP", "from", msg.From)
 					}
-					slog.Debug("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
+					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
 				}
 				cb.mu.Unlock()
 			case sigclient.TypeICE:
 				cb.mu.Lock()
 				if cb.peerMgr != nil {
 					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-						slog.Warn("webrtc add ICE candidate", "error", err)
+						slog.Warn("webrtc: add ICE candidate failed", "error", err)
 					}
 				} else {
 					// Queue ICE candidates until peerMgr is ready (e.g. during RINGING before answer)
 					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
-					slog.Debug("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
+					slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
 				}
 				cb.mu.Unlock()
 			case sigclient.TypeUpdateTrigger:
@@ -1295,7 +1296,7 @@ func main() {
 				peer := cb.callPeer
 				cb.mu.Unlock()
 				if pm == nil {
-					slog.Warn("ice-restart: no active peer connection, ignoring")
+					slog.Info("ice-restart: no active peer connection, ignoring")
 					break
 				}
 				slog.Info("ice-restart: received restart offer", "from", msg.From, "bytes", len(msg.SDP))
@@ -1336,7 +1337,6 @@ func main() {
 
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
-				
 				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode)
 
 			case sigclient.TypePaired:
@@ -1348,9 +1348,9 @@ func main() {
 						cb.number = msg.Number
 					}
 					if err := cb.cfg.Save(); err != nil {
-						slog.Error("signal: paired, failed to save config", "error", err)
+						slog.Warn("signal: paired -- failed to save config", "error", err)
 					} else {
-						slog.Info("signal: paired, config saved", "number", msg.Number, "path", cb.cfg.Path())
+						slog.Info("signal: paired", "number", msg.Number, "config", cb.cfg.Path())
 					}
 					cb.paired.Store(true)
 					cb.pairingCode = ""
@@ -1403,14 +1403,14 @@ func main() {
 		case <-sig.Done():
 			backoff := 3 * time.Second
 			for {
-				slog.Warn("signal: connection lost, reconnecting", "backoff", backoff)
+				slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
 				time.Sleep(backoff)
 				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 				cb.mu.Lock()
 				cb.sig = sig
 				cb.mu.Unlock()
 				if err := sig.Connect(); err != nil {
-					slog.Error("signal: reconnect failed", "error", err)
+					slog.Warn("signal: reconnect failed", "error", err)
 					if backoff < 60*time.Second {
 						backoff *= 2
 					}
@@ -1428,7 +1428,7 @@ func main() {
 // requestICEServers asks signald for STUN/TURN server configs.
 func requestICEServers(sig *sigclient.Client) {
 	if err := sig.Send(&sigclient.Message{Type: sigclient.TypeRequestICE}); err != nil {
-		slog.Error("ice: request failed", "error", err)
+		slog.Warn("ice: request failed", "error", err)
 	}
 }
 
@@ -1441,9 +1441,9 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		FirmwareCommit:  fwCommit,
 		FlashCapable:    flashCapable,
 	}); err != nil {
-		slog.Error("device_info: send failed", "error", err)
+		slog.Warn("device_info: send failed", "error", err)
 	} else {
-		slog.Info("device_info", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable)
+		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable)
 	}
 }
 

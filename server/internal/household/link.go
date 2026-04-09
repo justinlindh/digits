@@ -164,7 +164,7 @@ func (s *LinkStore) GetLinkedHouseholds(householdID string) ([]HouseholdLink, er
 	if err != nil {
 		return nil, fmt.Errorf("get linked households: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLinks(rows)
 }
 
@@ -193,7 +193,7 @@ func (s *LinkStore) RevokeLink(linkID, revokedByUserID string) error {
 	if err != nil {
 		return fmt.Errorf("revoke link begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Fetch the link's household IDs before revoking
 	var householdAID, householdBID sql.NullString
@@ -254,7 +254,7 @@ func (s *LinkStore) GetPendingForHousehold(householdID string) ([]HouseholdLink,
 	if err != nil {
 		return nil, fmt.Errorf("get pending for household: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLinks(rows)
 }
 
@@ -302,7 +302,7 @@ func (s *LinkStore) FindNumberConflicts(householdAID, householdBID string) ([]Nu
 	if err != nil {
 		return nil, fmt.Errorf("find conflicts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var conflicts []NumberConflict
 	for rows.Next() {

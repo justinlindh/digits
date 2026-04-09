@@ -67,22 +67,27 @@ func (c *Client) Connect() error {
 	reg := &Message{Type: TypeRegister, Number: c.number, HardwareID: c.hardwareID, DeviceToken: c.deviceToken}
 	data, err := reg.Marshal()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("signal: marshal register: %w", err)
 	}
 	c.mu.Lock()
 	err = conn.WriteMessage(websocket.TextMessage, data)
 	c.mu.Unlock()
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("signal: send register: %w", err)
 	}
 
 	// Reset read deadline on each server ping so Cloudflare/proxy
 	// idle timeouts don't kill the connection.
-	c.conn.SetReadDeadline(time.Now().Add(pingTimeout))
+	if err := c.conn.SetReadDeadline(time.Now().Add(pingTimeout)); err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("signal: set read deadline: %w", err)
+	}
 	c.conn.SetPingHandler(func(appData string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pingTimeout))
+		if err := c.conn.SetReadDeadline(time.Now().Add(pingTimeout)); err != nil {
+			slog.Warn("signal: set read deadline on ping", "error", err)
+		}
 		return c.conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
 	})
 

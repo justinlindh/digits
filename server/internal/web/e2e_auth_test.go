@@ -31,7 +31,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	t.Cleanup(func() { rawDB.Close() })
+	t.Cleanup(func() { _ = rawDB.Close() })
 
 	authStore := auth.NewStoreFromDB(rawDB)
 
@@ -80,7 +80,7 @@ func TestAuthRedirectsToLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("expected 302 or 303 redirect, got %d", resp.StatusCode)
@@ -101,7 +101,7 @@ func TestLoginPageReturns200(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /auth/login: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
