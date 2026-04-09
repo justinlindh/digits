@@ -47,7 +47,7 @@ func findCodecCardIn(r io.Reader) (int, error) {
 			}
 		}
 	}
-	return 0, fmt.Errorf("Codec Zero card not found in /proc/asound/cards")
+	return 0, fmt.Errorf("codec Zero card not found in /proc/asound/cards")
 }
 
 // FindCodecCard scans /proc/asound/cards for the Codec Zero (DA7212) and
@@ -57,7 +57,11 @@ func FindCodecCard() (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("open /proc/asound/cards: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			slog.Warn("close /proc/asound/cards", "error", cerr)
+		}
+	}()
 	return findCodecCardIn(f)
 }
 

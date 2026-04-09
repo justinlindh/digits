@@ -20,7 +20,7 @@ func TestLogWatcher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	w, err := NewLogWatcher(f.Name())
 	if err != nil {
@@ -60,7 +60,7 @@ func TestLogWatcher_SkipsTX(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	w, err := NewLogWatcher(f.Name())
 	if err != nil {
@@ -108,7 +108,7 @@ func TestLogWatcher_RealFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	w, err := NewLogWatcher(f.Name())
 	if err != nil {
@@ -151,7 +151,7 @@ func TestLogWatcher_Stop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	w, err := NewLogWatcher(f.Name())
 	if err != nil {

@@ -34,7 +34,9 @@ func TestLoadOrCreateDeviceID_NewFile(t *testing.T) {
 	path := filepath.Join(dir, "device-id")
 	// Test with a temp path - write a UUID, read it back
 	id, _ := generateUUIDv4()
-	os.WriteFile(path, []byte(id+"\n"), 0644)
+	if err := os.WriteFile(path, []byte(id+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	data, _ := os.ReadFile(path)
 	got := strings.TrimSpace(string(data))
 	if got != id {

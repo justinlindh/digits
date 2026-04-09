@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log/slog"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -77,7 +77,7 @@ func (m *Mixer) Start() {
 	m.running = true
 	m.stopCh = make(chan struct{})
 	go m.renderLoop(m.stopCh)
-	slog.Info("mixer: render loop started")
+	log.Println("mixer: render loop started")
 }
 
 // Stop halts the render loop. Blocks until the goroutine has exited.
@@ -92,7 +92,7 @@ func (m *Mixer) Stop() {
 	m.running = false
 	m.mu.Unlock()
 	// Wait for render loop to drain — it exits on next select check
-	slog.Info("mixer: render loop stopped")
+	log.Println("mixer: render loop stopped")
 }
 
 // renderLoop is the single goroutine that writes to hardware.
@@ -171,7 +171,7 @@ func (m *Mixer) EnableCapture(path string) error {
 	}
 	m.captureFile = f
 	m.capturePath = path
-	slog.Info("mixer: PCM capture started", "path", path)
+	log.Printf("mixer: PCM capture → %s", path)
 	return nil
 }
 
@@ -180,8 +180,10 @@ func (m *Mixer) DisableCapture() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.captureFile != nil {
-		m.captureFile.Close()
-		slog.Info("mixer: PCM capture stopped", "path", m.capturePath)
+		if err := m.captureFile.Close(); err != nil {
+			log.Printf("mixer: close capture file %s: %v", m.capturePath, err)
+		}
+		log.Printf("mixer: PCM capture stopped (%s)", m.capturePath)
 		m.captureFile = nil
 		m.capturePath = ""
 	}
@@ -222,7 +224,7 @@ func (m *Mixer) LoadTonesFromDir(dir string) error {
 			return fmt.Errorf("load %s: %w", e.Name(), err)
 		}
 		m.LoadTone(name, samples)
-		slog.Info("mixer: loaded tone", "name", name, "samples", len(samples), "duration_s", fmt.Sprintf("%.1f", float64(len(samples))/48000))
+		log.Printf("mixer: loaded %s (%d samples, %.1fs)", name, len(samples), float64(len(samples))/48000)
 	}
 	return nil
 }
@@ -234,7 +236,7 @@ func (m *Mixer) PlayLoop(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		slog.Warn("mixer: unknown tone", "name", name)
+		log.Printf("mixer: unknown tone %q", name)
 		return
 	}
 	m.loopSamples = samples
@@ -296,7 +298,7 @@ func (m *Mixer) PlayOnce(name string) {
 	defer m.mu.Unlock()
 	samples, ok := m.tones[name]
 	if !ok {
-		slog.Warn("mixer: unknown tone", "name", name)
+		log.Printf("mixer: unknown tone %q", name)
 		return
 	}
 	m.onceQueue = append(m.onceQueue, samples)
@@ -335,7 +337,11 @@ func loadWAV(path string) ([]int16, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			log.Printf("close WAV %s: %v", path, cerr)
+		}
+	}()
 
 	// Read RIFF header
 	var riffHdr [12]byte

@@ -13,10 +13,9 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
-	"log/slog"
+	"log"
 	"math"
 	"net"
-	"os"
 	"time"
 )
 
@@ -41,11 +40,10 @@ func main() {
 func runServer(addr string) {
 	conn, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		slog.Error("listen failed", "error", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-	defer conn.Close()
-	slog.Info("clocksync server listening", "addr", addr)
+	defer func() { _ = conn.Close() }()
+	log.Printf("clocksync server listening on %s", addr)
 
 	buf := make([]byte, 64)
 	for {
@@ -61,17 +59,18 @@ func runServer(addr string) {
 		resp := make([]byte, n+8)
 		copy(resp, buf[:n])
 		binary.LittleEndian.PutUint64(resp[n:], uint64(now))
-		conn.WriteTo(resp, remote)
+		if _, err := conn.WriteTo(resp, remote); err != nil {
+			log.Printf("writeto %s: %v", remote, err)
+		}
 	}
 }
 
 func runClient(addr string, count int) {
 	conn, err := net.Dial("udp", addr)
 	if err != nil {
-		slog.Error("dial failed", "error", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var offsets []float64
 
@@ -81,10 +80,15 @@ func runClient(addr string, count int) {
 		sendUs := sendTime.UnixMicro()
 		buf := make([]byte, 8)
 		binary.LittleEndian.PutUint64(buf, uint64(sendUs))
-		conn.Write(buf)
+		if _, err := conn.Write(buf); err != nil {
+			log.Printf("write probe %d: %v", i+1, err)
+			continue
+		}
 
 		// Read response
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
+			log.Fatalf("set deadline: %v", err)
+		}
 		resp := make([]byte, 64)
 		n, err := conn.Read(resp)
 		if err != nil {

@@ -37,14 +37,18 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 		"digits",
 	)
 	if err != nil {
-		pc.Close()
+		if cerr := pc.Close(); cerr != nil {
+			slog.Warn("webrtc: close peer connection after track error", "error", cerr)
+		}
 		return nil, fmt.Errorf("create local track: %w", err)
 	}
 	m.track = track
 
 	rtpSender, err := pc.AddTrack(track)
 	if err != nil {
-		pc.Close()
+		if cerr := pc.Close(); cerr != nil {
+			slog.Warn("webrtc: close peer connection after add track error", "error", cerr)
+		}
 		return nil, fmt.Errorf("add local track: %w", err)
 	}
 

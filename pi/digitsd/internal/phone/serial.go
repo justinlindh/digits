@@ -2,7 +2,7 @@ package phone
 
 import (
 	"fmt"
-	"log/slog"
+	"log"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,18 +20,18 @@ type SerialPort struct {
 	mu     sync.Mutex
 	respCh atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	stop   chan struct{}
-	logger *slog.Logger
+	logger *log.Logger
 }
 
 // OpenSerial opens the serial port and starts the RX reader goroutine.
-func OpenSerial(device string, baud int, logger *slog.Logger) (*SerialPort, error) {
+func OpenSerial(device string, baud int, logger *log.Logger) (*SerialPort, error) {
 	mode := &serial.Mode{BaudRate: baud}
 	port, err := serial.Open(device, mode)
 	if err != nil {
 		return nil, fmt.Errorf("serial open %s: %w", device, err)
 	}
 	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
-		port.Close()
+		_ = port.Close()
 		return nil, fmt.Errorf("serial set timeout: %w", err)
 	}
 
@@ -60,7 +60,7 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	sp.respCh.Store(&ch)
 	defer sp.respCh.Store(nil)
 
-	sp.logger.Info("TX", "cmd", cmd)
+	sp.logger.Printf("TX: %s", cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
 		return "", fmt.Errorf("serial write: %w", err)
 	}
@@ -77,8 +77,10 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
-	sp.logger.Info("TX", "cmd", cmd)
-	sp.port.Write([]byte(cmd + "\r\n"))
+	sp.logger.Printf("TX: %s", cmd)
+	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
+		sp.logger.Printf("serial: write %q: %v", cmd, err)
+	}
 }
 
 // Ping sends PING and expects PONG.
@@ -181,7 +183,7 @@ func (sp *SerialPort) readLoop() {
 					continue
 				}
 
-				sp.logger.Info("RX", "line", line)
+				sp.logger.Printf("RX: %s", line)
 
 				// Unsolicited Pico events (hook, keypad, boot) always go to
 				// the events channel, never to a pending command response.
@@ -189,7 +191,7 @@ func (sp *SerialPort) readLoop() {
 					select {
 					case sp.events <- line:
 					default:
-						sp.logger.Warn("serial: events full, dropping", "line", line)
+						sp.logger.Printf("serial: events full, dropping: %s", line)
 					}
 					continue
 				}
@@ -207,7 +209,7 @@ func (sp *SerialPort) readLoop() {
 				select {
 				case sp.events <- line:
 				default:
-					sp.logger.Warn("serial: events full, dropping", "line", line)
+					sp.logger.Printf("serial: events full, dropping: %s", line)
 				}
 			} else {
 				lineBuf.WriteByte(ch)
