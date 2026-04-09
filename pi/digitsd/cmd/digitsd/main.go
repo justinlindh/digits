@@ -721,6 +721,32 @@ func main() {
 			}
 			return exec.Command("sudo", "mount", "-o", "remount,"+mode, "/").Run()
 		},
+		RootfsWriteFile: func(data []byte, dest string, perm os.FileMode) error {
+			// Write to a temp file, then sudo cp + chmod to the rootfs destination.
+			// This matches the pattern used by the existing updater for binary replacement.
+			tmp, err := os.CreateTemp("", "asset-*")
+			if err != nil {
+				return fmt.Errorf("create temp: %w", err)
+			}
+			tmpPath := tmp.Name()
+			defer os.Remove(tmpPath)
+			if _, err := tmp.Write(data); err != nil {
+				tmp.Close()
+				return fmt.Errorf("write temp: %w", err)
+			}
+			tmp.Close()
+
+			if err := exec.Command("sudo", "mkdir", "-p", filepath.Dir(dest)).Run(); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+			}
+			if err := exec.Command("sudo", "cp", tmpPath, dest).Run(); err != nil {
+				return fmt.Errorf("cp to %s: %w", dest, err)
+			}
+			if err := exec.Command("sudo", "chmod", fmt.Sprintf("%o", perm), dest).Run(); err != nil {
+				return fmt.Errorf("chmod %s: %w", dest, err)
+			}
+			return nil
+		},
 	}
 	if err := extractor.Extract(version.Version); err != nil {
 		slog.Warn("asset extraction failed", "err", err)

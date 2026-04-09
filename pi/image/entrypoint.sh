@@ -70,8 +70,10 @@ info "Cross-compiling digitsd for aarch64..."
 mkdir -p /digits/tools/build
 cd /digits/pi/digitsd
 
-# Generate embedded assets (tones, scripts, configs) before building
-make embed
+# Verify embedded assets exist (must be generated on host via 'make embed')
+if [[ ! -d internal/assets/embed ]]; then
+    die "Embed directory not found. Run 'make embed' in pi/digitsd/ before building the image."
+fi
 
 export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig"
 export CC=aarch64-linux-gnu-gcc

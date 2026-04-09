@@ -17,12 +17,17 @@ var permOverrides = []struct {
 	{"rootfs/usr/local/bin/", 0755},
 }
 
+// WriteFunc writes data to dest with the given permissions.
+// For rootfs files this must handle privilege escalation (e.g., sudo).
+type WriteFunc func(data []byte, dest string, perm os.FileMode) error
+
 type Extractor struct {
-	FS         fs.FS
-	RootDir    string
-	DataDir    string
-	MarkerPath string
-	Remount    func(rw bool) error
+	FS             fs.FS
+	RootDir        string
+	DataDir        string
+	MarkerPath     string
+	Remount        func(rw bool) error
+	RootfsWriteFile WriteFunc // privileged writer for rootfs files (nil = use os.WriteFile)
 }
 
 func (e *Extractor) Extract(currentVersion string) error {
@@ -43,9 +48,13 @@ func (e *Extractor) Extract(currentVersion string) error {
 		if err := e.Remount(true); err != nil {
 			return fmt.Errorf("remount rw: %w", err)
 		}
+		rootfsWriter := e.RootfsWriteFile
+		if rootfsWriter == nil {
+			rootfsWriter = defaultWriteFile
+		}
 		for _, f := range rootfsFiles {
 			dest := filepath.Join(e.RootDir, f.relPath)
-			if err := e.writeFile(f, dest); err != nil {
+			if err := e.writeFileWith(f, dest, rootfsWriter); err != nil {
 				e.Remount(false)
 				return fmt.Errorf("write rootfs %s: %w", f.relPath, err)
 			}
@@ -62,7 +71,7 @@ func (e *Extractor) Extract(currentVersion string) error {
 
 	for _, f := range dataFiles {
 		dest := filepath.Join(e.DataDir, f.relPath)
-		if err := e.writeFile(f, dest); err != nil {
+		if err := e.writeFileWith(f, dest, defaultWriteFile); err != nil {
 			return fmt.Errorf("write data %s: %w", f.relPath, err)
 		}
 	}
@@ -114,15 +123,19 @@ func (e *Extractor) collectFiles(prefix string) ([]embeddedFile, error) {
 	return files, nil
 }
 
-func (e *Extractor) writeFile(f embeddedFile, dest string) error {
+func defaultWriteFile(data []byte, dest string, perm os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(dest, data, perm)
+}
+
+func (e *Extractor) writeFileWith(f embeddedFile, dest string, writeFn WriteFunc) error {
 	data, err := fs.ReadFile(e.FS, f.embedPath)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(dest, data, f.perm); err != nil {
+	if err := writeFn(data, dest, f.perm); err != nil {
 		return err
 	}
 	log.Printf("assets: wrote %s (%d bytes, %o)", dest, len(data), f.perm)
