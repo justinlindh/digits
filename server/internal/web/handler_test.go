@@ -347,8 +347,8 @@ func TestPhoneRestartOnline(t *testing.T) {
 	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
 	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
@@ -387,8 +387,8 @@ func TestPhoneRestartOffline(t *testing.T) {
 	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
 	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	form := url.Values{"mode": {"service"}}
@@ -411,8 +411,8 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
 	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
@@ -438,8 +438,8 @@ func TestPhoneOnlineStatus(t *testing.T) {
 	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
 	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	req := httptest.NewRequest("GET", "/phones/3140001/online", nil)
