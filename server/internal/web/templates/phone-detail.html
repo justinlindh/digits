@@ -401,5 +401,153 @@
     </div>
 
   </div>
+
+  {{if .Online}}
+  <!-- Device restart controls -->
+  <div class="mt-6 bg-[#161b22] border border-[#21262d] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#21262d]">
+      <h2 class="text-sm font-medium text-[#e6edf3]">Device Controls</h2>
+    </div>
+    <div class="p-4">
+      <div class="flex flex-wrap gap-3">
+        <!-- Restart Service button -->
+        <div id="restart-service-wrap">
+          <button type="button" id="restart-service-btn" onclick="showRestartConfirm('service')"
+                  class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+            Restart Service
+          </button>
+          <div id="restart-service-confirm" class="hidden flex items-center gap-2 mt-2">
+            <span class="text-sm text-[#d29922]">Restart digitsd service?</span>
+            <button type="button" onclick="doRestart('service')"
+                    class="px-3 py-1 bg-[#d29922] hover:bg-[#e3b341] text-[#0d1117] text-xs font-medium rounded transition-colors">
+              Confirm
+            </button>
+            <button type="button" onclick="cancelRestartConfirm('service')"
+                    class="px-3 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#8b949e] text-xs rounded transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <!-- Reboot Device button -->
+        <div id="restart-reboot-wrap">
+          <button type="button" id="restart-reboot-btn" onclick="showRestartConfirm('reboot')"
+                  class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+            Reboot Device
+          </button>
+          <div id="restart-reboot-confirm" class="hidden flex items-center gap-2 mt-2">
+            <span class="text-sm text-[#d29922]">Reboot the entire device?</span>
+            <button type="button" onclick="doRestart('reboot')"
+                    class="px-3 py-1 bg-[#da3633] hover:bg-[#f85149] text-white text-xs font-medium rounded transition-colors">
+              Confirm
+            </button>
+            <button type="button" onclick="cancelRestartConfirm('reboot')"
+                    class="px-3 py-1 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#8b949e] text-xs rounded transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Restart progress indicator -->
+      <div id="restart-progress" class="hidden mt-3">
+        <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
+          <div id="restart-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
+          <span id="restart-status" class="text-sm text-[#c9d1d9]">Sending command...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  var restartPollTimer = null;
+
+  function showRestartConfirm(mode) {
+    document.getElementById('restart-' + mode + '-btn').classList.add('hidden');
+    document.getElementById('restart-' + mode + '-confirm').classList.remove('hidden');
+  }
+
+  function cancelRestartConfirm(mode) {
+    document.getElementById('restart-' + mode + '-btn').classList.remove('hidden');
+    document.getElementById('restart-' + mode + '-confirm').classList.add('hidden');
+  }
+
+  function doRestart(mode) {
+    // Hide both button groups, show progress
+    document.getElementById('restart-service-wrap').querySelector('button').disabled = true;
+    document.getElementById('restart-reboot-wrap').querySelector('button').disabled = true;
+    document.getElementById('restart-' + mode + '-confirm').classList.add('hidden');
+    document.getElementById('restart-' + mode + '-btn').classList.add('hidden');
+    var progress = document.getElementById('restart-progress');
+    var status = document.getElementById('restart-status');
+    progress.classList.remove('hidden');
+    status.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
+
+    var body = new URLSearchParams({mode: mode});
+    fetch('/phones/' + phoneNumber + '/restart', {
+      method: 'POST',
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showRestartResult('failed', 'Failed: ' + data.error);
+        return;
+      }
+      var maxAttempts = mode === 'reboot' ? 90 : 15;
+      status.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
+      pollOnline(maxAttempts);
+    })
+    .catch(function(err) {
+      showRestartResult('failed', 'Network error: ' + err.message);
+    });
+  }
+
+  function pollOnline(maxAttempts) {
+    if (restartPollTimer) clearInterval(restartPollTimer);
+    var attempts = 0;
+    var sawOffline = false;
+    restartPollTimer = setInterval(function() {
+      attempts++;
+      if (attempts > maxAttempts) {
+        clearInterval(restartPollTimer);
+        showRestartResult('failed', 'Timed out waiting for device to come back online');
+        return;
+      }
+      fetch('/phones/' + phoneNumber + '/online')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (!data.online) {
+          sawOffline = true;
+          document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...';
+        } else if (sawOffline) {
+          clearInterval(restartPollTimer);
+          showRestartResult('success', 'Device is back online');
+          setTimeout(function() { location.reload(); }, 1500);
+        }
+      })
+      .catch(function() {});
+    }, 1000);
+  }
+
+  function showRestartResult(type, message) {
+    var spinner = document.getElementById('restart-spinner');
+    var status = document.getElementById('restart-status');
+    spinner.classList.add('hidden');
+    status.textContent = message;
+    if (type === 'success') {
+      status.className = 'text-sm text-[#3fb950]';
+    } else {
+      status.className = 'text-sm text-[#f85149]';
+      // Re-enable buttons on failure
+      document.getElementById('restart-service-btn').classList.remove('hidden');
+      document.getElementById('restart-service-btn').disabled = false;
+      document.getElementById('restart-reboot-btn').classList.remove('hidden');
+      document.getElementById('restart-reboot-btn').disabled = false;
+    }
+  }
+  </script>
+  {{end}}
 </div>
 {{end}}
