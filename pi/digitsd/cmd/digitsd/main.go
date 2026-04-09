@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -33,6 +34,11 @@ import (
 // iceRestartTimeout is how long to wait for an ICE restart to succeed
 // before giving up and hanging up the call.
 const iceRestartTimeout = 15 * time.Second
+
+// pairingRefreshInterval is how often an unpaired device reconnects to
+// obtain a fresh pairing code. Must be shorter than the server-side
+// CodeTTL (10 min) so the code is refreshed before it expires.
+const pairingRefreshInterval = 9 * time.Minute
 
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
@@ -69,7 +75,8 @@ type daemonCallbacks struct {
 	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
-	pairingCode      string   // current pairing code from server
+	pairingCode          string    // current pairing code from server
+	pairingCodeReceivedAt time.Time // when the current pairing code was received
 	callPeer         string   // number of the remote party during an active call
 	isCaller         bool     // true if we initiated the current call
 	isRestartingICE  bool     // true while an ICE restart is in progress
@@ -1099,6 +1106,13 @@ func main() {
 		}
 	}()
 
+	// Pairing code refresh: reconnect before the code expires so the
+	// server issues a fresh one. Timer starts when we receive a code.
+	pairingRefresh := time.NewTimer(0)
+	if !pairingRefresh.Stop() {
+		<-pairingRefresh.C
+	}
+
 	// OS signal handling
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -1123,7 +1137,19 @@ func main() {
 				for _, ch := range cb.pairingCode {
 					mixer.PlayOnce("spoken_" + string(ch))
 				}
-				mixer.PlayOnce("pairing_expires")
+				minutesLeft := int(math.Ceil(pairingRefreshInterval.Minutes() - time.Since(cb.pairingCodeReceivedAt).Minutes()))
+				if minutesLeft < 1 {
+					minutesLeft = 1
+				} else if minutesLeft > 10 {
+					minutesLeft = 10
+				}
+				unitClip := "pairing_expires_minutes"
+				if minutesLeft == 1 {
+					unitClip = "pairing_expires_minute"
+				}
+				mixer.PlayOnce("pairing_expires_prefix")
+				mixer.PlayOnce(fmt.Sprintf("spoken_%d", minutesLeft))
+				mixer.PlayOnce(unitClip)
 				slog.Info("phone: playing pairing code via voice", "code", cb.pairingCode)
 				sp.LED("ON")
 				continue // skip normal controller handling
@@ -1333,9 +1359,12 @@ func main() {
 
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
+				cb.pairingCodeReceivedAt = time.Now()
 				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode)
+				pairingRefresh.Reset(pairingRefreshInterval)
 
 			case sigclient.TypePaired:
+				pairingRefresh.Stop()
 				if msg.DeviceToken != "" && cb.cfg != nil {
 					cb.cfg.DeviceToken = msg.DeviceToken
 					cb.cfg.PairingCode = ""
@@ -1394,6 +1423,12 @@ func main() {
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
+			}
+
+		case <-pairingRefresh.C:
+			if !cb.paired.Load() {
+				slog.Info("signal: pairing code expiring, reconnecting for fresh code")
+				_ = sig.Close()
 			}
 
 		case <-sig.Done():
