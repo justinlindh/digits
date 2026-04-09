@@ -29,3 +29,6 @@ dtoverlay=wm8960-soundcard
 
 # Misc
 dtparam=pwr_led_trigger=none
+
+# Hardware watchdog (15s timeout, reboots if digitsd hangs)
+dtoverlay=watchdog
