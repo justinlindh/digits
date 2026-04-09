@@ -69,6 +69,10 @@ fi
 info "Cross-compiling digitsd for aarch64..."
 mkdir -p /digits/tools/build
 cd /digits/pi/digitsd
+
+# Generate embedded assets (tones, scripts, configs) before building
+make embed
+
 export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig"
 export CC=aarch64-linux-gnu-gcc
 export CGO_ENABLED=1
