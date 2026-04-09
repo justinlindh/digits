@@ -35,7 +35,13 @@
                  pattern="\d{7}"
                  maxlength="7"
                  required
+                 hx-get="/phones/check-number"
+                 hx-trigger="keyup changed delay:200ms"
+                 hx-target="next .number-check"
+                 hx-swap="innerHTML"
+                 hx-params="number"
                  class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
+          <span class="number-check mt-1 block h-4" aria-live="polite"></span>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Name</label>
@@ -71,6 +77,11 @@
     <h2 class="text-sm font-medium text-[#e6edf3]">Your Lines</h2>
     <span class="text-xs text-[#8b949e]">{{len .Lines}} total</span>
   </div>
+  {{if .Error}}
+  <div class="mx-4 mt-3 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
+    {{.Error}}
+  </div>
+  {{end}}
   {{if .Lines}}
   <!-- Desktop table -->
   <div class="hidden md:block">
@@ -155,12 +166,26 @@
 
 {{define "phone-edit-row"}}
 <tr>
-  <td class="px-4 py-2 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
-  <td class="px-4 py-2" colspan="3">
+  <td class="px-4 py-2" colspan="2">
     <form hx-post="/phones/{{.Line.Number}}/edit"
           hx-target="#phones-table"
           hx-swap="outerHTML"
-          class="flex gap-2">
+          class="flex items-start gap-2">
+      <div>
+        <input type="text"
+               name="number"
+               value="{{.Line.Number}}"
+               pattern="\d{7}"
+               maxlength="7"
+               required
+               hx-get="/phones/check-number?exclude={{.Line.Number}}"
+               hx-trigger="keyup changed delay:200ms"
+               hx-target="next .number-check"
+               hx-swap="innerHTML"
+               hx-params="number"
+               class="bg-[#0d1117] border border-[#58a6ff] rounded px-2 py-1 text-sm text-[#e6edf3] font-mono focus:outline-none w-28">
+        <span class="number-check block h-4" aria-live="polite"></span>
+      </div>
       <input type="text"
              name="name"
              value="{{.Line.Name}}"
@@ -169,6 +194,6 @@
       <a href="/phones" class="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#2d333b] text-[#c9d1d9] rounded transition-colors">Cancel</a>
     </form>
   </td>
-  <td></td>
+  <td colspan="3"></td>
 </tr>
 {{end}}
