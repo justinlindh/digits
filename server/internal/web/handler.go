@@ -473,7 +473,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	number := strings.TrimSpace(r.FormValue("number"))
+	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	// Get user's household to associate the new line
@@ -517,7 +517,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
-	number := strings.TrimSpace(r.FormValue("number"))
+	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	if err := line.ValidateNumber(number); err != nil {
