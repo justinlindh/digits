@@ -63,7 +63,7 @@ The v1 and original v2 design used a Raspberry Pi Pico H module plugged into hea
 | +3.3V | AMS1117-3.3 (U5) output | 3.3V | RP2040 IOVDD, DVDD, USB_VDD, ADC_AVDD; W25Q16 flash (U4) VCC |
 | +1.1V | RP2040 internal VREG (U3) | 1.1V | RP2040 digital core (VREG_VOUT) |
 
-The Pico H module previously provided its own 3.3V regulation from VSYS. With the bare RP2040, a dedicated AMS1117-3.3 LDO (U5) converts +5V to +3.3V for all IO, USB, and flash power. The RP2040's internal voltage regulator converts +5V (VREG_VIN) to 1.1V for the digital core, with an external 10uH inductor (L2) on the SMPS switching pin.
+5V → AMS1117-3.3 (U5, LDO) → 3.3V for IO/USB/flash (no inductor -- LDO not switching). 3.3V → RP2040 VREG_IN → internal LDO → 1.1V DVDD (fully integrated, no external inductor).
 
 **Note:** The 40-pin Pico header footprint is removed from the board. The RP2040 QFN-56 package (7x7mm) goes where the Pico module used to sit, freeing significant board area and reducing body-side height.
 
@@ -121,9 +121,7 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
   |
   +---> U5 AMS1117-3.3 ---> +3.3V rail (IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC)
   |
-  +---> RP2040 VREG_VIN --[internal SMPS]--> VREG_VOUT (1.1V core)
-                                |
-                               L2 (10uH, SMPS switching pin)
+  +---> RP2040 VREG_VIN --[internal LDO]--> VREG_VOUT (1.1V core)
 ```
 
 ### Components
@@ -131,10 +129,9 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 | Ref | Part | Value | Package | JLCPCB # | Purpose |
 |-----|------|-------|---------|-----------|---------|
 | U3 | RP2040 | -- | QFN-56 (7x7mm) | C2040 | Microcontroller |
-| U4 | W25Q16JVSSIQ | 2MB | SOIC-8 | C131257 | QSPI flash (program storage) |
+| U4 | W25Q16JVSSIQ | 2MB | SOIC-8 | C131025 | QSPI flash (program storage) |
 | U5 | AMS1117-3.3 | 3.3V LDO | SOT-223 | C6186 | 5V to 3.3V for IO/USB/flash |
 | Y1 | 12MHz crystal | 12MHz | 3225 (3.2x2.5mm) | C9002 | USB and PLL clock source |
-| L2 | Inductor | 10uH | 0603 (1608 metric) | C84280 | RP2040 SMPS switching inductor |
 | C5, C6 | Ceramic cap | 22pF | 0402 | C1555 | Crystal load capacitors |
 | C7, C8 | Ceramic cap | 1nF | 0402 | C52923 | USB D+/D- filtering |
 | C9, C10, C11 | Ceramic cap | 10uF 10V | 0402 | C15525 | VREG_VIN, VREG_VOUT, LDO output bulk |
@@ -147,7 +144,6 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 **Power pins:**
 - VREG_VIN (pin 44) -> +5V
 - VREG_VOUT (pin 45) -> 1.1V core (to digital core power pins via trace)
-- SMPS switching pin (pin 46, VREG_GPIO) -> L2 (10uH) to VREG_VOUT
 - IOVDD (pins 1, 10, 22, 33, 42, 49) -> +3.3V (each with nearby 100nF bypass cap)
 - DVDD (pin 23, 50) -> +3.3V (with 100nF bypass)
 - USB_VDD (pin 48) -> +3.3V (with 100nF bypass)
@@ -208,7 +204,7 @@ Exposed SMD pads (no cost, zero BOM):
 ## JLCPCB Assembly Strategy
 
 ### SMT-assembled (top side, JLCPCB does this)
-U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), D1, L1, L2, Y1, C1-C16, R1-R5
+U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), D1, L1, Y1, C1-C16, R1-R5
 
 ### Hand-solder after delivery
 J1 (B.Cu side), J2, J3, J4, J6, J7, J8, J9, J10, SW1
@@ -218,7 +214,7 @@ J1 (B.Cu side), J2, J3, J4, J6, J7, J8, J9, J10, SW1
 - **Layers:** 2
 - **Generate:** Gerbers, BOM CSV (JLCPCB format), pick-and-place CPL file
 - **SMD side:** Top only
-- Extended parts fee applies to: U2 (DRV8871), U3 (RP2040), U4 (W25Q16), possibly L1 and C1/C2
+- Extended parts fee applies to: U2 (DRV8871), U3 (RP2040), U4 (W25Q16), possibly L1, C1/C2
 - The RP2040 (QFN-56) requires fine-pitch placement -- use JLCPCB standard assembly (not economic) for reliable QFN soldering
 
 ---
@@ -270,9 +266,9 @@ J2 (SWD debug header) is unchanged. SWDIO and SWCLK connect to the Pi's GPIO22/G
 | Flash | Included on Pico | W25Q16 (~$0.30) |
 | Crystal | Included on Pico | 12MHz 3225 (~$0.10) |
 | 3.3V regulation | Included on Pico | AMS1117-3.3 (~$0.15) |
-| Passives | None | ~$0.50 total |
+| Passives | None | ~$0.40 total |
 | Assembly | Hand-solder headers | JLCPCB SMT (included in assembly fee) |
-| **Total** | **~$5 + hand labor** | **~$1.75 + assembly fee** |
+| **Total** | **~$5 + hand labor** | **~$1.65 + assembly fee** |
 
 ---
 
@@ -325,10 +321,9 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | R2 | Device:R | Resistor_SMD:R_2512_6332Metric | C160587 | [Link](https://jlcpcb.com/partdetail/C160587) | 32 ⚠️ |
 | C4 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | 13,893,007 |
 | U3 | MCU_RaspberryPi:RP2040 | Package_DFN_QFN:QFN-56-1EP_7x7mm_P0.4mm_EP3.2x3.2mm | C2040 | [Link](https://jlcpcb.com/partdetail/C2040) | Extended |
-| U4 | Memory_Flash:W25Q16JV | Package_SO:SOIC-8_3.9x4.9mm_P1.27mm | C131257 | [Link](https://jlcpcb.com/partdetail/C131257) | Extended |
+| U4 | Memory_Flash:W25Q16JV | Package_SO:SOIC-8_3.9x4.9mm_P1.27mm | C131025 | [Link](https://jlcpcb.com/partdetail/C131025) | Extended |
 | U5 | Regulator_Linear:AMS1117-3.3 | Package_TO_SOT_SMD:SOT-223-3_TabPin2 | C6186 | [Link](https://jlcpcb.com/partdetail/C6186) | Basic |
 | Y1 | Device:Crystal | Crystal_SMD_3225-4Pin_3.2x2.5mm | C9002 | [Link](https://jlcpcb.com/partdetail/C9002) | Basic |
-| L2 | Device:L | Inductor_SMD:L_0603_1608Metric | C84280 | [Link](https://jlcpcb.com/partdetail/C84280) | Extended |
 | C5,C6 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1555 | [Link](https://jlcpcb.com/partdetail/C1555) | Basic |
 | C7,C8 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | [Link](https://jlcpcb.com/partdetail/C52923) | Basic |
 | C9-C11 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
