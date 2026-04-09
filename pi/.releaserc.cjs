@@ -13,7 +13,7 @@ module.exports = {
         { scope: 'digitsd', type: 'fix', release: 'patch' },
         { scope: 'digitsd', type: 'perf', release: 'patch' },
         { scope: 'digitsd', breaking: true, release: 'major' },
-        { release: false },
+        { scope: '!(pi|digitsd)', release: false },
       ],
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
