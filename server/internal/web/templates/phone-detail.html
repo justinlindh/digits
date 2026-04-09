@@ -512,27 +512,30 @@
     if (restartPollTimer) clearInterval(restartPollTimer);
     var attempts = 0;
     var sawOffline = false;
-    restartPollTimer = setInterval(function() {
-      attempts++;
-      if (attempts > maxAttempts) {
-        clearInterval(restartPollTimer);
-        showRestartResult('failed', 'Timed out waiting for device to come back online');
-        return;
-      }
-      fetch('/phones/' + phoneNumber + '/online')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!data.online) {
-          sawOffline = true;
-          document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...';
-        } else if (sawOffline) {
+    // Give the device a moment to disconnect before we start polling
+    setTimeout(function() {
+      restartPollTimer = setInterval(function() {
+        attempts++;
+        if (attempts > maxAttempts) {
           clearInterval(restartPollTimer);
-          showRestartResult('success', 'Device is back online');
-          setTimeout(function() { location.reload(); }, 1500);
+          showRestartResult('failed', 'Timed out waiting for device to come back online');
+          return;
         }
-      })
-      .catch(function() {});
-    }, 1000);
+        fetch('/phones/' + phoneNumber + '/online')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data.online) {
+            sawOffline = true;
+            document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...';
+          } else if (sawOffline) {
+            clearInterval(restartPollTimer);
+            showRestartResult('success', 'Device is back online');
+            setTimeout(function() { location.reload(); }, 1500);
+          }
+        })
+        .catch(function() {});
+      }, 1000);
+    }, 2000);
   }
 
   function showRestartResult(resultType, message) {
@@ -544,10 +547,7 @@
       status.className = 'text-sm text-[#3fb950]';
     } else {
       status.className = 'text-sm text-[#f85149]';
-      // Show buttons again on failure
-      document.getElementById('restart-progress').classList.add('hidden');
-      document.getElementById('restart-buttons').classList.remove('hidden');
-      restartMode = null;
+      // Keep progress visible so user sees the error
     }
   }
   </script>
