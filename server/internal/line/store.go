@@ -13,6 +13,9 @@ import (
 // ErrNotFound is returned when a line cannot be found.
 var ErrNotFound = errors.New("line not found")
 
+// ErrNumberTaken is returned when a line number is already in use.
+var ErrNumberTaken = errors.New("line number is already in use")
+
 var numberRegex = regexp.MustCompile(`^\d{7}$`)
 
 // ValidateNumber checks that num is exactly 7 digits.
@@ -44,9 +47,18 @@ func NewStore(database *db.Database) *Store {
 }
 
 // Add inserts a new line for the given household and returns it.
+// Returns ErrNumberTaken if the number is already in use.
 func (s *Store) Add(number, name, householdID string) (*Line, error) {
+	taken, err := s.NumberExists(number)
+	if err != nil {
+		return nil, fmt.Errorf("add line: %w", err)
+	}
+	if taken {
+		return nil, ErrNumberTaken
+	}
+
 	l := &Line{}
-	err := s.db.QueryRow(
+	err = s.db.QueryRow(
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, number, name, household_id, created_at, updated_at`,
@@ -138,7 +150,16 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 }
 
 // Update modifies the number and name of the line with the given ID.
+// Returns ErrNumberTaken if the number is already in use by another line.
 func (s *Store) Update(id int64, number, name string) error {
+	taken, err := s.NumberExistsExcluding(number, id)
+	if err != nil {
+		return fmt.Errorf("update line: %w", err)
+	}
+	if taken {
+		return ErrNumberTaken
+	}
+
 	res, err := s.db.Exec(
 		`UPDATE lines SET number = $1, name = $2, updated_at = NOW() WHERE id = $3`,
 		number, name, id,
