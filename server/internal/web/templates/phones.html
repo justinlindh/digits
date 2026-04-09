@@ -41,7 +41,7 @@
                  hx-swap="innerHTML"
                  hx-params="number"
                  class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
-          <span class="number-check mt-1 block h-4"></span>
+          <span class="number-check mt-1 block h-4" aria-live="polite"></span>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Name</label>
@@ -178,13 +178,14 @@
                value="{{.Line.Number}}"
                pattern="\d{7}"
                maxlength="7"
+               required
                hx-get="/phones/check-number?exclude={{.Line.Number}}"
                hx-trigger="keyup changed delay:200ms"
                hx-target="next .number-check"
                hx-swap="innerHTML"
                hx-params="number"
                class="bg-[#0d1117] border border-[#58a6ff] rounded px-2 py-1 text-sm text-[#e6edf3] font-mono focus:outline-none w-28">
-        <span class="number-check block h-4"></span>
+        <span class="number-check block h-4" aria-live="polite"></span>
       </div>
       <input type="text"
              name="name"
