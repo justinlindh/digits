@@ -20,13 +20,14 @@ DATA_MNT="/tmp/data-check"
 COUNTER_FILE="digits/boot-counter"
 THRESHOLD=3
 
-RECOVERY_FLAG="digits/recovery-mode"
+RECOVERY_FLAG="/run/digits-recovery-mode"
 
 # Mount data partition
 mkdir -p "$DATA_MNT"
 mount -t ext4 "$DATA_DEV" "$DATA_MNT" 2>/dev/null
 if [ $? -ne 0 ]; then
-    echo "boot-check: cannot mount data partition, continuing boot"
+    echo "boot-check: cannot mount data partition, flagging for recovery mode"
+    touch "$RECOVERY_FLAG"
     exit 0
 fi
 
@@ -52,7 +53,8 @@ fi
 
 # Threshold reached -- flag for recovery mode
 echo "boot-check: threshold reached, flagging for recovery mode"
-touch "$DATA_MNT/$RECOVERY_FLAG"
+touch "$RECOVERY_FLAG"
+touch "$DATA_MNT/digits/recovery-mode"
 sync
 umount "$DATA_MNT"
 exit 0

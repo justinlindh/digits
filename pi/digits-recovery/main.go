@@ -198,6 +198,7 @@ dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m
 address=/#/192.168.4.1
 no-resolv
 domain-needed
+dhcp-leasefile=/data/dnsmasq-recovery.leases
 `), 0644)
 
 	// Start hostapd
