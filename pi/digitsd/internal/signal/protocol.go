@@ -41,6 +41,9 @@ const (
 	// Carries a new SDP offer with rotated ICE credentials.
 	TypeICERestart = "ice_restart"
 
+	// TypeFactoryReset is sent by the server to trigger a factory reset.
+	TypeFactoryReset = "factory_reset"
+
 	// TypeRestart is sent by the server to restart the service or reboot the device.
 	TypeRestart = "restart"
 )

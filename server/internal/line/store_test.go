@@ -1,7 +1,6 @@
 package line
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -140,13 +139,10 @@ func TestDuplicateNumberRejection(t *testing.T) {
 		t.Fatalf("Add first: %v", err)
 	}
 
-	// Adding the same number should fail with ErrNumberTaken
+	// Adding the same number should fail due to UNIQUE constraint
 	_, err := s.Add("9990001", "Duplicate", householdID)
 	if err == nil {
-		t.Fatal("expected error for duplicate number, got nil")
-	}
-	if !errors.Is(err, ErrNumberTaken) {
-		t.Errorf("expected ErrNumberTaken, got %v", err)
+		t.Error("expected error for duplicate number, got nil")
 	}
 }
 
@@ -215,35 +211,6 @@ func TestDelete(t *testing.T) {
 	// Deleting again should fail
 	if err := s.Delete(l.ID); err == nil {
 		t.Error("expected error deleting non-existent line, got nil")
-	}
-}
-
-func TestUpdateDuplicateNumberRejection(t *testing.T) {
-	s, database := testStore(t)
-	householdID := createTestHousehold(t, database)
-
-	l1, err := s.Add("4440001", "Line One", householdID)
-	if err != nil {
-		t.Fatalf("Add first: %v", err)
-	}
-	_, err = s.Add("4440002", "Line Two", householdID)
-	if err != nil {
-		t.Fatalf("Add second: %v", err)
-	}
-
-	// Updating line one's number to line two's number should fail
-	err = s.Update(l1.ID, "4440002", "Line One")
-	if err == nil {
-		t.Fatal("expected error for duplicate number on update, got nil")
-	}
-	if !errors.Is(err, ErrNumberTaken) {
-		t.Errorf("expected ErrNumberTaken, got %v", err)
-	}
-
-	// Updating a line to keep its own number should succeed
-	err = s.Update(l1.ID, "4440001", "Line One Renamed")
-	if err != nil {
-		t.Fatalf("updating line to keep its own number should succeed: %v", err)
 	}
 }
 

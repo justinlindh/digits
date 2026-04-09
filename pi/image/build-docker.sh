@@ -31,6 +31,10 @@ for arg in "$@"; do
     fi
 done
 
+# Generate embedded assets on the host (avoids root-owned files from Docker)
+info "Generating embedded assets..."
+make -C "$REPO_DIR/pi/digitsd" embed
+
 # Build the Docker image
 info "Building digits-image-builder Docker image..."
 docker build -t digits-image-builder "$SCRIPT_DIR"

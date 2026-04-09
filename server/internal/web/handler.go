@@ -28,8 +28,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
-const msgNumberTaken = "This number is already in use"
-
 //go:embed templates/*.html
 var templateFS embed.FS
 
@@ -202,7 +200,6 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
 	protected.HandleFunc("POST /phones", h.handlePhonesPost)
 	protected.Handle("POST /phones/pair", h.pairingLimiter.Middleware(http.HandlerFunc(h.handlePhonesPairPost)))
-	protected.HandleFunc("GET /phones/check-number", h.handleCheckNumber)
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
@@ -210,6 +207,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
+	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
 	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
@@ -501,68 +499,20 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.lineStore.Add(number, name, householdID)
+	data := h.buildLinesData(r, "")
 	if err != nil {
-		errMsg := "Failed to add line"
-		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = msgNumberTaken
-		}
-		data := h.buildLinesData(r, errMsg)
-
-		if isHTMX(r) {
-			renderWith(w, h.tmplPhones, "phones-table", data)
-			return
-		}
-		renderWith(w, h.tmplPhones, "layout.html", data)
-		return
+		data = h.buildLinesData(r, err.Error())
 	}
 
 	if isHTMX(r) {
-		data := h.buildLinesData(r, "")
 		renderWith(w, h.tmplPhones, "phones-table", data)
 		return
 	}
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
-}
-
-func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
-	number := strings.TrimSpace(r.URL.Query().Get("number"))
-	exclude := strings.TrimSpace(r.URL.Query().Get("exclude"))
-
-	// Too short to validate yet, return empty response
-	if len(number) < 7 {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	xIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>`
-	checkIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
-
-	if err := line.ValidateNumber(number); err != nil {
-		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s %s</span>`, xIcon, template.HTMLEscapeString(err.Error()))
-		return
-	}
-
-	var taken bool
-	var err error
-
-	if exclude != "" {
-		taken, err = h.lineStore.NumberExistsExcludingNumber(number, exclude)
-	} else {
-		taken, err = h.lineStore.NumberExists(number)
-	}
-
 	if err != nil {
-		slog.Error("check number failed", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
-
-	if taken {
-		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s Already in use</span>`, xIcon)
-		return
-	}
-
-	_, _ = fmt.Fprintf(w, `<span class="text-[#3fb950] text-xs">%s Available</span>`, checkIcon)
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
@@ -608,12 +558,8 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 
 	token, hwID, err := h.pairingStore.ClaimDevice(code, number, name, householdID)
 	if err != nil {
-		pairErr := err.Error()
-		if errors.Is(err, line.ErrNumberTaken) {
-			pairErr = msgNumberTaken
-		}
 		data := h.buildLinesData(r, "")
-		data.PairError = pairErr
+		data.PairError = err.Error()
 		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
@@ -736,7 +682,6 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	newNumber := strings.TrimSpace(r.FormValue("number"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -744,31 +689,8 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updateNumber := number
-	if newNumber != "" {
-		if err := line.ValidateNumber(newNumber); err != nil {
-			data := h.buildLinesData(r, err.Error())
-			if isHTMX(r) {
-				renderWith(w, h.tmplPhones, "phones-table", data)
-				return
-			}
-			renderWith(w, h.tmplPhones, "layout.html", data)
-			return
-		}
-		updateNumber = newNumber
-	}
-
-	if err := h.lineStore.Update(ln.ID, updateNumber, name); err != nil {
-		errMsg := "Failed to update line"
-		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = msgNumberTaken
-		}
-		data := h.buildLinesData(r, errMsg)
-		if isHTMX(r) {
-			renderWith(w, h.tmplPhones, "phones-table", data)
-			return
-		}
-		renderWith(w, h.tmplPhones, "layout.html", data)
+	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -836,6 +758,36 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		slog.Error("update status: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+
+	h.hub.ClearUpdateStatus(number)
+
+	msg := &signaling.Message{
+		Type: signaling.TypeFactoryReset,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("factory reset trigger failed", "number", number, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("factory reset triggered", "number", number)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
