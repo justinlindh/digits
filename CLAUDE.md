@@ -46,6 +46,20 @@ PICO_SDK_PATH=/path/to/pico-sdk ./scripts/build.sh
 ./scripts/flash.sh  # copies UF2 to mounted Pico
 ```
 
+## Linting
+
+golangci-lint v2 with `standard` defaults. Config is in `.golangci.yml` at repo root.
+
+Run manually (from each module directory):
+```
+golangci-lint run ./...
+```
+
+Pre-commit hook (opt in once per checkout):
+```
+git config core.hooksPath .githooks
+```
+
 ## Production deployment
 
 The server runs on the GPU box via Docker Compose. All commands from `server/`:

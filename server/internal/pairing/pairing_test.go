@@ -21,12 +21,12 @@ func setupStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	// Clean up test data
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM devices WHERE hardware_id LIKE 'test-%'")
-		database.DB.Exec("DELETE FROM lines WHERE number LIKE '555%'")
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id LIKE 'test-%'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number LIKE '555%'")
 	})
 
 	return NewStore(database.DB)
@@ -151,7 +151,7 @@ func TestCleanupExpiredCodes(t *testing.T) {
 		t.Fatalf("insert expired device: %v", err)
 	}
 	t.Cleanup(func() {
-		s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
+		_, _ = s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
 	})
 
 	n, err := s.CleanupExpired()
@@ -177,7 +177,7 @@ func TestRegenerateCode(t *testing.T) {
 	s := setupStore(t)
 	hwID := "test-hw-regen-001"
 	t.Cleanup(func() {
-		s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
+		_, _ = s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
 	})
 
 	// Generate initial code

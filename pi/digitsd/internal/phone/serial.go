@@ -31,7 +31,7 @@ func OpenSerial(device string, baud int, logger *slog.Logger) (*SerialPort, erro
 		return nil, fmt.Errorf("serial open %s: %w", device, err)
 	}
 	if err := port.SetReadTimeout(100 * time.Millisecond); err != nil {
-		port.Close()
+		_ = port.Close()
 		return nil, fmt.Errorf("serial set timeout: %w", err)
 	}
 
@@ -78,7 +78,9 @@ func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.logger.Info("TX", "cmd", cmd)
-	sp.port.Write([]byte(cmd + "\r\n"))
+	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
+		sp.logger.Warn("serial: write failed", "cmd", cmd, "error", err)
+	}
 }
 
 // Ping sends PING and expects PONG.

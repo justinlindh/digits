@@ -30,13 +30,13 @@ func TestCreateAdminAndLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	store := NewAuthStore(db)
 
 	t.Cleanup(func() {
-		db.DB.Exec("DELETE FROM admin_sessions")
-		db.DB.Exec("DELETE FROM admin_users WHERE username = 'testadmin'")
+		_, _ = db.DB.Exec("DELETE FROM admin_sessions")
+		_, _ = db.DB.Exec("DELETE FROM admin_users WHERE username = 'testadmin'")
 	})
 
 	hash, _ := HashSecret("password123")

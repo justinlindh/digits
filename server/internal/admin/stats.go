@@ -41,7 +41,7 @@ func (c *StatsClient) Fetch() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch stats: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("stats API returned %d", resp.StatusCode)

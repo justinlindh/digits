@@ -104,7 +104,9 @@ func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(idx)
+		if err := json.NewEncoder(w).Encode(idx); err != nil {
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
 	}
 }
 
@@ -127,7 +129,7 @@ func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
@@ -205,7 +207,7 @@ func (g *GitHubReleases) fetchSHA256(url string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return ""

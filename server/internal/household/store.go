@@ -39,7 +39,7 @@ func (s *Store) Create(name, ownerUserID string) (*Household, error) {
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	h := &Household{}
 	err = tx.QueryRow(
@@ -93,7 +93,7 @@ func (s *Store) GetForUser(userID string) ([]*Household, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get households for user: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var households []*Household
 	for rows.Next() {
@@ -146,7 +146,7 @@ func (s *Store) GetMembers(householdID string) ([]Member, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var members []Member
 	for rows.Next() {
 		var m Member

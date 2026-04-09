@@ -28,6 +28,22 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 	}
 }
 
+func TestHubGetReturnsNilForOffline(t *testing.T) {
+	hub := NewHub()
+	if hub.Get("3140099") != nil {
+		t.Fatal("expected nil for unregistered number")
+	}
+}
+
+func TestHubGetReturnsConnForOnline(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn)
+	if hub.Get("3140001") == nil {
+		t.Fatal("expected connection for registered number")
+	}
+}
+
 func TestRegisterHandlesAlreadyClosedSendChannel(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"

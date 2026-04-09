@@ -57,12 +57,16 @@ func main() {
 	// ICE candidate exchange
 	pc1.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c != nil {
-			pc2.AddICECandidate(c.ToJSON())
+			if err := pc2.AddICECandidate(c.ToJSON()); err != nil {
+				fmt.Printf("pc2 add ICE candidate: %v\n", err)
+			}
 		}
 	})
 	pc2.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c != nil {
-			pc1.AddICECandidate(c.ToJSON())
+			if err := pc1.AddICECandidate(c.ToJSON()); err != nil {
+				fmt.Printf("pc1 add ICE candidate: %v\n", err)
+			}
 		}
 	})
 
@@ -133,10 +137,12 @@ func main() {
 	start := time.Now()
 	frames := 0
 	for time.Since(start) < 5*time.Second {
-		track.WriteSample(media.Sample{
+		if err := track.WriteSample(media.Sample{
 			Data:     buf,
 			Duration: 20 * time.Millisecond,
-		})
+		}); err != nil {
+			fmt.Printf("write sample: %v\n", err)
+		}
 		frames++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -149,7 +155,11 @@ func main() {
 	fmt.Println("\n--- OS-level memory ---")
 	fmt.Printf("Check RSS with: ps -o rss= -p %d\n", 0) // placeholder
 
-	pc1.Close()
-	pc2.Close()
+	if err := pc1.Close(); err != nil {
+		fmt.Printf("pc1 close: %v\n", err)
+	}
+	if err := pc2.Close(); err != nil {
+		fmt.Printf("pc2 close: %v\n", err)
+	}
 	report("after cleanup")
 }
