@@ -93,6 +93,31 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 	return err
 }
 
+// ClearByNumber removes all active calls involving the given number and ends
+// them in the database. Used when a WebSocket disconnects unexpectedly.
+func (t *Tracker) ClearByNumber(number string) {
+	t.mu.Lock()
+	var toDelete []string
+	for key, c := range t.active {
+		if c.Caller == number || c.Callee == number {
+			toDelete = append(toDelete, key)
+		}
+	}
+	for _, key := range toDelete {
+		delete(t.active, key)
+	}
+	t.mu.Unlock()
+
+	// End any open calls in the database
+	t.db.DB.Exec(
+		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
+		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
+		 WHERE (caller = $1 OR callee = $1)
+		 AND status IN ('initiated', 'ringing', 'connected')`,
+		number,
+	)
+}
+
 func (t *Tracker) Busy(number string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
