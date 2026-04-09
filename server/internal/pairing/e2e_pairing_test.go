@@ -24,7 +24,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)
@@ -36,11 +36,11 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM devices WHERE hardware_id LIKE 'e2e-test-%'")
-		database.DB.Exec("DELETE FROM lines WHERE number IN ('5559876', '5559877')")
-		database.DB.Exec("DELETE FROM household_members WHERE user_id = $1", user.ID)
-		database.DB.Exec("DELETE FROM sessions WHERE user_id = $1", user.ID)
-		database.DB.Exec("DELETE FROM users WHERE id = $1", user.ID)
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id LIKE 'e2e-test-%'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('5559876', '5559877')")
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE user_id = $1", user.ID)
+		_, _ = database.DB.Exec("DELETE FROM sessions WHERE user_id = $1", user.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", user.ID)
 		// households cascade from members
 	})
 
@@ -50,7 +50,7 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("create household: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	// Step 1: Generate pairing code (simulates phone connecting via WebSocket)

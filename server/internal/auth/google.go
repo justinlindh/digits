@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 
 	"golang.org/x/oauth2"
@@ -76,7 +77,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to get user info", http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, "failed to read user info", http.StatusInternalServerError)
@@ -108,11 +109,15 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			// Link Google ID to existing account
-			g.store.LinkGoogleID(user.ID, info.ID)
+			if err := g.store.LinkGoogleID(user.ID, info.ID); err != nil {
+				log.Printf("auth: failed to link google ID for user %s: %v", user.ID, err)
+			}
 		}
 	}
 
-	g.store.UpdateLastLogin(user.ID)
+	if err := g.store.UpdateLastLogin(user.ID); err != nil {
+		log.Printf("auth: failed to update last login for user %s: %v", user.ID, err)
+	}
 
 	// Create session
 	sessionToken, _, err := g.store.CreateSession(user.ID, SessionTTL)

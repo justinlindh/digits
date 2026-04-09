@@ -32,7 +32,7 @@ func setupCallsTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.S
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
@@ -120,13 +120,13 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 
 	// Register cleanup
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM calls WHERE caller IN ($1, $2) OR callee IN ($1, $2)", phoneNumA, phoneNumB)
-		database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ($1, $2)", hwA, hwB)
-		database.DB.Exec("DELETE FROM lines WHERE number IN ($1, $2)", phoneNumA, phoneNumB)
-		database.DB.Exec("DELETE FROM household_members WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
-		database.DB.Exec("DELETE FROM households WHERE id IN ($1, $2)", hhA.ID, hhB.ID)
-		database.DB.Exec("DELETE FROM sessions WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
-		database.DB.Exec("DELETE FROM users WHERE id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller IN ($1, $2) OR callee IN ($1, $2)", phoneNumA, phoneNumB)
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ($1, $2)", hwA, hwB)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ($1, $2)", phoneNumA, phoneNumB)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id IN ($1, $2)", hhA.ID, hhB.ID)
+		_, _ = database.DB.Exec("DELETE FROM sessions WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id IN ($1, $2)", userA.ID, userB.ID)
 	})
 
 	// === Step 4: Insert call records via tracker ===
@@ -163,7 +163,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /calls: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}

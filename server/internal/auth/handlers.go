@@ -103,7 +103,9 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	h.store.UpdateLastLogin(user.ID)
+	if err := h.store.UpdateLastLogin(user.ID); err != nil {
+		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
+	}
 
 	sessionToken, _, err := h.store.CreateSession(user.ID, SessionTTL)
 	if err != nil {
@@ -129,7 +131,9 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil {
-		h.store.DeleteSession(cookie.Value)
+		if err := h.store.DeleteSession(cookie.Value); err != nil {
+			slog.Error("failed to delete session", "err", err)
+		}
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:   CookieName,
