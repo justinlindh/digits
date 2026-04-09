@@ -21,6 +21,7 @@ const (
 	TypeUpdateTrigger   = "update_trigger"    // Server → Phone: check and apply updates
 	TypeUpdateStatus    = "update_status"     // Phone → Server: update progress report
 	TypeICERestart      = "ice_restart"       // Bidirectional: ICE restart offer with new credentials
+	TypeRestart         = "restart"          // Server -> Phone: restart service or reboot
 )
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -59,6 +60,9 @@ type Message struct {
 
 	// Flash capability (device_info messages)
 	FlashCapable bool `json:"flash_capable,omitempty"`
+
+	// Restart fields (restart messages)
+	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
 }
 
 func ParseMessage(data []byte) (*Message, error) {
