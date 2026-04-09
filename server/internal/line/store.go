@@ -229,15 +229,10 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 // line other than the one with excludeNumber. Used for availability checks where
 // only the current number (not ID) is known.
 func (s *Store) NumberExistsExcludingNumber(number, excludeNumber string) (bool, error) {
-	var count int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM lines WHERE number = $1 AND number != $2`,
-		number, excludeNumber,
-	).Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("number exists excluding number: %w", err)
+	if number == excludeNumber {
+		return false, nil
 	}
-	return count > 0, nil
+	return s.NumberExists(number)
 }
 
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.

@@ -498,21 +498,24 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.lineStore.Add(number, name, householdID)
-	data := h.buildLinesData(r, "")
 	if err != nil {
 		errMsg := "Failed to add line"
 		if errors.Is(err, line.ErrNumberTaken) {
 			errMsg = msgNumberTaken
 		}
-		data = h.buildLinesData(r, errMsg)
+		data := h.buildLinesData(r, errMsg)
+
+		if isHTMX(r) {
+			renderWith(w, h.tmplPhones, "phones-table", data)
+			return
+		}
+		renderWith(w, h.tmplPhones, "layout.html", data)
+		return
 	}
 
 	if isHTMX(r) {
+		data := h.buildLinesData(r, "")
 		renderWith(w, h.tmplPhones, "phones-table", data)
-		return
-	}
-	if err != nil {
-		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
