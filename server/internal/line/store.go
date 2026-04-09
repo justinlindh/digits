@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
@@ -15,12 +16,27 @@ var ErrNotFound = errors.New("line not found")
 
 var numberRegex = regexp.MustCompile(`^\d{7}$`)
 
-// ValidateNumber checks that num is exactly 7 digits.
+// ValidateNumber checks that num is exactly 7 digits (with optional hyphen after 3rd digit).
 func ValidateNumber(num string) error {
-	if !numberRegex.MatchString(num) {
+	stripped := strings.ReplaceAll(num, "-", "")
+	if !numberRegex.MatchString(stripped) {
 		return fmt.Errorf("phone number must be exactly 7 digits, got %q", num)
 	}
 	return nil
+}
+
+// StripNumber removes any hyphens from a phone number string.
+func StripNumber(num string) string {
+	return strings.ReplaceAll(num, "-", "")
+}
+
+// FormatNumber inserts a hyphen after the 3rd digit of a 7-digit number.
+// Non-7-digit inputs are returned unchanged.
+func FormatNumber(num string) string {
+	if len(num) != 7 {
+		return num
+	}
+	return num[:3] + "-" + num[3:]
 }
 
 // Line represents a phone number belonging to a household.
