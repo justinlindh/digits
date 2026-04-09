@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -74,7 +75,8 @@ type daemonCallbacks struct {
 	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
-	pairingCode      string   // current pairing code from server
+	pairingCode          string    // current pairing code from server
+	pairingCodeReceivedAt time.Time // when the current pairing code was received
 	callPeer         string   // number of the remote party during an active call
 	isCaller         bool     // true if we initiated the current call
 	isRestartingICE  bool     // true while an ICE restart is in progress
@@ -1135,7 +1137,19 @@ func main() {
 				for _, ch := range cb.pairingCode {
 					mixer.PlayOnce("spoken_" + string(ch))
 				}
-				mixer.PlayOnce("pairing_expires")
+				minutesLeft := int(math.Ceil(pairingRefreshInterval.Minutes() - time.Since(cb.pairingCodeReceivedAt).Minutes()))
+				if minutesLeft < 1 {
+					minutesLeft = 1
+				} else if minutesLeft > 10 {
+					minutesLeft = 10
+				}
+				unitClip := "pairing_expires_minutes"
+				if minutesLeft == 1 {
+					unitClip = "pairing_expires_minute"
+				}
+				mixer.PlayOnce("pairing_expires_prefix")
+				mixer.PlayOnce(fmt.Sprintf("spoken_%d", minutesLeft))
+				mixer.PlayOnce(unitClip)
 				slog.Info("phone: playing pairing code via voice", "code", cb.pairingCode)
 				sp.LED("ON")
 				continue // skip normal controller handling
@@ -1345,6 +1359,7 @@ func main() {
 
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
+				cb.pairingCodeReceivedAt = time.Now()
 				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode)
 				pairingRefresh.Reset(pairingRefreshInterval)
 
