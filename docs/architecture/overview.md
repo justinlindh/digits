@@ -25,7 +25,7 @@ Digits is a point-to-point encrypted phone network built from gutted vintage des
                              └─────────────┘
 ```
 
-### RP2040 Pico
+### Pico H
 
 Real-time hardware controller. Manages the hook switch, keypad scanning, bell driver, tone generation (dial tone, ringback, busy), and status LED. Communicates with the Pi Zero over UART using a line-based ASCII protocol -- see [uart-protocol.md](uart-protocol.md) for the full spec.
 

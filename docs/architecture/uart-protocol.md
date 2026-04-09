@@ -1,6 +1,6 @@
 # Digits -- UART Protocol Specification
 
-Line-based ASCII protocol between RP2040 Pico and Pi Zero 2 W.
+Line-based ASCII protocol between Pico H and Pi Zero 2 W.
 
 ## Transport
 
