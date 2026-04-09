@@ -24,7 +24,7 @@
 ---
 
 Each Digits endpoint combines:
-- **RP2040 Pico** -- phone UX and real-time hardware control (hook switch, keypad, bell, tones, indicators)
+- **Pico H** -- phone UX and real-time hardware control (hook switch, keypad, bell, tones, indicators)
 - **Raspberry Pi Zero 2 W** -- Linux-side services (VoIP stack, crypto/session logic, orchestration)
 - **Raspberry Pi Codec Zero (DA7212)** -- audio input/output on the Pi side
 
@@ -36,7 +36,7 @@ A single phone unit is split into two cooperating processors:
 
 | Component | Role |
 |-----------|------|
-| **RP2040 Pico** (firmware) | Low-level telephony, timing-sensitive I/O, UART protocol to Pi |
+| **Pico H** (firmware) | Low-level telephony, timing-sensitive I/O, UART protocol to Pi |
 | **Pi Zero 2 W** (digitsd) | Go daemon for VoIP, signaling, WebRTC media, Opus codec, call control |
 | **Codec Zero** (DA7212) | Audio pHAT with mic input (3.5mm TRS), speaker output (screw terminal) |
 | **Signaling Server** (Go) | WebSocket relay for SDP/ICE, PostgreSQL persistence, web app + admin |
@@ -46,7 +46,7 @@ See [Architecture deep-dive](docs/architecture/overview.md) for the full call pa
 ## Project Structure
 
 ```text
-firmware/   RP2040 Pico firmware (C/CMake + Pico SDK)
+firmware/   Pico H firmware (C/CMake + Pico SDK)
 pi/         Pi Zero userland -- digitsd VoIP daemon, setup tools, image builder
 server/     Go signaling server (WebSocket relay, web app, admin panel)
 docs/       Hardware build guides, architecture, self-hosting
@@ -66,7 +66,7 @@ make test      # go test ./...
 
 Requires Go 1.26+ and PostgreSQL. The server reads `DATABASE_URL` and runs migrations automatically on startup.
 
-### Firmware (RP2040 Pico)
+### Firmware (Pico H)
 
 ```bash
 export PICO_SDK_PATH=/path/to/pico-sdk

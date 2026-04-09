@@ -1,11 +1,11 @@
 # Digits
 
-Private encrypted phone network built from gutted vintage desk phones. Three components talk to each other: firmware on an RP2040, a Go daemon on a Pi Zero 2 W, and a Go signaling server.
+Private encrypted phone network built from gutted vintage desk phones. Three components talk to each other: firmware on a Pico H, a Go daemon on a Pi Zero 2 W, and a Go signaling server.
 
 ## Repo layout
 
 ```
-firmware/       RP2040 Pico firmware (C, CMake, Pico SDK)
+firmware/       Pico H firmware (C, CMake, Pico SDK)
 pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64)
 pi/digits-setup/ First-boot setup tool (Go)
 pi/image/       Pi OS image builder
