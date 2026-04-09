@@ -20,29 +20,14 @@ DATA_MNT="/tmp/data-check"
 COUNTER_FILE="digits/boot-counter"
 THRESHOLD=3
 
-RECOVERY_DEV="/dev/mmcblk0p3"
-RECOVERY_MNT="/tmp/recovery"
-RECOVERY_BIN="digits-recovery"
+RECOVERY_FLAG="/run/digits-recovery-mode"
 
 # Mount data partition
 mkdir -p "$DATA_MNT"
 mount -t ext4 "$DATA_DEV" "$DATA_MNT" 2>/dev/null
 if [ $? -ne 0 ]; then
-    echo "boot-check: cannot mount data partition, entering recovery mode"
-    # Data partition failure is itself a reason to enter recovery
-    mkdir -p "$RECOVERY_MNT"
-    mount -t ext4 -o ro "$RECOVERY_DEV" "$RECOVERY_MNT" 2>/dev/null
-    if [ $? -ne 0 ]; then
-        echo "boot-check: cannot mount recovery either, continuing normal boot"
-        exit 0
-    fi
-    if [ -x "$RECOVERY_MNT/$RECOVERY_BIN" ]; then
-        export PATH="$RECOVERY_MNT/bin:$PATH"
-        export RECOVERY_DIR="$RECOVERY_MNT"
-        export BOOT_COUNTER_PATH=""
-        exec "$RECOVERY_MNT/$RECOVERY_BIN"
-    fi
-    umount "$RECOVERY_MNT"
+    echo "boot-check: cannot mount data partition, flagging for recovery mode"
+    touch "$RECOVERY_FLAG"
     exit 0
 fi
 
@@ -66,28 +51,8 @@ if [ "$COUNT" -lt "$THRESHOLD" ]; then
     exit 0
 fi
 
-# Threshold reached -- enter recovery mode
-echo "boot-check: threshold reached, entering recovery mode"
-
-mkdir -p "$RECOVERY_MNT"
-mount -t ext4 -o ro "$RECOVERY_DEV" "$RECOVERY_MNT" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "boot-check: cannot mount recovery partition, continuing normal boot"
-    umount "$DATA_MNT"
-    exit 0
-fi
-
-if [ ! -x "$RECOVERY_MNT/$RECOVERY_BIN" ]; then
-    echo "boot-check: recovery binary not found, continuing normal boot"
-    umount "$RECOVERY_MNT"
-    umount "$DATA_MNT"
-    exit 0
-fi
-
-export PATH="$RECOVERY_MNT/bin:$PATH"
-export BOOT_COUNTER_PATH="$DATA_MNT/$COUNTER_FILE"
-export RECOVERY_DIR="$RECOVERY_MNT"
-
-# Hand off to recovery binary (does not return)
-# Data partition stays mounted so recovery can read/clear the counter
-exec "$RECOVERY_MNT/$RECOVERY_BIN"
+# Threshold reached -- flag for recovery mode
+echo "boot-check: threshold reached, flagging for recovery mode"
+touch "$RECOVERY_FLAG"
+umount "$DATA_MNT"
+exit 0

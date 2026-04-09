@@ -657,6 +657,10 @@ RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
 [[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
+# Install recovery binary to rootfs so systemd can launch it
+rm -f "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+install -m 755 "$RECOVERY_BIN" "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+
 # Install initramfs boot-check hook
 info "  Installing initramfs boot-check hook..."
 HOOK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
@@ -833,6 +837,7 @@ hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
+hostside_enable_service "$ROOTFS_MNT" "digits-recovery.service"
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 

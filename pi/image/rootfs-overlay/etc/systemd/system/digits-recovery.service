@@ -3,7 +3,7 @@ Description=Digits Recovery Mode (AP + Factory Reset Server)
 ConditionPathExists=/run/digits-recovery-mode
 After=local-fs.target systemd-modules-load.service
 Before=digitsd.service
-Conflicts=digitsd.service digits-ap-check.service digits-ap.service digits-dnsmasq-ap.service NetworkManager.service
+Conflicts=digitsd.service digits-ap.service digits-dnsmasq-ap.service NetworkManager.service
 
 [Service]
 Type=simple
