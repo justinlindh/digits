@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.bug.st/serial"
@@ -17,7 +18,7 @@ type SerialPort struct {
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
 
 	mu     sync.Mutex
-	respCh chan string // single-slot response channel for command/response pairs
+	respCh atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	stop   chan struct{}
 	logger *log.Logger
 }
@@ -56,8 +57,8 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	defer sp.mu.Unlock()
 
 	ch := make(chan string, 1)
-	sp.respCh = ch
-	defer func() { sp.respCh = nil }()
+	sp.respCh.Store(&ch)
+	defer sp.respCh.Store(nil)
 
 	sp.logger.Printf("TX: %s", cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
@@ -194,9 +195,9 @@ func (sp *SerialPort) readLoop() {
 				}
 
 				// Command response: deliver to pending command if one is waiting.
-				if sp.respCh != nil {
+				if chp := sp.respCh.Load(); chp != nil {
 					select {
-					case sp.respCh <- line:
+					case *chp <- line:
 						continue
 					default:
 					}
