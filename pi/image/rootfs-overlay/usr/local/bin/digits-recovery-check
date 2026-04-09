@@ -3,13 +3,16 @@
 # Exits immediately if no recovery flag -- lets normal boot continue.
 # If flag exists, mounts recovery partition and execs the recovery server.
 
-RECOVERY_FLAG="/run/digits-recovery-mode"
+RECOVERY_FLAG="/data/digits/recovery-mode"
 
 if [ ! -f "$RECOVERY_FLAG" ]; then
     exit 0
 fi
 
 echo "digits-recovery: recovery flag found, entering recovery mode"
+
+# Remove flag so a reboot from recovery doesn't loop
+rm -f "$RECOVERY_FLAG"
 
 # Mount recovery partition (contains factory images)
 mount /recovery || { echo "digits-recovery: failed to mount /recovery"; exit 1; }
