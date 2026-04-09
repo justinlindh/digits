@@ -2,12 +2,16 @@ package line
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
 )
+
+// ErrNotFound is returned when a line cannot be found.
+var ErrNotFound = errors.New("line not found")
 
 var numberRegex = regexp.MustCompile(`^\d{7}$`)
 
@@ -63,7 +67,7 @@ func (s *Store) GetByID(id int64) (*Line, error) {
 		id,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("line %d not found", id)
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by id %d: %w", id, err)
@@ -80,7 +84,7 @@ func (s *Store) GetByNumber(number string) (*Line, error) {
 		number,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("line %s not found", number)
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by number %s: %w", number, err)
@@ -195,7 +199,7 @@ func (s *Store) GetHouseholdIDByNumber(number string) (string, error) {
 		`SELECT household_id FROM lines WHERE number = $1`, number,
 	).Scan(&householdID)
 	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("line %s not found", number)
+		return "", ErrNotFound
 	}
 	if err != nil {
 		return "", fmt.Errorf("get household id by number: %w", err)

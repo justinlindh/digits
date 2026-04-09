@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -738,8 +739,13 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
+	if errors.Is(err, line.ErrNotFound) {
 		http.Error(w, "line not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("delete line: lookup failed", "number", number, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	if err := h.lineStore.Delete(ln.ID); err != nil {
@@ -1093,7 +1099,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		lines, err := h.lineStore.List()
 		if err != nil {
 			slog.Error("stats: list lines failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		lineCount = len(lines)
@@ -1115,7 +1121,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		totalUsers, err = h.authStore.CountUsers()
 		if err != nil {
 			slog.Error("stats: count users failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1126,7 +1132,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		totalHouseholds, err = h.householdStore.CountHouseholds()
 		if err != nil {
 			slog.Error("stats: count households failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1137,7 +1143,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		totalLinks, err = h.linkStore.CountActiveLinks()
 		if err != nil {
 			slog.Error("stats: count active links failed", "err", err)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1161,7 +1167,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	lines, err := h.lineStore.List()
 	if err != nil {
 		slog.Error("api status: list lines failed", "err", err)
-		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	online := h.hub.OnlineNumbers()
@@ -1455,6 +1461,12 @@ func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		slog.Error("api version: json encode failed", "err", err)
 	}
+}
+
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
 }
 
 func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
