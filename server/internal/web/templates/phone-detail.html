@@ -45,7 +45,7 @@
           <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
         </div>
         {{end}}
-        <div class="pt-2 border-t border-[#21262d]">
+        <div class="mt-4">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{.Line.Number}})? This cannot be undone.')">
             <button type="submit"
