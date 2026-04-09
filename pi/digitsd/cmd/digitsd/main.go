@@ -393,6 +393,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 	d.pendingICE = nil
+	peer := d.callPeer
 	d.callPeer = ""
 	d.isCaller = false
 	d.isRestartingICE = false
@@ -401,7 +402,7 @@ func (d *daemonCallbacks) HangupCall() {
 		d.restartTimer = nil
 	}
 
-	d.sig.Send(&sigclient.Message{Type: sigclient.TypeHangup}) //nolint:errcheck
+	d.sig.Send(&sigclient.Message{Type: sigclient.TypeHangup, To: peer}) //nolint:errcheck
 
 	if d.pipeline != nil {
 		d.pipeline.Stop()
