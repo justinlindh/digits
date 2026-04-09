@@ -42,6 +42,9 @@ clean:
 print-version:
 	@echo $(VERSION)
 
-# Deploy to production server (set DEPLOY_HOST)
+# Deploy locally via Docker Compose (fetches tags for accurate version)
 deploy:
-	ssh $(DEPLOY_HOST) 'cd ~/digits/server && git pull && docker compose -p digits-prod -f docker-compose.prod.yml --env-file .env.prod build signald && docker compose -p digits-prod -f docker-compose.prod.yml --env-file .env.prod up -d signald'
+	git fetch --tags
+	BUILD_VERSION=$$(git describe --tags --match 'server/v*' --always | sed 's|^server/v||') \
+	BUILD_COMMIT=$$(git rev-parse --short HEAD) \
+	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build signald

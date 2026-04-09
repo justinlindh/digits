@@ -94,7 +94,7 @@ Digits uses WebRTC for media transport. DTLS-SRTP provides end-to-end encryption
 
 ### Audio Pipeline
 
-- **Capture:** ALSA `plughw:1,0` at 48kHz stereo -- right channel extracted (external mic on TRS jack)
+- **Capture:** ALSA `plughw:CARD=Zero,DEV=0` at 48kHz stereo -- right channel extracted (external mic on TRS jack)
 - **Processing:** Optional RNNoise ML denoiser for background noise suppression
 - **Encode:** Opus 48kHz mono, 24kbps, VoIP mode, in-band FEC, 20ms frames
 - **Transport:** RTP/SRTP via Pion WebRTC
