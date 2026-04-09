@@ -681,7 +681,11 @@ for tool in hostapd ip dnsmasq; do
         warn "  Tool not found in rootfs: $tool -- skipping"
         continue
     fi
-    install -m 755 "${ROOTFS_MNT}${TOOL_PATH}" "${RECOVERY_MNT}/bin/${tool}"
+    if [[ -f "${ROOTFS_MNT}${TOOL_PATH}" ]]; then
+        install -m 755 "${ROOTFS_MNT}${TOOL_PATH}" "${RECOVERY_MNT}/bin/${tool}"
+    else
+        warn "  Tool path ${TOOL_PATH} not found on rootfs for: $tool -- skipping"
+    fi
 done
 
 info "  Rebuilding initramfs (chroot)..."
