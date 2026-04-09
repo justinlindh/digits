@@ -18,6 +18,22 @@
       </div>
     </div>
     <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
+    <script>
+    document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
+      var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
+      var prevOnline = this.dataset.prevOnline === 'true';
+      if (this.dataset.prevOnline !== undefined && newOnline !== prevOnline) {
+        location.reload();
+        return;
+      }
+      this.dataset.prevOnline = newOnline;
+    });
+    (function() {
+      var badge = document.getElementById('status-badge');
+      var span = badge.querySelector('[data-online]');
+      if (span) badge.dataset.prevOnline = span.getAttribute('data-online');
+    })();
+    </script>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
@@ -552,12 +568,12 @@
 
 {{define "phone-status"}}
 {{if .Online}}
-  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+  <span data-online="true" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
     <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
     online
   </span>
 {{else}}
-  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+  <span data-online="false" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
     <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
     offline
   </span>
