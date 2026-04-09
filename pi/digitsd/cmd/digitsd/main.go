@@ -1374,6 +1374,38 @@ func main() {
 					}()
 				}
 
+			case sigclient.TypeRestart:
+				mode := msg.RestartMode
+				slog.Info("received restart command", "mode", mode)
+				switch mode {
+				case "service":
+					sig.Send(&sigclient.Message{
+						Type:         sigclient.TypeUpdateStatus,
+						UpdateStatus: "restarting",
+						UpdateDetail: "Service restart requested",
+					})
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						slog.Info("restarting service via exit (systemd will restart)")
+						os.Exit(0)
+					}()
+				case "reboot":
+					sig.Send(&sigclient.Message{
+						Type:         sigclient.TypeUpdateStatus,
+						UpdateStatus: "rebooting",
+						UpdateDetail: "Device reboot requested",
+					})
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						slog.Info("rebooting device")
+						if err := exec.Command("sudo", "reboot").Run(); err != nil {
+							slog.Error("reboot command failed", "err", err)
+						}
+					}()
+				default:
+					slog.Warn("unknown restart mode", "mode", mode)
+				}
+
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
 			}
