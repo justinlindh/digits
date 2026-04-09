@@ -220,7 +220,7 @@ func TestController_HangupDuringCalling(t *testing.T) {
 	}
 }
 
-// 6. Busy signal during CALLING → SendTone("STOP"), stays in CALLING or logs
+// 6. Busy signal during CALLING → SendTone("BUSY"), stays in CALLING
 func TestController_BusySignal(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
@@ -241,8 +241,8 @@ func TestController_BusySignal(t *testing.T) {
 		t.Error("expected SendTone to be called on busy")
 	}
 	lastTone := cb.tones[len(cb.tones)-1]
-	if lastTone != "STOP" {
-		t.Errorf("expected SendTone(STOP) on busy, got %s", lastTone)
+	if lastTone != "BUSY" {
+		t.Errorf("expected SendTone(BUSY) on busy, got %s", lastTone)
 	}
 	// No hangup call triggered by signal
 	if cb.hangups != 0 {
