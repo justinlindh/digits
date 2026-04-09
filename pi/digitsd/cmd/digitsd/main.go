@@ -16,13 +16,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/justinlindh/digits/pi/digitsd/internal/assets"
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
+	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
+	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 
 	"github.com/pion/webrtc/v4"
@@ -712,6 +715,24 @@ func main() {
 
 	log.Printf("digitsd: server=%s number=%s config=%s", effectiveServerURL, effectiveNumber, *configPath)
 
+	// 0. Extract embedded assets on version change
+	extractor := &assets.Extractor{
+		FS:         assets.EmbeddedFS,
+		RootDir:    "/",
+		DataDir:    "/data/digits",
+		MarkerPath: "/data/digits/asset-version",
+		Remount: func(rw bool) error {
+			mode := "ro"
+			if rw {
+				mode = "rw"
+			}
+			return exec.Command("sudo", "mount", "-o", "remount,"+mode, "/").Run()
+		},
+	}
+	if err := extractor.Extract(version.Version); err != nil {
+		log.Printf("WARNING: asset extraction failed: %v", err)
+	}
+
 	// 1. Open serial port directly (log to both stdout and uart.log file)
 	uartLogPath := filepath.Join(filepath.Dir(*socketPath), "uart.log")
 	uartLogFile, err := os.OpenFile(uartLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -1037,13 +1058,11 @@ func main() {
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
-		log.Println("service code: *#00000# → FACTORY RESET")
-		// 1. Remove config
-		os.Remove(config.DefaultPath)
-		os.Remove(config.DefaultPath + ".bak")
-		// 2. Remove Wi-Fi provisioning flag (boot into AP mode)
-		os.Remove(phone.WifiConfiguredFlag)
-		log.Println("service code factory reset: all data cleared, rebooting")
+		log.Println("service code: *#00000# -> FACTORY RESET")
+		if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+			log.Printf("factory reset: failed to set boot counter: %v", err)
+		}
+		log.Println("factory reset: rebooting into recovery")
 		exec.Command("sudo", "reboot").Run()
 	})
 
@@ -1092,6 +1111,22 @@ func main() {
 	// 11. Ready
 	phone.RestoreVolume()
 	log.Println("digitsd ready")
+
+	// Start hardware watchdog (if available)
+	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
+		wd.Start(5 * time.Second)
+		defer wd.Close()
+		log.Println("watchdog: started (5s interval)")
+	} else {
+		log.Printf("watchdog: not available: %v", err)
+	}
+
+	// Clear boot counter (we're healthy)
+	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
+		log.Printf("WARNING: failed to clear boot counter: %v", err)
+	} else {
+		log.Println("boot counter: cleared (healthy boot)")
+	}
 
 	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 	requestICEServers(sig)
@@ -1296,6 +1331,17 @@ func main() {
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
+
+			case "factory_reset":
+				log.Println("factory reset: triggered by server")
+				go func() {
+					if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+						log.Printf("factory reset: failed to set boot counter: %v", err)
+						return
+					}
+					log.Println("factory reset: boot counter set to 3, rebooting")
+					exec.Command("sudo", "reboot").Run()
+				}()
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()
