@@ -17,12 +17,12 @@ func OpenAdmin(databaseURL string) (*AdminDB, error) {
 		return nil, fmt.Errorf("open admin db: %w", err)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ping admin db: %w", err)
 	}
 	a := &AdminDB{DB: db}
 	if err := a.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate admin db: %w", err)
 	}
 	return a, nil

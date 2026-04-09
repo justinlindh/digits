@@ -26,7 +26,9 @@ func LoadOrCreateDeviceID() (string, error) {
 		return "", fmt.Errorf("generate device id: %w", err)
 	}
 
-	os.MkdirAll("/data/digits", 0755)
+	if err := os.MkdirAll("/data/digits", 0755); err != nil {
+		return "", fmt.Errorf("mkdir /data/digits: %w", err)
+	}
 	if err := os.WriteFile(deviceIDPath, []byte(id+"\n"), 0644); err != nil {
 		return "", fmt.Errorf("persist device id: %w", err)
 	}

@@ -173,23 +173,23 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	// Clean up temp file on any error
 	defer func() {
 		if tmpPath != "" {
-			os.Remove(tmpPath)
+			_ = os.Remove(tmpPath)
 		}
 	}()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return fmt.Errorf("write temp: %w", err)
 	}
 
 	// fsync to flush to storage before rename
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return fmt.Errorf("fsync temp: %w", err)
 	}
 
 	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck
 		return fmt.Errorf("chmod temp: %w", err)
 	}
 
@@ -206,8 +206,10 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	// fsync the directory to ensure the rename is durable
 	d, err := os.Open(dir)
 	if err == nil {
-		d.Sync()
-		d.Close()
+		if syncErr := d.Sync(); syncErr != nil {
+			slog.Warn("config: dir fsync", "dir", dir, "error", syncErr)
+		}
+		_ = d.Close()
 	}
 
 	return nil

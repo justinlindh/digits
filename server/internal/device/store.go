@@ -111,7 +111,7 @@ func (s *Store) ListByLine(lineID int64) ([]Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list devices by line: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var devices []Device
 	for rows.Next() {

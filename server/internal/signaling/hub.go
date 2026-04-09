@@ -43,7 +43,7 @@ func (h *Hub) Register(number string, conn *Conn) {
 	// Close existing connection for this number if any
 	if old, ok := h.conns[number]; ok {
 		if old.WS != nil {
-			old.WS.Close() // close WebSocket first so write pump exits
+			_ = old.WS.Close() // close WebSocket first so write pump exits
 		}
 		// Only close Send if it's not already closed
 		select {

@@ -4,23 +4,6 @@ import (
 	"testing"
 )
 
-func sampleIndex(piLatest string) *ReleaseIndex {
-	return &ReleaseIndex{
-		Pi: ComponentIndex{
-			Latest: piLatest,
-			Releases: map[string]*Release{
-				piLatest: {Version: piLatest, URL: "https://example.com/digitsd", Date: "2026-04-01"},
-			},
-		},
-		Firmware: ComponentIndex{
-			Latest: "0.5.0",
-			Releases: map[string]*Release{
-				"0.5.0": {Version: "0.5.0", URL: "https://example.com/firmware.elf", Date: "2026-04-01"},
-			},
-		},
-	}
-}
-
 func TestSortedReleases(t *testing.T) {
 	idx := &ReleaseIndex{
 		Pi: ComponentIndex{

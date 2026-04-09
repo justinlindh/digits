@@ -31,7 +31,7 @@ func createMinimalWAV(t *testing.T, path string, samples []int16) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	dataSize := len(samples) * 2
 	riffSize := 36 + dataSize
@@ -45,8 +45,8 @@ func createMinimalWAV(t *testing.T, path string, samples []int16) {
 	binary.LittleEndian.PutUint16(header[22:24], 1)  // mono
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
-	f.Write(header)
-	binary.Write(f, binary.LittleEndian, samples)
+	_, _ = f.Write(header)
+	_ = binary.Write(f, binary.LittleEndian, samples)
 }
 
 // --- Silence / keepalive ---
@@ -316,7 +316,7 @@ func TestLoadWAV(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer func() { _ = os.Remove(f.Name()) }()
 
 	// Write a proper WAV header with fmt and data chunks
 	pcm := []byte{
@@ -337,9 +337,9 @@ func TestLoadWAV(t *testing.T) {
 	binary.LittleEndian.PutUint16(header[22:24], 1)  // mono
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
-	f.Write(header)
-	f.Write(pcm)
-	f.Close()
+	_, _ = f.Write(header)
+	_, _ = f.Write(pcm)
+	_ = f.Close()
 
 	samples, err := loadWAV(f.Name())
 	if err != nil {
@@ -368,7 +368,7 @@ func TestLoadWAVDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 
 	for _, name := range []string{"tone_dial.wav", "dtmf_1.wav"} {
 		f, err := os.Create(dir + "/" + name)
@@ -386,9 +386,9 @@ func TestLoadWAVDir(t *testing.T) {
 		binary.LittleEndian.PutUint16(hdr[22:24], 1)
 		copy(hdr[36:40], "data")
 		binary.LittleEndian.PutUint32(hdr[40:44], uint32(len(pcm)))
-		f.Write(hdr)
-		f.Write(pcm)
-		f.Close()
+		_, _ = f.Write(hdr)
+		_, _ = f.Write(pcm)
+		_ = f.Close()
 	}
 
 	// Verify loadWAV works on each file directly

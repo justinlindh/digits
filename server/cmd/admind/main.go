@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("open admin db: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	authStore := admin.NewAuthStore(db)
 

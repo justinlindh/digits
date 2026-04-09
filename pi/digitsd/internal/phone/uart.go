@@ -28,7 +28,7 @@ func (c *UARTClient) SendCommand(cmd string, timeout time.Duration) (string, err
 	if err != nil {
 		return "", fmt.Errorf("uart: dial %s: %w", c.socketPath, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
 		return "", fmt.Errorf("uart: set deadline: %w", err)

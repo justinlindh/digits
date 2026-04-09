@@ -10,7 +10,9 @@ import (
 func newTestServer(idx ReleaseIndex) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/updates/releases" {
-			json.NewEncoder(w).Encode(idx)
+			if err := json.NewEncoder(w).Encode(idx); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 		http.NotFound(w, r)
