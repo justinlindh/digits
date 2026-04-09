@@ -356,7 +356,7 @@
           var btn = document.getElementById(prefix + '-install-btn');
           if (spinner) spinner.classList.add('hidden');
           if (progress) progress.classList.remove('hidden');
-          if (type === 'success') {
+          if (resultType === 'success') {
             if (progressText) {
               progressText.textContent = message;
               progressText.className = 'text-sm text-[#3fb950]';
@@ -474,10 +474,12 @@
 
   function doRestart(mode) {
     // Hide both button groups, show progress
-    document.getElementById('restart-service-wrap').querySelector('button').disabled = true;
-    document.getElementById('restart-reboot-wrap').querySelector('button').disabled = true;
-    document.getElementById('restart-' + mode + '-confirm').classList.add('hidden');
-    document.getElementById('restart-' + mode + '-btn').classList.add('hidden');
+    // Disable all buttons in both wraps to prevent double-clicks
+    document.querySelectorAll('#restart-service-wrap button, #restart-reboot-wrap button').forEach(function(b) { b.disabled = true; });
+    document.getElementById('restart-service-confirm').classList.add('hidden');
+    document.getElementById('restart-reboot-confirm').classList.add('hidden');
+    document.getElementById('restart-service-btn').classList.add('hidden');
+    document.getElementById('restart-reboot-btn').classList.add('hidden');
     var progress = document.getElementById('restart-progress');
     var status = document.getElementById('restart-status');
     progress.classList.remove('hidden');
@@ -531,12 +533,12 @@
     }, 1000);
   }
 
-  function showRestartResult(type, message) {
+  function showRestartResult(resultType, message) {
     var spinner = document.getElementById('restart-spinner');
     var status = document.getElementById('restart-status');
     spinner.classList.add('hidden');
     status.textContent = message;
-    if (type === 'success') {
+    if (resultType === 'success') {
       status.className = 'text-sm text-[#3fb950]';
     } else {
       status.className = 'text-sm text-[#f85149]';

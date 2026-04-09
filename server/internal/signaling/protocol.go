@@ -21,7 +21,7 @@ const (
 	TypeUpdateTrigger   = "update_trigger"    // Server → Phone: check and apply updates
 	TypeUpdateStatus    = "update_status"     // Phone → Server: update progress report
 	TypeICERestart      = "ice_restart"       // Bidirectional: ICE restart offer with new credentials
-	TypeRestart         = "restart"          // Server -> Phone: restart service or reboot
+	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
 )
 
 // ICEServer represents a STUN or TURN server configuration.
