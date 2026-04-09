@@ -356,7 +356,7 @@
           var btn = document.getElementById(prefix + '-install-btn');
           if (spinner) spinner.classList.add('hidden');
           if (progress) progress.classList.remove('hidden');
-          if (resultType === 'success') {
+          if (type === 'success') {
             if (progressText) {
               progressText.textContent = message;
               progressText.className = 'text-sm text-[#3fb950]';
