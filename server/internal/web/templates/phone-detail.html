@@ -5,57 +5,57 @@
 {{define "content"}}
 <div class="p-4 md:p-8">
   <div class="mb-6">
-    <a href="/phones" class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors flex items-center gap-1 mb-4">
+    <a href="/phones" class="text-xs text-[#9a8e82] hover:text-[#c1410c] transition-colors flex items-center gap-1 mb-4">
       <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
       </svg>
       Back to Lines
     </a>
     <div class="flex items-center gap-3">
-      <h1 class="text-xl font-semibold text-[#e6edf3]">{{.Line.Name}}</h1>
+      <h1 class="text-xl font-semibold text-[#e8ddd0]">{{.Line.Name}}</h1>
       <div id="status-badge" hx-get="/phones/{{.Line.Number}}/online" hx-trigger="every 10s" hx-swap="innerHTML">
         {{template "phone-status" .}}
       </div>
     </div>
-    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
+    <p class="text-sm text-[#9a8e82] mt-1 font-mono">{{.Line.Number}}</p>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
     <!-- Line details card -->
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg md:row-span-2">
-      <div class="px-4 py-3 border-b border-[#21262d]">
-        <h2 class="text-sm font-medium text-[#e6edf3]">Details</h2>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg md:row-span-2">
+      <div class="px-4 py-3 border-b border-[#342d26]">
+        <h2 class="text-sm font-medium text-[#e8ddd0]">Details</h2>
       </div>
       <div class="p-4 space-y-4">
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Line Number</label>
-          <span class="text-sm font-mono text-[#e6edf3]">{{.Line.Number}}</span>
+          <label class="block text-xs text-[#9a8e82] mb-1">Line Number</label>
+          <span class="text-sm font-mono text-[#e8ddd0]">{{.Line.Number}}</span>
         </div>
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Line Name</label>
-          <span class="text-sm text-[#e6edf3]">{{.Line.Name}}</span>
+          <label class="block text-xs text-[#9a8e82] mb-1">Line Name</label>
+          <span class="text-sm text-[#e8ddd0]">{{.Line.Name}}</span>
         </div>
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Added</label>
-          <span class="text-sm text-[#c9d1d9]">{{.Line.CreatedAt.Format "January 2, 2006"}}</span>
+          <label class="block text-xs text-[#9a8e82] mb-1">Added</label>
+          <span class="text-sm text-[#c9bba8]">{{.Line.CreatedAt.Format "January 2, 2006"}}</span>
         </div>
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Status</label>
+          <label class="block text-xs text-[#9a8e82] mb-1">Status</label>
           <span id="status-detail">
             {{if .Online}}
               <span class="text-sm text-[#3fb950]">Online</span>
             {{else}}
-              <span class="text-sm text-[#8b949e]">Offline</span>
+              <span class="text-sm text-[#9a8e82]">Offline</span>
             {{end}}
           </span>
         </div>
         {{if .Devices}}
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Devices</label>
-          <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
+          <label class="block text-xs text-[#9a8e82] mb-1">Devices</label>
+          <span class="text-sm text-[#c9bba8]">{{len .Devices}} paired</span>
         </div>
         {{end}}
-        <div class="pt-2 border-t border-[#21262d]">
+        <div class="pt-2 border-t border-[#342d26]">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{.Line.Number}})? This cannot be undone.')">
             <button type="submit"
@@ -68,18 +68,18 @@
     </div>
 
     <!-- Hardware & Software card -->
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-      <div class="px-4 py-3 border-b border-[#21262d]">
-        <h2 class="text-sm font-medium text-[#e6edf3]">Hardware & Software</h2>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+      <div class="px-4 py-3 border-b border-[#342d26]">
+        <h2 class="text-sm font-medium text-[#e8ddd0]">Hardware & Software</h2>
       </div>
       <div class="p-4 space-y-4">
         {{if .DeviceInfo}}
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-xs text-[#8b949e] mb-1">Pi Software</label>
-            <span class="text-sm font-mono text-[#e6edf3]">{{if .DeviceInfo.PiVersion}}{{.DeviceInfo.PiVersion}}{{else}}<span class="text-[#484f58] italic">unknown</span>{{end}}</span>
+            <label class="block text-xs text-[#9a8e82] mb-1">Pi Software</label>
+            <span class="text-sm font-mono text-[#e8ddd0]">{{if .DeviceInfo.PiVersion}}{{.DeviceInfo.PiVersion}}{{else}}<span class="text-[#5a5048] italic">unknown</span>{{end}}</span>
             {{if .DeviceInfo.PiCommit}}
-            <span class="text-xs font-mono text-[#484f58] ml-1">({{.DeviceInfo.PiCommit}})</span>
+            <span class="text-xs font-mono text-[#5a5048] ml-1">({{.DeviceInfo.PiCommit}})</span>
             {{end}}
             {{if and .LatestPiVersion (ne .DeviceInfo.PiVersion .LatestPiVersion)}}
             <div class="mt-1">
@@ -90,7 +90,7 @@
             </div>
             {{else if .LatestPiVersion}}
             <div class="mt-1">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a2e1f] text-[#3fb950]">
                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 up to date
               </span>
@@ -98,17 +98,17 @@
             {{end}}
           </div>
           <div>
-            <label class="block text-xs text-[#8b949e] mb-1 flex items-center gap-1.5">
+            <label class="block text-xs text-[#9a8e82] mb-1 flex items-center gap-1.5">
               Firmware
               {{if .DeviceInfo.FlashCapable}}
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a3a25] text-[#3fb950] border border-[#3fb950]/30">SWD</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a2e1f] text-[#3fb950] border border-[#3fb950]/30">SWD</span>
               {{else}}
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1c2128] text-[#484f58] border border-[#30363d]">No SWD</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#2d2620] text-[#5a5048] border border-[#3d352d]">No SWD</span>
               {{end}}
             </label>
-            <span class="text-sm font-mono text-[#e6edf3]">{{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="text-[#484f58] italic">unknown</span>{{end}}</span>
+            <span class="text-sm font-mono text-[#e8ddd0]">{{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="text-[#5a5048] italic">unknown</span>{{end}}</span>
             {{if .DeviceInfo.FirmwareCommit}}
-            <span class="text-xs font-mono text-[#484f58] ml-1">({{.DeviceInfo.FirmwareCommit}})</span>
+            <span class="text-xs font-mono text-[#5a5048] ml-1">({{.DeviceInfo.FirmwareCommit}})</span>
             {{end}}
             {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
             <div class="mt-1">
@@ -119,7 +119,7 @@
             </div>
             {{else if .LatestFirmwareVersion}}
             <div class="mt-1">
-              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+              <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-[#1a2e1f] text-[#3fb950]">
                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                 up to date
               </span>
@@ -129,18 +129,18 @@
         </div>
         {{if $.LastSeenAt}}
         <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Last Check-in</label>
-          <span class="text-sm text-[#c9d1d9]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
+          <label class="block text-xs text-[#9a8e82] mb-1">Last Check-in</label>
+          <span class="text-sm text-[#c9bba8]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
         </div>
         {{end}}
         {{if .Online}}
         <!-- Per-component update sections -->
-        <div class="pt-3 border-t border-[#21262d] space-y-3">
+        <div class="pt-3 border-t border-[#342d26] space-y-3">
 
           <!-- Pi Software update -->
           <div>
             <button onclick="togglePanel('pi-panel', this)" type="button"
-                    class="w-full flex items-center justify-between px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm rounded transition-colors">
+                    class="w-full flex items-center justify-between px-4 py-2 bg-[#c1410c] hover:bg-[#d4520f] text-white text-sm rounded transition-colors">
               <span>Update Pi Software</span>
               <svg class="w-4 h-4 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -150,37 +150,37 @@
               {{if .PiReleases}}
               <div class="space-y-1 max-h-48 overflow-y-auto">
                 {{range .PiReleases}}
-                <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border border-transparent">
+                <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#342d26] border border-transparent">
                   <input type="radio" name="target_pi_version" value="{{.Version}}"
                          {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}checked{{end}}{{end}}
-                         onchange="highlightVersion(this)" class="accent-[#1f6feb]">
+                         onchange="highlightVersion(this)" class="accent-[#c1410c]">
                   <div class="flex-1 flex items-center gap-2">
-                    <span class="text-sm font-mono text-[#e6edf3]">{{.Version}}</span>
+                    <span class="text-sm font-mono text-[#e8ddd0]">{{.Version}}</span>
                     {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/30">latest</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#c1410c]/20 text-[#c1410c] border border-[#c1410c]/30">latest</span>
                     {{end}}{{end}}
                     {{if $.DeviceInfo.PiVersion}}{{if eq .Version $.DeviceInfo.PiVersion}}
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a3a25] text-[#3fb950] border border-[#3fb950]/30">installed</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a2e1f] text-[#3fb950] border border-[#3fb950]/30">installed</span>
                     {{end}}{{end}}
                   </div>
                   {{if .Date}}
-                  <span class="text-xs text-[#484f58]">{{.Date}}</span>
+                  <span class="text-xs text-[#5a5048]">{{.Date}}</span>
                   {{end}}
                 </label>
                 {{end}}
               </div>
               <button type="button" id="pi-install-btn" onclick="triggerComponentUpdate('pi', 'target_pi_version')"
-                      class="w-full px-4 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded transition-colors">
+                      class="w-full px-4 py-2.5 bg-[#2d7a3e] hover:bg-[#38914a] text-white text-sm font-medium rounded transition-colors">
                 Install Pi Software
               </button>
               <div id="pi-update-progress" class="hidden mt-2">
-                <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
-                  <div id="pi-progress-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
-                  <span id="pi-progress-text" class="text-sm text-[#c9d1d9]">Sending update command...</span>
+                <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#15120f] border border-[#342d26]">
+                  <div id="pi-progress-spinner" class="w-4 h-4 border-2 border-[#c1410c] border-t-transparent rounded-full animate-spin"></div>
+                  <span id="pi-progress-text" class="text-sm text-[#c9bba8]">Sending update command...</span>
                 </div>
               </div>
               {{else}}
-              <p class="text-sm text-[#8b949e]">No Pi releases available.</p>
+              <p class="text-sm text-[#9a8e82]">No Pi releases available.</p>
               {{end}}
             </div>
           </div>
@@ -189,7 +189,7 @@
           {{if .DeviceInfo.FlashCapable}}
           <div>
             <button onclick="togglePanel('fw-panel', this)" type="button"
-                    class="w-full flex items-center justify-between px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm rounded transition-colors">
+                    class="w-full flex items-center justify-between px-4 py-2 bg-[#c1410c] hover:bg-[#d4520f] text-white text-sm rounded transition-colors">
               <span>Update Firmware</span>
               <svg class="w-4 h-4 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
@@ -199,42 +199,42 @@
               {{if .FWReleases}}
               <div class="space-y-1 max-h-48 overflow-y-auto">
                 {{range .FWReleases}}
-                <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border border-transparent">
+                <label class="version-option flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#342d26] border border-transparent">
                   <input type="radio" name="target_fw_version" value="{{.Version}}"
                          {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}checked{{end}}{{end}}
-                         onchange="highlightVersion(this)" class="accent-[#1f6feb]">
+                         onchange="highlightVersion(this)" class="accent-[#c1410c]">
                   <div class="flex-1 flex items-center gap-2">
-                    <span class="text-sm font-mono text-[#e6edf3]">{{.Version}}</span>
+                    <span class="text-sm font-mono text-[#e8ddd0]">{{.Version}}</span>
                     {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1f6feb]/20 text-[#58a6ff] border border-[#1f6feb]/30">latest</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#c1410c]/20 text-[#c1410c] border border-[#c1410c]/30">latest</span>
                     {{end}}{{end}}
                     {{if $.DeviceInfo.FirmwareVersion}}{{if eq .Version $.DeviceInfo.FirmwareVersion}}
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a3a25] text-[#3fb950] border border-[#3fb950]/30">installed</span>
+                    <span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#1a2e1f] text-[#3fb950] border border-[#3fb950]/30">installed</span>
                     {{end}}{{end}}
                   </div>
                   {{if .Date}}
-                  <span class="text-xs text-[#484f58]">{{.Date}}</span>
+                  <span class="text-xs text-[#5a5048]">{{.Date}}</span>
                   {{end}}
                 </label>
                 {{end}}
               </div>
               <button type="button" id="fw-install-btn" onclick="triggerComponentUpdate('fw', 'target_fw_version')"
-                      class="w-full px-4 py-2.5 bg-[#238636] hover:bg-[#2ea043] text-white text-sm font-medium rounded transition-colors">
+                      class="w-full px-4 py-2.5 bg-[#2d7a3e] hover:bg-[#38914a] text-white text-sm font-medium rounded transition-colors">
                 Install Firmware
               </button>
               <div id="fw-update-progress" class="hidden mt-2">
-                <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
-                  <div id="fw-progress-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
-                  <span id="fw-progress-text" class="text-sm text-[#c9d1d9]">Sending update command...</span>
+                <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#15120f] border border-[#342d26]">
+                  <div id="fw-progress-spinner" class="w-4 h-4 border-2 border-[#c1410c] border-t-transparent rounded-full animate-spin"></div>
+                  <span id="fw-progress-text" class="text-sm text-[#c9bba8]">Sending update command...</span>
                 </div>
               </div>
               {{else}}
-              <p class="text-sm text-[#8b949e]">No firmware releases available.</p>
+              <p class="text-sm text-[#9a8e82]">No firmware releases available.</p>
               {{end}}
             </div>
           </div>
           {{else}}
-          <p class="text-sm text-[#484f58]">Firmware updates require SWD wiring — flash via USB</p>
+          <p class="text-sm text-[#5a5048]">Firmware updates require SWD wiring — flash via USB</p>
           {{end}}
 
         </div>
@@ -254,10 +254,10 @@
             var label = r.closest('.version-option');
             if (r.checked) {
               label.classList.remove('border-transparent');
-              label.classList.add('bg-[#1f6feb]/10', 'border-[#1f6feb]/40');
+              label.classList.add('bg-[#c1410c]/10', 'border-[#c1410c]/40');
             } else {
               label.classList.add('border-transparent');
-              label.classList.remove('bg-[#1f6feb]/10', 'border-[#1f6feb]/40');
+              label.classList.remove('bg-[#c1410c]/10', 'border-[#c1410c]/40');
             }
           });
         }
@@ -370,25 +370,25 @@
         {{end}}
         {{else}}
           {{if .Online}}
-          <p class="text-sm text-[#8b949e]">Waiting for version report...</p>
-          <p class="text-xs text-[#484f58]">Device is online but hasn't reported version info yet.</p>
-          <div class="pt-3 border-t border-[#21262d]">
+          <p class="text-sm text-[#9a8e82]">Waiting for version report...</p>
+          <p class="text-xs text-[#5a5048]">Device is online but hasn't reported version info yet.</p>
+          <div class="pt-3 border-t border-[#342d26]">
             <form method="POST" action="/phones/{{.Line.Number}}/update">
               <button type="submit"
-                      class="px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm rounded transition-colors">
+                      class="px-4 py-2 bg-[#c1410c] hover:bg-[#d4520f] text-white text-sm rounded transition-colors">
                 Check for Updates
               </button>
             </form>
           </div>
           {{else}}
-          <p class="text-sm text-[#8b949e]">Device is offline</p>
+          <p class="text-sm text-[#9a8e82]">Device is offline</p>
           {{if $.LastSeenAt}}
           <div class="mt-2">
-            <label class="block text-xs text-[#8b949e] mb-1">Last seen</label>
-            <span class="text-sm text-[#c9d1d9]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
+            <label class="block text-xs text-[#9a8e82] mb-1">Last seen</label>
+            <span class="text-sm text-[#c9bba8]">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span>
           </div>
           {{end}}
-          <p class="text-xs text-[#484f58] mt-2">Version info is available when the device is connected.</p>
+          <p class="text-xs text-[#5a5048] mt-2">Version info is available when the device is connected.</p>
           {{end}}
         {{end}}
       </div>
@@ -398,33 +398,33 @@
 
   {{if .Online}}
   <!-- Device restart controls -->
-  <div class="mt-6 bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Device Controls</h2>
+  <div class="mt-6 bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Device Controls</h2>
     </div>
     <div class="p-4">
       <!-- Default: show both action buttons -->
       <div id="restart-buttons" class="flex flex-wrap gap-3">
         <button type="button" onclick="showRestartConfirm('service')"
-                class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+                class="px-4 py-2 bg-[#342d26] hover:bg-[#3d352d] border border-[#3d352d] text-[#c9bba8] text-sm rounded transition-colors">
           Restart Service
         </button>
         <button type="button" onclick="showRestartConfirm('reboot')"
-                class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+                class="px-4 py-2 bg-[#342d26] hover:bg-[#3d352d] border border-[#3d352d] text-[#c9bba8] text-sm rounded transition-colors">
           Reboot Device
         </button>
       </div>
 
       <!-- Confirmation: replaces buttons entirely -->
       <div id="restart-confirm" class="hidden">
-        <p id="restart-confirm-text" class="text-sm text-[#c9d1d9] mb-3"></p>
+        <p id="restart-confirm-text" class="text-sm text-[#c9bba8] mb-3"></p>
         <div class="flex gap-3">
           <button type="button" id="restart-confirm-btn" onclick="doRestart()"
                   class="px-4 py-2 text-sm font-medium rounded transition-colors">
             Confirm
           </button>
           <button type="button" onclick="cancelRestartConfirm()"
-                  class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+                  class="px-4 py-2 bg-[#342d26] hover:bg-[#3d352d] border border-[#3d352d] text-[#c9bba8] text-sm rounded transition-colors">
             Cancel
           </button>
         </div>
@@ -432,9 +432,9 @@
 
       <!-- Progress: replaces confirmation -->
       <div id="restart-progress" class="hidden">
-        <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
-          <div id="restart-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
-          <span id="restart-status" class="text-sm text-[#c9d1d9]">Sending command...</span>
+        <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#15120f] border border-[#342d26]">
+          <div id="restart-spinner" class="w-4 h-4 border-2 border-[#c1410c] border-t-transparent rounded-full animate-spin"></div>
+          <span id="restart-status" class="text-sm text-[#c9bba8]">Sending command...</span>
         </div>
       </div>
     </div>
@@ -459,7 +459,7 @@
       confirmBtn.className = 'px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm font-medium rounded transition-colors';
     } else {
       confirmText.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
-      confirmBtn.className = 'px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm font-medium rounded transition-colors';
+      confirmBtn.className = 'px-4 py-2 bg-[#c1410c] hover:bg-[#d4520f] text-white text-sm font-medium rounded transition-colors';
     }
   }
 
@@ -478,7 +478,7 @@
     confirm.classList.add('hidden');
     progress.classList.remove('hidden');
     status.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
-    status.className = 'text-sm text-[#c9d1d9]';
+    status.className = 'text-sm text-[#c9bba8]';
     document.getElementById('restart-spinner').classList.remove('hidden');
 
     var body = new URLSearchParams({mode: mode});
@@ -545,7 +545,7 @@
       var retryLink = document.createElement('a');
       retryLink.textContent = 'Try again';
       retryLink.href = '#';
-      retryLink.className = 'text-sm text-[#58a6ff] hover:underline ml-2';
+      retryLink.className = 'text-sm text-[#c1410c] hover:underline ml-2';
       retryLink.onclick = function(e) {
         e.preventDefault();
         document.getElementById('restart-progress').classList.add('hidden');
@@ -562,13 +562,13 @@
 
 {{define "phone-status"}}
 {{if .Online}}
-  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
-    <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a2e1f] text-[#3fb950]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950] online-dot"></span>
     online
   </span>
 {{else}}
-  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
-    <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#2d2620] text-[#9a8e82]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#5a5048]"></span>
     offline
   </span>
 {{end}}
@@ -576,7 +576,7 @@
   {{if .Online}}
     <span class="text-sm text-[#3fb950]">Online</span>
   {{else}}
-    <span class="text-sm text-[#8b949e]">Offline</span>
+    <span class="text-sm text-[#9a8e82]">Offline</span>
   {{end}}
 </span>
 {{end}}

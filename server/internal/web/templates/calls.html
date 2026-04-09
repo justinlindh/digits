@@ -6,23 +6,23 @@
 <div class="p-4 md:p-8">
   <div class="mb-6 md:mb-8 flex items-start justify-between">
     <div>
-      <h1 class="text-xl font-semibold text-[#e6edf3]">Call History</h1>
-      <p class="text-sm text-[#8b949e] mt-1">Recent calls</p>
+      <h1 class="text-xl font-semibold text-[#e8ddd0]">Call History</h1>
+      <p class="text-sm text-[#9a8e82] mt-1">Recent calls</p>
     </div>
-    <div class="text-xs text-[#8b949e] flex items-center gap-1.5 mt-1">
+    <div class="text-xs text-[#9a8e82] flex items-center gap-1.5 mt-1">
       <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse"></span>
       Auto-refreshing
     </div>
   </div>
 
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg"
+  <div id="calls-card" class="bg-[#231f1b] border border-[#342d26] rounded-lg"
        hx-get="/calls"
        hx-trigger="every 10s"
        hx-swap="outerHTML"
-       hx-select=".bg-\\[\\#161b22\\]">
-    <div class="px-4 py-3 border-b border-[#21262d] flex items-center justify-between">
-      <h2 class="text-sm font-medium text-[#e6edf3]">All Calls</h2>
-      <span class="text-xs text-[#8b949e]">{{len .Calls}} records</span>
+       hx-select="#calls-card">
+    <div class="px-4 py-3 border-b border-[#342d26] flex items-center justify-between">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">All Calls</h2>
+      <span class="text-xs text-[#9a8e82]">{{len .Calls}} records</span>
     </div>
 
     {{if .Calls}}
@@ -30,36 +30,36 @@
     <div class="hidden md:block">
       <table class="w-full">
         <thead>
-          <tr class="border-b border-[#21262d]">
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Caller</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Callee</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Status</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Started</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Duration</th>
+          <tr class="border-b border-[#342d26]">
+            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Caller</th>
+            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Callee</th>
+            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Status</th>
+            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Started</th>
+            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Duration</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-[#21262d]">
+        <tbody class="divide-y divide-[#342d26]">
           {{range .Calls}}
-          <tr class="hover:bg-[#1c2128]">
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Caller}}</td>
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Callee}}</td>
+          <tr class="hover:bg-[#2d2620]">
+            <td class="px-4 py-3 font-mono text-sm text-[#e8ddd0]">{{.Caller}}</td>
+            <td class="px-4 py-3 font-mono text-sm text-[#e8ddd0]">{{.Callee}}</td>
             <td class="px-4 py-3">
               {{if eq .Status "ended"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">ended</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2620] text-[#9a8e82]">ended</span>
               {{else if eq .Status "connected"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">connected</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a2e1f] text-[#3fb950]">connected</span>
               {{else if eq .Status "missed"}}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#3a1a1a] text-[#f85149]">missed</span>
               {{else if eq .Status "initiated"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2a3a] text-[#58a6ff]">initiated</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2116] text-[#c1410c]">initiated</span>
               {{else if eq .Status "ringing"}}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2a2a1c] text-[#d29922]">ringing</span>
               {{else}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">{{.Status}}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2620] text-[#9a8e82]">{{.Status}}</span>
               {{end}}
             </td>
-            <td class="px-4 py-3 text-xs text-[#8b949e] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</td>
-            <td class="px-4 py-3 text-xs text-[#8b949e] font-mono">
+            <td class="px-4 py-3 text-xs text-[#9a8e82] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="px-4 py-3 text-xs text-[#9a8e82] font-mono">
               {{if gt .DurationS 0}}{{.DurationS}}s{{else}}—{{end}}
             </td>
           </tr>
@@ -69,31 +69,31 @@
     </div>
 
     {{/* Mobile card list */}}
-    <div class="md:hidden divide-y divide-[#21262d]">
+    <div class="md:hidden divide-y divide-[#342d26]">
       {{range .Calls}}
       <div class="px-4 py-3">
-        <div class="flex items-center gap-1.5 font-mono text-sm text-[#e6edf3] mb-1.5">
+        <div class="flex items-center gap-1.5 font-mono text-sm text-[#e8ddd0] mb-1.5">
           <span>{{.Caller}}</span>
-          <span class="text-[#484f58]">→</span>
+          <span class="text-[#5a5048]">→</span>
           <span>{{.Callee}}</span>
         </div>
         <div class="flex items-center gap-2">
           {{if eq .Status "ended"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">ended</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2620] text-[#9a8e82]">ended</span>
           {{else if eq .Status "connected"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">connected</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a2e1f] text-[#3fb950]">connected</span>
           {{else if eq .Status "missed"}}
             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#3a1a1a] text-[#f85149]">missed</span>
           {{else if eq .Status "initiated"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2a3a] text-[#58a6ff]">initiated</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2116] text-[#c1410c]">initiated</span>
           {{else if eq .Status "ringing"}}
             <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2a2a1c] text-[#d29922]">ringing</span>
           {{else}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">{{.Status}}</span>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2d2620] text-[#9a8e82]">{{.Status}}</span>
           {{end}}
-          <span class="text-xs text-[#8b949e] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</span>
+          <span class="text-xs text-[#9a8e82] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</span>
           {{if gt .DurationS 0}}
-          <span class="text-xs text-[#8b949e] font-mono">· {{.DurationS}}s</span>
+          <span class="text-xs text-[#9a8e82] font-mono">· {{.DurationS}}s</span>
           {{end}}
         </div>
       </div>
@@ -101,10 +101,10 @@
     </div>
     {{else}}
     <div class="px-4 py-12 text-center">
-      <svg class="w-8 h-8 text-[#484f58] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg class="w-8 h-8 text-[#5a5048] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
       </svg>
-      <p class="text-sm text-[#8b949e]">No calls yet</p>
+      <p class="text-sm text-[#9a8e82]">No calls yet</p>
     </div>
     {{end}}
   </div>

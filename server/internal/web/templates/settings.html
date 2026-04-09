@@ -4,32 +4,32 @@
 
 {{define "content"}}
 <div class="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
-  <h1 class="text-xl font-semibold text-[#e6edf3]">Settings</h1>
+  <h1 class="text-xl font-semibold text-[#e8ddd0]">Settings</h1>
 
   {{if .Saved}}
-  <div class="p-3 rounded-md bg-[#238636]/10 border border-[#238636]/20 text-[#3fb950] text-sm">
+  <div class="p-3 rounded-md bg-[#2d7a3e]/10 border border-[#2d7a3e]/20 text-[#3fb950] text-sm">
     Settings saved.
   </div>
   {{end}}
 
   <!-- Account -->
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Account</h2>
+  <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Account</h2>
     </div>
-    <div class="divide-y divide-[#21262d]">
+    <div class="divide-y divide-[#342d26]">
       {{if .User}}
       <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Email</span>
-        <span class="text-sm text-[#e6edf3]">{{.User.Email}}</span>
+        <span class="text-sm text-[#9a8e82]">Email</span>
+        <span class="text-sm text-[#e8ddd0]">{{.User.Email}}</span>
       </div>
       <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Name</span>
-        <span class="text-sm text-[#e6edf3]">{{if .User.Name}}{{.User.Name}}{{else}}—{{end}}</span>
+        <span class="text-sm text-[#9a8e82]">Name</span>
+        <span class="text-sm text-[#e8ddd0]">{{if .User.Name}}{{.User.Name}}{{else}}—{{end}}</span>
       </div>
       {{if .User.GoogleID}}
       <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Google</span>
+        <span class="text-sm text-[#9a8e82]">Google</span>
         <span class="text-sm text-[#3fb950]">Connected</span>
       </div>
       {{end}}
@@ -39,23 +39,23 @@
 
   <!-- Household -->
   {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Household</h2>
+  <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Household</h2>
     </div>
     <div class="p-4">
       <form action="/settings/household" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
         <div class="flex-1">
-          <label for="household-name" class="block text-xs text-[#8b949e] mb-1">Family name</label>
+          <label for="household-name" class="block text-xs text-[#9a8e82] mb-1">Family name</label>
           <input type="text" id="household-name" name="name" value="{{.Household.Name}}" required
-            class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+            class="w-full px-3 py-2 rounded-md bg-[#15120f] border border-[#342d26] text-[#e8ddd0] text-sm focus:outline-none focus:ring-2 focus:ring-[#c1410c]/50 focus:border-[#c1410c]">
         </div>
         <button type="submit"
-          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#2d7a3e] text-white text-sm font-medium hover:bg-[#38914a] transition-colors">
           Save
         </button>
       </form>
-      <p class="text-xs text-[#8b949e] mt-2">
+      <p class="text-xs text-[#9a8e82] mt-2">
         Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}
       </p>
     </div>
@@ -64,16 +64,16 @@
 
   <!-- Timezone -->
   {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Timezone</h2>
+  <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Timezone</h2>
     </div>
     <div class="p-4">
       <form action="/settings/timezone" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
         <div class="flex-1">
-          <label for="timezone" class="block text-xs text-[#8b949e] mb-1">Display timezone</label>
+          <label for="timezone" class="block text-xs text-[#9a8e82] mb-1">Display timezone</label>
           <select id="timezone" name="timezone"
-            class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+            class="w-full px-3 py-2 rounded-md bg-[#15120f] border border-[#342d26] text-[#e8ddd0] text-sm focus:outline-none focus:ring-2 focus:ring-[#c1410c]/50 focus:border-[#c1410c]">
             <optgroup label="Americas">
               <option value="Pacific/Honolulu">Honolulu (HST)</option>
               <option value="America/Anchorage">Anchorage (AKST)</option>
@@ -128,11 +128,11 @@
           </select>
         </div>
         <button type="submit"
-          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#2d7a3e] text-white text-sm font-medium hover:bg-[#38914a] transition-colors">
           Save
         </button>
       </form>
-      <p class="text-xs text-[#8b949e] mt-2">
+      <p class="text-xs text-[#9a8e82] mt-2">
         Timestamps in the app will display in this timezone.
       </p>
     </div>
@@ -166,9 +166,9 @@
 
   <!-- Privacy -->
   {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Privacy</h2>
+  <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Privacy</h2>
     </div>
     <div class="p-4">
       <form action="/settings/call-history" method="POST">
@@ -178,11 +178,11 @@
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()"
                   class="sr-only peer">
-                <div class="w-9 h-5 bg-[#21262d] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#238636]"></div>
+                <div class="w-9 h-5 bg-[#342d26] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#2d7a3e]"></div>
               </label>
-              <span class="text-sm text-[#e6edf3]">Call History</span>
+              <span class="text-sm text-[#e8ddd0]">Call History</span>
             </div>
-            <p class="text-xs text-[#8b949e] mt-1.5 leading-relaxed">
+            <p class="text-xs text-[#9a8e82] mt-1.5 leading-relaxed">
               Records phone numbers, timestamps, and duration only. No audio is ever recorded. Worth noting: Digits is built on the idea that kids deserve the same phone privacy you had growing up. Call logs are light, but they're still surveillance. Most families don't need this.
             </p>
           </div>
@@ -193,8 +193,8 @@
   {{end}}
 
   <!-- Session -->
-  <div class="bg-[#161b22] border border-[#da3633]/20 rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
+  <div class="bg-[#231f1b] border border-[#da3633]/20 rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26]">
       <h2 class="text-sm font-medium text-[#da3633]">Session</h2>
     </div>
     <div class="p-4">

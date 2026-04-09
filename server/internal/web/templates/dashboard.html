@@ -6,66 +6,66 @@
 <div class="p-4 md:p-8">
   <div class="mb-6 md:mb-8">
     {{if .HouseholdName}}
-    <h1 class="text-xl font-semibold text-[#e6edf3]">{{.HouseholdName}}</h1>
-    <p class="text-sm text-[#8b949e] mt-1">Household dashboard</p>
+    <h1 class="text-xl font-semibold text-[#e8ddd0]">{{.HouseholdName}}</h1>
+    <p class="text-sm text-[#9a8e82] mt-1">Household dashboard</p>
     {{else}}
-    <h1 class="text-xl font-semibold text-[#e6edf3]">Network Overview</h1>
-    <p class="text-sm text-[#8b949e] mt-1">Real-time signaling server status</p>
+    <h1 class="text-xl font-semibold text-[#e8ddd0]">Network Overview</h1>
+    <p class="text-sm text-[#9a8e82] mt-1">Real-time signaling server status</p>
     {{end}}
   </div>
 
   <!-- Stats grid -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Lines</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e6edf3]">{{.Stats.TotalLines}}</p>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-4">
+      <p class="text-xs text-[#9a8e82] uppercase tracking-wider mb-1">Lines</p>
+      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e8ddd0]">{{.Stats.TotalLines}}</p>
     </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Online</p>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-4">
+      <p class="text-xs text-[#9a8e82] uppercase tracking-wider mb-1">Online</p>
       <p class="text-2xl md:text-3xl font-mono font-bold text-[#3fb950]">{{.Stats.OnlineLines}}</p>
     </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Active Calls</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#58a6ff]">{{.Stats.ActiveCalls}}</p>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-4">
+      <p class="text-xs text-[#9a8e82] uppercase tracking-wider mb-1">Active Calls</p>
+      <p class="text-2xl md:text-3xl font-mono font-bold text-[#c1410c]">{{.Stats.ActiveCalls}}</p>
     </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Calls Today</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e6edf3]">{{.Stats.CallsToday}}</p>
+    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-4">
+      <p class="text-xs text-[#9a8e82] uppercase tracking-wider mb-1">Calls Today</p>
+      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e8ddd0]">{{.Stats.CallsToday}}</p>
     </div>
   </div>
 
   <!-- Lines -->
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d] flex items-center justify-between">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Lines</h2>
-      <a href="/phones" class="text-xs text-[#58a6ff] hover:text-[#79c0ff] transition-colors">Manage</a>
+  <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#342d26] flex items-center justify-between">
+      <h2 class="text-sm font-medium text-[#e8ddd0]">Lines</h2>
+      <a href="/phones" class="text-xs text-[#c1410c] hover:text-[#d4520f] transition-colors">Manage</a>
     </div>
     {{if .Lines}}
-    <div class="divide-y divide-[#21262d]">
+    <div class="divide-y divide-[#342d26]">
       {{range .Lines}}
-      <a href="/phones/{{.Line.Number}}" class="flex items-center justify-between px-4 py-3 hover:bg-[#21262d]/50 transition-colors">
+      <a href="/phones/{{.Line.Number}}" class="flex items-center justify-between px-4 py-3 hover:bg-[#342d26]/50 transition-colors">
         <div class="flex items-center gap-3">
           {{if .Online}}
-          <span class="w-2 h-2 rounded-full bg-[#3fb950] shrink-0"></span>
+          <span class="w-2 h-2 rounded-full bg-[#3fb950] online-dot shrink-0"></span>
           {{else}}
-          <span class="w-2 h-2 rounded-full bg-[#484f58] shrink-0"></span>
+          <span class="w-2 h-2 rounded-full bg-[#5a5048] shrink-0"></span>
           {{end}}
           <div>
-            <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-            <p class="text-xs font-mono text-[#8b949e]">{{.Line.Number}}</p>
+            <p class="text-sm font-medium text-[#e8ddd0]">{{.Line.Name}}</p>
+            <p class="text-xs font-mono text-[#9a8e82]">{{.Line.Number}}</p>
           </div>
         </div>
         {{if .Online}}
         <span class="text-xs text-[#3fb950]">online</span>
         {{else}}
-        <span class="text-xs text-[#484f58]">offline</span>
+        <span class="text-xs text-[#5a5048]">offline</span>
         {{end}}
       </a>
       {{end}}
     </div>
     {{else}}
-    <div class="px-4 py-8 text-center text-[#8b949e] text-sm">
-      No lines registered. <a href="/phones" class="text-[#58a6ff] hover:underline">Add one</a>.
+    <div class="px-4 py-8 text-center text-[#9a8e82] text-sm">
+      No lines registered. <a href="/phones" class="text-[#c1410c] hover:underline">Add one</a>.
     </div>
     {{end}}
   </div>

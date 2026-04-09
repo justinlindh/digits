@@ -6,9 +6,12 @@
     <title>{{block "title" .}}Digits{{end}} — Digits</title>
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="stylesheet" href="/static/tailwind.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="/static/htmx.min.js"></script>
     <style>
-      body { background-color: #0f1117; color: #c9d1d9; }
+      body { background-color: #1a1714; color: #e8ddd0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
 
       /* Nav links — no @apply, pure CSS */
       .nav-link {
@@ -18,13 +21,13 @@
         padding: 8px 12px;
         border-radius: 6px;
         font-size: 14px;
-        color: #8b949e;
+        color: #9a8e82;
         text-decoration: none;
         transition: background-color 0.15s, color 0.15s;
         white-space: nowrap;
       }
-      .nav-link:hover { background-color: #21262d; color: #c9d1d9; }
-      .nav-link.active { background-color: #21262d; color: #c9d1d9; }
+      .nav-link:hover { background-color: #2d2620; color: #e8ddd0; }
+      .nav-link.active { background-color: #2d2620; color: #e8ddd0; }
       .nav-link svg { flex-shrink: 0; }
 
       /* Sidebar: hidden on mobile, visible on desktop */
@@ -52,17 +55,17 @@
 
   {{if ne .Page "login"}}
   <!-- Mobile top bar -->
-  <div id="mobile-top-bar" class="flex items-center justify-between px-4 py-3 border-b border-[#21262d] bg-[#0d1117]">
+  <div id="mobile-top-bar" class="flex items-center justify-between px-4 py-3 border-b border-[#342d26] bg-[#15120f]">
     <div class="flex items-center gap-2">
-      <svg class="w-5 h-5 text-[#58a6ff]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <svg class="w-5 h-5 text-[#c1410c]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
       </svg>
-      <span class="font-semibold text-[#e6edf3] tracking-wide text-sm">DIGITS</span>
+      <span class="font-semibold text-[#e8ddd0] tracking-wide text-sm" style="font-family:'IBM Plex Mono',monospace">DIGITS</span>
       {{if .HouseholdName}}
-      <span class="text-[10px] text-[#8b949e] tracking-widest uppercase ml-1">{{.HouseholdName}}</span>
+      <span class="text-xs text-[#9a8e82] tracking-widest uppercase ml-1">{{.HouseholdName}}</span>
       {{end}}
     </div>
-    <button id="mobile-menu-btn" class="p-2 text-[#8b949e] hover:text-[#e6edf3]" aria-label="Open menu">
+    <button id="mobile-menu-btn" class="p-2 text-[#9a8e82] hover:text-[#e8ddd0]" aria-label="Open menu">
       <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
       </svg>
@@ -73,23 +76,23 @@
   <div id="mobile-overlay" class="fixed inset-0 bg-black/50 z-40" style="display:none;" onclick="closeMobileMenu()"></div>
 
   <!-- Sidebar -->
-  <aside id="sidebar" class="w-56 flex-shrink-0 border-r border-[#21262d] bg-[#0d1117]">
-    <div class="px-4 py-4 border-b border-[#21262d] flex items-center justify-between">
+  <aside id="sidebar" class="w-56 flex-shrink-0 border-r border-[#342d26] bg-[#15120f]">
+    <div class="px-4 py-4 border-b border-[#342d26] flex items-center justify-between">
       <div>
         <div class="flex items-center gap-2">
-          <svg class="w-5 h-5 text-[#58a6ff]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <svg class="w-5 h-5 text-[#c1410c]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
           </svg>
-          <span class="font-semibold text-[#e6edf3] tracking-wide text-sm">DIGITS</span>
+          <span class="font-semibold text-[#e8ddd0] tracking-wide text-sm" style="font-family:'IBM Plex Mono',monospace">DIGITS</span>
         </div>
         {{if .HouseholdName}}
-        <p class="text-[10px] text-[#8b949e] mt-0.5 tracking-widest uppercase">{{.HouseholdName}}</p>
+        <p class="text-xs text-[#9a8e82] mt-0.5 tracking-widest uppercase">{{.HouseholdName}}</p>
         {{else}}
-        <p class="text-[10px] text-[#8b949e] mt-0.5 tracking-widest uppercase">A callback to analog in a digital world</p>
+        <p class="text-xs text-[#9a8e82] mt-0.5 tracking-widest uppercase">A callback to analog in a digital world</p>
         {{end}}
       </div>
       <!-- Close button (mobile only) -->
-      <button id="mobile-close-btn" class="p-1 text-[#8b949e] hover:text-[#e6edf3] md:hidden" onclick="closeMobileMenu()" aria-label="Close menu">
+      <button id="mobile-close-btn" class="p-1 text-[#9a8e82] hover:text-[#e8ddd0] md:hidden" onclick="closeMobileMenu()" aria-label="Close menu">
         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
         </svg>
@@ -130,7 +133,7 @@
         Settings
       </a>
     </nav>
-    <div style="margin-top:auto;" class="p-3 border-t border-[#21262d] space-y-2">
+    <div style="margin-top:auto;" class="p-3 border-t border-[#342d26] space-y-2">
       <form method="POST" action="/auth/logout">
         <button type="submit" class="nav-link w-full text-left">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -140,12 +143,12 @@
         </button>
       </form>
       <div class="flex items-center gap-2 px-3">
-        <span class="inline-block w-2 h-2 rounded-full bg-[#3fb950]"></span>
-        <span class="text-xs text-[#8b949e]">Server running</span>
+        <span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] online-dot"></span>
+        <span class="text-xs text-[#9a8e82]">Server running</span>
       </div>
       {{if .Version}}
       <div class="px-3 mt-1">
-        <span class="text-[10px] text-[#484f58] font-mono">{{.Version}}</span>
+        <span class="text-xs text-[#5a5048] font-mono">{{.Version}}</span>
       </div>
       {{end}}
     </div>
@@ -153,7 +156,7 @@
   {{end}}
 
   <!-- Main content -->
-  <main class="flex-1 overflow-visible md:overflow-auto p-4 md:p-0">
+  <main class="flex-1 overflow-visible md:overflow-auto p-4 md:p-0 animate-fade-in">
     {{block "content" .}}{{end}}
   </main>
 
