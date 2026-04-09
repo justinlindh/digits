@@ -509,3 +509,15 @@ func TestHubOnlineNumbers(t *testing.T) {
 		t.Fatalf("expected 2 online, got %d", len(nums))
 	}
 }
+
+func TestRelayRestartMessageNotPanics(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil)
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn)
+
+	// Restart messages are server->device, not relayed through HandleMessage.
+	// But verify it doesn't crash if one passes through.
+	relay.HandleMessage("3140001", &Message{Type: TypeRestart, RestartMode: "service"})
+}

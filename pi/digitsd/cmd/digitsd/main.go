@@ -573,10 +573,6 @@ type statusFunc func(status, detail string)
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
-func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
-}
-
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
@@ -1035,7 +1031,7 @@ func main() {
 
 	svcCodes.SetUpdateCallback(func() {
 		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
-		go runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
@@ -1105,12 +1101,6 @@ func main() {
 		for range ticker.C {
 			requestICEServers(sig)
 		}
-	}()
-
-	// Check for updates on startup (non-blocking)
-	go func() {
-		time.Sleep(10 * time.Second) // let things settle
-		runUpdate(effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil)
 	}()
 
 	// OS signal handling
@@ -1372,6 +1362,38 @@ func main() {
 						time.Sleep(2 * time.Second) // let dial tone play briefly
 						os.Exit(0)                  // systemd will restart us
 					}()
+				}
+
+			case sigclient.TypeRestart:
+				mode := msg.RestartMode
+				slog.Info("received restart command", "mode", mode)
+				switch mode {
+				case "service":
+					sig.Send(&sigclient.Message{ //nolint:errcheck
+						Type:         sigclient.TypeUpdateStatus,
+						UpdateStatus: "restarting",
+						UpdateDetail: "Service restart requested",
+					})
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						slog.Info("restarting service via exit (systemd will restart)")
+						os.Exit(0)
+					}()
+				case "reboot":
+					sig.Send(&sigclient.Message{ //nolint:errcheck
+						Type:         sigclient.TypeUpdateStatus,
+						UpdateStatus: "rebooting",
+						UpdateDetail: "Device reboot requested",
+					})
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						slog.Info("rebooting device")
+						if err := exec.Command("sudo", "reboot").Run(); err != nil {
+							slog.Error("reboot command failed", "err", err)
+						}
+					}()
+				default:
+					slog.Warn("unknown restart mode", "mode", mode)
 				}
 
 			default:

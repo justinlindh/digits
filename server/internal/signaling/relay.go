@@ -75,6 +75,8 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 			"status", msg.UpdateStatus, "detail", msg.UpdateDetail)
 		r.Hub.SetUpdateStatus(from, msg.UpdateStatus, msg.UpdateDetail)
 		return // No relay — server consumes this
+	case TypeRestart:
+		return // Server → device only; ignore if echoed back
 	default:
 		slog.Warn("unknown message type", "type", msg.Type, "from", from)
 	}
