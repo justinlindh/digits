@@ -347,7 +347,7 @@ func (c *Controller) onSignalBusy() {
 		log.Printf("phone: busy signal ignored in state %s (not CALLING)", c.state)
 		return
 	}
-	log.Printf("phone: busy signal received — call rejected")
-	c.cb.SendTone("STOP")
-	// Stay in CALLING — caller should hang up
+	log.Printf("phone: busy signal received -- call rejected")
+	c.cb.SendTone("BUSY")
+	// Stay in CALLING -- caller should hang up
 }
