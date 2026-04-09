@@ -11,6 +11,7 @@ type CallTracker interface {
 	OnCallInitiated(from, to string) error
 	OnCallAnswered(caller, callee string) error
 	OnCallEnded(caller, callee string) error
+	ClearByNumber(number string)
 	InCall(a, b string) bool
 	Busy(number string) bool
 }
@@ -160,6 +161,13 @@ func (r *Relay) handleRequestICE(from string, _ *Message) {
 
 	if err := r.Hub.SendTo(from, resp); err != nil {
 		slog.Error("send ice-servers failed", "to", from, "err", err)
+	}
+}
+
+// OnDisconnect cleans up any active calls for a phone that disconnected.
+func (r *Relay) OnDisconnect(number string) {
+	if r.Tracker != nil {
+		r.Tracker.ClearByNumber(number)
 	}
 }
 

@@ -32,6 +32,14 @@ func (m *mockTracker) OnCallEnded(caller, callee string) error {
 	delete(m.calls, callee+"→"+caller)
 	return nil
 }
+func (m *mockTracker) ClearByNumber(number string) {
+	for k := range m.calls {
+		a, b, _ := strings.Cut(k, "→")
+		if a == number || b == number {
+			delete(m.calls, k)
+		}
+	}
+}
 func (m *mockTracker) Busy(number string) bool {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
@@ -380,6 +388,55 @@ func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
 		t.Fatalf("target should not receive anything, got: %+v", msg)
 	default:
 		// correct
+	}
+}
+
+func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	conn3 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+	hub.Register("3140003", conn3)
+
+	// Establish a call: Phone 1 → Phone 2
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	// Verify Phone 2 is busy
+	if !tracker.Busy("3140002") {
+		t.Fatal("expected phone 2 to be busy after call initiated")
+	}
+
+	// Simulate Phone 2 disconnecting (WebSocket drops)
+	relay.OnDisconnect("3140002")
+
+	// Phone 2 should no longer be busy
+	if tracker.Busy("3140002") {
+		t.Fatal("expected phone 2 to not be busy after disconnect cleanup")
+	}
+	// Phone 1 should also be freed (its call was with Phone 2)
+	if tracker.Busy("3140001") {
+		t.Fatal("expected phone 1 to not be busy after peer disconnected")
+	}
+
+	// Phone 3 can now call Phone 2 (once reconnected)
+	newConn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140002", newConn2)
+	relay.HandleMessage("3140003", &Message{Type: TypeCall, To: "3140002"})
+
+	select {
+	case data := <-newConn2.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeRing {
+			t.Fatalf("expected ring on reconnected phone 2, got: %+v", msg)
+		}
+	default:
+		t.Fatal("reconnected phone 2 did not receive ring")
 	}
 }
 
