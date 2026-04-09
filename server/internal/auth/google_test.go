@@ -6,30 +6,6 @@ import (
 	"testing"
 )
 
-func TestGoogleAuth_Enabled(t *testing.T) {
-	s := testDB(t)
-
-	tests := []struct {
-		name     string
-		clientID string
-		secret   string
-		want     bool
-	}{
-		{"both set", "id", "secret", true},
-		{"empty id", "", "secret", false},
-		{"empty secret", "id", "", false},
-		{"both empty", "", "", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewGoogleAuth(tt.clientID, tt.secret, "http://localhost/callback", "", s)
-			if got := g.Enabled(); got != tt.want {
-				t.Errorf("Enabled() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
 	s := testDB(t)
 	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", s)

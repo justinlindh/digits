@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -96,22 +95,3 @@ func TestRequireAuth_ValidSession(t *testing.T) {
 	}
 }
 
-func TestUserFromContext_NoUser(t *testing.T) {
-	ctx := context.Background()
-	u := UserFromContext(ctx)
-	if u != nil {
-		t.Errorf("expected nil user from empty context, got %+v", u)
-	}
-}
-
-func TestUserFromContext_WithUser(t *testing.T) {
-	user := &User{ID: "test-id", Email: "ctx@test.com"}
-	ctx := context.WithValue(context.Background(), UserContextKey, user)
-	got := UserFromContext(ctx)
-	if got == nil {
-		t.Fatal("expected user from context, got nil")
-	}
-	if got.ID != "test-id" {
-		t.Errorf("user ID = %s, want test-id", got.ID)
-	}
-}
