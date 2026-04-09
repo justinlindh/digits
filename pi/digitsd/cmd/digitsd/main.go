@@ -34,6 +34,11 @@ import (
 // before giving up and hanging up the call.
 const iceRestartTimeout = 15 * time.Second
 
+// pairingRefreshInterval is how often an unpaired device reconnects to
+// obtain a fresh pairing code. Must be shorter than the server-side
+// CodeTTL (10 min) so the code is refreshed before it expires.
+const pairingRefreshInterval = 9 * time.Minute
+
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 }
@@ -1099,6 +1104,13 @@ func main() {
 		}
 	}()
 
+	// Pairing code refresh: reconnect before the code expires so the
+	// server issues a fresh one. Timer starts when we receive a code.
+	pairingRefresh := time.NewTimer(0)
+	if !pairingRefresh.Stop() {
+		<-pairingRefresh.C
+	}
+
 	// OS signal handling
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -1334,8 +1346,10 @@ func main() {
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
 				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode)
+				pairingRefresh.Reset(pairingRefreshInterval)
 
 			case sigclient.TypePaired:
+				pairingRefresh.Stop()
 				if msg.DeviceToken != "" && cb.cfg != nil {
 					cb.cfg.DeviceToken = msg.DeviceToken
 					cb.cfg.PairingCode = ""
@@ -1394,6 +1408,12 @@ func main() {
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
+			}
+
+		case <-pairingRefresh.C:
+			if !cb.paired.Load() {
+				slog.Info("signal: pairing code expiring, reconnecting for fresh code")
+				_ = sig.Close()
 			}
 
 		case <-sig.Done():
