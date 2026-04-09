@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -320,7 +321,10 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
 		name = "My Family"
@@ -458,7 +462,10 @@ func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	number := strings.TrimSpace(r.FormValue("number"))
 	name := strings.TrimSpace(r.FormValue("name"))
 
@@ -498,7 +505,10 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	code := strings.TrimSpace(r.FormValue("code"))
 	number := strings.TrimSpace(r.FormValue("number"))
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -643,7 +653,10 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	ln, err := h.lineStore.GetByNumber(number)
@@ -667,7 +680,10 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	targetPi := strings.TrimSpace(r.FormValue("target_pi_version"))
 	targetFW := strings.TrimSpace(r.FormValue("target_fw_version"))
 
@@ -692,9 +708,13 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if sendErr != "" {
 			w.WriteHeader(http.StatusBadGateway)
-			json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": sendErr}); err != nil {
+				slog.Error("phone update: json encode failed", "err", err)
+			}
 		} else {
-			json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "triggered"}); err != nil {
+				slog.Error("phone update: json encode failed", "err", err)
+			}
 		}
 		return
 	}
@@ -706,17 +726,32 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	status := h.hub.GetUpdateStatus(number)
 	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
-		json.NewEncoder(w).Encode(map[string]string{"status": ""})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": ""}); err != nil {
+			slog.Error("update status: json encode failed", "err", err)
+		}
 		return
 	}
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		slog.Error("update status: json encode failed", "err", err)
+	}
 }
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	ln, err := h.lineStore.GetByNumber(number)
-	if err == nil {
-		h.lineStore.Delete(ln.ID)
+	if errors.Is(err, line.ErrNotFound) {
+		http.Error(w, "line not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		slog.Error("delete line: lookup failed", "number", number, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.lineStore.Delete(ln.ID); err != nil {
+		slog.Error("delete line failed", "line_id", ln.ID, "err", err)
+		http.Error(w, "failed to delete line", http.StatusInternalServerError)
+		return
 	}
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
@@ -833,10 +868,17 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
-		h.householdStore.UpdateName(households[0].ID, name)
+		if err := h.householdStore.UpdateName(households[0].ID, name); err != nil {
+			slog.Error("update household name failed", "household_id", households[0].ID, "err", err)
+			http.Redirect(w, r, "/settings", http.StatusSeeOther)
+			return
+		}
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
@@ -991,7 +1033,10 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 	}
 	myHousehold := households[0]
 
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	code := strings.TrimSpace(strings.ToUpper(r.FormValue("code")))
 	if code == "" {
 		http.Redirect(w, r, "/links?error=invite+code+required", http.StatusSeeOther)
@@ -1051,7 +1096,12 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 	lineCount := 0
 	if h.lineStore != nil {
-		lines, _ := h.lineStore.List()
+		lines, err := h.lineStore.List()
+		if err != nil {
+			slog.Error("stats: list lines failed", "err", err)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 		lineCount = len(lines)
 	}
 
@@ -1067,42 +1117,69 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 	totalUsers := 0
 	if h.authStore != nil {
-		totalUsers, _ = h.authStore.CountUsers()
+		var err error
+		totalUsers, err = h.authStore.CountUsers()
+		if err != nil {
+			slog.Error("stats: count users failed", "err", err)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	totalHouseholds := 0
 	if h.householdStore != nil {
-		totalHouseholds, _ = h.householdStore.CountHouseholds()
+		var err error
+		totalHouseholds, err = h.householdStore.CountHouseholds()
+		if err != nil {
+			slog.Error("stats: count households failed", "err", err)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	totalLinks := 0
 	if h.linkStore != nil {
-		totalLinks, _ = h.linkStore.CountActiveLinks()
+		var err error
+		totalLinks, err = h.linkStore.CountActiveLinks()
+		if err != nil {
+			slog.Error("stats: count active links failed", "err", err)
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"total_users":      totalUsers,
 		"total_households": totalHouseholds,
 		"total_lines":      lineCount,
 		"online_lines":     onlineCount,
 		"active_calls":     activeCallCount,
 		"total_links":      totalLinks,
-	})
+	}); err != nil {
+		slog.Error("stats: json encode failed", "err", err)
+	}
 }
 
 // ---- API ----
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
-	lines, _ := h.lineStore.List()
+	lines, err := h.lineStore.List()
+	if err != nil {
+		slog.Error("api status: list lines failed", "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
 	online := h.hub.OnlineNumbers()
 	active := h.tracker.Active()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"total_lines":  len(lines),
 		"online_lines": len(online),
 		"active_calls": len(active),
-	})
+	}); err != nil {
+		slog.Error("api status: json encode failed", "err", err)
+	}
 }
 
 func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
@@ -1126,7 +1203,9 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pairs)
+	if err := json.NewEncoder(w).Encode(pairs); err != nil {
+		slog.Error("active calls: json encode failed", "err", err)
+	}
 }
 
 // ---- WebSocket ----
@@ -1307,6 +1386,8 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	enabled := r.FormValue("enabled") == "true"
 	if err := h.householdStore.SetCallHistoryEnabled(households[0].ID, enabled); err != nil {
 		slog.Error("set call history failed", "err", err)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
@@ -1321,12 +1402,15 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, _ := h.householdStore.GetForUser(user.ID)
-	if len(households) == 0 {
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
 		if err := h.householdStore.SetTimezone(households[0].ID, tz); err != nil {
@@ -1371,10 +1455,18 @@ func (h *Handler) householdTimezone(r *http.Request) *time.Location {
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"version": version.Version,
 		"commit":  version.Commit,
-	})
+	}); err != nil {
+		slog.Error("api version: json encode failed", "err", err)
+	}
+}
+
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
 }
 
 func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
