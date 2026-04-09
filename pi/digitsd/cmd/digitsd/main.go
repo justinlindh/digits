@@ -717,7 +717,7 @@ func main() {
 
 	// 0. Extract embedded assets on version change
 	extractor := &assets.Extractor{
-		FS:         assets.EmbeddedFS,
+		FS:         assets.SubFS(),
 		RootDir:    "/",
 		DataDir:    "/data/digits",
 		MarkerPath: "/data/digits/asset-version",
@@ -1332,7 +1332,7 @@ func main() {
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
 
-			case "factory_reset":
+			case sigclient.TypeFactoryReset:
 				log.Println("factory reset: triggered by server")
 				go func() {
 					if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {

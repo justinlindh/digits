@@ -40,6 +40,9 @@ const (
 	// TypeICERestart is sent by either peer to initiate an ICE restart.
 	// Carries a new SDP offer with rotated ICE credentials.
 	TypeICERestart = "ice_restart"
+
+	// TypeFactoryReset is sent by the server to trigger a factory reset.
+	TypeFactoryReset = "factory_reset"
 )
 
 // ContactEntry represents a single contact in a sync payload.

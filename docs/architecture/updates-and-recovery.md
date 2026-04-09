@@ -104,7 +104,7 @@ The recovery partition is never mounted during normal operation. The initramfs m
 
 ## Hardware Watchdog
 
-The BCM2835 hardware watchdog is enabled via `dtoverlay=bcm2835-wdt` in `config.txt`. `digitsd` pets the watchdog every 5 seconds. If `digitsd` hangs or crashes without the watchdog being stroked, the hardware resets the board automatically.
+The BCM2835 hardware watchdog is enabled via `dtoverlay=watchdog` in `config.txt`. `digitsd` pets the watchdog every 5 seconds. If `digitsd` hangs or crashes without the watchdog being stroked, the hardware resets the board automatically.
 
 This catches scenarios that the boot counter alone cannot: processes that start successfully but then lock up mid-run.
 
@@ -132,7 +132,7 @@ To test recovery mode without waiting for three actual boot failures:
 # Set the boot counter to the threshold manually
 # (mount the boot partition and write the counter file)
 sudo mount /boot/firmware -o remount,rw
-echo "3" | sudo tee /boot/firmware/boot_count
+echo "3" | sudo tee /boot/firmware/boot-counter
 sudo mount /boot/firmware -o remount,ro
 sudo reboot
 ```

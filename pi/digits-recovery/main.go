@@ -40,7 +40,11 @@ func (s *recoveryServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) {
-	os.WriteFile(s.counterPath, []byte("0"), 0644)
+	if err := os.WriteFile(s.counterPath, []byte("0"), 0644); err != nil {
+		log.Printf("recovery: failed to clear boot counter: %v", err)
+		http.Error(w, "failed to clear boot counter", http.StatusInternalServerError)
+		return
+	}
 	log.Println("recovery: try again requested, counter cleared")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Rebooting...")
@@ -52,7 +56,11 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
 	log.Println("recovery: factory reset requested")
 
-	os.WriteFile(s.counterPath, []byte("0"), 0644)
+	if err := os.WriteFile(s.counterPath, []byte("0"), 0644); err != nil {
+		log.Printf("recovery: failed to clear boot counter: %v", err)
+		http.Error(w, "failed to clear boot counter", http.StatusInternalServerError)
+		return
+	}
 
 	rootfsImg := s.recoveryDir + "/rootfs.img.zst"
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
@@ -74,7 +82,11 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 
 	dataMnt := "/tmp/data-restore"
-	os.MkdirAll(dataMnt, 0755)
+	if err := os.MkdirAll(dataMnt, 0755); err != nil {
+		log.Printf("recovery: failed to create mount point: %v", err)
+		http.Error(w, "failed to create mount point", http.StatusInternalServerError)
+		return
+	}
 	if err := exec.Command("mount", s.dataDev, dataMnt).Run(); err != nil {
 		log.Printf("recovery: data mount failed: %v", err)
 		http.Error(w, "data mount failed", http.StatusInternalServerError)
