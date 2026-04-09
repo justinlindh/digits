@@ -4,28 +4,28 @@
 
 {{define "content"}}
 <div class="p-4 md:p-8 max-w-4xl">
-  <h1 class="text-xl font-semibold text-[#e8ddd0] mb-6">Connected Families</h1>
+  <h1 class="text-xl font-semibold text-[#ede6dc] mb-6">Connected Families</h1>
 
   {{if .Error}}
-  <div class="mb-6 px-4 py-3 rounded-md bg-[#f85149]/10 border border-[#f85149]/30 text-[#f85149] text-sm">
+  <div class="mb-6 px-4 py-3 rounded-md bg-[#f87171]/10 border border-[#f87171]/30 text-[#f87171] text-sm">
     {{.Error}}
   </div>
   {{end}}
 
   {{if .Accepted}}
-  <div class="mb-6 px-4 py-3 rounded-md bg-[#3fb950]/10 border border-[#3fb950]/30 text-[#3fb950] text-sm">
+  <div class="mb-6 px-4 py-3 rounded-md bg-[#4ade80]/10 border border-[#4ade80]/30 text-[#4ade80] text-sm">
     Family connected successfully.
   </div>
   {{end}}
 
   {{if .Conflicts}}
-  <div class="mb-6 px-4 py-3 rounded-md bg-[#d29922]/10 border border-[#d29922]/30 text-[#d29922] text-sm">
+  <div class="mb-6 px-4 py-3 rounded-md bg-[#fbbf24]/10 border border-[#fbbf24]/30 text-[#fbbf24] text-sm">
     Number conflict: line numbers <strong>{{.Conflicts}}</strong> exist in both households. One family will need to change these numbers under Lines before calls can be placed to those lines.
   </div>
   {{end}}
 
   {{if .Revoked}}
-  <div class="mb-6 px-4 py-3 rounded-md bg-[#d29922]/10 border border-[#d29922]/30 text-[#d29922] text-sm">
+  <div class="mb-6 px-4 py-3 rounded-md bg-[#fbbf24]/10 border border-[#fbbf24]/30 text-[#fbbf24] text-sm">
     Family disconnected.
   </div>
   {{end}}
@@ -33,29 +33,29 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
 
     <!-- Create Invite Card -->
-    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-5">
-      <h2 class="text-sm font-semibold text-[#e8ddd0] mb-1">Create Invite</h2>
-      <p class="text-xs text-[#9a8e82] mb-4">Generate a code to share with another family.</p>
+    <div class="bg-[#1e1b18] border border-[#302a24] rounded-lg p-5">
+      <h2 class="text-sm font-semibold text-[#ede6dc] mb-1">Create Invite</h2>
+      <p class="text-xs text-[#908578] mb-4">Generate a code to share with another family.</p>
 
       {{if .CreatedCode}}
-      <div class="mb-4 p-3 rounded-md bg-[#15120f] border border-[#3fb950]/40">
-        <p class="text-xs text-[#9a8e82] mb-1">Share this code:</p>
-        <p class="font-mono text-lg tracking-widest text-[#e8ddd0] select-all">{{.CreatedCode}}</p>
+      <div class="mb-4 p-3 rounded-md bg-[#13100e] border border-[#4ade80]/40">
+        <p class="text-xs text-[#908578] mb-1">Share this code:</p>
+        <p class="font-mono text-lg tracking-widest text-[#ede6dc] select-all">{{.CreatedCode}}</p>
       </div>
       {{end}}
 
       <form method="POST" action="/links/invite">
         <button type="submit"
-          class="w-full px-4 py-2 rounded-md bg-[#2d7a3e] hover:bg-[#38914a] text-white text-sm font-medium transition-colors">
+          class="w-full px-4 py-2 rounded-md bg-[#22c55e] hover:bg-[#34d86a] text-white text-sm font-medium transition-colors">
           Generate Invite Code
         </button>
       </form>
     </div>
 
     <!-- Accept Invite Card -->
-    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg p-5">
-      <h2 class="text-sm font-semibold text-[#e8ddd0] mb-1">Accept Invite</h2>
-      <p class="text-xs text-[#9a8e82] mb-4">Enter a code you received from another family.</p>
+    <div class="bg-[#1e1b18] border border-[#302a24] rounded-lg p-5">
+      <h2 class="text-sm font-semibold text-[#ede6dc] mb-1">Accept Invite</h2>
+      <p class="text-xs text-[#908578] mb-4">Enter a code you received from another family.</p>
 
       <form method="POST" action="/links/accept" class="space-y-3">
         <input
@@ -63,12 +63,12 @@
           name="code"
           placeholder="Enter invite code"
           required
-          class="w-full px-3 py-2 rounded-md bg-[#15120f] border border-[#342d26] text-[#e8ddd0] placeholder-[#9a8e82] text-sm font-mono focus:outline-none focus:border-[#c1410c] tracking-widest uppercase"
+          class="w-full px-3 py-2 rounded-md bg-[#13100e] border border-[#302a24] text-[#ede6dc] placeholder-[#908578] text-sm font-mono focus:outline-none focus:border-[#e8601a] tracking-widest uppercase"
           autocomplete="off"
           maxlength="8"
         />
         <button type="submit"
-          class="w-full px-4 py-2 rounded-md bg-[#c1410c] hover:bg-[#d4520f] text-white text-sm font-medium transition-colors">
+          class="w-full px-4 py-2 rounded-md bg-[#e8601a] hover:bg-[#f0751f] text-white text-sm font-medium transition-colors">
           Accept Invite
         </button>
       </form>
@@ -78,43 +78,43 @@
 
   <!-- Connected Families -->
   <div class="mb-8">
-    <h2 class="text-sm font-semibold text-[#e8ddd0] mb-3">Connected Families</h2>
+    <h2 class="text-sm font-semibold text-[#ede6dc] mb-3">Connected Families</h2>
     {{if .LinkedFamilies}}
     <div class="space-y-4">
       {{range .LinkedFamilies}}
-      <div class="bg-[#231f1b] border border-[#342d26] rounded-lg overflow-hidden">
-        <div class="px-4 py-3 border-b border-[#342d26] flex items-center justify-between">
+      <div class="bg-[#1e1b18] border border-[#302a24] rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-[#302a24] flex items-center justify-between">
           <div>
-            <h3 class="text-sm font-medium text-[#e8ddd0]">{{.Name}}</h3>
+            <h3 class="text-sm font-medium text-[#ede6dc]">{{.Name}}</h3>
             <div class="flex items-center gap-1.5 mt-0.5">
-              <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#3fb950] online-dot"></span>
-              <span class="text-xs text-[#3fb950]">{{.Status}}</span>
+              <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#4ade80] online-dot"></span>
+              <span class="text-xs text-[#4ade80]">{{.Status}}</span>
               {{if .AcceptedAt}}
-              <span class="text-xs text-[#5a5048] ml-1">since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>
+              <span class="text-xs text-[#504840] ml-1">since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>
               {{end}}
             </div>
           </div>
           <form method="POST" action="/links/{{.ID}}/revoke"
             onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
             <button type="submit"
-              class="px-3 py-1 rounded text-xs text-[#f85149] border border-[#f85149]/30 hover:bg-[#f85149]/10 transition-colors">
+              class="px-3 py-1 rounded text-xs text-[#f87171] border border-[#f87171]/30 hover:bg-[#f87171]/10 transition-colors">
               Disconnect
             </button>
           </form>
         </div>
         {{if .Lines}}
-        <div class="divide-y divide-[#342d26]">
+        <div class="divide-y divide-[#302a24]">
           {{range .Lines}}
           <div class="px-4 py-2.5 flex items-center justify-between">
             <div>
-              <span class="text-sm text-[#e8ddd0]">{{.Name}}</span>
-              <span class="text-xs font-mono text-[#9a8e82] ml-2">{{.Number}}</span>
+              <span class="text-sm text-[#ede6dc]">{{.Name}}</span>
+              <span class="text-xs font-mono text-[#908578] ml-2">{{.Number}}</span>
             </div>
           </div>
           {{end}}
         </div>
         {{else}}
-        <div class="px-4 py-4 text-center text-xs text-[#9a8e82]">
+        <div class="px-4 py-4 text-center text-xs text-[#908578]">
           No lines registered yet
         </div>
         {{end}}
@@ -122,47 +122,47 @@
       {{end}}
     </div>
     {{else}}
-    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg">
-      <p class="px-4 py-6 text-center text-sm text-[#9a8e82]">No connected families yet.</p>
+    <div class="bg-[#1e1b18] border border-[#302a24] rounded-lg">
+      <p class="px-4 py-6 text-center text-sm text-[#908578]">No connected families yet.</p>
     </div>
     {{end}}
   </div>
 
   <!-- Pending Invites (Sent) -->
   <div>
-    <h2 class="text-sm font-semibold text-[#e8ddd0] mb-3">Pending Invites Sent</h2>
-    <div class="bg-[#231f1b] border border-[#342d26] rounded-lg overflow-hidden">
+    <h2 class="text-sm font-semibold text-[#ede6dc] mb-3">Pending Invites Sent</h2>
+    <div class="bg-[#1e1b18] border border-[#302a24] rounded-lg overflow-hidden">
       {{if .PendingInvites}}
       {{/* Desktop table */}}
       <div class="hidden md:block">
         <table class="w-full text-sm">
           <thead>
-            <tr class="border-b border-[#342d26]">
-              <th class="text-left px-4 py-3 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Invite Code</th>
-              <th class="text-left px-4 py-3 text-xs font-medium text-[#9a8e82] uppercase tracking-wider">Created</th>
+            <tr class="border-b border-[#302a24]">
+              <th class="text-left px-4 py-3 text-xs font-medium text-[#908578] uppercase tracking-wider">Invite Code</th>
+              <th class="text-left px-4 py-3 text-xs font-medium text-[#908578] uppercase tracking-wider">Created</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-[#342d26]">
+          <tbody class="divide-y divide-[#302a24]">
             {{range .PendingInvites}}
             <tr>
-              <td class="px-4 py-3 font-mono text-[#e8ddd0] tracking-widest">{{.InviteCode}}</td>
-              <td class="px-4 py-3 text-[#9a8e82]">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+              <td class="px-4 py-3 font-mono text-[#ede6dc] tracking-widest">{{.InviteCode}}</td>
+              <td class="px-4 py-3 text-[#908578]">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
             </tr>
             {{end}}
           </tbody>
         </table>
       </div>
       {{/* Mobile card list */}}
-      <div class="md:hidden divide-y divide-[#342d26]">
+      <div class="md:hidden divide-y divide-[#302a24]">
         {{range .PendingInvites}}
         <div class="px-4 py-3">
-          <p class="font-mono text-sm text-[#e8ddd0] tracking-widest">{{.InviteCode}}</p>
-          <p class="text-xs text-[#9a8e82] mt-0.5">Created {{.CreatedAt.Format "Jan 2, 2006"}}</p>
+          <p class="font-mono text-sm text-[#ede6dc] tracking-widest">{{.InviteCode}}</p>
+          <p class="text-xs text-[#908578] mt-0.5">Created {{.CreatedAt.Format "Jan 2, 2006"}}</p>
         </div>
         {{end}}
       </div>
       {{else}}
-      <p class="px-4 py-6 text-center text-sm text-[#9a8e82]">No pending invites.</p>
+      <p class="px-4 py-6 text-center text-sm text-[#908578]">No pending invites.</p>
       {{end}}
     </div>
   </div>
