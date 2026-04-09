@@ -22,11 +22,11 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	}
 	s := NewStore(database)
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM devices")
-		database.DB.Exec("DELETE FROM lines")
-		database.DB.Exec("DELETE FROM household_members")
-		database.DB.Exec("DELETE FROM households")
-		database.Close()
+		_, _ = database.DB.Exec("DELETE FROM devices")
+		_, _ = database.DB.Exec("DELETE FROM lines")
+		_, _ = database.DB.Exec("DELETE FROM household_members")
+		_, _ = database.DB.Exec("DELETE FROM households")
+		_ = database.Close()
 	})
 	return s, database
 }

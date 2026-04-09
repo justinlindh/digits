@@ -33,7 +33,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *line.Store, *calls.Tracke
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
@@ -69,7 +69,7 @@ func dialWS(t *testing.T, srv *httptest.Server) *websocket.Conn {
 	if err != nil {
 		t.Fatalf("dial ws: %v", err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 	return conn
 }
 
@@ -86,7 +86,7 @@ func sendMsg(t *testing.T, conn *websocket.Conn, msg signaling.Message) {
 
 func recvMsg(t *testing.T, conn *websocket.Conn) *signaling.Message {
 	t.Helper()
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -107,8 +107,8 @@ func TestE2EFullCallFlow(t *testing.T) {
 
 	// Register lines
 	dummyHH := "00000000-0000-0000-0000-000000000000"
-	lineStore.Add("3140001", "Phone A", dummyHH)
-	lineStore.Add("3140002", "Phone B", dummyHH)
+	_, _ = lineStore.Add("3140001", "Phone A", dummyHH)
+	_, _ = lineStore.Add("3140002", "Phone B", dummyHH)
 
 	// Connect two phones
 	ws1 := dialWS(t, srv)
@@ -171,7 +171,7 @@ func TestE2EFullCallFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("api/status: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
@@ -220,13 +220,13 @@ func TestE2ENoRegisterRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Send a non-register message first
 	sendMsg(t, conn, signaling.Message{Type: signaling.TypeCall, To: "3140002"})
 
 	// Should receive error and connection close
-	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, data, err := conn.ReadMessage()
 	if err != nil {
 		// Connection closed is also acceptable
@@ -242,8 +242,8 @@ func TestE2EWebUIWithData(t *testing.T) {
 	srv, lineStore, _, authStore := setupTestServer(t)
 
 	dummyHH := "00000000-0000-0000-0000-000000000000"
-	lineStore.Add("3140001", "Kitchen", dummyHH)
-	lineStore.Add("3140002", "Bedroom", dummyHH)
+	_, _ = lineStore.Add("3140001", "Kitchen", dummyHH)
+	_, _ = lineStore.Add("3140002", "Bedroom", dummyHH)
 
 	// Create a session cookie for authenticated requests
 	cookie := addSessionCookie(t, authStore)
@@ -255,7 +255,7 @@ func TestE2EWebUIWithData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
@@ -265,7 +265,7 @@ func TestE2EWebUIWithData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /phones: %v", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	var bodyBuf strings.Builder
 	_, _ = io.Copy(&bodyBuf, resp2.Body)
 	body := bodyBuf.String()

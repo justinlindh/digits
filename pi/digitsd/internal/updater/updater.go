@@ -97,7 +97,7 @@ func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) 
 	if err != nil {
 		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch releases: status %d", resp.StatusCode)
@@ -157,7 +157,7 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("download %s: status %d", url, resp.StatusCode)
@@ -170,18 +170,18 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 
 	h := sha256.New()
 	if _, err := io.Copy(io.MultiWriter(f, h), resp.Body); err != nil {
-		f.Close()
-		os.Remove(destPath + ".tmp")
+		_ = f.Close()
+		_ = os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("download write: %w", err)
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(destPath + ".tmp")
+		_ = os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("flush download: %w", err)
 	}
 
 	gotSHA := hex.EncodeToString(h.Sum(nil))
 	if expectedSHA != "" && gotSHA != expectedSHA {
-		os.Remove(destPath + ".tmp")
+		_ = os.Remove(destPath + ".tmp")
 		return "", fmt.Errorf("sha256 mismatch: got %s, want %s", gotSHA, expectedSHA)
 	}
 
@@ -210,20 +210,30 @@ func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 	// overwrite an open binary.
 	tmpDst := u.cfg.BinaryPath + ".tmp"
 	if err := exec.Command("sudo", "cp", stagedBinary, tmpDst).Run(); err != nil {
-		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		if rmErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); rmErr != nil {
+			slog.Warn("updater: failed to remount ro after copy failure", "error", rmErr)
+		}
 		return fmt.Errorf("copy binary: %w", err)
 	}
 	if err := exec.Command("sudo", "chmod", "0755", tmpDst).Run(); err != nil {
-		exec.Command("sudo", "rm", "-f", tmpDst).Run()
-		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		if rmErr := exec.Command("sudo", "rm", "-f", tmpDst).Run(); rmErr != nil {
+			slog.Warn("updater: failed to remove tmp binary after chmod failure", "error", rmErr)
+		}
+		if roErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); roErr != nil {
+			slog.Warn("updater: failed to remount ro after chmod failure", "error", roErr)
+		}
 		return fmt.Errorf("chmod binary: %w", err)
 	}
 	if err := exec.Command("sudo", "mv", tmpDst, u.cfg.BinaryPath).Run(); err != nil {
-		exec.Command("sudo", "rm", "-f", tmpDst).Run()
-		exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run()
+		if rmErr := exec.Command("sudo", "rm", "-f", tmpDst).Run(); rmErr != nil {
+			slog.Warn("updater: failed to remove tmp binary after rename failure", "error", rmErr)
+		}
+		if roErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); roErr != nil {
+			slog.Warn("updater: failed to remount ro after rename failure", "error", roErr)
+		}
 		return fmt.Errorf("rename binary: %w", err)
 	}
-	os.Remove(stagedBinary)
+	_ = os.Remove(stagedBinary)
 
 	// Verify the installed binary reports the expected version.
 	if expectedVersion != "" {

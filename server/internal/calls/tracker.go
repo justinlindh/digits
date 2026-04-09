@@ -174,7 +174,7 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var calls []Call
 	for rows.Next() {
@@ -211,7 +211,7 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var calls []Call
 	for rows.Next() {

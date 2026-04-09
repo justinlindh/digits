@@ -101,7 +101,7 @@ func (s *Store) List() ([]Line, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list lines: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var lines []Line
 	for rows.Next() {
@@ -124,7 +124,7 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list lines by household: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var lines []Line
 	for rows.Next() {

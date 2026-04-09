@@ -16,7 +16,7 @@ func TestAdminDBMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var count int
 	err = db.DB.QueryRow("SELECT COUNT(*) FROM admin_users").Scan(&count)

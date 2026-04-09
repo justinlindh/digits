@@ -27,7 +27,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
@@ -73,7 +73,7 @@ func TestMagicLinkRateLimited(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request %d: %v", i, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusTooManyRequests {
 			t.Fatalf("request %d: got 429, expected non-429 (within limit)", i)
 		}
@@ -85,7 +85,7 @@ func TestMagicLinkRateLimited(t *testing.T) {
 	if err != nil {
 		t.Fatalf("6th request: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("6th request: expected 429, got %d", resp.StatusCode)
 	}

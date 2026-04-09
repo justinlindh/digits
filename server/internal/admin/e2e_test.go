@@ -22,7 +22,7 @@ func TestE2EAdminLoginAndDashboard(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"total_users":5,"total_households":3,"total_phones":7,"online_phones":2,"active_calls":1,"total_links":2}`))
+		_, _ = w.Write([]byte(`{"total_users":5,"total_households":3,"total_phones":7,"online_phones":2,"active_calls":1,"total_links":2}`))
 	}))
 	defer statsSrv.Close()
 
@@ -30,16 +30,18 @@ func TestE2EAdminLoginAndDashboard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	t.Cleanup(func() {
-		db.DB.Exec("DELETE FROM admin_sessions")
-		db.DB.Exec("DELETE FROM admin_users WHERE username = 'e2eadmin'")
+		_, _ = db.DB.Exec("DELETE FROM admin_sessions")
+		_, _ = db.DB.Exec("DELETE FROM admin_users WHERE username = 'e2eadmin'")
 	})
 
 	authStore := NewAuthStore(db)
 	hash, _ := HashSecret("e2epass")
-	authStore.CreateAdmin("e2eadmin", hash)
+	if _, err := authStore.CreateAdmin("e2eadmin", hash); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := &Config{
 		Addr:        ":0",
