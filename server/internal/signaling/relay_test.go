@@ -425,17 +425,18 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	}
 
 	// Phone 3 can now call Phone 2 (once reconnected)
-	hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+	newConn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140002", newConn2)
 	relay.HandleMessage("3140003", &Message{Type: TypeCall, To: "3140002"})
 
 	select {
-	case data := <-conn3.Send:
+	case data := <-newConn2.Send:
 		msg, _ := ParseMessage(data)
-		if msg.Type == TypeBusy {
-			t.Fatal("phone 2 should not be busy after disconnect cleanup")
+		if msg.Type != TypeRing {
+			t.Fatalf("expected ring on reconnected phone 2, got: %+v", msg)
 		}
 	default:
-		// No busy signal sent to caller - check callee got ring
+		t.Fatal("reconnected phone 2 did not receive ring")
 	}
 }
 

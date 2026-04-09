@@ -2,6 +2,7 @@ package calls
 
 import (
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -109,13 +110,15 @@ func (t *Tracker) ClearByNumber(number string) {
 	t.mu.Unlock()
 
 	// End any open calls in the database
-	t.db.DB.Exec(
+	if _, err := t.db.DB.Exec(
 		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
 		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
 		 WHERE (caller = $1 OR callee = $1)
 		 AND status IN ('initiated', 'ringing', 'connected')`,
 		number,
-	)
+	); err != nil {
+		slog.Warn("clear calls on disconnect failed", "number", number, "err", err)
+	}
 }
 
 func (t *Tracker) Busy(number string) bool {
