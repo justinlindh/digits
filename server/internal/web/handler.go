@@ -82,8 +82,11 @@ type HandlerConfig struct {
 }
 
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+	funcMap := template.FuncMap{
+		"fmtPhone": line.FormatNumber,
+	}
 	parse := func(pages ...string) (*template.Template, error) {
-		return template.New("").ParseFS(templateFS, pages...)
+		return template.New("").Funcs(funcMap).ParseFS(templateFS, pages...)
 	}
 
 	tmplDashboard, err := parse("templates/layout.html", "templates/dashboard.html")
