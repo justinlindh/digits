@@ -19,6 +19,11 @@ var ErrNumberTaken = errors.New("line number is already in use")
 
 var numberRegex = regexp.MustCompile(`^\d{7}$`)
 
+func isUniqueViolation(err error) bool {
+	var pgErr *pq.Error
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
 // ValidateNumber checks that num is exactly 7 digits.
 func ValidateNumber(num string) error {
 	if !numberRegex.MatchString(num) {
@@ -66,8 +71,7 @@ func (s *Store) Add(number, name, householdID string) (*Line, error) {
 		number, name, householdID,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
-		var pgErr *pq.Error
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if isUniqueViolation(err) {
 			return nil, ErrNumberTaken
 		}
 		return nil, fmt.Errorf("add line: %w", err)
@@ -170,8 +174,7 @@ func (s *Store) Update(id int64, number, name string) error {
 		number, name, id,
 	)
 	if err != nil {
-		var pgErr *pq.Error
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if isUniqueViolation(err) {
 			return ErrNumberTaken
 		}
 		return fmt.Errorf("update line: %w", err)
@@ -218,6 +221,21 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 	).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("number exists excluding: %w", err)
+	}
+	return count > 0, nil
+}
+
+// NumberExistsExcludingNumber reports whether the given number is in use by any
+// line other than the one with excludeNumber. Used for availability checks where
+// only the current number (not ID) is known.
+func (s *Store) NumberExistsExcludingNumber(number, excludeNumber string) (bool, error) {
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM lines WHERE number = $1 AND number != $2`,
+		number, excludeNumber,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("number exists excluding number: %w", err)
 	}
 	return count > 0, nil
 }

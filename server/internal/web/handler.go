@@ -28,6 +28,8 @@ import (
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
+const msgNumberTaken = "This number is already in use"
+
 //go:embed templates/*.html
 var templateFS embed.FS
 
@@ -500,7 +502,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		errMsg := "Failed to add line"
 		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = "This number is already in use"
+			errMsg = msgNumberTaken
 		}
 		data = h.buildLinesData(r, errMsg)
 	}
@@ -521,13 +523,7 @@ func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
 	exclude := strings.TrimSpace(r.URL.Query().Get("exclude"))
 
 	// Too short to validate yet, return empty response
-	digitCount := 0
-	for _, c := range number {
-		if c >= '0' && c <= '9' {
-			digitCount++
-		}
-	}
-	if number == "" || digitCount < 7 {
+	if len(number) < 7 {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -544,11 +540,7 @@ func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if exclude != "" {
-		if existing, lookupErr := h.lineStore.GetByNumber(exclude); lookupErr == nil {
-			taken, err = h.lineStore.NumberExistsExcluding(number, existing.ID)
-		} else {
-			taken, err = h.lineStore.NumberExists(number)
-		}
+		taken, err = h.lineStore.NumberExistsExcludingNumber(number, exclude)
 	} else {
 		taken, err = h.lineStore.NumberExists(number)
 	}
@@ -612,7 +604,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		pairErr := err.Error()
 		if errors.Is(err, line.ErrNumberTaken) {
-			pairErr = "This number is already in use"
+			pairErr = msgNumberTaken
 		}
 		data := h.buildLinesData(r, "")
 		data.PairError = pairErr
@@ -763,7 +755,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	if err := h.lineStore.Update(ln.ID, updateNumber, name); err != nil {
 		errMsg := "Failed to update line"
 		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = "This number is already in use"
+			errMsg = msgNumberTaken
 		}
 		data := h.buildLinesData(r, errMsg)
 		if isHTMX(r) {
