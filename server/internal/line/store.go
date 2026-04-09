@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/lib/pq"
 )
 
 // ErrNotFound is returned when a line cannot be found.
@@ -65,6 +66,10 @@ func (s *Store) Add(number, name, householdID string) (*Line, error) {
 		number, name, householdID,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
+		var pgErr *pq.Error
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrNumberTaken
+		}
 		return nil, fmt.Errorf("add line: %w", err)
 	}
 	return l, nil
@@ -165,6 +170,10 @@ func (s *Store) Update(id int64, number, name string) error {
 		number, name, id,
 	)
 	if err != nil {
+		var pgErr *pq.Error
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrNumberTaken
+		}
 		return fmt.Errorf("update line: %w", err)
 	}
 	n, _ := res.RowsAffected()
