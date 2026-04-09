@@ -239,7 +239,7 @@ func main() {
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),
 		hostname:    hostname,
 		rebootFunc: func() error {
-			return exec.Command("reboot").Run()
+			return exec.Command("systemctl", "reboot").Run()
 		},
 	}
 

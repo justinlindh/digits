@@ -647,6 +647,18 @@ info "Populating recovery partition..."
 info "  Creating rootfs snapshot (this may take a while)..."
 dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
 
+# Clean /data before creating skeleton (first-boot must run fresh after reset)
+rm -f "${DATA_MNT}/.initialized"
+rm -f "${DATA_MNT}/log/digits-first-boot.log"
+rm -f "${DATA_MNT}/digits/device-id"
+rm -f "${DATA_MNT}/digits/config.json"
+rm -f "${DATA_MNT}/digits/config.json.bak"
+rm -f "${DATA_MNT}/digits/recovery-mode"
+rm -f "${DATA_MNT}/wifi-configured"
+rm -rf "${DATA_MNT}/wifi/"*
+rm -rf "${DATA_MNT}/log/journal/"*
+rm -rf "${DATA_MNT}/ssh/"*
+
 # Create compressed data skeleton archive
 info "  Creating data skeleton archive..."
 tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"

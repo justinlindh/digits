@@ -379,13 +379,13 @@
           <div id="factory-reset-default">
             <button type="button" onclick="showFactoryResetConfirm()"
                     class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#da3633]/40 text-[#f85149] text-sm rounded transition-colors">
-              Factory Reset
+              Recovery Mode
             </button>
-            <p class="text-xs text-[#484f58] mt-2">Erases all settings and restores the device to its original state.</p>
+            <p class="text-xs text-[#484f58] mt-2">Reboots the device into recovery mode. Connect to the device's recovery WiFi network to try again or perform a factory reset.</p>
           </div>
 
           <div id="factory-reset-confirm" class="hidden">
-            <p class="text-sm text-[#c9d1d9] mb-3">This will erase all settings and require physical access to the device to complete. Continue?</p>
+            <p class="text-sm text-[#c9d1d9] mb-3">The device will reboot into recovery mode. You'll need to connect to its recovery WiFi network to choose an action. Continue?</p>
             <div class="flex gap-3">
               <button type="button" onclick="doFactoryReset()"
                       class="px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm font-medium rounded transition-colors">
@@ -431,7 +431,7 @@
               text.textContent = 'Failed: ' + data.error;
               text.className = 'text-sm text-[#f85149]';
             } else {
-              text.textContent = 'Reset signal sent. Device is rebooting into recovery mode.';
+              text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery WiFi network to continue.';
               text.className = 'text-sm text-[#e3b341]';
             }
           })
