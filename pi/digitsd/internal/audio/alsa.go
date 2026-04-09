@@ -8,13 +8,8 @@ package audio
 import "C"
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
-	"os"
-	"strings"
 	"unsafe"
 )
 
@@ -22,6 +17,17 @@ import (
 // occurred and was recovered. The frame was still written successfully,
 // but the caller should drain stale data to re-sync.
 var ErrUnderrun = errors.New("alsa: buffer underrun recovered")
+
+const (
+	// CodecCardName is the ALSA card name for the RPi Codec Zero (DA7212).
+	// Used with amixer/alsactl which accept -c <name>.
+	CodecCardName = "Zero"
+
+	// CodecDeviceName is the stable ALSA device identifier for the Codec Zero.
+	// Uses the card name instead of a numeric index so it works regardless of
+	// card enumeration order (HDMI vs codec).
+	CodecDeviceName = "plughw:CARD=Zero,DEV=0"
+)
 
 // Config holds ALSA device parameters.
 type Config struct {
@@ -31,59 +37,11 @@ type Config struct {
 	FrameSize  int // samples per frame per channel (960 = 20ms at 48kHz)
 }
 
-// findCodecCardIn scans ALSA card list output for the Codec Zero (DA7212)
-// and returns its card number. The input should be the contents of
-// /proc/asound/cards. Lines look like:
-//
-//	 0 [Zero           ]: RPi_Codec_Zero - RPi Codec Zero
-func findCodecCardIn(r io.Reader) (int, error) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "RPi Codec Zero") || strings.Contains(line, "RPi_Codec_Zero") {
-			var num int
-			if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &num); err == nil {
-				return num, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("codec Zero card not found in /proc/asound/cards")
-}
-
-// FindCodecCard scans /proc/asound/cards for the Codec Zero (DA7212) and
-// returns its ALSA card number. Returns an error if not found.
-func FindCodecCard() (int, error) {
-	f, err := os.Open("/proc/asound/cards")
-	if err != nil {
-		return 0, fmt.Errorf("open /proc/asound/cards: %w", err)
-	}
-	defer func() {
-		if cerr := f.Close(); cerr != nil {
-			slog.Warn("close /proc/asound/cards", "error", cerr)
-		}
-	}()
-	return findCodecCardIn(f)
-}
-
-// CodecDeviceName returns "plughw:N,0" for the Codec Zero card.
-func CodecDeviceName() (string, error) {
-	card, err := FindCodecCard()
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("plughw:%d,0", card), nil
-}
-
 // DefaultCaptureConfig returns config for the DA7212 codec: stereo capture at 48kHz.
 // Uses plughw to bypass dmix (which is playback-only).
 func DefaultCaptureConfig() Config {
-	dev, err := CodecDeviceName()
-	if err != nil {
-		slog.Warn("codec detection failed, falling back to plughw:1,0", "error", err)
-		dev = "plughw:1,0"
-	}
 	return Config{
-		Device:     dev,
+		Device:     CodecDeviceName,
 		SampleRate: 48000,
 		Channels:   2,
 		FrameSize:  960,
