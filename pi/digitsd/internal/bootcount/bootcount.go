@@ -32,6 +32,9 @@ func Clear(path string) error {
 	return Write(path, 0)
 }
 
+// SetThreshold writes the threshold value directly to the boot counter file,
+// which causes the initramfs boot-check to immediately enter recovery mode
+// on the next reboot (since count >= threshold).
 func SetThreshold(path string, threshold int) error {
 	return Write(path, threshold)
 }

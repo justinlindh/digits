@@ -94,7 +94,10 @@ func (e *Extractor) collectFiles(prefix string) ([]embeddedFile, error) {
 		if d.IsDir() {
 			return nil
 		}
-		rel, _ := filepath.Rel(prefix, path)
+		rel, err := filepath.Rel(prefix, path)
+		if err != nil {
+			return fmt.Errorf("unexpected path %q not under %q: %w", path, prefix, err)
+		}
 		perm := os.FileMode(0644)
 		for _, po := range permOverrides {
 			if strings.HasPrefix(path, po.prefix) {

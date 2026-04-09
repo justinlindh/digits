@@ -71,6 +71,9 @@ export RECOVERY_DIR="$RECOVERY_MNT"
 
 # Re-mount boot so recovery binary can clear counter
 mount -t vfat "$BOOT_DEV" "$BOOT_MNT" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "boot-check: WARNING: cannot remount boot for counter access"
+fi
 
 # Hand off to recovery binary (does not return)
 exec "$RECOVERY_MNT/$RECOVERY_BIN"

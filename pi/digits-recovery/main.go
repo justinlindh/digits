@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //go:embed static/*
@@ -48,8 +49,14 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 	log.Println("recovery: try again requested, counter cleared")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Rebooting...")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 	if s.rebootFunc != nil {
-		s.rebootFunc()
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			s.rebootFunc()
+		}()
 	}
 }
 
@@ -64,11 +71,10 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 
 	rootfsImg := s.recoveryDir + "/rootfs.img.zst"
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
-	cmd := exec.Command("sh", "-c",
-		fmt.Sprintf("zstd -d -c %s | dd of=%s bs=4M status=progress", rootfsImg, s.rootfsDev))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := pipeCommands(
+		exec.Command("zstd", "-d", "-c", rootfsImg),
+		exec.Command("dd", "of="+s.rootfsDev, "bs=4M", "status=progress"),
+	); err != nil {
 		log.Printf("recovery: rootfs restore failed: %v", err)
 		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
 		return
@@ -94,11 +100,10 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 
 	skelArchive := s.recoveryDir + "/data-skeleton.tar.zst"
-	cmd = exec.Command("sh", "-c",
-		fmt.Sprintf("zstd -d -c %s | tar xf - -C %s", skelArchive, dataMnt))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := pipeCommands(
+		exec.Command("zstd", "-d", "-c", skelArchive),
+		exec.Command("tar", "xf", "-", "-C", dataMnt),
+	); err != nil {
 		log.Printf("recovery: data skeleton restore failed: %v", err)
 		exec.Command("umount", dataMnt).Run()
 		http.Error(w, "data restore failed", http.StatusInternalServerError)
@@ -109,9 +114,15 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	log.Println("recovery: factory reset complete, rebooting")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Factory reset complete. Rebooting...")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 
 	if s.rebootFunc != nil {
-		s.rebootFunc()
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			s.rebootFunc()
+		}()
 	}
 }
 
@@ -122,6 +133,35 @@ func (s *recoveryServer) readCounter() int {
 	}
 	n, _ := strconv.Atoi(strings.TrimSpace(string(data)))
 	return n
+}
+
+// pipeCommands connects two commands via a pipe (cmd1 stdout -> cmd2 stdin)
+// and runs them, avoiding sh -c and shell injection risks.
+func pipeCommands(cmd1, cmd2 *exec.Cmd) error {
+	pipe, err := cmd1.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("pipe: %w", err)
+	}
+	cmd2.Stdin = pipe
+	cmd2.Stdout = os.Stdout
+	cmd2.Stderr = os.Stderr
+	cmd1.Stderr = os.Stderr
+
+	if err := cmd1.Start(); err != nil {
+		return fmt.Errorf("start %s: %w", cmd1.Path, err)
+	}
+	if err := cmd2.Start(); err != nil {
+		cmd1.Process.Kill()
+		return fmt.Errorf("start %s: %w", cmd2.Path, err)
+	}
+	if err := cmd1.Wait(); err != nil {
+		cmd2.Process.Kill()
+		return fmt.Errorf("%s: %w", cmd1.Path, err)
+	}
+	if err := cmd2.Wait(); err != nil {
+		return fmt.Errorf("%s: %w", cmd2.Path, err)
+	}
+	return nil
 }
 
 func main() {
