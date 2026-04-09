@@ -23,18 +23,18 @@ func startFakeServer(t *testing.T, handler func(conn net.Conn)) string {
 	}
 
 	go func() {
-		defer ln.Close()
+		defer func() { _ = ln.Close() }()
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		handler(conn)
 	}()
 
 	t.Cleanup(func() {
-		ln.Close()
-		os.Remove(sockPath)
+		_ = ln.Close()
+		_ = os.Remove(sockPath)
 	})
 
 	return sockPath
@@ -45,7 +45,7 @@ func respondServer(reply string) func(conn net.Conn) {
 	return func(conn net.Conn) {
 		scanner := bufio.NewScanner(conn)
 		scanner.Scan() // read the command line
-		fmt.Fprintf(conn, "%s\n", reply)
+		_, _ = fmt.Fprintf(conn, "%s\n", reply)
 	}
 }
 
@@ -69,7 +69,7 @@ func TestUARTClient_Timeout(t *testing.T) {
 	sockPath := startFakeServer(t, func(conn net.Conn) {
 		// Read the command but never write a response
 		buf := make([]byte, 64)
-		conn.Read(buf)
+		_, _ = conn.Read(buf)
 		time.Sleep(10 * time.Second) // hold connection open
 	})
 	time.Sleep(10 * time.Millisecond)
@@ -98,7 +98,7 @@ func TestUARTClient_Ring(t *testing.T) {
 				if scanner.Scan() {
 					gotCmd = scanner.Text()
 				}
-				fmt.Fprintf(conn, "OK\n")
+				_, _ = fmt.Fprintf(conn, "OK\n")
 			})
 			time.Sleep(10 * time.Millisecond)
 

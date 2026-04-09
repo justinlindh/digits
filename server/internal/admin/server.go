@@ -121,31 +121,42 @@ type loginData struct {
 
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login"})
+	if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login"}); err != nil {
+		log.Printf("admin: render template: %v", err)
+	}
 }
 
 func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
 	if s.auth == nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "auth not configured"})
+		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "auth not configured"}); err != nil {
+			log.Printf("admin: render template: %v", err)
+		}
 		return
 	}
 
 	adminID, err := s.auth.VerifyLogin(username, password)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Invalid credentials"})
+		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Invalid credentials"}); err != nil {
+			log.Printf("admin: render template: %v", err)
+		}
 		return
 	}
 
 	token, err := s.auth.CreateSession(adminID)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Session error"})
+		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Session error"}); err != nil {
+			log.Printf("admin: render template: %v", err)
+		}
 		return
 	}
 
@@ -197,17 +208,23 @@ func (s *Server) fetchDashData(page string) dashData {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	s.tmplDash.ExecuteTemplate(w, "layout.html", s.fetchDashData("dashboard"))
+	if err := s.tmplDash.ExecuteTemplate(w, "layout.html", s.fetchDashData("dashboard")); err != nil {
+		log.Printf("admin: render template: %v", err)
+	}
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	s.tmplUsers.ExecuteTemplate(w, "layout.html", s.fetchDashData("users"))
+	if err := s.tmplUsers.ExecuteTemplate(w, "layout.html", s.fetchDashData("users")); err != nil {
+		log.Printf("admin: render template: %v", err)
+	}
 }
 
 func (s *Server) handleHouseholds(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	s.tmplHH.ExecuteTemplate(w, "layout.html", s.fetchDashData("households"))
+	if err := s.tmplHH.ExecuteTemplate(w, "layout.html", s.fetchDashData("households")); err != nil {
+		log.Printf("admin: render template: %v", err)
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -220,5 +237,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			data.DBHealthy = false
 		}
 	}
-	s.tmplHP.ExecuteTemplate(w, "layout.html", data)
+	if err := s.tmplHP.ExecuteTemplate(w, "layout.html", data); err != nil {
+		log.Printf("admin: render template: %v", err)
+	}
 }

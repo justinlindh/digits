@@ -17,12 +17,12 @@ func Open(databaseURL string) (*Database, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	d := &Database{DB: db}
 	if err := d.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return d, nil

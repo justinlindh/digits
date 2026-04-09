@@ -20,8 +20,8 @@ func setupTestDB(t *testing.T) *db.Database {
 		t.Fatalf("setup db: %v", err)
 	}
 	t.Cleanup(func() {
-		d.DB.Exec("DELETE FROM calls")
-		d.Close()
+		_, _ = d.DB.Exec("DELETE FROM calls")
+		_ = d.Close()
 	})
 	return d
 }
@@ -65,15 +65,15 @@ func TestActiveCalls(t *testing.T) {
 	d := setupTestDB(t)
 	tr := New(d)
 
-	tr.OnCallInitiated("3140001", "3140002")
-	tr.OnCallAnswered("3140001", "3140002")
+	_ = tr.OnCallInitiated("3140001", "3140002")
+	_ = tr.OnCallAnswered("3140001", "3140002")
 
 	active := tr.Active()
 	if len(active) != 1 {
 		t.Fatalf("expected 1 active call, got %d", len(active))
 	}
 
-	tr.OnCallEnded("3140001", "3140002")
+	_ = tr.OnCallEnded("3140001", "3140002")
 	active = tr.Active()
 	if len(active) != 0 {
 		t.Fatalf("expected 0 active calls, got %d", len(active))

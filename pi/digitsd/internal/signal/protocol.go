@@ -43,6 +43,9 @@ const (
 
 	// TypeFactoryReset is sent by the server to trigger a factory reset.
 	TypeFactoryReset = "factory_reset"
+
+	// TypeRestart is sent by the server to restart the service or reboot the device.
+	TypeRestart = "restart"
 )
 
 // ContactEntry represents a single contact in a sync payload.
@@ -89,6 +92,9 @@ type Message struct {
 
 	// Flash capability (device_info messages)
 	FlashCapable bool `json:"flash_capable,omitempty"`
+
+	// Restart fields (restart messages)
+	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.

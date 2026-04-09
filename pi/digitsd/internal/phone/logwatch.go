@@ -23,7 +23,7 @@ func NewLogWatcher(path string) (*LogWatcher, error) {
 	}
 
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
@@ -48,7 +48,7 @@ func (w *LogWatcher) Stop() {
 
 // tailLoop reads lines from f, parsing and forwarding RX events.
 func (w *LogWatcher) tailLoop(f *os.File) {
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	r := bufio.NewReader(f)
 
 	for {

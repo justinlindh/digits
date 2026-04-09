@@ -19,7 +19,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := NewStore(database.DB)
@@ -35,11 +35,11 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 		t.Fatalf("create user B: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM household_links WHERE invited_by_user_id = $1 OR accepted_by_user_id = $1", userA.ID)
-		database.DB.Exec("DELETE FROM household_links WHERE invited_by_user_id = $1 OR accepted_by_user_id = $1", userB.ID)
-		database.DB.Exec("DELETE FROM household_members WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
-		database.DB.Exec("DELETE FROM sessions WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
-		database.DB.Exec("DELETE FROM users WHERE id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_links WHERE invited_by_user_id = $1 OR accepted_by_user_id = $1", userA.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_links WHERE invited_by_user_id = $1 OR accepted_by_user_id = $1", userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM sessions WHERE user_id IN ($1, $2)", userA.ID, userB.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id IN ($1, $2)", userA.ID, userB.ID)
 	})
 
 	hhA, err := householdStore.Create("Family A", userA.ID)
@@ -51,7 +51,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 		t.Fatalf("create household B: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM households WHERE id IN ($1, $2)", hhA.ID, hhB.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id IN ($1, $2)", hhA.ID, hhB.ID)
 	})
 
 	// Step 1: Create invite from household A

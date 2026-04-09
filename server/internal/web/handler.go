@@ -155,6 +155,11 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	}, nil
 }
 
+// Hub returns the signaling hub (used in tests).
+func (h *Handler) Hub() *signaling.Hub {
+	return h.hub
+}
+
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
@@ -197,8 +202,10 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
+	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
 	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
+	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
@@ -213,7 +220,7 @@ func (h *Handler) Router() http.Handler {
 
 	// Onboarding gate: redirect users without a household to /onboard
 	// Only active when householdStore is set (nil means feature disabled)
-	var protectedHandler http.Handler = h.authStore.RequireAuth(protected)
+	protectedHandler := h.authStore.RequireAuth(protected)
 	if h.householdStore != nil {
 		protectedHandler = h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Don't gate the onboard routes themselves
@@ -641,6 +648,19 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	online := h.hub.Get(number) != nil
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]bool{"online": online}); err != nil {
+		slog.Error("encode online status failed", "err", err)
+	}
+}
+
 func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	ln, err := h.lineStore.GetByNumber(number)
@@ -758,13 +778,50 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 		w.Header().Set("Content-Type", "application/json")
 		if sendErr != "" {
 			w.WriteHeader(http.StatusBadGateway)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": sendErr}); err != nil {
-				slog.Error("factory reset: json encode failed", "err", err)
-			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
 		} else {
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "triggered"}); err != nil {
-				slog.Error("factory reset: json encode failed", "err", err)
-			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	mode := strings.TrimSpace(r.FormValue("mode"))
+
+	if mode != "service" && mode != "reboot" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "mode must be 'service' or 'reboot'"})
+		return
+	}
+
+	msg := &signaling.Message{
+		Type:        signaling.TypeRestart,
+		RestartMode: mode,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("restart command failed", "number", number, "mode", mode, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("restart command sent", "number", number, "mode", mode)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
 		}
 		return
 	}
@@ -1228,11 +1285,11 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 	if isHTMX(r) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if len(pairs) == 0 {
-			fmt.Fprint(w, `<div class="px-4 py-8 text-center text-[#8b949e] text-sm">No active calls</div>`)
+			_, _ = fmt.Fprint(w, `<div class="px-4 py-8 text-center text-[#8b949e] text-sm">No active calls</div>`)
 			return
 		}
 		for _, p := range pairs {
-			fmt.Fprintf(w, `<div class="px-4 py-3 border-b border-[#21262d] last:border-0"><div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] animate-pulse shrink-0"></span><span class="font-mono text-sm text-[#e6edf3]">%s</span><span class="text-[#8b949e] text-xs">→</span><span class="font-mono text-sm text-[#e6edf3]">%s</span></div></div>`, template.HTMLEscapeString(p.Caller), template.HTMLEscapeString(p.Callee))
+			_, _ = fmt.Fprintf(w, `<div class="px-4 py-3 border-b border-[#21262d] last:border-0"><div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] animate-pulse shrink-0"></span><span class="font-mono text-sm text-[#e6edf3]">%s</span><span class="text-[#8b949e] text-xs">→</span><span class="font-mono text-sm text-[#e6edf3]">%s</span></div></div>`, template.HTMLEscapeString(p.Caller), template.HTMLEscapeString(p.Callee))
 		}
 		return
 	}
@@ -1247,11 +1304,11 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 
 // wsReject sends an error message to the WebSocket client and closes the connection.
 func wsReject(ws *websocket.Conn, errMsg string) {
-	ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
+	_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
 		Type:  signaling.TypeError,
 		Error: errMsg,
 	}))
-	ws.Close()
+	_ = ws.Close()
 }
 
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
@@ -1262,14 +1319,14 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for register message
-	ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
 	_, data, err := ws.ReadMessage()
 	if err != nil {
 		slog.Error("websocket no register message", "err", err)
-		ws.Close()
+		_ = ws.Close()
 		return
 	}
-	ws.SetReadDeadline(time.Time{})
+	_ = ws.SetReadDeadline(time.Time{})
 
 	msg, err := signaling.ParseMessage(data)
 	if err != nil || msg.Type != signaling.TypeRegister || msg.Number == "" {
@@ -1298,7 +1355,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				slog.Error("generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
 			} else {
-				ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
+				_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
 					Type:        signaling.TypePairingCode,
 					PairingCode: code,
 				}))
@@ -1335,9 +1392,9 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Configure pong handler to extend read deadline on each pong
-	ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
-		ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 		if msg.HardwareID != "" && h.deviceStore != nil {
 			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
 				slog.Warn("touch last seen on pong failed", "hardware_id", msg.HardwareID, "err", err)
@@ -1350,7 +1407,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		ticker := time.NewTicker(wsPingInterval)
 		defer ticker.Stop()
-		defer ws.Close()
+		defer func() { _ = ws.Close() }()
 		for {
 			select {
 			case data, ok := <-conn.Send:
@@ -1482,11 +1539,6 @@ func (h *Handler) callHistoryEnabled(r *http.Request) bool {
 func (h *Handler) householdNameFromContext(r *http.Request) string {
 	name, _, _ := h.householdContext(r)
 	return name
-}
-
-func (h *Handler) householdTimezone(r *http.Request) *time.Location {
-	_, _, loc := h.householdContext(r)
-	return loc
 }
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {

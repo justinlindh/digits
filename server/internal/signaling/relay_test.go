@@ -54,6 +54,19 @@ func (m *mockTracker) InCall(a, b string) bool {
 	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
 
+func (m *mockTracker) PeerOf(number string) string {
+	for k := range m.calls {
+		a, b, _ := strings.Cut(k, "→")
+		if a == number {
+			return b
+		}
+		if b == number {
+			return a
+		}
+	}
+	return ""
+}
+
 type mockCallAuthorizer struct {
 	allowed map[[2]string]bool
 }
@@ -306,6 +319,50 @@ func TestRelayBusySignal(t *testing.T) {
 	}
 }
 
+func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+
+	// Phone 1 calls Phone 2
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	if !tracker.Busy("3140001") {
+		t.Fatal("expected 3140001 to be busy after call initiated")
+	}
+
+	// Phone 1 hangs up WITHOUT specifying To (reproduces the client bug)
+	relay.HandleMessage("3140001", &Message{Type: TypeHangup})
+
+	// Tracker should have resolved the peer and ended the call
+	if tracker.Busy("3140001") {
+		t.Fatal("expected 3140001 to no longer be busy after hangup")
+	}
+	if tracker.Busy("3140002") {
+		t.Fatal("expected 3140002 to no longer be busy after hangup")
+	}
+
+	// Phone 2 should have received the hangup (forwarded with resolved To)
+	select {
+	case data := <-conn2.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeHangup {
+			t.Fatalf("expected hangup, got: %s", msg.Type)
+		}
+	default:
+		t.Fatal("phone 2 did not receive hangup")
+	}
+}
+
 func TestRelayICERestartForwarded(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
@@ -451,4 +508,16 @@ func TestHubOnlineNumbers(t *testing.T) {
 	if len(nums) != 2 {
 		t.Fatalf("expected 2 online, got %d", len(nums))
 	}
+}
+
+func TestRelayRestartMessageNotPanics(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil)
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn)
+
+	// Restart messages are server->device, not relayed through HandleMessage.
+	// But verify it doesn't crash if one passes through.
+	relay.HandleMessage("3140001", &Message{Type: TypeRestart, RestartMode: "service"})
 }

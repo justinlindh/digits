@@ -132,6 +132,22 @@ func (t *Tracker) Busy(number string) bool {
 	return false
 }
 
+// PeerOf returns the other party in an active call involving number,
+// or "" if number is not in any active call.
+func (t *Tracker) PeerOf(number string) string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, c := range t.active {
+		if c.Caller == number {
+			return c.Callee
+		}
+		if c.Callee == number {
+			return c.Caller
+		}
+	}
+	return ""
+}
+
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -158,7 +174,7 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var calls []Call
 	for rows.Next() {
@@ -195,7 +211,7 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var calls []Call
 	for rows.Next() {

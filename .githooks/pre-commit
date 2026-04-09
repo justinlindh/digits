@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v golangci-lint &>/dev/null; then
+    echo "warning: golangci-lint not installed, skipping lint check"
+    echo "  install: https://golangci-lint.run/docs/welcome/install/"
+    exit 0
+fi
+
+# Find staged .go files
+STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
+
+if [ -z "$STAGED_GO_FILES" ]; then
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+FAILED=0
+
+# Determine which modules have staged Go files
+MODULES=""
+for file in $STAGED_GO_FILES; do
+    case "$file" in
+        server/*)          MODULES="$MODULES server" ;;
+        pi/digitsd/*)      MODULES="$MODULES pi/digitsd" ;;
+        pi/digits-setup/*) MODULES="$MODULES pi/digits-setup" ;;
+    esac
+done
+
+# Deduplicate
+MODULES=$(echo "$MODULES" | tr ' ' '\n' | sort -u)
+
+for mod in $MODULES; do
+    echo "linting $mod..."
+    if ! (cd "$REPO_ROOT/$mod" && golangci-lint run ./...); then
+        FAILED=1
+    fi
+done
+
+if [ "$FAILED" -ne 0 ]; then
+    echo ""
+    echo "lint failed -- fix errors before committing"
+    exit 1
+fi

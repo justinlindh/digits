@@ -15,7 +15,7 @@ func TestOpenAndMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 
 	// Verify all tables exist
 	tables := []string{"phones", "calls", "settings", "users", "sessions", "magic_links", "schema_version"}

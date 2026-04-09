@@ -13,17 +13,9 @@
     </a>
     <div class="flex items-center gap-3">
       <h1 class="text-xl font-semibold text-[#e6edf3]">{{.Line.Name}}</h1>
-      {{if .Online}}
-        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
-          online
-        </span>
-      {{else}}
-        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
-          offline
-        </span>
-      {{end}}
+      <div id="status-badge" hx-get="/phones/{{.Line.Number}}/online" hx-trigger="every 10s" hx-swap="innerHTML">
+        {{template "phone-status" .}}
+      </div>
     </div>
     <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
   </div>
@@ -46,14 +38,6 @@
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Added</label>
           <span class="text-sm text-[#c9d1d9]">{{.Line.CreatedAt.Format "January 2, 2006"}}</span>
-        </div>
-        <div>
-          <label class="block text-xs text-[#8b949e] mb-1">Status</label>
-          {{if .Online}}
-            <span class="text-sm text-[#3fb950]">Online</span>
-          {{else}}
-            <span class="text-sm text-[#8b949e]">Offline</span>
-          {{end}}
         </div>
         {{if .Devices}}
         <div>
@@ -459,5 +443,181 @@
     </div>
 
   </div>
+
+  {{if .Online}}
+  <!-- Device restart controls -->
+  <div class="mt-6 bg-[#161b22] border border-[#21262d] rounded-lg">
+    <div class="px-4 py-3 border-b border-[#21262d]">
+      <h2 class="text-sm font-medium text-[#e6edf3]">Device Controls</h2>
+    </div>
+    <div class="p-4">
+      <!-- Default: show both action buttons -->
+      <div id="restart-buttons" class="flex flex-wrap gap-3">
+        <button type="button" onclick="showRestartConfirm('service')"
+                class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+          Restart Service
+        </button>
+        <button type="button" onclick="showRestartConfirm('reboot')"
+                class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+          Reboot Device
+        </button>
+      </div>
+
+      <!-- Confirmation: replaces buttons entirely -->
+      <div id="restart-confirm" class="hidden">
+        <p id="restart-confirm-text" class="text-sm text-[#c9d1d9] mb-3"></p>
+        <div class="flex gap-3">
+          <button type="button" id="restart-confirm-btn" onclick="doRestart()"
+                  class="px-4 py-2 text-sm font-medium rounded transition-colors">
+            Confirm
+          </button>
+          <button type="button" onclick="cancelRestartConfirm()"
+                  class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Progress: replaces confirmation -->
+      <div id="restart-progress" class="hidden">
+        <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
+          <div id="restart-spinner" class="w-4 h-4 border-2 border-[#58a6ff] border-t-transparent rounded-full animate-spin"></div>
+          <span id="restart-status" class="text-sm text-[#c9d1d9]">Sending command...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  var restartPollTimer = null;
+  var restartMode = null;
+
+  function showRestartConfirm(mode) {
+    restartMode = mode;
+    var buttons = document.getElementById('restart-buttons');
+    var confirm = document.getElementById('restart-confirm');
+    var confirmText = document.getElementById('restart-confirm-text');
+    var confirmBtn = document.getElementById('restart-confirm-btn');
+
+    buttons.classList.add('hidden');
+    confirm.classList.remove('hidden');
+
+    if (mode === 'reboot') {
+      confirmText.textContent = 'Reboot the entire device? This will take about 30 seconds.';
+      confirmBtn.className = 'px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm font-medium rounded transition-colors';
+    } else {
+      confirmText.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
+      confirmBtn.className = 'px-4 py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-sm font-medium rounded transition-colors';
+    }
+  }
+
+  function cancelRestartConfirm() {
+    restartMode = null;
+    document.getElementById('restart-confirm').classList.add('hidden');
+    document.getElementById('restart-buttons').classList.remove('hidden');
+  }
+
+  function doRestart() {
+    var mode = restartMode;
+    var confirm = document.getElementById('restart-confirm');
+    var progress = document.getElementById('restart-progress');
+    var status = document.getElementById('restart-status');
+
+    confirm.classList.add('hidden');
+    progress.classList.remove('hidden');
+    status.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
+    status.className = 'text-sm text-[#c9d1d9]';
+    document.getElementById('restart-spinner').classList.remove('hidden');
+
+    var body = new URLSearchParams({mode: mode});
+    fetch('/phones/' + phoneNumber + '/restart', {
+      method: 'POST',
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        showRestartResult('failed', 'Failed: ' + data.error);
+        return;
+      }
+      var maxAttempts = mode === 'reboot' ? 90 : 15;
+      status.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
+      pollOnline(maxAttempts);
+    })
+    .catch(function(err) {
+      showRestartResult('failed', 'Network error: ' + err.message);
+    });
+  }
+
+  function pollOnline(maxAttempts) {
+    if (restartPollTimer) clearInterval(restartPollTimer);
+    var attempts = 0;
+    var sawOffline = false;
+    // Give the device a moment to disconnect before we start polling
+    setTimeout(function() {
+      restartPollTimer = setInterval(function() {
+        attempts++;
+        if (attempts > maxAttempts) {
+          clearInterval(restartPollTimer);
+          showRestartResult('failed', 'Timed out waiting for device to come back online');
+          return;
+        }
+        fetch('/phones/' + phoneNumber + '/online')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (!data.online) {
+            sawOffline = true;
+            document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...';
+          } else if (sawOffline) {
+            clearInterval(restartPollTimer);
+            showRestartResult('success', 'Device is back online');
+            setTimeout(function() { location.reload(); }, 1500);
+          }
+        })
+        .catch(function() {});
+      }, 1000);
+    }, 2000);
+  }
+
+  function showRestartResult(resultType, message) {
+    var spinner = document.getElementById('restart-spinner');
+    var status = document.getElementById('restart-status');
+    spinner.classList.add('hidden');
+    status.textContent = message;
+    if (resultType === 'success') {
+      status.className = 'text-sm text-[#3fb950]';
+    } else {
+      status.className = 'text-sm text-[#f85149]';
+      // Add a "try again" link below the error
+      var retryLink = document.createElement('a');
+      retryLink.textContent = 'Try again';
+      retryLink.href = '#';
+      retryLink.className = 'text-sm text-[#58a6ff] hover:underline ml-2';
+      retryLink.onclick = function(e) {
+        e.preventDefault();
+        document.getElementById('restart-progress').classList.add('hidden');
+        document.getElementById('restart-buttons').classList.remove('hidden');
+        restartMode = null;
+      };
+      status.parentNode.appendChild(retryLink);
+    }
+  }
+  </script>
+  {{end}}
 </div>
+{{end}}
+
+{{define "phone-status"}}
+{{if .Online}}
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
+    online
+  </span>
+{{else}}
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+    <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
+    offline
+  </span>
+{{end}}
 {{end}}

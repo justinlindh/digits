@@ -32,7 +32,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	t.Cleanup(func() { database.Close() })
+	t.Cleanup(func() { _ = database.Close() })
 
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
@@ -151,7 +151,7 @@ func TestDeletePhone(t *testing.T) {
 		t.Fatalf("add test line: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/delete", nil)
@@ -221,8 +221,8 @@ func TestSettingsTimezonePost(t *testing.T) {
 		t.Fatalf("create household: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	form := url.Values{"timezone": {"America/Chicago"}}
@@ -259,8 +259,8 @@ func TestSettingsTimezonePost_Invalid(t *testing.T) {
 		t.Fatalf("create household: %v", err)
 	}
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	form := url.Values{"timezone": {"Fake/Zone"}}
@@ -331,13 +331,145 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	}
 
 	t.Cleanup(func() {
-		database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
-		database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
-		database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hardwareID)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
 	return hardwareID, token
+}
+
+func TestPhoneRestartOnline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+
+	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	form := url.Values{"mode": {"service"}}
+	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, _ := signaling.ParseMessage(data)
+		if msg.Type != signaling.TypeRestart {
+			t.Fatalf("expected restart message, got %s", msg.Type)
+		}
+		if msg.RestartMode != "service" {
+			t.Fatalf("expected mode=service, got %s", msg.RestartMode)
+		}
+	default:
+		t.Fatal("device did not receive restart message")
+	}
+}
+
+func TestPhoneRestartOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+
+	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+	})
+
+	form := url.Values{"mode": {"service"}}
+	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 502 {
+		t.Fatalf("expected 502 for offline device, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneRestartInvalidMode(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+
+	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	form := url.Values{"mode": {"explode"}}
+	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for invalid mode, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneOnlineStatus(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+
+	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
+	})
+
+	req := httptest.NewRequest("GET", "/phones/3140001/online", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"online":false`) {
+		t.Fatalf("expected online:false, got %s", w.Body.String())
+	}
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	req = httptest.NewRequest("GET", "/phones/3140001/online", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `"online":true`) {
+		t.Fatalf("expected online:true, got %s", w.Body.String())
+	}
 }
 
 func TestWSRegister_MissingHardwareID(t *testing.T) {
@@ -425,7 +557,7 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	// The connection should stay open. If there was an auth error, we'd get
 	// an error message. Try reading with a short deadline; no error message
 	// means auth succeeded.
-	ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, _, err := ws.ReadMessage()
 	if err == nil {
 		t.Fatal("expected no message (timeout), but got one")
