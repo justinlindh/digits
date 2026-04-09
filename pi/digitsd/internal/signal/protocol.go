@@ -40,6 +40,9 @@ const (
 	// TypeICERestart is sent by either peer to initiate an ICE restart.
 	// Carries a new SDP offer with rotated ICE credentials.
 	TypeICERestart = "ice_restart"
+
+	// TypeRestart is sent by the server to restart the service or reboot the device.
+	TypeRestart = "restart"
 )
 
 // ContactEntry represents a single contact in a sync payload.
@@ -86,6 +89,9 @@ type Message struct {
 
 	// Flash capability (device_info messages)
 	FlashCapable bool `json:"flash_capable,omitempty"`
+
+	// Restart fields (restart messages)
+	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.

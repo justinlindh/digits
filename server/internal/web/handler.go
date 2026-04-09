@@ -155,6 +155,11 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	}, nil
 }
 
+// Hub returns the signaling hub (used in tests).
+func (h *Handler) Hub() *signaling.Hub {
+	return h.hub
+}
+
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
@@ -198,6 +203,8 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
+	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
+	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
@@ -734,6 +741,54 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		slog.Error("update status: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	mode := strings.TrimSpace(r.FormValue("mode"))
+
+	if mode != "service" && mode != "reboot" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "mode must be 'service' or 'reboot'"})
+		return
+	}
+
+	msg := &signaling.Message{
+		Type:        signaling.TypeRestart,
+		RestartMode: mode,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("restart command failed", "number", number, "mode", mode, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("restart command sent", "number", number, "mode", mode)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+		} else {
+			json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	online := h.hub.Get(number) != nil
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"online": online})
 }
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
