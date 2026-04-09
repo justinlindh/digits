@@ -41,8 +41,8 @@
         <tbody class="divide-y divide-[#21262d]">
           {{range .Calls}}
           <tr class="hover:bg-[#1c2128]">
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Caller}}</td>
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Callee}}</td>
+            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Caller}}</td>
+            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Callee}}</td>
             <td class="px-4 py-3">
               {{if eq .Status "ended"}}
                 <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">ended</span>
@@ -73,9 +73,9 @@
       {{range .Calls}}
       <div class="px-4 py-3">
         <div class="flex items-center gap-1.5 font-mono text-sm text-[#e6edf3] mb-1.5">
-          <span>{{.Caller}}</span>
+          <span>{{fmtPhone .Caller}}</span>
           <span class="text-[#484f58]">→</span>
-          <span>{{.Callee}}</span>
+          <span>{{fmtPhone .Callee}}</span>
         </div>
         <div class="flex items-center gap-2">
           {{if eq .Status "ended"}}

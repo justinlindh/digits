@@ -87,7 +87,7 @@
       <tbody class="divide-y divide-[#21262d]">
         {{range .Lines}}
         <tr class="hover:bg-[#1c2128] group">
-          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Line.Number}}</td>
           <td class="px-4 py-3 text-sm text-[#c9d1d9]"><a href="/phones/{{.Line.Number}}" class="hover:text-[#58a6ff] transition-colors">{{.Line.Name}}</a></td>
           <td class="px-4 py-3">
             {{if .Online}}
@@ -105,7 +105,7 @@
             <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML"
                 class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors">Edit</button>
-              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{.Line.Number}}?"
+              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{fmtPhone .Line.Number}}?"
                 class="text-xs text-[#8b949e] hover:text-[#f85149] transition-colors">Delete</button>
             </div>
           </td>
@@ -121,7 +121,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{.Line.Number}}</p>
+          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{fmtPhone .Line.Number}}</p>
         </div>
         <div class="flex items-center gap-2">
           {{if .Online}}
@@ -155,7 +155,7 @@
 
 {{define "phone-edit-row"}}
 <tr>
-  <td class="px-4 py-2 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+  <td class="px-4 py-2 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Line.Number}}</td>
   <td class="px-4 py-2" colspan="3">
     <form hx-post="/phones/{{.Line.Number}}/edit"
           hx-target="#phones-table"
