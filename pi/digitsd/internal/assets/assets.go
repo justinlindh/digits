@@ -127,6 +127,7 @@ func defaultWriteFile(data []byte, dest string, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
+	os.Remove(dest) // remove existing file in case of ownership mismatch
 	return os.WriteFile(dest, data, perm)
 }
 
