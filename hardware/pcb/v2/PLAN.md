@@ -59,11 +59,13 @@ The v1 and original v2 design used a Raspberry Pi Pico H module plugged into hea
 | Rail | Source | Voltage | Supplies |
 |------|--------|---------|----------|
 | +12V | Barrel jack (J3) | 12V | LM2596 input (U1), DRV8871 VCC (U2) |
-| +5V | LM2596 (U1) output | 5V | Pi 5V (J1 pin 2), RP2040 VREG_VIN, AMS1117-3.3 (U5) input |
-| +3.3V | AMS1117-3.3 (U5) output | 3.3V | RP2040 IOVDD, DVDD, USB_VDD, ADC_AVDD; W25Q16 flash (U4) VCC |
+| +5V | LM2596 (U1) output | 5V | Pi 5V (J1 pin 2), AMS1117-3.3 (U5) input |
+| +3.3V | AMS1117-3.3 (U5) output | 3.3V | RP2040 VREG_VIN, IOVDD, DVDD, USB_VDD, ADC_AVDD; W25Q16 flash (U4) VCC |
 | +1.1V | RP2040 internal VREG (U3) | 1.1V | RP2040 digital core (VREG_VOUT) |
 
-5V → AMS1117-3.3 (U5, LDO) → 3.3V for IO/USB/flash (no inductor -- LDO not switching). 3.3V → RP2040 VREG_IN → internal LDO → 1.1V DVDD (fully integrated, no external inductor).
+5V → AMS1117-3.3 (U5, LDO) → 3.3V for IO/USB/flash and RP2040 VREG_VIN (no inductor -- LDO not switching). 3.3V → RP2040 VREG_VIN → internal LDO → 1.1V DVDD (fully integrated, no external inductor).
+
+**CRITICAL: VREG_VIN max is 3.3V.** The RP2040 datasheet (section 2.9.3) specifies VREG_VIN nominal range 1.8-3.3V. Do NOT connect to +5V -- this will destroy the chip. The Pico H module had its own onboard 3.3V regulator (RT6150) feeding VREG_VIN; U5 replaces that function.
 
 **Note:** The 40-pin Pico header footprint is removed from the board. The RP2040 QFN-56 package (7x7mm) goes where the Pico module used to sit, freeing significant board area and reducing body-side height.
 
@@ -104,8 +106,8 @@ This eliminates J5 (L298N control header), the L298N module, and its wiring.
 | `KP_COL0-2` | RP2040 GP6-8 | J4 pins 1-3 |
 | `MIC_HOT` / `MIC_GND` | J8 pins 1/4 | C3, J9 pins 1/3 |
 | `EAR_P` / `EAR_N` | J8 pins 2/3 | J10 pins 1/2 |
-| `+5V` | LM2596 output | RP2040 VREG_VIN, U5 input, Pi 5V (pin 2) |
-| `+3.3V` | U5 (AMS1117-3.3) output | RP2040 IOVDD/DVDD/USB_VDD/ADC_AVDD, U4 flash VCC |
+| `+5V` | LM2596 output | U5 input, Pi 5V (pin 2) |
+| `+3.3V` | U5 (AMS1117-3.3) output | RP2040 VREG_VIN, IOVDD/DVDD/USB_VDD/ADC_AVDD, U4 flash VCC |
 | `+12V` | Barrel jack | LM2596 input, U2 VCC |
 
 ---
@@ -119,9 +121,11 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 ```
 +5V (from LM2596)
   |
-  +---> U5 AMS1117-3.3 ---> +3.3V rail (IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC)
-  |
-  +---> RP2040 VREG_VIN --[internal LDO]--> VREG_VOUT (1.1V core)
+  +---> U5 AMS1117-3.3 ---> +3.3V rail
+                               |
+                               +---> IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC
+                               |
+                               +---> RP2040 VREG_VIN --[internal LDO]--> VREG_VOUT (1.1V core)
 ```
 
 ### Components
@@ -130,7 +134,7 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 |-----|------|-------|---------|-----------|---------|
 | U3 | RP2040 | -- | QFN-56 (7x7mm) | C2040 | Microcontroller |
 | U4 | W25Q16JVSSIQ | 2MB | SOIC-8 | C131025 | QSPI flash (program storage) |
-| U5 | AMS1117-3.3 | 3.3V LDO | SOT-223 | C6186 | 5V to 3.3V for IO/USB/flash |
+| U5 | AMS1117-3.3 | 3.3V LDO | SOT-223 | C6186 | 5V to 3.3V for IO/USB/flash (needs 10uF input cap at VIN) |
 | Y1 | 12MHz crystal | 12MHz | 3225 (3.2x2.5mm) | C9002 | USB and PLL clock source |
 | C5, C6 | Ceramic cap | 22pF | 0402 | C1555 | Crystal load capacitors |
 | C7, C8 | Ceramic cap | 1nF | 0402 | C52923 | USB D+/D- filtering |
@@ -138,11 +142,12 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 | C12-C16 | Ceramic cap | 100nF 50V | 0805 | C49678 | Bypass: IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC |
 | R3, R4 | Resistor | 27 ohm | 0402 | C25100 | USB D+/D- series resistors |
 | R5 | Resistor | 10k ohm | 0402 | C25744 | RUN pin pullup to 3.3V |
+| R6 | Resistor | 10k ohm | 0402 | C25744 | QSPI_SS pullup to 3.3V |
 
 ### RP2040 Pin Connections
 
 **Power pins:**
-- VREG_VIN (pin 44) -> +5V
+- VREG_VIN (pin 44) -> +3.3V (from U5 AMS1117-3.3 output -- max 3.3V, do NOT connect to +5V)
 - VREG_VOUT (pin 45) -> 1.1V core (to digital core power pins via trace)
 - IOVDD (pins 1, 10, 22, 33, 42, 49) -> +3.3V (each with nearby 100nF bypass cap)
 - DVDD (pin 23, 50) -> +3.3V (with 100nF bypass)
@@ -157,16 +162,19 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 **Crystal (Y1) connections:**
 - XIN (pin 20) -> Y1 pin 1, C5 to GND
 - XOUT (pin 21) -> Y1 pin 3, C6 to GND
+- **Note:** Y1 (X322512MSB4SI) has 20pF load capacitance. With 22pF external caps, effective load is ~14pF (short by 6pF). Either switch to 33pF caps or use a 10pF-load crystal (e.g., ABM8-272-T3) with 15pF caps.
 
 **USB connections:**
 - USB_DM (pin 46) -> R3 (27 ohm) -> USB D-
 - USB_DP (pin 47) -> R4 (27 ohm) -> USB D+
-- C7 on USB_DM side, C8 on USB_DP side (to GND, after resistors)
+- **Note:** C7/C8 (1nF) with 27 ohm resistors form a 5.9MHz low-pass filter, which is below USB full-speed 12MHz. Recommend removing C7/C8 entirely or reducing to 47pF if EMI filtering is desired.
 
 **Boot/reset:**
+- TESTEN (pin 19) -> GND (required -- if floating, RP2040 may enter factory test mode)
 - RUN (pin 26) -> R5 (10k) pullup to +3.3V
-- QSPI_SS (active low) doubles as BOOTSEL -- directly usable for UF2 boot mode
-- Optional: BOOTSEL button from QSPI_SS to GND (not included in BOM -- can be added if needed)
+- QSPI_SS (pin 51) -> R6 (10k) pullup to +3.3V (reliable flash chip-select during power-up)
+- QSPI_SS doubles as BOOTSEL -- directly usable for UF2 boot mode
+- Optional: BOOTSEL button from QSPI_SS to GND via 1k series resistor (not included in BOM -- can be added if needed)
 
 **GPIO (directly mapped from Pico pinout):**
 - GP0 (pin 2) -> UART_TX_PI
@@ -175,8 +183,8 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 - GP6-GP8 (pins 8-11) -> KP_COL0-2
 - GP10 (pin 14) -> HOOK_SW
 - GP11 (pin 15) -> RINGER_IN1
-- GP14 (pin 19) -> LED_OUT
-- GP15 (pin 20) -> RINGER_IN2
+- GP14 (pin 17) -> LED_OUT
+- GP15 (pin 18) -> RINGER_IN2
 
 ### Test points
 
@@ -246,6 +254,8 @@ The bare RP2040 uses the same UF2 bootloader approach as the Pico H:
 - The `scripts/flash.sh` script works without modification
 
 On the bare RP2040, the BOOTSEL function is on the QSPI_SS pin. If no physical BOOTSEL button is populated, entering boot mode requires briefly shorting QSPI_SS to GND while toggling RUN (or power cycling). A BOOTSEL button footprint can be added to the board for convenience.
+
+**USB access required:** UF2/BOOTSEL mode requires physical USB D+/D- connections. The board needs either a USB micro/C connector, test pads, or pogo pin pads for USB_DM and USB_DP. Without this, flashing is SWD-only via the Pi. For production units where the Pi handles all firmware updates over SWD, USB pads may be sufficient (no connector needed).
 
 ### SWD debug
 
