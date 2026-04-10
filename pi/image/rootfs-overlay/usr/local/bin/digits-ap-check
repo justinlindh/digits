@@ -102,6 +102,28 @@ else
     # Stop digitsd in AP mode
     systemctl stop digitsd.service 2>/dev/null || true
 
+    # Ensure hostapd SSID is not the build-time placeholder.
+    # digits-first-boot.sh normally sets this, but if first-boot was skipped
+    # (e.g. /data/.initialized already existed) or failed, the placeholder
+    # persists. Resolve it here before starting hostapd.
+    HOSTAPD_CONF="/etc/hostapd/digits-ap.conf"
+    CURRENT_SSID=$(grep '^ssid=' "$HOSTAPD_CONF" | cut -d= -f2)
+    if [ "$CURRENT_SSID" = "Digits-XXXX" ]; then
+        log "SSID is still placeholder — resolving"
+        DEVICE_ID_FILE="/data/digits/device-id"
+        if [ -f "$DEVICE_ID_FILE" ]; then
+            SUFFIX=$(cat "$DEVICE_ID_FILE" | tail -c 4)
+        else
+            SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
+        fi
+        NEW_SSID="Digits-${SUFFIX}"
+        mount -o remount,rw / 2>/dev/null || true
+        sed -i "s/^ssid=.*/ssid=${NEW_SSID}/" "$HOSTAPD_CONF"
+        sync
+        mount -o remount,ro / 2>/dev/null || true
+        log "Updated SSID to: ${NEW_SSID}"
+    fi
+
     # Start AP services (--no-block to avoid deadlock with network.target)
     systemctl start --no-block digits-ap.service
     systemctl start --no-block digits-dnsmasq-ap.service
