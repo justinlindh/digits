@@ -42,6 +42,8 @@ jobs:
       - name: Build server
         working-directory: server
         run: go build -o bin/signald ./cmd/signald/
+        env:
+          GOTOOLCHAIN: auto
 
       - name: Start server
         working-directory: server
