@@ -691,7 +691,7 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
 mkdir -p "${RECOVERY_MNT}/bin"
-for tool in hostapd ip dnsmasq; do
+for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
     # Use readlink -f inside chroot to resolve symlinks to the real binary
     TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
     if [[ -z "$TOOL_PATH" ]]; then

@@ -81,7 +81,7 @@ The counter lives on the data partition (`/data/digits/boot-counter`), which is 
 
 The recovery binary starts a Wi-Fi access point and serves a small web UI:
 
-- **SSID:** Digits
+- **SSID:** Digits-Recovery
 - **Address:** `192.168.4.1`
 - **Options presented:**
   - **Try Again** -- clears the boot counter, reboots normally. Useful after a transient failure.

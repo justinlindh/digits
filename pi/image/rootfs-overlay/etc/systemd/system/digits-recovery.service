@@ -7,6 +7,7 @@ Before=digitsd.service digits-ap-check.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/digits-recovery-check
+TimeoutStartSec=infinity
 StandardOutput=journal
 StandardError=journal
 

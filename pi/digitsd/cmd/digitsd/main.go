@@ -578,6 +578,15 @@ const (
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
 
+func triggerFactoryReset() {
+	if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+		slog.Error("factory reset: failed to set boot counter", "err", err)
+		return
+	}
+	slog.Info("factory reset: boot counter set to 3, rebooting")
+	_ = exec.Command("sudo", "reboot").Run()
+}
+
 // updateInProgress guards against concurrent firmware update runs.
 // The startup update goroutine and server-triggered updates both check this
 // to avoid racing (e.g. double-flashing the Pico).
@@ -1087,11 +1096,7 @@ func main() {
 
 	svcCodes.SetFactoryResetCallback(func() {
 		slog.Info("service code: *#00000# -> FACTORY RESET")
-		if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
-			slog.Error("factory reset: failed to set boot counter", "err", err)
-		}
-		slog.Info("factory reset: rebooting into recovery")
-		_ = exec.Command("sudo", "reboot").Run()
+		triggerFactoryReset()
 	})
 
 	// 6b. Create easter egg detector
@@ -1376,14 +1381,7 @@ func main() {
 
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
-				go func() {
-					if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
-						slog.Error("factory reset: failed to set boot counter", "err", err)
-						return
-					}
-					slog.Info("factory reset: boot counter set to 3, rebooting")
-					_ = exec.Command("sudo", "reboot").Run()
-				}()
+				go triggerFactoryReset()
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()

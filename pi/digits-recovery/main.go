@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -63,17 +64,18 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
 	log.Println("recovery: factory reset requested")
 
+	// Non-fatal: data partition may be corrupt (that's why we're here).
+	// mkfs.ext4 below will wipe it anyway.
 	if err := os.WriteFile(s.counterPath, []byte("0"), 0644); err != nil {
-		log.Printf("recovery: failed to clear boot counter: %v", err)
-		http.Error(w, "failed to clear boot counter", http.StatusInternalServerError)
-		return
+		log.Printf("recovery: failed to clear boot counter (non-fatal): %v", err)
 	}
 
+	bin := filepath.Join(s.recoveryDir, "bin")
 	rootfsImg := s.recoveryDir + "/rootfs.img.zst"
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
 	if err := pipeCommands(
-		exec.Command("zstd", "-d", "-c", rootfsImg),
-		exec.Command("dd", "of="+s.rootfsDev, "bs=4M", "status=progress"),
+		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
+		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "status=progress"),
 	); err != nil {
 		log.Printf("recovery: rootfs restore failed: %v", err)
 		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
@@ -81,7 +83,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 
 	log.Printf("recovery: formatting %s", s.dataDev)
-	if err := exec.Command("mkfs.ext4", "-L", "data", "-F", s.dataDev).Run(); err != nil {
+	if err := exec.Command(filepath.Join(bin, "mkfs.ext4"), "-L", "data", "-F", s.dataDev).Run(); err != nil {
 		log.Printf("recovery: data format failed: %v", err)
 		http.Error(w, "data format failed", http.StatusInternalServerError)
 		return
@@ -93,7 +95,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		http.Error(w, "failed to create mount point", http.StatusInternalServerError)
 		return
 	}
-	if err := exec.Command("mount", s.dataDev, dataMnt).Run(); err != nil {
+	if err := exec.Command(filepath.Join(bin, "mount"), s.dataDev, dataMnt).Run(); err != nil {
 		log.Printf("recovery: data mount failed: %v", err)
 		http.Error(w, "data mount failed", http.StatusInternalServerError)
 		return
@@ -101,15 +103,15 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 
 	skelArchive := s.recoveryDir + "/data-skeleton.tar.zst"
 	if err := pipeCommands(
-		exec.Command("zstd", "-d", "-c", skelArchive),
-		exec.Command("tar", "xf", "-", "-C", dataMnt),
+		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
+		exec.Command(filepath.Join(bin, "tar"), "xf", "-", "-C", dataMnt),
 	); err != nil {
 		log.Printf("recovery: data skeleton restore failed: %v", err)
-		exec.Command("umount", dataMnt).Run()
+		exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
 		http.Error(w, "data restore failed", http.StatusInternalServerError)
 		return
 	}
-	exec.Command("umount", dataMnt).Run()
+	exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
 
 	log.Println("recovery: factory reset complete, rebooting")
 	w.WriteHeader(http.StatusOK)
@@ -165,15 +167,18 @@ func pipeCommands(cmd1, cmd2 *exec.Cmd) error {
 }
 
 // startAP brings up wlan0 in AP mode with hostapd and dnsmasq.
-// Uses tools from the recovery partition's bin/ directory.
+// Uses tools from the recovery partition's bin/ directory to avoid
+// depending on rootfs, which may be overwritten during factory reset.
 func startAP(recoveryDir string) error {
+	bin := filepath.Join(recoveryDir, "bin")
+
 	// Bring up wlan0
-	if err := exec.Command("ip", "link", "set", "wlan0", "up").Run(); err != nil {
+	if err := exec.Command(filepath.Join(bin, "ip"), "link", "set", "wlan0", "up").Run(); err != nil {
 		return fmt.Errorf("ip link set wlan0 up: %w", err)
 	}
 	// Flush and assign static IP
-	exec.Command("ip", "addr", "flush", "dev", "wlan0").Run()
-	if err := exec.Command("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run(); err != nil {
+	exec.Command(filepath.Join(bin, "ip"), "addr", "flush", "dev", "wlan0").Run()
+	if err := exec.Command(filepath.Join(bin, "ip"), "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run(); err != nil {
 		return fmt.Errorf("ip addr add: %w", err)
 	}
 
@@ -198,11 +203,11 @@ dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m
 address=/#/192.168.4.1
 no-resolv
 domain-needed
-dhcp-leasefile=/data/dnsmasq-recovery.leases
+dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 `), 0644)
 
 	// Start hostapd
-	hostapd := exec.Command("hostapd", "-B", hostapdConf)
+	hostapd := exec.Command(filepath.Join(bin, "hostapd"), "-B", hostapdConf)
 	hostapd.Stdout = os.Stdout
 	hostapd.Stderr = os.Stderr
 	if err := hostapd.Run(); err != nil {
@@ -210,7 +215,7 @@ dhcp-leasefile=/data/dnsmasq-recovery.leases
 	}
 
 	// Start dnsmasq
-	dnsmasq := exec.Command("dnsmasq", "-C", dnsmasqConf)
+	dnsmasq := exec.Command(filepath.Join(bin, "dnsmasq"), "-C", dnsmasqConf)
 	dnsmasq.Stdout = os.Stdout
 	dnsmasq.Stderr = os.Stderr
 	if err := dnsmasq.Run(); err != nil {
