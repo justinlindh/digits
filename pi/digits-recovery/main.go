@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -25,6 +26,17 @@ type statusResponse struct {
 	Hostname  string `json:"hostname"`
 }
 
+type resetState struct {
+	mu         sync.Mutex
+	inProgress bool
+	status     string
+}
+
+type resetStatusResponse struct {
+	InProgress bool   `json:"in_progress"`
+	Status     string `json:"status"`
+}
+
 type recoveryServer struct {
 	counterPath string
 	recoveryDir string
@@ -32,6 +44,25 @@ type recoveryServer struct {
 	dataDev     string
 	hostname    string
 	rebootFunc  func() error
+	reset       resetState
+}
+
+func (s *recoveryServer) setResetStatus(status string) {
+	s.reset.mu.Lock()
+	s.reset.inProgress = true
+	s.reset.status = status
+	s.reset.mu.Unlock()
+}
+
+func (s *recoveryServer) handleFactoryResetStatus(w http.ResponseWriter, _ *http.Request) {
+	s.reset.mu.Lock()
+	resp := resetStatusResponse{
+		InProgress: s.reset.inProgress,
+		Status:     s.reset.status,
+	}
+	s.reset.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *recoveryServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -67,6 +98,7 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 
 func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
 	log.Println("recovery: factory reset requested")
+	s.setResetStatus("Restoring rootfs...")
 
 	// Non-fatal: data partition may be corrupt (that's why we're here).
 	// mkfs.ext4 below will wipe it anyway.
@@ -87,6 +119,8 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 	log.Println("recovery: rootfs restore complete, syncing")
 	syscall.Sync()
+
+	s.setResetStatus("Formatting data partition...")
 
 	// Close log file and unmount data partition before formatting.
 	// The log file holds /data busy, preventing unmount.
@@ -115,6 +149,8 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		return
 	}
 
+	s.setResetStatus("Restoring data...")
+
 	skelArchive := filepath.Join(s.recoveryDir, "data-skeleton.tar.zst")
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
@@ -127,6 +163,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 	exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
 
+	s.setResetStatus("Rebooting...")
 	log.Println("recovery: factory reset complete, rebooting")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Factory reset complete. Rebooting...")
@@ -335,6 +372,7 @@ func main() {
 	staticSub, _ := fs.Sub(staticFS, "static")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", srv.handleStatus)
+	mux.HandleFunc("GET /factory-reset/status", srv.handleFactoryResetStatus)
 	mux.HandleFunc("POST /try-again", srv.handleTryAgain)
 	mux.HandleFunc("POST /factory-reset", srv.handleFactoryReset)
 	mux.Handle("GET /style.css", http.FileServer(http.FS(staticSub)))

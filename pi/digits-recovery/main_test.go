@@ -33,6 +33,39 @@ func TestStatusEndpoint(t *testing.T) {
 	}
 }
 
+func TestFactoryResetStatusEndpoint(t *testing.T) {
+	srv := &recoveryServer{}
+
+	// Initially not in progress
+	req := httptest.NewRequest("GET", "/factory-reset/status", nil)
+	w := httptest.NewRecorder()
+	srv.handleFactoryResetStatus(w, req)
+
+	var resp resetStatusResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.InProgress {
+		t.Error("expected in_progress=false initially")
+	}
+	if resp.Status != "" {
+		t.Errorf("expected empty status, got %q", resp.Status)
+	}
+
+	// After setting status
+	srv.setResetStatus("Restoring rootfs...")
+	req = httptest.NewRequest("GET", "/factory-reset/status", nil)
+	w = httptest.NewRecorder()
+	srv.handleFactoryResetStatus(w, req)
+
+	var resp2 resetStatusResponse
+	json.NewDecoder(w.Body).Decode(&resp2)
+	if !resp2.InProgress {
+		t.Error("expected in_progress=true after setResetStatus")
+	}
+	if resp2.Status != "Restoring rootfs..." {
+		t.Errorf("status = %q, want %q", resp2.Status, "Restoring rootfs...")
+	}
+}
+
 func TestTryAgainEndpoint(t *testing.T) {
 	counterPath := filepath.Join(t.TempDir(), "boot-counter")
 	os.WriteFile(counterPath, []byte("3"), 0644)
