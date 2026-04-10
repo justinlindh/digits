@@ -7,9 +7,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"strings"
+	"os/signal"
 	"syscall"
-	"time"
 )
 
 func initSetup() {
@@ -38,96 +37,24 @@ func initSetup() {
 	if f, err := os.OpenFile("/data/digits/recovery.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644); err == nil {
 		recoveryLogFile = f
 		log.SetOutput(io.MultiWriter(os.Stderr, f))
-		log.Println("init: log file opened at /data/digits/recovery.log")
+		log.Println("init: log file opened")
 	}
 
 	// Set LD_LIBRARY_PATH so dynamically linked recovery tools (hostapd,
-	// dnsmasq, zstd, dd, etc.) can find their shared libraries on the
-	// recovery partition.
+	// dnsmasq, zstd, dd, etc.) can find their shared libraries.
 	os.Setenv("LD_LIBRARY_PATH", "/lib")
 
-	// Dump diagnostic info for WiFi debugging
-	if data, err := os.ReadFile("/proc/modules"); err == nil {
-		log.Printf("init: loaded modules:\n%s", string(data))
-	}
-	if entries, err := os.ReadDir("/sys/bus/sdio/devices"); err == nil {
-		for _, e := range entries {
-			log.Printf("init: sdio device: %s", e.Name())
-		}
-	} else {
-		log.Printf("init: /sys/bus/sdio/devices: %v", err)
-	}
-	if entries, err := os.ReadDir("/sys/bus/sdio/drivers"); err == nil {
-		for _, e := range entries {
-			log.Printf("init: sdio driver: %s", e.Name())
-		}
-	} else {
-		log.Printf("init: /sys/bus/sdio/drivers: %v", err)
-	}
-
-	// Load WiFi kernel modules via modprobe (busybox). This handles the
+	// Load WiFi kernel modules via modprobe (busybox). Handles the
 	// dependency chain: rfkill -> cfg80211 -> brcmutil -> brcmfmac.
-	// When brcmfmac probes the SDIO device, it calls request_module("brcmfmac-wcc")
-	// which the kernel routes to /sbin/modprobe, also handled by busybox.
+	// brcmfmac calls request_module("brcmfmac-wcc") during probe,
+	// which the kernel routes to /sbin/modprobe (busybox).
 	log.Println("init: loading brcmfmac via modprobe")
 	if out, err := exec.Command("/sbin/modprobe", "brcmfmac").CombinedOutput(); err != nil {
 		log.Printf("init: modprobe brcmfmac: %v: %s", err, string(out))
-	} else {
-		log.Println("init: modprobe brcmfmac: ok")
 	}
 
-	// Give firmware load time to complete (async SDIO probe + firmware upload)
-	time.Sleep(3 * time.Second)
-
-	// Post-module-load diagnostics
-	if entries, err := os.ReadDir("/sys/class/net"); err == nil {
-		var nets []string
-		for _, e := range entries {
-			nets = append(nets, e.Name())
-		}
-		log.Printf("init: network interfaces after module load: %v", nets)
-	}
-	if entries, err := os.ReadDir("/sys/bus/sdio/drivers"); err == nil {
-		for _, e := range entries {
-			log.Printf("init: sdio driver (post-load): %s", e.Name())
-			// Check if driver has bound devices
-			subs, _ := os.ReadDir("/sys/bus/sdio/drivers/" + e.Name())
-			for _, s := range subs {
-				if s.Name() != "bind" && s.Name() != "unbind" && s.Name() != "module" && s.Name() != "uevent" {
-					log.Printf("init:   bound device: %s", s.Name())
-				}
-			}
-		}
-	}
-	// Dump kernel log for firmware load messages.
-	// /dev/kmsg is a streaming interface, read /proc/kmsg would block.
-	// Use /sys/fs/pstore or just open /dev/kmsg with O_NONBLOCK.
-	if f, err := syscall.Open("/dev/kmsg", syscall.O_RDONLY|syscall.O_NONBLOCK, 0); err == nil {
-		buf := make([]byte, 65536)
-		var dmesg []byte
-		for {
-			n, readErr := syscall.Read(f, buf)
-			if n <= 0 || readErr != nil {
-				break
-			}
-			dmesg = append(dmesg, buf[:n]...)
-		}
-		syscall.Close(f)
-		// Extract last 50 lines
-		lines := strings.Split(string(dmesg), "\n")
-		start := len(lines) - 50
-		if start < 0 {
-			start = 0
-		}
-		log.Printf("init: dmesg (last 50 lines):\n%s", strings.Join(lines[start:], "\n"))
-	} else {
-		log.Printf("init: open /dev/kmsg: %v (errno %d)", err, err)
-	}
-	// Flush log
-	syncLog()
-
-	// PID 1 must reap zombie children. Use WNOHANG so we don't steal
-	// waits from exec.Command -- the reaper only picks up orphans.
+	// PID 1 must reap zombie children. Wait for SIGCHLD rather than
+	// polling to avoid unnecessary wakeups.
 	go reapChildren()
 }
 
@@ -146,18 +73,17 @@ func closeDataLog() {
 }
 
 func reapChildren() {
+	sigchld := make(chan os.Signal, 1)
+	signal.Notify(sigchld, syscall.SIGCHLD)
 	var ws syscall.WaitStatus
-	for {
-		pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
-		if pid <= 0 || err != nil {
-			time.Sleep(500 * time.Millisecond)
+	for range sigchld {
+		for {
+			pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, nil)
+			if pid <= 0 || err != nil {
+				break
+			}
 		}
 	}
-}
-
-// syncLog flushes the log file to disk.
-func syncLog() {
-	syscall.Sync()
 }
 
 func rebootDirect() error {
