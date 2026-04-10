@@ -43,15 +43,30 @@ jobs:
         working-directory: server
         run: |
           go version
-          go env GOVERSION GOTOOLCHAIN GOROOT
+          go env GOVERSION GOTOOLCHAIN GOROOT GOOS GOARCH
           which go
           head -5 go.mod
+          # Check if there's a pre-installed Go
+          ls /usr/local/go/bin/ 2>/dev/null || echo "no /usr/local/go"
+          ls /opt/hostedtoolcache/go/ 2>/dev/null || echo "no hostedtoolcache go"
+          # Try a minimal repro
+          cat > /tmp/test.go << 'GOEOF'
+          package main
+          import "fmt"
+          type S struct { f func(string) error }
+          func main() {
+            s := S{f: func(string) error {
+              if x := 1; x > 0 { fmt.Println(x) }
+              return nil
+            }}
+            _ = s
+          }
+          GOEOF
+          go run /tmp/test.go
 
       - name: Build server
         working-directory: server
         run: go build -v -o bin/signald ./cmd/signald/
-        env:
-          GOTOOLCHAIN: auto
 
       - name: Start server
         working-directory: server
