@@ -46,7 +46,7 @@ setup('authenticate', async ({ page, context }) => {
   const devStatus = devResp?.status() ?? 0;
   const devUrl = page.url();
   console.log(`[setup] Dev-session response: status=${devStatus}, url=${devUrl}`);
-  if (devStatus !== 404 && !devUrl.includes('/auth/login')) {
+  if (devStatus !== 404 && devResp?.ok() && !devUrl.includes('/auth/login')) {
     // If we landed on /onboard, complete onboarding so tests have a household.
     if (devUrl.includes('/onboard')) {
       console.log('[setup] New user needs onboarding -- creating household via API.');
