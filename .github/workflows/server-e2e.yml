@@ -33,48 +33,11 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: '1.26.1'
-          cache: false
+          cache-dependency-path: server/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Debug Go env
-        working-directory: server
-        run: |
-          go version
-          go env GOVERSION GOTOOLCHAIN GOROOT GOOS GOARCH
-          which go
-          head -5 go.mod
-          # Check if there's a pre-installed Go
-          ls /usr/local/go/bin/ 2>/dev/null || echo "no /usr/local/go"
-          ls /opt/hostedtoolcache/go/ 2>/dev/null || echo "no hostedtoolcache go"
-          # Try a minimal repro
-          cat > /tmp/test.go << 'GOEOF'
-          package main
-          import "fmt"
-          type S struct { f func(string) error }
-          func main() {
-            s := S{f: func(string) error {
-              if x := 1; x > 0 { fmt.Println(x) }
-              return nil
-            }}
-            _ = s
-          }
-          GOEOF
-          go run /tmp/test.go
-
-      - name: Check handler.go syntax
-        working-directory: server
-        run: |
-          echo "=== File line count ==="
-          wc -l internal/web/handler.go
-          echo "=== Lines 1395-1410 ==="
-          sed -n '1395,1410p' internal/web/handler.go
-          echo "=== md5sum ==="
-          md5sum internal/web/handler.go
-          echo "=== go vet web package ==="
-          go vet ./internal/web/ 2>&1 || true
 
       - name: Build server
         working-directory: server

@@ -1400,8 +1400,6 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	conn := &signaling.Conn{
 		WS:         ws,
-	conn := &signaling.Conn{
-		WS:         ws,
 		HardwareID: msg.HardwareID,
 		Send:       make(chan []byte, 32),
 		LastSeen:   time.Now(),
