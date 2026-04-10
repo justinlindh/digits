@@ -472,7 +472,7 @@
     "pinned_symbol_libs": []
   },
   "meta": {
-    "filename": "digits-pcb-v2.kicad_pro",
+    "filename": "digits-pcb.kicad_pro",
     "version": 3
   },
   "net_settings": {
@@ -648,7 +648,7 @@
     "subpart_id_separator": 0,
     "top_level_sheets": [
       {
-        "filename": "digits-pcb-v2.kicad_sch",
+        "filename": "digits-pcb.kicad_sch",
         "name": "digits-pcb",
         "uuid": "74ec24e7-a8af-4132-928f-b03228b07139"
       }
