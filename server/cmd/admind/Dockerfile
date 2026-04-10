@@ -7,7 +7,7 @@ COPY . .
 # Build Tailwind CSS (download standalone CLI if not vendored)
 RUN set -e; \
     TWCSS=/tmp/tailwindcss; \
-    curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o $TWCSS && chmod +x $TWCSS; \
+    curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.2/tailwindcss-linux-x64 -o $TWCSS && chmod +x $TWCSS; \
     $TWCSS --input internal/admin/static/input.css --output internal/admin/static/tailwind.css --content 'internal/admin/templates/*.html' --minify
 
 RUN CGO_ENABLED=0 go build -o admind ./cmd/admind/
