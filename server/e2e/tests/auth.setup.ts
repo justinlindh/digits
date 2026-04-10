@@ -49,18 +49,22 @@ setup('authenticate', async ({ page, context }) => {
   if (devStatus !== 404 && !devUrl.includes('/auth/login')) {
     // If we landed on /onboard, complete onboarding so tests have a household.
     if (devUrl.includes('/onboard')) {
-      console.log('[setup] New user needs onboarding -- creating household.');
-      await page.fill('input[name="name"]', 'E2E Test Family');
-      await page.click('button[type="submit"]');
-      await page.waitForURL(url => !url.toString().includes('/onboard'), { timeout: 5000 });
-      const postUrl = page.url();
-      console.log(`[setup] Onboarding POST landed on ${postUrl}`);
-      // The POST may lose the session (Secure cookie over HTTP). Re-auth if needed.
-      if (postUrl.includes('/auth/login')) {
-        console.log('[setup] Session lost after onboard -- re-running dev-session.');
-        await page.goto(devSessionUrl);
-        console.log(`[setup] Re-auth landed on ${page.url()}`);
+      console.log('[setup] New user needs onboarding -- creating household via API.');
+      // Use the API context to POST the form directly with cookies, avoiding
+      // browser redirect issues with HSTS/Secure cookies over HTTP.
+      const cookies = await context.cookies();
+      const sessionCookie = cookies.find(c => c.name === 'digits_session');
+      if (sessionCookie) {
+        const resp = await page.request.post('/onboard', {
+          form: { name: 'E2E Test Family' },
+          headers: { Cookie: `digits_session=${sessionCookie.value}` },
+          maxRedirects: 0,
+        });
+        console.log(`[setup] Onboard API response: ${resp.status()}`);
       }
+      // Re-auth to get a clean session state after onboarding.
+      await page.goto(devSessionUrl);
+      console.log(`[setup] Post-onboard re-auth landed on ${page.url()}`);
     }
     await context.storageState({ path: AUTH_FILE });
     console.log('[setup] Dev-session endpoint succeeded -- auth state saved.');
