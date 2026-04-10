@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -78,15 +79,22 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
-		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "status=progress"),
+		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "conv=fsync"),
 	); err != nil {
 		log.Printf("recovery: rootfs restore failed: %v", err)
 		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
 		return
 	}
+	log.Println("recovery: rootfs restore complete, syncing")
+	syscall.Sync()
 
-	// Unmount data partition before formatting (may be mounted from init or fstab)
-	exec.Command(filepath.Join(bin, "umount"), "/data").Run()
+	// Close log file and unmount data partition before formatting.
+	// The log file holds /data busy, preventing unmount.
+	closeDataLog()
+	if out, err := exec.Command(filepath.Join(bin, "umount"), "/data").CombinedOutput(); err != nil {
+		log.Printf("recovery: umount /data failed (trying lazy): %v: %s", err, string(out))
+		exec.Command(filepath.Join(bin, "umount"), "-l", "/data").Run()
+	}
 
 	log.Printf("recovery: formatting %s", s.dataDev)
 	if err := exec.Command(filepath.Join(bin, "mkfs.ext4"), "-L", "data", "-F", s.dataDev).Run(); err != nil {
@@ -205,6 +213,8 @@ ieee80211d=1
 	dnsmasqConf := "/tmp/recovery-dnsmasq.conf"
 	os.WriteFile(dnsmasqConf, []byte(`interface=wlan0
 bind-interfaces
+user=root
+pid-file=/tmp/dnsmasq.pid
 dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m
 address=/#/192.168.4.1
 no-resolv
@@ -212,7 +222,7 @@ domain-needed
 dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 `), 0644)
 
-	// Start hostapd
+	// Start hostapd (forks to background with -B)
 	hostapd := exec.Command(filepath.Join(bin, "hostapd"), "-B", hostapdConf)
 	hostapd.Stdout = os.Stdout
 	hostapd.Stderr = os.Stderr
@@ -220,12 +230,14 @@ dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 		return fmt.Errorf("hostapd: %w", err)
 	}
 
-	// Start dnsmasq
+	// Start dnsmasq (daemonizes by default)
 	dnsmasq := exec.Command(filepath.Join(bin, "dnsmasq"), "-C", dnsmasqConf)
 	dnsmasq.Stdout = os.Stdout
 	dnsmasq.Stderr = os.Stderr
 	if err := dnsmasq.Run(); err != nil {
-		return fmt.Errorf("dnsmasq: %w", err)
+		// Capture error details on retry with combined output
+		retryOut, retryErr := exec.Command(filepath.Join(bin, "dnsmasq"), "--no-daemon", "--test", "-C", dnsmasqConf).CombinedOutput()
+		return fmt.Errorf("dnsmasq: %w (test: %v: %s)", err, retryErr, string(retryOut))
 	}
 
 	log.Println("recovery: AP mode started (SSID: Digits-Recovery)")
