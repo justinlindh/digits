@@ -7,7 +7,7 @@ COPY . .
 # Build Tailwind CSS (download standalone CLI if not vendored)
 RUN set -e; \
     TWCSS=/tmp/tailwindcss; \
-    curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o $TWCSS && chmod +x $TWCSS; \
+    curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.2/tailwindcss-linux-x64 -o $TWCSS && chmod +x $TWCSS; \
     $TWCSS --input internal/web/static/input.css --output internal/web/static/tailwind.css --content 'internal/web/templates/*.html' --minify; \
     $TWCSS --input internal/admin/static/input.css --output internal/admin/static/tailwind.css --content 'internal/admin/templates/*.html' --minify
 
@@ -19,6 +19,5 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /build/signald .
-COPY --from=builder /build/static ./static
 EXPOSE 8080
 CMD ["./signald"]
