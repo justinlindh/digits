@@ -749,21 +749,104 @@ done
 mkdir -p "${RECOVERY_MNT}/lib/aarch64-linux-gnu"
 ln -sf /lib/ld-linux-aarch64.so.1 "${RECOVERY_MNT}/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
 
-# Copy WiFi firmware for the Pi Zero 2 W (BCM43436).
-# The kernel loads firmware when the brcmfmac module is inserted. If the module
-# was loaded during initramfs, firmware is already in memory. But if a firmware
-# reload is needed after switch_root, the files must be on the new rootfs.
+# Copy WiFi firmware for the Pi Zero 2 W.
+# The chip is BCM43430 but firmware files use both 43430 and 43436 names
+# (43430 files are often symlinks to 43436 variants). Copy both sets.
 info "  Copying WiFi firmware..."
 if [[ -d "${ROOTFS_MNT}/lib/firmware/brcm" ]]; then
     mkdir -p "${RECOVERY_MNT}/lib/firmware/brcm"
-    cp "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
-    # Also copy regulatory database
-    for reg_file in regulatory.db regulatory.db.p7s; do
-        if [[ -f "${ROOTFS_MNT}/lib/firmware/${reg_file}" ]]; then
-            cp "${ROOTFS_MNT}/lib/firmware/${reg_file}" "${RECOVERY_MNT}/lib/firmware/"
+    # Copy 43436 firmware (real files)
+    cp -a "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
+    cp -a "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436s"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
+    # Copy 43430 firmware (resolving symlinks to real files)
+    for f in "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43430"*; do
+        [[ -e "$f" ]] || continue
+        NAME=$(basename "$f")
+        if [[ -L "$f" ]]; then
+            # Resolve symlink, copy the target with the 43430 name
+            TARGET=$(readlink -f "$f" 2>/dev/null || true)
+            if [[ -n "$TARGET" && -f "$TARGET" ]]; then
+                cp "$TARGET" "${RECOVERY_MNT}/lib/firmware/brcm/${NAME}"
+            fi
+        else
+            cp "$f" "${RECOVERY_MNT}/lib/firmware/brcm/${NAME}"
         fi
     done
 fi
+
+# Copy busybox and create shell/modprobe symlinks.
+# Recovery partition has no init system -- busybox provides /bin/sh (for
+# scripts), /sbin/modprobe (kernel calls this via request_module), and
+# /sbin/insmod as fallback.
+info "  Installing busybox and symlinks..."
+install -m 755 "${ROOTFS_MNT}/bin/busybox" "${RECOVERY_MNT}/bin/busybox"
+# libresolv is busybox's only extra dependency beyond libc
+for lib in libresolv.so.2; do
+    LIBPATH=$(chroot "$ROOTFS_MNT" readlink -f "/usr/lib/aarch64-linux-gnu/${lib}" 2>/dev/null || true)
+    if [[ -n "$LIBPATH" && -f "${ROOTFS_MNT}${LIBPATH}" ]]; then
+        cp -L "${ROOTFS_MNT}${LIBPATH}" "${RECOVERY_MNT}/lib/${lib}"
+    fi
+done
+for tool in sh insmod modprobe; do
+    ln -sf /bin/busybox "${RECOVERY_MNT}/sbin/${tool}"
+done
+
+# Copy WiFi kernel modules (decompressed) and create modules.dep.
+# The recovery binary loads brcmfmac via modprobe; the kernel's
+# request_module("brcmfmac-wcc") also needs modprobe infrastructure.
+info "  Copying WiFi kernel modules..."
+KVER=$(ls "${ROOTFS_MNT}/lib/modules/" | grep rpi-v8 | head -1)
+KDIR="${ROOTFS_MNT}/lib/modules/${KVER}"
+RECOVERY_KDIR="${RECOVERY_MNT}/lib/modules/${KVER}"
+mkdir -p "$RECOVERY_KDIR"
+for mod_path in \
+    kernel/net/rfkill/rfkill.ko.xz \
+    kernel/net/wireless/cfg80211.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/brcmfmac-bca.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/brcmfmac-wcc.ko.xz; do
+    NAME=$(basename "${mod_path%.xz}")
+    if [[ -f "${KDIR}/${mod_path}" ]]; then
+        xz -dk -c "${KDIR}/${mod_path}" > "${RECOVERY_KDIR}/${NAME}"
+        info "    ${NAME}"
+    else
+        warn "    Module not found: ${mod_path}"
+    fi
+done
+
+cat > "${RECOVERY_KDIR}/modules.dep" << 'MODDEP'
+brcmfmac-wcc.ko: brcmfmac.ko brcmutil.ko cfg80211.ko rfkill.ko
+brcmfmac-bca.ko: brcmfmac.ko brcmutil.ko cfg80211.ko rfkill.ko
+brcmfmac.ko: brcmutil.ko cfg80211.ko rfkill.ko
+cfg80211.ko: rfkill.ko
+brcmutil.ko:
+rfkill.ko:
+MODDEP
+
+cat > "${RECOVERY_KDIR}/modules.alias" << 'MODALIAS'
+alias brcmfmac-wcc brcmfmac-wcc
+alias brcmfmac-bca brcmfmac-bca
+alias brcmfmac_wcc brcmfmac-wcc
+alias brcmfmac_bca brcmfmac-bca
+MODALIAS
+
+touch "${RECOVERY_KDIR}/modules.dep.bin" \
+      "${RECOVERY_KDIR}/modules.alias.bin" \
+      "${RECOVERY_KDIR}/modules.softdep" \
+      "${RECOVERY_KDIR}/modules.symbols"
+
+# Create minimal /etc for dnsmasq (needs passwd for user= directive)
+# and glibc (needs nsswitch.conf for name resolution).
+info "  Creating minimal /etc..."
+mkdir -p "${RECOVERY_MNT}/etc"
+echo "root:x:0:0:root:/root:/bin/sh" > "${RECOVERY_MNT}/etc/passwd"
+echo "root:x:0:" > "${RECOVERY_MNT}/etc/group"
+printf "passwd: files\ngroup: files\nhosts: files dns\n" > "${RECOVERY_MNT}/etc/nsswitch.conf"
+
+# Symlink /var/run -> /run (tmpfs from initramfs)
+mkdir -p "${RECOVERY_MNT}/var"
+ln -sf /run "${RECOVERY_MNT}/var/run"
 
 info "  Rebuilding initramfs (chroot)..."
 chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
