@@ -177,6 +177,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
 	mux.Handle("GET /auth/magic/{token}", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
 	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
+	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)

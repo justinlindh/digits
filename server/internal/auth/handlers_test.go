@@ -247,6 +247,85 @@ func TestHandleLogout_WithSession(t *testing.T) {
 	}
 }
 
+func newTestHandlersDevMode(t *testing.T) (*Handlers, *Store) {
+	t.Helper()
+	s := testDB(t)
+	sender := email.NewNoopSender()
+	google := NewGoogleAuth("", "", "", "", s)
+	tmpl := minimalTemplate(t)
+	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, true)
+	return h, s
+}
+
+func TestHandleDevSession_DevModeEnabled(t *testing.T) {
+	h, s := newTestHandlersDevMode(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/dev-session?email=test@example.com", nil)
+	w := httptest.NewRecorder()
+	h.HandleDevSession(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("redirect location = %q, want /", loc)
+	}
+
+	// Should have set a session cookie
+	cookies := w.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == CookieName {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if sessionCookie.Value == "" {
+		t.Error("session cookie value should not be empty")
+	}
+
+	// User should exist
+	user, err := s.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("expected user to be created, got: %v", err)
+	}
+	if user.LastLoginAt == nil {
+		t.Error("expected last_login_at to be set")
+	}
+}
+
+func TestHandleDevSession_DevModeDisabled(t *testing.T) {
+	h, _, _ := newTestHandlers(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/dev-session?email=test@example.com", nil)
+	w := httptest.NewRecorder()
+	h.HandleDevSession(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestHandleDevSession_DefaultEmail(t *testing.T) {
+	h, s := newTestHandlersDevMode(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/dev-session", nil)
+	w := httptest.NewRecorder()
+	h.HandleDevSession(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d", w.Code)
+	}
+
+	// Should have created user with default email
+	_, err := s.GetUserByEmail("e2e@example.com")
+	if err != nil {
+		t.Fatalf("expected user with default email to be created, got: %v", err)
+	}
+}
+
 func TestHandleLogout_NoCookie(t *testing.T) {
 	h, _, _ := newTestHandlers(t)
 
