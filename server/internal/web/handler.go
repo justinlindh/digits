@@ -1042,26 +1042,32 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("get linked households failed", "err", err)
 	}
+
+	// Collect linked household IDs for a single batched line query
+	otherIDs := make([]string, 0, len(activeLinks))
 	for _, l := range activeLinks {
 		otherID := l.HouseholdAID
 		if otherID == myHousehold.ID && l.HouseholdBID != nil {
 			otherID = *l.HouseholdBID
 		}
+		otherIDs = append(otherIDs, otherID)
+	}
+	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
+	if err != nil {
+		slog.Error("batch list lines for linked households failed", "err", err)
+	}
+
+	for i, l := range activeLinks {
+		otherID := otherIDs[i]
 		otherName := otherID
 		if other, err := h.householdStore.GetByID(otherID); err == nil {
 			otherName = other.Name
 		}
 
-		// Look up the other household's lines
-		otherLines, err := h.lineStore.ListByHousehold(otherID)
-		if err != nil {
-			slog.Error("list lines for linked household failed", "household_id", otherID, "err", err)
-		}
-
 		data.LinkedFamilies = append(data.LinkedFamilies, linkedFamilyRow{
 			ID:         l.ID,
 			Name:       otherName,
-			Lines:      otherLines,
+			Lines:      linesByHousehold[otherID],
 			Status:     l.Status,
 			AcceptedAt: l.AcceptedAt,
 		})
