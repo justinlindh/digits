@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
-	"github.com/lib/pq"
 )
 
 // ErrNotFound is returned when a line cannot be found.
@@ -19,11 +18,6 @@ var ErrNotFound = errors.New("line not found")
 var ErrNumberTaken = errors.New("line number is already in use")
 
 var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
-
-func isUniqueViolation(err error) bool {
-	var pgErr *pq.Error
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
-}
 
 // ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
