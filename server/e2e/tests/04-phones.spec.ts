@@ -101,8 +101,8 @@ test.describe('Phones list', () => {
       return;
     }
 
-    // The "Registered Phones" section always renders
-    await expect(page.locator('text=Registered Phones')).toBeVisible();
+    // The "Your Lines" section always renders
+    await expect(page.locator('h2', { hasText: 'Your Lines' })).toBeVisible();
   });
 
   test('nav shows Phones as active on /phones', async ({ page }) => {
@@ -114,7 +114,7 @@ test.describe('Phones list', () => {
 
     const activeLink = page.locator('.nav-link.active');
     const text = await activeLink.textContent();
-    expect(text?.toLowerCase()).toContain('phone');
+    expect(text?.toLowerCase()).toContain('lines');
   });
 });
 

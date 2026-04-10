@@ -19,11 +19,10 @@ function isAuthOrOnboard(url: string) {
 
 const PAGES = [
   { path: '/',          titlePattern: /Dashboard|Digits/i },
-  { path: '/phones',    titlePattern: /Phones|Digits/i },
+  { path: '/phones',    titlePattern: /Lines|Digits/i },
   { path: '/calls',     titlePattern: /Calls|Digits/i },
-  { path: '/links',     titlePattern: /Links|Digits/i },
+  { path: '/links',     titlePattern: /Connected Families|Digits/i },
   { path: '/settings',  titlePattern: /Settings|Digits/i },
-  { path: '/contacts',  titlePattern: /Contacts|Digits/i },
 ];
 
 for (const { path, titlePattern } of PAGES) {
@@ -50,7 +49,7 @@ test('sidebar nav links are all present and have correct hrefs', async ({ page }
     return;
   }
 
-  const expectedHrefs = ['/', '/phones', '/links', '/contacts', '/calls', '/settings'];
+  const expectedHrefs = ['/', '/phones', '/links', '/settings'];
   for (const href of expectedHrefs) {
     const link = page.locator(`#sidebar a[href="${href}"]`);
     await expect(link).toBeAttached();
@@ -66,7 +65,7 @@ test('clicking Phones nav link goes to /phones', async ({ page }) => {
 
   await page.locator('#sidebar a[href="/phones"]').click();
   await expect(page).toHaveURL('/phones');
-  await expect(page.locator('h1', { hasText: 'Phones' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 });
 
 test('clicking Settings nav link goes to /settings', async ({ page }) => {
@@ -90,5 +89,5 @@ test('clicking Links nav link goes to /links', async ({ page }) => {
 
   await page.locator('#sidebar a[href="/links"]').click();
   await expect(page).toHaveURL('/links');
-  await expect(page.locator('h1', { hasText: 'Household Links' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Connected Families' })).toBeVisible();
 });
