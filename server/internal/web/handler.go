@@ -177,6 +177,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
 	mux.Handle("GET /auth/magic/{token}", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
 	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
+	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
@@ -251,7 +252,9 @@ func (h *Handler) Router() http.Handler {
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'")
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -1414,8 +1417,6 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		wsWriteTimeout = 10 * time.Second
 	)
 
-	conn := &signaling.Conn{
-		WS:         ws,
 	conn := &signaling.Conn{
 		WS:         ws,
 		HardwareID: msg.HardwareID,

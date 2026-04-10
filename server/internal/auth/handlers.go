@@ -127,6 +127,57 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// HandleDevSession creates an authenticated session in one round-trip for e2e testing.
+// Only works when dev mode is enabled; returns 404 otherwise.
+func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
+	if !h.devMode {
+		http.NotFound(w, r)
+		return
+	}
+
+	emailAddr := r.URL.Query().Get("email")
+	if emailAddr == "" {
+		emailAddr = "e2e@example.com"
+	}
+
+	slog.Info("dev-session requested", "email", emailAddr)
+
+	// Find or create user (same pattern as HandleMagicLinkVerify)
+	user, err := h.store.GetUserByEmail(emailAddr)
+	if err != nil {
+		user, err = h.store.CreateUser(emailAddr, "", nil)
+		if err != nil {
+			http.Error(w, "failed to create user", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err := h.store.UpdateLastLogin(user.ID); err != nil {
+		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
+	}
+
+	sessionToken, _, err := h.store.CreateSession(user.ID, SessionTTL)
+	if err != nil {
+		http.Error(w, "failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	// Secure=false: this endpoint only exists in dev mode and CI runs over
+	// plain HTTP. Chromium won't send Secure cookies over http://localhost.
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    sessionToken,
+		Domain:   h.cookieDomain,
+		Path:     "/",
+		MaxAge:   int(SessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // HandleLogout destroys the session and clears the cookie.
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)

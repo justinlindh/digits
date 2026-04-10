@@ -28,7 +28,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.1'
           cache-dependency-path: server/go.sum
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.1'
           cache-dependency-path: pi/digitsd/go.sum
       - name: Install C dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libopus-dev libopusfile-dev
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          go-version: '1.26.1'
           cache-dependency-path: pi/digits-setup/go.sum
       - uses: golangci/golangci-lint-action@v9
         with:

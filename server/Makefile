@@ -1,4 +1,4 @@
-.PHONY: build build-dev run test e2e clean deploy css
+.PHONY: build build-dev run test e2e e2e-ci clean deploy css
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -33,6 +33,21 @@ e2e:
 	cd e2e && npm install --silent
 	cd e2e && npx playwright install --with-deps chromium
 	cd e2e && npx playwright test
+
+# E2E CI — full lifecycle: build, start server, run Playwright, clean up.
+# Requires a running PostgreSQL with DATABASE_URL set (defaults to local dev DB).
+e2e-ci:
+	$(MAKE) build
+	DEV_MODE=true SIGNALD_ADDR=:8080 BASE_URL=http://localhost:8080 DATABASE_URL=$(DATABASE_URL) ./bin/signald & SERVER_PID=$$!; \
+	trap "kill $$SERVER_PID 2>/dev/null" EXIT; \
+	for i in $$(seq 1 30); do \
+		curl -sf http://localhost:8080/healthz > /dev/null 2>&1 && break; \
+		sleep 1; \
+	done; \
+	curl -sf http://localhost:8080/healthz > /dev/null 2>&1 || { echo "Server failed to start"; exit 1; }; \
+	cd e2e && npm install --silent && \
+	npx playwright install --with-deps chromium && \
+	npx playwright test
 
 clean:
 	rm -rf bin/

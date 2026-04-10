@@ -28,8 +28,8 @@ test.describe('Links page', () => {
       return;
     }
 
-    await expect(page.locator('h1', { hasText: 'Household Links' })).toBeVisible();
-    await expect(page).toHaveTitle(/Links|Digits/i);
+    await expect(page.locator('h1', { hasText: 'Connected Families' })).toBeVisible();
+    await expect(page).toHaveTitle(/Connected Families|Digits/i);
   });
 
   test('create invite card is visible', async ({ page }) => {
@@ -72,17 +72,17 @@ test.describe('Links page', () => {
       return;
     }
 
-    // "Active Links" heading
-    await expect(page.locator('h2', { hasText: 'Active Links' })).toBeVisible();
+    // "Connected Families" heading
+    await expect(page.locator('h2', { hasText: 'Connected Families' })).toBeVisible();
 
-    // Either a table or the empty state message
-    const table = page.locator('table').first();
-    const emptyState = page.locator('text=No active links yet');
+    // Either linked family cards or the empty state message
+    const disconnectBtn = page.locator('button', { hasText: 'Disconnect' });
+    const emptyState = page.locator('text=No connected families yet.');
 
-    const tableVisible = await table.isVisible().catch(() => false);
+    const hasFamily = await disconnectBtn.first().isVisible().catch(() => false);
     const emptyVisible = await emptyState.isVisible().catch(() => false);
 
-    expect(tableVisible || emptyVisible).toBeTruthy();
+    expect(hasFamily || emptyVisible).toBeTruthy();
   });
 
   test('active links table has correct columns when populated', async ({ page }) => {
@@ -154,6 +154,6 @@ test.describe('Links page', () => {
 
     const activeLink = page.locator('.nav-link.active');
     const text = await activeLink.textContent();
-    expect(text?.toLowerCase()).toContain('link');
+    expect(text?.toLowerCase()).toContain('connected families');
   });
 });
