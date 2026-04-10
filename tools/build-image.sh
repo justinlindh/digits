@@ -853,6 +853,7 @@ touch "${RECOVERY_KDIR}/modules.dep.bin" \
 # and glibc (needs nsswitch.conf for name resolution).
 info "  Creating minimal /etc..."
 mkdir -p "${RECOVERY_MNT}/etc"
+echo "digits" > "${RECOVERY_MNT}/etc/hostname"
 echo "root:x:0:0:root:/root:/bin/sh" > "${RECOVERY_MNT}/etc/passwd"
 echo "root:x:0:" > "${RECOVERY_MNT}/etc/group"
 printf "passwd: files\ngroup: files\nhosts: files dns\n" > "${RECOVERY_MNT}/etc/nsswitch.conf"
