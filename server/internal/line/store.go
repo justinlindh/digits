@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -153,6 +155,32 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 		lines = append(lines, l)
 	}
 	return lines, rows.Err()
+}
+
+// ListByHouseholds returns all lines for the given household IDs, grouped by household.
+func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, error) {
+	if len(householdIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id, number, name, household_id, created_at, updated_at
+		 FROM lines WHERE household_id = ANY($1) ORDER BY number`,
+		pq.Array(householdIDs),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list lines by households: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string][]Line)
+	for rows.Next() {
+		var l Line
+		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan line: %w", err)
+		}
+		result[l.HouseholdID] = append(result[l.HouseholdID], l)
+	}
+	return result, rows.Err()
 }
 
 // Update modifies the number and name of the line with the given ID.
