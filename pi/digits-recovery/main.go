@@ -97,8 +97,17 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 }
 
 func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
+	s.reset.mu.Lock()
+	if s.reset.inProgress {
+		s.reset.mu.Unlock()
+		http.Error(w, "factory reset already in progress", http.StatusConflict)
+		return
+	}
+	s.reset.inProgress = true
+	s.reset.status = "Restoring rootfs..."
+	s.reset.mu.Unlock()
+
 	log.Println("recovery: factory reset requested")
-	s.setResetStatus("Restoring rootfs...")
 
 	// Non-fatal: data partition may be corrupt (that's why we're here).
 	// mkfs.ext4 below will wipe it anyway.
