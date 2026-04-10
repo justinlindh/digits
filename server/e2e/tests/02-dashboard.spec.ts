@@ -46,7 +46,7 @@ test.describe('Dashboard', () => {
 
     // At least one stat label should be present
     const statsText = await page.locator('.grid').first().textContent();
-    const hasStats = ['Phones', 'Online', 'Active', 'Today'].some(s =>
+    const hasStats = ['Lines', 'Online', 'Active Calls', 'Calls Today'].some(s =>
       statsText?.includes(s)
     );
     expect(hasStats).toBeTruthy();
@@ -63,15 +63,15 @@ test.describe('Dashboard', () => {
     await expect(activeCalls).toBeVisible();
   });
 
-  test('dashboard shows recent calls section', async ({ page }) => {
+  test('dashboard shows lines section', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    const recentCalls = page.locator('text=Recent Calls');
-    await expect(recentCalls).toBeVisible();
+    const linesSection = page.locator('h2', { hasText: 'Lines' });
+    await expect(linesSection).toBeVisible();
   });
 
   test('sidebar navigation is visible', async ({ page }) => {
@@ -85,10 +85,11 @@ test.describe('Dashboard', () => {
     const sidebar = page.locator('#sidebar');
     await expect(sidebar).toBeAttached();
 
-    // Nav links for core sections
-    await expect(page.locator('a[href="/phones"]')).toBeAttached();
-    await expect(page.locator('a[href="/settings"]')).toBeAttached();
-    await expect(page.locator('a[href="/links"]')).toBeAttached();
+    // Nav links for core sections (use sidebar-specific selectors to avoid
+    // matching other links on the page that share the same href)
+    await expect(page.locator('#sidebar a[href="/phones"]')).toBeAttached();
+    await expect(page.locator('#sidebar a[href="/settings"]')).toBeAttached();
+    await expect(page.locator('#sidebar a[href="/links"]')).toBeAttached();
   });
 
   test('unauthenticated visit to / redirects to login', async ({ browser }) => {

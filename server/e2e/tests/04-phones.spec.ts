@@ -28,10 +28,10 @@ test.describe('Phones list', () => {
     }
 
     // Page heading
-    await expect(page.locator('h1', { hasText: 'Phones' })).toBeVisible();
+    await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 
-    // "Pair a Phone" section
-    await expect(page.locator('text=Pair a Phone')).toBeVisible();
+    // "Pair a Device" section
+    await expect(page.locator('text=Pair a Device')).toBeVisible();
   });
 
   test('pair form has pairing code, number, and name inputs', async ({ page }) => {
