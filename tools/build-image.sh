@@ -648,10 +648,10 @@ info "  Creating rootfs snapshot (this may take a while)..."
 dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
 
 # Clean /data before creating skeleton (first-boot must run fresh after reset)
+# Keep config.json (has server_url), remove device-specific state
 rm -f "${DATA_MNT}/.initialized"
 rm -f "${DATA_MNT}/log/digits-first-boot.log"
 rm -f "${DATA_MNT}/digits/device-id"
-rm -f "${DATA_MNT}/digits/config.json"
 rm -f "${DATA_MNT}/digits/config.json.bak"
 rm -f "${DATA_MNT}/digits/recovery-mode"
 rm -f "${DATA_MNT}/wifi-configured"
