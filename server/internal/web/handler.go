@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -75,6 +76,9 @@ type Handler struct {
 	pairingLimiter *ratelimit.Limiter
 	// Updates
 	Releases *updates.GitHubReleases
+	// Last-seen throttle
+	lastSeenMu    sync.Mutex
+	lastSeenTimes map[string]time.Time
 }
 
 type HandlerConfig struct {
@@ -155,6 +159,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		adminSecret:     adminSecret,
 		authLimiter:     ratelimit.New(5, time.Minute),
 		pairingLimiter:  ratelimit.New(5, time.Minute),
+		lastSeenTimes:  make(map[string]time.Time),
 	}, nil
 }
 
@@ -1314,6 +1319,19 @@ func wsReject(ws *websocket.Conn, errMsg string) {
 	_ = ws.Close()
 }
 
+const lastSeenThrottle = 5 * time.Minute
+
+func (h *Handler) shouldUpdateLastSeen(hardwareID string) bool {
+	h.lastSeenMu.Lock()
+	defer h.lastSeenMu.Unlock()
+	now := time.Now()
+	if last, ok := h.lastSeenTimes[hardwareID]; ok && now.Sub(last) < lastSeenThrottle {
+		return false
+	}
+	h.lastSeenTimes[hardwareID] = now
+	return true
+}
+
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -1398,7 +1416,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
-		if msg.HardwareID != "" && h.deviceStore != nil {
+		if msg.HardwareID != "" && h.deviceStore != nil && h.shouldUpdateLastSeen(msg.HardwareID) {
 			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
 				slog.Warn("touch last seen on pong failed", "hardware_id", msg.HardwareID, "err", err)
 			}
