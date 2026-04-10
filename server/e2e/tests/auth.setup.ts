@@ -47,6 +47,14 @@ setup('authenticate', async ({ page, context }) => {
   const devUrl = page.url();
   console.log(`[setup] Dev-session response: status=${devStatus}, url=${devUrl}`);
   if (devStatus !== 404 && !devUrl.includes('/auth/login')) {
+    // If we landed on /onboard, complete onboarding so tests have a household.
+    if (devUrl.includes('/onboard')) {
+      console.log('[setup] New user needs onboarding -- creating household.');
+      await page.fill('input[name="name"]', 'E2E Test Family');
+      await page.click('button[type="submit"]');
+      await page.waitForURL(url => !url.toString().includes('/onboard'), { timeout: 5000 });
+      console.log(`[setup] Onboarding complete -- landed on ${page.url()}`);
+    }
     await context.storageState({ path: AUTH_FILE });
     console.log('[setup] Dev-session endpoint succeeded -- auth state saved.');
     return;
