@@ -46,8 +46,15 @@ else
     [[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
 fi
 
-# Trust the mounted repo (owned by host user, not container root)
+# Trust the mounted repo (owned by host user, not container root).
+# In a git worktree, .git is a file pointing to the main repo's
+# .git/worktrees/ directory. Trust both paths so git works either way.
 git config --global --add safe.directory /digits
+if [[ -f /digits/.git ]]; then
+    MAIN_GIT_DIR=$(sed -n 's/^gitdir: //p' /digits/.git)
+    MAIN_GIT_DIR="${MAIN_GIT_DIR%/worktrees/*}"
+    git config --global --add safe.directory "$(dirname "$MAIN_GIT_DIR")" 2>/dev/null || true
+fi
 
 # Register qemu-aarch64 binfmt if not already present (needed for chroot)
 if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
