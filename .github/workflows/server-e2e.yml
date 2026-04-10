@@ -64,9 +64,21 @@ jobs:
           GOEOF
           go run /tmp/test.go
 
+      - name: Check handler.go syntax
+        working-directory: server
+        run: |
+          echo "=== File line count ==="
+          wc -l internal/web/handler.go
+          echo "=== Lines 1395-1410 ==="
+          sed -n '1395,1410p' internal/web/handler.go
+          echo "=== md5sum ==="
+          md5sum internal/web/handler.go
+          echo "=== go vet web package ==="
+          go vet ./internal/web/ 2>&1 || true
+
       - name: Build server
         working-directory: server
-        run: go build -v -o bin/signald ./cmd/signald/
+        run: go build -o bin/signald ./cmd/signald/
 
       - name: Start server
         working-directory: server
