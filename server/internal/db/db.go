@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -20,6 +21,9 @@ func Open(databaseURL string) (*Database, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
 	d := &Database{DB: db}
 	if err := d.migrate(); err != nil {
 		_ = db.Close()
