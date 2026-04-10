@@ -14,6 +14,7 @@ type Conn struct {
 	Number     string
 	HardwareID string
 	Send       chan []byte
+	LastSeen   time.Time
 
 	// Device info (reported on connect via device_info message)
 	PiVersion       string
@@ -198,6 +199,30 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, 
 	conn.FirmwareCommit = fwCommit
 	conn.FlashCapable = flashCapable
 	return true
+}
+
+// TouchLastSeen updates the in-memory last-seen timestamp for a connected phone.
+func (h *Hub) TouchLastSeen(number string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if conn, ok := h.conns[number]; ok {
+		conn.LastSeen = time.Now()
+	}
+}
+
+// LastSeenAt returns the last-seen timestamp for a connected phone, or nil if offline.
+func (h *Hub) LastSeenAt(number string) *time.Time {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conn, ok := h.conns[number]
+	if !ok {
+		return nil
+	}
+	if conn.LastSeen.IsZero() {
+		return nil
+	}
+	t := conn.LastSeen
+	return &t
 }
 
 func (h *Hub) OnlineNumbers() []string {

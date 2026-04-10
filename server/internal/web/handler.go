@@ -607,10 +607,16 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		devices, _ = h.deviceStore.ListByLine(ln.ID)
 	}
 
+	// For online devices, use the real-time in-memory timestamp from the Hub.
+	// For offline devices, fall back to the last disconnect time from the DB.
 	var lastSeenAt *time.Time
-	for _, d := range devices {
-		if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
-			lastSeenAt = d.LastSeenAt
+	if online {
+		lastSeenAt = h.hub.LastSeenAt(number)
+	} else {
+		for _, d := range devices {
+			if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
+				lastSeenAt = d.LastSeenAt
+			}
 		}
 	}
 
@@ -1389,26 +1395,20 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	conn := &signaling.Conn{
 		WS:         ws,
+	conn := &signaling.Conn{
+		WS:         ws,
 		HardwareID: msg.HardwareID,
 		Send:       make(chan []byte, 32),
+		LastSeen:   time.Now(),
 	}
 	h.hub.Register(msg.Number, conn)
 	number := msg.Number
-	if msg.HardwareID != "" && h.deviceStore != nil {
-		if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
-			slog.Warn("touch last seen on connect failed", "hardware_id", msg.HardwareID, "err", err)
-		}
-	}
 
 	// Configure pong handler to extend read deadline on each pong
 	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
-		if msg.HardwareID != "" && h.deviceStore != nil {
-			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
-				slog.Warn("touch last seen on pong failed", "hardware_id", msg.HardwareID, "err", err)
-			}
-		}
+		h.hub.TouchLastSeen(number)
 		return nil
 	})
 
