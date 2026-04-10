@@ -112,7 +112,7 @@ else
         log "SSID is still placeholder — resolving"
         DEVICE_ID_FILE="/data/digits/device-id"
         if [ -f "$DEVICE_ID_FILE" ]; then
-            SUFFIX=$(cat "$DEVICE_ID_FILE" | tail -c 4)
+            SUFFIX=$(tr -d '\n' < "$DEVICE_ID_FILE" | tail -c 4)
         else
             SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
         fi
