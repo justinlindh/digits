@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -47,6 +48,8 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 		http.Error(w, "failed to clear boot counter", http.StatusInternalServerError)
 		return
 	}
+	// Also clear the persistent recovery-mode flag on the data partition
+	os.Remove(filepath.Join(filepath.Dir(s.counterPath), "recovery-mode"))
 	log.Println("recovery: try again requested, counter cleared")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Rebooting...")
@@ -71,7 +74,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 
 	bin := filepath.Join(s.recoveryDir, "bin")
-	rootfsImg := s.recoveryDir + "/rootfs.img.zst"
+	rootfsImg := filepath.Join(s.recoveryDir, "rootfs.img.zst")
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
@@ -81,6 +84,9 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
 		return
 	}
+
+	// Unmount data partition before formatting (may be mounted from init or fstab)
+	exec.Command(filepath.Join(bin, "umount"), "/data").Run()
 
 	log.Printf("recovery: formatting %s", s.dataDev)
 	if err := exec.Command(filepath.Join(bin, "mkfs.ext4"), "-L", "data", "-F", s.dataDev).Run(); err != nil {
@@ -101,7 +107,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		return
 	}
 
-	skelArchive := s.recoveryDir + "/data-skeleton.tar.zst"
+	skelArchive := filepath.Join(s.recoveryDir, "data-skeleton.tar.zst")
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
 		exec.Command(filepath.Join(bin, "tar"), "xf", "-", "-C", dataMnt),
@@ -226,15 +232,83 @@ dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 	return nil
 }
 
+func isInitMode() bool {
+	return os.Getpid() == 1
+}
+
+// waitForInterface waits for a network interface to appear.
+func waitForInterface(name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := net.InterfaceByName(name); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timeout waiting for %s", name)
+}
+
+// unblockWifi unblocks all WiFi rfkill devices via sysfs, avoiding the need
+// for the rfkill binary on the recovery partition.
+func unblockWifi() {
+	entries, err := os.ReadDir("/sys/class/rfkill")
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		typePath := filepath.Join("/sys/class/rfkill", entry.Name(), "type")
+		data, err := os.ReadFile(typePath)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(string(data)) == "wlan" {
+			softPath := filepath.Join("/sys/class/rfkill", entry.Name(), "soft")
+			os.WriteFile(softPath, []byte("0"), 0644)
+		}
+	}
+}
+
 func main() {
+	initMode := isInitMode()
+
+	if initMode {
+		log.Println("digits-recovery: running as init (PID 1)")
+		initSetup()
+	}
+
 	hostname, _ := os.Hostname()
 
+	// When running as init from the recovery partition, the recovery files
+	// (rootfs.img.zst, bin/, etc.) are at the filesystem root.
 	recoveryDir := envOr("RECOVERY_DIR", "/mnt/recovery")
+	if initMode && os.Getenv("RECOVERY_DIR") == "" {
+		recoveryDir = "/"
+	}
+
+	if initMode {
+		// Wait for WiFi hardware (kernel module + firmware load)
+		log.Println("recovery: waiting for wlan0...")
+		if err := waitForInterface("wlan0", 15*time.Second); err != nil {
+			log.Printf("recovery: WARNING: %v", err)
+		}
+
+		// Unblock WiFi radio (rfkill may have soft-blocked it)
+		unblockWifi()
+	}
 
 	// Start AP mode so users can connect
 	if err := startAP(recoveryDir); err != nil {
 		log.Printf("recovery: WARNING: AP setup failed: %v", err)
 		log.Println("recovery: continuing anyway (HTTP server may not be reachable)")
+	}
+
+	rebootFn := func() error {
+		return exec.Command("systemctl", "reboot").Run()
+	}
+	if initMode {
+		rebootFn = func() error {
+			return rebootDirect()
+		}
 	}
 
 	srv := &recoveryServer{
@@ -243,9 +317,7 @@ func main() {
 		rootfsDev:   envOr("ROOTFS_DEV", "/dev/mmcblk0p2"),
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),
 		hostname:    hostname,
-		rebootFunc: func() error {
-			return exec.Command("systemctl", "reboot").Run()
-		},
+		rebootFunc:  rebootFn,
 	}
 
 	staticSub, _ := fs.Sub(staticFS, "static")

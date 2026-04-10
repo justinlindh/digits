@@ -669,18 +669,35 @@ RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
 [[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
-# Install recovery binary to rootfs so systemd can launch it
-rm -f "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
-install -m 755 "$RECOVERY_BIN" "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+# Create mini-rootfs directory structure on recovery partition.
+# After switch_root, this partition IS the root filesystem, so it needs
+# mount points for virtual filesystems and a valid /sbin/init.
+info "  Creating recovery partition rootfs structure..."
+mkdir -p "${RECOVERY_MNT}/dev"
+mkdir -p "${RECOVERY_MNT}/proc"
+mkdir -p "${RECOVERY_MNT}/sys"
+mkdir -p "${RECOVERY_MNT}/tmp"
+mkdir -p "${RECOVERY_MNT}/run"
+mkdir -p "${RECOVERY_MNT}/data"
+mkdir -p "${RECOVERY_MNT}/sbin"
+mkdir -p "${RECOVERY_MNT}/lib"
+mkdir -p "${RECOVERY_MNT}/bin"
 
-# Install initramfs boot-check hook
-info "  Installing initramfs boot-check hook..."
-HOOK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
-[[ -f "$HOOK_SRC" ]] || die "boot-check.sh not found: $HOOK_SRC"
+# Create /sbin/init symlink -- this is what switch_root execs as PID 1
+ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
+
+# Install initramfs hooks
+info "  Installing initramfs hooks..."
+BOOT_CHECK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
+RECOVERY_ROOT_SRC="${REPO_DIR}/pi/image/initramfs/recovery-root.sh"
+[[ -f "$BOOT_CHECK_SRC" ]]   || die "boot-check.sh not found: $BOOT_CHECK_SRC"
+[[ -f "$RECOVERY_ROOT_SRC" ]] || die "recovery-root.sh not found: $RECOVERY_ROOT_SRC"
 mkdir -p "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount"
-install -m 755 "$HOOK_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount/boot-check"
+mkdir -p "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom"
+install -m 755 "$BOOT_CHECK_SRC"   "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount/boot-check"
+install -m 755 "$RECOVERY_ROOT_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom/recovery-root"
 
-# Set up chroot for tool path resolution and initramfs rebuild
+# Set up chroot for tool path resolution, library copying, and initramfs rebuild
 cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
 mount -t proc proc "${ROOTFS_MNT}/proc"
 mount -t sysfs sys "${ROOTFS_MNT}/sys"
@@ -690,7 +707,6 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
-mkdir -p "${RECOVERY_MNT}/bin"
 for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
     # Use readlink -f inside chroot to resolve symlinks to the real binary
     TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
@@ -705,6 +721,53 @@ for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
         warn "  Tool path ${TOOL_PATH} not found on rootfs for: $tool -- skipping"
     fi
 done
+
+# Copy shared libraries needed by dynamically linked tools.
+# The recovery partition is a self-contained rootfs, so all libs must be present.
+info "  Copying shared libraries for recovery tools..."
+NEEDED_LIBS=$(mktemp)
+for tool_bin in "${RECOVERY_MNT}/bin/"*; do
+    tool_name=$(basename "$tool_bin")
+    # Find the original path in rootfs for ldd
+    ORIG_PATH=$(chroot "$ROOTFS_MNT" which "$tool_name" 2>/dev/null || true)
+    if [[ -n "$ORIG_PATH" ]]; then
+        chroot "$ROOTFS_MNT" ldd "$ORIG_PATH" 2>/dev/null | \
+            grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
+    fi
+done
+
+# Copy unique libraries
+sort -u "$NEEDED_LIBS" | while read -r lib; do
+    if [[ -n "$lib" && -f "${ROOTFS_MNT}${lib}" ]]; then
+        cp -L "${ROOTFS_MNT}${lib}" "${RECOVERY_MNT}/lib/" 2>/dev/null || true
+    fi
+done
+rm -f "$NEEDED_LIBS"
+
+# Copy the dynamic linker (ELF interpreter) -- path is hardcoded in binaries
+for ld_path in /lib/ld-linux-aarch64.so.1 /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1; do
+    if [[ -e "${ROOTFS_MNT}${ld_path}" ]]; then
+        cp -L "${ROOTFS_MNT}${ld_path}" "${RECOVERY_MNT}/lib/ld-linux-aarch64.so.1"
+        info "  Copied dynamic linker from ${ld_path}"
+        break
+    fi
+done
+
+# Copy WiFi firmware for the Pi Zero 2 W (BCM43436).
+# The kernel loads firmware when the brcmfmac module is inserted. If the module
+# was loaded during initramfs, firmware is already in memory. But if a firmware
+# reload is needed after switch_root, the files must be on the new rootfs.
+info "  Copying WiFi firmware..."
+if [[ -d "${ROOTFS_MNT}/lib/firmware/brcm" ]]; then
+    mkdir -p "${RECOVERY_MNT}/lib/firmware/brcm"
+    cp "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
+    # Also copy regulatory database
+    for reg_file in regulatory.db regulatory.db.p7s; do
+        if [[ -f "${ROOTFS_MNT}/lib/firmware/${reg_file}" ]]; then
+            cp "${ROOTFS_MNT}/lib/firmware/${reg_file}" "${RECOVERY_MNT}/lib/firmware/"
+        fi
+    done
+fi
 
 info "  Rebuilding initramfs (chroot)..."
 chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
@@ -808,7 +871,8 @@ PARTUUID=${PARTUUID_P1}  /boot/firmware  vfat  defaults,ro,noatime  0  2
 # Root filesystem (read-only)
 PARTUUID=${PARTUUID_P2}  /  ext4  defaults,ro,noatime  0  1
 
-# Recovery partition (read-only, no automount -- used by initramfs only)
+# Recovery partition (read-only, no automount -- initramfs switch_root
+# mounts this directly as rootfs during recovery mode)
 PARTUUID=${PARTUUID_P3}  /recovery       ext4    defaults,ro,noatime,noauto  0  0
 
 # Writable data partition (journaled)
@@ -852,7 +916,6 @@ hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
-hostside_enable_service "$ROOTFS_MNT" "digits-recovery.service"
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
