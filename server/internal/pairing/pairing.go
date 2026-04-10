@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/line"
 )
 
 const (
@@ -23,6 +22,7 @@ const (
 var (
 	ErrInvalidCode = errors.New("invalid or expired pairing code")
 	ErrAlreadyPaired = errors.New("device is already paired")
+	ErrNumberTaken = errors.New("line number is already in use")
 )
 
 // Store handles device pairing operations.
@@ -89,7 +89,7 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 		return "", "", fmt.Errorf("check number uniqueness: %w", err)
 	}
 	if count > 0 {
-		return "", "", line.ErrNumberTaken
+		return "", "", ErrNumberTaken
 	}
 
 	// Find the device with this pairing code

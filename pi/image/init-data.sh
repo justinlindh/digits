@@ -75,6 +75,8 @@ install -d -m 750 -o root -g root "${MOUNT_POINT}/wifi"
 
 # log/ — persistent logs (bind-mounted to /var/log)
 install -d -m 755 -o root -g root "${MOUNT_POINT}/log"
+# journal/ — systemd journal persistence (journald auto-persists when this exists)
+install -d -m 2755 -o root -g adm "${MOUNT_POINT}/log/journal"
 
 # tmp/ — tmp files (bind-mounted to /tmp)
 install -d -m 1777 -o root -g root "${MOUNT_POINT}/tmp"

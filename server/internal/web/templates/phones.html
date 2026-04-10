@@ -31,17 +31,13 @@
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Number</label>
           <input type="text"
                  name="number"
-                 placeholder="3140001"
-                 pattern="\d{7}"
-                 maxlength="7"
+                 id="line-number-input"
+                 placeholder="314-0001"
+                 pattern="\d{3}-?\d{4}"
+                 maxlength="8"
                  required
-                 hx-get="/phones/check-number"
-                 hx-trigger="keyup changed delay:200ms"
-                 hx-target="next .number-check"
-                 hx-swap="innerHTML"
-                 hx-params="number"
                  class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
-          <span class="number-check mt-1 block h-4" aria-live="polite"></span>
+          <p id="number-hint" class="hidden mt-1 text-xs text-[#f85149]">Line number is already in use</p>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Name</label>
@@ -54,11 +50,80 @@
       </div>
       <div class="mt-4">
         <button type="submit"
-                class="w-full md:w-auto px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-sm rounded transition-colors">
+                id="pair-submit"
+                disabled
+                class="w-full md:w-auto px-4 py-2 text-white text-sm rounded transition-colors bg-[#238636] hover:bg-[#2ea043] disabled:bg-[#21262d] disabled:text-[#484f58] disabled:cursor-not-allowed">
           Pair
         </button>
       </div>
     </form>
+    <script>
+    (function() {
+      var numberInput = document.getElementById('line-number-input');
+      var numberHint = document.getElementById('number-hint');
+      var codeInput = document.querySelector('input[name="code"]');
+      var nameInput = document.querySelector('input[name="name"]');
+      var submitBtn = document.getElementById('pair-submit');
+      var checkTimer = null;
+
+      function setNumberError() {
+        numberInput.setCustomValidity('Line number is already in use');
+        numberInput.classList.add('border-[#f85149]');
+        numberHint.classList.remove('hidden');
+      }
+
+      function clearNumberError() {
+        numberInput.setCustomValidity('');
+        numberInput.classList.remove('border-[#f85149]');
+        numberHint.classList.add('hidden');
+      }
+
+      function updateSubmit() {
+        var codeDigits = codeInput.value.replace(/\D/g, '');
+        var numDigits = numberInput.value.replace(/\D/g, '');
+        var hasName = nameInput.value.trim().length > 0;
+        submitBtn.disabled = codeDigits.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+      }
+
+      function checkNumber() {
+        var digits = numberInput.value.replace(/\D/g, '');
+        if (digits.length !== 7) {
+          clearNumberError();
+          updateSubmit();
+          return;
+        }
+        fetch('/api/lines/number-available?number=' + digits, {credentials: 'same-origin'})
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (numberInput.value.replace(/\D/g, '') !== digits) return;
+            if (data.available) { clearNumberError(); } else { setNumberError(); }
+            updateSubmit();
+          })
+          .catch(function() {
+            clearNumberError();
+            updateSubmit();
+          });
+      }
+
+      numberInput.addEventListener('input', function() {
+        var digits = this.value.replace(/\D/g, '').slice(0, 7);
+        if (digits.length > 3) {
+          this.value = digits.slice(0, 3) + '-' + digits.slice(3);
+        } else {
+          this.value = digits;
+        }
+        clearNumberError();
+        updateSubmit();
+        clearTimeout(checkTimer);
+        if (digits.length === 7) {
+          checkTimer = setTimeout(checkNumber, 300);
+        }
+      });
+
+      codeInput.addEventListener('input', updateSubmit);
+      nameInput.addEventListener('input', updateSubmit);
+    })();
+    </script>
     {{if .PairError}}
     <div class="mx-4 mb-4 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
       {{.PairError}}
@@ -77,11 +142,6 @@
     <h2 class="text-sm font-medium text-[#e6edf3]">Your Lines</h2>
     <span class="text-xs text-[#8b949e]">{{len .Lines}} total</span>
   </div>
-  {{if .Error}}
-  <div class="mx-4 mt-3 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
-    {{.Error}}
-  </div>
-  {{end}}
   {{if .Lines}}
   <!-- Desktop table -->
   <div class="hidden md:block">
@@ -98,7 +158,7 @@
       <tbody class="divide-y divide-[#21262d]">
         {{range .Lines}}
         <tr class="hover:bg-[#1c2128] group">
-          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Line.Number}}</td>
           <td class="px-4 py-3 text-sm text-[#c9d1d9]"><a href="/phones/{{.Line.Number}}" class="hover:text-[#58a6ff] transition-colors">{{.Line.Name}}</a></td>
           <td class="px-4 py-3">
             {{if .Online}}
@@ -116,7 +176,7 @@
             <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML"
                 class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors">Edit</button>
-              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{.Line.Number}}?"
+              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{fmtPhone .Line.Number}}?"
                 class="text-xs text-[#8b949e] hover:text-[#f85149] transition-colors">Delete</button>
             </div>
           </td>
@@ -132,7 +192,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{.Line.Number}}</p>
+          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{fmtPhone .Line.Number}}</p>
         </div>
         <div class="flex items-center gap-2">
           {{if .Online}}
@@ -166,26 +226,12 @@
 
 {{define "phone-edit-row"}}
 <tr>
-  <td class="px-4 py-2" colspan="2">
+  <td class="px-4 py-2 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+  <td class="px-4 py-2" colspan="3">
     <form hx-post="/phones/{{.Line.Number}}/edit"
           hx-target="#phones-table"
           hx-swap="outerHTML"
-          class="flex items-start gap-2">
-      <div>
-        <input type="text"
-               name="number"
-               value="{{.Line.Number}}"
-               pattern="\d{7}"
-               maxlength="7"
-               required
-               hx-get="/phones/check-number?exclude={{.Line.Number}}"
-               hx-trigger="keyup changed delay:200ms"
-               hx-target="next .number-check"
-               hx-swap="innerHTML"
-               hx-params="number"
-               class="bg-[#0d1117] border border-[#58a6ff] rounded px-2 py-1 text-sm text-[#e6edf3] font-mono focus:outline-none w-28">
-        <span class="number-check block h-4" aria-live="polite"></span>
-      </div>
+          class="flex gap-2">
       <input type="text"
              name="name"
              value="{{.Line.Name}}"
@@ -194,6 +240,6 @@
       <a href="/phones" class="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#2d333b] text-[#c9d1d9] rounded transition-colors">Cancel</a>
     </form>
   </td>
-  <td colspan="3"></td>
+  <td></td>
 </tr>
 {{end}}

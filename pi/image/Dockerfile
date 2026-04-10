@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     openssl \
     dosfstools \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Cross-compilation toolchain for digitsd (arm64 with CGO)

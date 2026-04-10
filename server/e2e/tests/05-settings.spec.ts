@@ -102,7 +102,8 @@ test.describe('Settings', () => {
       return;
     }
 
-    const signOut = page.locator('button', { hasText: /sign out/i });
+    // Sign out button in the Session section of the settings page
+    const signOut = page.locator('main button', { hasText: /sign out/i });
     await expect(signOut).toBeVisible();
   });
 

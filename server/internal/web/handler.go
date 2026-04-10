@@ -28,8 +28,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
-const msgNumberTaken = "This number is already in use"
-
 //go:embed templates/*.html
 var templateFS embed.FS
 
@@ -84,8 +82,11 @@ type HandlerConfig struct {
 }
 
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+	funcMap := template.FuncMap{
+		"fmtPhone": line.FormatNumber,
+	}
 	parse := func(pages ...string) (*template.Template, error) {
-		return template.New("").ParseFS(templateFS, pages...)
+		return template.New("").Funcs(funcMap).ParseFS(templateFS, pages...)
 	}
 
 	tmplDashboard, err := parse("templates/layout.html", "templates/dashboard.html")
@@ -176,6 +177,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
 	mux.Handle("GET /auth/magic/{token}", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
 	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
+	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
@@ -199,7 +201,6 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
 	protected.HandleFunc("POST /phones", h.handlePhonesPost)
 	protected.Handle("POST /phones/pair", h.pairingLimiter.Middleware(http.HandlerFunc(h.handlePhonesPairPost)))
-	protected.HandleFunc("GET /phones/check-number", h.handleCheckNumber)
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
@@ -207,6 +208,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
+	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
 	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
@@ -219,6 +221,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
 	// Only active when householdStore is set (nil means feature disabled)
@@ -249,7 +252,9 @@ func (h *Handler) Router() http.Handler {
 func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'")
-		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		if r.TLS != nil {
+			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -476,7 +481,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	number := strings.TrimSpace(r.FormValue("number"))
+	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	// Get user's household to associate the new line
@@ -498,68 +503,20 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, err := h.lineStore.Add(number, name, householdID)
+	data := h.buildLinesData(r, "")
 	if err != nil {
-		errMsg := "Failed to add line"
-		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = msgNumberTaken
-		}
-		data := h.buildLinesData(r, errMsg)
-
-		if isHTMX(r) {
-			renderWith(w, h.tmplPhones, "phones-table", data)
-			return
-		}
-		renderWith(w, h.tmplPhones, "layout.html", data)
-		return
+		data = h.buildLinesData(r, err.Error())
 	}
 
 	if isHTMX(r) {
-		data := h.buildLinesData(r, "")
 		renderWith(w, h.tmplPhones, "phones-table", data)
 		return
 	}
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
-}
-
-func (h *Handler) handleCheckNumber(w http.ResponseWriter, r *http.Request) {
-	number := strings.TrimSpace(r.URL.Query().Get("number"))
-	exclude := strings.TrimSpace(r.URL.Query().Get("exclude"))
-
-	// Too short to validate yet, return empty response
-	if len(number) < 7 {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	xIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>`
-	checkIcon := `<svg class="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
-
-	if err := line.ValidateNumber(number); err != nil {
-		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s %s</span>`, xIcon, template.HTMLEscapeString(err.Error()))
-		return
-	}
-
-	var taken bool
-	var err error
-
-	if exclude != "" {
-		taken, err = h.lineStore.NumberExistsExcludingNumber(number, exclude)
-	} else {
-		taken, err = h.lineStore.NumberExists(number)
-	}
-
 	if err != nil {
-		slog.Error("check number failed", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
-
-	if taken {
-		_, _ = fmt.Fprintf(w, `<span class="text-[#f85149] text-xs">%s Already in use</span>`, xIcon)
-		return
-	}
-
-	_, _ = fmt.Fprintf(w, `<span class="text-[#3fb950] text-xs">%s Available</span>`, checkIcon)
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
@@ -568,7 +525,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
-	number := strings.TrimSpace(r.FormValue("number"))
+	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	if err := line.ValidateNumber(number); err != nil {
@@ -605,12 +562,8 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 
 	token, hwID, err := h.pairingStore.ClaimDevice(code, number, name, householdID)
 	if err != nil {
-		pairErr := err.Error()
-		if errors.Is(err, line.ErrNumberTaken) {
-			pairErr = msgNumberTaken
-		}
 		data := h.buildLinesData(r, "")
-		data.PairError = pairErr
+		data.PairError = err.Error()
 		renderWith(w, h.tmplPhones, "layout.html", data)
 		return
 	}
@@ -655,13 +608,23 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	var devices []device.Device
 	if h.deviceStore != nil {
-		devices, _ = h.deviceStore.ListByLine(ln.ID)
+		var err error
+		devices, err = h.deviceStore.ListByLine(ln.ID)
+		if err != nil {
+			slog.Error("failed to list devices by line", "err", err, "line_id", ln.ID)
+		}
 	}
 
+	// For online devices, use the real-time in-memory timestamp from the Hub.
+	// For offline devices, fall back to the last disconnect time from the DB.
 	var lastSeenAt *time.Time
-	for _, d := range devices {
-		if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
-			lastSeenAt = d.LastSeenAt
+	if online {
+		lastSeenAt = h.hub.LastSeenAt(number)
+	} else {
+		for _, d := range devices {
+			if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
+				lastSeenAt = d.LastSeenAt
+			}
 		}
 	}
 
@@ -733,7 +696,6 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	newNumber := strings.TrimSpace(r.FormValue("number"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -741,31 +703,8 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updateNumber := number
-	if newNumber != "" {
-		if err := line.ValidateNumber(newNumber); err != nil {
-			data := h.buildLinesData(r, err.Error())
-			if isHTMX(r) {
-				renderWith(w, h.tmplPhones, "phones-table", data)
-				return
-			}
-			renderWith(w, h.tmplPhones, "layout.html", data)
-			return
-		}
-		updateNumber = newNumber
-	}
-
-	if err := h.lineStore.Update(ln.ID, updateNumber, name); err != nil {
-		errMsg := "Failed to update line"
-		if errors.Is(err, line.ErrNumberTaken) {
-			errMsg = msgNumberTaken
-		}
-		data := h.buildLinesData(r, errMsg)
-		if isHTMX(r) {
-			renderWith(w, h.tmplPhones, "phones-table", data)
-			return
-		}
-		renderWith(w, h.tmplPhones, "layout.html", data)
+	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -833,6 +772,36 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	if err := json.NewEncoder(w).Encode(status); err != nil {
 		slog.Error("update status: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+
+	h.hub.ClearUpdateStatus(number)
+
+	msg := &signaling.Message{
+		Type: signaling.TypeFactoryReset,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("factory reset trigger failed", "number", number, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("factory reset triggered", "number", number)
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		w.Header().Set("Content-Type", "application/json")
+		if sendErr != "" {
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
+		} else {
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+		}
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
@@ -1087,26 +1056,32 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("get linked households failed", "err", err)
 	}
+
+	// Collect linked household IDs for a single batched line query
+	otherIDs := make([]string, 0, len(activeLinks))
 	for _, l := range activeLinks {
 		otherID := l.HouseholdAID
 		if otherID == myHousehold.ID && l.HouseholdBID != nil {
 			otherID = *l.HouseholdBID
 		}
+		otherIDs = append(otherIDs, otherID)
+	}
+	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
+	if err != nil {
+		slog.Error("batch list lines for linked households failed", "err", err)
+	}
+
+	for i, l := range activeLinks {
+		otherID := otherIDs[i]
 		otherName := otherID
 		if other, err := h.householdStore.GetByID(otherID); err == nil {
 			otherName = other.Name
 		}
 
-		// Look up the other household's lines
-		otherLines, err := h.lineStore.ListByHousehold(otherID)
-		if err != nil {
-			slog.Error("list lines for linked household failed", "household_id", otherID, "err", err)
-		}
-
 		data.LinkedFamilies = append(data.LinkedFamilies, linkedFamilyRow{
 			ID:         l.ID,
 			Name:       otherName,
-			Lines:      otherLines,
+			Lines:      linesByHousehold[otherID],
 			Status:     l.Status,
 			AcceptedAt: l.AcceptedAt,
 		})
@@ -1348,6 +1323,22 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Request) {
+	number := line.StripNumber(r.URL.Query().Get("number"))
+	if err := line.ValidateNumber(number); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	exists, err := h.lineStore.NumberExists(number)
+	if err != nil {
+		slog.Error("number available check failed", "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"available": !exists}) //nolint:errcheck
+}
+
 // ---- WebSocket ----
 
 // wsReject sends an error message to the WebSocket client and closes the connection.
@@ -1430,24 +1421,16 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		WS:         ws,
 		HardwareID: msg.HardwareID,
 		Send:       make(chan []byte, 32),
+		LastSeen:   time.Now(),
 	}
 	h.hub.Register(msg.Number, conn)
 	number := msg.Number
-	if msg.HardwareID != "" && h.deviceStore != nil {
-		if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
-			slog.Warn("touch last seen on connect failed", "hardware_id", msg.HardwareID, "err", err)
-		}
-	}
 
 	// Configure pong handler to extend read deadline on each pong
 	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
-		if msg.HardwareID != "" && h.deviceStore != nil {
-			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
-				slog.Warn("touch last seen on pong failed", "hardware_id", msg.HardwareID, "err", err)
-			}
-		}
+		h.hub.TouchLastSeen(number)
 		return nil
 	})
 

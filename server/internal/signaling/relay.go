@@ -106,7 +106,9 @@ func (r *Relay) handleCall(from string, msg *Message) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		_ = r.Tracker.OnCallInitiated(from, msg.To)
+		if err := r.Tracker.OnCallInitiated(from, msg.To); err != nil {
+			slog.Error("failed to track call initiation", "err", err)
+		}
 	}
 
 	_ = r.Hub.SendTo(msg.To, &Message{
@@ -126,7 +128,9 @@ func (r *Relay) handleICERestart(from string, msg *Message) {
 
 func (r *Relay) handleAnswer(from string, msg *Message) {
 	if r.Tracker != nil {
-		_ = r.Tracker.OnCallAnswered(msg.To, from)
+		if err := r.Tracker.OnCallAnswered(msg.To, from); err != nil {
+			slog.Error("failed to track call answer", "err", err)
+		}
 	}
 	r.forward(msg)
 }
@@ -139,7 +143,9 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 		}
 	}
 	if r.Tracker != nil {
-		_ = r.Tracker.OnCallEnded(from, msg.To)
+		if err := r.Tracker.OnCallEnded(from, msg.To); err != nil {
+			slog.Error("failed to track call end", "err", err)
+		}
 	}
 	r.forward(msg)
 }

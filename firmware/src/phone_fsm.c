@@ -290,7 +290,7 @@ void phone_fsm_update(void) {
             char key_msg[8];
             snprintf(key_msg, sizeof(key_msg), "KEY:%c", key);
             uart_proto_send(key_msg);
-            printf("🔢 RAW %s\n", key_msg);
+            printf("[KEY] RAW %s\n", key_msg);
             stdio_flush();
         }
         led_update();

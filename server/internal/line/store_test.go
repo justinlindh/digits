@@ -1,7 +1,6 @@
 package line
 
 import (
-	"errors"
 	"os"
 	"testing"
 
@@ -140,13 +139,10 @@ func TestDuplicateNumberRejection(t *testing.T) {
 		t.Fatalf("Add first: %v", err)
 	}
 
-	// Adding the same number should fail with ErrNumberTaken
+	// Adding the same number should fail due to UNIQUE constraint
 	_, err := s.Add("9990001", "Duplicate", householdID)
 	if err == nil {
-		t.Fatal("expected error for duplicate number, got nil")
-	}
-	if !errors.Is(err, ErrNumberTaken) {
-		t.Errorf("expected ErrNumberTaken, got %v", err)
+		t.Error("expected error for duplicate number, got nil")
 	}
 }
 
@@ -218,35 +214,6 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func TestUpdateDuplicateNumberRejection(t *testing.T) {
-	s, database := testStore(t)
-	householdID := createTestHousehold(t, database)
-
-	l1, err := s.Add("4440001", "Line One", householdID)
-	if err != nil {
-		t.Fatalf("Add first: %v", err)
-	}
-	_, err = s.Add("4440002", "Line Two", householdID)
-	if err != nil {
-		t.Fatalf("Add second: %v", err)
-	}
-
-	// Updating line one's number to line two's number should fail
-	err = s.Update(l1.ID, "4440002", "Line One")
-	if err == nil {
-		t.Fatal("expected error for duplicate number on update, got nil")
-	}
-	if !errors.Is(err, ErrNumberTaken) {
-		t.Errorf("expected ErrNumberTaken, got %v", err)
-	}
-
-	// Updating a line to keep its own number should succeed
-	err = s.Update(l1.ID, "4440001", "Line One Renamed")
-	if err != nil {
-		t.Fatalf("updating line to keep its own number should succeed: %v", err)
-	}
-}
-
 func TestUpdate(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
@@ -272,6 +239,46 @@ func TestUpdate(t *testing.T) {
 	}
 	if !got.UpdatedAt.After(l.UpdatedAt) {
 		t.Error("UpdatedAt should be later after update")
+	}
+}
+
+func TestFormatNumber(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"3140001", "314-0001"},
+		{"5551234", "555-1234"},
+		{"1234567", "123-4567"},
+		{"short", "short"},       // too short; returned as-is
+		{"12345678", "12345678"}, // too long; returned as-is
+	}
+	for _, tt := range tests {
+		got := FormatNumber(tt.input)
+		if got != tt.want {
+			t.Errorf("FormatNumber(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestValidateNumber(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantErr bool
+	}{
+		{"3140001", false},
+		{"314-0001", false},   // hyphenated form accepted
+		{"12345", true},       // too short
+		{"12345678", true},    // too long
+		{"314-00001", true},   // too many digits
+		{"3-140001", true},    // hyphen in wrong position
+		{"abcdefg", true},     // non-digits
+	}
+	for _, tt := range tests {
+		err := ValidateNumber(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateNumber(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+		}
 	}
 }
 

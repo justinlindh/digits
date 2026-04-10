@@ -17,7 +17,7 @@
         {{template "phone-status" .}}
       </div>
     </div>
-    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
+    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{fmtPhone .Line.Number}}</p>
     <script>
     document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
       var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
@@ -45,7 +45,7 @@
       <div class="p-4 space-y-4">
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Line Number</label>
-          <span class="text-sm font-mono text-[#e6edf3]">{{.Line.Number}}</span>
+          <span class="text-sm font-mono text-[#e6edf3]">{{fmtPhone .Line.Number}}</span>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Line Name</label>
@@ -61,9 +61,9 @@
           <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
         </div>
         {{end}}
-        <div class="pt-2 border-t border-[#21262d]">
+        <div class="mt-4">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
-                onsubmit="return confirm('Delete line {{.Line.Name}} ({{.Line.Number}})? This cannot be undone.')">
+                onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
             <button type="submit"
                     class="px-4 py-2 bg-[#3a1a1a] hover:bg-[#4a2020] border border-[#6a2020] text-[#f85149] text-sm rounded transition-colors">
               Delete Line
@@ -373,6 +373,78 @@
           }
         }
         </script>
+
+        {{if .Online}}
+        <div class="mt-6">
+          <div id="factory-reset-default">
+            <button type="button" onclick="showFactoryResetConfirm()"
+                    class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#da3633]/40 text-[#f85149] text-sm rounded transition-colors">
+              Recovery Mode
+            </button>
+            <p class="text-xs text-[#484f58] mt-2">Reboots the device into recovery mode. Connect to the device's recovery WiFi network to try again or perform a factory reset.</p>
+          </div>
+
+          <div id="factory-reset-confirm" class="hidden">
+            <p class="text-sm text-[#c9d1d9] mb-3">The device will reboot into recovery mode. You'll need to connect to its recovery WiFi network to choose an action. Continue?</p>
+            <div class="flex gap-3">
+              <button type="button" onclick="doFactoryReset()"
+                      class="px-4 py-2 bg-[#da3633] hover:bg-[#f85149] text-white text-sm font-medium rounded transition-colors">
+                Confirm
+              </button>
+              <button type="button" onclick="cancelFactoryReset()"
+                      class="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] text-[#c9d1d9] text-sm rounded transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+
+          <div id="factory-reset-progress" class="hidden">
+            <div class="flex items-center gap-2 px-3 py-2 rounded bg-[#0d1117] border border-[#21262d]">
+              <div id="factory-reset-spinner" class="w-4 h-4 border-2 border-[#f85149] border-t-transparent rounded-full animate-spin"></div>
+              <span id="factory-reset-text" class="text-sm text-[#c9d1d9]">Sending reset command...</span>
+            </div>
+          </div>
+        </div>
+
+        <script>
+        function showFactoryResetConfirm() {
+          document.getElementById('factory-reset-default').classList.add('hidden');
+          document.getElementById('factory-reset-confirm').classList.remove('hidden');
+        }
+        function cancelFactoryReset() {
+          document.getElementById('factory-reset-confirm').classList.add('hidden');
+          document.getElementById('factory-reset-default').classList.remove('hidden');
+        }
+        function doFactoryReset() {
+          document.getElementById('factory-reset-confirm').classList.add('hidden');
+          document.getElementById('factory-reset-progress').classList.remove('hidden');
+          fetch('/phones/' + phoneNumber + '/factory-reset', {
+            method: 'POST',
+            headers: {'Accept': 'application/json'}
+          })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            var spinner = document.getElementById('factory-reset-spinner');
+            var text = document.getElementById('factory-reset-text');
+            spinner.classList.add('hidden');
+            if (data.error) {
+              text.textContent = 'Failed: ' + data.error;
+              text.className = 'text-sm text-[#f85149]';
+            } else {
+              text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery WiFi network to continue.';
+              text.className = 'text-sm text-[#e3b341]';
+            }
+          })
+          .catch(function(err) {
+            var spinner = document.getElementById('factory-reset-spinner');
+            var text = document.getElementById('factory-reset-text');
+            spinner.classList.add('hidden');
+            text.textContent = 'Error: ' + err.message;
+            text.className = 'text-sm text-[#f85149]';
+          });
+        }
+        </script>
+        {{end}}
         {{end}}
         {{else}}
           {{if .Online}}
@@ -568,12 +640,12 @@
 
 {{define "phone-status"}}
 {{if .Online}}
-  <span data-online="true" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">
     <span class="w-1.5 h-1.5 rounded-full bg-[#3fb950]"></span>
     online
   </span>
 {{else}}
-  <span data-online="false" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
+  <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">
     <span class="w-1.5 h-1.5 rounded-full bg-[#484f58]"></span>
     offline
   </span>

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
-	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/lib/pq"
+
+	"github.com/justinlindh/digits/server/internal/db"
 )
 
 // ErrNotFound is returned when a line cannot be found.
@@ -17,19 +19,28 @@ var ErrNotFound = errors.New("line not found")
 // ErrNumberTaken is returned when a line number is already in use.
 var ErrNumberTaken = errors.New("line number is already in use")
 
-var numberRegex = regexp.MustCompile(`^\d{7}$`)
+var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
 
-func isUniqueViolation(err error) bool {
-	var pgErr *pq.Error
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
-}
-
-// ValidateNumber checks that num is exactly 7 digits.
+// ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
 	if !numberRegex.MatchString(num) {
 		return fmt.Errorf("phone number must be exactly 7 digits, got %q", num)
 	}
 	return nil
+}
+
+// StripNumber removes any hyphens from a phone number string.
+func StripNumber(num string) string {
+	return strings.ReplaceAll(num, "-", "")
+}
+
+// FormatNumber inserts a hyphen after the 3rd digit of a 7-digit number.
+// Non-7-digit inputs are returned unchanged.
+func FormatNumber(num string) string {
+	if len(num) != 7 {
+		return num
+	}
+	return num[:3] + "-" + num[3:]
 }
 
 // Line represents a phone number belonging to a household.
@@ -53,27 +64,15 @@ func NewStore(database *db.Database) *Store {
 }
 
 // Add inserts a new line for the given household and returns it.
-// Returns ErrNumberTaken if the number is already in use.
 func (s *Store) Add(number, name, householdID string) (*Line, error) {
-	taken, err := s.NumberExists(number)
-	if err != nil {
-		return nil, fmt.Errorf("add line: %w", err)
-	}
-	if taken {
-		return nil, ErrNumberTaken
-	}
-
 	l := &Line{}
-	err = s.db.QueryRow(
+	err := s.db.QueryRow(
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, number, name, household_id, created_at, updated_at`,
 		number, name, householdID,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, ErrNumberTaken
-		}
 		return nil, fmt.Errorf("add line: %w", err)
 	}
 	return l, nil
@@ -158,25 +157,40 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 	return lines, rows.Err()
 }
 
-// Update modifies the number and name of the line with the given ID.
-// Returns ErrNumberTaken if the number is already in use by another line.
-func (s *Store) Update(id int64, number, name string) error {
-	taken, err := s.NumberExistsExcluding(number, id)
+// ListByHouseholds returns all lines for the given household IDs, grouped by
+// household ID and ordered by number within each group.
+func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, error) {
+	if len(householdIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id, number, name, household_id, created_at, updated_at
+		 FROM lines WHERE household_id = ANY($1) ORDER BY number`,
+		pq.Array(householdIDs),
+	)
 	if err != nil {
-		return fmt.Errorf("update line: %w", err)
+		return nil, fmt.Errorf("list lines by households: %w", err)
 	}
-	if taken {
-		return ErrNumberTaken
-	}
+	defer func() { _ = rows.Close() }()
 
+	result := make(map[string][]Line, len(householdIDs))
+	for rows.Next() {
+		var l Line
+		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan line: %w", err)
+		}
+		result[l.HouseholdID] = append(result[l.HouseholdID], l)
+	}
+	return result, rows.Err()
+}
+
+// Update modifies the number and name of the line with the given ID.
+func (s *Store) Update(id int64, number, name string) error {
 	res, err := s.db.Exec(
 		`UPDATE lines SET number = $1, name = $2, updated_at = NOW() WHERE id = $3`,
 		number, name, id,
 	)
 	if err != nil {
-		if isUniqueViolation(err) {
-			return ErrNumberTaken
-		}
 		return fmt.Errorf("update line: %w", err)
 	}
 	n, _ := res.RowsAffected()
@@ -223,16 +237,6 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 		return false, fmt.Errorf("number exists excluding: %w", err)
 	}
 	return count > 0, nil
-}
-
-// NumberExistsExcludingNumber reports whether the given number is in use by any
-// line other than the one with excludeNumber. Used for availability checks where
-// only the current number (not ID) is known.
-func (s *Store) NumberExistsExcludingNumber(number, excludeNumber string) (bool, error) {
-	if number == excludeNumber {
-		return false, nil
-	}
-	return s.NumberExists(number)
 }
 
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.
