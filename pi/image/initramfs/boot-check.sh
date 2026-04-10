@@ -31,6 +31,14 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
+# Check for persistent recovery flag (set by service code or web UI factory reset)
+if [ -f "$DATA_MNT/digits/recovery-mode" ]; then
+    echo "boot-check: persistent recovery flag found, entering recovery mode"
+    touch "$RECOVERY_FLAG"
+    umount "$DATA_MNT"
+    exit 0
+fi
+
 # Read and increment counter
 COUNT=0
 if [ -f "$DATA_MNT/$COUNTER_FILE" ]; then

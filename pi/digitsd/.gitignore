@@ -1,3 +1,4 @@
 bin/
 digitsd-arm64
-internal/assets/embed/
+internal/assets/embed/*
+!internal/assets/embed/.gitkeep
