@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
@@ -17,19 +18,33 @@ var ErrNotFound = errors.New("line not found")
 // ErrNumberTaken is returned when a line number is already in use.
 var ErrNumberTaken = errors.New("line number is already in use")
 
-var numberRegex = regexp.MustCompile(`^\d{7}$`)
+var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
 
 func isUniqueViolation(err error) bool {
 	var pgErr *pq.Error
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// ValidateNumber checks that num is exactly 7 digits.
+// ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
 	if !numberRegex.MatchString(num) {
 		return fmt.Errorf("phone number must be exactly 7 digits, got %q", num)
 	}
 	return nil
+}
+
+// StripNumber removes any hyphens from a phone number string.
+func StripNumber(num string) string {
+	return strings.ReplaceAll(num, "-", "")
+}
+
+// FormatNumber inserts a hyphen after the 3rd digit of a 7-digit number.
+// Non-7-digit inputs are returned unchanged.
+func FormatNumber(num string) string {
+	if len(num) != 7 {
+		return num
+	}
+	return num[:3] + "-" + num[3:]
 }
 
 // Line represents a phone number belonging to a household.

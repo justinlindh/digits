@@ -52,7 +52,7 @@
           {{end}}
           <div>
             <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-            <p class="text-xs font-mono text-[#8b949e]">{{.Line.Number}}</p>
+            <p class="text-xs font-mono text-[#8b949e]">{{fmtPhone .Line.Number}}</p>
           </div>
         </div>
         {{if .Online}}

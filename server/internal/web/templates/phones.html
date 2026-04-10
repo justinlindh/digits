@@ -31,9 +31,10 @@
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Number</label>
           <input type="text"
                  name="number"
-                 placeholder="3140001"
-                 pattern="\d{7}"
-                 maxlength="7"
+                 id="line-number-input"
+                 placeholder="314-0001"
+                 pattern="\d{3}-?\d{4}"
+                 maxlength="8"
                  required
                  hx-get="/phones/check-number"
                  hx-trigger="keyup changed delay:200ms"
@@ -59,6 +60,19 @@
         </button>
       </div>
     </form>
+    <script>
+    (function() {
+      var input = document.getElementById('line-number-input');
+      input.addEventListener('input', function() {
+        var digits = this.value.replace(/\D/g, '').slice(0, 7);
+        if (digits.length > 3) {
+          this.value = digits.slice(0, 3) + '-' + digits.slice(3);
+        } else {
+          this.value = digits;
+        }
+      });
+    })();
+    </script>
     {{if .PairError}}
     <div class="mx-4 mb-4 px-3 py-2 bg-[#3a1a1a] border border-[#6a2020] rounded text-sm text-[#f85149]">
       {{.PairError}}
@@ -98,7 +112,7 @@
       <tbody class="divide-y divide-[#21262d]">
         {{range .Lines}}
         <tr class="hover:bg-[#1c2128] group">
-          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{.Line.Number}}</td>
+          <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Line.Number}}</td>
           <td class="px-4 py-3 text-sm text-[#c9d1d9]"><a href="/phones/{{.Line.Number}}" class="hover:text-[#58a6ff] transition-colors">{{.Line.Name}}</a></td>
           <td class="px-4 py-3">
             {{if .Online}}
@@ -116,7 +130,7 @@
             <div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML"
                 class="text-xs text-[#8b949e] hover:text-[#58a6ff] transition-colors">Edit</button>
-              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{.Line.Number}}?"
+              <button hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{fmtPhone .Line.Number}}?"
                 class="text-xs text-[#8b949e] hover:text-[#f85149] transition-colors">Delete</button>
             </div>
           </td>
@@ -132,7 +146,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{.Line.Number}}</p>
+          <p class="text-xs font-mono text-[#8b949e] mt-0.5">{{fmtPhone .Line.Number}}</p>
         </div>
         <div class="flex items-center gap-2">
           {{if .Online}}

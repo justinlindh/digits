@@ -17,7 +17,7 @@
         {{template "phone-status" .}}
       </div>
     </div>
-    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{.Line.Number}}</p>
+    <p class="text-sm text-[#8b949e] mt-1 font-mono">{{fmtPhone .Line.Number}}</p>
     <script>
     document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
       var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
@@ -45,7 +45,7 @@
       <div class="p-4 space-y-4">
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Line Number</label>
-          <span class="text-sm font-mono text-[#e6edf3]">{{.Line.Number}}</span>
+          <span class="text-sm font-mono text-[#e6edf3]">{{fmtPhone .Line.Number}}</span>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1">Line Name</label>
@@ -63,7 +63,7 @@
         {{end}}
         <div class="pt-2 border-t border-[#21262d]">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
-                onsubmit="return confirm('Delete line {{.Line.Name}} ({{.Line.Number}})? This cannot be undone.')">
+                onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
             <button type="submit"
                     class="px-4 py-2 bg-[#3a1a1a] hover:bg-[#4a2020] border border-[#6a2020] text-[#f85149] text-sm rounded transition-colors">
               Delete Line
