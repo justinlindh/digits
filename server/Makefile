@@ -18,7 +18,7 @@ build:
 build-dev:
 	go build -o bin/signald ./cmd/signald/
 
-run: build
+run: css build
 	./bin/signald
 
 test:
@@ -37,8 +37,6 @@ e2e:
 clean:
 	rm -rf bin/
 
-.PHONY: css
-
 print-version:
 	@echo $(VERSION)
 
@@ -47,4 +45,4 @@ deploy:
 	git fetch --tags
 	BUILD_VERSION=$$(git describe --tags --match 'server/v*' --always | sed 's|^server/v||') \
 	BUILD_COMMIT=$$(git rev-parse --short HEAD) \
-	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build signald
+	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build signald admind
