@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/server-ci.yml/badge.svg" alt="Server CI"></a>
-  <a href="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml"><img src="https://github.com/justinlindh/digits/actions/workflows/commitlint.yml/badge.svg" alt="Commitlint"></a>
+
   <a href="https://github.com/justinlindh/digits/releases?q=server%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=server/v*&label=server" alt="Server release"></a>
   <a href="https://github.com/justinlindh/digits/releases?q=pi%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=pi/v*&label=pi" alt="Pi release"></a>
   <a href="https://github.com/justinlindh/digits/releases?q=fw%2Fv"><img src="https://img.shields.io/github/v/release/justinlindh/digits?filter=fw/v*&label=firmware" alt="Firmware release"></a>

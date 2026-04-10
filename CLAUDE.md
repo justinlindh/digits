@@ -76,7 +76,9 @@ Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot
 
 ## Commit conventions
 
-Conventional commits enforced by commitlint. Scope is required (warning if empty, error if invalid). **ALL commits must follow this format, including merge commits.** Do not use bare `merge:` or `Merge branch` messages. Use `chore(<scope>): merge ...` instead.
+Conventional commit format. Scope is required.
+
+PR titles must use this format (they become the squash commit message on merge). Individual commits on feature branches don't need to.
 
 Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`
 
@@ -85,7 +87,6 @@ Examples:
 fix(server): handle NULL line_id in device lookup
 feat(digitsd): add volume service code
 docs: update wiring notes
-chore(server): merge main into feature branch
 ```
 
 ## Git workflow
@@ -101,7 +102,6 @@ When addressing PR review comments, always reply to each comment on GitHub (via 
 ## CI
 
 GitHub Actions workflows (`.github/workflows/`):
-- **commitlint** -- validates commit messages on PRs
 - **server-ci** -- build, test, vet (triggers on `server/` changes)
 - **fw-release / pi-release / server-release** -- tag-triggered release pipelines
 
