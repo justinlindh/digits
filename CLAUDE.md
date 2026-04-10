@@ -78,7 +78,7 @@ Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot
 
 Conventional commit format. Scope is required.
 
-Since PRs are squash-merged, the squash commit message must follow this format. Individual commits on feature branches don't need to.
+PR titles must use this format (they become the squash commit message on merge). Individual commits on feature branches don't need to.
 
 Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`
 
