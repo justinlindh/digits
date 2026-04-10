@@ -51,7 +51,7 @@ jobs:
         env:
           DEV_MODE: "true"
           DATABASE_URL: postgres://digits:digits@localhost:5432/digits_test?sslmode=disable
-          LISTEN_ADDR: :8080
+          SIGNALD_ADDR: :8080
 
       - name: Wait for server health
         run: |
