@@ -745,6 +745,10 @@ for ld_path in /lib/ld-linux-aarch64.so.1 /lib/aarch64-linux-gnu/ld-linux-aarch6
     fi
 done
 
+# Safety symlink for multiarch interpreter path
+mkdir -p "${RECOVERY_MNT}/lib/aarch64-linux-gnu"
+ln -sf /lib/ld-linux-aarch64.so.1 "${RECOVERY_MNT}/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+
 # Copy WiFi firmware for the Pi Zero 2 W (BCM43436).
 # The kernel loads firmware when the brcmfmac module is inserted. If the module
 # was loaded during initramfs, firmware is already in memory. But if a firmware
