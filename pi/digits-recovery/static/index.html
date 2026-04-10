@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digits Recovery</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Digits Recovery Mode</h1>
+    <div class="info-box">
+      <p class="boot-count"><span id="boot-count">0</span> failed boot attempts detected</p>
+      <p class="hostname">Device: <span id="hostname">unknown</span></p>
+    </div>
+
+    <div class="actions">
+      <form method="POST" action="/try-again">
+        <button type="submit" class="btn btn-primary">Try Again</button>
+        <p class="btn-help">Resets the boot counter and restarts normally.</p>
+      </form>
+
+      <form method="POST" action="/factory-reset" id="reset-form">
+        <button type="button" class="btn btn-danger" onclick="confirmReset()">Factory Reset</button>
+        <p class="btn-help">Erases all settings and restores the device to its original state.</p>
+      </form>
+    </div>
+
+    <div id="progress" class="hidden">
+      <div class="progress-box">
+        <div class="spinner"></div>
+        <span id="progress-text">Processing...</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  fetch('/status').then(r => r.json()).then(data => {
+    document.getElementById('boot-count').textContent = data.boot_count;
+    document.getElementById('hostname').textContent = data.hostname;
+  });
+
+  function confirmReset() {
+    if (confirm('This will erase ALL settings, Wi-Fi configuration, and phone pairing. The device will need to be set up again from scratch.\n\nContinue?')) {
+      document.getElementById('progress').classList.remove('hidden');
+      document.getElementById('progress-text').textContent = 'Restoring factory image... This may take a few minutes.';
+      document.getElementById('reset-form').querySelector('button').disabled = true;
+      fetch('/factory-reset', {method: 'POST'}).then(function() {
+        document.getElementById('progress-text').textContent = 'Reset complete. Device is rebooting...';
+      }).catch(function() {
+        document.getElementById('progress-text').textContent = 'Connection lost. Device may be rebooting.';
+      });
+    }
+  }
+  </script>
+</body>
+</html>

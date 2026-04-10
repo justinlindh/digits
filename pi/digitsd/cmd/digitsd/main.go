@@ -18,13 +18,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/justinlindh/digits/pi/digitsd/internal/assets"
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
+	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
+	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 
 	"github.com/pion/webrtc/v4"
@@ -575,10 +578,20 @@ const (
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
 
+func triggerFactoryReset() {
+	if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+		slog.Error("factory reset: failed to set boot counter", "err", err)
+		return
+	}
+	slog.Info("factory reset: boot counter set to 3, rebooting")
+	_ = exec.Command("sudo", "reboot").Run()
+}
+
 // updateInProgress guards against concurrent firmware update runs.
 // The startup update goroutine and server-triggered updates both check this
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
+
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if !updateInProgress.CompareAndSwap(false, true) {
@@ -712,6 +725,50 @@ func main() {
 	}
 
 	slog.Info("digitsd starting", "server", effectiveServerURL, "number", effectiveNumber, "config", *configPath)
+
+	// 0. Extract embedded assets on version change
+	extractor := &assets.Extractor{
+		FS:         assets.SubFS(),
+		RootDir:    "/",
+		DataDir:    "/data/digits",
+		MarkerPath: "/data/digits/asset-version",
+		Remount: func(rw bool) error {
+			mode := "ro"
+			if rw {
+				mode = "rw"
+			}
+			return exec.Command("sudo", "mount", "-o", "remount,"+mode, "/").Run()
+		},
+		RootfsWriteFile: func(data []byte, dest string, perm os.FileMode) error {
+			// Write to a temp file, then sudo cp + chmod to the rootfs destination.
+			// This matches the pattern used by the existing updater for binary replacement.
+			tmp, err := os.CreateTemp("", "asset-*")
+			if err != nil {
+				return fmt.Errorf("create temp: %w", err)
+			}
+			tmpPath := tmp.Name()
+			defer os.Remove(tmpPath) //nolint:errcheck // best-effort cleanup
+			if _, err := tmp.Write(data); err != nil {
+				_ = tmp.Close()
+				return fmt.Errorf("write temp: %w", err)
+			}
+			_ = tmp.Close()
+
+			if err := exec.Command("sudo", "mkdir", "-p", filepath.Dir(dest)).Run(); err != nil {
+				return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
+			}
+			if err := exec.Command("sudo", "cp", tmpPath, dest).Run(); err != nil {
+				return fmt.Errorf("cp to %s: %w", dest, err)
+			}
+			if err := exec.Command("sudo", "chmod", fmt.Sprintf("%o", perm), dest).Run(); err != nil {
+				return fmt.Errorf("chmod %s: %w", dest, err)
+			}
+			return nil
+		},
+	}
+	if err := extractor.Extract(version.Version); err != nil {
+		slog.Warn("asset extraction failed", "err", err)
+	}
 
 	// 1. Open serial port directly (log to both stdout and uart.log file)
 	uartLogPath := filepath.Join(filepath.Dir(*socketPath), "uart.log")
@@ -1039,13 +1096,7 @@ func main() {
 
 	svcCodes.SetFactoryResetCallback(func() {
 		slog.Info("service code: *#00000# -> FACTORY RESET")
-		// 1. Remove config
-		_ = os.Remove(config.DefaultPath)
-		_ = os.Remove(config.DefaultPath + ".bak")
-		// 2. Remove Wi-Fi provisioning flag (boot into AP mode)
-		_ = os.Remove(phone.WifiConfiguredFlag)
-		slog.Info("service code factory reset: all data cleared, rebooting")
-		_ = exec.Command("sudo", "reboot").Run()
+		triggerFactoryReset()
 	})
 
 	// 6b. Create easter egg detector
@@ -1093,6 +1144,22 @@ func main() {
 	// 11. Ready
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
+
+	// Start hardware watchdog (if available)
+	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
+		wd.Start(5 * time.Second)
+		defer wd.Close()
+		slog.Info("watchdog: started", "interval", "5s")
+	} else {
+		slog.Debug("watchdog: not available", "err", err)
+	}
+
+	// Clear boot counter (we're healthy)
+	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
+		slog.Warn("failed to clear boot counter", "err", err)
+	} else {
+		slog.Info("boot counter: cleared (healthy boot)")
+	}
 
 	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 	requestICEServers(sig)
@@ -1311,6 +1378,10 @@ func main() {
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
+
+			case sigclient.TypeFactoryReset:
+				slog.Info("factory reset: triggered by server")
+				go triggerFactoryReset()
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()

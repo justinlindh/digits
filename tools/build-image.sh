@@ -171,6 +171,7 @@ require_cmd() {
 LOOP_DEV=""
 ROOTFS_MNT=""
 BOOT_MNT=""
+RECOVERY_MNT=""
 DATA_MNT=""
 USING_KPARTX=false
 
@@ -186,9 +187,10 @@ cleanup() {
     fi
 
     # Unmount partitions
-    [[ -n "${DATA_MNT:-}" ]]   && { umount "$DATA_MNT" 2>/dev/null || true; }
-    [[ -n "${BOOT_MNT:-}" ]]   && { umount "$BOOT_MNT" 2>/dev/null || true; }
-    [[ -n "${ROOTFS_MNT:-}" ]] && { umount "$ROOTFS_MNT" 2>/dev/null || true; }
+    [[ -n "${DATA_MNT:-}" ]]     && { umount "$DATA_MNT" 2>/dev/null || true; }
+    [[ -n "${RECOVERY_MNT:-}" ]] && { umount "$RECOVERY_MNT" 2>/dev/null || true; }
+    [[ -n "${BOOT_MNT:-}" ]]     && { umount "$BOOT_MNT" 2>/dev/null || true; }
+    [[ -n "${ROOTFS_MNT:-}" ]]   && { umount "$ROOTFS_MNT" 2>/dev/null || true; }
 
     # Detach loop device
     if [[ -n "${LOOP_DEV:-}" ]]; then
@@ -198,9 +200,10 @@ cleanup() {
     fi
 
     # Remove temp mount points
-    [[ -n "${ROOTFS_MNT:-}" ]] && { rmdir "$ROOTFS_MNT" 2>/dev/null || true; }
-    [[ -n "${BOOT_MNT:-}" ]]   && { rmdir "$BOOT_MNT" 2>/dev/null || true; }
-    [[ -n "${DATA_MNT:-}" ]]   && { rmdir "$DATA_MNT" 2>/dev/null || true; }
+    [[ -n "${ROOTFS_MNT:-}" ]]   && { rmdir "$ROOTFS_MNT" 2>/dev/null || true; }
+    [[ -n "${BOOT_MNT:-}" ]]     && { rmdir "$BOOT_MNT" 2>/dev/null || true; }
+    [[ -n "${RECOVERY_MNT:-}" ]] && { rmdir "$RECOVERY_MNT" 2>/dev/null || true; }
+    [[ -n "${DATA_MNT:-}" ]]     && { rmdir "$DATA_MNT" 2>/dev/null || true; }
 
     if [[ $rc -ne 0 ]]; then
         warn "Build failed! Partial image may remain: ${OUTPUT_NAME}"
@@ -360,7 +363,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl
+            qemu-aarch64-static gzip blkid rsync openssl zstd
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
@@ -370,8 +373,9 @@ INPUT_IMG="${1:-}"
 [[ -f "$INPUT_IMG" ]] || die "Input image not found: $INPUT_IMG"
 
 # Verify pre-built binaries exist
-[[ -f "${BUILD_DIR}/digitsd" ]]      || die "Missing ${BUILD_DIR}/digitsd — run cross-compilation first (see README)"
-[[ -f "${BUILD_DIR}/digits-setup" ]] || die "Missing ${BUILD_DIR}/digits-setup — run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digitsd" ]]      || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digits-setup" ]] || die "Missing ${BUILD_DIR}/digits-setup -- run cross-compilation first (see README)"
+[[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
 
 # Verify overlay directory exists
 [[ -d "$OVERLAY_DIR" ]] || die "Overlay directory not found: $OVERLAY_DIR"
@@ -414,19 +418,19 @@ if [[ "$WORK_IMG" != "$OUTPUT_NAME" ]]; then
     WORK_IMG="$OUTPUT_NAME"
 fi
 
-# Expand image to have room for /data partition
-# partition-setup.sh shrinks rootfs to ~4.5GB and adds ~2GB for /data
-# Pi OS Lite is ~2.7GB; we need ~7GB total
+# Expand image to have room for recovery and data partitions
+# partition-setup.sh shrinks rootfs to ~3.5GB, adds ~1.5GB for recovery, and ~2GB for data
+# Pi OS Lite is ~2.7GB; we need ~8GB total
 CURRENT_SIZE=$(stat -c %s "$WORK_IMG")
-TARGET_SIZE=$((7 * 1024 * 1024 * 1024))  # 7 GiB
+TARGET_SIZE=$((8 * 1024 * 1024 * 1024))  # 8 GiB
 if (( CURRENT_SIZE < TARGET_SIZE )); then
-    info "Expanding image to 7GiB to accommodate /data partition..."
+    info "Expanding image to 8GiB to accommodate recovery and data partitions..."
     truncate -s "${TARGET_SIZE}" "$WORK_IMG"
 fi
 
-# ── step 2: create /data partition ──────────────────────────────────────────
+# ── step 2: create recovery and data partitions ──────────────────────────────
 
-info "Running partition-setup.sh to create /data partition..."
+info "Running partition-setup.sh to create recovery and data partitions..."
 bash "$PARTITION_SETUP" "$WORK_IMG"
 
 # ── step 3: mount partitions ────────────────────────────────────────────────
@@ -439,14 +443,17 @@ ensure_partitions "$LOOP_DEV"
 P1="${P_PREFIX}1"
 P2="${P_PREFIX}2"
 P3="${P_PREFIX}3"
+P4="${P_PREFIX}4"
 
 [[ -b "$P1" ]] || die "Boot partition not found at $P1"
 [[ -b "$P2" ]] || die "Root partition not found at $P2"
-[[ -b "$P3" ]] || die "Data partition not found at $P3"
+[[ -b "$P3" ]] || die "Recovery partition not found at $P3"
+[[ -b "$P4" ]] || die "Data partition not found at $P4"
 
 # Create mount points
 ROOTFS_MNT=$(mktemp -d /tmp/digits-rootfs-XXXXXX)
 BOOT_MNT="${ROOTFS_MNT}/boot/firmware"
+RECOVERY_MNT=$(mktemp -d /tmp/digits-recovery-XXXXXX)
 DATA_MNT="${ROOTFS_MNT}/data"
 
 info "Mounting rootfs ($P2) → $ROOTFS_MNT"
@@ -457,8 +464,11 @@ mkdir -p "$BOOT_MNT" "$DATA_MNT"
 info "Mounting boot ($P1) → $BOOT_MNT"
 mount "$P1" "$BOOT_MNT"
 
-info "Mounting data ($P3) → $DATA_MNT"
-mount "$P3" "$DATA_MNT"
+info "Mounting recovery ($P3) → $RECOVERY_MNT"
+mount "$P3" "$RECOVERY_MNT"
+
+info "Mounting data ($P4) → $DATA_MNT"
+mount "$P4" "$DATA_MNT"
 
 # ── step 4: prepare chroot (apt-get ONLY) ───────────────────────────────────
 
@@ -629,6 +639,85 @@ else
     bash "$INIT_DATA" "$DATA_MNT"
 fi
 
+# ── step 15b: populate recovery partition (host-side) ───────────────────────
+
+info "Populating recovery partition..."
+
+# Create compressed rootfs snapshot
+info "  Creating rootfs snapshot (this may take a while)..."
+dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
+
+# Clean /data before creating skeleton (first-boot must run fresh after reset)
+# Keep config.json (has server_url), remove device-specific state
+rm -f "${DATA_MNT}/.initialized"
+rm -f "${DATA_MNT}/log/digits-first-boot.log"
+rm -f "${DATA_MNT}/digits/device-id"
+rm -f "${DATA_MNT}/digits/config.json.bak"
+rm -f "${DATA_MNT}/digits/recovery-mode"
+rm -f "${DATA_MNT}/wifi-configured"
+rm -rf "${DATA_MNT}/wifi/"*
+rm -rf "${DATA_MNT}/log/journal/"*
+rm -rf "${DATA_MNT}/ssh/"*
+
+# Create compressed data skeleton archive
+info "  Creating data skeleton archive..."
+tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"
+
+# Copy recovery binary
+info "  Copying recovery binary..."
+RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
+[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
+install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
+
+# Install recovery binary to rootfs so systemd can launch it
+rm -f "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+install -m 755 "$RECOVERY_BIN" "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+
+# Install initramfs boot-check hook
+info "  Installing initramfs boot-check hook..."
+HOOK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
+[[ -f "$HOOK_SRC" ]] || die "boot-check.sh not found: $HOOK_SRC"
+mkdir -p "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount"
+install -m 755 "$HOOK_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount/boot-check"
+
+# Set up chroot for tool path resolution and initramfs rebuild
+cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
+mount -t proc proc "${ROOTFS_MNT}/proc"
+mount -t sysfs sys "${ROOTFS_MNT}/sys"
+mount --bind /dev "${ROOTFS_MNT}/dev"
+mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
+mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+
+# Copy required tools from rootfs into recovery partition bin/
+info "  Copying required tools to recovery/bin/..."
+mkdir -p "${RECOVERY_MNT}/bin"
+for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
+    # Use readlink -f inside chroot to resolve symlinks to the real binary
+    TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
+    if [[ -z "$TOOL_PATH" ]]; then
+        warn "  Tool not found in rootfs: $tool -- skipping"
+        continue
+    fi
+    if [[ -f "${ROOTFS_MNT}${TOOL_PATH}" ]]; then
+        install -m 755 "${ROOTFS_MNT}${TOOL_PATH}" "${RECOVERY_MNT}/bin/${tool}"
+        info "  Copied $tool (${TOOL_PATH})"
+    else
+        warn "  Tool path ${TOOL_PATH} not found on rootfs for: $tool -- skipping"
+    fi
+done
+
+info "  Rebuilding initramfs (chroot)..."
+chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
+
+for mp in dev/pts dev/shm dev proc sys; do
+    umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
+done
+rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
+
+info "  Unmounting recovery partition..."
+umount "$RECOVERY_MNT"
+RECOVERY_MNT=""
+
 # ── step 16: configure boot (host-side) ─────────────────────────────────────
 
 info "Configuring boot parameters..."
@@ -698,10 +787,15 @@ info "Configuring /etc/fstab with correct PARTUUIDs..."
 PARTUUID_P1=$(blkid -s PARTUUID -o value "$P1") || die "Could not determine PARTUUID for $P1"
 PARTUUID_P2=$(blkid -s PARTUUID -o value "$P2") || die "Could not determine PARTUUID for $P2"
 PARTUUID_P3=$(blkid -s PARTUUID -o value "$P3") || die "Could not determine PARTUUID for $P3"
+PARTUUID_P4=$(blkid -s PARTUUID -o value "$P4") || die "Could not determine PARTUUID for $P4"
 
 info "  P1 PARTUUID: $PARTUUID_P1"
 info "  P2 PARTUUID: $PARTUUID_P2"
 info "  P3 PARTUUID: $PARTUUID_P3"
+info "  P4 PARTUUID: $PARTUUID_P4"
+
+# Create mount point for recovery partition
+mkdir -p "${ROOTFS_MNT}/recovery"
 
 cat > "${ROOTFS_MNT}/etc/fstab" << EOF
 # /etc/fstab — Digits Pi (generated by build-image.sh)
@@ -714,8 +808,11 @@ PARTUUID=${PARTUUID_P1}  /boot/firmware  vfat  defaults,ro,noatime  0  2
 # Root filesystem (read-only)
 PARTUUID=${PARTUUID_P2}  /  ext4  defaults,ro,noatime  0  1
 
+# Recovery partition (read-only, no automount -- used by initramfs only)
+PARTUUID=${PARTUUID_P3}  /recovery       ext4    defaults,ro,noatime,noauto  0  0
+
 # Writable data partition (journaled)
-PARTUUID=${PARTUUID_P3}  /data           ext4    defaults,noatime     0    2
+PARTUUID=${PARTUUID_P4}  /data           ext4    defaults,noatime     0    2
 
 # Bind mounts from /data
 /data/log          /var/log        none    bind                 0  0
@@ -755,6 +852,7 @@ hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
+hostside_enable_service "$ROOTFS_MNT" "digits-recovery.service"
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
