@@ -673,15 +673,7 @@ install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 # After switch_root, this partition IS the root filesystem, so it needs
 # mount points for virtual filesystems and a valid /sbin/init.
 info "  Creating recovery partition rootfs structure..."
-mkdir -p "${RECOVERY_MNT}/dev"
-mkdir -p "${RECOVERY_MNT}/proc"
-mkdir -p "${RECOVERY_MNT}/sys"
-mkdir -p "${RECOVERY_MNT}/tmp"
-mkdir -p "${RECOVERY_MNT}/run"
-mkdir -p "${RECOVERY_MNT}/data"
-mkdir -p "${RECOVERY_MNT}/sbin"
-mkdir -p "${RECOVERY_MNT}/lib"
-mkdir -p "${RECOVERY_MNT}/bin"
+mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin}
 
 # Create /sbin/init symlink -- this is what switch_root execs as PID 1
 ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
