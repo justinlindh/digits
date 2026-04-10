@@ -220,6 +220,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
 	// Only active when householdStore is set (nil means feature disabled)
@@ -1317,6 +1318,22 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(pairs); err != nil {
 		slog.Error("active calls: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Request) {
+	number := line.StripNumber(r.URL.Query().Get("number"))
+	if err := line.ValidateNumber(number); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	exists, err := h.lineStore.NumberExists(number)
+	if err != nil {
+		slog.Error("number available check failed", "err", err)
+		jsonError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"available": !exists}) //nolint:errcheck
 }
 
 // ---- WebSocket ----

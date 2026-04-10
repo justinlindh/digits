@@ -37,6 +37,7 @@
                  maxlength="8"
                  required
                  class="w-full bg-[#0d1117] border border-[#21262d] rounded px-3 py-2 text-sm text-[#e6edf3] placeholder-[#484f58] font-mono focus:outline-none focus:border-[#58a6ff] focus:ring-1 focus:ring-[#58a6ff]">
+          <p id="number-hint" class="hidden mt-1 text-xs text-[#f85149]">Line number is already in use</p>
         </div>
         <div>
           <label class="block text-xs text-[#8b949e] mb-1.5">Line Name</label>
@@ -49,22 +50,78 @@
       </div>
       <div class="mt-4">
         <button type="submit"
-                class="w-full md:w-auto px-4 py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-sm rounded transition-colors">
+                id="pair-submit"
+                disabled
+                class="w-full md:w-auto px-4 py-2 text-white text-sm rounded transition-colors bg-[#238636] hover:bg-[#2ea043] disabled:bg-[#21262d] disabled:text-[#484f58] disabled:cursor-not-allowed">
           Pair
         </button>
       </div>
     </form>
     <script>
     (function() {
-      var input = document.getElementById('line-number-input');
-      input.addEventListener('input', function() {
+      var numberInput = document.getElementById('line-number-input');
+      var numberHint = document.getElementById('number-hint');
+      var codeInput = document.querySelector('input[name="code"]');
+      var nameInput = document.querySelector('input[name="name"]');
+      var submitBtn = document.getElementById('pair-submit');
+      var checkTimer = null;
+
+      function setNumberError() {
+        numberInput.setCustomValidity('Line number is already in use');
+        numberInput.classList.add('border-[#f85149]');
+        numberHint.classList.remove('hidden');
+      }
+
+      function clearNumberError() {
+        numberInput.setCustomValidity('');
+        numberInput.classList.remove('border-[#f85149]');
+        numberHint.classList.add('hidden');
+      }
+
+      function updateSubmit() {
+        var codeDigits = codeInput.value.replace(/\D/g, '');
+        var numDigits = numberInput.value.replace(/\D/g, '');
+        var hasName = nameInput.value.trim().length > 0;
+        submitBtn.disabled = codeDigits.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+      }
+
+      function checkNumber() {
+        var digits = numberInput.value.replace(/\D/g, '');
+        if (digits.length !== 7) {
+          clearNumberError();
+          updateSubmit();
+          return;
+        }
+        fetch('/api/lines/number-available?number=' + digits, {credentials: 'same-origin'})
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (numberInput.value.replace(/\D/g, '') !== digits) return;
+            if (data.available) { clearNumberError(); } else { setNumberError(); }
+            updateSubmit();
+          })
+          .catch(function() {
+            clearNumberError();
+            updateSubmit();
+          });
+      }
+
+      numberInput.addEventListener('input', function() {
         var digits = this.value.replace(/\D/g, '').slice(0, 7);
         if (digits.length > 3) {
           this.value = digits.slice(0, 3) + '-' + digits.slice(3);
         } else {
           this.value = digits;
         }
+        clearNumberError();
+        updateSubmit();
+        clearTimeout(checkTimer);
+        if (digits.length === 7) {
+          checkTimer = setTimeout(checkNumber, 300);
+        }
       });
+
+      codeInput.addEventListener('input', updateSubmit);
+      nameInput.addEventListener('input', updateSubmit);
     })();
     </script>
     {{if .PairError}}
