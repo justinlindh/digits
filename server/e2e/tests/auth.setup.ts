@@ -44,7 +44,9 @@ setup('authenticate', async ({ page, context }) => {
   const devSessionUrl = `/auth/dev-session?email=${encodeURIComponent(email)}`;
   const devResp = await page.goto(devSessionUrl);
   const devStatus = devResp?.status() ?? 0;
-  if (devStatus !== 404 && !page.url().includes('/auth/login')) {
+  const devUrl = page.url();
+  console.log(`[setup] Dev-session response: status=${devStatus}, url=${devUrl}`);
+  if (devStatus !== 404 && !devUrl.includes('/auth/login')) {
     await context.storageState({ path: AUTH_FILE });
     console.log('[setup] Dev-session endpoint succeeded -- auth state saved.');
     return;
