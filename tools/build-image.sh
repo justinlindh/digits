@@ -643,9 +643,22 @@ fi
 
 info "Populating recovery partition..."
 
+# Sync all pending writes before snapshotting rootfs.
+# The rootfs stays mounted (later build steps still need it), but all
+# data must be on disk for a consistent raw block-level copy.
+info "  Syncing rootfs before snapshot..."
+sync
+
+# Freeze the filesystem to ensure a consistent snapshot -- this flushes
+# the journal and prevents new writes during the dd.
+fsfreeze --freeze "$ROOTFS_MNT"
+
 # Create compressed rootfs snapshot
 info "  Creating rootfs snapshot (this may take a while)..."
 dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
+
+# Unfreeze so the rest of the build can continue
+fsfreeze --unfreeze "$ROOTFS_MNT"
 
 # Clean /data before creating skeleton (first-boot must run fresh after reset)
 # Keep config.json (has server_url), remove device-specific state
