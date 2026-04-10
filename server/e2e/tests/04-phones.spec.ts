@@ -31,7 +31,7 @@ test.describe('Phones list', () => {
     await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 
     // "Pair a Device" section
-    await expect(page.locator('text=Pair a Device')).toBeVisible();
+    await expect(page.locator('h2', { hasText: 'Pair a Device' })).toBeVisible();
   });
 
   test('pair form has pairing code, number, and name inputs', async ({ page }) => {
