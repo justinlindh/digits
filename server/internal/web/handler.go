@@ -604,7 +604,11 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	var devices []device.Device
 	if h.deviceStore != nil {
-		devices, _ = h.deviceStore.ListByLine(ln.ID)
+		var err error
+		devices, err = h.deviceStore.ListByLine(ln.ID)
+		if err != nil {
+			slog.Error("failed to list devices by line", "err", err, "line_id", ln.ID)
+		}
 	}
 
 	// For online devices, use the real-time in-memory timestamp from the Hub.
