@@ -584,11 +584,6 @@ type statusFunc func(status, detail string)
 var updateInProgress atomic.Bool
 
 
-func runUpdate(serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc) {
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus)
-}
-
-
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
@@ -743,12 +738,12 @@ func main() {
 				return fmt.Errorf("create temp: %w", err)
 			}
 			tmpPath := tmp.Name()
-			defer os.Remove(tmpPath)
+			defer os.Remove(tmpPath) //nolint:errcheck // best-effort cleanup
 			if _, err := tmp.Write(data); err != nil {
-				tmp.Close()
+				_ = tmp.Close()
 				return fmt.Errorf("write temp: %w", err)
 			}
-			tmp.Close()
+			_ = tmp.Close()
 
 			if err := exec.Command("sudo", "mkdir", "-p", filepath.Dir(dest)).Run(); err != nil {
 				return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
@@ -1387,7 +1382,7 @@ func main() {
 						return
 					}
 					slog.Info("factory reset: boot counter set to 3, rebooting")
-					exec.Command("sudo", "reboot").Run()
+					_ = exec.Command("sudo", "reboot").Run()
 				}()
 
 			case sigclient.TypeICERestart:

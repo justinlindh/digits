@@ -46,7 +46,7 @@ func (w *Watchdog) Start(interval time.Duration) {
 func (w *Watchdog) Close() {
 	w.closed.Do(func() {
 		close(w.done)
-		w.f.Write([]byte("V"))
-		w.f.Close()
+		_, _ = w.f.Write([]byte("V"))
+		_ = w.f.Close()
 	})
 }

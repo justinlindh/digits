@@ -27,7 +27,7 @@ func Read(path string) (int, error) {
 func Write(path string, count int) error {
 	// Remove first in case the file is owned by root (created by initramfs).
 	// The parent directory is owned by the digits user, so remove succeeds.
-	os.Remove(path)
+	_ = os.Remove(path)
 	return os.WriteFile(path, []byte(strconv.Itoa(count)), 0644)
 }
 

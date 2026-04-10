@@ -33,7 +33,7 @@ func TestReadWrite(t *testing.T) {
 
 func TestClear(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "boot-counter")
-	os.WriteFile(p, []byte("5"), 0644)
+	_ = os.WriteFile(p, []byte("5"), 0644)
 	if err := Clear(p); err != nil {
 		t.Fatalf("Clear: %v", err)
 	}

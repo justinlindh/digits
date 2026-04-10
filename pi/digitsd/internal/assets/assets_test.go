@@ -55,7 +55,7 @@ func TestExtract_SkipsWhenVersionMatches(t *testing.T) {
 	root := t.TempDir()
 	dataDir := t.TempDir()
 	markerPath := filepath.Join(dataDir, "asset-version")
-	os.WriteFile(markerPath, []byte("1.0.0"), 0644)
+	_ = os.WriteFile(markerPath, []byte("1.0.0"), 0644)
 
 	remountCalled := false
 	e := &Extractor{

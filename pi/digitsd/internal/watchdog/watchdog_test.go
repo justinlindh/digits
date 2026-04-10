@@ -13,7 +13,7 @@ func TestWatchdog_PetsFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	w, err := Open(tmp)
 	if err != nil {
@@ -34,7 +34,7 @@ func TestWatchdog_PetsFile(t *testing.T) {
 func TestWatchdog_StartStop(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "watchdog")
 	f, _ := os.Create(tmp)
-	f.Close()
+	_ = f.Close()
 
 	w, err := Open(tmp)
 	if err != nil {

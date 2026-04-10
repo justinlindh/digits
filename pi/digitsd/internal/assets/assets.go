@@ -55,7 +55,7 @@ func (e *Extractor) Extract(currentVersion string) error {
 		for _, f := range rootfsFiles {
 			dest := filepath.Join(e.RootDir, f.relPath)
 			if err := e.writeFileWith(f, dest, rootfsWriter); err != nil {
-				e.Remount(false)
+				_ = e.Remount(false)
 				return fmt.Errorf("write rootfs %s: %w", f.relPath, err)
 			}
 		}
@@ -127,7 +127,7 @@ func defaultWriteFile(data []byte, dest string, perm os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
 		return err
 	}
-	os.Remove(dest) // remove existing file in case of ownership mismatch
+	_ = os.Remove(dest) // remove existing file in case of ownership mismatch
 	return os.WriteFile(dest, data, perm)
 }
 
