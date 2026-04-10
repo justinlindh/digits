@@ -643,22 +643,10 @@ fi
 
 info "Populating recovery partition..."
 
-# Sync all pending writes before snapshotting rootfs.
-# The rootfs stays mounted (later build steps still need it), but all
-# data must be on disk for a consistent raw block-level copy.
-info "  Syncing rootfs before snapshot..."
-sync
-
-# Freeze the filesystem to ensure a consistent snapshot -- this flushes
-# the journal and prevents new writes during the dd.
-fsfreeze --freeze "$ROOTFS_MNT"
-
-# Create compressed rootfs snapshot
-info "  Creating rootfs snapshot (this may take a while)..."
-dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
-
-# Unfreeze so the rest of the build can continue
-fsfreeze --unfreeze "$ROOTFS_MNT"
+# NOTE: rootfs snapshot is deferred until after all rootfs modifications
+# are complete (services enabled, config applied, etc.). It is taken in
+# the final steps before unmount, with the recovery partition temporarily
+# re-mounted. See "step 23b: create rootfs snapshot" below.
 
 # Clean /data before creating skeleton (first-boot must run fresh after reset)
 # Keep config.json (has server_url), remove device-specific state
@@ -1122,6 +1110,29 @@ rm -f "${DATA_MNT}/.initialized" 2>/dev/null || true
 rm -f "${DATA_MNT}/log/digits-first-boot.log" 2>/dev/null || true
 rm -f "${DATA_MNT}/digits/device-id" 2>/dev/null || true
 rm -rf "${DATA_MNT}/log/journal/"* 2>/dev/null || true
+
+# ── step 23b: create rootfs snapshot (deferred) ─────────────────────────────
+# The snapshot must be taken AFTER all rootfs modifications (services enabled,
+# config applied, dev mode, etc.) so factory reset restores a fully configured
+# system. We re-mount the recovery partition temporarily to write the image.
+
+info "Creating rootfs snapshot..."
+
+RECOVERY_MNT_SNAP=$(mktemp -d /tmp/digits-recovery-snap-XXXXXX)
+mount "$P3" "$RECOVERY_MNT_SNAP"
+
+info "  Freezing rootfs for consistent snapshot..."
+sync
+fsfreeze --freeze "$ROOTFS_MNT"
+
+info "  Creating compressed rootfs snapshot (this may take a while)..."
+dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT_SNAP}/rootfs.img.zst"
+
+fsfreeze --unfreeze "$ROOTFS_MNT"
+
+info "  Unmounting recovery partition..."
+umount "$RECOVERY_MNT_SNAP"
+rmdir "$RECOVERY_MNT_SNAP"
 
 # ── step 24: unmount everything ──────────────────────────────────────────────
 
