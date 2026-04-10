@@ -39,9 +39,17 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Debug Go env
+        working-directory: server
+        run: |
+          go version
+          go env GOVERSION GOTOOLCHAIN GOROOT
+          which go
+          head -5 go.mod
+
       - name: Build server
         working-directory: server
-        run: go build -o bin/signald ./cmd/signald/
+        run: go build -v -o bin/signald ./cmd/signald/
         env:
           GOTOOLCHAIN: auto
 
