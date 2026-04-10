@@ -76,7 +76,9 @@ Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot
 
 ## Commit conventions
 
-Conventional commit style preferred but not enforced. Scope recommended.
+Conventional commit format. Scope is required.
+
+Since PRs are squash-merged, the squash commit message must follow this format. Individual commits on feature branches don't need to.
 
 Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`
 
