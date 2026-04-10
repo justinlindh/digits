@@ -18,17 +18,16 @@ var ErrNotFound = errors.New("line not found")
 // ErrNumberTaken is returned when a line number is already in use.
 var ErrNumberTaken = errors.New("line number is already in use")
 
-var numberRegex = regexp.MustCompile(`^\d{7}$`)
+var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
 
 func isUniqueViolation(err error) bool {
 	var pgErr *pq.Error
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-// ValidateNumber checks that num is exactly 7 digits (with optional hyphen after 3rd digit).
+// ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
-	stripped := strings.ReplaceAll(num, "-", "")
-	if !numberRegex.MatchString(stripped) {
+	if !numberRegex.MatchString(num) {
 		return fmt.Errorf("phone number must be exactly 7 digits, got %q", num)
 	}
 	return nil

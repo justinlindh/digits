@@ -300,11 +300,12 @@ func TestValidateNumber(t *testing.T) {
 		wantErr bool
 	}{
 		{"3140001", false},
-		{"314-0001", false},  // hyphenated form accepted
-		{"12345", true},      // too short
-		{"12345678", true},   // too long
-		{"314-00001", true},  // wrong position
-		{"abcdefg", true},    // non-digits
+		{"314-0001", false},   // hyphenated form accepted
+		{"12345", true},       // too short
+		{"12345678", true},    // too long
+		{"314-00001", true},   // too many digits
+		{"3-140001", true},    // hyphen in wrong position
+		{"abcdefg", true},     // non-digits
 	}
 	for _, tt := range tests {
 		err := ValidateNumber(tt.input)
