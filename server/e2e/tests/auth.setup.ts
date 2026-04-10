@@ -53,7 +53,14 @@ setup('authenticate', async ({ page, context }) => {
       await page.fill('input[name="name"]', 'E2E Test Family');
       await page.click('button[type="submit"]');
       await page.waitForURL(url => !url.toString().includes('/onboard'), { timeout: 5000 });
-      console.log(`[setup] Onboarding complete -- landed on ${page.url()}`);
+      const postUrl = page.url();
+      console.log(`[setup] Onboarding POST landed on ${postUrl}`);
+      // The POST may lose the session (Secure cookie over HTTP). Re-auth if needed.
+      if (postUrl.includes('/auth/login')) {
+        console.log('[setup] Session lost after onboard -- re-running dev-session.');
+        await page.goto(devSessionUrl);
+        console.log(`[setup] Re-auth landed on ${page.url()}`);
+      }
     }
     await context.storageState({ path: AUTH_FILE });
     console.log('[setup] Dev-session endpoint succeeded -- auth state saved.');
