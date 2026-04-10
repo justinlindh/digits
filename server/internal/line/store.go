@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/lib/pq"
 )
 
 // ErrNotFound is returned when a line cannot be found.
