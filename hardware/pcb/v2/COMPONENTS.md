@@ -80,12 +80,12 @@ Every component on the board, what it does, and why it exists.
 
 ## Other
 
-| Ref | Part | Package | Purpose |
-|-----|------|---------|---------|
-| SW1 | 6mm tact switch | THT | Hook switch. Detects handset on/off hook. Connected to RP2040 GPIO |
-| R1 | 220 ohm | 0805 | Current limiting resistor for LED output (LED_OUT to J6) |
-| C3 | 100nF 50V X7R | 0805 | Filter capacitor on microphone circuit (MIC_HOT net) |
-| H1, H2, H3 | M3 mounting holes | - | Mechanical mounting to phone enclosure. Positions locked by physical constraints |
+| Ref | Part | Package | LCSC | Purpose |
+|-----|------|---------|------|---------|
+| SW1 | 6mm tact switch | THT | - | Hook switch. Detects handset on/off hook. Connected to RP2040 GPIO |
+| R1 | 220 ohm | 0805 | C17557 | Current limiting resistor for LED output (LED_OUT to J6) |
+| C3 | 100nF 50V X7R | 0805 | C49678 | Filter capacitor on microphone circuit (MIC_HOT net) |
+| H1, H2, H3 | M3 mounting holes | - | - | Mechanical mounting to phone enclosure. Positions locked by physical constraints |
 
 ## Power Rails
 
