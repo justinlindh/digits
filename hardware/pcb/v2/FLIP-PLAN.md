@@ -55,14 +55,15 @@ When the board flips, the screw posts in the phone body stay fixed. The board's 
 
 ### Phase 1: Preparation (no KiCad changes)
 - [x] 1. Justin confirms flip axis (horizontal or vertical edge) -- **Flip A confirmed**
-- [ ] 2. Update board outline and mounting holes to new positions in KiCad (holes only, no components yet)
+- [ ] 2. Re-add mounting holes H1-H3 (lost during F8 update -- "Delete footprints with no symbols" removed them) and place at new calculated positions
 - [ ] 3. Export 1:1 scale PDF of board outline + mounting holes (Edge.Cuts + drill marks only). Print on paper, cut out, and physically test-fit against the phone body to verify hole alignment before any component work
 - [ ] 4. Justin confirms SW1 position after flip still aligns with hook mechanism
 
-### Phase 2: Component Layer Changes
-- [ ] 5. Move all SMD footprints from F.Cu to B.Cu (select all, flip)
-- [ ] 6. Move SW1 back to F.Cu (it should stay on the phone-bottom side)
-- [ ] 7. Move J1 from B.Cu to F.Cu (Pi needs to plug in from phone-bottom)
+### Phase 2: Component Layer Swap
+- [ ] 5. Select All (Ctrl+A), press F to flip everything. This swaps F.Cu and B.Cu for all components in one step.
+- [ ] 6. Flip SW1 back to F.Cu (phone-bottom side, faces hook mechanism)
+- [ ] 7. Flip J1 back to F.Cu (phone-bottom side, Pi plugs in from below). Verify pin 1 orientation -- may need 180-degree rotation after flip.
+- [ ] **Note:** Symmetric parts (caps, resistors, QFN) mirror safely. Check J1 pin 1 position carefully.
 
 ### Phase 3: Re-route
 - [ ] 8. Delete all traces (copper pour stays, zones stay)
