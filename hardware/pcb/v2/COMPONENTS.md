@@ -26,8 +26,8 @@ Every component on the board, what it does, and why it exists.
 | Ref | Part | Package | LCSC | Purpose |
 |-----|------|---------|------|---------|
 | U5 | AMS1117-3.3 | SOT-223 | C6186 | 3.3V 1A linear regulator. Powers the RP2040 I/O, flash, and crystal from the 5V rail |
-| C9 | 10uF 6.3V X5R | 0603 | C15525 | Input capacitor for U5. Stabilizes 5V input to the LDO |
-| C11 | 10uF 6.3V X5R | 0603 | C15525 | Output capacitor for U5. Required for LDO stability, smooths 3.3V output |
+| C9 | 10uF 6.3V X5R | 0603 | C19702 | Input capacitor for U5. Stabilizes 5V input to the LDO |
+| C11 | 10uF 6.3V X5R | 0603 | C19702 | Output capacitor for U5. Required for LDO stability, smooths 3.3V output |
 
 ## RP2040 Microcontroller
 
@@ -35,7 +35,7 @@ Every component on the board, what it does, and why it exists.
 |-----|------|---------|------|---------|
 | U3 | RP2040 | QFN-56 | C2040 | Dual-core ARM Cortex-M0+ MCU. Runs the phone firmware: keypad scanning, audio routing, UART to Pi, LED control, hook switch detection |
 | C12-C16 | 5x 100nF 50V X7R | 0805 | C49678 | Bypass/decoupling capacitors for U3. One per IOVDD/DVDD pin per RP2040 datasheet. Filters high-frequency noise from power pins |
-| C10 | 10uF 6.3V X5R | 0603 | C15525 | Bulk bypass for RP2040. Provides local charge reservoir for transient current demands |
+| C10 | 10uF 6.3V X5R | 0603 | C19702 | Bulk bypass for RP2040. Provides local charge reservoir for transient current demands |
 | R5 | 10k | 0402 | C25744 | Pull-up on RUN pin. Keeps RP2040 out of reset |
 
 ## RP2040 Crystal Oscillator
