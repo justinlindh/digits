@@ -19,14 +19,15 @@ import (
 var ErrUnderrun = errors.New("alsa: buffer underrun recovered")
 
 const (
-	// CodecCardName is the ALSA card name for the RPi Codec Zero (DA7212).
+	// CodecCardName is the ALSA card name for the onboard TLV320AIC3104.
+	// Matches the simple-audio-card,name in the digits-codec device tree overlay.
 	// Used with amixer/alsactl which accept -c <name>.
-	CodecCardName = "Zero"
+	CodecCardName = "digitscodec"
 
-	// CodecDeviceName is the stable ALSA device identifier for the Codec Zero.
+	// CodecDeviceName is the stable ALSA device identifier for the onboard codec.
 	// Uses the card name instead of a numeric index so it works regardless of
 	// card enumeration order (HDMI vs codec).
-	CodecDeviceName = "plughw:CARD=Zero,DEV=0"
+	CodecDeviceName = "plughw:CARD=digitscodec,DEV=0"
 )
 
 // Config holds ALSA device parameters.
@@ -37,7 +38,7 @@ type Config struct {
 	FrameSize  int // samples per frame per channel (960 = 20ms at 48kHz)
 }
 
-// DefaultCaptureConfig returns config for the DA7212 codec: stereo capture at 48kHz.
+// DefaultCaptureConfig returns config for the TLV320AIC3104 codec: stereo capture at 48kHz.
 // Uses plughw to bypass dmix (which is playback-only).
 func DefaultCaptureConfig() Config {
 	return Config{
