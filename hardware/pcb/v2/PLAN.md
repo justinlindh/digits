@@ -146,12 +146,12 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 | Y1 | 12MHz crystal | 12MHz | 3225 (3.2x2.5mm) | C9002 | USB and PLL clock source |
 | C5, C6 | Ceramic cap | 22pF | 0402 | C1555 | Crystal load capacitors |
 | ~~C7, C8~~ | ~~Ceramic cap~~ | ~~1nF~~ | ~~0402~~ | ~~C52923~~ | **Removed** -- 1nF with 27 ohm creates 5.9MHz LPF, below USB Full Speed 12MHz |
-| C9, C10, C11 | Ceramic cap | 10uF 10V | 0402 | C15525 | VREG_VIN, VREG_VOUT, LDO output bulk |
+| C9, C10, C11 | Ceramic cap | 10uF 6.3V | 0603 | C109455 | VREG_VIN, VREG_VOUT, LDO output bulk |
 | C12-C16 | Ceramic cap | 100nF 50V | 0805 | C49678 | Bypass: IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC |
 | R3, R4 | Resistor | 27 ohm | 0402 | C25100 | USB D+/D- series resistors |
-| R5 | Resistor | 10k ohm | 0402 | C25744 | RUN pin pullup to 3.3V |
-| R6 | Resistor | 10k ohm | 0402 | C25744 | QSPI_SS pullup to 3.3V |
-| F1 | PTC Fuse | 1.5A | 1210 | C369159 | Resettable overcurrent protection on +12V input |
+| R5 | Resistor | 10k ohm | 0402 | C60490 | RUN pin pullup to 3.3V |
+| R6 | Resistor | 10k ohm | 0402 | C60490 | QSPI_SS pullup to 3.3V |
+| F1 | PTC Fuse | 1.5A | 1210 | C70102 | Resettable overcurrent protection on +12V input |
 
 ### RP2040 Pin Connections
 
@@ -310,10 +310,10 @@ Replaces the Raspberry Pi Codec Zero HAT (DA7212). The codec connects to the Pi 
 | C23 | MLCC | 1uF | 0402 | C52923 | Mic input AC coupling |
 | C24 | MLCC | 10uF | 0402 | C15525 | Earpiece output AC coupling |
 | C25 | MLCC | 10uF | 0402 | C15525 | DVDD decoupling (internal 1.8V LDO output) |
-| R7 | Resistor | 10k | 0402 | C25744 | RESET pullup to +3V3 |
+| R7 | Resistor | 10k | 0402 | C60490 | RESET pullup to +3V3 |
 | R8 | Resistor | 2.2k | 0402 | C25879 | MICBIAS series resistor for electret mic |
-| C26 | MLCC | 470nF | 0402 | C1046 | Unused analog inputs to GND (noise suppression) |
-| C27 | MLCC | 1nF | 0402 | C52923 | RESET pin ESD protection cap |
+| C26 | MLCC | 470nF | 0402 | C47339 | Unused analog inputs to GND (noise suppression) |
+| C27 | MLCC | 1nF | 0402 | C14442 | RESET pin ESD protection cap |
 
 ### Pin Connections
 
@@ -405,20 +405,20 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | Y1 | Device:Crystal | Crystal_SMD_3225-4Pin_3.2x2.5mm | C9002 | [Link](https://jlcpcb.com/partdetail/C9002) | Basic |
 | C5,C6 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1555 | [Link](https://jlcpcb.com/partdetail/C1555) | Basic |
 | ~~C7,C8~~ | ~~Device:C~~ | ~~Capacitor_SMD:C_0402_1005Metric~~ | ~~C52923~~ | **Removed** | -- |
-| C9-C11 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
+| C9-C11 | Device:C | Capacitor_SMD:C_0603_1608Metric | C109455 | [Link](https://jlcpcb.com/partdetail/C109455) | Basic |
 | C12-C16 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | Basic |
 | R3,R4 | Device:R | Resistor_SMD:R_0402_1005Metric | C25100 | [Link](https://jlcpcb.com/partdetail/C25100) | Basic |
-| R5 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | [Link](https://jlcpcb.com/partdetail/C25744) | Basic |
-| R6 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | (same as R5) | Basic |
-| F1 | Device:Polyfuse | Fuse:Fuse_1210_3225Metric | C369159 | [Link](https://jlcpcb.com/partdetail/C369159) | Basic |
+| R5 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | [Link](https://jlcpcb.com/partdetail/C60490) | Basic |
+| R6 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | (same as R5) | Basic |
+| F1 | Device:Polyfuse | Fuse:Fuse_1210_3225Metric | C70102 | [Link](https://jlcpcb.com/partdetail/C70102) | Basic |
 | U6 | TLV320AIC3104IRHBR | Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.5x3.5mm | C181753 | [Link](https://jlcpcb.com/partdetail/C181753) | Extended |
-| C17,C19,C22,C24,C25 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | (same as C9-C11) | Basic |
+| C17,C19,C22,C24,C25 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
 | C18,C20,C21 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | Basic |
 | C23 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | [Link](https://jlcpcb.com/partdetail/C52923) | Basic |
-| R7 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | (same as R5) | Basic |
+| R7 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | (same as R5) | Basic |
 | R8 | Device:R | Resistor_SMD:R_0402_1005Metric | C25879 | [Link](https://jlcpcb.com/partdetail/C25879) | Basic |
-| C26 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1046 | [Link](https://jlcpcb.com/partdetail/C1046) | Basic |
-| C27 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | (same as C23) | Basic |
+| C26 | Device:C | Capacitor_SMD:C_0402_1005Metric | C47339 | [Link](https://jlcpcb.com/partdetail/C47339) | Basic |
+| C27 | Device:C | Capacitor_SMD:C_0402_1005Metric | C14442 | [Link](https://jlcpcb.com/partdetail/C14442) | Basic |
 
 ### ⚠️ Low Stock Alert
 

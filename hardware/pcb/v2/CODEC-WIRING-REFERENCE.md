@@ -9,7 +9,7 @@ This is the definitive reference for wiring U6 and its passives in KiCad. Use th
 | Ref | Value | Footprint | LCSC | Purpose |
 |-----|-------|-----------|------|---------|
 | U6 | TLV320AIC3104IRHBR | Texas_RHB0032E VQFN-32 | C181753 | Audio codec |
-| R7 | 10k | 0402 | C25744 | RESET pullup to +3V3 |
+| R7 | 10k | 0402 | C60490 | RESET pullup to +3V3 |
 | R8 | 2.2k | 0402 | C25879 | MICBIAS series resistor for electret mic |
 | C17 | 10uF | 0402 or 0805 | C15525 | AVDD decoupling |
 | C18 | 100nF | 0805 | C49678 | DRVDD decoupling (pin 10 side) |
@@ -20,8 +20,8 @@ This is the definitive reference for wiring U6 and its passives in KiCad. Use th
 | C23 | 1uF | 0402 | C52923 | AC coupling, mic input (MIC1LP) |
 | C24 | 10uF | 0402 | C15525 | AC coupling, earpiece output (HPLOUT) |
 | C25 | 10uF | 0402 | C15525 | DVDD decoupling (internal LDO output) |
-| C26 | 470nF | 0402 | C1046 | Unused analog inputs to GND (noise suppression) |
-| C27 | 1nF | 0402 | C52923 | RESET pin ESD protection cap |
+| C26 | 470nF | 0402 | C47339 | Unused analog inputs to GND (noise suppression) |
+| C27 | 1nF | 0402 | C14442 | RESET pin ESD protection cap |
 
 ---
 
