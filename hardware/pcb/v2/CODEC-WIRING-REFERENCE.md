@@ -10,16 +10,18 @@ This is the definitive reference for wiring U6 and its passives in KiCad. Use th
 |-----|-------|-----------|------|---------|
 | U6 | TLV320AIC3104IRHBR | Texas_RHB0032E VQFN-32 | C181753 | Audio codec |
 | R7 | 10k | 0402 | C25744 | RESET pullup to +3V3 |
-| R8 | 2.2k | 0402 | TBD | MICBIAS series resistor for electret mic |
+| R8 | 2.2k | 0402 | C25879 | MICBIAS series resistor for electret mic |
 | C17 | 10uF | 0402 or 0805 | C15525 | AVDD decoupling |
 | C18 | 100nF | 0805 | C49678 | DRVDD decoupling (pin 10 side) |
 | C19 | 10uF | 0402 or 0805 | C15525 | DRVDD decoupling (pin 16 side) |
 | C20 | 100nF | 0805 | C49678 | IOVDD decoupling |
 | C21 | 100nF | 0805 | C49678 | AVDD additional decoupling |
 | C22 | 10uF | 0402 or 0805 | C15525 | AVSS/analog ground bulk |
-| C23 | 1uF | 0402 or 0805 | TBD | AC coupling, mic input (MIC1LP) |
-| C24 | 10uF | 0402 or 0805 | C15525 | AC coupling, earpiece output (HPLOUT) |
-| C25 | 10uF | 0402 or 0805 | C15525 | DVDD decoupling (internal LDO output) |
+| C23 | 1uF | 0402 | C52923 | AC coupling, mic input (MIC1LP) |
+| C24 | 10uF | 0402 | C15525 | AC coupling, earpiece output (HPLOUT) |
+| C25 | 10uF | 0402 | C15525 | DVDD decoupling (internal LDO output) |
+| C26 | 470nF | 0402 | C1046 | Unused analog inputs to GND (noise suppression) |
+| C27 | 1nF | 0402 | C52923 | RESET pin ESD protection cap |
 
 ---
 
@@ -49,18 +51,18 @@ This is the definitive reference for wiring U6 and its passives in KiCad. Use th
 | 2 | MIC1LP | C23 pin 1 | (internal) | AC-coupled from mic; C23 other end to MIC_FROM_SW |
 | 3 | MIC1LM | GND | GND | Single-ended mic, tie inverting input to ground |
 | 7 | MICBIAS | R8 pin 1 | MICBIAS_OUT | R8 other end provides bias to electret mic |
-| 4 | MIC1RP | no connect | -- | Place X (no-connect flag) |
-| 5 | MIC1RM | no connect | -- | Place X |
-| 6 | MIC2L | no connect | -- | Place X |
-| 8 | MIC2R | no connect | -- | Place X |
+| 4 | MIC1RP | C26 to GND | CODEC_UNUSED_IN | Tied together with other unused inputs via C26 (470nF) to GND |
+| 5 | MIC1RM | C26 to GND | CODEC_UNUSED_IN | Per TI: unused inputs must be grounded via cap to prevent noise coupling |
+| 6 | MIC2L | C26 to GND | CODEC_UNUSED_IN | |
+| 8 | MIC2R | C26 to GND | CODEC_UNUSED_IN | |
 
 ### Audio Output (Earpiece)
 
 | Pin | Name | Connect To | Net Label | Notes |
 |-----|------|-----------|-----------|-------|
 | 11 | HPLOUT | C24 pin 1 | (internal) | AC-coupled to earpiece; C24 other end to EAR_P |
-| 12 | HPLCOM | GND | GND | Single-ended output, tie to ground |
-| 14 | HPRCOM | GND | GND | Unused, tie to ground |
+| 12 | HPLCOM | no connect | -- | Power down via registers. Do NOT tie to GND (causes thermal issues per TI E2E) |
+| 14 | HPRCOM | no connect | -- | Power down via registers. Do NOT tie to GND |
 | 15 | HPROUT | no connect | -- | Place X (mono earpiece, right channel unused) |
 | 19 | LEFT_LOP | no connect | -- | Place X (line out unused) |
 | 20 | LEFT_LOM | no connect | -- | Place X |
@@ -153,20 +155,10 @@ The following nets and components existed and were routed on the V2 PCB before t
 
 ---
 
-## Current Schematic Issues
+## Design Notes
 
-1. **All U6 signal pins are unwired** -- labels exist at pin positions but no wires connect them
-2. **U6 power/ground labels are wrong** -- GND labels on power pins, +3V3 labels on ground pins
-3. **No-connect flags missing** on unused U6 pins (4, 5, 6, 8, 15, 19, 20, 21, 22)
-4. **C22** -- currently a decoupling cap but should verify its role (AVSS bulk vs another purpose)
-5. **R8 LCSC number** -- needs to be assigned (2.2k 0402)
-
-## Steps to Fix in KiCad GUI
-
-1. Delete all existing broken labels on U6's pins (both signal and power/ground)
-2. Wire each U6 pin per the tables above using KiCad's wire tool (W key)
-3. Place net labels on the wire endpoints
-4. Place no-connect flags (X) on unused pins
-5. Wire the passive components (C17-C25, R7, R8) per the passive wiring tables
-6. Run ERC -- target: 0 errors
-7. Save, then F8 to sync PCB
+- HPLCOM/HPRCOM are no-connect (not GND) to avoid thermal issues per TI E2E guidance. Power down these blocks via register writes.
+- Unused analog inputs (MIC1RP, MIC1RM, MIC2L, MIC2R) are tied together via C26 (470nF) to GND per TI recommendation to prevent noise coupling.
+- C27 (1nF) provides ESD protection on the RESET pin.
+- DVDD is the internal 1.8V LDO output. Never connect to +3V3.
+- I2C address is fixed at 0x18 (no ADDR pin on TLV320AIC3104).

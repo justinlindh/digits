@@ -221,7 +221,7 @@ Exposed SMD pads (no cost, zero BOM):
 ## JLCPCB Assembly Strategy
 
 ### SMT-assembled (top side, JLCPCB does this)
-U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), U6 (codec), D1, L1, Y1, F1, C1-C25, R1-R8
+U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), U6 (codec), D1, L1, Y1, F1, C1-C27, R1-R8
 
 ### Hand-solder after delivery
 J1 (B.Cu side), J3, J4, J6, J7, J8, J9, J10, SW1
@@ -312,6 +312,8 @@ Replaces the Raspberry Pi Codec Zero HAT (DA7212). The codec connects to the Pi 
 | C25 | MLCC | 10uF | 0402 | C15525 | DVDD decoupling (internal 1.8V LDO output) |
 | R7 | Resistor | 10k | 0402 | C25744 | RESET pullup to +3V3 |
 | R8 | Resistor | 2.2k | 0402 | C25879 | MICBIAS series resistor for electret mic |
+| C26 | MLCC | 470nF | 0402 | C1046 | Unused analog inputs to GND (noise suppression) |
+| C27 | MLCC | 1nF | 0402 | C52923 | RESET pin ESD protection cap |
 
 ### Pin Connections
 
@@ -337,11 +339,13 @@ Replaces the Raspberry Pi Codec Zero HAT (DA7212). The codec connects to the Pi 
 
 **Audio:**
 - Mic: MICBIAS (pin 7) -> R8 (2.2k) -> mic bias point; MIC_FROM_SW (from J9) -> C23 (1uF, AC coupling) -> MIC1LP (pin 2). MIC1LM (pin 3) to GND (single-ended).
-- Earpiece: HPLOUT (pin 11) -> C24 (10uF, AC coupling) -> EAR_P. HPLCOM (pin 12) to GND.
-- Unused: MIC1RP, MIC1RM, MIC2L, MIC2R, HPROUT, HPRCOM, LEFT_LOP/LOM, RIGHT_LOP/LOM -- no-connect flags.
+- Earpiece: HPLOUT (pin 11) -> C24 (10uF, AC coupling) -> EAR_P. HPLCOM (pin 12) no-connect (power down via registers).
+- Unused inputs: MIC1RP, MIC1RM, MIC2L, MIC2R -> tied together via C26 (470nF) to GND (prevents noise coupling per TI recommendation).
+- Unused outputs: HPROUT, HPRCOM, LEFT_LOP/LOM, RIGHT_LOP/LOM -- no-connect flags.
 
 **Control:**
-- ADDR -> GND (I2C address 0x18)
+- I2C address is fixed at 0x18 (no ADDR pin on TLV320AIC3104).
+- ~{RESET} (pin 23) -> R7 (10k) pullup to +3V3, C27 (1nF) to GND for ESD protection.
 
 ---
 
@@ -413,6 +417,8 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | C23 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | [Link](https://jlcpcb.com/partdetail/C52923) | Basic |
 | R7 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | (same as R5) | Basic |
 | R8 | Device:R | Resistor_SMD:R_0402_1005Metric | C25879 | [Link](https://jlcpcb.com/partdetail/C25879) | Basic |
+| C26 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1046 | [Link](https://jlcpcb.com/partdetail/C1046) | Basic |
+| C27 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | (same as C23) | Basic |
 
 ### ⚠️ Low Stock Alert
 

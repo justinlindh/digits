@@ -94,6 +94,8 @@ Every component on the board, what it does, and why it exists.
 | C25 | 10uF 6.3V X5R | 0402 | C15525 | DVDD decoupling. Internal 1.8V LDO output -- do NOT connect to +3.3V |
 | R7 | 10k | 0402 | C25744 | RESET pullup to +3.3V. Keeps codec out of reset |
 | R8 | 2.2k | 0402 | C25879 | MICBIAS series resistor. Provides DC bias to electret mic element |
+| C26 | 470nF 25V X7R | 0402 | C1046 | Unused analog input grounding cap. Ties MIC1RP/MIC1RM/MIC2L/MIC2R to GND to prevent noise coupling |
+| C27 | 1nF 50V C0G | 0402 | C52923 | RESET pin ESD protection. Prevents spurious resets from ESD events |
 
 ## Other
 
