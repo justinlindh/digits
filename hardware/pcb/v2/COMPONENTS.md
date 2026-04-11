@@ -78,6 +78,23 @@ Every component on the board, what it does, and why it exists.
 | J9 | 1x3 pin header 2.54mm | THT | Microphone input. MIC_HOT, MIC_FROM_SW, MIC_GND |
 | J10 | 1x2 pin header 2.54mm | THT | Earpiece output. EAR_P, EAR_N |
 
+## Audio Codec
+
+| Ref | Part | Package | LCSC | Purpose |
+|-----|------|---------|------|---------|
+| U6 | TLV320AIC3104IRHBR | QFN-32 (5x5mm) | C181753 | Onboard audio codec. Replaces Codec Zero HAT. I2S ADC/DAC with mic preamp and headphone amp |
+| C17 | 10uF 6.3V X5R | 0402 | C15525 | AVDD decoupling (U6 pin 17) |
+| C18 | 100nF 50V X7R | 0805 | C49678 | DRVDD decoupling (U6 pin 10) |
+| C19 | 10uF 6.3V X5R | 0402 | C15525 | DRVDD decoupling (U6 pin 16) |
+| C20 | 100nF 50V X7R | 0805 | C49678 | IOVDD decoupling (U6 pin 31) |
+| C21 | 100nF 50V X7R | 0805 | C49678 | AVDD additional decoupling (U6 pin 17) |
+| C22 | 10uF 6.3V X5R | 0402 | C15525 | AVSS analog ground bulk capacitor |
+| C23 | 1uF 25V X7R | 0402 | C52923 | AC coupling, mic signal to MIC1LP input |
+| C24 | 10uF 6.3V X5R | 0402 | C15525 | AC coupling, HPLOUT to earpiece |
+| C25 | 10uF 6.3V X5R | 0402 | C15525 | DVDD decoupling. Internal 1.8V LDO output -- do NOT connect to +3.3V |
+| R7 | 10k | 0402 | C25744 | RESET pullup to +3.3V. Keeps codec out of reset |
+| R8 | 2.2k | 0402 | C25879 | MICBIAS series resistor. Provides DC bias to electret mic element |
+
 ## Other
 
 | Ref | Part | Package | LCSC | Purpose |
@@ -93,8 +110,9 @@ Every component on the board, what it does, and why it exists.
 |------|---------|--------|-----------|
 | +12V | 12V | J3 barrel jack via F1 fuse | U1 (buck input), U2 (motor driver) |
 | +5V | 5V | U1 LM2596S-5 | Pi Zero 2 W (via J1), U5 (LDO input) |
-| +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD), U4 (flash), Y1 circuit |
+| +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD), U4 (flash), Y1 circuit, U6 (codec AVDD/DRVDD/IOVDD) |
 | DVDD_1V1 | 1.1V | U3 internal VREG | U3 (RP2040 core/DVDD) |
+| CODEC_DVDD | 1.8V | U6 internal LDO | U6 (codec digital core) |
 | GND | 0V | Common return | All components, copper pour on both layers |
 
 ## Signal Summary
@@ -116,5 +134,14 @@ Every component on the board, what it does, and why it exists.
 | QSPI_* | U3 | U4 | 4-bit flash interface (SCLK, SD0-3, SS) |
 | XIN/XOUT | Y1 | U3 | 12MHz crystal oscillator |
 | MIC_HOT | J8/J9 | Audio circuit | Microphone hot signal |
-| EAR_P/N | J8/J10 | Audio circuit | Earpiece differential audio |
+| MIC_FROM_SW | J9 | C23, U6 MIC1LP | Mic signal after kill switch, AC-coupled to codec |
+| EAR_P/N | U6 HPLOUT via C24 | J8/J10 | Earpiece audio from codec headphone amp |
+| CODEC_SDA | J1 (Pi GPIO2) | U6 pin 1 | I2C data for codec control |
+| CODEC_SCL | J1 (Pi GPIO3) | U6 pin 32 | I2C clock for codec control |
+| CODEC_BCLK | J1 (Pi GPIO18) | U6 pin 26 | I2S bit clock |
+| CODEC_WCLK | J1 (Pi GPIO19) | U6 pin 27 | I2S word clock (LRCLK) |
+| CODEC_DIN | J1 (Pi GPIO21) | U6 pin 28 | I2S data, Pi TX to codec RX |
+| CODEC_DOUT | U6 pin 29 | J1 (Pi GPIO20) | I2S data, codec TX to Pi RX |
+| CODEC_MCLK | J1 (Pi GPIO4) | U6 pin 25 | Master clock (optional, PLL-from-BCLK default) |
+| MICBIAS_OUT | U6 pin 7 | R8 | Mic bias voltage for electret element |
 | RUN | R5 pull-up | U3 pin 26 | RP2040 reset (active low, held high) |

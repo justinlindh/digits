@@ -29,11 +29,11 @@ This is the definitive reference for wiring U6 and its passives in KiCad. Use th
 
 | Pin | Name | Connect To | Net Label | Notes |
 |-----|------|-----------|-----------|-------|
-| 25 | MCLK | J1 pin 31 (GPIO4/GPCLK0) | CODEC_MCLK | Optional; can use PLL-from-BCLK instead |
-| 26 | BCLK | J1 pin 28 (GPIO18) | CODEC_BCLK | I2S bit clock |
-| 27 | WCLK | J1 pin 2 (GPIO19) | CODEC_WCLK | I2S word clock (LRCLK) |
-| 28 | DIN | J1 pin 15 (GPIO21) | CODEC_DIN | Pi TX to codec RX |
-| 29 | DOUT | J1 pin 33 (GPIO20) | CODEC_DOUT | Codec TX to Pi RX |
+| 25 | MCLK | J1 pin 7 (GPIO4/GPCLK0) | CODEC_MCLK | Optional; can use PLL-from-BCLK instead |
+| 26 | BCLK | J1 pin 12 (GPIO18) | CODEC_BCLK | I2S bit clock |
+| 27 | WCLK | J1 pin 35 (GPIO19) | CODEC_WCLK | I2S word clock (LRCLK) |
+| 28 | DIN | J1 pin 40 (GPIO21) | CODEC_DIN | Pi TX to codec RX |
+| 29 | DOUT | J1 pin 38 (GPIO20) | CODEC_DOUT | Codec TX to Pi RX |
 
 ### I2C Control (connect to Pi header J1)
 
@@ -133,11 +133,11 @@ These J1 pins need new connections for the codec. They were previously unused.
 |--------|---------|-----------|-------------|
 | 3 | GPIO2 (SDA1) | CODEC_SDA | U6 pin 1 |
 | 5 | GPIO3 (SCL1) | CODEC_SCL | U6 pin 32 |
-| 2 | GPIO19 (PCM_FS) | CODEC_WCLK | U6 pin 27 |
-| 15 | GPIO21 (PCM_DOUT) | CODEC_DIN | U6 pin 28 |
-| 28 | GPIO18 (PCM_CLK) | CODEC_BCLK | U6 pin 26 |
-| 31 | GPIO4 (GPCLK0) | CODEC_MCLK | U6 pin 25 |
-| 33 | GPIO20 (PCM_DIN) | CODEC_DOUT | U6 pin 29 |
+| 7 | GPIO4 (GPCLK0) | CODEC_MCLK | U6 pin 25 |
+| 12 | GPIO18 (PCM_CLK) | CODEC_BCLK | U6 pin 26 |
+| 35 | GPIO19 (PCM_FS) | CODEC_WCLK | U6 pin 27 |
+| 38 | GPIO20 (PCM_DIN) | CODEC_DOUT | U6 pin 29 |
+| 40 | GPIO21 (PCM_DOUT) | CODEC_DIN | U6 pin 28 |
 
 ---
 
