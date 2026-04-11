@@ -68,15 +68,15 @@ Every component on the board, what it does, and why it exists.
 
 ## Connectors
 
-| Ref | Part | Package | Purpose |
-|-----|------|---------|---------|
-| J1 | 2x20 Female Header 2.54mm | THT | Pi Zero 2 W GPIO header. Carries UART, SWD, power, keypad signals between Pi and RP2040 |
-| J4 | JST ZH 7-pin | SMD | Keypad connector. KP_ROW0-3, KP_COL0-2 for the 4x3 matrix |
-| J6 | JST ZH 2-pin | SMD | LED connector. LED_OUT signal and ground |
-| J7 | Phoenix 2-pos screw terminal | THT | Bell/ringer output. BELL_A and BELL_B from U2 to the ringer mechanism |
-| J8 | JST ZH 4-pin | SMD | Handset connector. MIC_HOT, EAR_P, EAR_N, MIC_GND |
-| J9 | 1x3 pin header 2.54mm | THT | Microphone input. MIC_HOT, MIC_FROM_SW, MIC_GND |
-| J10 | 1x2 pin header 2.54mm | THT | Earpiece output. EAR_P, EAR_N |
+| Ref | Part | Package | LCSC | Purpose |
+|-----|------|---------|------|---------|
+| J1 | 2x20 Female Header 2.54mm | THT | - | Pi Zero 2 W GPIO header. Carries UART, SWD, power, keypad signals between Pi and RP2040 |
+| J4 | JST ZH 7-pin | SMD | C265294 | Keypad connector. KP_ROW0-3, KP_COL0-2 for the 4x3 matrix |
+| J6 | JST ZH 2-pin | SMD | C265284 | LED connector. LED_OUT signal and ground |
+| J7 | Phoenix 2-pos screw terminal | THT | - | Bell/ringer output. BELL_A and BELL_B from U2 to the ringer mechanism |
+| J8 | JST ZH 4-pin | SMD | C265083 | Handset connector. MIC_HOT, EAR_P, EAR_N, MIC_GND |
+| J9 | 1x3 pin header 2.54mm | THT | - | Microphone input. MIC_HOT, MIC_FROM_SW, MIC_GND |
+| J10 | 1x2 pin header 2.54mm | THT | - | Earpiece output. EAR_P, EAR_N |
 
 ## Other
 
