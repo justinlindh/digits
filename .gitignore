@@ -43,6 +43,9 @@ node_modules/
 .claude/
 CLAUDE.local.md
 
+# KiCad editor state
+*.kicad_prl
+
 # Misc
 __pycache__/
 *.pyc
