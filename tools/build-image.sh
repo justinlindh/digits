@@ -620,6 +620,18 @@ else
     warn "No tone WAV files found in $TONES_DIR — skipping"
 fi
 
+# ── step 14a: copy Pico firmware to /data (host-side) ────────────────────────
+
+FW_ELF="${BUILD_DIR}/firmware.elf"
+if [[ -f "$FW_ELF" ]]; then
+    info "Copying Pico firmware to /data/digits/firmware.elf..."
+    cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
+    chown 999:992 "${DATA_MNT}/digits/firmware.elf"
+    chmod 644 "${DATA_MNT}/digits/firmware.elf"
+else
+    warn "No firmware.elf found in tools/build/ -- Pico will need OTA flash after first boot"
+fi
+
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
 MIXER_STATE="${REPO_DIR}/pi/digits_mixer.state"

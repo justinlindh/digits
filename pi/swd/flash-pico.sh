@@ -43,7 +43,10 @@ echo "Flashing via SWD..."
 if ! sudo "$OPENOCD" \
     -f "$SWD_CFG" \
     -f target/rp2040.cfg \
-    -c "program $ELF verify reset exit"; then
+    -c "rp2040.core0 configure -event reset-init {}" \
+    -c "program $ELF verify" \
+    -c "reset run" \
+    -c "exit"; then
     echo "ERROR: OpenOCD flash failed" >&2
     echo "Restarting digitsd anyway..."
     sudo systemctl start digitsd.service
