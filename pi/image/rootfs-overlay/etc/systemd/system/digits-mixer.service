@@ -6,7 +6,7 @@ Before=digitsd.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/alsactl restore 0 -f /data/digits_mixer.state
+ExecStart=/usr/sbin/alsactl restore digitscodec -f /data/digits_mixer.state
 
 [Install]
 WantedBy=multi-user.target
