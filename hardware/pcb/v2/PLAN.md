@@ -39,10 +39,11 @@ The v1 and original v2 design used a Raspberry Pi Pico H module plugged into hea
 ### Components unchanged
 
 - U1 (LM2596S-5.0, already SMD D2PAK)
-- J1 (2x20 Pi header), J2 (SWD), J3 (barrel jack), J4 (keypad), J6 (LED), J7 (bell terminal), J8 (handset), J9 (mic kill switch), J10 (earpiece)
+- J1 (2x20 Pi header), J3 (barrel jack), J4 (keypad), J6 (LED), J7 (bell terminal), J8 (handset), J9 (mic kill switch), J10 (earpiece)
 - SW1 (hook switch)
-- All connectors remain THT — hand-solder after PCBA
-- Pico H module is **removed** — replaced by on-board RP2040 (U3) and support circuit
+- All connectors remain THT -- hand-solder after PCBA
+- Pico H module is **removed** -- replaced by on-board RP2040 (U3) and support circuit
+- J2 (SWD connector) is **removed** -- SWD signals route directly from J1 (Pi header) to RP2040 dedicated SWDIO/SWCLK pins (24/25)
 
 ---
 
@@ -97,7 +98,7 @@ This eliminates J5 (L298N control header), the L298N module, and its wiring.
 | Net | From | To |
 |-----|------|----|
 | `UART_TX_PI` / `UART_RX_PI` | RP2040 GP0/GP1 | Pi GPIO15/GPIO14 (crossover) |
-| `SWD_SWDIO` / `SWD_SWCLK` | Pi GPIO22/GPIO25 | J2 SWD connector |
+| `SWD_SWDIO` / `SWD_SWCLK` | Pi GPIO (via J1) | RP2040 SWDIO (pin 25) / SWCLK (pin 24) |
 | `HOOK_SW` | RP2040 GP10 | SW1 (other pin to GND) |
 | `RINGER_IN1` / `RINGER_IN2` | RP2040 GP11/GP15 | U2 IN1/IN2 |
 | `BELL_A` / `BELL_B` | U2 OUT1/OUT2 | J7 screw terminal |
@@ -137,12 +138,13 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 | U5 | AMS1117-3.3 | 3.3V LDO | SOT-223 | C6186 | 5V to 3.3V for IO/USB/flash (needs 10uF input cap at VIN) |
 | Y1 | 12MHz crystal | 12MHz | 3225 (3.2x2.5mm) | C9002 | USB and PLL clock source |
 | C5, C6 | Ceramic cap | 22pF | 0402 | C1555 | Crystal load capacitors |
-| C7, C8 | Ceramic cap | 1nF | 0402 | C52923 | USB D+/D- filtering |
+| ~~C7, C8~~ | ~~Ceramic cap~~ | ~~1nF~~ | ~~0402~~ | ~~C52923~~ | **Removed** -- 1nF with 27 ohm creates 5.9MHz LPF, below USB Full Speed 12MHz |
 | C9, C10, C11 | Ceramic cap | 10uF 10V | 0402 | C15525 | VREG_VIN, VREG_VOUT, LDO output bulk |
 | C12-C16 | Ceramic cap | 100nF 50V | 0805 | C49678 | Bypass: IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC |
 | R3, R4 | Resistor | 27 ohm | 0402 | C25100 | USB D+/D- series resistors |
 | R5 | Resistor | 10k ohm | 0402 | C25744 | RUN pin pullup to 3.3V |
 | R6 | Resistor | 10k ohm | 0402 | C25744 | QSPI_SS pullup to 3.3V |
+| F1 | PTC Fuse | 1.5A | 1210 | C369159 | Resettable overcurrent protection on +12V input |
 
 ### RP2040 Pin Connections
 
@@ -167,7 +169,7 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 **USB connections:**
 - USB_DM (pin 46) -> R3 (27 ohm) -> USB D-
 - USB_DP (pin 47) -> R4 (27 ohm) -> USB D+
-- **Note:** C7/C8 (1nF) with 27 ohm resistors form a 5.9MHz low-pass filter, which is below USB full-speed 12MHz. Recommend removing C7/C8 entirely or reducing to 47pF if EMI filtering is desired.
+- **Note:** C7/C8 (1nF USB filter caps) were removed. 1nF with 27 ohm resistors would create a 5.9MHz low-pass filter, below USB Full Speed 12MHz, degrading signal integrity.
 
 **Boot/reset:**
 - TESTEN (pin 19) -> GND (required -- if floating, RP2040 may enter factory test mode)
@@ -212,10 +214,10 @@ Exposed SMD pads (no cost, zero BOM):
 ## JLCPCB Assembly Strategy
 
 ### SMT-assembled (top side, JLCPCB does this)
-U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), D1, L1, Y1, C1-C16, R1-R5
+U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), D1, L1, Y1, F1, C1-C16, R1-R6
 
 ### Hand-solder after delivery
-J1 (B.Cu side), J2, J3, J4, J6, J7, J8, J9, J10, SW1
+J1 (B.Cu side), J3, J4, J6, J7, J8, J9, J10, SW1
 
 ### Order notes
 - **PCB + Assembly:** Standard JLCPCB PCBA (economic or standard)
@@ -230,10 +232,10 @@ J1 (B.Cu side), J2, J3, J4, J6, J7, J8, J9, J10, SW1
 ## Build Phases
 
 - [x] Phase 1: Component selection and BOM (this document)
-- [ ] Phase 2: Update KiCad schematic (swap footprints, add DRV8871 circuit)
-- [ ] Phase 3: Update PCB layout (place new SMD components, re-route)
-- [ ] Phase 4: DRC validation
-- [ ] Phase 5: Generate JLCPCB production files (Gerber + BOM + CPL)
+- [x] Phase 2: Update KiCad schematic (swap footprints, add DRV8871 circuit, RP2040 support circuit)
+- [x] Phase 3: Update PCB layout (place SMD components, route traces, GND pour)
+- [x] Phase 4: DRC validation (0 errors, 0 unconnected pads)
+- [ ] Phase 5: Generate JLCPCB production files (Gerber + BOM + CPL via Fabrication Toolkit)
 - [ ] Phase 6: Order from JLCPCB
 - [ ] Phase 7: Hand-solder THT connectors
 - [ ] Phase 8: Test
@@ -259,7 +261,7 @@ On the bare RP2040, the BOOTSEL function is on the QSPI_SS pin. If no physical B
 
 ### SWD debug
 
-J2 (SWD debug header) is unchanged. SWDIO and SWCLK connect to the Pi's GPIO22/GPIO25 for probe-rs flashing, same as v1.
+J2 (SWD debug connector) has been removed. SWD signals now route directly from J1 (Pi header) to the RP2040's dedicated SWDIO (pin 25) and SWCLK (pin 24) pins. No physical connector is needed since both chips are on the same board. The Pi still drives SWD via GPIO for probe-rs flashing, same as v1.
 
 ### Board layout impact
 
@@ -335,11 +337,13 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | U5 | Regulator_Linear:AMS1117-3.3 | Package_TO_SOT_SMD:SOT-223-3_TabPin2 | C6186 | [Link](https://jlcpcb.com/partdetail/C6186) | Basic |
 | Y1 | Device:Crystal | Crystal_SMD_3225-4Pin_3.2x2.5mm | C9002 | [Link](https://jlcpcb.com/partdetail/C9002) | Basic |
 | C5,C6 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1555 | [Link](https://jlcpcb.com/partdetail/C1555) | Basic |
-| C7,C8 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | [Link](https://jlcpcb.com/partdetail/C52923) | Basic |
+| ~~C7,C8~~ | ~~Device:C~~ | ~~Capacitor_SMD:C_0402_1005Metric~~ | ~~C52923~~ | **Removed** | -- |
 | C9-C11 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
 | C12-C16 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | Basic |
 | R3,R4 | Device:R | Resistor_SMD:R_0402_1005Metric | C25100 | [Link](https://jlcpcb.com/partdetail/C25100) | Basic |
 | R5 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | [Link](https://jlcpcb.com/partdetail/C25744) | Basic |
+| R6 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | (same as R5) | Basic |
+| F1 | Device:Polyfuse | Fuse:Fuse_1210_3225Metric | C369159 | [Link](https://jlcpcb.com/partdetail/C369159) | Basic |
 
 ### ⚠️ Low Stock Alert
 
