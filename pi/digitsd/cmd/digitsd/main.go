@@ -819,7 +819,10 @@ func main() {
 				cmd := exec.Command("sudo", openocd,
 					"-f", swdCfg,
 					"-f", "target/rp2040.cfg",
-					"-c", fmt.Sprintf("program %s verify reset exit", elfPath))
+					"-c", "rp2040.core0 configure -event reset-init {}",
+					"-c", fmt.Sprintf("program %s verify", elfPath),
+					"-c", "reset run",
+					"-c", "exit")
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				if err := cmd.Run(); err != nil {
