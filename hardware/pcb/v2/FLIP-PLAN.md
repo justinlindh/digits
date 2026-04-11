@@ -41,23 +41,15 @@ The board physically flips over in the phone. In KiCad terms:
 
 When the board flips, the screw posts in the phone body stay fixed. The board's hole positions mirror along the flip axis.
 
-**Question for Justin:** Which edge do you flip the board around?
-- **Flip around the long edge (horizontal axis):** Y coordinates mirror. y_new = 14.435 + 71.385 - y_old = 85.82 - y_old. X stays.
-- **Flip around the short edge (vertical axis):** X coordinates mirror. x_new = 14.975 + 91.225 - x_old = 106.2 - x_old. Y stays.
+**Confirmed: Flip A -- horizontal axis (top-bottom mirror).** X coordinates stay, Y coordinates mirror. y_new = 85.82 - y_old. Verified from phone body photos: three screw posts are symmetric left-to-right, board flips so top edge swaps with bottom edge.
 
-### If flipping around horizontal axis (top-bottom mirror):
-- H1: (23.4, 85.82 - 47.96) = (23.4, 37.86)
-- H2: (82.3, 85.82 - 61.16) = (82.3, 24.66)
-- H3: (87.4, 85.82 - 30.46) = (87.4, 55.36)
-- SW1: (62.4, 85.82 - 31.96) = (62.4, 53.86)
+### New positions after flip:
+- H1: (23.4, 85.82 - 47.96) = **(23.4, 37.86)**
+- H2: (82.3, 85.82 - 61.16) = **(82.3, 24.66)**
+- H3: (87.4, 85.82 - 30.46) = **(87.4, 55.36)**
+- SW1: (62.4, 85.82 - 31.96) = **(62.4, 53.86)**
 
-### If flipping around vertical axis (left-right mirror):
-- H1: (106.2 - 23.4, 47.96) = (82.8, 47.96)
-- H2: (106.2 - 82.3, 61.16) = (23.9, 61.16)
-- H3: (106.2 - 87.4, 30.46) = (18.8, 30.46)
-- SW1: (106.2 - 62.4, 31.96) = (43.8, 31.96)
-
-**Justin needs to verify** which flip axis is correct by checking the phone body.
+**Justin to verify** these calculated positions against the physical phone body before implementation.
 
 ## Implementation Steps
 
