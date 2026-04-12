@@ -10,17 +10,17 @@ type PipelineConfig struct {
 	SampleRate  int
 	FrameMs     int
 	OpusBitrate int
-	MicChannel  int  // 0=left, 1=right. TLV320AIC3104: mic on MIC1LP (left channel).
+	MicChannel  int  // 0=left, 1=right. Both codecs route mic to left channel.
 	Denoise     bool
 }
 
-// DefaultPipelineConfig returns sensible defaults for the TLV320AIC3104 codec setup.
+// DefaultPipelineConfig returns sensible defaults for both codec types.
 func DefaultPipelineConfig() PipelineConfig {
 	return PipelineConfig{
 		SampleRate:  48000,
 		FrameMs:     20,
 		OpusBitrate: 24000,
-		MicChannel:  0, // Mic on MIC1LP, captured as left channel
+		MicChannel:  0, // Both codecs route mic to left channel
 		Denoise:     true,
 	}
 }

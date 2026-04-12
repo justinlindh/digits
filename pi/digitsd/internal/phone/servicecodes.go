@@ -211,9 +211,7 @@ const (
 	defaultVolume  = 5
 )
 
-// volumeToALSA converts a 0-9 volume level to ALSA PCM value (40-115).
-// TLV320AIC3104 DAC digital volume range is 0-127. We use 40-115 to avoid
-// both inaudibly quiet and clipping-hot extremes.
+// volumeToALSA converts a 0-9 volume level to ALSA value for the detected codec.
 func volumeToALSA(level int) int {
 	if level < 0 {
 		level = 0
@@ -221,15 +219,17 @@ func volumeToALSA(level int) int {
 	if level > 9 {
 		level = 9
 	}
-	return 40 + (level * (115 - 40) / 9)
+	min, max := audio.CodecALSARange()
+	return min + (level * (max - min) / 9)
 }
 
-// SetVolume sets PCM volume. Level 0-9 maps to ALSA 40-115.
+// SetVolume sets volume on the detected codec. Level 0-9.
 // Persists the level to /data/digits/volume and saves full mixer state.
 func SetVolume(level int) error {
 	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName
-	cmd := exec.Command("amixer", "-c", card, "sset", "PCM", fmt.Sprintf("%d", alsaVal))
+	card := audio.CodecCardName()
+	mixer := audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -243,7 +243,7 @@ func SetVolume(level int) error {
 	// Save full mixer state
 	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
 	_ = cmd.Run() // best-effort
-	slog.Info("volume set", "level", level, "max", 9, "pcm", alsaVal, "persisted", true)
+	slog.Info("volume set", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal, "persisted", true)
 	return nil
 }
 
@@ -259,11 +259,12 @@ func RestoreVolume() {
 		}
 	}
 	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName
-	cmd := exec.Command("amixer", "-c", card, "sset", "PCM", fmt.Sprintf("%d", alsaVal))
+	card := audio.CodecCardName()
+	mixer := audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		slog.Warn("volume restore: amixer failed", "output", strings.TrimSpace(string(out)), "error", err)
 		return
 	}
-	slog.Info("volume restored", "level", level, "max", 9, "pcm", alsaVal)
+	slog.Info("volume restored", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal)
 }
