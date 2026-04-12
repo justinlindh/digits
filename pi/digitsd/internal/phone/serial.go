@@ -69,7 +69,7 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	case resp := <-ch:
 		return resp, nil
 	case <-time.After(timeout):
-		return "", nil
+		return "", fmt.Errorf("serial: timeout waiting for response to %q", cmd)
 	}
 }
 

@@ -1187,6 +1187,14 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// Post-reboot firmware version results. STATUS:READY spawns a goroutine
+	// that retries QueryVersion (the Pico's UART command loop isn't quite
+	// awake yet at the instant it emits STATUS:READY). The goroutine sends
+	// the result here so the main loop can update fwVersion/fwCommit without
+	// any shared-state synchronization.
+	type fwVersionResult struct{ version, commit string }
+	fwVersionCh := make(chan fwVersionResult, 1)
+
 	// Main select loop
 	for {
 		select {
@@ -1257,18 +1265,32 @@ func main() {
 			}
 
 			// Pico rebooted (e.g. external flash, power cycle): re-query
-			// firmware version and report it to the server.
+			// firmware version and report it to the server. The Pico emits
+			// STATUS:READY before its UART command loop is fully accepting
+			// commands, so retry a few times in a goroutine. Running this
+			// inline would block the event loop for up to ~15s during which
+			// HOOK/KEY events would queue up or be dropped.
 			if event == "STATUS:READY" {
 				slog.Info("pico: detected reboot, re-querying firmware version")
-				if v, c, err := sp.QueryVersion(); err != nil {
-					slog.Warn("pico: version query after reboot failed", "error", err)
-				} else if v != fwVersion || c != fwCommit {
-					fwVersion, fwCommit = v, c
-					slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
-					sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-				} else {
-					slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
-				}
+				go func() {
+					const attempts = 5
+					for attempt := 1; attempt <= attempts; attempt++ {
+						v, c, err := sp.QueryVersion()
+						if err == nil {
+							select {
+							case fwVersionCh <- fwVersionResult{version: v, commit: c}:
+							default:
+								slog.Warn("pico: version result channel full, dropping")
+							}
+							return
+						}
+						slog.Warn("pico: version query attempt failed", "attempt", attempt, "error", err)
+						if attempt < attempts {
+							time.Sleep(500 * time.Millisecond)
+						}
+					}
+					slog.Warn("pico: version query after reboot gave up")
+				}()
 				continue
 			}
 
@@ -1281,6 +1303,15 @@ func main() {
 				easterEggs.Reset()
 				svcCodes.Reset()
 				svcCodes.Reset()
+			}
+
+		case r := <-fwVersionCh:
+			if r.version != fwVersion || r.commit != fwCommit {
+				fwVersion, fwCommit = r.version, r.commit
+				slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
+				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+			} else {
+				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 			}
 
 		case msg := <-sig.Inbox():
