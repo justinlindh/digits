@@ -14,7 +14,11 @@ OVERLAY_SRC = $(REPO_ROOT)/pi/image/rootfs-overlay
 TONES_SRC   = $(REPO_ROOT)/pi/tones
 
 # Files from rootfs-overlay that are only used by the image builder (not deployed via embed)
-OVERLAY_EXCLUDE = boot/firmware/cmdline-ro.txt.fragment etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater
+OVERLAY_EXCLUDE = etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater
+# Directories in rootfs-overlay that are only consumed at image-build time
+# (kernel boot config, device tree fragments). These live on the FAT firmware
+# partition, not the ext4 rootfs, so they must not be extracted at runtime.
+OVERLAY_EXCLUDE_DIRS = boot
 
 .PHONY: build build-local builder deploy run test clean embed clean-embed
 
@@ -22,6 +26,7 @@ embed: clean-embed
 	@mkdir -p $(EMBED_DIR)/rootfs $(EMBED_DIR)/data
 	@cp -a $(OVERLAY_SRC)/. $(EMBED_DIR)/rootfs/
 	@for f in $(OVERLAY_EXCLUDE); do rm -f $(EMBED_DIR)/rootfs/$$f; done
+	@for d in $(OVERLAY_EXCLUDE_DIRS); do rm -rf $(EMBED_DIR)/rootfs/$$d; done
 	@find $(EMBED_DIR)/rootfs -type d -empty -delete 2>/dev/null || true
 	@cp -a $(TONES_SRC)/. $(EMBED_DIR)/data/tones/
 	@echo "embed: prepared $$(find $(EMBED_DIR) -type f | wc -l) files"
