@@ -18,6 +18,13 @@ echo "=== Building digitsd aarch64 v${VERSION} (commit ${GIT_COMMIT}) ==="
 ARTIFACT="digitsd-${VERSION}-aarch64"
 
 cd "${REPO_DIR}/pi/digitsd"
+
+# Populate the embed tree so the //go:embed directive sees actual files
+# rather than just the committed .gitkeep. Without this, the binary ships
+# with an effectively empty assets FS and digitsd's asset extractor becomes
+# a no-op, leaving stale files on disk after every OTA update.
+make embed
+
 export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig"
 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go build \
     -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=${VERSION} \
