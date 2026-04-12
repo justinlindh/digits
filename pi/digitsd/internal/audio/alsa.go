@@ -10,6 +10,10 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"os/exec"
+	"strings"
+	"sync"
 	"unsafe"
 )
 
@@ -18,16 +22,62 @@ import (
 // but the caller should drain stale data to re-sync.
 var ErrUnderrun = errors.New("alsa: buffer underrun recovered")
 
-const (
-	// CodecCardName is the ALSA card name for the RPi Codec Zero (DA7212).
-	// Used with amixer/alsactl which accept -c <name>.
-	CodecCardName = "Zero"
+// codecConfig holds the detected codec's ALSA identifiers and mixer control names.
+type codecConfig struct {
+	CardName   string // ALSA card name for amixer/alsactl -c
+	DeviceName string // ALSA device for plughw
+	MixerName  string // Volume mixer control name (PCM vs Lineout)
+	ALSAMin    int    // Volume range minimum
+	ALSAMax    int    // Volume range maximum
+}
 
-	// CodecDeviceName is the stable ALSA device identifier for the Codec Zero.
-	// Uses the card name instead of a numeric index so it works regardless of
-	// card enumeration order (HDMI vs codec).
-	CodecDeviceName = "plughw:CARD=Zero,DEV=0"
+var (
+	detectedCodec *codecConfig
+	detectOnce    sync.Once
 )
+
+// detectCodec probes ALSA for the onboard TLV320AIC3104 ("digitscodec").
+// Falls back to the Codec Zero HAT ("Zero") if not found.
+func detectCodec() *codecConfig {
+	detectOnce.Do(func() {
+		// Try onboard TLV320AIC3104 first
+		out, err := exec.Command("amixer", "-c", "digitscodec", "info").CombinedOutput()
+		if err == nil && strings.Contains(string(out), "digitscodec") {
+			slog.Info("audio: detected onboard TLV320AIC3104 codec")
+			detectedCodec = &codecConfig{
+				CardName:   "digitscodec",
+				DeviceName: "plughw:CARD=digitscodec,DEV=0",
+				MixerName:  "PCM",
+				ALSAMin:    40,
+				ALSAMax:    115,
+			}
+			return
+		}
+
+		// Fall back to Codec Zero HAT (DA7212)
+		slog.Info("audio: using Codec Zero HAT (DA7212)")
+		detectedCodec = &codecConfig{
+			CardName:   "Zero",
+			DeviceName: "plughw:CARD=Zero,DEV=0",
+			MixerName:  "Lineout",
+			ALSAMin:    20,
+			ALSAMax:    58,
+		}
+	})
+	return detectedCodec
+}
+
+// CodecCardName returns the ALSA card name for the detected codec.
+func CodecCardName() string { return detectCodec().CardName }
+
+// CodecDeviceName returns the ALSA device identifier for the detected codec.
+func CodecDeviceName() string { return detectCodec().DeviceName }
+
+// CodecMixerName returns the mixer control name for volume adjustment.
+func CodecMixerName() string { return detectCodec().MixerName }
+
+// CodecALSARange returns the min/max ALSA values for volume mapping.
+func CodecALSARange() (int, int) { c := detectCodec(); return c.ALSAMin, c.ALSAMax }
 
 // Config holds ALSA device parameters.
 type Config struct {
@@ -37,11 +87,11 @@ type Config struct {
 	FrameSize  int // samples per frame per channel (960 = 20ms at 48kHz)
 }
 
-// DefaultCaptureConfig returns config for the DA7212 codec: stereo capture at 48kHz.
+// DefaultCaptureConfig returns config for the detected codec: stereo capture at 48kHz.
 // Uses plughw to bypass dmix (which is playback-only).
 func DefaultCaptureConfig() Config {
 	return Config{
-		Device:     CodecDeviceName,
+		Device:     CodecDeviceName(),
 		SampleRate: 48000,
 		Channels:   2,
 		FrameSize:  960,

@@ -105,8 +105,15 @@ This eliminates J5 (L298N control header), the L298N module, and its wiring.
 | `LED_OUT` | RP2040 GP14 | R1 -> J6 |
 | `KP_ROW0-3` | RP2040 GP2-5 | J4 pins 7-4 |
 | `KP_COL0-2` | RP2040 GP6-8 | J4 pins 1-3 |
-| `MIC_HOT` / `MIC_GND` | J8 pins 1/4 | C3, J9 pins 1/3 |
-| `EAR_P` / `EAR_N` | J8 pins 2/3 | J10 pins 1/2 |
+| `MIC_HOT` / `MIC_GND` | J8 pins 1/4 | C3, J9, R8/C23 -> U6 MIC1LP |
+| `EAR_P` / `EAR_N` | U6 HPLOUT -> C24 | J10, J8 pins 2/3 |
+| `CODEC_SDA` | Pi GPIO2 (J1 pin 3) | U6 SDA |
+| `CODEC_SCL` | Pi GPIO3 (J1 pin 5) | U6 SCL |
+| `CODEC_BCLK` | Pi GPIO18 (J1 pin 12) | U6 BCLK |
+| `CODEC_WCLK` | Pi GPIO19 (J1 pin 35) | U6 WCLK |
+| `CODEC_DIN` | Pi GPIO21 (J1 pin 40) | U6 DIN |
+| `CODEC_DOUT` | Pi GPIO20 (J1 pin 38) | U6 DOUT |
+| `CODEC_MCLK` | Pi GPIO4 (J1 pin 7) | U6 MCLK |
 | `+5V` | LM2596 output | U5 input, Pi 5V (pin 2) |
 | `+3.3V` | U5 (AMS1117-3.3) output | RP2040 VREG_VIN, IOVDD/DVDD/USB_VDD/ADC_AVDD, U4 flash VCC |
 | `+12V` | Barrel jack | LM2596 input, U2 VCC |
@@ -139,12 +146,12 @@ The bare RP2040 (U3, QFN-56) requires a small support circuit that the Pico H mo
 | Y1 | 12MHz crystal | 12MHz | 3225 (3.2x2.5mm) | C9002 | USB and PLL clock source |
 | C5, C6 | Ceramic cap | 22pF | 0402 | C1555 | Crystal load capacitors |
 | ~~C7, C8~~ | ~~Ceramic cap~~ | ~~1nF~~ | ~~0402~~ | ~~C52923~~ | **Removed** -- 1nF with 27 ohm creates 5.9MHz LPF, below USB Full Speed 12MHz |
-| C9, C10, C11 | Ceramic cap | 10uF 10V | 0402 | C15525 | VREG_VIN, VREG_VOUT, LDO output bulk |
+| C9, C10, C11 | Ceramic cap | 10uF 6.3V | 0603 | C109455 | VREG_VIN, VREG_VOUT, LDO output bulk |
 | C12-C16 | Ceramic cap | 100nF 50V | 0805 | C49678 | Bypass: IOVDD, DVDD, USB_VDD, ADC_AVDD, flash VCC |
 | R3, R4 | Resistor | 27 ohm | 0402 | C25100 | USB D+/D- series resistors |
-| R5 | Resistor | 10k ohm | 0402 | C25744 | RUN pin pullup to 3.3V |
-| R6 | Resistor | 10k ohm | 0402 | C25744 | QSPI_SS pullup to 3.3V |
-| F1 | PTC Fuse | 1.5A | 1210 | C369159 | Resettable overcurrent protection on +12V input |
+| R5 | Resistor | 10k ohm | 0402 | C60490 | RUN pin pullup to 3.3V |
+| R6 | Resistor | 10k ohm | 0402 | C60490 | QSPI_SS pullup to 3.3V |
+| F1 | PTC Fuse | 1.5A | 1210 | C70102 | Resettable overcurrent protection on +12V input |
 
 ### RP2040 Pin Connections
 
@@ -214,7 +221,7 @@ Exposed SMD pads (no cost, zero BOM):
 ## JLCPCB Assembly Strategy
 
 ### SMT-assembled (top side, JLCPCB does this)
-U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), D1, L1, Y1, F1, C1-C16, R1-R6
+U1, U2, U3 (RP2040), U4 (flash), U5 (3.3V LDO), U6 (codec), D1, L1, Y1, F1, C1-C27, R1-R8
 
 ### Hand-solder after delivery
 J1 (B.Cu side), J3, J4, J6, J7, J8, J9, J10, SW1
@@ -233,6 +240,7 @@ J1 (B.Cu side), J3, J4, J6, J7, J8, J9, J10, SW1
 
 - [x] Phase 1: Component selection and BOM (this document)
 - [x] Phase 2: Update KiCad schematic (swap footprints, add DRV8871 circuit, RP2040 support circuit)
+- [ ] Phase 2.5: Add audio codec circuit (TLV320AIC3104)
 - [x] Phase 3: Update PCB layout (place SMD components, route traces, GND pour)
 - [x] Phase 4: DRC validation (0 errors, 0 unconnected pads)
 - [ ] Phase 5: Generate JLCPCB production files (Gerber + BOM + CPL via Fabrication Toolkit)
@@ -284,6 +292,63 @@ J2 (SWD debug connector) has been removed. SWD signals now route directly from J
 
 ---
 
+## TLV320AIC3104 Audio Codec Circuit
+
+Replaces the Raspberry Pi Codec Zero HAT (DA7212). The codec connects to the Pi via I2S (GPIO18-21) and I2C (GPIO2/3) through J1. GPCLK0 (GPIO4) is wired to MCLK as a fallback, but the default configuration uses PLL-from-BCLK.
+
+### Components
+
+| Ref | Part | Value | Package | JLCPCB # | Purpose |
+|-----|------|-------|---------|-----------|---------|
+| U6 | TLV320AIC3104IRHBR | -- | QFN-32 (5x5mm) | C181753 | Audio codec |
+| C17 | MLCC | 10uF | 0402 | C15525 | AVDD decoupling |
+| C18 | MLCC | 100nF | 0805 | C49678 | DRVDD decoupling (pin 10) |
+| C19 | MLCC | 10uF | 0402 | C15525 | DRVDD decoupling (pin 16) |
+| C20 | MLCC | 100nF | 0805 | C49678 | IOVDD decoupling |
+| C21 | MLCC | 100nF | 0805 | C49678 | AVDD additional decoupling |
+| C22 | MLCC | 10uF | 0402 | C15525 | AVSS analog ground bulk |
+| C23 | MLCC | 1uF | 0402 | C52923 | Mic input AC coupling |
+| C24 | MLCC | 10uF | 0402 | C15525 | Earpiece output AC coupling |
+| C25 | MLCC | 10uF | 0402 | C15525 | DVDD decoupling (internal 1.8V LDO output) |
+| R7 | Resistor | 10k | 0402 | C60490 | RESET pullup to +3V3 |
+| R8 | Resistor | 2.2k | 0402 | C25879 | MICBIAS series resistor for electret mic |
+| C26 | MLCC | 470nF | 0402 | C47339 | Unused analog inputs to GND (noise suppression) |
+| C27 | MLCC | 1nF | 0402 | C14442 | RESET pin ESD protection cap |
+
+### Pin Connections
+
+**Power:**
+- AVDD (pin 17) -> +3.3V (C17 + C21 decoupling)
+- DRVDD (pin 10, 16) -> +3.3V (C18 + C19 decoupling)
+- IOVDD (pin 31) -> +3.3V (C20 decoupling)
+- DVDD (pin 24) -> C25 to GND only. **DO NOT connect to +3.3V.** This is the internal 1.8V LDO output.
+- AVSS1 (pin 9), AVSS2 (pin 18), DVSS (pin 30), DRVSS (pin 13), GND/EP (pin 33) -> GND
+- RESET (pin 23) -> R7 (10k) -> +3.3V
+
+**Digital (via J1):**
+
+| Pi GPIO | J1 Pin | Function | U6 Pin |
+|---------|--------|----------|--------|
+| GPIO2 | 3 | I2C1 SDA | SDA (pin 1) |
+| GPIO3 | 5 | I2C1 SCL | SCL (pin 32) |
+| GPIO18 | 12 | I2S BCLK | BCLK (pin 26) |
+| GPIO19 | 35 | I2S LRCLK | WCLK (pin 27) |
+| GPIO21 | 40 | I2S DOUT (Pi TX) | DIN (pin 28) |
+| GPIO20 | 38 | I2S DIN (Pi RX) | DOUT (pin 29) |
+| GPIO4 | 7 | GPCLK0 | MCLK (pin 25) |
+
+**Audio:**
+- Mic: MICBIAS (pin 7) -> R8 (2.2k) -> mic bias point; MIC_FROM_SW (from J9) -> C23 (1uF, AC coupling) -> MIC1LP (pin 2). MIC1LM (pin 3) to GND (single-ended).
+- Earpiece: HPLOUT (pin 11) -> C24 (10uF, AC coupling) -> EAR_P. HPLCOM (pin 12) no-connect (power down via registers).
+- Unused inputs: MIC1RP, MIC1RM, MIC2L, MIC2R -> tied together via C26 (470nF) to GND (prevents noise coupling per TI recommendation).
+- Unused outputs: HPROUT, HPRCOM, LEFT_LOP/LOM, RIGHT_LOP/LOM -- no-connect flags.
+
+**Control:**
+- I2C address is fixed at 0x18 (no ADDR pin on TLV320AIC3104).
+- ~{RESET} (pin 23) -> R7 (10k) pullup to +3V3, C27 (1nF) to GND for ESD protection.
+
+---
+
 ## Reference
 
 - V1 design: `../v1/PLAN.md`
@@ -295,6 +360,8 @@ J2 (SWD debug connector) has been removed. SWD signals now route directly from J
 - DRV8871 datasheet: https://www.ti.com/lit/ds/symlink/drv8871.pdf
 - LM2596 datasheet: https://www.ti.com/lit/ds/symlink/lm2596.pdf
 - AMS1117-3.3 datasheet: http://www.advanced-monolithic.com/pdf/ds1117.pdf
+- TLV320AIC3104 datasheet: https://www.ti.com/lit/ds/symlink/tlv320aic3104.pdf
+- Codec wiring reference: `CODEC-WIRING-REFERENCE.md`
 
 ---
 
@@ -338,12 +405,20 @@ Use this to assign LCSC part numbers in KiCad (via symbol field `LCSC` or using 
 | Y1 | Device:Crystal | Crystal_SMD_3225-4Pin_3.2x2.5mm | C9002 | [Link](https://jlcpcb.com/partdetail/C9002) | Basic |
 | C5,C6 | Device:C | Capacitor_SMD:C_0402_1005Metric | C1555 | [Link](https://jlcpcb.com/partdetail/C1555) | Basic |
 | ~~C7,C8~~ | ~~Device:C~~ | ~~Capacitor_SMD:C_0402_1005Metric~~ | ~~C52923~~ | **Removed** | -- |
-| C9-C11 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
+| C9-C11 | Device:C | Capacitor_SMD:C_0603_1608Metric | C109455 | [Link](https://jlcpcb.com/partdetail/C109455) | Basic |
 | C12-C16 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | Basic |
 | R3,R4 | Device:R | Resistor_SMD:R_0402_1005Metric | C25100 | [Link](https://jlcpcb.com/partdetail/C25100) | Basic |
-| R5 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | [Link](https://jlcpcb.com/partdetail/C25744) | Basic |
-| R6 | Device:R | Resistor_SMD:R_0402_1005Metric | C25744 | (same as R5) | Basic |
-| F1 | Device:Polyfuse | Fuse:Fuse_1210_3225Metric | C369159 | [Link](https://jlcpcb.com/partdetail/C369159) | Basic |
+| R5 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | [Link](https://jlcpcb.com/partdetail/C60490) | Basic |
+| R6 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | (same as R5) | Basic |
+| F1 | Device:Polyfuse | Fuse:Fuse_1210_3225Metric | C70102 | [Link](https://jlcpcb.com/partdetail/C70102) | Basic |
+| U6 | TLV320AIC3104IRHBR | Package_DFN_QFN:QFN-32-1EP_5x5mm_P0.5mm_EP3.5x3.5mm | C181753 | [Link](https://jlcpcb.com/partdetail/C181753) | Extended |
+| C17,C19,C22,C24,C25 | Device:C | Capacitor_SMD:C_0402_1005Metric | C15525 | [Link](https://jlcpcb.com/partdetail/C15525) | Basic |
+| C18,C20,C21 | Device:C | Capacitor_SMD:C_0805_2012Metric | C49678 | (same as C3) | Basic |
+| C23 | Device:C | Capacitor_SMD:C_0402_1005Metric | C52923 | [Link](https://jlcpcb.com/partdetail/C52923) | Basic |
+| R7 | Device:R | Resistor_SMD:R_0402_1005Metric | C60490 | (same as R5) | Basic |
+| R8 | Device:R | Resistor_SMD:R_0402_1005Metric | C25879 | [Link](https://jlcpcb.com/partdetail/C25879) | Basic |
+| C26 | Device:C | Capacitor_SMD:C_0402_1005Metric | C47339 | [Link](https://jlcpcb.com/partdetail/C47339) | Basic |
+| C27 | Device:C | Capacitor_SMD:C_0402_1005Metric | C14442 | [Link](https://jlcpcb.com/partdetail/C14442) | Basic |
 
 ### ⚠️ Low Stock Alert
 

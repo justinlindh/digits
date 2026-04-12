@@ -10,17 +10,17 @@ type PipelineConfig struct {
 	SampleRate  int
 	FrameMs     int
 	OpusBitrate int
-	MicChannel  int  // 0=left, 1=right. DA7212: Mic 1 routed to Mixin Left.
+	MicChannel  int  // 0=left, 1=right. Both codecs route mic to left channel.
 	Denoise     bool
 }
 
-// DefaultPipelineConfig returns sensible defaults for the DA7212 codec setup.
+// DefaultPipelineConfig returns sensible defaults for both codec types.
 func DefaultPipelineConfig() PipelineConfig {
 	return PipelineConfig{
 		SampleRate:  48000,
 		FrameMs:     20,
 		OpusBitrate: 24000,
-		MicChannel:  0, // Mic 1 routed to Mixin Left in digits_mixer.state
+		MicChannel:  0, // Both codecs route mic to left channel
 		Denoise:     true,
 	}
 }

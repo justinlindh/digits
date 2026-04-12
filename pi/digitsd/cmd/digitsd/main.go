@@ -886,7 +886,7 @@ func main() {
 	// 2. Open ALSA playback (direct hardware, no dmix)
 	pbDev := *alsaDevice
 	if pbDev == "" {
-		pbDev = audio.CodecDeviceName
+		pbDev = audio.CodecDeviceName()
 		slog.Info("alsa playback: using codec", "device", pbDev)
 	}
 	pbCfg := audio.Config{
