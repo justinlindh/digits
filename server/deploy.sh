@@ -15,8 +15,9 @@ COMPOSE_FILE="docker-compose.prod.yml"
 SERVICES=("${@:-signald}")
 
 # Set build version from git tags so the binary reports it at runtime
+git fetch --tags
 export BUILD_VERSION
-BUILD_VERSION="$(git describe --tags --match 'server/*' --always 2>/dev/null | sed 's|^server/||')"
+BUILD_VERSION="$(git describe --tags --match 'server/v*' --always 2>/dev/null | sed 's|^server/v||')"
 export BUILD_COMMIT
 BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null)"
 
