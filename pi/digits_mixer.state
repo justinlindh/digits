@@ -46,8 +46,8 @@ state.Zero {
 	control.4 {
 		iface MIXER
 		name 'Mixin PGA Volume'
-		value.0 7
-		value.1 5
+		value.0 15
+		value.1 15
 		comment {
 			access 'read write'
 			type INTEGER
@@ -55,8 +55,8 @@ state.Zero {
 			range '0 - 15'
 			dbmin -450
 			dbmax 1800
-			dbvalue.0 600
-			dbvalue.1 300
+			dbvalue.0 1800
+			dbvalue.1 1800
 		}
 	}
 	control.5 {
@@ -978,7 +978,7 @@ state.Zero {
 	control.78 {
 		iface MIXER
 		name 'Mixin Right Mic 1 Switch'
-		value false
+		value true
 		comment {
 			access 'read write'
 			type BOOLEAN
