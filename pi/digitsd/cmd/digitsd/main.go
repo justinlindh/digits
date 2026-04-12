@@ -1257,11 +1257,25 @@ func main() {
 			}
 
 			// Pico rebooted (e.g. external flash, power cycle): re-query
-			// firmware version and report it to the server.
+			// firmware version and report it to the server. The Pico emits
+			// STATUS:READY before its UART command loop is fully accepting
+			// commands, so retry a few times before giving up.
 			if event == "STATUS:READY" {
 				slog.Info("pico: detected reboot, re-querying firmware version")
-				if v, c, err := sp.QueryVersion(); err != nil {
-					slog.Warn("pico: version query after reboot failed", "error", err)
+				var (
+					v, c string
+					err  error
+				)
+				for attempt := 1; attempt <= 5; attempt++ {
+					v, c, err = sp.QueryVersion()
+					if err == nil {
+						break
+					}
+					slog.Warn("pico: version query after reboot failed", "attempt", attempt, "error", err)
+					time.Sleep(500 * time.Millisecond)
+				}
+				if err != nil {
+					slog.Warn("pico: version query after reboot gave up", "error", err)
 				} else if v != fwVersion || c != fwCommit {
 					fwVersion, fwCommit = v, c
 					slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
