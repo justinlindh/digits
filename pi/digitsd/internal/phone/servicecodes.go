@@ -211,7 +211,7 @@ const (
 	defaultVolume  = 5
 )
 
-// volumeToALSA converts a 0-9 volume level to ALSA Lineout value (20-58).
+// volumeToALSA converts a 0-9 volume level to ALSA value for the detected codec.
 func volumeToALSA(level int) int {
 	if level < 0 {
 		level = 0
@@ -219,15 +219,17 @@ func volumeToALSA(level int) int {
 	if level > 9 {
 		level = 9
 	}
-	return 20 + (level * (58 - 20) / 9)
+	min, max := audio.CodecALSARange()
+	return min + (level * (max - min) / 9)
 }
 
-// SetVolume sets Lineout volume. Level 0-9 maps to ALSA 20-58.
+// SetVolume sets volume on the detected codec. Level 0-9.
 // Persists the level to /data/digits/volume and saves full mixer state.
 func SetVolume(level int) error {
 	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName
-	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	card := audio.CodecCardName()
+	mixer := audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
 	}
@@ -241,7 +243,7 @@ func SetVolume(level int) error {
 	// Save full mixer state
 	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
 	_ = cmd.Run() // best-effort
-	slog.Info("volume set", "level", level, "max", 9, "lineout", alsaVal, "persisted", true)
+	slog.Info("volume set", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal, "persisted", true)
 	return nil
 }
 
@@ -257,11 +259,12 @@ func RestoreVolume() {
 		}
 	}
 	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName
-	cmd := exec.Command("amixer", "-c", card, "sset", "Lineout", fmt.Sprintf("%d", alsaVal))
+	card := audio.CodecCardName()
+	mixer := audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		slog.Warn("volume restore: amixer failed", "output", strings.TrimSpace(string(out)), "error", err)
 		return
 	}
-	slog.Info("volume restored", "level", level, "max", 9, "lineout", alsaVal)
+	slog.Info("volume restored", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal)
 }
