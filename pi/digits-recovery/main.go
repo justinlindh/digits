@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -23,6 +26,17 @@ type statusResponse struct {
 	Hostname  string `json:"hostname"`
 }
 
+type resetState struct {
+	mu         sync.Mutex
+	inProgress bool
+	status     string
+}
+
+type resetStatusResponse struct {
+	InProgress bool   `json:"in_progress"`
+	Status     string `json:"status"`
+}
+
 type recoveryServer struct {
 	counterPath string
 	recoveryDir string
@@ -30,6 +44,25 @@ type recoveryServer struct {
 	dataDev     string
 	hostname    string
 	rebootFunc  func() error
+	reset       resetState
+}
+
+func (s *recoveryServer) setResetStatus(status string) {
+	s.reset.mu.Lock()
+	s.reset.inProgress = true
+	s.reset.status = status
+	s.reset.mu.Unlock()
+}
+
+func (s *recoveryServer) handleFactoryResetStatus(w http.ResponseWriter, _ *http.Request) {
+	s.reset.mu.Lock()
+	resp := resetStatusResponse{
+		InProgress: s.reset.inProgress,
+		Status:     s.reset.status,
+	}
+	s.reset.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *recoveryServer) handleStatus(w http.ResponseWriter, _ *http.Request) {
@@ -47,6 +80,8 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 		http.Error(w, "failed to clear boot counter", http.StatusInternalServerError)
 		return
 	}
+	// Also clear the persistent recovery-mode flag on the data partition
+	os.Remove(filepath.Join(filepath.Dir(s.counterPath), "recovery-mode"))
 	log.Println("recovery: try again requested, counter cleared")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Rebooting...")
@@ -62,6 +97,16 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 }
 
 func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
+	s.reset.mu.Lock()
+	if s.reset.inProgress {
+		s.reset.mu.Unlock()
+		http.Error(w, "factory reset already in progress", http.StatusConflict)
+		return
+	}
+	s.reset.inProgress = true
+	s.reset.status = "Restoring rootfs..."
+	s.reset.mu.Unlock()
+
 	log.Println("recovery: factory reset requested")
 
 	// Non-fatal: data partition may be corrupt (that's why we're here).
@@ -71,15 +116,27 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 
 	bin := filepath.Join(s.recoveryDir, "bin")
-	rootfsImg := s.recoveryDir + "/rootfs.img.zst"
+	rootfsImg := filepath.Join(s.recoveryDir, "rootfs.img.zst")
 	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, s.rootfsDev)
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
-		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "status=progress"),
+		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "conv=fsync"),
 	); err != nil {
 		log.Printf("recovery: rootfs restore failed: %v", err)
 		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
 		return
+	}
+	log.Println("recovery: rootfs restore complete, syncing")
+	syscall.Sync()
+
+	s.setResetStatus("Formatting data partition...")
+
+	// Close log file and unmount data partition before formatting.
+	// The log file holds /data busy, preventing unmount.
+	closeDataLog()
+	if out, err := exec.Command(filepath.Join(bin, "umount"), "/data").CombinedOutput(); err != nil {
+		log.Printf("recovery: umount /data failed (trying lazy): %v: %s", err, string(out))
+		exec.Command(filepath.Join(bin, "umount"), "-l", "/data").Run()
 	}
 
 	log.Printf("recovery: formatting %s", s.dataDev)
@@ -101,7 +158,9 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		return
 	}
 
-	skelArchive := s.recoveryDir + "/data-skeleton.tar.zst"
+	s.setResetStatus("Restoring data...")
+
+	skelArchive := filepath.Join(s.recoveryDir, "data-skeleton.tar.zst")
 	if err := pipeCommands(
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
 		exec.Command(filepath.Join(bin, "tar"), "xf", "-", "-C", dataMnt),
@@ -113,6 +172,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 	}
 	exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
 
+	s.setResetStatus("Rebooting...")
 	log.Println("recovery: factory reset complete, rebooting")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Factory reset complete. Rebooting...")
@@ -199,6 +259,8 @@ ieee80211d=1
 	dnsmasqConf := "/tmp/recovery-dnsmasq.conf"
 	os.WriteFile(dnsmasqConf, []byte(`interface=wlan0
 bind-interfaces
+user=root
+pid-file=/tmp/dnsmasq.pid
 dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m
 address=/#/192.168.4.1
 no-resolv
@@ -206,7 +268,7 @@ domain-needed
 dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 `), 0644)
 
-	// Start hostapd
+	// Start hostapd (forks to background with -B)
 	hostapd := exec.Command(filepath.Join(bin, "hostapd"), "-B", hostapdConf)
 	hostapd.Stdout = os.Stdout
 	hostapd.Stderr = os.Stderr
@@ -214,27 +276,97 @@ dhcp-leasefile=/tmp/dnsmasq-recovery.leases
 		return fmt.Errorf("hostapd: %w", err)
 	}
 
-	// Start dnsmasq
+	// Start dnsmasq (daemonizes by default)
 	dnsmasq := exec.Command(filepath.Join(bin, "dnsmasq"), "-C", dnsmasqConf)
 	dnsmasq.Stdout = os.Stdout
 	dnsmasq.Stderr = os.Stderr
 	if err := dnsmasq.Run(); err != nil {
-		return fmt.Errorf("dnsmasq: %w", err)
+		// Capture error details on retry with combined output
+		retryOut, retryErr := exec.Command(filepath.Join(bin, "dnsmasq"), "--no-daemon", "--test", "-C", dnsmasqConf).CombinedOutput()
+		return fmt.Errorf("dnsmasq: %w (test: %v: %s)", err, retryErr, string(retryOut))
 	}
 
 	log.Println("recovery: AP mode started (SSID: Digits-Recovery)")
 	return nil
 }
 
+func isInitMode() bool {
+	return os.Getpid() == 1
+}
+
+// waitForInterface waits for a network interface to appear.
+func waitForInterface(name string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := net.InterfaceByName(name); err == nil {
+			return nil
+		}
+		time.Sleep(time.Second)
+	}
+	return fmt.Errorf("timeout waiting for %s", name)
+}
+
+// unblockWifi unblocks all WiFi rfkill devices via sysfs, avoiding the need
+// for the rfkill binary on the recovery partition.
+func unblockWifi() {
+	entries, err := os.ReadDir("/sys/class/rfkill")
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		typePath := filepath.Join("/sys/class/rfkill", entry.Name(), "type")
+		data, err := os.ReadFile(typePath)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(string(data)) == "wlan" {
+			softPath := filepath.Join("/sys/class/rfkill", entry.Name(), "soft")
+			os.WriteFile(softPath, []byte("0"), 0644)
+		}
+	}
+}
+
 func main() {
+	initMode := isInitMode()
+
+	if initMode {
+		log.Println("digits-recovery: running as init (PID 1)")
+		initSetup()
+	}
+
 	hostname, _ := os.Hostname()
 
+	// When running as init from the recovery partition, the recovery files
+	// (rootfs.img.zst, bin/, etc.) are at the filesystem root.
 	recoveryDir := envOr("RECOVERY_DIR", "/mnt/recovery")
+	if initMode && os.Getenv("RECOVERY_DIR") == "" {
+		recoveryDir = "/"
+	}
+
+	if initMode {
+		// Wait for WiFi hardware (kernel module + firmware load)
+		log.Println("recovery: waiting for wlan0...")
+		if err := waitForInterface("wlan0", 15*time.Second); err != nil {
+			log.Printf("recovery: WARNING: %v", err)
+		}
+
+		// Unblock WiFi radio (rfkill may have soft-blocked it)
+		unblockWifi()
+	}
 
 	// Start AP mode so users can connect
 	if err := startAP(recoveryDir); err != nil {
 		log.Printf("recovery: WARNING: AP setup failed: %v", err)
 		log.Println("recovery: continuing anyway (HTTP server may not be reachable)")
+	}
+
+	rebootFn := func() error {
+		return exec.Command("systemctl", "reboot").Run()
+	}
+	if initMode {
+		rebootFn = func() error {
+			return rebootDirect()
+		}
 	}
 
 	srv := &recoveryServer{
@@ -243,14 +375,13 @@ func main() {
 		rootfsDev:   envOr("ROOTFS_DEV", "/dev/mmcblk0p2"),
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),
 		hostname:    hostname,
-		rebootFunc: func() error {
-			return exec.Command("systemctl", "reboot").Run()
-		},
+		rebootFunc:  rebootFn,
 	}
 
 	staticSub, _ := fs.Sub(staticFS, "static")
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /status", srv.handleStatus)
+	mux.HandleFunc("GET /factory-reset/status", srv.handleFactoryResetStatus)
 	mux.HandleFunc("POST /try-again", srv.handleTryAgain)
 	mux.HandleFunc("POST /factory-reset", srv.handleFactoryReset)
 	mux.Handle("GET /style.css", http.FileServer(http.FS(staticSub)))

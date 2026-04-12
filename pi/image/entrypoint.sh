@@ -46,8 +46,15 @@ else
     [[ -f "$SOURCE_IMAGE" ]] || die "Image not found: $SOURCE_IMAGE"
 fi
 
-# Trust the mounted repo (owned by host user, not container root)
+# Trust the mounted repo (owned by host user, not container root).
+# In a git worktree, .git is a file pointing to the main repo's
+# .git/worktrees/ directory. Trust both paths so git works either way.
 git config --global --add safe.directory /digits
+if [[ -f /digits/.git ]]; then
+    MAIN_GIT_DIR=$(sed -n 's/^gitdir: //p' /digits/.git)
+    MAIN_GIT_DIR="${MAIN_GIT_DIR%/worktrees/*}"
+    git config --global --add safe.directory "$(dirname "$MAIN_GIT_DIR")" 2>/dev/null || true
+fi
 
 # Register qemu-aarch64 binfmt if not already present (needed for chroot)
 if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
@@ -92,6 +99,28 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     ./cmd/digits-setup/
 
 info "Binaries ready in tools/build/"
+
+# Download latest firmware ELF from GitHub releases
+info "Downloading latest Pico firmware from GitHub releases..."
+FW_API_URL="https://api.github.com/repos/justinlindh/digits/releases"
+FW_TAG=$(curl -sf "$FW_API_URL" | python3 -c "
+import json, sys
+for r in json.load(sys.stdin):
+    if r['tag_name'].startswith('fw/'):
+        print(r['tag_name']); break
+" 2>/dev/null || true)
+if [[ -n "$FW_TAG" ]]; then
+    FW_VERSION="${FW_TAG#fw/}"
+    FW_DOWNLOAD_URL="https://github.com/justinlindh/digits/releases/download/${FW_TAG}/firmware-${FW_VERSION}.elf"
+    info "  Downloading firmware ${FW_VERSION}..."
+    if curl -sfL -o /digits/tools/build/firmware.elf "$FW_DOWNLOAD_URL"; then
+        info "  Firmware downloaded: tools/build/firmware.elf"
+    else
+        echo "WARN: Failed to download firmware from $FW_DOWNLOAD_URL -- image will not include firmware" >&2
+    fi
+else
+    echo "WARN: Could not determine latest firmware release tag -- image will not include firmware" >&2
+fi
 
 # Run the image builder in a working directory, then copy output back
 BUILD_WD="/build"

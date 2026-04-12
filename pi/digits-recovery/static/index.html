@@ -35,21 +35,53 @@
   </div>
 
   <script>
+  var pollTimer = null;
+
   fetch('/status').then(r => r.json()).then(data => {
     document.getElementById('boot-count').textContent = data.boot_count;
     document.getElementById('hostname').textContent = data.hostname;
   });
 
-  function confirmReset() {
-    if (confirm('This will erase ALL settings, Wi-Fi configuration, and phone pairing. The device will need to be set up again from scratch.\n\nContinue?')) {
-      document.getElementById('progress').classList.remove('hidden');
-      document.getElementById('progress-text').textContent = 'Restoring factory image... This may take a few minutes.';
-      document.getElementById('reset-form').querySelector('button').disabled = true;
-      fetch('/factory-reset', {method: 'POST'}).then(function() {
-        document.getElementById('progress-text').textContent = 'Reset complete. Device is rebooting...';
+  // On page load, check if a factory reset is already in progress (handles refresh)
+  checkResetStatus();
+
+  function checkResetStatus() {
+    fetch('/factory-reset/status').then(r => r.json()).then(data => {
+      if (data.in_progress) {
+        showProgress(data.status);
+        startPolling();
+      }
+    }).catch(function() {});
+  }
+
+  function showProgress(message) {
+    document.getElementById('progress').classList.remove('hidden');
+    document.getElementById('progress-text').textContent = message;
+    document.querySelector('.actions').classList.add('hidden');
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function() {
+      fetch('/factory-reset/status').then(r => r.json()).then(data => {
+        if (data.in_progress) {
+          document.getElementById('progress-text').textContent = data.status;
+        }
       }).catch(function() {
         document.getElementById('progress-text').textContent = 'Connection lost. Device may be rebooting.';
+        clearInterval(pollTimer);
+        pollTimer = null;
       });
+    }, 2000);
+  }
+
+  function confirmReset() {
+    if (confirm('This will erase ALL settings, Wi-Fi configuration, and phone pairing. The device will need to be set up again from scratch.\n\nContinue?')) {
+      showProgress('Restoring factory image... This may take a few minutes.');
+      startPolling();
+      fetch('/factory-reset', {method: 'POST'}).then(function() {
+        document.getElementById('progress-text').textContent = 'Reset complete. Device is rebooting...';
+      }).catch(function() {});
     }
   }
   </script>

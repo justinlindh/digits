@@ -46,6 +46,20 @@ DOCKER_ARGS=(
     -v "$CACHE_VOLUME":/cache
     -w /digits
 )
+
+# If this is a git worktree, .git is a file pointing to the main repo's
+# .git/worktrees/ directory. Mount the main repo's .git so the pointer
+# resolves inside the container.
+GIT_PATH="$REPO_DIR/.git"
+if [[ -f "$GIT_PATH" ]]; then
+    MAIN_GIT_DIR=$(sed -n 's/^gitdir: //p' "$GIT_PATH")
+    # Resolve to the top-level .git directory (strip /worktrees/<name>)
+    MAIN_GIT_DIR="${MAIN_GIT_DIR%/worktrees/*}"
+    if [[ -d "$MAIN_GIT_DIR" ]]; then
+        info "Worktree detected -- mounting main .git for container"
+        DOCKER_ARGS+=(-v "$MAIN_GIT_DIR":"$MAIN_GIT_DIR":ro)
+    fi
+fi
 ENTRYPOINT_ARGS=()
 [[ -n "$DEV_FLAG" ]] && ENTRYPOINT_ARGS+=("$DEV_FLAG")
 

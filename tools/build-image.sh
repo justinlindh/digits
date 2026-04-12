@@ -620,6 +620,18 @@ else
     warn "No tone WAV files found in $TONES_DIR — skipping"
 fi
 
+# ── step 14a: copy Pico firmware to /data (host-side) ────────────────────────
+
+FW_ELF="${BUILD_DIR}/firmware.elf"
+if [[ -f "$FW_ELF" ]]; then
+    info "Copying Pico firmware to /data/digits/firmware.elf..."
+    cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
+    chown 999:992 "${DATA_MNT}/digits/firmware.elf"
+    chmod 644 "${DATA_MNT}/digits/firmware.elf"
+else
+    warn "No firmware.elf found in tools/build/ -- Pico will need OTA flash after first boot"
+fi
+
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
 MIXER_STATE="${REPO_DIR}/pi/digits_mixer.state"
@@ -643,9 +655,10 @@ fi
 
 info "Populating recovery partition..."
 
-# Create compressed rootfs snapshot
-info "  Creating rootfs snapshot (this may take a while)..."
-dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT}/rootfs.img.zst"
+# NOTE: rootfs snapshot is deferred until after all rootfs modifications
+# are complete (services enabled, config applied, etc.). It is taken in
+# the final steps before unmount, with the recovery partition temporarily
+# re-mounted. See "step 23b: create rootfs snapshot" below.
 
 # Clean /data before creating skeleton (first-boot must run fresh after reset)
 # Keep config.json (has server_url), remove device-specific state
@@ -669,18 +682,27 @@ RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
 [[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
-# Install recovery binary to rootfs so systemd can launch it
-rm -f "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
-install -m 755 "$RECOVERY_BIN" "${ROOTFS_MNT}/usr/local/bin/digits-recovery"
+# Create mini-rootfs directory structure on recovery partition.
+# After switch_root, this partition IS the root filesystem, so it needs
+# mount points for virtual filesystems and a valid /sbin/init.
+info "  Creating recovery partition rootfs structure..."
+mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin}
 
-# Install initramfs boot-check hook
-info "  Installing initramfs boot-check hook..."
-HOOK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
-[[ -f "$HOOK_SRC" ]] || die "boot-check.sh not found: $HOOK_SRC"
+# Create /sbin/init symlink -- this is what switch_root execs as PID 1
+ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
+
+# Install initramfs hooks
+info "  Installing initramfs hooks..."
+BOOT_CHECK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"
+RECOVERY_ROOT_SRC="${REPO_DIR}/pi/image/initramfs/recovery-root.sh"
+[[ -f "$BOOT_CHECK_SRC" ]]   || die "boot-check.sh not found: $BOOT_CHECK_SRC"
+[[ -f "$RECOVERY_ROOT_SRC" ]] || die "recovery-root.sh not found: $RECOVERY_ROOT_SRC"
 mkdir -p "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount"
-install -m 755 "$HOOK_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount/boot-check"
+mkdir -p "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom"
+install -m 755 "$BOOT_CHECK_SRC"   "${ROOTFS_MNT}/etc/initramfs-tools/scripts/init-premount/boot-check"
+install -m 755 "$RECOVERY_ROOT_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom/recovery-root"
 
-# Set up chroot for tool path resolution and initramfs rebuild
+# Set up chroot for tool path resolution, library copying, and initramfs rebuild
 cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
 mount -t proc proc "${ROOTFS_MNT}/proc"
 mount -t sysfs sys "${ROOTFS_MNT}/sys"
@@ -690,7 +712,6 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
-mkdir -p "${RECOVERY_MNT}/bin"
 for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
     # Use readlink -f inside chroot to resolve symlinks to the real binary
     TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
@@ -705,6 +726,141 @@ for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
         warn "  Tool path ${TOOL_PATH} not found on rootfs for: $tool -- skipping"
     fi
 done
+
+# Copy shared libraries needed by dynamically linked tools.
+# The recovery partition is a self-contained rootfs, so all libs must be present.
+info "  Copying shared libraries for recovery tools..."
+NEEDED_LIBS=$(mktemp)
+for tool_bin in "${RECOVERY_MNT}/bin/"*; do
+    tool_name=$(basename "$tool_bin")
+    # Find the original path in rootfs for ldd
+    ORIG_PATH=$(chroot "$ROOTFS_MNT" which "$tool_name" 2>/dev/null || true)
+    if [[ -n "$ORIG_PATH" ]]; then
+        chroot "$ROOTFS_MNT" ldd "$ORIG_PATH" 2>/dev/null | \
+            grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
+    fi
+done
+
+# Copy unique libraries
+sort -u "$NEEDED_LIBS" | while read -r lib; do
+    if [[ -n "$lib" && -f "${ROOTFS_MNT}${lib}" ]]; then
+        cp -L "${ROOTFS_MNT}${lib}" "${RECOVERY_MNT}/lib/" 2>/dev/null || true
+    fi
+done
+rm -f "$NEEDED_LIBS"
+
+# Copy the dynamic linker (ELF interpreter) -- path is hardcoded in binaries
+for ld_path in /lib/ld-linux-aarch64.so.1 /lib/aarch64-linux-gnu/ld-linux-aarch64.so.1; do
+    if [[ -e "${ROOTFS_MNT}${ld_path}" ]]; then
+        cp -L "${ROOTFS_MNT}${ld_path}" "${RECOVERY_MNT}/lib/ld-linux-aarch64.so.1"
+        info "  Copied dynamic linker from ${ld_path}"
+        break
+    fi
+done
+
+# Safety symlink for multiarch interpreter path
+mkdir -p "${RECOVERY_MNT}/lib/aarch64-linux-gnu"
+ln -sf /lib/ld-linux-aarch64.so.1 "${RECOVERY_MNT}/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1"
+
+# Copy WiFi firmware for the Pi Zero 2 W.
+# The chip is BCM43430 but firmware files use both 43430 and 43436 names
+# (43430 files are often symlinks to 43436 variants). Copy both sets.
+info "  Copying WiFi firmware..."
+if [[ -d "${ROOTFS_MNT}/lib/firmware/brcm" ]]; then
+    mkdir -p "${RECOVERY_MNT}/lib/firmware/brcm"
+    # Copy 43436 firmware (real files)
+    cp -a "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
+    cp -a "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43436s"* "${RECOVERY_MNT}/lib/firmware/brcm/" 2>/dev/null || true
+    # Copy 43430 firmware (resolving symlinks to real files)
+    for f in "${ROOTFS_MNT}/lib/firmware/brcm/brcmfmac43430"*; do
+        [[ -e "$f" ]] || continue
+        NAME=$(basename "$f")
+        if [[ -L "$f" ]]; then
+            # Resolve symlink, copy the target with the 43430 name
+            TARGET=$(readlink -f "$f" 2>/dev/null || true)
+            if [[ -n "$TARGET" && -f "$TARGET" ]]; then
+                cp "$TARGET" "${RECOVERY_MNT}/lib/firmware/brcm/${NAME}"
+            fi
+        else
+            cp "$f" "${RECOVERY_MNT}/lib/firmware/brcm/${NAME}"
+        fi
+    done
+fi
+
+# Copy busybox and create shell/modprobe symlinks.
+# Recovery partition has no init system -- busybox provides /bin/sh (for
+# scripts), /sbin/modprobe (kernel calls this via request_module), and
+# /sbin/insmod as fallback.
+info "  Installing busybox and symlinks..."
+install -m 755 "${ROOTFS_MNT}/bin/busybox" "${RECOVERY_MNT}/bin/busybox"
+# libresolv is busybox's only extra dependency beyond libc
+for lib in libresolv.so.2; do
+    LIBPATH=$(chroot "$ROOTFS_MNT" readlink -f "/usr/lib/aarch64-linux-gnu/${lib}" 2>/dev/null || true)
+    if [[ -n "$LIBPATH" && -f "${ROOTFS_MNT}${LIBPATH}" ]]; then
+        cp -L "${ROOTFS_MNT}${LIBPATH}" "${RECOVERY_MNT}/lib/${lib}"
+    fi
+done
+for tool in sh insmod modprobe; do
+    ln -sf /bin/busybox "${RECOVERY_MNT}/sbin/${tool}"
+done
+
+# Copy WiFi kernel modules (decompressed) and create modules.dep.
+# The recovery binary loads brcmfmac via modprobe; the kernel's
+# request_module("brcmfmac-wcc") also needs modprobe infrastructure.
+info "  Copying WiFi kernel modules..."
+KVER=$(ls "${ROOTFS_MNT}/lib/modules/" | grep rpi-v8 | head -1)
+KDIR="${ROOTFS_MNT}/lib/modules/${KVER}"
+RECOVERY_KDIR="${RECOVERY_MNT}/lib/modules/${KVER}"
+mkdir -p "$RECOVERY_KDIR"
+for mod_path in \
+    kernel/net/rfkill/rfkill.ko.xz \
+    kernel/net/wireless/cfg80211.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmutil/brcmutil.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/brcmfmac.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/bca/brcmfmac-bca.ko.xz \
+    kernel/drivers/net/wireless/broadcom/brcm80211/brcmfmac/wcc/brcmfmac-wcc.ko.xz; do
+    NAME=$(basename "${mod_path%.xz}")
+    if [[ -f "${KDIR}/${mod_path}" ]]; then
+        xz -dk -c "${KDIR}/${mod_path}" > "${RECOVERY_KDIR}/${NAME}"
+        info "    ${NAME}"
+    else
+        warn "    Module not found: ${mod_path}"
+    fi
+done
+
+cat > "${RECOVERY_KDIR}/modules.dep" << 'MODDEP'
+brcmfmac-wcc.ko: brcmfmac.ko brcmutil.ko cfg80211.ko rfkill.ko
+brcmfmac-bca.ko: brcmfmac.ko brcmutil.ko cfg80211.ko rfkill.ko
+brcmfmac.ko: brcmutil.ko cfg80211.ko rfkill.ko
+cfg80211.ko: rfkill.ko
+brcmutil.ko:
+rfkill.ko:
+MODDEP
+
+cat > "${RECOVERY_KDIR}/modules.alias" << 'MODALIAS'
+alias brcmfmac-wcc brcmfmac-wcc
+alias brcmfmac-bca brcmfmac-bca
+alias brcmfmac_wcc brcmfmac-wcc
+alias brcmfmac_bca brcmfmac-bca
+MODALIAS
+
+touch "${RECOVERY_KDIR}/modules.dep.bin" \
+      "${RECOVERY_KDIR}/modules.alias.bin" \
+      "${RECOVERY_KDIR}/modules.softdep" \
+      "${RECOVERY_KDIR}/modules.symbols"
+
+# Create minimal /etc for dnsmasq (needs passwd for user= directive)
+# and glibc (needs nsswitch.conf for name resolution).
+info "  Creating minimal /etc..."
+mkdir -p "${RECOVERY_MNT}/etc"
+echo "digits" > "${RECOVERY_MNT}/etc/hostname"
+echo "root:x:0:0:root:/root:/bin/sh" > "${RECOVERY_MNT}/etc/passwd"
+echo "root:x:0:" > "${RECOVERY_MNT}/etc/group"
+printf "passwd: files\ngroup: files\nhosts: files dns\n" > "${RECOVERY_MNT}/etc/nsswitch.conf"
+
+# Symlink /var/run -> /run (tmpfs from initramfs)
+mkdir -p "${RECOVERY_MNT}/var"
+ln -sf /run "${RECOVERY_MNT}/var/run"
 
 info "  Rebuilding initramfs (chroot)..."
 chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
@@ -808,7 +964,8 @@ PARTUUID=${PARTUUID_P1}  /boot/firmware  vfat  defaults,ro,noatime  0  2
 # Root filesystem (read-only)
 PARTUUID=${PARTUUID_P2}  /  ext4  defaults,ro,noatime  0  1
 
-# Recovery partition (read-only, no automount -- used by initramfs only)
+# Recovery partition (read-only, no automount -- initramfs switch_root
+# mounts this directly as rootfs during recovery mode)
 PARTUUID=${PARTUUID_P3}  /recovery       ext4    defaults,ro,noatime,noauto  0  0
 
 # Writable data partition (journaled)
@@ -852,7 +1009,6 @@ hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
-hostside_enable_service "$ROOTFS_MNT" "digits-recovery.service"
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
@@ -966,6 +1122,29 @@ rm -f "${DATA_MNT}/.initialized" 2>/dev/null || true
 rm -f "${DATA_MNT}/log/digits-first-boot.log" 2>/dev/null || true
 rm -f "${DATA_MNT}/digits/device-id" 2>/dev/null || true
 rm -rf "${DATA_MNT}/log/journal/"* 2>/dev/null || true
+
+# ── step 23b: create rootfs snapshot (deferred) ─────────────────────────────
+# The snapshot must be taken AFTER all rootfs modifications (services enabled,
+# config applied, dev mode, etc.) so factory reset restores a fully configured
+# system. We re-mount the recovery partition temporarily to write the image.
+
+info "Creating rootfs snapshot..."
+
+RECOVERY_MNT_SNAP=$(mktemp -d /tmp/digits-recovery-snap-XXXXXX)
+mount "$P3" "$RECOVERY_MNT_SNAP"
+
+info "  Freezing rootfs for consistent snapshot..."
+sync
+fsfreeze --freeze "$ROOTFS_MNT"
+
+info "  Creating compressed rootfs snapshot (this may take a while)..."
+dd if="$P2" bs=4M | zstd -T0 -o "${RECOVERY_MNT_SNAP}/rootfs.img.zst"
+
+fsfreeze --unfreeze "$ROOTFS_MNT"
+
+info "  Unmounting recovery partition..."
+umount "$RECOVERY_MNT_SNAP"
+rmdir "$RECOVERY_MNT_SNAP"
 
 # ── step 24: unmount everything ──────────────────────────────────────────────
 
