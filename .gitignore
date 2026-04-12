@@ -46,6 +46,9 @@ CLAUDE.local.md
 # KiCad editor state
 *.kicad_prl
 
+# KiCad build artifacts (regenerate on demand)
+hardware/pcb/*/gerber/
+
 # Misc
 __pycache__/
 *.pyc
