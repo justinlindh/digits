@@ -129,6 +129,110 @@ func TestExtract_ReExtractsWhenContentChangesUnderSameVersion(t *testing.T) {
 	}
 }
 
+// Regression: one bad file should not abort the whole extract. Before,
+// the extractor returned on the first write error, skipping every later
+// file AND skipping the data/* pass AND skipping the marker — so a single
+// inaccessible file would roll back an entire update. Now: log-and-continue,
+// write every file we can, return an error at the end, withhold the marker
+// so the next boot retries.
+func TestExtract_ContinuesPastFileErrors(t *testing.T) {
+	root := t.TempDir()
+	dataDir := t.TempDir()
+	markerPath := filepath.Join(dataDir, "asset-version")
+
+	fsys := fstest.MapFS{
+		"rootfs/etc/systemd/system/a.service": &fstest.MapFile{Data: []byte("a")},
+		"rootfs/etc/systemd/system/b.service": &fstest.MapFile{Data: []byte("b")},
+		"rootfs/etc/systemd/system/c.service": &fstest.MapFile{Data: []byte("c")},
+		"data/tones/dial.wav":                 &fstest.MapFile{Data: []byte("wav")},
+	}
+
+	e := &Extractor{
+		FS:         fsys,
+		RootDir:    root,
+		DataDir:    dataDir,
+		MarkerPath: markerPath,
+		Remount:    func(rw bool) error { return nil },
+		RootfsWriteFile: func(data []byte, dest string, perm os.FileMode) error {
+			if filepath.Base(dest) == "b.service" {
+				return os.ErrPermission
+			}
+			return defaultWriteFile(data, dest, perm)
+		},
+	}
+
+	err := e.Extract("1.0.0")
+	if err == nil {
+		t.Fatal("expected error for partial failure, got nil")
+	}
+	if !strings.Contains(err.Error(), "b.service") {
+		t.Errorf("error should mention failing file: %v", err)
+	}
+
+	// Other rootfs files landed despite the one failure.
+	for _, name := range []string{"a.service", "c.service"} {
+		if _, err := os.Stat(filepath.Join(root, "etc/systemd/system", name)); err != nil {
+			t.Errorf("expected %s on disk after partial extract, got %v", name, err)
+		}
+	}
+	// Data files still ran.
+	if _, err := os.Stat(filepath.Join(dataDir, "tones/dial.wav")); err != nil {
+		t.Errorf("data file missing after partial extract: %v", err)
+	}
+	// Marker withheld so the next boot retries.
+	if _, err := os.Stat(markerPath); !os.IsNotExist(err) {
+		t.Errorf("marker should not exist on partial failure, err=%v", err)
+	}
+}
+
+func TestExtract_CallsReloadSystemdAfterRootfsWrites(t *testing.T) {
+	root := t.TempDir()
+	dataDir := t.TempDir()
+	markerPath := filepath.Join(dataDir, "asset-version")
+
+	reloadCalls := 0
+	e := &Extractor{
+		FS: fstest.MapFS{
+			"rootfs/etc/systemd/system/x.service": &fstest.MapFile{Data: []byte("unit")},
+		},
+		RootDir:       root,
+		DataDir:       dataDir,
+		MarkerPath:    markerPath,
+		Remount:       func(rw bool) error { return nil },
+		ReloadSystemd: func() error { reloadCalls++; return nil },
+	}
+	if err := e.Extract("1.0.0"); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if reloadCalls != 1 {
+		t.Errorf("ReloadSystemd called %d times, want 1", reloadCalls)
+	}
+}
+
+func TestExtract_SkipsReloadWhenNoRootfsFiles(t *testing.T) {
+	root := t.TempDir()
+	dataDir := t.TempDir()
+	markerPath := filepath.Join(dataDir, "asset-version")
+
+	reloadCalls := 0
+	e := &Extractor{
+		FS: fstest.MapFS{
+			"data/tones/dial.wav": &fstest.MapFile{Data: []byte("wav")},
+		},
+		RootDir:       root,
+		DataDir:       dataDir,
+		MarkerPath:    markerPath,
+		Remount:       func(rw bool) error { return nil },
+		ReloadSystemd: func() error { reloadCalls++; return nil },
+	}
+	if err := e.Extract("1.0.0"); err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	if reloadCalls != 0 {
+		t.Errorf("ReloadSystemd called %d times, want 0 (no rootfs writes)", reloadCalls)
+	}
+}
+
 func TestExtract_SetsPermissionsForScripts(t *testing.T) {
 	root := t.TempDir()
 	dataDir := t.TempDir()
