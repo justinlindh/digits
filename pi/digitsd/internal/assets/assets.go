@@ -25,12 +25,16 @@ var permOverrides = []struct {
 type WriteFunc func(data []byte, dest string, perm os.FileMode) error
 
 type Extractor struct {
-	FS             fs.FS
-	RootDir        string
-	DataDir        string
-	MarkerPath     string
-	Remount        func(rw bool) error
+	FS              fs.FS
+	RootDir         string
+	DataDir         string
+	MarkerPath      string
+	Remount         func(rw bool) error
 	RootfsWriteFile WriteFunc // privileged writer for rootfs files (nil = use os.WriteFile)
+	// ReloadSystemd, if set, is called after any rootfs files are written so
+	// that systemd picks up rewritten unit files without requiring a reboot.
+	// Typically wired to `sudo systemctl daemon-reload`.
+	ReloadSystemd func() error
 }
 
 func (e *Extractor) Extract(currentVersion string) error {
@@ -53,6 +57,8 @@ func (e *Extractor) Extract(currentVersion string) error {
 		return fmt.Errorf("collect rootfs files: %w", err)
 	}
 
+	var failures []string
+	rootfsWritten := 0
 	if len(rootfsFiles) > 0 {
 		if err := e.Remount(true); err != nil {
 			return fmt.Errorf("remount rw: %w", err)
@@ -64,12 +70,23 @@ func (e *Extractor) Extract(currentVersion string) error {
 		for _, f := range rootfsFiles {
 			dest := filepath.Join(e.RootDir, f.relPath)
 			if err := e.writeFileWith(f, dest, rootfsWriter); err != nil {
-				_ = e.Remount(false)
-				return fmt.Errorf("write rootfs %s: %w", f.relPath, err)
+				log.Printf("assets: WARNING: write rootfs %s failed: %v", f.relPath, err)
+				failures = append(failures, "rootfs/"+f.relPath)
+				continue
 			}
+			rootfsWritten++
 		}
 		if err := e.Remount(false); err != nil {
 			log.Printf("assets: WARNING: remount ro failed: %v", err)
+		}
+		// Rewritten systemd units won't take effect until systemd re-reads
+		// its unit files, so tell it to reload if we touched anything on
+		// the rootfs. Cheap and idempotent, so no need to gate on whether
+		// any of the written paths were actually under /etc/systemd.
+		if rootfsWritten > 0 && e.ReloadSystemd != nil {
+			if err := e.ReloadSystemd(); err != nil {
+				log.Printf("assets: WARNING: systemd daemon-reload failed: %v", err)
+			}
 		}
 	}
 
@@ -78,11 +95,26 @@ func (e *Extractor) Extract(currentVersion string) error {
 		return fmt.Errorf("collect data files: %w", err)
 	}
 
+	dataWritten := 0
 	for _, f := range dataFiles {
 		dest := filepath.Join(e.DataDir, f.relPath)
 		if err := e.writeFileWith(f, dest, defaultWriteFile); err != nil {
-			return fmt.Errorf("write data %s: %w", f.relPath, err)
+			log.Printf("assets: WARNING: write data %s failed: %v", f.relPath, err)
+			failures = append(failures, "data/"+f.relPath)
+			continue
 		}
+		dataWritten++
+	}
+
+	log.Printf("assets: extracted %d/%d rootfs + %d/%d data files for version %s (hash=%s)",
+		rootfsWritten, len(rootfsFiles), dataWritten, len(dataFiles), currentVersion, contentHash[:12])
+
+	// Only commit the marker on a fully successful run. A partial success
+	// must retry on the next boot so that whatever was blocking the failed
+	// file (e.g. a stale ownership issue) gets another chance after the
+	// user resolves it.
+	if len(failures) > 0 {
+		return fmt.Errorf("asset extraction incomplete: %d file(s) failed: %s", len(failures), strings.Join(failures, ", "))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(e.MarkerPath), 0755); err != nil {
@@ -91,9 +123,6 @@ func (e *Extractor) Extract(currentVersion string) error {
 	if err := os.WriteFile(e.MarkerPath, []byte(want), 0644); err != nil {
 		return fmt.Errorf("write marker: %w", err)
 	}
-
-	log.Printf("assets: extracted %d rootfs + %d data files for version %s (hash=%s)",
-		len(rootfsFiles), len(dataFiles), currentVersion, contentHash[:12])
 	return nil
 }
 

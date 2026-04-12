@@ -766,6 +766,9 @@ func main() {
 			}
 			return nil
 		},
+		ReloadSystemd: func() error {
+			return exec.Command("sudo", "systemctl", "daemon-reload").Run()
+		},
 	}
 	if err := extractor.Extract(version.Version); err != nil {
 		slog.Warn("asset extraction failed", "err", err)
