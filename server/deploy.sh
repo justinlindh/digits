@@ -14,7 +14,14 @@ COMPOSE_FILE="docker-compose.prod.yml"
 
 SERVICES=("${@:-signald}")
 
-echo "==> Building ${SERVICES[*]}..."
+# Set build version from git tags so the binary reports it at runtime
+git fetch --tags
+export BUILD_VERSION
+BUILD_VERSION="$(git describe --tags --match 'server/v*' --always 2>/dev/null | sed 's|^server/v||')"
+export BUILD_COMMIT
+BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null)"
+
+echo "==> Building ${SERVICES[*]} (version=${BUILD_VERSION}, commit=${BUILD_COMMIT})..."
 docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build "${SERVICES[@]}"
 
 echo "==> Restarting ${SERVICES[*]}..."
