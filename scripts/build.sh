@@ -4,7 +4,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FIRMWARE_DIR="$SCRIPT_DIR/../firmware"
-BUILD_DIR="$FIRMWARE_DIR/build"
+# Local and Docker builds use separate subdirectories so switching between
+# modes doesn't poison CMakeCache.txt with stale toolchain/PICO_SDK_PATH.
+BUILD_DIR="$FIRMWARE_DIR/build/local"
 
 # Auto-find PICO_SDK_PATH if not set
 if [ -z "${PICO_SDK_PATH:-}" ]; then
@@ -33,7 +35,7 @@ echo "  Build dir: $BUILD_DIR"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
-cmake .. -DPICO_SDK_PATH="$PICO_SDK_PATH"
+cmake "$FIRMWARE_DIR" -DPICO_SDK_PATH="$PICO_SDK_PATH"
 make -j"$(nproc)"
 
 echo ""

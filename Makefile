@@ -65,4 +65,5 @@ test: server-test pi-test ## Run all tests
 clean: ## Clean build artifacts
 	$(MAKE) -C server clean
 	$(MAKE) -C pi/digitsd clean
-	rm -rf tools/build/ firmware/build/
+	$(MAKE) -C firmware clean
+	rm -rf tools/build/

@@ -4,4 +4,4 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-"$SCRIPT_DIR/build.sh" && picotool load -f "$SCRIPT_DIR/../firmware/build/digits.uf2"
+"$SCRIPT_DIR/build.sh" && picotool load -f "$SCRIPT_DIR/../firmware/build/local/digits.uf2"

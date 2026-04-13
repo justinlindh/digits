@@ -1,5 +1,7 @@
 FROM debian:bookworm-slim
 
+# build-essential is required: picotool is built during firmware compilation
+# and needs a native (not cross) C/C++ compiler.
 RUN apt-get update -qq \
     && apt-get install -y -qq --no-install-recommends \
        build-essential \
@@ -12,7 +14,8 @@ RUN apt-get update -qq \
        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk \
+ARG PICO_SDK_VERSION=2.2.0
+RUN git clone --depth 1 --branch ${PICO_SDK_VERSION} https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk \
     && cd /opt/pico-sdk \
     && git submodule update --init --depth 1
 
