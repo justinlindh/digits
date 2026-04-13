@@ -47,12 +47,24 @@ const (
 
 	// TypeRestart is sent by the server to restart the service or reboot the device.
 	TypeRestart = "restart"
+
+	// TypeLineSettings is sent by the server to push an updated Settings blob
+	// for the line this device is registered as. Applied live.
+	TypeLineSettings = "line_settings"
 )
 
 // ContactEntry represents a single contact in a sync payload.
 type ContactEntry struct {
 	Number string `json:"number"`
 	Name   string `json:"name"`
+}
+
+// LineSettings is the wire-format copy of server/internal/line.Settings used
+// in signaling messages. Kept as a separate struct (not imported directly
+// from internal/line) so the signaling package stays a leaf with no upstream
+// dependency on the line store.
+type LineSettings struct {
+	VoiceStyle string `json:"voice_style,omitempty"`
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -97,6 +109,9 @@ type Message struct {
 
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
+
+	// Per-line settings updates (line_settings messages)
+	LineSettings *LineSettings `json:"line_settings,omitempty"`
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.

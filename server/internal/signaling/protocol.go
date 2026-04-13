@@ -24,7 +24,16 @@ const (
 	TypeICERestart      = "ice_restart"       // Bidirectional: ICE restart offer with new credentials
 	TypeFactoryReset    = "factory_reset"    // Server → Phone: trigger factory reset
 	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
+	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
 )
+
+// LineSettings is the wire-format copy of server/internal/line.Settings used
+// in signaling messages. Kept as a separate struct (not imported directly
+// from internal/line) so the signaling package stays a leaf with no upstream
+// dependency on the line store.
+type LineSettings struct {
+	VoiceStyle string `json:"voice_style,omitempty"`
+}
 
 // ICEServer represents a STUN or TURN server configuration.
 type ICEServer struct {
@@ -66,6 +75,9 @@ type Message struct {
 
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
+
+	// Per-line settings updates (line_settings messages)
+	LineSettings *LineSettings `json:"line_settings,omitempty"`
 }
 
 func ParseMessage(data []byte) (*Message, error) {
