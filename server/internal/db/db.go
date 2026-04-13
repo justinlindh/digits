@@ -216,6 +216,8 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (10);
     END IF;
 END $$;`,
+		// v11: per-line settings JSONB column (voice_style, etc.)
+		`ALTER TABLE lines ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
