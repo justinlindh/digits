@@ -146,6 +146,12 @@ func TestBiquadChainNilIsNoOp(t *testing.T) {
 			t.Fatalf("nil chain modified sample %d", i)
 		}
 	}
+	// Must be an independent copy so downstream in-place mutators don't
+	// corrupt upstream buffers.
+	out[0] = 12345
+	if in[0] == 12345 {
+		t.Fatal("nil chain returned a slice aliasing the input")
+	}
 }
 
 func TestBiquadChainEmptyIsNoOp(t *testing.T) {
@@ -156,5 +162,9 @@ func TestBiquadChainEmptyIsNoOp(t *testing.T) {
 		if out[i] != in[i] {
 			t.Fatalf("empty chain modified sample %d", i)
 		}
+	}
+	out[0] = 12345
+	if in[0] == 12345 {
+		t.Fatal("empty chain returned a slice aliasing the input")
 	}
 }

@@ -1048,8 +1048,11 @@ func main() {
 		}
 		slog.Info("audio test: captured, playing back", "samples", len(recorded), "duration_s", float64(len(recorded))/float64(sampleRate), "peak", maxAmp)
 
-		if err := writePCMWav("/tmp/audiotest_last.wav", recorded, sampleRate); err != nil {
-			slog.Warn("audio test: wav dump failed", "error", err)
+		const dumpPath = "/tmp/audiotest_last.wav"
+		if err := writePCMWav(dumpPath, recorded, sampleRate); err != nil {
+			slog.Warn("audio test: wav dump failed", "path", dumpPath, "error", err)
+		} else {
+			slog.Info("audio test: wav dumped", "path", dumpPath)
 		}
 		mixer.PlayOnceSamples(recorded)
 		time.Sleep(100 * time.Millisecond)

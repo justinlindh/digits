@@ -97,15 +97,15 @@ func (c *BiquadChain) Reset() {
 }
 
 // Process runs the cascade over the input and returns a new slice of the same
-// length. The int16 output is saturated to the PCM range.
+// length. The returned slice is always independent of the input so callers
+// (or downstream stages like RNNoise that mutate their buffer in place) don't
+// have to reason about aliasing. A nil or empty chain still copies.
 func (c *BiquadChain) Process(in []int16) []int16 {
-	if c == nil || len(c.stages) == 0 {
-		// Return input unchanged. Callers are expected not to mutate the
-		// returned slice assuming it is a copy, since our non-nil path
-		// always copies.
-		return in
-	}
 	out := make([]int16, len(in))
+	if c == nil || len(c.stages) == 0 {
+		copy(out, in)
+		return out
+	}
 	for i, s := range in {
 		v := float64(s)
 		for _, stage := range c.stages {
