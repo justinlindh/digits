@@ -5,11 +5,13 @@ module.exports = {
   plugins: [
     ['@semantic-release/commit-analyzer', {
       releaseRules: [
-        { scope: 'server', type: 'feat', release: 'minor' },
-        { scope: 'server', type: 'fix', release: 'patch' },
-        { scope: 'server', type: 'perf', release: 'patch' },
-        { scope: 'server', breaking: true, release: 'major' },
-        { scope: '!server', release: false },
+        // Scope globs use micromatch substring patterns so multi-scope commits
+        // like fix(digitsd,firmware,server) trigger this release too.
+        { scope: '*server*', type: 'feat', release: 'minor' },
+        { scope: '*server*', type: 'fix', release: 'patch' },
+        { scope: '*server*', type: 'perf', release: 'patch' },
+        { scope: '*server*', breaking: true, release: 'major' },
+        { scope: '!*server*', release: false },
       ],
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
@@ -17,8 +19,6 @@ module.exports = {
     }],
     ['@semantic-release/release-notes-generator', {
       parserOpts: {
-        headerPattern: /^(\w*)(?:\((server)\))?: (.*)$/,
-        headerCorrespondence: ['type', 'scope', 'subject'],
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
       },
     }],
