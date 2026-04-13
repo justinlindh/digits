@@ -21,11 +21,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
-func setupTestServer(t *testing.T) (*httptest.Server, *line.Store, *calls.Tracker, *auth.Store) {
+func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -44,6 +45,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *line.Store, *calls.Tracke
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	authStore := auth.NewStoreFromDB(database.DB)
+	householdStore := household.NewStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
 	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout.html", "templates/login.html")
@@ -54,14 +56,39 @@ func setupTestServer(t *testing.T) (*httptest.Server, *line.Store, *calls.Tracke
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, nil, nil, nil, nil, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, nil, nil, nil, "", "")
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
 
 	srv := httptest.NewServer(h.Router())
 	t.Cleanup(srv.Close)
-	return srv, lineStore, tracker, authStore
+	return srv, database, lineStore, tracker, authStore
+}
+
+// seedE2EHousehold creates a household owned by the test user (test@example.com,
+// created on demand) and returns its UUID. The onboarding middleware and the
+// lines.household_id FK both require a real household membership; tests that
+// insert lines or hit routes behind the onboarding gate must call this.
+func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store) string {
+	t.Helper()
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		user, err = authStore.CreateUser("test@example.com", "Test User", nil)
+		if err != nil {
+			t.Fatalf("create test user: %v", err)
+		}
+	}
+	store := household.NewStore(database.DB)
+	hh, err := store.Create("E2E Test Household", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+	return hh.ID
 }
 
 func dialWS(t *testing.T, srv *httptest.Server) *websocket.Conn {
@@ -101,24 +128,35 @@ func recvMsg(t *testing.T, conn *websocket.Conn) *signaling.Message {
 }
 
 func TestE2EFullCallFlow(t *testing.T) {
-	srv, lineStore, tracker, authStore := setupTestServer(t)
+	srv, database, lineStore, tracker, authStore := setupTestServer(t)
 	// Create authenticated client for protected route checks
 	cookie := addSessionCookie(t, authStore)
 	jar := &testCookieJar{cookie: cookie, url: srv.URL}
 	authedClient := &http.Client{Jar: jar}
 
-	// Register lines
-	dummyHH := "00000000-0000-0000-0000-000000000000"
-	_, _ = lineStore.Add("3140001", "Phone A", dummyHH)
-	_, _ = lineStore.Add("3140002", "Phone B", dummyHH)
+	// Register lines under a real household; the lines.household_id FK
+	// rejects bogus UUIDs and the /api/status call goes through the
+	// onboarding middleware, which needs a household_members row.
+	hhID := seedE2EHousehold(t, database, authStore)
+	if _, err := lineStore.Add("3140001", "Phone A", hhID); err != nil {
+		t.Fatalf("add line A: %v", err)
+	}
+	if _, err := lineStore.Add("3140002", "Phone B", hhID); err != nil {
+		t.Fatalf("add line B: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001', '3140002')")
+	})
 
 	// Connect two phones
 	ws1 := dialWS(t, srv)
 	ws2 := dialWS(t, srv)
 
-	// Both register
-	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001"})
-	sendMsg(t, ws2, signaling.Message{Type: signaling.TypeRegister, Number: "3140002"})
+	// Both register. The WS handler requires a non-empty hardware_id; pairing
+	// enforcement is skipped here because setupTestServer wires a nil
+	// pairingStore, so any stable string works.
+	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001", HardwareID: "e2e-hw-a"})
+	sendMsg(t, ws2, signaling.Message{Type: signaling.TypeRegister, Number: "3140002", HardwareID: "e2e-hw-b"})
 
 	// Give server time to register
 	time.Sleep(50 * time.Millisecond)
@@ -199,10 +237,10 @@ func TestE2EFullCallFlow(t *testing.T) {
 }
 
 func TestE2ECallToOfflinePhone(t *testing.T) {
-	srv, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _ := setupTestServer(t)
 
 	ws1 := dialWS(t, srv)
-	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001"})
+	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001", HardwareID: "e2e-offline-a"})
 	time.Sleep(30 * time.Millisecond)
 
 	// Call a phone that's not connected
@@ -215,7 +253,7 @@ func TestE2ECallToOfflinePhone(t *testing.T) {
 }
 
 func TestE2ENoRegisterRejected(t *testing.T) {
-	srv, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _ := setupTestServer(t)
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -241,11 +279,18 @@ func TestE2ENoRegisterRejected(t *testing.T) {
 }
 
 func TestE2EWebUIWithData(t *testing.T) {
-	srv, lineStore, _, authStore := setupTestServer(t)
+	srv, database, lineStore, _, authStore := setupTestServer(t)
 
-	dummyHH := "00000000-0000-0000-0000-000000000000"
-	_, _ = lineStore.Add("3140001", "Kitchen", dummyHH)
-	_, _ = lineStore.Add("3140002", "Bedroom", dummyHH)
+	hhID := seedE2EHousehold(t, database, authStore)
+	if _, err := lineStore.Add("3140001", "Kitchen", hhID); err != nil {
+		t.Fatalf("add kitchen line: %v", err)
+	}
+	if _, err := lineStore.Add("3140002", "Bedroom", hhID); err != nil {
+		t.Fatalf("add bedroom line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001', '3140002')")
+	})
 
 	// Create a session cookie for authenticated requests
 	cookie := addSessionCookie(t, authStore)
