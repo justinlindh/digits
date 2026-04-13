@@ -199,7 +199,9 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	close(sdpSent)
 
 	// Start audio pipeline
-	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	pipCfg := audio.DefaultPipelineConfig()
+	pipCfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
+	d.pipeline = audio.NewPipeline(pipCfg)
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline start failed", "error", err)
 		return
@@ -374,7 +376,9 @@ func (d *daemonCallbacks) AnswerCall() {
 	close(sdpSent)
 
 	// Start audio pipeline (capture only — playback goes through mixer)
-	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	pipCfg := audio.DefaultPipelineConfig()
+	pipCfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
+	d.pipeline = audio.NewPipeline(pipCfg)
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline (answer) start failed", "error", err)
 		return
