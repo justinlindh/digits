@@ -9,9 +9,11 @@ LDFLAGS  = -X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=
            -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$(COMMIT)
 REPO_ROOT   = $(shell git rev-parse --show-toplevel)
 
-EMBED_DIR   = internal/assets/embed
-OVERLAY_SRC = $(REPO_ROOT)/pi/image/rootfs-overlay
-TONES_SRC   = $(REPO_ROOT)/pi/tones
+EMBED_DIR         = internal/assets/embed
+OVERLAY_SRC       = $(REPO_ROOT)/pi/image/rootfs-overlay
+TONES_SRC         = $(REPO_ROOT)/pi/tones
+DIGITS_SETUP_SRC  = $(REPO_ROOT)/pi/digits-setup
+DIGITS_SETUP_BIN  = $(EMBED_DIR)/rootfs/usr/local/bin/digits-setup
 
 # Paths in rootfs-overlay that are only consumed at image-build time (kernel
 # boot config and device tree fragments live on the FAT firmware partition;
@@ -28,9 +30,15 @@ embed: clean-embed
 	@for x in $(OVERLAY_EXCLUDE); do rm -rf $(EMBED_DIR)/rootfs/$$x; done
 	@find $(EMBED_DIR)/rootfs -type d -empty -delete 2>/dev/null || true
 	@cp -a $(TONES_SRC)/. $(EMBED_DIR)/data/tones/
+	@mkdir -p $(dir $(DIGITS_SETUP_BIN))
+	@echo "embed: cross-compiling digits-setup for arm64"
+	@cd $(DIGITS_SETUP_SRC) && \
+		GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+		go build -trimpath -ldflags="-s -w" \
+		-o $(abspath $(DIGITS_SETUP_BIN)) ./cmd/digits-setup
 	@count=$$(find $(EMBED_DIR) -type f | wc -l); \
 	 echo "embed: prepared $$count files"; \
-	 if [ "$$count" -eq 0 ]; then echo "embed: ERROR: staged tree is empty — rootfs-overlay missing?" >&2; exit 1; fi
+	 if [ "$$count" -eq 0 ]; then echo "embed: ERROR: staged tree is empty -- rootfs-overlay missing?" >&2; exit 1; fi
 
 clean-embed:
 	@rm -rf $(EMBED_DIR)
