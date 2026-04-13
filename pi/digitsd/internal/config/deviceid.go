@@ -10,9 +10,11 @@ import (
 
 const deviceIDPath = "/data/digits/device-id"
 
-// LoadOrCreateDeviceID reads the device ID from /data/digits/device-id.
-// If the file doesn't exist or contains a non-UUID value (legacy 4-char hex),
-// generates a new UUID v4 and persists it.
+// LoadOrCreateDeviceID reads the device ID from /data/digits/device-id,
+// validating that it has UUID v4 shape. If the file is missing, unreadable,
+// or contains anything that isn't a UUID v4 (legacy short ids, NUL-filled
+// post-crash artifacts, stray text), it generates a fresh UUID v4 and
+// atomically writes it in place.
 func LoadOrCreateDeviceID() (string, error) {
 	return loadOrCreateDeviceIDAt(deviceIDPath)
 }
@@ -31,18 +33,38 @@ func loadOrCreateDeviceIDAt(path string) (string, error) {
 		return "", fmt.Errorf("generate device id: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	// Unlink first so we can replace a file owned by another user
-	// (legacy images provisioned /data/digits/device-id as root while
-	// digitsd runs as the digits user) or a file without write perms.
-	// ENOENT is fine: os.WriteFile will create it below.
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("remove stale device id: %w", err)
+	// Write to a temp file and rename onto the target so the replace is
+	// atomic (no power-loss window where device-id is missing) and so
+	// it works even if the existing file is owned by another user:
+	// rename only needs write permission on the parent directory. Legacy
+	// images provisioned /data/digits/device-id as root while digitsd
+	// runs as the digits user, so plain os.WriteFile would hit EACCES.
+	tmp, err := os.CreateTemp(dir, "device-id.*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("create temp device id: %w", err)
 	}
-	if err := os.WriteFile(path, []byte(id+"\n"), 0644); err != nil {
-		return "", fmt.Errorf("persist device id: %w", err)
+	tmpPath := tmp.Name()
+	if _, err := tmp.WriteString(id + "\n"); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("write temp device id: %w", err)
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("chmod temp device id: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("close temp device id: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", fmt.Errorf("rename device id into place: %w", err)
 	}
 
 	return id, nil
@@ -52,7 +74,8 @@ func isUUIDv4Shape(s string) bool {
 	if len(s) != 36 {
 		return false
 	}
-	for i, c := range s {
+	for i := 0; i < 36; i++ {
+		c := s[i]
 		switch i {
 		case 8, 13, 18, 23:
 			if c != '-' {
@@ -60,6 +83,11 @@ func isUUIDv4Shape(s string) bool {
 			}
 		case 14:
 			if c != '4' {
+				return false
+			}
+		case 19:
+			// UUID v4 variant: high bits are 10, so the nibble is 8..b.
+			if c != '8' && c != '9' && c != 'a' && c != 'b' && c != 'A' && c != 'B' {
 				return false
 			}
 		default:
