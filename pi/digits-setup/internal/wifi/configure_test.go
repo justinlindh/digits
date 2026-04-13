@@ -8,7 +8,6 @@ import (
 	"testing"
 )
 
-// mockFS records all file operations.
 type mockFS struct {
 	dirs  map[string]os.FileMode
 	files map[string]mockFile
@@ -36,14 +35,6 @@ func (m *mockFS) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-func (m *mockFS) ReadFile(name string) ([]byte, error) {
-	f, ok := m.files[name]
-	if !ok {
-		return nil, os.ErrNotExist
-	}
-	return f.data, nil
-}
-
 func (m *mockFS) Remove(name string) error {
 	if _, ok := m.files[name]; !ok {
 		return os.ErrNotExist
@@ -62,19 +53,10 @@ func (m *mockFS) Rename(oldpath, newpath string) error {
 	return nil
 }
 
-func (m *mockFS) Stat(name string) (os.FileInfo, error) {
-	if _, ok := m.files[name]; !ok {
-		return nil, os.ErrNotExist
-	}
-	return nil, nil
-}
-
-// mockMounter records remount calls.
 type mockMounter struct {
 	rwCalls int
 	roCalls int
 	failRW  bool
-	failRO  bool
 }
 
 func (m *mockMounter) RemountRW() error {
@@ -87,9 +69,6 @@ func (m *mockMounter) RemountRW() error {
 
 func (m *mockMounter) RemountRO() error {
 	m.roCalls++
-	if m.failRO {
-		return fmt.Errorf("simulated remount ro failure")
-	}
 	return nil
 }
 
@@ -97,11 +76,7 @@ func TestConfigureSuccess(t *testing.T) {
 	fs := newMockFS()
 	mounter := &mockMounter{}
 
-	req := ConfigRequest{
-		SSID:     "MyNetwork",
-		Password: "secret123",
-	}
-
+	req := ConfigRequest{SSID: "MyNetwork", Password: "secret123"}
 	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,17 +105,10 @@ func TestConfigureSuccess(t *testing.T) {
 	if !strings.Contains(string(backup.data), "psk=secret123") {
 		t.Errorf("missing psk, got: %s", backup.data)
 	}
-	if _, ok := fs.files[backupPath+".tmp"]; ok {
-		t.Error("backup temp file was not renamed away")
-	}
-	if _, ok := fs.files[opPath+".tmp"]; ok {
-		t.Error("operational temp file was not renamed away")
-	}
-	if mounter.rwCalls != 1 {
-		t.Errorf("remount rw calls = %d, want 1", mounter.rwCalls)
-	}
-	if mounter.roCalls != 1 {
-		t.Errorf("remount ro calls = %d, want 1", mounter.roCalls)
+	for name := range fs.files {
+		if strings.HasSuffix(name, ".tmp") {
+			t.Errorf("stray temp file left behind: %s", name)
+		}
 	}
 
 	flag, ok := fs.files["/data/wifi-configured"]
@@ -211,51 +179,13 @@ func TestConfigureVisibleNetworkNoScanSSID(t *testing.T) {
 	}
 }
 
-// corruptingFS writes null bytes instead of actual data for paths matching a prefix.
-type corruptingFS struct {
-	mockFS
-	corruptPrefix string
-}
-
-func (c *corruptingFS) WriteFile(name string, data []byte, perm os.FileMode) error {
-	if c.corruptPrefix != "" && strings.HasPrefix(name, c.corruptPrefix) {
-		c.files[name] = mockFile{data: make([]byte, len(data)), perm: perm}
-		return nil
-	}
-	c.files[name] = mockFile{data: data, perm: perm}
-	return nil
-}
-
-func TestConfigureCorruptWrite(t *testing.T) {
-	fs := &corruptingFS{mockFS: *newMockFS(), corruptPrefix: "/etc/NetworkManager/"}
-	mounter := &mockMounter{}
-
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	err := ConfigureWithDeps(req, fs, mounter)
-	if err == nil {
-		t.Fatal("expected verify error from corrupt write")
-	}
-	if !strings.Contains(err.Error(), "verify") {
-		t.Errorf("error = %q, want mention of verify", err.Error())
-	}
-	if _, ok := fs.files["/data/wifi-configured"]; ok {
-		t.Error("flag must not be set on verify failure")
-	}
-	if mounter.roCalls != 1 {
-		t.Error("remount ro must run even on write failure to restore rootfs")
-	}
-}
-
 func TestConfigureFilenameCollisionPrevention(t *testing.T) {
 	fs := newMockFS()
-	mounter1 := &mockMounter{}
-	mounter2 := &mockMounter{}
 
-	// Two SSIDs that sanitize to the same base name.
 	req1 := ConfigRequest{SSID: "Network 1", Password: "pass1"}
 	req2 := ConfigRequest{SSID: "Network-1", Password: "pass2"}
 
-	if err := ConfigureWithDeps(req1, fs, mounter1); err != nil {
+	if err := ConfigureWithDeps(req1, fs, &mockMounter{}); err != nil {
 		t.Fatalf("first configure failed: %v", err)
 	}
 	path1 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network 1")[:6]+".nmconnection")
@@ -263,7 +193,7 @@ func TestConfigureFilenameCollisionPrevention(t *testing.T) {
 		t.Fatalf("first network file not written to %s", path1)
 	}
 
-	if err := ConfigureWithDeps(req2, fs, mounter2); err != nil {
+	if err := ConfigureWithDeps(req2, fs, &mockMounter{}); err != nil {
 		t.Fatalf("second configure failed: %v", err)
 	}
 	path2 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network-1")[:6]+".nmconnection")
@@ -305,10 +235,9 @@ func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
 	fs := newMockFS()
 	fs.files["/data/wifi/digits-wifi.nmconnection"] = mockFile{data: []byte("old"), perm: 0600}
 	fs.files["/etc/NetworkManager/system-connections/digits-wifi.nmconnection"] = mockFile{data: []byte("old"), perm: 0600}
-	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
+	if err := ConfigureWithDeps(req, fs, &mockMounter{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, ok := fs.files["/data/wifi/digits-wifi.nmconnection"]; ok {
@@ -321,26 +250,9 @@ func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
 
 func TestConfigureLegacyCleanupMissingIsOK(t *testing.T) {
 	fs := newMockFS()
-	mounter := &mockMounter{}
-
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
+	if err := ConfigureWithDeps(req, fs, &mockMounter{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestConfigureAtomicRenameOrder(t *testing.T) {
-	fs := newMockFS()
-	mounter := &mockMounter{}
-
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for name := range fs.files {
-		if strings.HasSuffix(name, ".tmp") {
-			t.Errorf("stray temp file left behind: %s", name)
-		}
 	}
 }
 

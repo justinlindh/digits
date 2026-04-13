@@ -48,23 +48,29 @@ validate_nmconnection() {
     return 0
 }
 
+# has_any <dir>
+# Returns 0 if the directory contains at least one digits-wifi*.nmconnection
+# file. Used on the boot hot path before committing to per-file validation.
+has_any() {
+    local dir="$1"
+    shopt -s nullglob
+    local files=("$dir"/$NM_CONN_PATTERN)
+    shopt -u nullglob
+    [ ${#files[@]} -gt 0 ]
+}
+
 # list_valid <dir>
-# Prints basenames (one per line) of valid digits-wifi*.nmconnection files in
-# the given directory. Uses validate_nmconnection for each candidate.
+# Prints basenames of valid digits-wifi*.nmconnection files in the given
+# directory. Runs validate_nmconnection on each candidate.
 list_valid() {
     local dir="$1"
     shopt -s nullglob
     for f in "$dir"/$NM_CONN_PATTERN; do
         if validate_nmconnection "$f"; then
-            basename "$f"
+            printf '%s\n' "${f##*/}"
         fi
     done
     shopt -u nullglob
-}
-
-# count_valid <dir>
-count_valid() {
-    list_valid "$1" | wc -l
 }
 
 # Clear wifi-configured state so the device falls back to AP mode.
@@ -185,20 +191,24 @@ do_init() {
         return
     fi
 
-    local op_count
-    op_count=$(count_valid "$NM_OPERATIONAL_DIR")
-    if [ "$op_count" -eq 0 ]; then
-        local backup_count
-        backup_count=$(count_valid "$NM_BACKUP_DIR")
-        if [ "$backup_count" -eq 0 ]; then
-            log "WARNING: No valid Wi-Fi config files in $NM_OPERATIONAL_DIR or $NM_BACKUP_DIR -- falling back to AP mode"
-            reset_wifi_config
-            do_ap_up
-            return
-        fi
-        restore_from_backup
+    # Hot path: operational store already has at least one file. Trust it and
+    # let NetworkManager validate; avoid forking grep per file before
+    # network-pre.target.
+    if has_any "$NM_OPERATIONAL_DIR"; then
+        do_station_up
+        return
     fi
 
+    # Cold path: operational store is empty (e.g. after an OTA image upgrade
+    # replaced the rootfs). Fall back to the persistent backup.
+    if ! has_any "$NM_BACKUP_DIR" || [ -z "$(list_valid "$NM_BACKUP_DIR")" ]; then
+        log "WARNING: No valid Wi-Fi config files in $NM_OPERATIONAL_DIR or $NM_BACKUP_DIR -- falling back to AP mode"
+        reset_wifi_config
+        do_ap_up
+        return
+    fi
+
+    restore_from_backup
     do_station_up
 }
 
