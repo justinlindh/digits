@@ -1,6 +1,8 @@
 package wififallback
 
 import (
+	"errors"
+	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -19,12 +21,10 @@ type fakeAP struct {
 	hasClient bool
 	upCalls   int
 	downCalls int
-	upErr     error
-	downErr   error
 }
 
-func (f *fakeAP) Up() error                { f.upCalls++; return f.upErr }
-func (f *fakeAP) Down() error              { f.downCalls++; return f.downErr }
+func (f *fakeAP) Up() error                { f.upCalls++; return nil }
+func (f *fakeAP) Down() error              { f.downCalls++; return nil }
 func (f *fakeAP) HasClient() (bool, error) { return f.hasClient, nil }
 
 func testCfg() config.WiFiFallback {
@@ -37,7 +37,8 @@ func testCfg() config.WiFiFallback {
 }
 
 func newTestSupervisor(nm *fakeNM, ap *fakeAP, call *bool) *Supervisor {
-	return NewSupervisor(testCfg(), nm, ap, func() bool { return *call }, slog.Default())
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	return NewSupervisor(testCfg(), nm, ap, func() bool { return *call }, quiet)
 }
 
 func TestStationOKStaysWhenConnected(t *testing.T) {
@@ -203,7 +204,8 @@ func TestDisabledKillSwitch(t *testing.T) {
 	call := false
 	cfg := testCfg()
 	cfg.Enabled = false
-	s := NewSupervisor(cfg, nm, ap, func() bool { return call }, slog.Default())
+	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	s := NewSupervisor(cfg, nm, ap, func() bool { return call }, quiet)
 
 	s.Tick(time.Unix(1000, 0))
 	s.Tick(time.Unix(2000, 0))
@@ -224,9 +226,13 @@ func TestAPActiveClientLeavesReentersAPOffered(t *testing.T) {
 	start := time.Unix(1000, 0)
 
 	s.Tick(start)                      // degraded
-	s.Tick(start.Add(6 * time.Minute)) // AP_OFFERED, client already present -> AP_ACTIVE
+	s.Tick(start.Add(6 * time.Minute)) // AP_OFFERED
+	if s.State() != StateAPOffered {
+		t.Fatalf("after first post-grace tick: state = %v, want StateAPOffered", s.State())
+	}
+	s.Tick(start.Add(6*time.Minute + time.Second)) // next tick detects client -> AP_ACTIVE
 	if s.State() != StateAPActive {
-		t.Fatalf("state = %v, want StateAPActive", s.State())
+		t.Fatalf("after second post-grace tick: state = %v, want StateAPActive", s.State())
 	}
 
 	// Client disconnects
@@ -239,5 +245,50 @@ func TestAPActiveClientLeavesReentersAPOffered(t *testing.T) {
 	wantExpires := start.Add(7 * time.Minute).Add(2 * time.Minute)
 	if !s.apExpires.Equal(wantExpires) {
 		t.Errorf("apExpires = %v, want %v (2m re-grace)", s.apExpires, wantExpires)
+	}
+}
+
+func TestNMQueryErrorTreatedAsDisconnected(t *testing.T) {
+	nm := &fakeNM{connected: false, err: errors.New("nmcli boom")}
+	ap := &fakeAP{}
+	call := false
+	s := newTestSupervisor(nm, ap, &call)
+	start := time.Unix(1000, 0)
+
+	s.Tick(start)                      // degraded (error treated as not connected)
+	if s.State() != StateStationDegraded {
+		t.Fatalf("state = %v, want StateStationDegraded", s.State())
+	}
+	s.Tick(start.Add(6 * time.Minute)) // AP_OFFERED after grace
+	if s.State() != StateAPOffered {
+		t.Errorf("state = %v, want StateAPOffered despite nm errors", s.State())
+	}
+}
+
+func TestBackoffResetsOnRecovery(t *testing.T) {
+	nm := &fakeNM{connected: false}
+	ap := &fakeAP{}
+	call := false
+	s := newTestSupervisor(nm, ap, &call)
+	start := time.Unix(1000, 0)
+
+	// Cycle once to grow backoff to 10m.
+	s.Tick(start)                          // degraded, backoff=5m, graceExpires=+5m
+	s.Tick(start.Add(6 * time.Minute))     // AP_OFFERED, apExpires=+16m
+	s.Tick(start.Add(17 * time.Minute))    // timeout -> degraded, backoff=10m, graceExpires=+27m
+
+	// Recover.
+	nm.connected = true
+	s.Tick(start.Add(18 * time.Minute))    // StationOK, backoff resets to 5m
+	if s.State() != StateStationOK {
+		t.Fatalf("state = %v, want StateStationOK", s.State())
+	}
+
+	// Drop again. New graceExpires should use reset backoff of 5m.
+	nm.connected = false
+	s.Tick(start.Add(19 * time.Minute))
+	wantExpires := start.Add(19 * time.Minute).Add(5 * time.Minute)
+	if !s.graceExpires.Equal(wantExpires) {
+		t.Errorf("graceExpires = %v, want %v (backoff should have reset)", s.graceExpires, wantExpires)
 	}
 }

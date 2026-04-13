@@ -3,6 +3,7 @@ package wififallback
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
@@ -37,6 +38,7 @@ func (s State) String() string {
 // between station mode and setup-AP mode. It must be driven by Tick (for
 // tests) or Run (for production).
 type Supervisor struct {
+	mu         sync.Mutex
 	cfg        config.WiFiFallback
 	nm         NMStatusChecker
 	ap         APController
@@ -67,11 +69,17 @@ func NewSupervisor(cfg config.WiFiFallback, nm NMStatusChecker, ap APController,
 }
 
 // State returns the current supervisor state.
-func (s *Supervisor) State() State { return s.state }
+func (s *Supervisor) State() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}
 
 // Tick runs one iteration of the state machine with the given now value.
 // Tests call this directly; Run invokes it on a ticker.
 func (s *Supervisor) Tick(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.cfg.Enabled {
 		return
 	}
@@ -115,10 +123,6 @@ func (s *Supervisor) tickStationDegraded(now time.Time, connected bool) {
 		return
 	}
 	s.transitionTo(now, StateAPOffered, "grace expired")
-	// Immediately evaluate the AP_OFFERED state in the same tick so that a
-	// client that was already associated (e.g. in tests) doesn't wait a full
-	// tick interval to be detected.
-	s.tickAPOffered(now, connected)
 }
 
 func (s *Supervisor) tickAPOffered(now time.Time, _ bool) {
@@ -148,11 +152,9 @@ func (s *Supervisor) tickAPActive(now time.Time, _ bool) {
 	if hasClient {
 		return
 	}
-	// All clients gone. Drop back to AP_OFFERED with a short re-grace in case
-	// they need to rejoin. AP is still up -- do not call ap.Up() again.
+	s.transitionTo(now, StateAPOffered, "client left")
+	// Tighter re-grace than a fresh AP_OFFERED — if they just need to reconnect.
 	s.apExpires = now.Add(2 * time.Minute)
-	s.state = StateAPOffered
-	s.logger.Info("wifi-fallback: client left, back to AP_OFFERED")
 }
 
 func (s *Supervisor) transitionTo(now time.Time, next State, reason string) {
@@ -166,10 +168,15 @@ func (s *Supervisor) transitionTo(now time.Time, next State, reason string) {
 	case StateStationDegraded:
 		s.graceExpires = now.Add(s.backoff)
 	case StateAPOffered:
-		if err := s.ap.Up(); err != nil {
-			s.logger.Error("wifi-fallback: AP Up failed", "err", err)
+		// AP is already up when demoting from AP_ACTIVE; don't call Up again.
+		if prev != StateAPActive {
+			if err := s.ap.Up(); err != nil {
+				s.logger.Error("wifi-fallback: AP Up failed", "err", err)
+			}
+			s.apExpires = now.Add(s.cfg.APNoClientTimeout)
 		}
-		s.apExpires = now.Add(s.cfg.APNoClientTimeout)
+		// When prev == StateAPActive the caller is responsible for setting
+		// apExpires to the desired re-grace window.
 	}
 }
 
