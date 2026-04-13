@@ -1353,6 +1353,31 @@ func main() {
 				ctrl.HandleSignal("hangup")
 			case sigclient.TypeBusy:
 				ctrl.HandleSignal("busy")
+			case sigclient.TypeDTMF:
+				// Remote peer pressed a digit during the call. Play the local
+				// DTMF sample so the user hears what their peer is pressing,
+				// matching real-phone behavior.
+				if ctrl.State() != phone.StateCONNECTED {
+					slog.Debug("dtmf: ignoring (not connected)", "from", msg.From)
+					break
+				}
+				cb.mu.Lock()
+				peer := cb.callPeer
+				cb.mu.Unlock()
+				if msg.From != peer {
+					slog.Debug("dtmf: ignoring (wrong peer)", "from", msg.From, "expected", peer)
+					break
+				}
+				if msg.Digit == "" {
+					slog.Warn("dtmf: empty digit in message")
+					break
+				}
+				dtmfName := dtmfToneName(msg.Digit)
+				if dtmfName == "" {
+					slog.Warn("dtmf: unrecognized digit", "digit", msg.Digit)
+					break
+				}
+				mixer.PlayOnce(dtmfName)
 			case sigclient.TypeError:
 				slog.Warn("signal error", "error", msg.Error)
 				// Number not reachable -- emulate real phone: ringback -> SIT -> busy
