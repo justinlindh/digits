@@ -23,18 +23,20 @@ type CallAuthorizer interface {
 }
 
 type Relay struct {
-	Hub          *Hub
-	Tracker      CallTracker
-	TURNGen      *turn.CredentialGenerator
-	TURNDomain   string
+	Hub            *Hub
+	Tracker        CallTracker
+	TURNGen        *turn.CredentialGenerator
+	TURNDomain     string
 	CallAuthorizer CallAuthorizer
+	LineStore      LineStore
 }
 
-func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer) *Relay {
+func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
 	return &Relay{
 		Hub:            hub,
 		Tracker:        tracker,
 		CallAuthorizer: authorizer,
+		LineStore:      lineStore,
 	}
 }
 
@@ -178,6 +180,31 @@ func (r *Relay) handleRequestICE(from string, _ *Message) {
 
 	if err := r.Hub.SendTo(from, resp); err != nil {
 		slog.Error("send ice-servers failed", "to", from, "err", err)
+	}
+}
+
+// OnRegistered is called immediately after a device successfully registers.
+// It pushes the current line settings to the device so it boots with the
+// right voice style. Best-effort: unknown lines (unpaired) or send failures
+// are logged and skipped -- the device keeps its locally-cached last setting.
+func (r *Relay) OnRegistered(number string) {
+	if r.LineStore == nil {
+		return
+	}
+	settings, err := r.LineStore.LineSettingsByNumber(number)
+	if err != nil {
+		slog.Debug("line settings lookup on register skipped", "number", number, "err", err)
+		return
+	}
+	if settings == nil {
+		return
+	}
+	if err := r.Hub.SendTo(number, &Message{
+		Type:         TypeLineSettings,
+		To:           number,
+		LineSettings: settings,
+	}); err != nil {
+		slog.Warn("push line settings on register failed", "number", number, "err", err)
 	}
 }
 

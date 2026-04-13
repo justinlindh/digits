@@ -1447,6 +1447,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		LastSeen:   time.Now(),
 	}
 	h.hub.Register(msg.Number, conn)
+	h.relay.OnRegistered(msg.Number)
 	number := msg.Number
 
 	// Configure pong handler to extend read deadline on each pong
