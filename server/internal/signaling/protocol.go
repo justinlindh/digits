@@ -29,8 +29,12 @@ const (
 
 // LineSettings is the wire-format copy of server/internal/line.Settings used
 // in signaling messages. Kept as a separate struct (not imported directly
-// from internal/line) so the signaling package stays a leaf with no upstream
-// dependency on the line store.
+// from internal/line) so the dependency on internal/line is isolated to
+// linestore_adapter.go.
+//
+// Valid VoiceStyle values are defined canonically in server/internal/line
+// as VoiceStyleCopper and VoiceStyleModern. Any new voice style must be
+// added there, in pi/digitsd/internal/config, and in pi/digitsd/internal/signal.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 }

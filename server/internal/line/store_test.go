@@ -287,9 +287,7 @@ func TestValidateNumber(t *testing.T) {
 // household ID for tests that need all three.
 type testStoreWithHousehold struct {
 	store       *Store
-	rawDB       interface {
-		Exec(query string, args ...any) (sql.Result, error)
-	}
+	rawDB       *sql.DB
 	householdID string
 }
 

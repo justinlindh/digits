@@ -59,10 +59,13 @@ type ContactEntry struct {
 	Name   string `json:"name"`
 }
 
-// LineSettings is the wire-format copy of server/internal/line.Settings used
-// in signaling messages. Kept as a separate struct (not imported directly
-// from internal/line) so the signaling package stays a leaf with no upstream
-// dependency on the line store.
+// LineSettings is the wire-format copy of server-side line.Settings used in
+// signaling messages. Mirrors the server definition so digitsd doesn't need
+// to import any server code.
+//
+// Valid VoiceStyle values are defined canonically in internal/config as
+// VoiceStyleCopper and VoiceStyleModern. Any new voice style must be added
+// there, in server/internal/line, and in server/internal/signaling.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 }
