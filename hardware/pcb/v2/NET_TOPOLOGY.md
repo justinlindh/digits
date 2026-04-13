@@ -91,7 +91,7 @@ U5 AMS1117-3.3
     pin 3 VI         ← +5 V
 
 +3V3 rail            ├── C9 10 µF bulk
-                     ├── C12–C16 100 nF (RP2040 IOVDD decap, one per IOVDD pin)
+                     ├── C12–C16 100 nF (RP2040 IOVDD HF decap; 5 caps shared across 6 IOVDD pins — pre-existing BOM, not one-per-pin)
                      ├── C17, C19, C22 10 µF bulk (codec AVDD, DRVDD, IOVDD)
                      ├── C18, C20, C21 100 nF HF (codec power decap pairs)
                      ├── R5 pullup  → U3.26 RUN
@@ -297,15 +297,17 @@ Reset design: R7 (10 kΩ) pulls `/RESET` to +3V3. C27 (1 nF) provides ESD protec
 ```
                              ┌── C3 100 nF ──┐ (RFI filter across raw mic)
                              │               │
- Handset MIC+  →  J8.1 ── J9.1 ── [external kill switch] ── J9.2 ── R8 ── C23 ── U6.2 MIC1LP
-                                                                    ↑          (DC block)
-                                                 U6.7 MICBIAS ──────┘
-                                                 (bias inject post-switch)
+ Handset MIC+  →  J8.1 ── J9.1 ── [external kill switch] ── J9.2 ──┬── C23 100 nF ── U6.2 MIC1LP
+                                                                    │                (DC block)
+                                                       R8 2.2 kΩ ───┤
+                                                                    │
+                                                       U6.7 MICBIAS ┘
+                                                       (parallel bias inject)
 
  Handset MIC−  →  J8.4 ── J9.3 ── GND
 ```
 
-The mic signal leaves J8 as `MIC_HOT`, goes out through J9 to an external kill-switch lever on the phone cradle, and returns on `MIC_FROM_SW`. Mic bias from `U6.7 MICBIAS` is injected into the post-switch signal via R8 (2.2 kΩ series), then AC-coupled into the codec's `MIC1LP` input through C23 (100 nF). The 100 nF cap into the codec's 20 kΩ input impedance gives an 80 Hz high-pass corner per the TLV320AIC3104 datasheet recommendation.
+The mic signal leaves J8 as `MIC_HOT`, goes out through J9 to an external kill-switch lever on the phone cradle, and returns on `MIC_FROM_SW`. Mic bias from `U6.7 MICBIAS` is injected into the post-switch `MIC_FROM_SW` node via R8 (2.2 kΩ series, parallel branch — R8 is *not* in the signal path), and the same node is AC-coupled into the codec's `MIC1LP` input through C23 (100 nF). The 100 nF cap into the codec's 20 kΩ input impedance gives an 80 Hz high-pass corner per the TLV320AIC3104 datasheet recommendation.
 
 C3 (100 nF) is an RFI suppression cap across the raw mic signal at the connector, before the kill-switch cable.
 
@@ -334,11 +336,11 @@ J8 and J10 both expose the earpiece pair to allow either to be used as the prima
 
 ## USB
 
-R3 (27 Ω) and R4 (27 Ω) provide series termination on the RP2040's USB data lines. On this revision there is no USB connector on the board — `USB_DM_PAD` and `USB_DP_PAD` are test nets with NC markers on the connector side, leaving the option to add a USB connector in a future rev. The series resistors stay in place so the traces from the RP2040 to the future connector position stay impedance-matched.
+R3 (27 Ω) and R4 (27 Ω) provide series termination on the RP2040's USB data lines. On this revision there is no USB connector on the board. The `USB_DM` and `USB_DP` nets run from the RP2040 to R3/R4; the far-side pads of R3/R4 are unlabeled NC pins (flagged with explicit no-connect markers so they pass ERC). This leaves the option to add a USB connector in a future rev by labeling those pads and running them to a connector, without changing the RP2040-side topology.
 
 ```
- U3.46 USB_DM ── R3 27 Ω ── USB_DM_PAD (test stub, NC)
- U3.47 USB_DP ── R4 27 Ω ── USB_DP_PAD (test stub, NC)
+ U3.46 USB_DM ── R3.2 ── R3.1 (NC, reserved for future USB connector)
+ U3.47 USB_DP ── R4.2 ── R4.1 (NC, reserved for future USB connector)
 ```
 
 ## SWD programming
