@@ -152,6 +152,9 @@ static void process_pi_command(const char *cmd) {
     } else if (strcmp(cmd, "TONE:STOP") == 0) {
         tone_stop();
     } else if (strcmp(cmd, "CALL:CONNECTED") == 0) {
+        // Caller-side: Pi sends this after the WebRTC peer answers.
+        // RINGING is accepted defensively; callees normally self-transition
+        // to CONNECTED via hook-off detection.
         if (s_state == PHONE_STATE_DIALING || s_state == PHONE_STATE_RINGING) {
             set_state(PHONE_STATE_CONNECTED);
             uart_proto_send("CALL:CONNECTED:ACK");
