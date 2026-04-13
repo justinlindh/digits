@@ -1634,12 +1634,16 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 
 // writePCMWav writes mono 16-bit PCM samples to a WAV file. Used by the
 // *#TEST# service code to dump the last captured buffer for offline analysis.
-func writePCMWav(path string, samples []int16, sampleRate int) error {
+func writePCMWav(path string, samples []int16, sampleRate int) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	dataSize := uint32(2 * len(samples))
 	byteRate := uint32(sampleRate * 2) // mono * 2 bytes/sample
