@@ -71,7 +71,8 @@ jobs:
             @semantic-release/commit-analyzer \
             @semantic-release/release-notes-generator \
             @semantic-release/exec \
-            @semantic-release/github
+            @semantic-release/github \
+            conventional-changelog-conventionalcommits
 
       - name: Run semantic-release
         run: |

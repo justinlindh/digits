@@ -32,7 +32,7 @@ jobs:
           node-version: "20"
 
       - name: Install semantic-release
-        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/github conventional-changelog-conventionalcommits
 
       - name: Run semantic-release
         run: |

@@ -472,6 +472,16 @@
       </div>
     </div>
 
+    <!-- Options card -->
+    <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
+      <div class="px-4 py-3 border-b border-[#21262d]">
+        <h2 class="text-sm font-medium text-[#e6edf3]">Options</h2>
+      </div>
+      <div class="p-4">
+        {{template "voice-style-section" .}}
+      </div>
+    </div>
+
   </div>
 
   {{if .Online}}
@@ -635,6 +645,37 @@
   }
   </script>
   {{end}}
+</div>
+{{end}}
+
+{{define "voice-style-section"}}
+<div id="voice-style-section">
+  <label class="block text-xs text-[#8b949e] mb-2">Voice Style</label>
+  <form hx-post="/phones/{{.Line.Number}}/voice-style"
+        hx-target="#voice-style-section"
+        hx-swap="outerHTML"
+        class="space-y-2">
+    <label class="flex items-start gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border {{if eq .Line.Settings.VoiceStyle "copper"}}border-[#1f6feb] bg-[#1f6feb]/10{{else}}border-transparent{{end}}">
+      <input type="radio" name="voice_style" value="copper" class="mt-0.5 accent-[#1f6feb]"
+             {{if eq .Line.Settings.VoiceStyle "copper"}}checked{{end}}>
+      <span class="flex-1">
+        <span class="block text-sm text-[#e6edf3]">Copper wire</span>
+        <span class="block text-xs text-[#8b949e] mt-0.5">Warm vintage POTS sound. Narrow 300–3400 Hz band, like the old phone network.</span>
+      </span>
+    </label>
+    <label class="flex items-start gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border {{if eq .Line.Settings.VoiceStyle "modern"}}border-[#1f6feb] bg-[#1f6feb]/10{{else}}border-transparent{{end}}">
+      <input type="radio" name="voice_style" value="modern" class="mt-0.5 accent-[#1f6feb]"
+             {{if eq .Line.Settings.VoiceStyle "modern"}}checked{{end}}>
+      <span class="flex-1">
+        <span class="block text-sm text-[#e6edf3]">Modern HD</span>
+        <span class="block text-xs text-[#8b949e] mt-0.5">Full-range clean audio. No coloration, maximum clarity.</span>
+      </span>
+    </label>
+    <button type="submit"
+      class="w-full md:w-auto mt-2 px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+      Save
+    </button>
+  </form>
 </div>
 {{end}}
 
