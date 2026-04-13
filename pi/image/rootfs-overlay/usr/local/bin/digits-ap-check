@@ -12,13 +12,16 @@
 set -euo pipefail
 
 WIFI_CONFIGURED_FLAG="/data/wifi-configured"
-NM_CONN_SRC_DIR="/data/wifi"
-NM_CONN_DST_DIR="/etc/NetworkManager/system-connections"
+NM_BACKUP_DIR="/data/wifi"
+NM_OPERATIONAL_DIR="/etc/NetworkManager/system-connections"
 NM_CONN_PATTERN="digits-wifi*.nmconnection"
 LOG_TAG="digits-ap-check"
 
+# Log to stderr and /dev/kmsg, never stdout. list_valid captures stdout via
+# command substitution, so any log output here would contaminate its result.
 log() {
-    echo "$LOG_TAG: $*" | tee /dev/kmsg 2>/dev/null || true
+    echo "$LOG_TAG: $*" >&2
+    echo "$LOG_TAG: $*" > /dev/kmsg 2>/dev/null || true
     logger -t "$LOG_TAG" "$*" 2>/dev/null || true
 }
 
@@ -48,15 +51,29 @@ validate_nmconnection() {
     return 0
 }
 
-# List all configured nmconnection files in the data partition.
-# Sets global array NM_CONN_SOURCES.
-list_nm_sources() {
-    NM_CONN_SOURCES=()
+# has_any <dir>
+# Returns 0 if the directory contains at least one digits-wifi*.nmconnection
+# file. Used on the boot hot path before committing to per-file validation.
+has_any() {
+    local dir="$1"
     shopt -s nullglob
-    # shellcheck disable=SC2206
-    local files=($NM_CONN_SRC_DIR/$NM_CONN_PATTERN)
+    local files=("$dir"/$NM_CONN_PATTERN)
     shopt -u nullglob
-    NM_CONN_SOURCES=("${files[@]}")
+    [ ${#files[@]} -gt 0 ]
+}
+
+# list_valid <dir>
+# Prints basenames of valid digits-wifi*.nmconnection files in the given
+# directory. Runs validate_nmconnection on each candidate.
+list_valid() {
+    local dir="$1"
+    shopt -s nullglob
+    for f in "$dir"/$NM_CONN_PATTERN; do
+        if validate_nmconnection "$f"; then
+            printf '%s\n' "${f##*/}"
+        fi
+    done
+    shopt -u nullglob
 }
 
 # Clear wifi-configured state so the device falls back to AP mode.
@@ -64,8 +81,14 @@ reset_wifi_config() {
     log "Resetting wifi config -- will enter AP mode"
     rm -f "$WIFI_CONFIGURED_FLAG"
     shopt -s nullglob
-    rm -f "$NM_CONN_SRC_DIR"/$NM_CONN_PATTERN
+    rm -f "$NM_BACKUP_DIR"/$NM_CONN_PATTERN
     shopt -u nullglob
+    # Wipe the operational store too. Requires remount,rw.
+    mount -o remount,rw / 2>/dev/null || true
+    shopt -s nullglob
+    rm -f "$NM_OPERATIONAL_DIR"/$NM_CONN_PATTERN
+    shopt -u nullglob
+    mount -o remount,ro / 2>/dev/null || true
 }
 
 do_station_up() {
@@ -77,60 +100,7 @@ do_station_up() {
     # Unblock WiFi radio
     rfkill unblock wifi || true
 
-    # Enumerate valid source files once so we know what the desired destination
-    # set looks like.
-    list_nm_sources
-    local desired_basenames=()
-    for src in "${NM_CONN_SOURCES[@]}"; do
-        if validate_nmconnection "$src"; then
-            desired_basenames+=("$(basename "$src")")
-        fi
-    done
-
-    # Remount rw once, do all filesystem mutations, remount ro.
-    mount -o remount,rw / 2>/dev/null || true
-
-    # Prune stale digits-wifi*.nmconnection files from the NM directory that
-    # don't correspond to a currently-valid source. This prevents accumulation
-    # as the user reconfigures across networks over time.
-    shopt -s nullglob
-    for dst in "$NM_CONN_DST_DIR"/$NM_CONN_PATTERN; do
-        local base
-        base=$(basename "$dst")
-        local keep=0
-        for wanted in "${desired_basenames[@]}"; do
-            if [ "$base" = "$wanted" ]; then
-                keep=1
-                break
-            fi
-        done
-        if [ "$keep" -eq 0 ]; then
-            log "Pruning stale NM connection: $base"
-            rm -f "$dst" 2>/dev/null || true
-        fi
-    done
-    shopt -u nullglob
-
-    # Copy each valid source into the NM connections directory.
-    local copied=0
-    for src in "${NM_CONN_SOURCES[@]}"; do
-        if validate_nmconnection "$src"; then
-            local dst="$NM_CONN_DST_DIR/$(basename "$src")"
-            cp "$src" "$dst" 2>/dev/null || true
-            chmod 600 "$dst" 2>/dev/null || true
-            copied=$((copied + 1))
-        fi
-    done
-
-    mount -o remount,ro / 2>/dev/null || true
-
-    if [ "$copied" -gt 0 ]; then
-        log "Copied $copied NM connection file(s)"
-    else
-        log "WARNING: No valid NM connection files found in $NM_CONN_SRC_DIR"
-    fi
-
-    # Let NetworkManager handle everything
+    # Let NetworkManager handle everything; it reads its own config dir.
     log "Wi-Fi client mode -- NetworkManager will connect"
 }
 
@@ -199,26 +169,50 @@ do_ap_down() {
     log "AP mode down -- NetworkManager started"
 }
 
+# restore_from_backup copies every valid backup file into the operational
+# directory. Used when the operational store is empty (e.g. after an OTA
+# image upgrade that replaced the rootfs).
+restore_from_backup() {
+    log "Restoring NM connections from backup at $NM_BACKUP_DIR"
+    local count=0
+    mount -o remount,rw / 2>/dev/null || true
+    while IFS= read -r base; do
+        [ -z "$base" ] && continue
+        local src="$NM_BACKUP_DIR/$base"
+        local dst="$NM_OPERATIONAL_DIR/$base"
+        cp "$src" "$dst" 2>/dev/null || true
+        chmod 600 "$dst" 2>/dev/null || true
+        count=$((count + 1))
+    done < <(list_valid "$NM_BACKUP_DIR")
+    mount -o remount,ro / 2>/dev/null || true
+    log "Restored $count NM connection file(s) from backup"
+}
+
 do_init() {
-    if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
-        list_nm_sources
-        local valid_count=0
-        for src in "${NM_CONN_SOURCES[@]}"; do
-            if validate_nmconnection "$src"; then
-                valid_count=$((valid_count + 1))
-            fi
-        done
-        if [ "$valid_count" -eq 0 ]; then
-            log "WARNING: No valid Wi-Fi config files found in $NM_CONN_SRC_DIR -- falling back to AP mode"
-            reset_wifi_config
-        fi
+    if [ ! -f "$WIFI_CONFIGURED_FLAG" ]; then
+        do_ap_up
+        return
     fi
 
-    if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+    # Hot path: operational store already has at least one file. Trust it and
+    # let NetworkManager validate; avoid forking grep per file before
+    # network-pre.target.
+    if has_any "$NM_OPERATIONAL_DIR"; then
         do_station_up
-    else
-        do_ap_up
+        return
     fi
+
+    # Cold path: operational store is empty (e.g. after an OTA image upgrade
+    # replaced the rootfs). Fall back to the persistent backup.
+    if ! has_any "$NM_BACKUP_DIR" || [ -z "$(list_valid "$NM_BACKUP_DIR")" ]; then
+        log "WARNING: No valid Wi-Fi config files in $NM_OPERATIONAL_DIR or $NM_BACKUP_DIR -- falling back to AP mode"
+        reset_wifi_config
+        do_ap_up
+        return
+    fi
+
+    restore_from_backup
+    do_station_up
 }
 
 case "${1:-init}" in
