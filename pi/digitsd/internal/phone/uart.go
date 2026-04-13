@@ -72,14 +72,6 @@ func (c *UARTClient) LED(mode string) error {
 	return err
 }
 
-// CallConnected sends CALL:CONNECTED to tell the Pico the call has been answered.
-// This is the caller-side transition from DIALING to CONNECTED; the callee's
-// firmware self-transitions via hook detection when the user picks up.
-func (c *UARTClient) CallConnected() error {
-	_, err := c.SendCommand("CALL:CONNECTED", defaultTimeout)
-	return err
-}
-
 // Ping sends PING and expects PONG back. Returns an error if the response is wrong.
 func (c *UARTClient) Ping() error {
 	resp, err := c.SendCommand("PING", defaultTimeout)
