@@ -6,12 +6,13 @@ import (
 )
 
 type mockCallbacks struct {
-	tones   []string
-	rings   []bool
-	leds    []string
-	calls   []string
-	hangups int
-	answers int
+	tones              []string
+	rings              []bool
+	leds               []string
+	calls              []string
+	hangups            int
+	answers            int
+	callConnectedCalls int
 }
 
 func (m *mockCallbacks) SendTone(name string)       { m.tones = append(m.tones, name) }
@@ -21,6 +22,7 @@ func (m *mockCallbacks) SendLED(mode string)        { m.leds = append(m.leds, mo
 func (m *mockCallbacks) InitiateCall(number string) { m.calls = append(m.calls, number) }
 func (m *mockCallbacks) AnswerCall()                { m.answers++ }
 func (m *mockCallbacks) HangupCall()                { m.hangups++ }
+func (m *mockCallbacks) NotifyCallConnected()       { m.callConnectedCalls++ }
 
 // 1. Full outgoing call flow: HOOK:OFF → keys → DIAL:5551234 → answer → HOOK:ON
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
@@ -373,6 +375,44 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 	// No HangupCall — there was no active WebRTC session
 	if cb.hangups != 0 {
 		t.Errorf("expected 0 HangupCall (no active call), got %d", cb.hangups)
+	}
+}
+
+func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "5551234")
+
+	// Drive the controller into StateCALLING by simulating a full dial.
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("KEY:6")
+	c.HandleEvent("KEY:7")
+	c.HandleEvent("KEY:8")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("DIAL:5556789")
+
+	// Wait for the 800ms async goroutine in onDial to set StateCALLING.
+	deadline := time.Now().Add(2 * time.Second)
+	for c.State() != StateCALLING && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if c.State() != StateCALLING {
+		t.Fatalf("expected StateCALLING, got %s", c.State())
+	}
+
+	if cb.callConnectedCalls != 0 {
+		t.Errorf("NotifyCallConnected should not be called before answer, got %d", cb.callConnectedCalls)
+	}
+
+	c.HandleSignal("answer")
+
+	if c.State() != StateCONNECTED {
+		t.Errorf("expected StateCONNECTED after answer, got %s", c.State())
+	}
+	if cb.callConnectedCalls != 1 {
+		t.Errorf("expected NotifyCallConnected to be called once, got %d", cb.callConnectedCalls)
 	}
 }
 
