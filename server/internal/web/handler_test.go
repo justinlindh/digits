@@ -472,6 +472,209 @@ func TestPhoneOnlineStatus(t *testing.T) {
 	}
 }
 
+// setupVoiceStyleLine creates the test user's household, inserts a line with
+// the default voice_style, and registers cleanup. Returns a function that
+// reads the current voice_style straight from the DB so tests can assert
+// final state without reaching into the line store abstraction.
+func setupVoiceStyleLine(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store) (readVoiceStyle func() string) {
+	t.Helper()
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create("Voice Style Test", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	lineStore := line.NewStore(database)
+	if _, err := lineStore.Add("3140001", "Test Phone", hh.ID); err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+	return func() string {
+		var raw string
+		// COALESCE to match the server-side default: an absent voice_style
+		// key (fresh line, never edited) reads back as copper.
+		if err := database.DB.QueryRow(`SELECT COALESCE(settings->>'voice_style', 'copper') FROM lines WHERE number = '3140001'`).Scan(&raw); err != nil {
+			t.Fatalf("read voice_style: %v", err)
+		}
+		return raw
+	}
+}
+
+func postVoiceStyle(t *testing.T, h *Handler, cookie *http.Cookie, value string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"voice_style": {value}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voice-style", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestPhoneVoiceStyleEmptyReturns400(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	read := setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postVoiceStyle(t, h, cookie, "", false)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty voice_style, got %d: %s", w.Code, w.Body.String())
+	}
+	// Must not have written anything — default is copper on insert.
+	if got := read(); got != "copper" {
+		t.Fatalf("expected voice_style untouched (copper), got %q", got)
+	}
+}
+
+func TestPhoneVoiceStyleUpdatePersistsAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	read := setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postVoiceStyle(t, h, cookie, "modern", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	if got := read(); got != "modern" {
+		t.Fatalf("expected voice_style=modern in db, got %q", got)
+	}
+}
+
+func TestPhoneVoiceStyleHTMXReturnsPartialWithSelection(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postVoiceStyle(t, h, cookie, "modern", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="voice-style-section"`) {
+		t.Fatalf("htmx response missing voice-style-section wrapper:\n%s", body)
+	}
+	// The newly-selected radio must carry `checked`, the other must not.
+	modernIdx := strings.Index(body, `value="modern"`)
+	copperIdx := strings.Index(body, `value="copper"`)
+	if modernIdx < 0 || copperIdx < 0 {
+		t.Fatalf("htmx response missing radios:\n%s", body)
+	}
+	// Walk forward from each input to the end of its tag to check for `checked`.
+	modernTag := body[modernIdx:strings.Index(body[modernIdx:], ">")+modernIdx]
+	copperTag := body[copperIdx:strings.Index(body[copperIdx:], ">")+copperIdx]
+	if !strings.Contains(modernTag, "checked") {
+		t.Errorf("modern radio not marked checked after save: %q", modernTag)
+	}
+	if strings.Contains(copperTag, "checked") {
+		t.Errorf("copper radio still marked checked after switching to modern: %q", copperTag)
+	}
+}
+
+func TestPhoneVoiceStyleUnknownValueNormalizesToCopper(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	read := setupVoiceStyleLine(t, h, database, authStore)
+
+	// First move the line away from the default so we can observe the coercion.
+	if w := postVoiceStyle(t, h, cookie, "modern", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("seed modern failed: %d %s", w.Code, w.Body.String())
+	}
+	if got := read(); got != "modern" {
+		t.Fatalf("seed expected modern, got %q", got)
+	}
+
+	w := postVoiceStyle(t, h, cookie, "disco", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for unknown value (normalized), got %d: %s", w.Code, w.Body.String())
+	}
+	if got := read(); got != "copper" {
+		t.Fatalf("expected unknown value to normalize to copper, got %q", got)
+	}
+}
+
+func TestPhoneVoiceStyleMissingLineReturns404(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create("Voice Style Missing", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	w := postVoiceStyle(t, h, cookie, "modern", false)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneVoiceStylePushesToConnectedDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	if w := postVoiceStyle(t, h, cookie, "modern", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse pushed message: %v", err)
+		}
+		if msg.Type != signaling.TypeLineSettings {
+			t.Fatalf("expected %s push, got %s", signaling.TypeLineSettings, msg.Type)
+		}
+		if msg.LineSettings == nil || msg.LineSettings.VoiceStyle != "modern" {
+			t.Fatalf("expected modern line_settings, got %+v", msg.LineSettings)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive line_settings push")
+	}
+}
+
+func TestPhoneVoiceStyleNoOpSkipsPush(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	// Line defaults to copper on insert — saving copper again must be a no-op.
+	if w := postVoiceStyle(t, h, cookie, "copper", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case data := <-conn.Send:
+		t.Fatalf("expected no push on no-op save, got message: %s", string(data))
+	case <-time.After(100 * time.Millisecond):
+		// Expected: no push.
+	}
+}
+
 func TestWSRegister_MissingHardwareID(t *testing.T) {
 	h, _, _ := setupHandler(t)
 	srv := httptest.NewServer(h.Router())

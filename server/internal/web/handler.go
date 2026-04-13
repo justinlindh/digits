@@ -204,6 +204,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
+	protected.HandleFunc("POST /phones/{number}/voice-style", h.handlePhoneVoiceStylePost)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
@@ -696,7 +697,6 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	voiceStyle := strings.TrimSpace(r.FormValue("voice_style"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -709,29 +709,50 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if voiceStyle != "" {
-		next := ln.Settings
-		next.VoiceStyle = voiceStyle
-		next = next.Normalize()
-		if next.VoiceStyle != ln.Settings.VoiceStyle {
-			if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			// Push to the device if it is currently connected so the change
-			// takes effect live without waiting for the next reconnect.
-			if err := h.pushLineSettings(number, next); err != nil {
-				slog.Warn("push line settings failed", "number", number, "err", err)
-			}
-		}
-	}
-
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhones, "phones-table", data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	raw := strings.TrimSpace(r.FormValue("voice_style"))
+	if raw == "" {
+		http.Error(w, "missing voice_style", http.StatusBadRequest)
+		return
+	}
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	next := ln.Settings
+	next.VoiceStyle = raw
+	next = next.Normalize()
+	if next.VoiceStyle != ln.Settings.VoiceStyle {
+		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := h.pushLineSettings(number, next); err != nil {
+			slog.Warn("push line settings failed", "number", number, "err", err)
+		}
+		ln.Settings = next
+	}
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhoneDetail, "voice-style-section", struct {
+			Line line.Line
+		}{Line: *ln})
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 // pushLineSettings sends the updated settings to the device currently

@@ -236,14 +236,6 @@
              name="name"
              value="{{.Line.Name}}"
              class="bg-[#0d1117] border border-[#58a6ff] rounded px-2 py-1 text-sm text-[#e6edf3] focus:outline-none w-48">
-      <label class="flex items-center gap-1 text-xs text-[#8b949e]">
-        Voice
-        <select name="voice_style"
-                class="bg-[#0d1117] border border-[#30363d] rounded px-2 py-1 text-sm text-[#e6edf3]">
-          <option value="copper" {{if eq .Line.Settings.VoiceStyle "copper"}}selected{{end}}>Copper wire</option>
-          <option value="modern" {{if eq .Line.Settings.VoiceStyle "modern"}}selected{{end}}>Modern HD</option>
-        </select>
-      </label>
       <button type="submit" class="text-xs px-3 py-1 bg-[#238636] hover:bg-[#2ea043] text-white rounded transition-colors">Save</button>
       <a href="/phones" class="text-xs px-3 py-1 bg-[#21262d] hover:bg-[#2d333b] text-[#c9d1d9] rounded transition-colors">Cancel</a>
     </form>
