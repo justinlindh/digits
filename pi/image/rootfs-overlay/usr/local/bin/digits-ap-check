@@ -1,6 +1,11 @@
 #!/bin/bash
-# digits-ap-check: Run at boot to decide between AP mode and normal Wi-Fi mode.
-# Called by digits-ap-check.service (Before=network-pre.target).
+# digits-ap-check: Manage AP mode vs. station mode for Wi-Fi.
+# Subcommands:
+#   init  -- boot-time decision: read flag, go into station or AP mode (default)
+#   up    -- unconditionally bring the setup AP up
+#   down  -- unconditionally tear the setup AP down and hand wlan0 to NetworkManager
+#
+# Called by digits-ap-check.service (Before=network-pre.target) as: digits-ap-check init
 #
 # NOTE: Root filesystem is read-only. Use systemctl start/stop only, never enable/disable.
 
@@ -49,16 +54,7 @@ reset_wifi_config() {
     rm -f "$NM_CONN_SRC"
 }
 
-if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
-    # Validate the config file before trusting it
-    if ! validate_nmconnection "$NM_CONN_SRC"; then
-        log "WARNING: Wi-Fi config is corrupt or missing -- falling back to AP mode"
-        reset_wifi_config
-        # Fall through to the AP mode block below
-    fi
-fi
-
-if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+do_station_up() {
     log "Wi-Fi configured — starting normal boot"
 
     # Stop AP services
@@ -82,7 +78,9 @@ if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
 
     # Let NetworkManager handle everything (wpa_supplicant runs under NM via D-Bus)
     log "Wi-Fi client mode — NetworkManager will connect"
-else
+}
+
+do_ap_up() {
     log "Wi-Fi not configured — entering AP mode"
 
     # Kill NetworkManager — it fights hostapd for wlan0 and re-blocks rfkill
@@ -130,4 +128,46 @@ else
     systemctl start --no-block digits-setup.service
 
     log "AP mode started — SSID: $(grep '^ssid=' /etc/hostapd/digits-ap.conf | cut -d= -f2)"
-fi
+}
+
+do_ap_down() {
+    log "Tearing down AP mode — handing wlan0 back to NetworkManager"
+
+    systemctl stop digits-setup.service 2>/dev/null || true
+    systemctl stop digits-dnsmasq-ap.service 2>/dev/null || true
+    systemctl stop digits-ap.service 2>/dev/null || true
+
+    ip addr flush dev wlan0 2>/dev/null || true
+    ip link set wlan0 down 2>/dev/null || true
+
+    systemctl start NetworkManager
+
+    log "AP mode down — NetworkManager started"
+}
+
+do_init() {
+    if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+        # Validate the config file before trusting it
+        if ! validate_nmconnection "$NM_CONN_SRC"; then
+            log "WARNING: Wi-Fi config is corrupt or missing -- falling back to AP mode"
+            reset_wifi_config
+            # Fall through to the AP mode block below
+        fi
+    fi
+
+    if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
+        do_station_up
+    else
+        do_ap_up
+    fi
+}
+
+case "${1:-init}" in
+    init)  do_init ;;
+    up)    do_ap_up ;;
+    down)  do_ap_down ;;
+    *)
+        echo "usage: $0 {init|up|down}" >&2
+        exit 2
+        ;;
+esac
