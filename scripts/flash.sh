@@ -62,11 +62,23 @@ if [ "${1:-}" = "--release" ]; then
 fi
 
 # --- Local mode: copy UF2 to BOOTSEL mount ---
-UF2_FILE="$SCRIPT_DIR/../firmware/build/digits.uf2"
+# Prefer whichever build dir has the newer UF2 (docker vs local).
+LOCAL_UF2="$SCRIPT_DIR/../firmware/build/local/digits.uf2"
+DOCKER_UF2="$SCRIPT_DIR/../firmware/build/docker/digits.uf2"
 
-if [ ! -f "$UF2_FILE" ]; then
-    echo "ERROR: UF2 file not found at $UF2_FILE" >&2
-    echo "Run scripts/build.sh first." >&2
+if [ -f "$LOCAL_UF2" ] && [ -f "$DOCKER_UF2" ]; then
+    if [ "$LOCAL_UF2" -nt "$DOCKER_UF2" ]; then
+        UF2_FILE="$LOCAL_UF2"
+    else
+        UF2_FILE="$DOCKER_UF2"
+    fi
+elif [ -f "$LOCAL_UF2" ]; then
+    UF2_FILE="$LOCAL_UF2"
+elif [ -f "$DOCKER_UF2" ]; then
+    UF2_FILE="$DOCKER_UF2"
+else
+    echo "ERROR: UF2 file not found in firmware/build/local or firmware/build/docker" >&2
+    echo "Run 'make firmware' or 'make firmware-local' first." >&2
     exit 1
 fi
 
