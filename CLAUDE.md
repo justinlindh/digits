@@ -42,9 +42,12 @@ make test
 
 Firmware (from repo root):
 ```
-PICO_SDK_PATH=/path/to/pico-sdk ./scripts/build.sh
-./scripts/flash.sh  # copies UF2 to mounted Pico
+make firmware         # builds in Docker, no host toolchain needed
+make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
+./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
+
+`make firmware-local` runs `./scripts/build.sh`, which auto-detects `PICO_SDK_PATH` from common locations (`/usr/share/pico-sdk`, `~/pico-sdk`, etc.). Only set `PICO_SDK_PATH` explicitly if the SDK is installed somewhere non-standard.
 
 ## Linting
 

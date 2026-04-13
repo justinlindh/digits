@@ -24,8 +24,11 @@ pi-test: ## Run digitsd tests (host architecture)
 
 # ── Firmware ─────────────────────────────────────────────────────────────────
 
-firmware: ## Build Pico firmware (requires arm-none-eabi-gcc + Pico SDK)
-	./scripts/build.sh
+firmware: ## Build Pico firmware (Docker, no host toolchain needed)
+	$(MAKE) -C firmware build
+
+firmware-local: ## Build Pico firmware on host (requires arm-none-eabi-gcc + Pico SDK)
+	$(MAKE) -C firmware build-local
 
 # ── Pi SD Card Image ─────────────────────────────────────────────────────────
 
