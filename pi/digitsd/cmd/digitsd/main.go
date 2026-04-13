@@ -1246,6 +1246,19 @@ func main() {
 					}
 					mixer.PlayOnce(dtmfName)
 				}
+				// Forward DTMF to the remote peer if a call is connected.
+				if ctrl.State() == phone.StateCONNECTED {
+					cb.mu.Lock()
+					peer := cb.callPeer
+					cb.mu.Unlock()
+					if peer != "" {
+						sig.Send(&sigclient.Message{ //nolint:errcheck
+							Type:  sigclient.TypeDTMF,
+							To:    peer,
+							Digit: key,
+						})
+					}
+				}
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
 					if svcCodes.AddKey(key) {
