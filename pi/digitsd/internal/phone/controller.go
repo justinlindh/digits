@@ -71,6 +71,16 @@ func (c *Controller) State() State {
 	return c.state
 }
 
+// IsCallActive reports whether the phone is currently in a call or actively ringing.
+func (c *Controller) IsCallActive() bool {
+	switch c.State() {
+	case StateCALLING, StateRINGING, StateCONNECTED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Reset forces the controller back to IDLE with no pending digits.
 // Used after service codes to return the phone to a clean state.
 func (c *Controller) Reset() {

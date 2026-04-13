@@ -30,6 +30,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
+	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
 
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -1223,6 +1224,21 @@ func main() {
 			requestICEServers(sig)
 		}
 	}()
+
+	// WiFi auto-fallback supervisor. Watches NM connectivity and flips the
+	// device into setup-AP mode if the configured network is unreachable for
+	// longer than the grace window. Held during active calls. Disabled when
+	// cfg.WiFiFallback.Enabled is false.
+	wifiSupervisor := wififallback.NewSupervisor(
+		cfg.WiFiFallback,
+		wififallback.NewNMCLIChecker(),
+		wififallback.NewScriptAPController(),
+		ctrl.IsCallActive,
+		slog.Default().With("subsystem", "wifi-fallback"),
+	)
+	wifiCtx, wifiCancel := context.WithCancel(context.Background())
+	defer wifiCancel()
+	go wifiSupervisor.Run(wifiCtx)
 
 	// Pairing code refresh: reconnect before the code expires so the
 	// server issues a fresh one. Timer starts when we receive a code.
