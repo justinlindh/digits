@@ -11,3 +11,15 @@
 *.dsn
 *.ses
 *.rules
+
+# DRC / ERC output artifacts
+*_drc_violations.json
+*-erc.rpt
+
+# kicad-mcp-server snapshots
+snapshots/
+
+# Fabrication toolkit outputs: regenerated per build. Track only bom.csv
+# as the hand-audited source of truth for the assembly order.
+production/*
+!production/bom.csv
