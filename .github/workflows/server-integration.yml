@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      signald-db:
+      postgres:
         image: postgres:16-alpine
         env:
           POSTGRES_USER: digits
@@ -18,20 +18,6 @@ jobs:
           POSTGRES_DB: digits_test
         ports:
           - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U digits"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-      admin-db:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: digits
-          POSTGRES_PASSWORD: digits
-          POSTGRES_DB: digits_admin_test
-        ports:
-          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U digits"
           --health-interval 5s
@@ -46,11 +32,16 @@ jobs:
           go-version: '1.26.1'
           cache-dependency-path: server/go.sum
 
+      - name: Create admind test database
+        env:
+          PGPASSWORD: digits
+        run: psql -h localhost -U digits -d postgres -c "CREATE DATABASE digits_admin_test OWNER digits"
+
       - name: Integration tests
         working-directory: server
         env:
           TEST_DATABASE_URL: postgres://digits:digits@localhost:5432/digits_test?sslmode=disable
-          TEST_ADMIN_DATABASE_URL: postgres://digits:digits@localhost:5433/digits_admin_test?sslmode=disable
+          TEST_ADMIN_DATABASE_URL: postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable
         # -p 1 serializes package execution. Integration tests across packages
         # share the same Postgres instance; parallel `CREATE TABLE IF NOT EXISTS`
         # statements issued by each package's Open() migration can race, and

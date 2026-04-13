@@ -95,7 +95,7 @@ Integration tests require two environment variables pointing at live databases:
 
 ```
 export TEST_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_test?sslmode=disable"
-export TEST_ADMIN_DATABASE_URL="postgres://digits:digits@localhost:5433/digits_admin_test?sslmode=disable"
+export TEST_ADMIN_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable"
 ```
 
 If either variable is unset, the tests that require it call `t.Skip` and log the reason. That means `go test -tags=integration ./...` without a DSN is safe -- it just skips anything it can't run.
