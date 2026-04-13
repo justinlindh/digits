@@ -13,8 +13,13 @@ type PipelineConfig struct {
 	MicChannel  int  // 0=left, 1=right. Both codecs route mic to left channel.
 	Denoise     bool
 	// Bandpass enables the POTS telephony bandpass + mains notch comb on
-	// the capture path. See NewPOTSChain for the exact filter topology.
+	// the capture path, applied BEFORE the denoiser. See NewPOTSChain for
+	// the exact filter topology.
 	Bandpass bool
+	// Character enables a pure 300-3400 Hz POTS bandpass applied AFTER the
+	// denoiser as a cosmetic voice-color effect that makes calls sound like
+	// a legacy copper-wire phone. See NewPOTSCharacterChain.
+	Character bool
 }
 
 // DefaultPipelineConfig returns sensible defaults for both codec types.
@@ -38,13 +43,14 @@ func DefaultPipelineConfig() PipelineConfig {
 // Pipeline ties ALSA capture → RNNoise denoising → outPCM channel.
 // Capture-only: playback is handled by the Mixer.
 type Pipeline struct {
-	cfg      PipelineConfig
-	capture  *Capture
-	filters  *BiquadChain
-	denoiser *Denoiser
-	outPCM   chan []int16 // denoised mono 20ms frames for WebRTC to encode
-	stop     chan struct{}
-	wg       sync.WaitGroup
+	cfg       PipelineConfig
+	capture   *Capture
+	filters   *BiquadChain // pre-denoise bandpass (optional)
+	character *BiquadChain // post-denoise POTS character shaping (optional)
+	denoiser  *Denoiser
+	outPCM    chan []int16 // denoised mono 20ms frames for WebRTC to encode
+	stop      chan struct{}
+	wg        sync.WaitGroup
 }
 
 // NewPipeline creates a Pipeline with the given config. Call Start() to open
@@ -72,6 +78,9 @@ func (p *Pipeline) Start() error {
 
 	if p.cfg.Bandpass {
 		p.filters = NewPOTSChain(p.cfg.SampleRate)
+	}
+	if p.cfg.Character {
+		p.character = NewPOTSCharacterChain(p.cfg.SampleRate)
 	}
 
 	if p.cfg.Denoise {
@@ -128,6 +137,8 @@ func (p *Pipeline) captureLoop() {
 		if p.denoiser != nil {
 			mono = p.denoiser.Process(mono)
 		}
+
+		mono = p.character.Process(mono)
 
 		// Non-blocking send — drop frame if consumer is slow.
 		select {
