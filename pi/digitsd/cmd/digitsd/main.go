@@ -1054,7 +1054,32 @@ func main() {
 		} else {
 			slog.Info("audio test: wav dumped", "path", dumpPath)
 		}
+
+		// A/B comparison scaffolding (temporary, for tuning the POTS voice
+		// character filter): play back the raw captured signal first, then
+		// the same signal processed through NewPOTSCharacterChain so the
+		// user can hear the "copper wire" color effect back-to-back on a
+		// real device. Strip this block before merging.
+		slog.Info("audio test A/B: playing RAW (RNNoise only)")
 		mixer.PlayOnceSamples(recorded)
+		time.Sleep(100 * time.Millisecond)
+		for mixer.OncePlaying() {
+			time.Sleep(100 * time.Millisecond)
+		}
+		doubleBeep()
+		for mixer.OncePlaying() {
+			time.Sleep(50 * time.Millisecond)
+		}
+
+		character := audio.NewPOTSCharacterChain(sampleRate).Process(recorded)
+		const characterDumpPath = "/tmp/audiotest_character.wav"
+		if err := writePCMWav(characterDumpPath, character, sampleRate); err != nil {
+			slog.Warn("audio test: character wav dump failed", "path", characterDumpPath, "error", err)
+		} else {
+			slog.Info("audio test: character wav dumped", "path", characterDumpPath)
+		}
+		slog.Info("audio test A/B: playing COPPER (RNNoise + POTS character)")
+		mixer.PlayOnceSamples(character)
 		time.Sleep(100 * time.Millisecond)
 		for mixer.OncePlaying() {
 			time.Sleep(100 * time.Millisecond)
