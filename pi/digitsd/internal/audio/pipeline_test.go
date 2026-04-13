@@ -19,6 +19,9 @@ func TestPipelineConfig(t *testing.T) {
 	if !cfg.Denoise {
 		t.Error("Denoise: got false, want true")
 	}
+	if cfg.Bandpass {
+		t.Error("Bandpass: got true, want false (RNNoise handles hum)")
+	}
 }
 
 func TestNewPipeline(t *testing.T) {

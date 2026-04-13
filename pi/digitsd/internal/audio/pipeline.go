@@ -12,6 +12,9 @@ type PipelineConfig struct {
 	OpusBitrate int
 	MicChannel  int  // 0=left, 1=right. Both codecs route mic to left channel.
 	Denoise     bool
+	// Bandpass enables the POTS telephony bandpass + mains notch comb on
+	// the capture path. See NewPOTSChain for the exact filter topology.
+	Bandpass bool
 }
 
 // DefaultPipelineConfig returns sensible defaults for both codec types.
@@ -22,6 +25,13 @@ func DefaultPipelineConfig() PipelineConfig {
 		OpusBitrate: 24000,
 		MicChannel:  0, // Both codecs route mic to left channel
 		Denoise:     true,
+		// Bandpass off by default: RNNoise alone handles both the 60 Hz
+		// mains hum and the broadband preamp hiss on the prototype phones
+		// cleanly. A fixed biquad chain in front of RNNoise only distorts
+		// voice without improving noise. Leaving the POTS filter code in
+		// place so it can be re-enabled for testing or for a future codec
+		// without RNNoise.
+		Bandpass: false,
 	}
 }
 
@@ -30,6 +40,7 @@ func DefaultPipelineConfig() PipelineConfig {
 type Pipeline struct {
 	cfg      PipelineConfig
 	capture  *Capture
+	filters  *BiquadChain
 	denoiser *Denoiser
 	outPCM   chan []int16 // denoised mono 20ms frames for WebRTC to encode
 	stop     chan struct{}
@@ -58,6 +69,10 @@ func (p *Pipeline) Start() error {
 		return err
 	}
 	p.capture = cap
+
+	if p.cfg.Bandpass {
+		p.filters = NewPOTSChain(p.cfg.SampleRate)
+	}
 
 	if p.cfg.Denoise {
 		d, err := NewDenoiser()
@@ -107,6 +122,8 @@ func (p *Pipeline) captureLoop() {
 		}
 
 		mono := ExtractChannel(stereo, 2, p.cfg.MicChannel)
+
+		mono = p.filters.Process(mono)
 
 		if p.denoiser != nil {
 			mono = p.denoiser.Process(mono)
