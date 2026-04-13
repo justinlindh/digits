@@ -11,7 +11,7 @@ on:
       - 'server/**'
 
 jobs:
-  test:
+  unit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -25,7 +25,7 @@ jobs:
         working-directory: server
         run: go build -o bin/signald ./cmd/signald/
 
-      - name: Test
+      - name: Unit tests
         working-directory: server
         run: go test -race -count=1 ./...
 
