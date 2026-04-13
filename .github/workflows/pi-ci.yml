@@ -1,0 +1,55 @@
+name: Pi CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pi/digitsd/**'
+      - 'pi/digits-setup/**'
+      - '.github/workflows/pi-ci.yml'
+  pull_request:
+    paths:
+      - 'pi/digitsd/**'
+      - 'pi/digits-setup/**'
+      - '.github/workflows/pi-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-digitsd:
+    name: test-digitsd
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache-dependency-path: pi/digitsd/go.sum
+      - name: Install C dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libopus-dev libopusfile-dev
+      - name: Build digitsd
+        working-directory: pi/digitsd
+        run: go build ./...
+      - name: Test digitsd
+        working-directory: pi/digitsd
+        run: go test ./...
+      - name: Race test wififallback supervisor
+        working-directory: pi/digitsd
+        run: go test -race ./internal/wififallback/...
+
+  test-digits-setup:
+    name: test-digits-setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache-dependency-path: pi/digits-setup/go.sum
+      - name: Build digits-setup
+        working-directory: pi/digits-setup
+        run: go build ./...
+      - name: Test digits-setup
+        working-directory: pi/digits-setup
+        run: go test ./...
