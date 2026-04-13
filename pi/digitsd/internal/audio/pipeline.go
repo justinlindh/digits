@@ -3,6 +3,7 @@ package audio
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // PipelineConfig holds configuration for the audio pipeline.
@@ -37,6 +38,10 @@ func DefaultPipelineConfig() PipelineConfig {
 		// place so it can be re-enabled for testing or for a future codec
 		// without RNNoise.
 		Bandpass: false,
+		// Character defaults to true (copper voice) because the physical Digits
+		// phones are vintage handsets and the POTS color matches their aesthetic.
+		// Web UI toggles per line.
+		Character: true,
 	}
 }
 
@@ -46,7 +51,7 @@ type Pipeline struct {
 	cfg       PipelineConfig
 	capture   *Capture
 	filters   *BiquadChain // pre-denoise bandpass (optional)
-	character *BiquadChain // post-denoise POTS character shaping (optional)
+	character atomic.Pointer[BiquadChain] // post-denoise POTS character, swappable live
 	denoiser  *Denoiser
 	outPCM    chan []int16 // denoised mono 20ms frames for WebRTC to encode
 	stop      chan struct{}
@@ -56,16 +61,47 @@ type Pipeline struct {
 // NewPipeline creates a Pipeline with the given config. Call Start() to open
 // ALSA devices and begin streaming.
 func NewPipeline(cfg PipelineConfig) *Pipeline {
-	return &Pipeline{
+	p := &Pipeline{
 		cfg:    cfg,
 		outPCM: make(chan []int16, 8),
 		stop:   make(chan struct{}),
 	}
+	if cfg.Character {
+		p.character.Store(NewPOTSCharacterChain(cfg.SampleRate))
+	}
+	return p
 }
 
 // OutFrames returns the read-only channel of captured+denoised mono PCM frames.
 func (p *Pipeline) OutFrames() <-chan []int16 {
 	return p.outPCM
+}
+
+// Voice style identifiers accepted by SetVoiceStyle. Kept here rather than in
+// the signal package so the audio package has no upstream dependency.
+const (
+	VoiceStyleCopper = "copper"
+	VoiceStyleModern = "modern"
+)
+
+// SetVoiceStyle swaps the post-denoise character filter atomically. Safe to
+// call from any goroutine at any time, including mid-call: captureLoop reads
+// the pointer each frame so the next frame after the swap picks up the new
+// chain. Unknown style values fall back to copper so garbage config can't
+// silently disable the effect.
+func (p *Pipeline) SetVoiceStyle(style string) {
+	switch style {
+	case VoiceStyleModern:
+		p.character.Store(nil)
+	default:
+		p.character.Store(NewPOTSCharacterChain(p.cfg.SampleRate))
+	}
+}
+
+// loadCharacter is a test helper. Returns the current character chain (may
+// be nil).
+func (p *Pipeline) loadCharacter() *BiquadChain {
+	return p.character.Load()
 }
 
 // Start opens the ALSA capture device and begins the capture goroutine.
@@ -78,9 +114,6 @@ func (p *Pipeline) Start() error {
 
 	if p.cfg.Bandpass {
 		p.filters = NewPOTSChain(p.cfg.SampleRate)
-	}
-	if p.cfg.Character {
-		p.character = NewPOTSCharacterChain(p.cfg.SampleRate)
 	}
 
 	if p.cfg.Denoise {
@@ -138,7 +171,9 @@ func (p *Pipeline) captureLoop() {
 			mono = p.denoiser.Process(mono)
 		}
 
-		mono = p.character.Process(mono)
+		if ch := p.character.Load(); ch != nil {
+			mono = ch.Process(mono)
+		}
 
 		// Non-blocking send — drop frame if consumer is slow.
 		select {
