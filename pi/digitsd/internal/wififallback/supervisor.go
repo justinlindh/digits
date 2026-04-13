@@ -3,7 +3,7 @@ package wififallback
 import (
 	"context"
 	"log/slog"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
@@ -38,14 +38,13 @@ func (s State) String() string {
 // between station mode and setup-AP mode. It must be driven by Tick (for
 // tests) or Run (for production).
 type Supervisor struct {
-	mu         sync.Mutex
 	cfg        config.WiFiFallback
 	nm         NMStatusChecker
 	ap         APController
 	callActive func() bool
 	logger     *slog.Logger
 
-	state        State
+	state        atomic.Int32 // stores State
 	graceExpires time.Time
 	apExpires    time.Time
 	backoff      time.Duration
@@ -57,29 +56,26 @@ func NewSupervisor(cfg config.WiFiFallback, nm NMStatusChecker, ap APController,
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Supervisor{
+	s := &Supervisor{
 		cfg:        cfg,
 		nm:         nm,
 		ap:         ap,
 		callActive: callActive,
 		logger:     logger,
-		state:      StateStationOK,
 		backoff:    cfg.GraceInitial,
 	}
+	s.state.Store(int32(StateStationOK))
+	return s
 }
 
 // State returns the current supervisor state.
 func (s *Supervisor) State() State {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.state
+	return State(s.state.Load())
 }
 
 // Tick runs one iteration of the state machine with the given now value.
 // Tests call this directly; Run invokes it on a ticker.
 func (s *Supervisor) Tick(now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if !s.cfg.Enabled {
 		return
 	}
@@ -90,7 +86,7 @@ func (s *Supervisor) Tick(now time.Time) {
 		connected = false
 	}
 
-	switch s.state {
+	switch s.State() {
 	case StateStationOK:
 		s.tickStationOK(now, connected)
 	case StateStationDegraded:
@@ -147,19 +143,20 @@ func (s *Supervisor) tickAPOffered(now time.Time, _ bool) {
 func (s *Supervisor) tickAPActive(now time.Time, _ bool) {
 	hasClient, err := s.ap.HasClient()
 	if err != nil {
-		s.logger.Warn("wifi-fallback: HasClient failed", "err", err)
+		s.logger.Warn("wifi-fallback: HasClient failed in AP_ACTIVE, holding", "err", err)
+		return
 	}
 	if hasClient {
 		return
 	}
 	s.transitionTo(now, StateAPOffered, "client left")
-	// Tighter re-grace than a fresh AP_OFFERED — if they just need to reconnect.
+	// Tighter re-grace than a fresh AP_OFFERED -- if they just need to reconnect.
 	s.apExpires = now.Add(2 * time.Minute)
 }
 
 func (s *Supervisor) transitionTo(now time.Time, next State, reason string) {
-	prev := s.state
-	s.state = next
+	prev := s.State()
+	s.state.Store(int32(next))
 	s.logger.Info("wifi-fallback: transition", "from", prev.String(), "to", next.String(), "reason", reason)
 	switch next {
 	case StateStationOK:
