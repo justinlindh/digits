@@ -1,10 +1,6 @@
 package wififallback
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -24,22 +20,9 @@ type nmcliChecker struct {
 
 // NewNMCLIChecker returns an NMStatusChecker backed by the nmcli binary.
 func NewNMCLIChecker() NMStatusChecker {
-	return &nmcliChecker{run: execNmcli}
-}
-
-// execNmcli runs nmcli with the given args, applying a 5 second timeout
-// and capturing stderr so caller errors are actionable.
-func execNmcli(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "nmcli", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("nmcli %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
+	return &nmcliChecker{run: func(args ...string) ([]byte, error) {
+		return runCmd(5*time.Second, "nmcli", args...)
+	}}
 }
 
 func (c *nmcliChecker) HasConnectivity() (bool, error) {

@@ -1,10 +1,6 @@
 package wififallback
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -27,36 +23,16 @@ type scriptAPController struct {
 // for HasClient.
 func NewScriptAPController() APController {
 	return &scriptAPController{
-		run:    runCombinedScript,
-		runOut: runStdoutQuick,
+		run: func(args ...string) error {
+			// digits-ap-check can take a while: stopping NetworkManager,
+			// starting hostapd, dnsmasq, and the captive portal on a Pi Zero.
+			_, err := runCmd(30*time.Second, args[0], args[1:]...)
+			return err
+		},
+		runOut: func(args ...string) ([]byte, error) {
+			return runCmd(5*time.Second, args[0], args[1:]...)
+		},
 	}
-}
-
-// runCombinedScript runs a command with 30s timeout (for digits-ap-check which
-// can take 10-20s to stop NetworkManager and bring up hostapd/dnsmasq/portal).
-func runCombinedScript(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v failed: %w: %s", args, err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-// runStdoutQuick runs a command with 5s timeout (for iw which is quick).
-func runStdoutQuick(args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%v failed: %w: %s", args, err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
 }
 
 func (s *scriptAPController) Up() error {
@@ -72,5 +48,9 @@ func (s *scriptAPController) HasClient() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return strings.Contains(string(out), "Station "), nil
+	// iw's `station dump` output starts each station block with "Station <mac>"
+	// at column 0. Anchor the check to line-start to avoid false positives from
+	// any future iw field label that happens to contain "Station ".
+	str := string(out)
+	return strings.HasPrefix(str, "Station ") || strings.Contains(str, "\nStation "), nil
 }
