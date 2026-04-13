@@ -696,6 +696,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	voiceStyle := strings.TrimSpace(r.FormValue("voice_style"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -708,12 +709,34 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if voiceStyle != "" && voiceStyle != ln.Settings.VoiceStyle {
+		next := ln.Settings
+		next.VoiceStyle = voiceStyle
+		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Push to the device if it is currently connected so the change
+		// takes effect live without waiting for the next reconnect.
+		if err := h.pushLineSettings(number, next); err != nil {
+			slog.Warn("push line settings failed", "number", number, "err", err)
+		}
+	}
+
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhones, "phones-table", data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+// pushLineSettings is implemented in Task 7 once the signaling message
+// type exists. Present here as a stub so handler code compiles in isolation.
+func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
+	_ = number
+	_ = settings
+	return nil
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
