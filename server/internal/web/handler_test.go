@@ -1,3 +1,5 @@
+//go:build integration
+
 package web
 
 import (
@@ -80,9 +82,33 @@ func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
 	}
 }
 
-func TestDashboardReturns200(t *testing.T) {
-	h, _, authStore := setupHandler(t)
+// setupAuthedHousehold combines addSessionCookie with household creation so
+// a test user has a household_members row. Onboarding middleware redirects
+// any request without a household to /onboard, so every test that hits a
+// protected route must seed one. Returns the session cookie and the created
+// household. Cleanup for the household row and its member row is registered
+// via t.Cleanup.
+func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store) (*http.Cookie, *household.Household) {
+	t.Helper()
 	cookie := addSessionCookie(t, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create("Handler Test Household", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+	return cookie, hh
+}
+
+func TestDashboardReturns200(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -90,14 +116,14 @@ func TestDashboardReturns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "Network Overview") {
+	if !strings.Contains(w.Body.String(), "Household dashboard") {
 		t.Errorf("dashboard missing expected content")
 	}
 }
 
 func TestPhonesPageReturns200(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -108,8 +134,8 @@ func TestPhonesPageReturns200(t *testing.T) {
 }
 
 func TestAddPhoneViaHTMX(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	form := url.Values{"number": {"3140001"}, "name": {"Test Phone"}}
 	req := httptest.NewRequest(http.MethodPost, "/phones", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -126,8 +152,8 @@ func TestAddPhoneViaHTMX(t *testing.T) {
 }
 
 func TestAddPhoneInvalidNumber(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	form := url.Values{"number": {"123"}, "name": {"Bad Phone"}}
 	req := httptest.NewRequest(http.MethodPost, "/phones", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -143,10 +169,9 @@ func TestAddPhoneInvalidNumber(t *testing.T) {
 
 func TestDeletePhone(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	lineStore := line.NewStore(database)
-	// We need a household to add a line; for this test we just insert directly
-	_, err := lineStore.Add("3140001", "Test Phone", "00000000-0000-0000-0000-000000000000")
+	_, err := lineStore.Add("3140001", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("add test line: %v", err)
 	}
@@ -169,8 +194,11 @@ func TestDeletePhone(t *testing.T) {
 }
 
 func TestCallsPageReturns200(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -181,8 +209,8 @@ func TestCallsPageReturns200(t *testing.T) {
 }
 
 func TestSettingsPageReturns200(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -190,14 +218,14 @@ func TestSettingsPageReturns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "SIGNALD_ADDR") {
-		t.Errorf("settings page missing env var reference")
+	if !strings.Contains(w.Body.String(), "Settings") {
+		t.Errorf("settings page missing expected content")
 	}
 }
 
 func TestAPIStatusReturnsJSON(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -284,8 +312,8 @@ func TestSettingsTimezonePost_Invalid(t *testing.T) {
 }
 
 func TestNotFound(t *testing.T) {
-	h, _, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -342,13 +370,11 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 
 func TestPhoneRestartOnline(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
-	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
@@ -382,13 +408,11 @@ func TestPhoneRestartOnline(t *testing.T) {
 
 func TestPhoneRestartOffline(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
-	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	form := url.Values{"mode": {"service"}}
@@ -406,13 +430,11 @@ func TestPhoneRestartOffline(t *testing.T) {
 
 func TestPhoneRestartInvalidMode(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
-	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
@@ -433,13 +455,11 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 
 func TestPhoneOnlineStatus(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	_, _ = database.DB.Exec("INSERT INTO households (id, name) VALUES ('h1', 'Test') ON CONFLICT DO NOTHING")
-	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', 'h1') ON CONFLICT DO NOTHING`)
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = 'h1'")
 	})
 
 	req := httptest.NewRequest("GET", "/phones/3140001/online", nil)

@@ -56,6 +56,7 @@ DEVICE_UUID=$(cat /proc/sys/kernel/random/uuid)
 log "Device UUID: ${DEVICE_UUID}"
 mkdir -p /data/digits
 echo "${DEVICE_UUID}" > /data/digits/device-id
+chown digits:digits /data/digits/device-id
 
 # Keep a short suffix for the AP SSID (last 4 chars of UUID)
 DEVICE_ID="${DEVICE_UUID: -4}"

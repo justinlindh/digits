@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadMissingFile(t *testing.T) {
@@ -377,5 +378,77 @@ func TestConfigLoadPreservesVoiceStyle(t *testing.T) {
 	}
 	if c.VoiceStyle != "modern" {
 		t.Errorf("loaded voice_style: got %q, want %q", c.VoiceStyle, "modern")
+	}
+}
+
+func TestWiFiFallbackDefaults(t *testing.T) {
+	c := Default()
+	if !c.WiFiFallback.Enabled {
+		t.Error("WiFiFallback.Enabled should default to true")
+	}
+	if c.WiFiFallback.GraceInitial != 5*time.Minute {
+		t.Errorf("GraceInitial = %v, want 5m", c.WiFiFallback.GraceInitial)
+	}
+	if c.WiFiFallback.GraceMax != 30*time.Minute {
+		t.Errorf("GraceMax = %v, want 30m", c.WiFiFallback.GraceMax)
+	}
+	if c.WiFiFallback.APNoClientTimeout != 10*time.Minute {
+		t.Errorf("APNoClientTimeout = %v, want 10m", c.WiFiFallback.APNoClientTimeout)
+	}
+}
+
+func TestLoadPreservesExplicitEnabledFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	data := []byte(`{"wifi_fallback": {"enabled": false, "grace_initial": 120000000000}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if c.WiFiFallback.Enabled {
+		t.Error("explicit enabled:false was not preserved")
+	}
+	if c.WiFiFallback.GraceInitial != 2*time.Minute {
+		t.Errorf("GraceInitial = %v, want 2m", c.WiFiFallback.GraceInitial)
+	}
+	// Fields omitted from JSON should have default values.
+	if c.WiFiFallback.GraceMax != 30*time.Minute {
+		t.Errorf("GraceMax = %v, want 30m (default)", c.WiFiFallback.GraceMax)
+	}
+	if c.WiFiFallback.APNoClientTimeout != 10*time.Minute {
+		t.Errorf("APNoClientTimeout = %v, want 10m (default)", c.WiFiFallback.APNoClientTimeout)
+	}
+}
+
+func TestLoadWithoutWiFiFallbackSectionUsesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	// Minimal config with no wifi_fallback section at all.
+	data := []byte(`{}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if !c.WiFiFallback.Enabled {
+		t.Error("Enabled should default to true when wifi_fallback section is absent")
+	}
+	if c.WiFiFallback.GraceInitial != 5*time.Minute {
+		t.Errorf("GraceInitial = %v, want 5m", c.WiFiFallback.GraceInitial)
+	}
+	if c.WiFiFallback.GraceMax != 30*time.Minute {
+		t.Errorf("GraceMax = %v, want 30m", c.WiFiFallback.GraceMax)
+	}
+	if c.WiFiFallback.APNoClientTimeout != 10*time.Minute {
+		t.Errorf("APNoClientTimeout = %v, want 10m", c.WiFiFallback.APNoClientTimeout)
 	}
 }

@@ -460,3 +460,27 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 		t.Error("expected no SendRing call when ring arrives during CONNECTED")
 	}
 }
+
+func TestIsCallActive(t *testing.T) {
+	cases := []struct {
+		name  string
+		state State
+		want  bool
+	}{
+		{"idle", StateIDLE, false},
+		{"dialtone", StateDIALTONE, false},
+		{"dialing", StateDIALING, false},
+		{"calling", StateCALLING, true},
+		{"ringing", StateRINGING, true},
+		{"connected", StateCONNECTED, true},
+		{"remote hangup", StateREMOTE_HANGUP, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Controller{state: tc.state}
+			if got := c.IsCallActive(); got != tc.want {
+				t.Errorf("IsCallActive() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

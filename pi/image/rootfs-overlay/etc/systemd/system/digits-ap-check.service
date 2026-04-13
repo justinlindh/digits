@@ -10,7 +10,7 @@ Before=network-pre.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/digits-ap-check
+ExecStart=/usr/local/bin/digits-ap-check init
 
 [Install]
 WantedBy=sysinit.target
