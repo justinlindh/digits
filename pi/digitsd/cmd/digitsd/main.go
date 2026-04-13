@@ -453,6 +453,17 @@ func (d *daemonCallbacks) applyVoiceStyleLive(style string) {
 	pip.SetVoiceStyle(style)
 }
 
+// setVoiceStyleConfig writes the new voice style to the local config cache
+// under d.mu (serializing with the call-setup paths that read
+// d.cfg.VoiceStyle) and then persists it to disk outside the lock so the
+// atomic tmp+rename write doesn't block call setup.
+func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
+	d.mu.Lock()
+	d.cfg.VoiceStyle = style
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
@@ -1616,8 +1627,7 @@ func main() {
 
 				// Persist the new style locally so the next cold start or in-flight
 				// call construction reads the correct value.
-				cb.cfg.VoiceStyle = style
-				if err := cb.cfg.Save(); err != nil {
+				if err := cb.setVoiceStyleConfig(style); err != nil {
 					slog.Warn("line_settings: config save failed", "err", err)
 				}
 
