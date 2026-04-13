@@ -199,9 +199,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	close(sdpSent)
 
 	// Start audio pipeline
-	pipCfg := audio.DefaultPipelineConfig()
-	pipCfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
-	d.pipeline = audio.NewPipeline(pipCfg)
+	d.pipeline = d.newPipeline()
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline start failed", "error", err)
 		return
@@ -376,9 +374,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	close(sdpSent)
 
 	// Start audio pipeline (capture only — playback goes through mixer)
-	pipCfg := audio.DefaultPipelineConfig()
-	pipCfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
-	d.pipeline = audio.NewPipeline(pipCfg)
+	d.pipeline = d.newPipeline()
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline (answer) start failed", "error", err)
 		return
@@ -438,11 +434,19 @@ func (d *daemonCallbacks) HangupCall() {
 	slog.Info("call ended")
 }
 
-// applyVoiceStyleLive forwards a voice style change to the active audio
-// pipeline if one is running. Called from the signal inbox handler when a
-// line_settings update arrives; safe to call with no active pipeline (it
-// becomes a no-op, and the config cache still gets persisted so the next
-// call picks up the style at construction time).
+// newPipeline constructs a fresh capture pipeline with per-line config
+// applied (voice style, etc). The returned pipeline is not yet started.
+// Must be called with d.mu held (reads d.cfg without acquiring the lock).
+func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
+	cfg := audio.DefaultPipelineConfig()
+	cfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
+	return audio.NewPipeline(cfg)
+}
+
+// applyVoiceStyleLive forwards a voice style change to the active pipeline
+// if one is running. Safe to call with no active pipeline: it becomes a
+// no-op, and the config cache save in setVoiceStyleConfig still persists
+// the style for the next call to pick up at construction time.
 func (d *daemonCallbacks) applyVoiceStyleLive(style string) {
 	d.mu.Lock()
 	pip := d.pipeline
@@ -1617,16 +1621,18 @@ func main() {
 				if style == "" {
 					style = config.VoiceStyleCopper
 				}
+
+				cb.mu.Lock()
+				current := cb.cfg.VoiceStyle
+				cb.mu.Unlock()
+				if style == current {
+					// No change — skip the live apply and the config save so
+					// reconnect-triggered pushes don't fsync on every connect.
+					break
+				}
+
 				slog.Info("line_settings applied", "voice_style", style)
-
-				// Apply to any live pipeline so a mid-call change is heard immediately.
-				// If no pipeline is currently running, the next one constructed (at
-				// call start) will pick the style up from the config cache we save
-				// below.
 				cb.applyVoiceStyleLive(style)
-
-				// Persist the new style locally so the next cold start or in-flight
-				// call construction reads the correct value.
 				if err := cb.setVoiceStyleConfig(style); err != nil {
 					slog.Warn("line_settings: config save failed", "err", err)
 				}

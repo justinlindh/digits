@@ -77,13 +77,6 @@ func (p *Pipeline) OutFrames() <-chan []int16 {
 	return p.outPCM
 }
 
-// Voice style identifiers accepted by SetVoiceStyle. Kept here rather than in
-// the signal package so the audio package has no upstream dependency.
-const (
-	VoiceStyleCopper = "copper"
-	VoiceStyleModern = "modern"
-)
-
 // SetVoiceStyle swaps the post-denoise character filter atomically. Safe to
 // call from any goroutine at any time, including mid-call: captureLoop reads
 // the pointer each frame so the next frame after the swap picks up the new
@@ -91,7 +84,7 @@ const (
 // silently disable the effect.
 func (p *Pipeline) SetVoiceStyle(style string) {
 	switch style {
-	case VoiceStyleModern:
+	case "modern":
 		p.character.Store(nil)
 	default:
 		p.character.Store(NewPOTSCharacterChain(p.cfg.SampleRate))
