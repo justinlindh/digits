@@ -61,7 +61,6 @@
           <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
         </div>
         {{end}}
-        {{template "voice-style-section" .}}
         <div class="mt-4">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
@@ -473,6 +472,16 @@
       </div>
     </div>
 
+    <!-- Options card -->
+    <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
+      <div class="px-4 py-3 border-b border-[#21262d]">
+        <h2 class="text-sm font-medium text-[#e6edf3]">Options</h2>
+      </div>
+      <div class="p-4">
+        {{template "voice-style-section" .}}
+      </div>
+    </div>
+
   </div>
 
   {{if .Online}}
@@ -641,24 +650,32 @@
 
 {{define "voice-style-section"}}
 <div id="voice-style-section">
-  <label for="voice-style" class="block text-xs text-[#8b949e] mb-1">Voice Style</label>
+  <label class="block text-xs text-[#8b949e] mb-2">Voice Style</label>
   <form hx-post="/phones/{{.Line.Number}}/voice-style"
         hx-target="#voice-style-section"
         hx-swap="outerHTML"
-        class="flex flex-col md:flex-row gap-3 md:items-end">
-    <div class="flex-1">
-      <select id="voice-style" name="voice_style"
-        class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
-        <option value="copper" {{if eq .Line.Settings.VoiceStyle "copper"}}selected{{end}}>Copper wire</option>
-        <option value="modern" {{if eq .Line.Settings.VoiceStyle "modern"}}selected{{end}}>Modern HD</option>
-      </select>
-    </div>
+        class="space-y-2">
+    <label class="flex items-start gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border {{if eq .Line.Settings.VoiceStyle "copper"}}border-[#1f6feb] bg-[#1f6feb]/10{{else}}border-transparent{{end}}">
+      <input type="radio" name="voice_style" value="copper" class="mt-0.5 accent-[#1f6feb]"
+             {{if eq .Line.Settings.VoiceStyle "copper"}}checked{{end}}>
+      <span class="flex-1">
+        <span class="block text-sm text-[#e6edf3]">Copper wire</span>
+        <span class="block text-xs text-[#8b949e] mt-0.5">Warm vintage POTS sound. Narrow 300–3400 Hz band, like the old phone network.</span>
+      </span>
+    </label>
+    <label class="flex items-start gap-3 px-3 py-2 rounded cursor-pointer transition-colors hover:bg-[#21262d] border {{if eq .Line.Settings.VoiceStyle "modern"}}border-[#1f6feb] bg-[#1f6feb]/10{{else}}border-transparent{{end}}">
+      <input type="radio" name="voice_style" value="modern" class="mt-0.5 accent-[#1f6feb]"
+             {{if eq .Line.Settings.VoiceStyle "modern"}}checked{{end}}>
+      <span class="flex-1">
+        <span class="block text-sm text-[#e6edf3]">Modern HD</span>
+        <span class="block text-xs text-[#8b949e] mt-0.5">Full-range clean audio. No coloration, maximum clarity.</span>
+      </span>
+    </label>
     <button type="submit"
-      class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+      class="w-full md:w-auto mt-2 px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
       Save
     </button>
   </form>
-  <p class="text-xs text-[#8b949e] mt-2">POTS bandpass for warm vintage sound, or full-range HD audio.</p>
 </div>
 {{end}}
 
