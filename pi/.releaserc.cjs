@@ -18,8 +18,19 @@ module.exports = {
       },
     }],
     ['@semantic-release/release-notes-generator', {
+      preset: 'conventionalcommits',
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
+      },
+      writerOpts: {
+        // Only include commits whose scope is or contains "pi" or "digitsd".
+        // Multi-scope commits like fix(digitsd,firmware,server) are included.
+        transform: (commit) => {
+          if (!commit.scope || !/(^|,)(pi|digitsd)(,|$)/.test(commit.scope)) return;
+          const typeMap = { feat: 'Features', fix: 'Bug Fixes', perf: 'Performance Improvements' };
+          if (!typeMap[commit.type]) return;
+          return { ...commit, type: typeMap[commit.type], shortHash: commit.hash && commit.hash.substring(0, 7) };
+        },
       },
     }],
     ['@semantic-release/exec', {
