@@ -151,6 +151,13 @@ static void process_pi_command(const char *cmd) {
         tone_play(TONE_RINGBACK);
     } else if (strcmp(cmd, "TONE:STOP") == 0) {
         tone_stop();
+    } else if (strcmp(cmd, "CALL:CONNECTED") == 0) {
+        if (s_state == PHONE_STATE_DIALING || s_state == PHONE_STATE_RINGING) {
+            set_state(PHONE_STATE_CONNECTED);
+            uart_proto_send("CALL:CONNECTED:ACK");
+        } else {
+            uart_proto_send("CALL:CONNECTED:IGNORED");
+        }
     } else if (strcmp(cmd, "PING") == 0) {
         uart_proto_send("PONG");
     } else if (strcmp(cmd, "VERSION") == 0) {
@@ -246,7 +253,7 @@ static void process_key(char key) {
         set_state(PHONE_STATE_DIALING);
     }
 
-    if (s_state != PHONE_STATE_DIALING) {
+    if (s_state != PHONE_STATE_DIALING && s_state != PHONE_STATE_CONNECTED) {
         return;
     }
 
@@ -256,17 +263,19 @@ static void process_key(char key) {
     snprintf(key_msg, sizeof(key_msg), "KEY:%c", key);
     uart_proto_send(key_msg);
 
-    if (key >= '0' && key <= '9' && s_digits_len < DIAL_DIGITS_REQUIRED) {
-        s_digits[s_digits_len++] = key;
-        s_digits[s_digits_len] = '\0';
-    }
+    if (s_state == PHONE_STATE_DIALING) {
+        if (key >= '0' && key <= '9' && s_digits_len < DIAL_DIGITS_REQUIRED) {
+            s_digits[s_digits_len++] = key;
+            s_digits[s_digits_len] = '\0';
+        }
 
-    if (s_digits_len == DIAL_DIGITS_REQUIRED && !s_dial_sent) {
-        char dial_msg[16];
-        snprintf(dial_msg, sizeof(dial_msg), "DIAL:%s", s_digits);
-        uart_proto_send(dial_msg);
-        tone_play(TONE_RINGBACK);
-        s_dial_sent = true;
+        if (s_digits_len == DIAL_DIGITS_REQUIRED && !s_dial_sent) {
+            char dial_msg[16];
+            snprintf(dial_msg, sizeof(dial_msg), "DIAL:%s", s_digits);
+            uart_proto_send(dial_msg);
+            tone_play(TONE_RINGBACK);
+            s_dial_sent = true;
+        }
     }
 }
 
