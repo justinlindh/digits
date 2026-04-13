@@ -731,12 +731,21 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
-// pushLineSettings is implemented in Task 7 once the signaling message
-// type exists. Present here as a stub so handler code compiles in isolation.
+// pushLineSettings sends the updated settings to the device currently
+// registered as the given number, if any. A missing device is not an error;
+// the next time that device reconnects it will receive the latest settings
+// via the registration push in relay.OnRegistered.
 func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
-	_ = number
-	_ = settings
-	return nil
+	if h.hub.Get(number) == nil {
+		return nil
+	}
+	return h.hub.SendTo(number, &signaling.Message{
+		Type: signaling.TypeLineSettings,
+		To:   number,
+		LineSettings: &signaling.LineSettings{
+			VoiceStyle: settings.VoiceStyle,
+		},
+	})
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
