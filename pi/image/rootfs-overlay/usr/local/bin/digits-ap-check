@@ -12,8 +12,9 @@
 set -euo pipefail
 
 WIFI_CONFIGURED_FLAG="/data/wifi-configured"
-NM_CONN_SRC="/data/wifi/digits-wifi.nmconnection"
-NM_CONN_DST="/etc/NetworkManager/system-connections/digits-wifi.nmconnection"
+NM_CONN_SRC_DIR="/data/wifi"
+NM_CONN_DST_DIR="/etc/NetworkManager/system-connections"
+NM_CONN_PATTERN="digits-wifi*.nmconnection"
 LOG_TAG="digits-ap-check"
 
 log() {
@@ -47,15 +48,28 @@ validate_nmconnection() {
     return 0
 }
 
+# List all configured nmconnection files in the data partition.
+# Sets global array NM_CONN_SOURCES.
+list_nm_sources() {
+    NM_CONN_SOURCES=()
+    shopt -s nullglob
+    # shellcheck disable=SC2206
+    local files=($NM_CONN_SRC_DIR/$NM_CONN_PATTERN)
+    shopt -u nullglob
+    NM_CONN_SOURCES=("${files[@]}")
+}
+
 # Clear wifi-configured state so the device falls back to AP mode.
 reset_wifi_config() {
     log "Resetting wifi config -- will enter AP mode"
     rm -f "$WIFI_CONFIGURED_FLAG"
-    rm -f "$NM_CONN_SRC"
+    shopt -s nullglob
+    rm -f "$NM_CONN_SRC_DIR"/$NM_CONN_PATTERN
+    shopt -u nullglob
 }
 
 do_station_up() {
-    log "Wi-Fi configured — starting normal boot"
+    log "Wi-Fi configured -- starting normal boot"
 
     # Stop AP services
     systemctl stop digits-ap.service digits-dnsmasq-ap.service digits-setup.service 2>/dev/null || true
@@ -63,27 +77,67 @@ do_station_up() {
     # Unblock WiFi radio
     rfkill unblock wifi || true
 
-    # Copy NM connection to where NetworkManager expects it.
-    # /etc is on ro root, so we need a tmpfs or remount. Use a tmpfs bind mount.
-    if [ -f "$NM_CONN_SRC" ]; then
-        # Remount rw briefly to copy the connection file
-        mount -o remount,rw / 2>/dev/null || true
-        cp "$NM_CONN_SRC" "$NM_CONN_DST" 2>/dev/null || true
-        chmod 600 "$NM_CONN_DST" 2>/dev/null || true
-        mount -o remount,ro / 2>/dev/null || true
-        log "Copied NM connection file"
+    # Enumerate valid source files once so we know what the desired destination
+    # set looks like.
+    list_nm_sources
+    local desired_basenames=()
+    for src in "${NM_CONN_SOURCES[@]}"; do
+        if validate_nmconnection "$src"; then
+            desired_basenames+=("$(basename "$src")")
+        fi
+    done
+
+    # Remount rw once, do all filesystem mutations, remount ro.
+    mount -o remount,rw / 2>/dev/null || true
+
+    # Prune stale digits-wifi*.nmconnection files from the NM directory that
+    # don't correspond to a currently-valid source. This prevents accumulation
+    # as the user reconfigures across networks over time.
+    shopt -s nullglob
+    for dst in "$NM_CONN_DST_DIR"/$NM_CONN_PATTERN; do
+        local base
+        base=$(basename "$dst")
+        local keep=0
+        for wanted in "${desired_basenames[@]}"; do
+            if [ "$base" = "$wanted" ]; then
+                keep=1
+                break
+            fi
+        done
+        if [ "$keep" -eq 0 ]; then
+            log "Pruning stale NM connection: $base"
+            rm -f "$dst" 2>/dev/null || true
+        fi
+    done
+    shopt -u nullglob
+
+    # Copy each valid source into the NM connections directory.
+    local copied=0
+    for src in "${NM_CONN_SOURCES[@]}"; do
+        if validate_nmconnection "$src"; then
+            local dst="$NM_CONN_DST_DIR/$(basename "$src")"
+            cp "$src" "$dst" 2>/dev/null || true
+            chmod 600 "$dst" 2>/dev/null || true
+            copied=$((copied + 1))
+        fi
+    done
+
+    mount -o remount,ro / 2>/dev/null || true
+
+    if [ "$copied" -gt 0 ]; then
+        log "Copied $copied NM connection file(s)"
     else
-        log "WARNING: No NM connection file found at $NM_CONN_SRC"
+        log "WARNING: No valid NM connection files found in $NM_CONN_SRC_DIR"
     fi
 
-    # Let NetworkManager handle everything (wpa_supplicant runs under NM via D-Bus)
-    log "Wi-Fi client mode — NetworkManager will connect"
+    # Let NetworkManager handle everything
+    log "Wi-Fi client mode -- NetworkManager will connect"
 }
 
 do_ap_up() {
-    log "Wi-Fi not configured — entering AP mode"
+    log "Wi-Fi not configured -- entering AP mode"
 
-    # Kill NetworkManager — it fights hostapd for wlan0 and re-blocks rfkill
+    # Kill NetworkManager -- it fights hostapd for wlan0 and re-blocks rfkill
     systemctl stop NetworkManager.service 2>/dev/null || true
 
     # Stop wpa_supplicant so it doesn't fight hostapd
@@ -107,7 +161,7 @@ do_ap_up() {
     HOSTAPD_CONF="/etc/hostapd/digits-ap.conf"
     CURRENT_SSID=$(grep '^ssid=' "$HOSTAPD_CONF" | cut -d= -f2)
     if [ "$CURRENT_SSID" = "Digits-XXXX" ]; then
-        log "SSID is still placeholder — resolving"
+        log "SSID is still placeholder -- resolving"
         DEVICE_ID_FILE="/data/digits/device-id"
         if [ -f "$DEVICE_ID_FILE" ]; then
             SUFFIX=$(tr -d '\n' < "$DEVICE_ID_FILE" | tail -c 4)
@@ -127,11 +181,11 @@ do_ap_up() {
     systemctl start --no-block digits-dnsmasq-ap.service
     systemctl start --no-block digits-setup.service
 
-    log "AP mode started — SSID: $(grep '^ssid=' /etc/hostapd/digits-ap.conf | cut -d= -f2)"
+    log "AP mode started -- SSID: $(grep '^ssid=' /etc/hostapd/digits-ap.conf | cut -d= -f2)"
 }
 
 do_ap_down() {
-    log "Tearing down AP mode — handing wlan0 back to NetworkManager"
+    log "Tearing down AP mode -- handing wlan0 back to NetworkManager"
 
     systemctl stop digits-setup.service 2>/dev/null || true
     systemctl stop digits-dnsmasq-ap.service 2>/dev/null || true
@@ -142,16 +196,21 @@ do_ap_down() {
 
     systemctl start NetworkManager
 
-    log "AP mode down — NetworkManager started"
+    log "AP mode down -- NetworkManager started"
 }
 
 do_init() {
     if [ -f "$WIFI_CONFIGURED_FLAG" ]; then
-        # Validate the config file before trusting it
-        if ! validate_nmconnection "$NM_CONN_SRC"; then
-            log "WARNING: Wi-Fi config is corrupt or missing -- falling back to AP mode"
+        list_nm_sources
+        local valid_count=0
+        for src in "${NM_CONN_SOURCES[@]}"; do
+            if validate_nmconnection "$src"; then
+                valid_count=$((valid_count + 1))
+            fi
+        done
+        if [ "$valid_count" -eq 0 ]; then
+            log "WARNING: No valid Wi-Fi config files found in $NM_CONN_SRC_DIR -- falling back to AP mode"
             reset_wifi_config
-            # Fall through to the AP mode block below
         fi
     fi
 
