@@ -1,6 +1,7 @@
 package wifi
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -228,6 +229,52 @@ func TestConfigureRemountRWFailureAbortsWithoutFlag(t *testing.T) {
 	}
 	if mounter.roCalls != 0 {
 		t.Error("remount ro must not be called when remount rw failed")
+	}
+}
+
+// failOpWriteFS fails WriteFile once, for the operational path only. Used to
+// verify that a failed operational write leaves the backup present and does
+// NOT set the wifi-configured flag (the "half-written config never promotes
+// to station" invariant from ConfigureWithDeps' doc comment).
+type failOpWriteFS struct {
+	*mockFS
+}
+
+func (f *failOpWriteFS) WriteFile(name string, data []byte, perm os.FileMode) error {
+	if strings.HasPrefix(name, "/etc/NetworkManager/system-connections/") {
+		return fmt.Errorf("simulated operational write failure")
+	}
+	return f.mockFS.WriteFile(name, data, perm)
+}
+
+func TestConfigureMissingSSIDIsInvalidRequest(t *testing.T) {
+	err := ConfigureWithDeps(ConfigRequest{Password: "pw"}, newMockFS(), &mockMounter{})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("err = %v, want ErrInvalidRequest", err)
+	}
+}
+
+func TestConfigureOperationalWriteFailureKeepsBackupOmitsFlag(t *testing.T) {
+	base := newMockFS()
+	fs := &failOpWriteFS{mockFS: base}
+	mounter := &mockMounter{}
+
+	req := ConfigRequest{SSID: "Net", Password: "pw"}
+	err := ConfigureWithDeps(req, fs, mounter)
+	if err == nil {
+		t.Fatal("expected error from failing operational write")
+	}
+
+	filename := "digits-wifi-Net-" + uuidForSSID("Net")[:6] + ".nmconnection"
+	backupPath := filepath.Join("/data/wifi", filename)
+	if _, ok := base.files[backupPath]; !ok {
+		t.Error("backup must remain when operational write fails")
+	}
+	if _, ok := base.files["/data/wifi-configured"]; ok {
+		t.Error("flag must not be set when operational write fails")
+	}
+	if mounter.roCalls != 1 {
+		t.Errorf("remount ro should run via defer, got roCalls=%d", mounter.roCalls)
 	}
 }
 

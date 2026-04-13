@@ -3,9 +3,11 @@ package portal
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/justinlindh/digits/pi/digits-setup/internal/wifi"
@@ -14,9 +16,20 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+// apTeardownDelay defers `digits-ap-check down` after a successful configure
+// so two things can happen in order: (1) the HTTP response bytes leave wlan0
+// before hostapd stops, and (2) the client has a moment to read them before
+// losing AP association.
+const apTeardownDelay = 2 * time.Second
+
 // NewHandler returns the HTTP mux for the captive portal.
 func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.APController) http.Handler {
 	mux := http.NewServeMux()
+
+	// teardownScheduled gates the deferred AP teardown so a duplicate or
+	// retried /api/configure cannot stack multiple `digits-ap-check down`
+	// goroutines.
+	var teardownScheduled atomic.Bool
 
 	// Captive portal detection — redirect to setup page
 	captiveRedirect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +73,11 @@ func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.AP
 
 		if err := configurator.Configure(req); err != nil {
 			log.Printf("configure error: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			status := http.StatusInternalServerError
+			if errors.Is(err, wifi.ErrInvalidRequest) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 
@@ -75,14 +92,14 @@ func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.AP
 			f.Flush()
 		}
 
-		// Defer AP teardown so the response bytes have time to leave wlan0
-		// before hostapd stops and the client loses association.
-		go func() {
-			time.Sleep(2 * time.Second)
-			if err := ap.Down(); err != nil {
-				log.Printf("configure: ap down failed: %v", err)
-			}
-		}()
+		if teardownScheduled.CompareAndSwap(false, true) {
+			go func() {
+				time.Sleep(apTeardownDelay)
+				if err := ap.Down(); err != nil {
+					log.Printf("configure: ap down failed: %v", err)
+				}
+			}()
+		}
 	})
 
 	// Static files (index.html, style.css, app.js)

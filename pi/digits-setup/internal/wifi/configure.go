@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,10 @@ import (
 	"path/filepath"
 	"time"
 )
+
+// ErrInvalidRequest is returned by ConfigureWithDeps for user-facing validation
+// failures (missing SSID, etc.) so handlers can return 400 vs. 500.
+var ErrInvalidRequest = errors.New("invalid configure request")
 
 // ConfigRequest is the JSON body for POST /api/configure.
 type ConfigRequest struct {
@@ -111,9 +116,9 @@ const (
 	legacyConnFilename = "digits-wifi.nmconnection"
 )
 
-// uuidForSSID returns a stable UUID-shaped string derived from the SSID so
+// uuidForSSID returns a UUID-shaped string derived from the SSID so
 // reconfiguring the same SSID overwrites the previous file rather than
-// creating a duplicate.
+// creating a duplicate. It is a stable identifier, not an RFC 4122 UUID.
 func uuidForSSID(ssid string) string {
 	h := sha256.Sum256([]byte(ssid))
 	s := hex.EncodeToString(h[:16])
@@ -127,7 +132,7 @@ func uuidForSSID(ssid string) string {
 // boot with a half-written config.
 func ConfigureWithDeps(req ConfigRequest, fs FileSystem, mounter Mounter) error {
 	if req.SSID == "" {
-		return fmt.Errorf("ssid is required")
+		return fmt.Errorf("%w: ssid is required", ErrInvalidRequest)
 	}
 
 	safeName := SanitizeSSID(req.SSID)
@@ -182,6 +187,9 @@ method=auto
 		return fmt.Errorf("operational write: %w", err)
 	}
 
+	// The pre-PR-170 scheme produced exactly one file with this hardcoded
+	// name; removing it by name (not by pattern) is deliberate so we don't
+	// accidentally stomp on current digits-wifi-*.nmconnection entries.
 	for _, p := range []string{
 		filepath.Join(backupDir, legacyConnFilename),
 		filepath.Join(operationalDir, legacyConnFilename),
@@ -191,7 +199,7 @@ method=auto
 		}
 	}
 
-	if err := fs.WriteFile(wifiConfiguredFlag, []byte("1\n"), 0644); err != nil {
+	if err := fs.WriteFile(wifiConfiguredFlag, []byte("1\n"), 0600); err != nil {
 		return fmt.Errorf("write flag: %w", err)
 	}
 

@@ -17,8 +17,11 @@ NM_OPERATIONAL_DIR="/etc/NetworkManager/system-connections"
 NM_CONN_PATTERN="digits-wifi*.nmconnection"
 LOG_TAG="digits-ap-check"
 
+# Log to stderr and /dev/kmsg, never stdout. list_valid captures stdout via
+# command substitution, so any log output here would contaminate its result.
 log() {
-    echo "$LOG_TAG: $*" | tee /dev/kmsg 2>/dev/null || true
+    echo "$LOG_TAG: $*" >&2
+    echo "$LOG_TAG: $*" > /dev/kmsg 2>/dev/null || true
     logger -t "$LOG_TAG" "$*" 2>/dev/null || true
 }
 
