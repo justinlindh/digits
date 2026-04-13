@@ -127,9 +127,8 @@ func (sp *SerialPort) LED(mode string) {
 // CallConnected sends CALL:CONNECTED to tell the Pico the call has been answered.
 // This is the caller-side transition from DIALING to CONNECTED; the callee's
 // firmware self-transitions via hook detection when the user picks up.
-func (sp *SerialPort) CallConnected() error {
+func (sp *SerialPort) CallConnected() {
 	sp.SendFire("CALL:CONNECTED")
-	return nil
 }
 
 // Close stops the reader and closes the port.

@@ -126,9 +126,7 @@ func (d *daemonCallbacks) SendLED(mode string) {
 }
 
 func (d *daemonCallbacks) NotifyCallConnected() {
-	if err := d.serial.CallConnected(); err != nil {
-		slog.Warn("uart: CALL:CONNECTED failed", "error", err)
-	}
+	d.serial.CallConnected()
 }
 
 func (d *daemonCallbacks) InitiateCall(targetNumber string) {
