@@ -1,3 +1,5 @@
+//go:build integration
+
 package pairing
 
 import (
@@ -27,9 +29,22 @@ func setupStore(t *testing.T) *Store {
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id LIKE 'test-%'")
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number LIKE '555%'")
+		_, _ = database.DB.Exec("DELETE FROM households WHERE name = 'pairing test'")
 	})
 
 	return NewStore(database.DB)
+}
+
+// seedHousehold inserts a fresh household row and returns its UUID. Tests that
+// call ClaimDevice need a valid household_id because lines.household_id has a
+// foreign key onto households.id.
+func seedHousehold(t *testing.T, s *Store) string {
+	t.Helper()
+	var id string
+	if err := s.db.QueryRow(`INSERT INTO households (name) VALUES ('pairing test') RETURNING id`).Scan(&id); err != nil {
+		t.Fatalf("seed household: %v", err)
+	}
+	return id
 }
 
 func TestGenerateCode_Returns6Digits(t *testing.T) {
@@ -60,12 +75,13 @@ func TestGenerateCode_ReusesBeforeExpiry(t *testing.T) {
 
 func TestClaimDevice_Success(t *testing.T) {
 	s := setupStore(t)
+	hhID := seedHousehold(t, s)
 	code, err := s.GenerateCode("test-hw-003")
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
 
-	token, _, err := s.ClaimDevice(code, "5550100", "Kitchen Phone", "00000000-0000-0000-0000-000000000001")
+	token, _, err := s.ClaimDevice(code, "5550100", "Kitchen Phone", hhID)
 	if err != nil {
 		t.Fatalf("ClaimDevice: %v", err)
 	}
@@ -84,7 +100,8 @@ func TestClaimDevice_Success(t *testing.T) {
 
 func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
 	s := setupStore(t)
-	_, _, err := s.ClaimDevice("999999", "5550101", "Bad Phone", "00000000-0000-0000-0000-000000000001")
+	hhID := seedHousehold(t, s)
+	_, _, err := s.ClaimDevice("999999", "5550101", "Bad Phone", hhID)
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode, got %v", err)
 	}
@@ -104,7 +121,7 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 		t.Fatalf("expire code: %v", err)
 	}
 
-	_, _, err = s.ClaimDevice(code, "5550102", "Expired Phone", "00000000-0000-0000-0000-000000000001")
+	_, _, err = s.ClaimDevice(code, "5550102", "Expired Phone", seedHousehold(t, s))
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
 	}
@@ -140,10 +157,11 @@ func TestCleanupExpiredCodes(t *testing.T) {
 	s := setupStore(t)
 	hwID := "test-hw-cleanup-001"
 
-	// Insert a device with an already-expired pairing code
+	// Insert a device with an already-expired pairing code. line_id is nullable
+	// since migration v7 (a device exists before it's paired to a line).
 	_, err := s.db.Exec(`
 		INSERT INTO devices (line_id, hardware_id, pairing_code, pairing_code_expires_at)
-		VALUES (0, $1, '123456', $2)
+		VALUES (NULL, $1, '123456', $2)
 		ON CONFLICT (hardware_id) DO UPDATE
 		SET pairing_code = '123456', pairing_code_expires_at = $2
 	`, hwID, time.Now().Add(-1*time.Minute))
