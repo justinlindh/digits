@@ -12,6 +12,7 @@ const (
 	TypeAnswer     = "answer"
 	TypeHangup     = "hangup"
 	TypeBusy       = "busy"
+	TypeDTMF       = "dtmf"
 	TypeError      = "error"
 	TypeICEServers = "ice-servers"
 	TypeRequestICE = "request-ice-servers"
@@ -37,6 +38,7 @@ type Message struct {
 	From        string         `json:"from,omitempty"`
 	To          string         `json:"to,omitempty"`
 	Number      string         `json:"number,omitempty"`
+	Digit       string         `json:"digit,omitempty"`
 	SDP         string         `json:"sdp,omitempty"`
 	Candidate   string         `json:"candidate,omitempty"`
 	Error       string         `json:"error,omitempty"`

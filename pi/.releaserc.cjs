@@ -5,15 +5,13 @@ module.exports = {
   plugins: [
     ['@semantic-release/commit-analyzer', {
       releaseRules: [
-        { scope: 'pi', type: 'feat', release: 'minor' },
-        { scope: 'pi', type: 'fix', release: 'patch' },
-        { scope: 'pi', type: 'perf', release: 'patch' },
-        { scope: 'pi', breaking: true, release: 'major' },
-        { scope: 'digitsd', type: 'feat', release: 'minor' },
-        { scope: 'digitsd', type: 'fix', release: 'patch' },
-        { scope: 'digitsd', type: 'perf', release: 'patch' },
-        { scope: 'digitsd', breaking: true, release: 'major' },
-        { scope: '!(pi|digitsd)', release: false },
+        // Scope globs use micromatch substring patterns so multi-scope commits
+        // like fix(digitsd,firmware,server) trigger this release too.
+        { scope: '{*pi*,*digitsd*}', type: 'feat', release: 'minor' },
+        { scope: '{*pi*,*digitsd*}', type: 'fix', release: 'patch' },
+        { scope: '{*pi*,*digitsd*}', type: 'perf', release: 'patch' },
+        { scope: '{*pi*,*digitsd*}', breaking: true, release: 'major' },
+        { scope: '!{*pi*,*digitsd*}', release: false },
       ],
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
@@ -21,8 +19,6 @@ module.exports = {
     }],
     ['@semantic-release/release-notes-generator', {
       parserOpts: {
-        headerPattern: /^(\w*)(?:\((pi|digitsd)\))?: (.*)$/,
-        headerCorrespondence: ['type', 'scope', 'subject'],
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
       },
     }],

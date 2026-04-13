@@ -55,6 +55,8 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 		r.handleAnswer(from, msg)
 	case TypeHangup:
 		r.handleHangup(from, msg)
+	case TypeDTMF:
+		r.forward(msg)
 	case TypeRequestICE:
 		r.handleRequestICE(from, msg)
 	case TypeDeviceInfo:
