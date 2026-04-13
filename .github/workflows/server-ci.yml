@@ -3,12 +3,7 @@ name: Server CI
 on:
   push:
     branches: [main, 'feature/**']
-    paths:
-      - 'server/**'
-      - '.github/workflows/server-ci.yml'
   pull_request:
-    paths:
-      - 'server/**'
 
 jobs:
   unit:
