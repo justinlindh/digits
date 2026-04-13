@@ -709,17 +709,20 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if voiceStyle != "" && voiceStyle != ln.Settings.VoiceStyle {
+	if voiceStyle != "" {
 		next := ln.Settings
 		next.VoiceStyle = voiceStyle
-		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		// Push to the device if it is currently connected so the change
-		// takes effect live without waiting for the next reconnect.
-		if err := h.pushLineSettings(number, next); err != nil {
-			slog.Warn("push line settings failed", "number", number, "err", err)
+		next = next.Normalize()
+		if next.VoiceStyle != ln.Settings.VoiceStyle {
+			if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			// Push to the device if it is currently connected so the change
+			// takes effect live without waiting for the next reconnect.
+			if err := h.pushLineSettings(number, next); err != nil {
+				slog.Warn("push line settings failed", "number", number, "err", err)
+			}
 		}
 	}
 
