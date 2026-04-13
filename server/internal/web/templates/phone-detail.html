@@ -61,6 +61,7 @@
           <span class="text-sm text-[#c9d1d9]">{{len .Devices}} paired</span>
         </div>
         {{end}}
+        {{template "voice-style-section" .}}
         <div class="mt-4">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
@@ -635,6 +636,29 @@
   }
   </script>
   {{end}}
+</div>
+{{end}}
+
+{{define "voice-style-section"}}
+<div id="voice-style-section">
+  <label for="voice-style" class="block text-xs text-[#8b949e] mb-1">Voice Style</label>
+  <form hx-post="/phones/{{.Line.Number}}/voice-style"
+        hx-target="#voice-style-section"
+        hx-swap="outerHTML"
+        class="flex flex-col md:flex-row gap-3 md:items-end">
+    <div class="flex-1">
+      <select id="voice-style" name="voice_style"
+        class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+        <option value="copper" {{if eq .Line.Settings.VoiceStyle "copper"}}selected{{end}}>Copper wire</option>
+        <option value="modern" {{if eq .Line.Settings.VoiceStyle "modern"}}selected{{end}}>Modern HD</option>
+      </select>
+    </div>
+    <button type="submit"
+      class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
+      Save
+    </button>
+  </form>
+  <p class="text-xs text-[#8b949e] mt-2">POTS bandpass for warm vintage sound, or full-range HD audio.</p>
 </div>
 {{end}}
 
