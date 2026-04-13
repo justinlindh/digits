@@ -86,7 +86,7 @@ func (m *errorCallAuthorizer) CanCall(fromNumber, toNumber string) (bool, error)
 func TestRelayCallFlow(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	// Register two mock connections
 	conn1 := &Conn{Send: make(chan []byte, 10)}
@@ -115,7 +115,7 @@ func TestRelayCallFlow(t *testing.T) {
 
 func TestRelayCallToOfflinePhone(t *testing.T) {
 	hub := NewHub()
-	relay := NewRelay(hub, nil, nil)
+	relay := NewRelay(hub, nil, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	hub.Register("3140001", conn1)
@@ -146,7 +146,7 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 		},
 	}
 
-	relay := NewRelay(hub, tracker, authorizer)
+	relay := NewRelay(hub, tracker, authorizer, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -229,7 +229,7 @@ func TestRelayCallDeniedOnAuthorizerError(t *testing.T) {
 	tracker := newMockTracker()
 
 	authorizer := &errorCallAuthorizer{err: errors.New("db connection failed")}
-	relay := NewRelay(hub, tracker, authorizer)
+	relay := NewRelay(hub, tracker, authorizer, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -264,7 +264,7 @@ func TestRelayCallDeniedOnAuthorizerError(t *testing.T) {
 func TestRelayBusySignal(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -322,7 +322,7 @@ func TestRelayBusySignal(t *testing.T) {
 func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -366,7 +366,7 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 func TestRelayICERestartForwarded(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -407,7 +407,7 @@ func TestRelayICERestartForwarded(t *testing.T) {
 func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -451,7 +451,7 @@ func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
 func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	relay := NewRelay(hub, tracker, nil)
+	relay := NewRelay(hub, tracker, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -512,7 +512,7 @@ func TestHubOnlineNumbers(t *testing.T) {
 
 func TestRelayRestartMessageNotPanics(t *testing.T) {
 	hub := NewHub()
-	relay := NewRelay(hub, nil, nil)
+	relay := NewRelay(hub, nil, nil, nil)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
 	hub.Register("3140001", conn)

@@ -134,6 +134,40 @@ func TestPOTSChainKillsHumAndHissPreservesVoice(t *testing.T) {
 	}
 }
 
+func TestPOTSCharacterChainShapesBand(t *testing.T) {
+	// POTS-character chain: pure 300-3400 Hz bandpass, no notch comb.
+	// It is meant to run AFTER RNNoise as a cosmetic voice color, so the
+	// test checks the 4th-order HPF + 4th-order LPF envelope rather than
+	// noise rejection.
+	ch := NewPOTSCharacterChain(48000)
+
+	// Well below the 300 Hz HPF corner: should be deeply attenuated.
+	if loss := attenuationDB(t, ch, 80); loss < 30 {
+		t.Errorf("80Hz attenuation (well below HPF corner): got %.1f dB, want >=30 dB", loss)
+	}
+	ch.Reset()
+	if loss := attenuationDB(t, ch, 150); loss < 12 {
+		t.Errorf("150Hz attenuation (below HPF corner): got %.1f dB, want >=12 dB", loss)
+	}
+	// Well above the 3400 Hz LPF corner.
+	ch.Reset()
+	if loss := attenuationDB(t, ch, 6000); loss < 20 {
+		t.Errorf("6kHz attenuation (above LPF corner): got %.1f dB, want >=20 dB", loss)
+	}
+
+	// Voice passband (safely inside both corners, with margin for the
+	// cascaded 2nd-order sections that push the effective -6 dB point
+	// slightly inside the stated corner). No notch comb means no harmonic
+	// teeth to worry about, so passband loss is smooth and monotonic.
+	for _, f := range []float64{800, 1200, 1500, 1800} {
+		ch.Reset()
+		loss := attenuationDB(t, ch, f)
+		if math.Abs(loss) > 1.0 {
+			t.Errorf("%gHz voice preserve: got %.2f dB, want within +-1 dB", f, loss)
+		}
+	}
+}
+
 func TestBiquadChainNilIsNoOp(t *testing.T) {
 	var ch *BiquadChain
 	in := sine(60, 48000, 10000, 1000)

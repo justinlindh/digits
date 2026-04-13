@@ -51,7 +51,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 
 	hub := signaling.NewHub()
 	tracker := calls.New(nil) // nil DB — no DB calls expected in these tests
-	relay := signaling.NewRelay(hub, tracker, nil)
+	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	h, err := NewHandler(nil, nil, hub, tracker, relay, HandlerConfig{
 		Addr:        ":0",

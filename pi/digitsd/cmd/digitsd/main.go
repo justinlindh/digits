@@ -199,7 +199,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	close(sdpSent)
 
 	// Start audio pipeline
-	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	d.pipeline = d.newPipeline()
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline start failed", "error", err)
 		return
@@ -374,7 +374,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	close(sdpSent)
 
 	// Start audio pipeline (capture only — playback goes through mixer)
-	d.pipeline = audio.NewPipeline(audio.DefaultPipelineConfig())
+	d.pipeline = d.newPipeline()
 	if err := d.pipeline.Start(); err != nil {
 		slog.Error("audio pipeline (answer) start failed", "error", err)
 		return
@@ -432,6 +432,40 @@ func (d *daemonCallbacks) HangupCall() {
 	}
 
 	slog.Info("call ended")
+}
+
+// newPipeline constructs a fresh capture pipeline with per-line config
+// applied (voice style, etc). The returned pipeline is not yet started.
+// Must be called with d.mu held (reads d.cfg without acquiring the lock).
+func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
+	cfg := audio.DefaultPipelineConfig()
+	cfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
+	return audio.NewPipeline(cfg)
+}
+
+// applyVoiceStyleLive forwards a voice style change to the active pipeline
+// if one is running. Safe to call with no active pipeline: it becomes a
+// no-op, and the config cache save in setVoiceStyleConfig still persists
+// the style for the next call to pick up at construction time.
+func (d *daemonCallbacks) applyVoiceStyleLive(style string) {
+	d.mu.Lock()
+	pip := d.pipeline
+	d.mu.Unlock()
+	if pip == nil {
+		return
+	}
+	pip.SetVoiceStyle(style)
+}
+
+// setVoiceStyleConfig writes the new voice style to the local config cache
+// under d.mu (serializing with the call-setup paths that read
+// d.cfg.VoiceStyle) and then persists it to disk outside the lock so the
+// atomic tmp+rename write doesn't block call setup.
+func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
+	d.mu.Lock()
+	d.cfg.VoiceStyle = style
+	d.mu.Unlock()
+	return d.cfg.Save()
 }
 
 // handleConnectionStateChange is called (without d.mu held) from a pion
@@ -1576,6 +1610,31 @@ func main() {
 					}()
 				default:
 					slog.Warn("unknown restart mode", "mode", mode)
+				}
+
+			case sigclient.TypeLineSettings:
+				if msg.LineSettings == nil {
+					slog.Warn("line_settings message missing payload", "from", msg.From)
+					break
+				}
+				style := msg.LineSettings.VoiceStyle
+				if style == "" {
+					style = config.VoiceStyleCopper
+				}
+
+				cb.mu.Lock()
+				current := cb.cfg.VoiceStyle
+				cb.mu.Unlock()
+				if style == current {
+					// No change — skip the live apply and the config save so
+					// reconnect-triggered pushes don't fsync on every connect.
+					break
+				}
+
+				slog.Info("line_settings applied", "voice_style", style)
+				cb.applyVoiceStyleLive(style)
+				if err := cb.setVoiceStyleConfig(style); err != nil {
+					slog.Warn("line_settings: config save failed", "err", err)
 				}
 
 			default:

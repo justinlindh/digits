@@ -38,7 +38,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil)
+	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)

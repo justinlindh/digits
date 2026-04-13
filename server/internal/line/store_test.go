@@ -1,6 +1,7 @@
 package line
 
 import (
+	"database/sql"
 	"os"
 	"testing"
 
@@ -279,6 +280,70 @@ func TestValidateNumber(t *testing.T) {
 		if (err != nil) != tt.wantErr {
 			t.Errorf("ValidateNumber(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 		}
+	}
+}
+
+// testStoreWithHousehold bundles a Store, the raw *sql.DB, and a pre-created
+// household ID for tests that need all three.
+type testStoreWithHousehold struct {
+	store       *Store
+	rawDB       *sql.DB
+	householdID string
+}
+
+// newTestStoreWithHousehold creates a testStoreWithHousehold using the same
+// skip-if-no-DB pattern as testStore.
+func newTestStoreWithHousehold(t *testing.T) (*testStoreWithHousehold, func()) {
+	t.Helper()
+	s, database := testStore(t)
+	householdID := createTestHousehold(t, database)
+	return &testStoreWithHousehold{
+		store:       s,
+		rawDB:       database.DB,
+		householdID: householdID,
+	}, func() {}
+}
+
+func TestStoreSettingsDefaultAndUpdate(t *testing.T) {
+	store, cleanup := newTestStoreWithHousehold(t)
+	defer cleanup()
+
+	ln, err := store.store.Add("555-0101", "Test", store.householdID)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Newly created line should come back with default-filled settings.
+	got, err := store.store.GetByID(ln.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Settings.VoiceStyle != VoiceStyleCopper {
+		t.Errorf("new line default VoiceStyle: got %q, want %q", got.Settings.VoiceStyle, VoiceStyleCopper)
+	}
+
+	// Update the setting.
+	if err := store.store.UpdateSettings(ln.ID, Settings{VoiceStyle: VoiceStyleModern}); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+	got, err = store.store.GetByID(ln.ID)
+	if err != nil {
+		t.Fatalf("reget: %v", err)
+	}
+	if got.Settings.VoiceStyle != VoiceStyleModern {
+		t.Errorf("after update: got %q, want %q", got.Settings.VoiceStyle, VoiceStyleModern)
+	}
+
+	// Empty settings in DB should still return default after load.
+	if _, err := store.rawDB.Exec(`UPDATE lines SET settings = '{}' WHERE id = $1`, ln.ID); err != nil {
+		t.Fatalf("reset settings: %v", err)
+	}
+	got, err = store.store.GetByID(ln.ID)
+	if err != nil {
+		t.Fatalf("reget after reset: %v", err)
+	}
+	if got.Settings.VoiceStyle != VoiceStyleCopper {
+		t.Errorf("empty json should fall through to default, got %q", got.Settings.VoiceStyle)
 	}
 }
 

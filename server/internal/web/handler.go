@@ -696,6 +696,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	voiceStyle := strings.TrimSpace(r.FormValue("voice_style"))
 
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
@@ -708,12 +709,46 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if voiceStyle != "" {
+		next := ln.Settings
+		next.VoiceStyle = voiceStyle
+		next = next.Normalize()
+		if next.VoiceStyle != ln.Settings.VoiceStyle {
+			if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			// Push to the device if it is currently connected so the change
+			// takes effect live without waiting for the next reconnect.
+			if err := h.pushLineSettings(number, next); err != nil {
+				slog.Warn("push line settings failed", "number", number, "err", err)
+			}
+		}
+	}
+
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhones, "phones-table", data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+// pushLineSettings sends the updated settings to the device currently
+// registered as the given number, if any. A missing device is not an error;
+// the next time that device reconnects it will receive the latest settings
+// via the registration push in relay.OnRegistered.
+func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
+	if h.hub.Get(number) == nil {
+		return nil
+	}
+	return h.hub.SendTo(number, &signaling.Message{
+		Type: signaling.TypeLineSettings,
+		To:   number,
+		LineSettings: &signaling.LineSettings{
+			VoiceStyle: settings.VoiceStyle,
+		},
+	})
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1424,6 +1459,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		LastSeen:   time.Now(),
 	}
 	h.hub.Register(msg.Number, conn)
+	h.relay.OnRegistered(msg.Number)
 	number := msg.Number
 
 	// Configure pong handler to extend read deadline on each pong

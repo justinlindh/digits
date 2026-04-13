@@ -2,6 +2,7 @@ package line
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -20,6 +21,19 @@ var ErrNotFound = errors.New("line not found")
 var ErrNumberTaken = errors.New("line number is already in use")
 
 var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
+
+// scanSettings parses the settings JSONB value returned by Postgres into a
+// Settings struct, layering the result on top of DefaultSettings so any
+// field not present in the DB falls through to its default.
+func scanSettings(raw []byte) (Settings, error) {
+	patch := Settings{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &patch); err != nil {
+			return Settings{}, fmt.Errorf("settings: %w", err)
+		}
+	}
+	return DefaultSettings().Merge(patch).Normalize(), nil
+}
 
 // ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
@@ -49,6 +63,7 @@ type Line struct {
 	Number      string
 	Name        string
 	HouseholdID string
+	Settings    Settings
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -66,14 +81,18 @@ func NewStore(database *db.Database) *Store {
 // Add inserts a new line for the given household and returns it.
 func (s *Store) Add(number, name, householdID string) (*Line, error) {
 	l := &Line{}
+	var settingsRaw []byte
 	err := s.db.QueryRow(
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, number, name, household_id, created_at, updated_at`,
+		 RETURNING id, number, name, household_id, settings, created_at, updated_at`,
 		number, name, householdID,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
+	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("add line: %w", err)
+	}
+	if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		return nil, err
 	}
 	return l, nil
 }
@@ -81,16 +100,20 @@ func (s *Store) Add(number, name, householdID string) (*Line, error) {
 // GetByID retrieves a line by its integer ID.
 func (s *Store) GetByID(id int64) (*Line, error) {
 	l := &Line{}
+	var settingsRaw []byte
 	err := s.db.QueryRow(
-		`SELECT id, number, name, household_id, created_at, updated_at
+		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE id = $1`,
 		id,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
+	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by id %d: %w", id, err)
+	}
+	if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		return nil, err
 	}
 	return l, nil
 }
@@ -98,16 +121,20 @@ func (s *Store) GetByID(id int64) (*Line, error) {
 // GetByNumber retrieves a line by its phone number.
 func (s *Store) GetByNumber(number string) (*Line, error) {
 	l := &Line{}
+	var settingsRaw []byte
 	err := s.db.QueryRow(
-		`SELECT id, number, name, household_id, created_at, updated_at
+		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE number = $1`,
 		number,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt)
+	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by number %s: %w", number, err)
+	}
+	if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		return nil, err
 	}
 	return l, nil
 }
@@ -115,7 +142,7 @@ func (s *Store) GetByNumber(number string) (*Line, error) {
 // List returns all lines ordered by number.
 func (s *Store) List() ([]Line, error) {
 	rows, err := s.db.Query(
-		`SELECT id, number, name, household_id, created_at, updated_at
+		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines ORDER BY number`,
 	)
 	if err != nil {
@@ -126,8 +153,12 @@ func (s *Store) List() ([]Line, error) {
 	var lines []Line
 	for rows.Next() {
 		var l Line
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		var settingsRaw []byte
+		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan line: %w", err)
+		}
+		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+			return nil, err
 		}
 		lines = append(lines, l)
 	}
@@ -137,7 +168,7 @@ func (s *Store) List() ([]Line, error) {
 // ListByHousehold returns all lines belonging to the given household, ordered by number.
 func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 	rows, err := s.db.Query(
-		`SELECT id, number, name, household_id, created_at, updated_at
+		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE household_id = $1 ORDER BY number`,
 		householdID,
 	)
@@ -149,8 +180,12 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 	var lines []Line
 	for rows.Next() {
 		var l Line
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		var settingsRaw []byte
+		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan line: %w", err)
+		}
+		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+			return nil, err
 		}
 		lines = append(lines, l)
 	}
@@ -164,7 +199,7 @@ func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, erro
 		return nil, nil
 	}
 	rows, err := s.db.Query(
-		`SELECT id, number, name, household_id, created_at, updated_at
+		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE household_id = ANY($1) ORDER BY number`,
 		pq.Array(householdIDs),
 	)
@@ -176,8 +211,12 @@ func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, erro
 	result := make(map[string][]Line, len(householdIDs))
 	for rows.Next() {
 		var l Line
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		var settingsRaw []byte
+		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan line: %w", err)
+		}
+		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+			return nil, err
 		}
 		result[l.HouseholdID] = append(result[l.HouseholdID], l)
 	}
@@ -237,6 +276,26 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 		return false, fmt.Errorf("number exists excluding: %w", err)
 	}
 	return count > 0, nil
+}
+
+// UpdateSettings replaces the settings JSONB for the line with the given ID.
+func (s *Store) UpdateSettings(id int64, settings Settings) error {
+	raw, err := json.Marshal(settings.Normalize())
+	if err != nil {
+		return fmt.Errorf("marshal settings: %w", err)
+	}
+	res, err := s.db.Exec(
+		`UPDATE lines SET settings = $1, updated_at = NOW() WHERE id = $2`,
+		raw, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update settings: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("line %d not found", id)
+	}
+	return nil
 }
 
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.

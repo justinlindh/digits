@@ -148,3 +148,23 @@ func NewPOTSChain(sampleRate int) *BiquadChain {
 	}
 	return NewBiquadChain(stages...)
 }
+
+// NewPOTSCharacterChain builds a pure 300-3400 Hz telephony bandpass with no
+// notch comb, intended as a cosmetic voice-color filter that makes speech
+// sound like a legacy copper-wire phone call.
+//
+// Unlike NewPOTSChain this does NOT try to remove mains hum. It assumes its
+// input is already clean (noise removed upstream by RNNoise or similar) and
+// therefore skips the harmonic notches entirely, which preserves voice
+// formants perfectly between the corners. The only effect is band-limiting,
+// which is exactly the POTS sound.
+//
+// Pipeline order matters: run this AFTER the denoiser, not before. Filtering
+// before denoise would narrow the spectrum RNNoise operates on and reduce
+// how well it can separate voice from noise.
+func NewPOTSCharacterChain(sampleRate int) *BiquadChain {
+	return NewBiquadChain(
+		NewHPF(sampleRate, 300), NewHPF(sampleRate, 300),
+		NewLPF(sampleRate, 3400), NewLPF(sampleRate, 3400),
+	)
+}

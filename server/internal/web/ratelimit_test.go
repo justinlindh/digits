@@ -33,7 +33,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil)
+	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)

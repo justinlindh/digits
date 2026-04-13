@@ -55,7 +55,7 @@ func main() {
 	// Link store
 	linkStore := household.NewLinkStore(database.DB)
 
-	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database))
+	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 
 	// Configure TURN credential generation if enabled
 	if cfg.TURNEnabled {

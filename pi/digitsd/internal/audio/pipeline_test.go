@@ -22,6 +22,9 @@ func TestPipelineConfig(t *testing.T) {
 	if cfg.Bandpass {
 		t.Error("Bandpass: got true, want false (RNNoise handles hum)")
 	}
+	if !cfg.Character {
+		t.Error("Character: got false, want true (copper default)")
+	}
 }
 
 func TestNewPipeline(t *testing.T) {
