@@ -96,6 +96,11 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create household B: %v", err)
 	}
+	// handleCalls redirects to /settings when call history is disabled (the
+	// default). We care about scoping the rendered list, not the feature gate.
+	if err := householdStore.SetCallHistoryEnabled(hhA.ID, true); err != nil {
+		t.Fatalf("enable call history A: %v", err)
+	}
 
 	// === Step 3: Pair phones into each household ===
 	pairingStore := pairing.NewStore(database.DB)
@@ -176,19 +181,25 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	}
 	body := bodyBuf.String()
 
+	// Calls template renders numbers through line.FormatNumber, which turns
+	// a 7-digit number into XXX-XXXX. Assert against the formatted form so
+	// the test stays honest about what the user actually sees.
+	displayA := line.FormatNumber(phoneNumA)
+	displayB := line.FormatNumber(phoneNumB)
+
 	// === Step 7: userA's household phone number should appear ===
-	if !strings.Contains(body, phoneNumA) {
+	if !strings.Contains(body, displayA) {
 		t.Errorf("expected /calls page to contain household-A phone %s, but it didn't\nbody snippet: %s",
-			phoneNumA, truncate(body, 500))
+			displayA, truncate(body, 500))
 	}
 
 	// === Step 8: userB's household phone number should NOT appear ===
-	if strings.Contains(body, phoneNumB) {
+	if strings.Contains(body, displayB) {
 		t.Errorf("expected /calls page to NOT contain household-B phone %s, but it did\nbody snippet: %s",
-			phoneNumB, truncate(body, 500))
+			displayB, truncate(body, 500))
 	}
 
-	t.Logf("✓ /calls page correctly scoped: shows %s, hides %s", phoneNumA, phoneNumB)
+	t.Logf("✓ /calls page correctly scoped: shows %s, hides %s", displayA, displayB)
 }
 
 func truncate(s string, n int) string {
