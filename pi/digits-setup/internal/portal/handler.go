@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digits-setup/internal/wifi"
 )
@@ -14,7 +15,7 @@ import (
 var staticFiles embed.FS
 
 // NewHandler returns the HTTP mux for the captive portal.
-func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator) http.Handler {
+func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.APController) http.Handler {
 	mux := http.NewServeMux()
 
 	// Captive portal detection — redirect to setup page
@@ -66,10 +67,22 @@ func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator) http.Handl
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status":  "ok",
-			"message": "Configuration saved. Rebooting in 5 seconds...",
+			"message": "Configuration saved. Reconnect to your normal network.",
 		}); err != nil {
 			log.Printf("configure: encode response: %v", err)
 		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		// Defer AP teardown so the response bytes have time to leave wlan0
+		// before hostapd stops and the client loses association.
+		go func() {
+			time.Sleep(2 * time.Second)
+			if err := ap.Down(); err != nil {
+				log.Printf("configure: ap down failed: %v", err)
+			}
+		}()
 	})
 
 	// Static files (index.html, style.css, app.js)
