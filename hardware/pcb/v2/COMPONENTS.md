@@ -18,7 +18,17 @@ Converts the 12V wall adapter input to 5V for the Raspberry Pi and the 3.3V LDO.
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U1 | LM2596S-5 | TO-263-5 | C347421 | +12V in, +5V out, L1, D1, C1, C2 | 5V 3A fixed-output switching step-down regulator. Converts 12V to 5V at up to 3A. The fixed-output version eliminates the feedback resistor divider. |
-| C1 | 680uF 25V electrolytic | 10x10.5mm SMD | C976031 | +12V rail, GND | Input bulk capacitor for U1. Absorbs input voltage ripple and provides instantaneous energy during switching transients. 680uF is per the LM2596 datasheet recommendation for the input side. |
+| C1 | 680uF 25V electrolytic | 10x10.5mm SMD | TBD (see note below) | +12V rail, GND | Input bulk capacitor for U1. Absorbs input voltage ripple and provides instantaneous energy during switching transients. 680uF is per the LM2596 datasheet recommendation for the input side. |
+
+> **C1 reflow note (v2 order, 2026-04):** The original LCSC pick for C1 was `C976031`, which has a peak reflow temperature of only 235°C. JLCPCB's standard PCBA reflow profile is 240°C ±5°C, so they flag this part and require either (a) a $32.59 medium-temperature solder paste surcharge, or (b) a substitute part. Before the next order, replace C1 with a part that meets all of the following criteria, then update both `bom.csv` and the LCSC field on the schematic symbol:
+>
+> - Footprint: SMD aluminum electrolytic, 10mm can diameter (drops into the existing `Capacitor_SMD:CP_Elec_10x10.5` pad pattern with no layout changes)
+> - Capacitance: 680µF (470µF is acceptable per the LM2596 datasheet if 680 is sparse)
+> - Voltage: ≥25V (35V or 50V is fine and may be easier to find in stock)
+> - Peak reflow temperature: **260°C** (verify on the manufacturer datasheet, not just the LCSC summary)
+> - Low ESR aluminum electrolytic, ripple current rating ≥ ~500mA at 100kHz
+>
+> Candidate families known to ship with 260°C reflow ratings: Lelon REA series, Nichicon UWT/UWX series, Rubycon TZV/ZLH series, Aishi SK series. Filter JLCPCB's parts library by category → Aluminum Electrolytic Capacitors - SMD, then sort by stock and confirm the datasheet reflow rating before committing.
 | C2 | 220uF 25V electrolytic | 8x6.5mm SMD | C2895286 | +5V rail, GND | Output bulk capacitor for U1. Smooths the 5V output ripple. 220uF is the LM2596 datasheet minimum for stable regulation. |
 | L1 | 33uH shielded inductor | 12x12mm SMD | C9400 | U1 output pin, D1/C2 junction | Energy storage inductor for the buck topology. During U1's on-time, current ramps up through L1 storing energy in the magnetic field. During off-time, L1 releases energy through D1 to maintain current flow. 33uH is sized per the LM2596 datasheet for 5V/3A output from 12V input. Shielded to reduce EMI. |
 | D1 | SS54 Schottky diode | SMA (DO-214AC) | C22452 | L1/U1 junction, GND | Freewheeling (catch) diode for the buck converter. When U1's internal switch turns off, L1's magnetic field collapses and current must continue flowing -- D1 provides that path. Schottky type for low forward voltage drop (0.5V vs 0.7V for standard diodes), improving efficiency and reducing heat. 5A/40V rated, matching the LM2596's current capability. |
