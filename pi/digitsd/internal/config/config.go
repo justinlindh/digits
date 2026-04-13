@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Voice style identifiers persisted in Config and on the wire.
@@ -18,6 +19,14 @@ const (
 	VoiceStyleCopper = "copper"
 	VoiceStyleModern = "modern"
 )
+
+// WiFiFallback configures the wifi auto-fallback supervisor.
+type WiFiFallback struct {
+	Enabled           bool          `json:"enabled"`
+	GraceInitial      time.Duration `json:"grace_initial"`
+	GraceMax          time.Duration `json:"grace_max"`
+	APNoClientTimeout time.Duration `json:"ap_no_client_timeout"`
+}
 
 // Config holds digitsd runtime configuration loaded from a JSON file.
 // CLI flags always override values loaded from the file.
@@ -50,12 +59,27 @@ type Config struct {
 	// locally so the device can start up with the correct style offline.
 	VoiceStyle string `json:"voice_style,omitempty"`
 
+	// WiFiFallback configures the WiFi auto-fallback supervisor.
+	WiFiFallback WiFiFallback `json:"wifi_fallback"`
+
 	// path is the file the config was loaded from; used by Save.
 	path string
 }
 
 // DefaultPath is the default config file location on a Pi.
 const DefaultPath = "/data/digits/config.json"
+
+// Default returns a Config with sensible defaults.
+func Default() *Config {
+	return &Config{
+		WiFiFallback: WiFiFallback{
+			Enabled:           true,
+			GraceInitial:      5 * time.Minute,
+			GraceMax:          30 * time.Minute,
+			APNoClientTimeout: 10 * time.Minute,
+		},
+	}
+}
 
 // Load reads the config file at path. If the file does not exist a zero-value
 // Config is returned with no error (caller applies CLI-flag defaults).
@@ -87,6 +111,19 @@ func Load(path string) (*Config, error) {
 		return loadBackup(path)
 	}
 
+	// Fill in defaults for WiFiFallback fields that weren't in the config file
+	if c.WiFiFallback.GraceInitial == 0 {
+		c.WiFiFallback.GraceInitial = 5 * time.Minute
+	}
+	if c.WiFiFallback.GraceMax == 0 {
+		c.WiFiFallback.GraceMax = 30 * time.Minute
+	}
+	if c.WiFiFallback.APNoClientTimeout == 0 {
+		c.WiFiFallback.APNoClientTimeout = 10 * time.Minute
+	}
+	// Note: we do NOT auto-default Enabled to true here to avoid silently
+	// overriding explicit "enabled": false in existing config files.
+
 	slog.Info("config: loaded", "path", path, "server_url", c.ServerURL, "phone_number", c.PhoneNumber, "has_token", c.DeviceToken != "", "has_pairing_code", c.PairingCode != "")
 	return c, nil
 }
@@ -111,6 +148,17 @@ func loadBackup(path string) (*Config, error) {
 	if err := json.Unmarshal(data, c); err != nil {
 		slog.Warn("config: backup also unparseable, using defaults", "path", bakPath, "error", err)
 		return c, nil
+	}
+
+	// Fill in defaults for WiFiFallback fields that weren't in the backup
+	if c.WiFiFallback.GraceInitial == 0 {
+		c.WiFiFallback.GraceInitial = 5 * time.Minute
+	}
+	if c.WiFiFallback.GraceMax == 0 {
+		c.WiFiFallback.GraceMax = 30 * time.Minute
+	}
+	if c.WiFiFallback.APNoClientTimeout == 0 {
+		c.WiFiFallback.APNoClientTimeout = 10 * time.Minute
 	}
 
 	slog.Info("config: recovered from backup", "path", bakPath, "server_url", c.ServerURL, "phone_number", c.PhoneNumber, "has_token", c.DeviceToken != "")

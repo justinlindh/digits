@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadMissingFile(t *testing.T) {
@@ -377,5 +378,21 @@ func TestConfigLoadPreservesVoiceStyle(t *testing.T) {
 	}
 	if c.VoiceStyle != "modern" {
 		t.Errorf("loaded voice_style: got %q, want %q", c.VoiceStyle, "modern")
+	}
+}
+
+func TestWiFiFallbackDefaults(t *testing.T) {
+	c := Default()
+	if !c.WiFiFallback.Enabled {
+		t.Error("WiFiFallback.Enabled should default to true")
+	}
+	if c.WiFiFallback.GraceInitial != 5*time.Minute {
+		t.Errorf("GraceInitial = %v, want 5m", c.WiFiFallback.GraceInitial)
+	}
+	if c.WiFiFallback.GraceMax != 30*time.Minute {
+		t.Errorf("GraceMax = %v, want 30m", c.WiFiFallback.GraceMax)
+	}
+	if c.WiFiFallback.APNoClientTimeout != 10*time.Minute {
+		t.Errorf("APNoClientTimeout = %v, want 10m", c.WiFiFallback.APNoClientTimeout)
 	}
 }
