@@ -69,15 +69,21 @@ type Config struct {
 // DefaultPath is the default config file location on a Pi.
 const DefaultPath = "/data/digits/config.json"
 
+// defaultWiFiFallback returns the canonical default WiFiFallback config. This
+// is the single source of truth for both Default() and the Load path.
+func defaultWiFiFallback() WiFiFallback {
+	return WiFiFallback{
+		Enabled:           true,
+		GraceInitial:      5 * time.Minute,
+		GraceMax:          30 * time.Minute,
+		APNoClientTimeout: 10 * time.Minute,
+	}
+}
+
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
-		WiFiFallback: WiFiFallback{
-			Enabled:           true,
-			GraceInitial:      5 * time.Minute,
-			GraceMax:          30 * time.Minute,
-			APNoClientTimeout: 10 * time.Minute,
-		},
+		WiFiFallback: defaultWiFiFallback(),
 	}
 }
 
@@ -87,7 +93,7 @@ func Default() *Config {
 // If the primary file is corrupt (e.g. null bytes from a power cut), Load
 // automatically falls back to the .bak file.
 func Load(path string) (*Config, error) {
-	c := &Config{path: path}
+	c := &Config{path: path, WiFiFallback: defaultWiFiFallback()}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -111,19 +117,6 @@ func Load(path string) (*Config, error) {
 		return loadBackup(path)
 	}
 
-	// Fill in defaults for WiFiFallback fields that weren't in the config file
-	if c.WiFiFallback.GraceInitial == 0 {
-		c.WiFiFallback.GraceInitial = 5 * time.Minute
-	}
-	if c.WiFiFallback.GraceMax == 0 {
-		c.WiFiFallback.GraceMax = 30 * time.Minute
-	}
-	if c.WiFiFallback.APNoClientTimeout == 0 {
-		c.WiFiFallback.APNoClientTimeout = 10 * time.Minute
-	}
-	// Note: we do NOT auto-default Enabled to true here to avoid silently
-	// overriding explicit "enabled": false in existing config files.
-
 	slog.Info("config: loaded", "path", path, "server_url", c.ServerURL, "phone_number", c.PhoneNumber, "has_token", c.DeviceToken != "", "has_pairing_code", c.PairingCode != "")
 	return c, nil
 }
@@ -132,7 +125,7 @@ func Load(path string) (*Config, error) {
 // a zero-value config so the daemon can still boot (in pairing mode).
 func loadBackup(path string) (*Config, error) {
 	bakPath := path + ".bak"
-	c := &Config{path: path}
+	c := &Config{path: path, WiFiFallback: defaultWiFiFallback()}
 
 	data, err := os.ReadFile(bakPath)
 	if err != nil {
@@ -148,17 +141,6 @@ func loadBackup(path string) (*Config, error) {
 	if err := json.Unmarshal(data, c); err != nil {
 		slog.Warn("config: backup also unparseable, using defaults", "path", bakPath, "error", err)
 		return c, nil
-	}
-
-	// Fill in defaults for WiFiFallback fields that weren't in the backup
-	if c.WiFiFallback.GraceInitial == 0 {
-		c.WiFiFallback.GraceInitial = 5 * time.Minute
-	}
-	if c.WiFiFallback.GraceMax == 0 {
-		c.WiFiFallback.GraceMax = 30 * time.Minute
-	}
-	if c.WiFiFallback.APNoClientTimeout == 0 {
-		c.WiFiFallback.APNoClientTimeout = 10 * time.Minute
 	}
 
 	slog.Info("config: recovered from backup", "path", bakPath, "server_url", c.ServerURL, "phone_number", c.PhoneNumber, "has_token", c.DeviceToken != "")
