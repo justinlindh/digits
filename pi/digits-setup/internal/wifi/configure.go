@@ -1,6 +1,8 @@
 package wifi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -67,6 +69,16 @@ func (c *SystemConfigurator) Configure(req ConfigRequest) error {
 	return ConfigureWithDeps(req, OSFileSystem{}, SystemRebooter{})
 }
 
+// uuidForSSID returns a stable UUID-shaped string derived from the SSID.
+// Format: 8-4-4-4-12 hex chars. Not a real UUID, but NetworkManager accepts
+// anything UUID-shaped in this field. Deterministic so reconfiguring the
+// same SSID overwrites the previous file rather than creating a duplicate.
+func uuidForSSID(ssid string) string {
+	h := sha256.Sum256([]byte(ssid))
+	s := hex.EncodeToString(h[:16])
+	return s[0:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:32]
+}
+
 // ConfigureWithDeps performs configuration with injectable dependencies.
 func ConfigureWithDeps(req ConfigRequest, fs FileSystem, rebooter Rebooter) error {
 	if req.SSID == "" {
@@ -78,6 +90,10 @@ func ConfigureWithDeps(req ConfigRequest, fs FileSystem, rebooter Rebooter) erro
 		return fmt.Errorf("mkdir %s: %w", wpaDir, err)
 	}
 
+	safeName := SanitizeSSID(req.SSID)
+	connID := "digits-wifi-" + safeName
+	uuid := uuidForSSID(req.SSID)
+
 	hiddenLine := ""
 	if req.Hidden {
 		hiddenLine = "hidden=true\n"
@@ -85,8 +101,8 @@ func ConfigureWithDeps(req ConfigRequest, fs FileSystem, rebooter Rebooter) erro
 
 	// Write NetworkManager connection file (NM manages wlan0 on the working Pi)
 	nmConn := fmt.Sprintf(`[connection]
-id=digits-wifi
-uuid=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+id=%s
+uuid=%s
 type=wifi
 
 [wifi]
@@ -105,9 +121,9 @@ addr-gen-mode=default
 method=auto
 
 [proxy]
-`, hiddenLine, req.SSID, req.Password)
+`, connID, uuid, hiddenLine, req.SSID, req.Password)
 
-	nmPath := filepath.Join(wpaDir, "digits-wifi.nmconnection")
+	nmPath := filepath.Join(wpaDir, "digits-wifi-"+safeName+".nmconnection")
 	if err := fs.WriteFile(nmPath, []byte(nmConn), 0600); err != nil {
 		return fmt.Errorf("write nmconnection: %w", err)
 	}

@@ -69,7 +69,7 @@ func TestConfigureSuccess(t *testing.T) {
 	}
 
 	// Check wpa_supplicant.conf
-	nm, ok := fs.files["/data/wifi/digits-wifi.nmconnection"]
+	nm, ok := fs.files["/data/wifi/digits-wifi-MyNetwork.nmconnection"]
 	if !ok {
 		t.Fatal("nmconnection not written")
 	}
@@ -137,7 +137,7 @@ func TestConfigureHiddenNetwork(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	nm := fs.files["/data/wifi/digits-wifi.nmconnection"]
+	nm := fs.files["/data/wifi/digits-wifi-SecretNet.nmconnection"]
 	nmStr := string(nm.data)
 	if !strings.Contains(nmStr, "hidden=true") {
 		t.Errorf("hidden network should have hidden=true, got: %s", nmStr)
@@ -159,7 +159,7 @@ func TestConfigureVisibleNetworkNoScanSSID(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	nm := fs.files["/data/wifi/digits-wifi.nmconnection"]
+	nm := fs.files["/data/wifi/digits-wifi-VisibleNet.nmconnection"]
 	nmStr := string(nm.data)
 	if strings.Contains(nmStr, "hidden=") {
 		t.Errorf("visible network should not have hidden=, got: %s", nmStr)
