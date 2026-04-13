@@ -125,12 +125,15 @@ func (d *daemonCallbacks) SendLED(mode string) {
 	d.serial.LED(mode)
 }
 
+func (d *daemonCallbacks) NotifyCallConnected() {
+	if err := d.serial.CallConnected(); err != nil {
+		slog.Warn("uart: CALL:CONNECTED failed", "error", err)
+	}
+}
+
 func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	// Stop tones — mixer continues writing silence (DAC keepalive) until WebRTC audio arrives
-	d.mixer.StopTone()
 
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
