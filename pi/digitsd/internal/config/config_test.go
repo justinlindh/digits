@@ -350,3 +350,32 @@ func TestCLIOverride(t *testing.T) {
 		t.Errorf("CLI override for phone_number failed: got %q", effectiveNumber)
 	}
 }
+
+func TestConfigVoiceStyleDefaultCopper(t *testing.T) {
+	c := &Config{}
+	if got := c.VoiceStyleOrDefault(); got != "copper" {
+		t.Errorf("empty config: got %q, want %q", got, "copper")
+	}
+}
+
+func TestConfigVoiceStyleCustomPreserved(t *testing.T) {
+	c := &Config{VoiceStyle: "modern"}
+	if got := c.VoiceStyleOrDefault(); got != "modern" {
+		t.Errorf("custom value: got %q, want %q", got, "modern")
+	}
+}
+
+func TestConfigLoadPreservesVoiceStyle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"voice_style":"modern"}`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if c.VoiceStyle != "modern" {
+		t.Errorf("loaded voice_style: got %q, want %q", c.VoiceStyle, "modern")
+	}
+}

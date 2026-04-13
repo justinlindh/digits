@@ -13,6 +13,12 @@ import (
 	"path/filepath"
 )
 
+// Voice style identifiers persisted in Config and on the wire.
+const (
+	VoiceStyleCopper = "copper"
+	VoiceStyleModern = "modern"
+)
+
 // Config holds digitsd runtime configuration loaded from a JSON file.
 // CLI flags always override values loaded from the file.
 type Config struct {
@@ -38,6 +44,11 @@ type Config struct {
 	// (LOW = off-hook). Leave false for protoboard builds with V-153-1C25
 	// microswitch (HIGH = off-hook).
 	HookInverted bool `json:"hook_inverted,omitempty"`
+
+	// VoiceStyle is the per-line audio character ("copper" or "modern").
+	// Set by the server on registration and on each web-UI change, cached
+	// locally so the device can start up with the correct style offline.
+	VoiceStyle string `json:"voice_style,omitempty"`
 
 	// path is the file the config was loaded from; used by Save.
 	path string
@@ -126,6 +137,17 @@ func isCorrupt(data []byte) bool {
 		}
 	}
 	return false
+}
+
+// VoiceStyleOrDefault returns the configured voice style, falling back to
+// VoiceStyleCopper when the field is empty. Kept separate from the raw field
+// so the empty-string case (never set, or explicitly cleared) doesn't have
+// to be special-cased at every call site.
+func (c *Config) VoiceStyleOrDefault() string {
+	if c == nil || c.VoiceStyle == "" {
+		return VoiceStyleCopper
+	}
+	return c.VoiceStyle
 }
 
 // Save writes the config back to the file it was loaded from.
