@@ -723,13 +723,18 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	raw := strings.TrimSpace(r.FormValue("voice_style"))
+	if raw == "" {
+		http.Error(w, "missing voice_style", http.StatusBadRequest)
+		return
+	}
 	ln, err := h.lineStore.GetByNumber(number)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 	next := ln.Settings
-	next.VoiceStyle = strings.TrimSpace(r.FormValue("voice_style"))
+	next.VoiceStyle = raw
 	next = next.Normalize()
 	if next.VoiceStyle != ln.Settings.VoiceStyle {
 		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
