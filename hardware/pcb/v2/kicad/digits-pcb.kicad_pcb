@@ -131,7 +131,7 @@
 	(footprint "Capacitor_SMD:CP_Elec_10x10.5"
 		(layer "F.Cu")
 		(uuid "034a0793-dc66-46cd-b93f-7d1a86bd1ea5")
-		(at 22.2 61.96)
+		(at 22.2 63.46)
 		(descr "SMD capacitor, aluminum electrolytic, Vishay 1010, 10.0x10.5mm, http://www.vishay.com/docs/28395/150crz.pdf")
 		(tags "capacitor electrolytic")
 		(property "Reference" "C1"
@@ -2996,13 +2996,13 @@
 	(footprint "Resistor_SMD:R_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "505d0bb0-cc32-4bcb-bf85-fda2be0485fa")
-		(at 59.51 66.71)
+		(at 61.24 49.22)
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R7"
 			(at 0 -1.17 0)
 			(layer "F.SilkS")
-			(uuid "0bdf6ca2-91ae-4d06-8c5c-720e9c4da071")
+			(uuid "dd86080f-a80d-46b3-92c2-8df58a66f1f3")
 			(effects
 				(font
 					(size 0.5 0.5)
@@ -3013,7 +3013,7 @@
 		(property "Value" "10k"
 			(at 0 1.17 0)
 			(layer "F.Fab")
-			(uuid "076f805a-0eb8-476f-99ca-81b53ebbb0ef")
+			(uuid "a01e0299-83fc-4fa6-ac35-14a6cb59d596")
 			(effects
 				(font
 					(size 1 1)
@@ -3025,7 +3025,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "bceb037c-4426-4f05-a15d-1f0b535b07f5")
+			(uuid "77285397-d1a3-4c16-ae3e-9e5ff7220468")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3036,7 +3036,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "689ad524-c709-405d-aec4-d2023447edf1")
+			(uuid "2209d473-c026-4c66-a4a6-05b8dcbcfc9f")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3337,11 +3337,11 @@
 	(footprint "Diode_SMD:D_SMA"
 		(layer "F.Cu")
 		(uuid "57edb3de-3b63-4d5a-92b1-e704c028b721")
-		(at 32.5 65.46)
+		(at 33.25 64.96)
 		(descr "Diode SMA (DO-214AC)")
 		(tags "Diode SMA (DO-214AC)")
 		(property "Reference" "D1"
-			(at 6.35 -3.72 0)
+			(at 4.75 -2.5 0)
 			(layer "F.Fab")
 			(uuid "5f41d732-6eba-43ab-8f95-62140b23c258")
 			(effects
@@ -3352,7 +3352,7 @@
 			)
 		)
 		(property "Value" "SS54"
-			(at 6.35 3.72 0)
+			(at 5.25 3 0)
 			(layer "F.Fab")
 			(uuid "d73ac858-1165-45a0-a142-0496d5b4690b")
 			(effects
@@ -3579,7 +3579,7 @@
 			(uuid "5849a59d-c8b4-4690-a2e6-c0aeb62be97d")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 7.0625 0 0)
+			(at 4.75 0 0)
 			(layer "F.Fab")
 			(uuid "5402658f-0ef3-41f1-9c5c-1d00754b8d9c")
 			(effects
@@ -10111,7 +10111,7 @@
 	(footprint "Package_TO_SOT_SMD:TO-263-5_TabPin3"
 		(layer "F.Cu")
 		(uuid "c3f53482-2e62-426b-a8b7-93caa3f57881")
-		(at 28.9 39.31)
+		(at 28.925 37.735)
 		(descr "TO-263/D2PAK/DDPAK SMD package, http://www.infineon.com/cms/en/product/packages/PG-TO263/PG-TO263-5-1/")
 		(tags "D2PAK DDPAK TO-263 D2PAK-5 TO-263-5 SOT-426")
 		(property "Reference" "U1"
@@ -10734,7 +10734,7 @@
 	(footprint "Connector_JST:JST_ZH_B4B-ZR-SM4-TF_1x04-1MP_P1.50mm_Vertical"
 		(layer "F.Cu")
 		(uuid "c64653dc-7c3d-4111-8142-36598970ae32")
-		(at 83.25 67.21)
+		(at 63.25 65.76)
 		(descr "JST ZH series connector, B4B-ZR-SM4-TF (http://www.jst-mfg.com/product/pdf/eng/eZH.pdf)")
 		(tags "connector JST ZH vertical")
 		(property "Reference" "J8"
@@ -14120,7 +14120,7 @@
 	(footprint "Resistor_SMD:R_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "e9de3d7e-7003-47e0-b5de-5d08f568627a")
-		(at 59.51 68.7)
+		(at 61.24 51.21)
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R8"
