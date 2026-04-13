@@ -438,6 +438,21 @@ func (d *daemonCallbacks) HangupCall() {
 	slog.Info("call ended")
 }
 
+// applyVoiceStyleLive forwards a voice style change to the active audio
+// pipeline if one is running. Called from the signal inbox handler when a
+// line_settings update arrives; safe to call with no active pipeline (it
+// becomes a no-op, and the config cache still gets persisted so the next
+// call picks up the style at construction time).
+func (d *daemonCallbacks) applyVoiceStyleLive(style string) {
+	d.mu.Lock()
+	pip := d.pipeline
+	d.mu.Unlock()
+	if pip == nil {
+		return
+	}
+	pip.SetVoiceStyle(style)
+}
+
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
@@ -1580,6 +1595,30 @@ func main() {
 					}()
 				default:
 					slog.Warn("unknown restart mode", "mode", mode)
+				}
+
+			case sigclient.TypeLineSettings:
+				if msg.LineSettings == nil {
+					slog.Warn("line_settings message missing payload", "from", msg.From)
+					break
+				}
+				style := msg.LineSettings.VoiceStyle
+				if style == "" {
+					style = config.VoiceStyleCopper
+				}
+				slog.Info("line_settings applied", "voice_style", style)
+
+				// Apply to any live pipeline so a mid-call change is heard immediately.
+				// If no pipeline is currently running, the next one constructed (at
+				// call start) will pick the style up from the config cache we save
+				// below.
+				cb.applyVoiceStyleLive(style)
+
+				// Persist the new style locally so the next cold start or in-flight
+				// call construction reads the correct value.
+				cb.cfg.VoiceStyle = style
+				if err := cb.cfg.Save(); err != nil {
+					slog.Warn("line_settings: config save failed", "err", err)
 				}
 
 			default:
