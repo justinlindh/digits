@@ -18,14 +18,15 @@ type fakeNM struct {
 func (f *fakeNM) HasConnectivity() (bool, error) { return f.connected, f.err }
 
 type fakeAP struct {
-	hasClient bool
-	upCalls   int
-	downCalls int
+	hasClient    bool
+	hasClientErr error
+	upCalls      int
+	downCalls    int
 }
 
 func (f *fakeAP) Up() error                { f.upCalls++; return nil }
 func (f *fakeAP) Down() error              { f.downCalls++; return nil }
-func (f *fakeAP) HasClient() (bool, error) { return f.hasClient, nil }
+func (f *fakeAP) HasClient() (bool, error) { return f.hasClient, f.hasClientErr }
 
 func testCfg() config.WiFiFallback {
 	return config.WiFiFallback{
@@ -273,13 +274,13 @@ func TestBackoffResetsOnRecovery(t *testing.T) {
 	start := time.Unix(1000, 0)
 
 	// Cycle once to grow backoff to 10m.
-	s.Tick(start)                          // degraded, backoff=5m, graceExpires=+5m
-	s.Tick(start.Add(6 * time.Minute))     // AP_OFFERED, apExpires=+16m
-	s.Tick(start.Add(17 * time.Minute))    // timeout -> degraded, backoff=10m, graceExpires=+27m
+	s.Tick(start)                       // degraded, backoff=5m, graceExpires=+5m
+	s.Tick(start.Add(6 * time.Minute))  // AP_OFFERED, apExpires=+16m
+	s.Tick(start.Add(17 * time.Minute)) // timeout -> degraded, backoff=10m, graceExpires=+27m
 
 	// Recover.
 	nm.connected = true
-	s.Tick(start.Add(18 * time.Minute))    // StationOK, backoff resets to 5m
+	s.Tick(start.Add(18 * time.Minute)) // StationOK, backoff resets to 5m
 	if s.State() != StateStationOK {
 		t.Fatalf("state = %v, want StateStationOK", s.State())
 	}
@@ -290,5 +291,31 @@ func TestBackoffResetsOnRecovery(t *testing.T) {
 	wantExpires := start.Add(19 * time.Minute).Add(5 * time.Minute)
 	if !s.graceExpires.Equal(wantExpires) {
 		t.Errorf("graceExpires = %v, want %v (backoff should have reset)", s.graceExpires, wantExpires)
+	}
+}
+
+func TestAPActiveHoldsOnHasClientError(t *testing.T) {
+	nm := &fakeNM{connected: false}
+	ap := &fakeAP{hasClient: true}
+	call := false
+	s := newTestSupervisor(nm, ap, &call)
+	start := time.Unix(1000, 0)
+
+	// Walk to AP_ACTIVE
+	s.Tick(start)                                    // degraded
+	s.Tick(start.Add(6 * time.Minute))               // AP_OFFERED
+	s.Tick(start.Add(6*time.Minute + time.Second))   // AP_ACTIVE
+
+	if s.State() != StateAPActive {
+		t.Fatalf("setup: state = %v, want StateAPActive", s.State())
+	}
+
+	// Simulate HasClient error on next tick; state must hold.
+	ap.hasClient = false
+	ap.hasClientErr = errors.New("iw transient")
+	s.Tick(start.Add(7 * time.Minute))
+
+	if s.State() != StateAPActive {
+		t.Errorf("state = %v, want held StateAPActive despite HasClient error", s.State())
 	}
 }
