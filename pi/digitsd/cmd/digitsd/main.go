@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -998,9 +999,10 @@ func main() {
 			time.Sleep(50 * time.Millisecond)
 		}
 
-		// Open capture AFTER beeps so there's no startup delay
+		// Open capture AFTER beeps so there's no startup delay.
+		// Use the default pipeline config so the self-test plays back
+		// exactly what the remote peer hears in a real call.
 		pipCfg := audio.DefaultPipelineConfig()
-		pipCfg.Denoise = false // raw mic -- hear exactly what the hardware picks up
 		pip := audio.NewPipeline(pipCfg)
 		if err := pip.Start(); err != nil {
 			slog.Error("audio test: pipeline start failed", "error", err)
@@ -1045,6 +1047,13 @@ func main() {
 			}
 		}
 		slog.Info("audio test: captured, playing back", "samples", len(recorded), "duration_s", float64(len(recorded))/float64(sampleRate), "peak", maxAmp)
+
+		const dumpPath = "/tmp/audiotest_last.wav"
+		if err := writePCMWav(dumpPath, recorded, sampleRate); err != nil {
+			slog.Warn("audio test: wav dump failed", "path", dumpPath, "error", err)
+		} else {
+			slog.Info("audio test: wav dumped", "path", dumpPath)
+		}
 		mixer.PlayOnceSamples(recorded)
 		time.Sleep(100 * time.Millisecond)
 		for mixer.OncePlaying() {
@@ -1624,6 +1633,48 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 	} else {
 		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable)
 	}
+}
+
+// writePCMWav writes mono 16-bit PCM samples to a WAV file. Used by the
+// *#TEST# service code to dump the last captured buffer for offline analysis.
+func writePCMWav(path string, samples []int16, sampleRate int) (err error) {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	dataSize := uint32(2 * len(samples))
+	byteRate := uint32(sampleRate * 2) // mono * 2 bytes/sample
+
+	hdr := make([]byte, 44)
+	copy(hdr[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(hdr[4:8], 36+dataSize)
+	copy(hdr[8:12], "WAVE")
+	copy(hdr[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(hdr[16:20], 16) // fmt chunk size
+	binary.LittleEndian.PutUint16(hdr[20:22], 1)  // PCM
+	binary.LittleEndian.PutUint16(hdr[22:24], 1)  // mono
+	binary.LittleEndian.PutUint32(hdr[24:28], uint32(sampleRate))
+	binary.LittleEndian.PutUint32(hdr[28:32], byteRate)
+	binary.LittleEndian.PutUint16(hdr[32:34], 2)  // block align
+	binary.LittleEndian.PutUint16(hdr[34:36], 16) // bits/sample
+	copy(hdr[36:40], "data")
+	binary.LittleEndian.PutUint32(hdr[40:44], dataSize)
+
+	if _, err := f.Write(hdr); err != nil {
+		return err
+	}
+	payload := make([]byte, 2*len(samples))
+	for i, s := range samples {
+		binary.LittleEndian.PutUint16(payload[2*i:2*i+2], uint16(s))
+	}
+	_, err = f.Write(payload)
+	return err
 }
 
 // dtmfToneName maps a keypad character to a WAV file name.
