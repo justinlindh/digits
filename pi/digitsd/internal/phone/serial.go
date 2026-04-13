@@ -124,6 +124,11 @@ func (sp *SerialPort) LED(mode string) {
 	sp.SendFire("LED:" + mode)
 }
 
+// CallConnected sends CALL:CONNECTED to the Pico.
+func (sp *SerialPort) CallConnected() {
+	sp.SendFire("CALL:CONNECTED")
+}
+
 // Close stops the reader and closes the port.
 func (sp *SerialPort) Close() error {
 	close(sp.stop)

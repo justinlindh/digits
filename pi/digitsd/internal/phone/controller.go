@@ -28,6 +28,7 @@ type Callbacks interface {
 	InitiateCall(number string) // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
+	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -282,6 +283,7 @@ func (c *Controller) onSignalAnswer() {
 	}
 	c.state = StateCONNECTED
 	c.cb.SendTone("STOP")
+	c.cb.NotifyCallConnected()
 }
 
 func (c *Controller) onSignalHangup() {

@@ -125,12 +125,13 @@ func (d *daemonCallbacks) SendLED(mode string) {
 	d.serial.LED(mode)
 }
 
+func (d *daemonCallbacks) NotifyCallConnected() {
+	d.serial.CallConnected()
+}
+
 func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-
-	// Stop tones — mixer continues writing silence (DAC keepalive) until WebRTC audio arrives
-	d.mixer.StopTone()
 
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
@@ -1248,6 +1249,19 @@ func main() {
 					}
 					mixer.PlayOnce(dtmfName)
 				}
+				// Forward DTMF to the remote peer if a call is connected.
+				if ctrl.State() == phone.StateCONNECTED {
+					cb.mu.Lock()
+					peer := cb.callPeer
+					cb.mu.Unlock()
+					if peer != "" {
+						sig.Send(&sigclient.Message{ //nolint:errcheck
+							Type:  sigclient.TypeDTMF,
+							To:    peer,
+							Digit: key,
+						})
+					}
+				}
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
 					if svcCodes.AddKey(key) {
@@ -1342,6 +1356,31 @@ func main() {
 				ctrl.HandleSignal("hangup")
 			case sigclient.TypeBusy:
 				ctrl.HandleSignal("busy")
+			case sigclient.TypeDTMF:
+				// Remote peer pressed a digit during the call. Play the local
+				// DTMF sample so the user hears what their peer is pressing,
+				// matching real-phone behavior.
+				if ctrl.State() != phone.StateCONNECTED {
+					slog.Debug("dtmf: ignoring (not connected)", "from", msg.From)
+					break
+				}
+				cb.mu.Lock()
+				peer := cb.callPeer
+				cb.mu.Unlock()
+				if msg.From != peer {
+					slog.Debug("dtmf: ignoring (wrong peer)", "from", msg.From, "expected", peer)
+					break
+				}
+				if msg.Digit == "" {
+					slog.Warn("dtmf: empty digit in message")
+					break
+				}
+				dtmfName := dtmfToneName(msg.Digit)
+				if dtmfName == "" {
+					slog.Warn("dtmf: unrecognized digit", "digit", msg.Digit)
+					break
+				}
+				mixer.PlayOnce(dtmfName)
 			case sigclient.TypeError:
 				slog.Warn("signal error", "error", msg.Error)
 				// Number not reachable -- emulate real phone: ringback -> SIT -> busy
