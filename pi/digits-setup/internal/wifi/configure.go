@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,7 @@ type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
 	ReadFile(name string) ([]byte, error)
+	Remove(name string) error
 }
 
 // Rebooter abstracts the system reboot.
@@ -47,6 +49,10 @@ func (OSFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error 
 
 func (OSFileSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
+}
+
+func (OSFileSystem) Remove(name string) error {
+	return os.Remove(name)
 }
 
 // SystemRebooter calls `systemctl reboot`.
@@ -91,8 +97,8 @@ func ConfigureWithDeps(req ConfigRequest, fs FileSystem, rebooter Rebooter) erro
 	}
 
 	safeName := SanitizeSSID(req.SSID)
-	connID := "digits-wifi-" + safeName
 	uuid := uuidForSSID(req.SSID)
+	connID := "digits-wifi-" + safeName + "-" + uuid[:6]
 
 	hiddenLine := ""
 	if req.Hidden {
@@ -123,7 +129,7 @@ method=auto
 [proxy]
 `, connID, uuid, hiddenLine, req.SSID, req.Password)
 
-	nmPath := filepath.Join(wpaDir, "digits-wifi-"+safeName+".nmconnection")
+	nmPath := filepath.Join(wpaDir, "digits-wifi-"+safeName+"-"+uuid[:6]+".nmconnection")
 	if err := fs.WriteFile(nmPath, []byte(nmConn), 0600); err != nil {
 		return fmt.Errorf("write nmconnection: %w", err)
 	}
@@ -135,6 +141,16 @@ method=auto
 	}
 	if string(readBack) != nmConn {
 		return fmt.Errorf("verify nmconnection: read-back mismatch (wrote %d bytes, read %d bytes)", len(nmConn), len(readBack))
+	}
+
+	// Best-effort cleanup: remove the legacy single-file nmconnection left over
+	// from pre-multi-network devices so NetworkManager doesn't load a stale
+	// profile alongside the new per-SSID file.
+	legacyPath := filepath.Join(wpaDir, "digits-wifi.nmconnection")
+	if err := fs.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
+		// Log but do not fail the configure; a failure here should not block
+		// the user's provisioning attempt.
+		log.Printf("configure: legacy cleanup of %s failed: %v", legacyPath, err)
 	}
 
 	// Set wifi-configured flag
