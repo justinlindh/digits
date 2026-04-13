@@ -382,15 +382,8 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "5551234")
 
-	// Drive the controller into StateCALLING by simulating a full dial.
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:6")
-	c.HandleEvent("KEY:7")
-	c.HandleEvent("KEY:8")
-	c.HandleEvent("KEY:9")
 	c.HandleEvent("DIAL:5556789")
 
 	// Wait for the 800ms async goroutine in onDial to set StateCALLING.
@@ -416,29 +409,20 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 	}
 }
 
-func TestRingbackSurvivesInitiateCall(t *testing.T) {
-	// Regression: InitiateCall used to call mixer.StopTone() immediately after
-	// the controller asked for RINGBACK, cutting off the ringback tone. The
-	// controller should send RINGBACK and InitiateCall, in that order, and
-	// NOTHING should send STOP until onSignalAnswer fires.
+func TestRingbackMustPlayUntilAnswer(t *testing.T) {
+	// Ringback must keep playing from the moment the controller emits RINGBACK
+	// until onSignalAnswer fires; nothing else should STOP it in between.
 	cb := &mockCallbacks{}
 	c := NewController(cb, "5551234")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:5")
-	c.HandleEvent("KEY:6")
-	c.HandleEvent("KEY:7")
-	c.HandleEvent("KEY:8")
-	c.HandleEvent("KEY:9")
 	c.HandleEvent("DIAL:5556789")
 
-	// Wait for async goroutine (800ms + a little slack)
 	waitForTone(cb, "RINGBACK")
 
-	// After RINGBACK is issued, the LAST tone recorded must still be RINGBACK:
-	// no STOP should have been sent between RINGBACK and now.
+	// The last tone recorded must still be RINGBACK: no STOP should have been
+	// sent between RINGBACK and now.
 	lastTone := ""
 	if len(cb.tones) > 0 {
 		lastTone = cb.tones[len(cb.tones)-1]
