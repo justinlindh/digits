@@ -2,6 +2,7 @@ package wififallback
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -38,5 +39,20 @@ func TestNmcliCheckerParses(t *testing.T) {
 				t.Errorf("HasConnectivity() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNmcliCheckerUsesTerseFormat(t *testing.T) {
+	var gotArgs []string
+	c := &nmcliChecker{run: func(args ...string) ([]byte, error) {
+		gotArgs = append([]string(nil), args...)
+		return []byte("full\n"), nil
+	}}
+	if _, err := c.HasConnectivity(); err != nil {
+		t.Fatalf("HasConnectivity: %v", err)
+	}
+	want := []string{"-t", "-f", "CONNECTIVITY", "general"}
+	if !reflect.DeepEqual(gotArgs, want) {
+		t.Errorf("args = %v, want %v", gotArgs, want)
 	}
 }

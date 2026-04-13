@@ -2,17 +2,22 @@ package wififallback
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
-// NMStatusChecker reports whether NetworkManager currently has global connectivity.
+// NMStatusChecker reports whether NetworkManager currently has global
+// connectivity. Callers should treat a non-nil error as equivalent to
+// "no connectivity" for escalation decisions -- a wedged nmcli is
+// indistinguishable from an offline network from the supervisor's
+// point of view.
 type NMStatusChecker interface {
 	HasConnectivity() (bool, error)
 }
 
-// nmcliChecker queries nmcli -t -f CONNECTIVITY general and treats "full" as connectivity.
 type nmcliChecker struct {
 	run func(args ...string) ([]byte, error)
 }
@@ -22,14 +27,19 @@ func NewNMCLIChecker() NMStatusChecker {
 	return &nmcliChecker{run: execNmcli}
 }
 
+// execNmcli runs nmcli with the given args, applying a 5 second timeout
+// and capturing stderr so caller errors are actionable.
 func execNmcli(args ...string) ([]byte, error) {
-	cmd := exec.Command("nmcli", args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nmcli", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("nmcli %v: %w", args, err)
+		return nil, fmt.Errorf("nmcli %v: %w: %s", args, err, strings.TrimSpace(stderr.String()))
 	}
-	return out.Bytes(), nil
+	return stdout.Bytes(), nil
 }
 
 func (c *nmcliChecker) HasConnectivity() (bool, error) {
