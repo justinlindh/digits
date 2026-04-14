@@ -32,6 +32,7 @@ hardware/pcb/v2/
 ├── README.md                   # this file — start here
 ├── NET_TOPOLOGY.md             # net-by-net wiring description with citations
 ├── COMPONENTS.md               # per-component catalogue (values, packages, pins, purpose)
+├── CLUSTER_AUDIT_RUNBOOK.md    # process runbook for auditing each IC cluster
 ├── NEXT_STEPS.md               # phased plan from current checkpoint through fab
 ├── decoupling_targets.json     # machine-checkable per-pin placement contract
 ├── kicad/
@@ -45,7 +46,7 @@ hardware/pcb/v2/
     ├── check_decoupling.py     # validates decoupling_targets.json against .kicad_pcb
     ├── check_rp2040_bom.py     # validates §2.9 per-pin decoupling against netlist
     ├── inspect_cluster.py      # dumps ground-truth positions for the RP2040 cluster
-    └── plan_rp2040_cluster.py  # computes target positions from ch05 reference offsets
+    └── plan_rp2040_cluster.py  # computes target positions from Minimal-KiCAD reference offsets
 ```
 
 ---

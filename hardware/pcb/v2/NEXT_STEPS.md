@@ -31,6 +31,8 @@ Goal: plug a real KiCad DRC check into the loop so we catch clearance / annular-
 
 Goal: every non-RP2040 component is currently placed by hand from the pre-rewrite era. Audit each cluster against datasheet / reference practice the same way we did for U3.
 
+**Process: follow `CLUSTER_AUDIT_RUNBOOK.md` for each sub-phase below.** The runbook was written after the RP2040 cluster work and captures the nine-step ritual (gather primary sources → schematic audit → symbol/footprint pad audit → placement contract → reference geometry → target compute + preview → batched moves → overlap triage → commit + docs). Each cluster gets its own targets JSON and checker script; they are additive, not replacements.
+
 **B1. Power cluster (U1 LM2596S, D1, L1, C1, C2, C4, C11, F1, J3).**
 - Reference: TI LM2596 datasheet §8.2 "Typical Application" and §10 "Layout Guidelines"; Digi-Key and TI reference designs.
 - Check: input cap C1 close to U1.1 VIN; catch diode D1 reverse path loop area; L1 switching node kept short; output cap C2 close to L1.2 and in the same GND-return loop as D1 and U1.3 GND; GND return stitching.
@@ -193,4 +195,4 @@ Pinned for future sessions to avoid re-fetching:
 | TLV320AIC3104 datasheet (SLAS510C) | codec | https://www.ti.com/lit/ds/symlink/tlv320aic3104.pdf |
 | DRV8871 datasheet | ringer driver | https://www.ti.com/lit/ds/symlink/drv8871.pdf |
 | LM2596 datasheet | buck | https://www.ti.com/lit/ds/symlink/lm2596.pdf |
-| AMS1117-3.3 datasheet | LDO | https://www.diodes.com/assets/Datasheets/AP2114.pdf |
+| AMS1117-3.3 datasheet | LDO | https://www.advanced-monolithic.com/pdf/ds1117.pdf (verify exact vendor URL during Phase B2 cluster audit; prior link was wrong) |

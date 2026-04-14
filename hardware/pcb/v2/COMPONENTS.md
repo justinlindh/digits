@@ -39,7 +39,7 @@ Bare RP2040 chip (replacing the Pico H module from V1) with its minimal support 
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| U3 | RP2040 | QFN-56 (7x7mm) | C2040 | Everything | Dual-core ARM Cortex-M0+ microcontroller. Runs the phone firmware: scans the 4x3 keypad matrix (GPIO2-8), detects hook switch state (GPIO10), drives the ringer bell via DRV8871 (GPIO11, GPIO15), controls the indicator LED (GPIO14), and communicates with the Pi over UART (GPIO0/1). Also provides SWD debug pins for firmware flashing from the Pi. |
+| U3 | RP2040 | QFN-56 (7x7mm) | C2040 | Everything | Dual-core ARM Cortex-M0+ microcontroller. Runs the phone firmware: scans the 4x3 keypad matrix (GPIO21-27 split across columns/rows per NET_TOPOLOGY.md § RP2040 pin table), detects hook switch state (GPIO20), drives the ringer bell via DRV8871 (GPIO19 IN1, GPIO15 IN2), controls the indicator LED (GPIO16), and communicates with the Pi over UART (GPIO28 TX, GPIO29 RX). Also provides SWD debug pins (pin 24 SWCLK, pin 25 SWDIO) for firmware flashing from the Pi. |
 | C12-C16, C28 | 6x 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, one per RP2040 IOVDD pin (1, 10, 22, 33, 42, 49) | Per-pin high-frequency decoupling for U3 IOVDD pins per RP2040 datasheet §2.9.1. The RP2040 has 6 IOVDD pins and the datasheet mandates one 100 nF cap near each. |
 | C29, C30 | 2x 100nF 50V X7R | 0402 | C1525 | DVDD_1V1 to GND, at U3 pins 23 and 50 | Per-pin decoupling for U3 DVDD pins per RP2040 §2.9.2. DVDD_1V1 is the RP2040's internal 1.1V rail sourced at VREG_VOUT (pin 45). |
 | C10 | 1uF 10V X7R | 0402 | C52923 | DVDD_1V1 at U3.45 VREG_VOUT to GND | Bulk cap on the DVDD_1V1 rail at the internal regulator output. Matches the Pico reference design. Previous rev spec'd 10uF 0603 which is overkill and wrong package. |
@@ -86,9 +86,9 @@ H-bridge motor driver that drives the phone's mechanical bell. The RP2040 genera
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| U2 | DRV8871DDAR | SOIC-8-EP | C75864 | +12V (VCC), RP2040 GPIO11/15 (IN1/IN2), R2 (ILIM), J7 (OUT1/OUT2), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
-| C4 | 100nF 50V X7R | 0805 | C49678 | U2 VCC (pin 1), GND | VCC decoupling capacitor for U2. Filters high-frequency noise on the 12V supply to U2. Note: for heavy bell loads, the PCB trace to C1 (680uF bulk cap) should be low-impedance for inductive kickback absorption. |
-| R2 | 33k 1% | 0402 | C25779 | U2 ILIM (pin 4), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per Equation 1 in the datasheet: I_TRIP = V_ILIM (kV) / R_ILIM (kOhm) = 64 / 33 = ~1.94A peak. The DRV8871 uses internal current sensing -- this is NOT an external shunt resistor. Minimum allowed R_ILIM is 15k per the datasheet. |
+| U2 | DRV8871DDAR | HTSOP-8 with EP | C75864 | +12V (VM pin 5), RP2040 GPIO19/15 (IN1/IN2 via RINGER_IN1/RINGER_IN2), R2 (ILIM pin 4), J7 (OUT1/OUT2 pins 6/8), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
+| C4 | 100nF 50V X7R | 0805 | C49678 | +12V (near U2 VM pin 5), GND | VCC decoupling capacitor for U2. Filters high-frequency noise on the 12V supply to U2. Note: for heavy bell loads, the PCB trace to C1 (680uF bulk cap) should be low-impedance for inductive kickback absorption. |
+| R2 | 33k 1% | 2512 | C25779 | U2 ILIM (pin 4), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet Equation 1. The 33 kΩ value and the resulting I_TRIP (A) are TBD pending a fresh datasheet recalculation -- previous revisions of this doc recorded both ~0.94 A and ~1.94 A and the two are not reconcilable without the datasheet in hand. **Do not rely on the numeric I_TRIP until Phase B4 cluster audit re-derives it.** Minimum allowed R_ILIM is 15 kΩ per the datasheet. |
 
 ## Audio Codec
 
@@ -104,11 +104,11 @@ Onboard audio codec replacing the external Codec Zero HAT ($20/unit). Provides I
 | C20 | 100nF 50V X7R | 0805 | C49678 | U6 IOVDD (pin 31), GND | Digital I/O supply decoupling. Filters noise on the 3.3V supply to the I2S and I2C interface logic. |
 | C25 | 10uF 6.3V X5R | 0402 | C15525 | U6 DVDD (pin 24), GND | Internal LDO output decoupling. DVDD is the output of U6's internal 1.8V digital LDO -- do NOT connect to +3V3. This cap stabilizes the internal regulator's output. |
 | C22 | 10uF 6.3V X5R | 0402 | C15525 | +3V3, GND (near AVSS pins) | Analog ground section bulk capacitor. Provides additional energy storage near the codec's analog ground pins (AVSS1/AVSS2) to reduce noise coupling between digital and analog sections. |
-| C23 | 1uF 25V X5R | 0402 | C52923 | U6 MIC1LP (pin 2), MIC_FROM_SW net | AC coupling capacitor for mic input. Blocks the DC bias voltage from R8/MICBIAS while passing the audio signal from the electret mic through to the codec's mic preamp input. 1uF gives a -3dB cutoff around 50Hz with the preamp's input impedance, well below the telephony band (300Hz-3.4kHz). |
+| C23 | 100nF 50V X7R | 0402 | C1525 | U6 MIC1LP (pin 2), MIC_FROM_SW net | AC coupling capacitor for mic input. Blocks the DC bias voltage from R8/MICBIAS while passing the audio signal from the electret mic through to the codec's mic preamp input. 100 nF into the codec's ~20 kΩ input impedance gives a -3 dB high-pass corner around 80 Hz, below the telephony band (300 Hz–3.4 kHz). |
 | R7 | 10k 1% | 0402 | C25744 | U6 ~{RESET} (pin 23), +3V3 | RESET pullup. Keeps the codec out of hardware reset during normal operation. Active-low reset -- the driver can soft-reset via I2C register writes if needed. |
 | C27 | 1nF 50V X7R | 0402 | C1523 | U6 ~{RESET} (pin 23), GND | RESET ESD protection capacitor. Filters transient voltage spikes on the RESET pin that could cause spurious resets. Recommended by TI application notes. |
 | R8 | 2.2k | 0402 | C25879 | U6 MICBIAS (pin 7), MIC_FROM_SW net | MICBIAS series resistor. The codec's MICBIAS output provides ~2V DC through R8 to bias the electret microphone element. The mic needs DC bias to operate -- the electret's internal FET modulates current flow in response to sound pressure, creating the audio signal. R8 limits current and sets the bias point. |
-| C26 | 470nF 10V X5R | 0402 | C47339 | U6 pins 4/5/6/8 (CODEC_UNUSED_IN net), GND | Unused analog input grounding capacitor. All four unused mic/line inputs (MIC1RP, MIC1RM, MIC2L, MIC2R) are tied together through this cap to ground. Per TI's application guidance, floating analog inputs can pick up noise that couples into the active signal path through the internal analog mux. The cap provides a low-impedance AC ground path. |
+| C26 | 1uF 10V X7R | 0402 | C52923 | U6 pins 4/5/6/8 (CODEC_UNUSED_IN net), GND | Unused analog input grounding capacitor. All four unused mic/line inputs (MIC1RP, MIC1RM, MIC2L, MIC2R) are tied together through this cap to ground. Per TI's application guidance, floating analog inputs can pick up noise that couples into the active signal path through the internal analog mux. The cap provides a low-impedance AC ground path. |
 
 ## Connectors
 
@@ -128,10 +128,10 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| SW1 | 6mm tact switch | THT | RP2040 GPIO10 (HOOK_SW), GND | Hook switch. Detects whether the handset is on or off the cradle. When the handset is lifted, the switch opens and GPIO10 reads high (via internal pullup). When replaced, the switch closes and pulls GPIO10 to ground. The firmware uses this to answer/end calls. Position is fixed by the phone enclosure. |
-| R1 | 220 ohm | 0805 | C17557 | RP2040 GPIO14 (LED_OUT), J6 | Current limiting resistor for the indicator LED. At 3.3V with a typical 2V LED forward voltage, R1 limits current to ~6mA -- bright enough to see, safe for the GPIO pin (max 12mA per pin on RP2040). |
+| SW1 | 6mm tact switch | THT (B.Cu side) | RP2040 GPIO20 (HOOK_SW = U3.31), GND | Hook switch. Detects whether the handset is on or off the cradle. When the handset is lifted, the switch opens and GPIO20 reads high (via internal pullup). When replaced, the switch closes and pulls GPIO20 to ground. The firmware uses this to answer/end calls. Position is fixed by the phone enclosure; mounted on the bottom copper layer. |
+| R1 | 220 ohm | 0805 | C17557 | RP2040 GPIO16 (LED_OUT = U3.27), J6 | Current limiting resistor for the indicator LED. At 3.3V with a typical 2V LED forward voltage, R1 limits current to ~6mA -- bright enough to see, safe for the GPIO pin (max 12mA per pin on RP2040). |
 | C3 | 100nF 50V X7R | 0805 | C49678 | MIC_HOT net, GND | Filter capacitor on the microphone hot signal. Provides a low-impedance path to ground for RF/high-frequency interference that might be picked up by the mic cable acting as an antenna. Prevents noise from entering the audio path. |
-| H1, H2, H3 | M3 mounting holes | 3.2mm | - | Mechanical only | Board mounting points. Three M3 holes whose positions are locked by the phone enclosure's screw posts. These cannot be moved without modifying the phone housing. |
+| MH1, MH2, MH3 | M3 mounting holes | 3.2mm | - | Mechanical only | Board mounting points. Three M3 holes whose positions are locked by the phone enclosure's screw posts. These cannot be moved without modifying the phone housing. |
 
 ---
 
@@ -148,22 +148,39 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 
 ## Signal Summary
 
+**NET_TOPOLOGY.md § "RP2040 (U3)" pin table is the authoritative mapping.** This summary restates the RP2040-to-everything-else connections for quick lookup; if it disagrees with `NET_TOPOLOGY.md`, `NET_TOPOLOGY.md` wins.
+
+Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric** — the name describes which direction the Pi is driving. `UART_TX_PI` is the wire carrying the Pi's TX signal (Pi out → RP2040 RX in). `UART_RX_PI` is the wire carrying the Pi's RX signal (RP2040 TX out → Pi RX in).
+
 | Signal | From | To | Purpose |
 |--------|------|----|---------|
-| UART_TX_PI | U3 GPIO0 | J1 pin 8 (Pi GPIO14) | RP2040 TX to Pi RX. Serial communication for phone control protocol. Crossover: RP2040 TX connects to Pi RX. |
-| UART_RX_PI | J1 pin 10 (Pi GPIO15) | U3 GPIO1 | Pi TX to RP2040 RX. Crossover: Pi TX connects to RP2040 RX. |
-| SWD_SWDIO | J1 (Pi GPIO) | U3 pin 25 | Firmware flashing data line. The Pi drives SWD to flash firmware onto the RP2040 via probe-rs. |
-| SWD_SWCLK | J1 (Pi GPIO) | U3 pin 24 | Firmware flashing clock line. Paired with SWDIO. |
-| KP_ROW0-3 | U3 GPIO2-5 | J4 pins 7-4 | Keypad matrix row scan outputs. The RP2040 drives one row low at a time and reads the columns. |
-| KP_COL0-2 | U3 GPIO6-8 | J4 pins 1-3 | Keypad matrix column read inputs. When a button is pressed, the active row's signal appears on the corresponding column. |
-| HOOK_SW | SW1 | U3 GPIO10 | Hook switch state. Low = on hook (handset down), high = off hook (handset lifted). |
-| LED_OUT | U3 GPIO14 | R1 -> J6 | Indicator LED drive. High = LED on. |
-| RINGER_IN1 | U3 GPIO11 | U2 IN1 (pin 2) | Motor driver control line 1. Combined with IN2 to control bell direction. |
-| RINGER_IN2 | U3 GPIO15 | U2 IN2 (pin 3) | Motor driver control line 2. Square wave on IN1/IN2 alternates bell hammer. |
-| BELL_A/B | U2 OUT1/OUT2 | J7 | Ringer mechanism drive. Bidirectional current through the bell mechanism. |
-| USB_DP/DM | U3 pins 46/47 | R3/R4 | USB data lines (Full Speed 12Mbps). No connector populated; available for debug. |
-| QSPI_SS/SCLK/SD0-3 | U3 pins 51-56 | U4 | 4-bit QSPI flash interface. High-speed firmware read during boot. |
-| XIN/XOUT | Y1 | U3 pins 20/21 | 12MHz crystal oscillator for PLL and USB timing. |
+| UART_TX_PI | J1 pin 8 (Pi GPIO14 TXD0 out) | U3 pin 41 (GPIO29 RX in) | Pi-to-RP2040 serial. Alt UART0 pinout. |
+| UART_RX_PI | U3 pin 40 (GPIO28 TX out) | J1 pin 10 (Pi GPIO15 RXD0 in) | RP2040-to-Pi serial. Alt UART0 pinout. |
+| SWD_SWDIO | J1 pin 18 (Pi GPIO24) | U3 pin 25 | Bit-banged SWD data line (openocd raspberrypi-native). Pi flashes firmware onto the RP2040 over these two pins. |
+| SWD_SWCLK | J1 pin 22 (Pi GPIO25) | U3 pin 24 | Bit-banged SWD clock line. Paired with SWDIO. |
+| KP_COL0 | J4.1 | U3 pin 36 (GPIO24) | Keypad column 0 read input. Active row pulls this low when a button is pressed. |
+| KP_COL1 | J4.2 | U3 pin 35 (GPIO23) | Keypad column 1. |
+| KP_COL2 | J4.3 | U3 pin 34 (GPIO22) | Keypad column 2. |
+| KP_ROW0 | U3 pin 39 (GPIO27/ADC1) | J4.7 | Keypad row 0 scan output. |
+| KP_ROW1 | U3 pin 38 (GPIO26/ADC0) | J4.6 | Keypad row 1. |
+| KP_ROW2 | U3 pin 32 (GPIO21) | J4.5 | Keypad row 2. |
+| KP_ROW3 | U3 pin 37 (GPIO25) | J4.4 | Keypad row 3. |
+| HOOK_SW | SW1.1 | U3 pin 31 (GPIO20) | Hook switch state. Low when the handset is on the cradle (switch closed to GND). High via RP2040 internal pull-up when the handset is lifted. |
+| LED_OUT | U3 pin 27 (GPIO16) | R1 → J6.1 | Indicator LED drive. High = LED on. |
+| RINGER_IN1 | U3 pin 30 (GPIO19) | U2 pin 3 (IN1) | Motor driver control line 1. |
+| RINGER_IN2 | U3 pin 18 (GPIO15) | U2 pin 2 (IN2) | Motor driver control line 2. Square wave on IN1/IN2 alternates bell hammer. |
+| BELL_A / BELL_B | U2 OUT1 / OUT2 (pins 6 / 8) | J7.1 / J7.2 | Ringer mechanism drive. Bidirectional current through the bell coil. |
+| USB_DM | U3 pin 46 | R3.2 (far pad NC) | USB D- series termination (27 Ω). No connector populated. |
+| USB_DP | U3 pin 47 | R4.2 (far pad NC) | USB D+ series termination (27 Ω). |
+| QSPI_SS | U3 pin 56 | U4 pin 1 /CS | 4-bit QSPI flash chip select. |
+| QSPI_SCLK | U3 pin 52 | U4 pin 6 CLK | QSPI clock. |
+| QSPI_SD0 | U3 pin 53 | U4 pin 5 DI/IO0 | QSPI data bit 0. |
+| QSPI_SD1 | U3 pin 55 | U4 pin 2 DO/IO1 | QSPI data bit 1. |
+| QSPI_SD2 | U3 pin 54 | U4 pin 3 /WP/IO2 | QSPI data bit 2 (write-protect). |
+| QSPI_SD3 | U3 pin 51 | U4 pin 7 /HOLD/IO3 | QSPI data bit 3 (hold). |
+| XIN | Y1.1 (Xi signal) | U3 pin 20 | 12 MHz crystal input. Load cap C5 sits next to Y1.1. |
+| XOUT_MCU | U3 pin 21 | R9.1 | RP2040 drives XOUT into the R9 damping resistor first. |
+| XOUT | R9.2 | Y1.3 (Xo signal), C6.1 | Net between R9 and the crystal. Load cap C6 sits next to Y1.3. |
 | CODEC_SDA | J1 pin 3 (Pi GPIO2) | U6 pin 1 | I2C data for codec register control. Pi's I2C1 bus. Internal 1.8k pullups on Pi. |
 | CODEC_SCL | J1 pin 5 (Pi GPIO3) | U6 pin 32 | I2C clock for codec control. Paired with SDA. |
 | CODEC_BCLK | J1 pin 12 (Pi GPIO18) | U6 pin 26 | I2S bit clock. Pi drives at sample_rate x bits_per_sample x 2 channels. |
