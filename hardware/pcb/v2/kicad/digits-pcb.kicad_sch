@@ -4246,7 +4246,7 @@
     (property "Description" "Generic screw terminal, single row, 01x02, script generated (kicad-library-utils/schlib/autogen/connector/)" (at 26.67 107.95 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
-    (property "LCSC Part #" "" (at 29.21 107.9499 0) (show_name)
+    (property "LCSC Part #" "C265284" (at 29.21 107.9499 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
     (pin "1" (uuid 1aa45ab3-3d5d-419b-92ef-c03960ebc90a))
@@ -5167,6 +5167,9 @@
     (property "Datasheet" "~" (at 200 30 0)
       (effects (font (size 1.27 1.27)))
     )
+    (property "LCSC Part #" "C49678" (at 200 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "project"
         (path "/"
@@ -5189,6 +5192,9 @@
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 210 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "LCSC Part #" "C49678" (at 210 30 0)
       (effects (font (size 1.27 1.27)))
     )
     (instances
@@ -5215,6 +5221,9 @@
     (property "Datasheet" "~" (at 220 30 0)
       (effects (font (size 1.27 1.27)))
     )
+    (property "LCSC Part #" "C49678" (at 220 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "project"
         (path "/"
@@ -5237,6 +5246,9 @@
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 230 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "LCSC Part #" "C109455" (at 230 30 0)
       (effects (font (size 1.27 1.27)))
     )
     (instances
@@ -5263,6 +5275,9 @@
     (property "Datasheet" "~" (at 240 30 0)
       (effects (font (size 1.27 1.27)))
     )
+    (property "LCSC Part #" "C49678" (at 240 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "project"
         (path "/"
@@ -5285,6 +5300,9 @@
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 250 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "LCSC Part #" "C49678" (at 250 30 0)
       (effects (font (size 1.27 1.27)))
     )
     (instances
@@ -5311,6 +5329,9 @@
     (property "Datasheet" "~" (at 260 30 0)
       (effects (font (size 1.27 1.27)))
     )
+    (property "LCSC Part #" "C49678" (at 260 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "project"
         (path "/"
@@ -5333,6 +5354,9 @@
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 270 30 0)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "LCSC Part #" "C49678" (at 270 30 0)
       (effects (font (size 1.27 1.27)))
     )
     (instances
@@ -5466,6 +5490,9 @@
     (property "Datasheet" "~" (at 60.96 142.24 0)
       (effects (font (size 1.27 1.27)))
     )
+    (property "LCSC Part #" "C265284" (at 60.96 142.24 0)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "project"
         (path "/"
@@ -5488,6 +5515,9 @@
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 65 149.86 0) (show_name)
+      (effects (font (size 1.27 1.27)))
+    )
+    (property "LCSC Part #" "C49678" (at 65 149.86 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
     (pin "1" (uuid 012bd382-6429-4faa-8d1c-1b2be95e81e6))
