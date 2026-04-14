@@ -1,47 +1,47 @@
 {
-  "$schema_doc": "Placement constraints for the LM2596S-5 buck converter (U1 + L1 + D1 + C1 + C2 + C4). The switching loop (U1.SW -> L1 -> D1 -> C2 GND -> back) should be as tight as physical footprint dimensions allow. Distances are measured from the target component's footprint CENTER to the referenced pin, so they include half the target's body width. Values below are calibrated against the actual footprint sizes, not an ideal textbook diagram. Run `python3 hardware/pcb/v2/tools/check_buck_placement.py`. Datasheet: LM2596 (TI SNVS124).",
-  "default_max_distance_mm": 10.0,
+  "$schema_doc": "Placement constraints for the LM2596S-5 buck converter (U1 + L1 + D1 + C1 + C2 + C4 + C56). Topology per TI SNVS124 Figure 9-13: SW_NODE is a single short copper pour shared by U1.2, D1.cathode, and L1.1, with nothing else on that copper. CIN (C1/C4) sits on the U1.1 VIN side OUTSIDE the SW loop. COUT (C2/C56) sits on the L1.2 +5V side OUTSIDE the SW loop. Distances are center-to-pin and include half the target's body width. Run `python3 hardware/pcb/v2/tools/check_buck_placement.py`.",
+  "default_max_distance_mm": 12.0,
   "constraints": [
     {
       "cap": "L1",
       "target": "U1.2",
       "value": "33uH",
-      "rationale": "Inductor input at U1 SW pin. The 12x12mm inductor body (half-width 6mm) plus U1 pin pad half-width (2.3mm) plus clearance sets a geometric minimum of ~9.3mm center-to-center. 10mm gives a small margin. Rotate L1 so pad 1 faces U1 to keep the SW_NODE trace itself short.",
-      "max_distance_mm": 10.0
+      "rationale": "Inductor pad 1 (SW side) touches U1.2 via a short SW_NODE copper. 12x12mm body half-width 6mm plus U1 courtyard half-width 5.65mm plus ~0.5mm DRC clearance sets L1 center ~12.2mm east of U1; adding the 2.65mm y offset from U1 pin row center gives ~14.5mm center-to-pin. 15mm gives small margin for routing jitter.",
+      "max_distance_mm": 15.0
     },
     {
       "cap": "D1",
       "target": "U1.2",
       "value": "SS54",
-      "rationale": "Catch diode anode at U1 SW node. SMA body (4x2.6mm) can tuck above or below U1 pin 2 with anode pointing at the SW_NODE/L1.1 junction. ~5-6mm center-to-center is achievable; 8mm gives realistic routing margin after needing to clear C4 body (an 0805 bulk cap, not 0402).",
-      "max_distance_mm": 8.0
+      "rationale": "Catch diode cathode on the SW_NODE pour. SMA body 4.4x2.6mm. D1 sits perpendicular to the SW trace (rotation 90 or 270), cathode pad touching the SW copper, anode hanging off toward the GND pour. Physical floor is ~6.5mm because the SMA body has to clear U1's courtyard south edge, which is 6.45mm below U1 center. 7mm gives margin.",
+      "max_distance_mm": 7.0
     },
     {
       "cap": "C2",
       "target": "L1.2",
       "value": "220uF",
-      "rationale": "Output bulk on +5V rail, directly at the far side of L1 (L1.2). 8x6.5mm electrolytic (half-width 4mm) plus L1 pad half-width (1.45mm) plus clearance ~= 6mm min; 7mm gives margin. Measured to L1.2 rather than U1.2 because C2 belongs to the post-inductor output node, not the switching node.",
-      "max_distance_mm": 7.0
+      "rationale": "Output bulk on +5V rail at L1.2. 8x6.5mm SMD aluminum electrolytic. Must sit OUTSIDE the SW loop, on the far side of L1 from U1. Pad span ~5.6mm plus L1 half-width 6mm plus clearance sets center-to-L1.2 minimum around 8-9mm; 10mm gives margin for routing around adjacent non-buck parts.",
+      "max_distance_mm": 10.0
     },
     {
       "cap": "C1",
       "target": "U1.1",
       "value": "680uF",
-      "rationale": "Input bulk reservoir on +12V rail. 10x10.5mm electrolytic is large; precise position is not critical because the high-frequency transient demand is handled by C4. 15mm gives realistic freedom to fit the cap body near the VIN pin.",
+      "rationale": "Input bulk reservoir on +12V rail at U1.1. 10x10.5mm SMD aluminum electrolytic; precise position not critical because the HF transient demand is handled by C4. Sits on the U1.1 VIN side, OUTSIDE the SW loop. 15mm gives realistic freedom to fit the can near VIN.",
       "max_distance_mm": 15.0
     },
     {
       "cap": "C4",
       "target": "U1.1",
       "value": "100nF",
-      "rationale": "High-frequency +12V bypass directly at U1 VIN pin. C4 is an 0805 (2x1.25mm body) not 0402 \u2014 the schematic specifies 0805. Its pad-to-pad span (1.9mm) exceeds U1 pin pitch (1.7mm), so it cannot sit between adjacent U1 pins. Best achievable: 4-5mm offset from U1.1 pad.",
+      "rationale": "High-frequency +12V bypass directly at U1 VIN pin. C4 is an 0805 (2x1.25mm body); its pad-to-pad span (1.9mm) exceeds U1 pin pitch (1.7mm) so it cannot sit between adjacent U1 pins. Best achievable is ~4mm offset from U1.1 with the body just clearing the courtyard.",
       "max_distance_mm": 5.0
     },
     {
       "cap": "C56",
-      "target": "U1.4",
+      "target": "L1.2",
       "value": "100nF",
-      "rationale": "+5V output HF bypass companion to the C2 wet electrolytic. C2 is CP_Elec_8x6.5 with high ESR; ceramic 100nF restores fast transient response on the +5V rail feeding J1 (Pi header) and U5 (AMS1117 LDO input). Placement near U1 pin 4 for routing convenience.",
+      "rationale": "+5V output HF bypass companion to C2. Aluminum electrolytic C2 has significant ESR at switching frequencies; ceramic 100nF restores fast transient response at the +5V rail. Target changed from U1.4 (FB) to L1.2 (post-inductor rail) because that is where the ceramic actually belongs in the TI reference.",
       "max_distance_mm": 5.0
     }
   ]
