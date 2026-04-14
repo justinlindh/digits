@@ -342,6 +342,9 @@
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
           (reference "U1") (unit 1)
         )
+        (path "/74ec24e7-a8af-4132-928f-b03228b07139/86bcc52b-70aa-42a4-9931-3742612f7070"
+          (reference "U2") (unit 1)
+        )
       )
     )
   )
@@ -368,6 +371,9 @@
       (project "digits-pcb"
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
           (reference "R1") (unit 1)
+        )
+        (path "/74ec24e7-a8af-4132-928f-b03228b07139/86bcc52b-70aa-42a4-9931-3742612f7070"
+          (reference "R2") (unit 1)
         )
       )
     )
@@ -396,6 +402,9 @@
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
           (reference "C1") (unit 1)
         )
+        (path "/74ec24e7-a8af-4132-928f-b03228b07139/86bcc52b-70aa-42a4-9931-3742612f7070"
+          (reference "C54") (unit 1)
+        )
       )
     )
   )
@@ -423,11 +432,15 @@
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
           (reference "C2") (unit 1)
         )
+        (path "/74ec24e7-a8af-4132-928f-b03228b07139/86bcc52b-70aa-42a4-9931-3742612f7070"
+          (reference "C55") (unit 1)
+        )
       )
     )
   )
 
   (sheet_instances
     (path "/" (page "1"))
+    (path "/74ec24e7-a8af-4132-928f-b03228b07139/86bcc52b-70aa-42a4-9931-3742612f7070" (page "3"))
   )
 )
