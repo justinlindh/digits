@@ -34,6 +34,72 @@ LCSC Part #s assigned to 38 of 42 components. Missing: `J1` and `SW1` (TH, hand-
 
 ## What's left
 
+### 🔴 Phase F — DRC blockers (DO THIS BEFORE ROUTING)
+
+`hardware/pcb/v2/tools/check_real_drc.py` (new this session) reports **79 real DRC violations** across 7 categories. These must be fixed before any meaningful routing — otherwise the routes will land on top of existing shorts. None of the placement validators caught these because the validators only check center-to-pad distance, not body collisions.
+
+Categories and what to do:
+
+#### 1. Crystal cluster shorts (8 shorting + many courtyard overlaps) — WORST OFFENDER
+
+The Y1/C5/C6/C14/C29/C35/R5/R9 cluster around `(28-34, 46-50)` is jammed too tight. Components are physically overlapping and pads are touching across nets. The 1.5mm shift of Y1 toward U3 earlier in the session squeezed everything together.
+
+**Fix**: spread out the crystal cluster. Y1 + 6 caps + 1 resistor need ~6×4 mm of clear space minimum. Move Y1 back 1-2mm south (further from U3.20) to give the surrounding caps room. Then re-run `check_real_drc.py` and `check_decoupling.py`/`check_crystal_placement.py` until both pass.
+
+Specific shorts to clear (look in pcbnew at the listed coords):
+- C14.GND ↔ Y1.XOUT at (30.75, 46.81)
+- C35.GND ↔ C6.XOUT at (32.35, 46.81)
+- R5.+3V3 ↔ C6.GND at (33.55, 46.84)
+- R9.XOUT_MCU ↔ Y1.GND at (29.05, 47.35)
+- Y1.XOUT ↔ C29.GND at (31.25, 47.35)
+
+#### 2. Buck cluster shorts (3 shorting + multiple courtyard overlaps)
+
+- **C2.GND ↔ L1.SW_NODE** at (52.92, 39.09): C2 is too close to L1 above. Move C2 north by ~1mm.
+- **C4.+12V ↔ D1.SW_NODE** at (56.48, 54.33): C4 right next to D1.
+- **C4.GND ↔ D1.SW_NODE** at (56.48, 52.43): same issue.
+
+C4 was placed at (56.48, 53.38) for the U1 pin 1 fanout. D1 was at (59.23, 53.38). They're 2.75mm center-to-center but D1 is 4mm wide and C4 is 1mm wide, so they overlap. **Move C4 ~1mm south** (away from D1) or **rotate C4 90° vertically** to give D1 horizontal clearance.
+
+#### 3. CODEC_RESET track touching U6.30 (1 shorting)
+
+`Track [CODEC_RESET] on F.Cu, length 1.4770 mm | Pad 30 [unconnected-(U6-RIGHT_LOM-Pad30)] of U6` at (22.16, 22.97).
+
+This is a routing bug from this session's locked starter traces. The CODEC_RESET trace from R11 to U6.31 (RESET) is brushing the adjacent U6.30 (RIGHT_LOM, unused). Route is too wide for the 0.5mm QFN pin pitch at the angle it takes.
+
+**Fix**: delete the existing CODEC_RESET trace, move R11 slightly so it can approach U6.31 without crossing pin 30, or hand-route a 0.15mm trace at a less aggressive angle.
+
+#### 4. C56 ↔ L1 courtyard overlap
+
+C56 at (49.5, 51.0) is too close to L1 at (52.92, 44.03). The +5V output cap collides with the inductor. **Move C56 east** to ~(48, 53) where it's clear of L1's body but still within ~5mm of U1.4.
+
+#### 5. U1 copper_edge_clearance (5 pads)
+
+5 pads of U1 are flagged as too close to the board outline `Rectangle on Edge.Cuts`. Worth investigating in pcbnew — could be the LM2596's thermal tab crossing one of the board edges, or a stale Edge.Cuts segment from earlier work.
+
+#### 6. tracks_crossing (1)
+
+`Track [/codec/MICBIAS] on F.Cu, length 1.2394 mm` crosses `Track [/codec/MIC2L_INT] on F.Cu, length 2.1549 mm` at (24.66, 27.85). Two F.Cu tracks on different nets crossing — needs one to move to B.Cu via or detour around.
+
+#### 7. track_dangling (1)
+
+`Track [XIN] on F.Cu, length 1.9800 mm` at (29.05, 50.55). XIN trace stub with one unconnected end, near the crystal cluster. Probably a fragment from a deleted route. **Delete it.**
+
+#### 8. solder_mask_bridge (13)
+
+These mostly correlate with the shorting_items above (when pads are too close, the mask between them can't be drawn). Fixing shorts in #1-#3 will resolve most of these.
+
+#### 9. clearance (26)
+
+26 cases of copper too close to other copper. Most are in the codec / RP2040 cluster boundary area where the fanout traces are tight against U6/U3 pad edges. Some are in the crystal cluster from #1. Fix #1-#3 first; then re-run check_real_drc.py and triage what's left.
+
+**Verification command after each fix**:
+```
+NO_COLOR=1 python3 hardware/pcb/v2/tools/check_real_drc.py
+```
+
+Goal: 0 real DRC issues before starting Phase G routing.
+
 ### Phase G — Inter-cluster manual routing (next)
 
 Route the critical analog/clock/power nets that span clusters or are too signal-sensitive for the auto-router. Then hand the rest to freerouter.
