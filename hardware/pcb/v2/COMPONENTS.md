@@ -57,7 +57,7 @@ Provides the 12MHz reference clock that the RP2040's PLL multiplies up to the op
 |-----|------|---------|------|----------|---------|
 | Y1 | Abracon ABM8-272-T3 (12MHz, CL=10pF, ESR≤50Ω) | 3225 (3.2x2.5mm) | C9002 | U3 XIN (pin 20), XOUT (pin 21) | 12MHz crystal mandated by RP2040 datasheet §2.16.1.1 ("Raspberry Pi Pico has been specifically tuned for the specifications of the Abracon ABM8-272-T3"). Do not substitute. |
 | C5 | 15pF 50V C0G | 0402 | -- | Y1 pin 1, GND | Crystal load cap (XIN side). `C_load = 2·(CL − C_stray) = 2·(10 − 2.5) = 15 pF` for CL = 10 pF and typical 2.5 pF stray. C0G dielectric for temperature stability. Previous rev spec'd 22pF which corresponds to no real crystal. |
-| C6 | 15pF 50V C0G | 0402 | -- | Y1 pin 3, GND | Crystal load cap (XOUT side). Matches C5. |
+| C6 | 15pF 50V C0G | 0402 | -- | Y1 pin 3 (Xo), GND | Crystal load cap (XOUT side). Wired to footprint pad 3 (the actual Xo signal); pad 2 is case GND per ABM8 datasheet. Matches C5. |
 | R9 | 1k 1% | 0402 | -- | U3.21 (XOUT) in series to Y1.2 | XOUT series damping resistor. RPi "Hardware design with RP2040" §2 explicitly specifies this for IOVDD = 3.3 V designs. Limits crystal drive level and prevents overdrive. Net U3.21 -> XOUT_MCU -> R9.1, R9.2 -> XOUT -> Y1.2, C6. |
 
 ## QSPI Flash

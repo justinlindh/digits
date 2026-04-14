@@ -344,11 +344,14 @@ Load caps C5/C6 = **15 pF C0G 0402** computed as `C_load = 2·(CL − C_stray)` 
 A 1 kΩ series damping resistor (**R9**) sits on the XOUT side between the RP2040 and the crystal. This is mandated by Raspberry Pi's *Hardware design with RP2040* guide §2 for designs running IOVDD = 3.3 V and limits the drive level into the crystal. Do not omit it or substitute 0 Ω.
 
 ```
- U3.20 XIN ───────────────── Y1.1
-                              Y1 ABM8-272-T3 (12 MHz, CL=10 pF)
- U3.21 XOUT ── R9 1 kΩ ───── Y1.2
- C5 15 pF ── GND              C6 15 pF ── GND
+ U3.20 XIN ────────────────────── Y1.1 (Xi)
+                                   Y1 ABM8-272-T3 (12 MHz, CL=10 pF)
+ U3.21 XOUT ── R9 1 kΩ ────────── Y1.3 (Xo)
+ C5 15 pF ── GND                   C6 15 pF ── GND
+                                   Y1.2, Y1.4 ── GND (case shield)
 ```
+
+**Schematic symbol:** `Device:Crystal_GND24` (NOT `Device:Crystal`). The 2-pin `Device:Crystal` symbol is incompatible with the 4-pad `Crystal_SMD_3225-4Pin_3.2x2.5mm` footprint used by the ABM8: pads 1 and 3 are diagonal signal pads (Xi/Xo), pads 2 and 4 are the case shield (GND). Using the 2-pin symbol lands net XOUT on footprint pad 2 (which is GND, not Xo), leaving the actual Xo pin (pad 3) floating — the crystal never oscillates. Keep `Device:Crystal_GND24`; do not substitute.
 
 ## RP2040 cluster per-pin decoupling placement
 

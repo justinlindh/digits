@@ -86,7 +86,7 @@
       "target": "Y1.3",
       "value": "15pF",
       "max_distance_mm": 1.5,
-      "rationale": "Crystal load cap for XOUT side. Same short-trace imperative as C5."
+      "rationale": "Crystal load cap for XOUT side. Y1.3 is the Xo signal pad on ABM8-272-T3 (pads 1,3 are signals; 2,4 are case GND). Schematic uses Device:Crystal_GND24 to get the diagonal signal topology right."
     },
     {
       "cap": "C10",
