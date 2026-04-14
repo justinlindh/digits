@@ -36,6 +36,13 @@
       "value": "100nF",
       "rationale": "High-frequency +12V bypass directly at U1 VIN pin. 0402 body is trivially small (half-width 0.5mm) so it can sit right next to the pin pad; 3mm is a comfortable bound.",
       "max_distance_mm": 3.0
+    },
+    {
+      "cap": "C56",
+      "target": "U1.4",
+      "value": "100nF",
+      "rationale": "+5V output HF bypass companion to the C2 wet electrolytic. C2 is CP_Elec_8x6.5 with high ESR; ceramic 100nF restores fast transient response on the +5V rail feeding J1 (Pi header) and U5 (AMS1117 LDO input). Placement near U1 pin 4 for routing convenience.",
+      "max_distance_mm": 5.0
     }
   ]
 }
