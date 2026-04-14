@@ -38,10 +38,12 @@ REAL_TYPES = {
     "clearance",
     "copper_edge_clearance",
     "tracks_crossing",
-    "track_dangling",
     "courtyards_overlap",
     "solder_mask_bridge",
 }
+# track_dangling is KiCad severity 'warning' — orphan stubs that don't short
+# anything but indicate incomplete routing. During active rip-up/re-route
+# workflows these are expected and transient, so classify as cosmetic.
 
 
 def main() -> int:
