@@ -1,0 +1,20 @@
+{
+  "$schema_doc": "Placement constraints for the AMS1117-3.3 LDO (U5) and its bulk caps. Per the AMS1117 datasheet typical application circuit, an input bulk cap belongs at U5.3 (Vin, +5V) and an output bulk cap belongs at U5.2 (Vout, +3V3). The +3V3 rail also gets distributed per-pin decoupling at every IC consumer (covered by other targets files), but U5 itself needs local bulk to handle transient load steps from the rest of the +3V3 consumers. Run `python3 hardware/pcb/v2/tools/check_ldo_placement.py`.",
+  "default_max_distance_mm": 4.0,
+  "constraints": [
+    {
+      "cap": "C11",
+      "target": "U5.3",
+      "value": "10uF",
+      "rationale": "Input bulk cap on +5V rail at U5 Vin pin. AMS1117 datasheet recommends a 10uF tantalum or aluminum at the input; ceramic 10uF is acceptable in modern practice. Tight placement reduces input noise reflected back to the buck converter output.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "C9",
+      "target": "U5.2",
+      "value": "10uF",
+      "rationale": "Output bulk cap on +3V3 rail at U5 Vout pin. AMS1117 datasheet specifies an output cap >= 22uF aluminum, but ceramic 10uF (low ESR) is acceptable in modern designs. Critical: must be physically close to U5.2 because the LDO's stability loop depends on the output cap's ESR/ESL profile at the pin.",
+      "max_distance_mm": 4.0
+    }
+  ]
+}
