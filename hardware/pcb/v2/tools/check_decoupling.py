@@ -218,6 +218,13 @@ def main():
         if status == "FAIL":
             fails += 1
 
+    # ANSI colors, auto-disabled when stdout is not a TTY or NO_COLOR is set.
+    use_color = sys.stdout.isatty() and "NO_COLOR" not in __import__("os").environ
+    GREEN = "\033[32m" if use_color else ""
+    RED = "\033[31m" if use_color else ""
+    BOLD = "\033[1m" if use_color else ""
+    RESET = "\033[0m" if use_color else ""
+
     if not args.quiet:
         print(f"{'res':5} {'cap':6} {'target':10} {'dist':>9} {'max':>6}  rationale")
         print("-" * 80)
@@ -225,13 +232,15 @@ def main():
         if args.quiet and status == "PASS":
             continue
         dist_s = f"{dist:6.2f}mm" if dist is not None else "    n/a"
-        print(f"{status:5} {cap_ref:6} {target:10} {dist_s:>9} {max_d:5.2f}  {note}")
+        color = GREEN if status == "PASS" else RED
+        line = f"{status:5} {cap_ref:6} {target:10} {dist_s:>9} {max_d:5.2f}  {note}"
+        print(f"{color}{line}{RESET}")
 
     print()
     if fails:
-        print(f"FAIL: {fails} of {len(constraints)} decoupling constraints violated.")
+        print(f"{BOLD}{RED}FAIL: {fails} of {len(constraints)} decoupling constraints violated.{RESET}")
         return 1
-    print(f"OK: all {len(constraints)} decoupling constraints satisfied.")
+    print(f"{BOLD}{GREEN}OK: all {len(constraints)} decoupling constraints satisfied.{RESET}")
     return 0
 
 
