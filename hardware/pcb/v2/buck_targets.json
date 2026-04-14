@@ -13,8 +13,8 @@
       "cap": "D1",
       "target": "U1.2",
       "value": "SS54",
-      "rationale": "Catch diode anode at U1 SW node. SMA body (4x2.6mm) can tuck above or below U1 pin 2 with anode pointing at the SW_NODE/L1.1 junction. ~5-6mm center-to-center is achievable; 7mm gives routing margin.",
-      "max_distance_mm": 7.0
+      "rationale": "Catch diode anode at U1 SW node. SMA body (4x2.6mm) can tuck above or below U1 pin 2 with anode pointing at the SW_NODE/L1.1 junction. ~5-6mm center-to-center is achievable; 8mm gives realistic routing margin after needing to clear C4 body (an 0805 bulk cap, not 0402).",
+      "max_distance_mm": 8.0
     },
     {
       "cap": "C2",
@@ -34,8 +34,8 @@
       "cap": "C4",
       "target": "U1.1",
       "value": "100nF",
-      "rationale": "High-frequency +12V bypass directly at U1 VIN pin. 0402 body is trivially small (half-width 0.5mm) so it can sit right next to the pin pad; 3mm is a comfortable bound.",
-      "max_distance_mm": 3.0
+      "rationale": "High-frequency +12V bypass directly at U1 VIN pin. C4 is an 0805 (2x1.25mm body) not 0402 \u2014 the schematic specifies 0805. Its pad-to-pad span (1.9mm) exceeds U1 pin pitch (1.7mm), so it cannot sit between adjacent U1 pins. Best achievable: 4-5mm offset from U1.1 pad.",
+      "max_distance_mm": 5.0
     },
     {
       "cap": "C56",

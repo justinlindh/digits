@@ -127,9 +127,15 @@ def footprint_reference(fp):
 
 
 def rotate(px, py, deg):
+    # KiCad rotation convention for pad local offsets: (x,y) -> (x*cos + y*sin, -x*sin + y*cos).
+    # This matches what KiCad's internal RotatePoint does, verified against DRC pad
+    # positions. The naive math-convention formula (x*cos - y*sin, x*sin + y*cos)
+    # gives the opposite direction and produces phantom "PASS" results on rotated
+    # footprints whose pads are actually 180 degrees from where this script thinks
+    # they are.
     r = math.radians(deg)
     c, s = math.cos(r), math.sin(r)
-    return (px * c - py * s, px * s + py * c)
+    return (px * c + py * s, -px * s + py * c)
 
 
 # ---------- PCB data extraction ----------

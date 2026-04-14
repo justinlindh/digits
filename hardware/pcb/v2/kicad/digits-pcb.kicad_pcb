@@ -5029,7 +5029,7 @@
 	(footprint "Capacitor_SMD:C_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "54c9488e-dd8c-4208-9654-4d5f7f0775e5")
-		(at 56.48 53.38 90)
+		(at 56 49.5 90)
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C4"
@@ -5357,7 +5357,7 @@
 	(footprint "Diode_SMD:D_SMA"
 		(layer "F.Cu")
 		(uuid "57edb3de-3b63-4d5a-92b1-e704c028b721")
-		(at 59.225 53.385)
+		(at 60.225 53.385)
 		(descr "Diode SMA (DO-214AC)")
 		(tags "Diode SMA (DO-214AC)")
 		(property "Reference" "D1"
@@ -12919,7 +12919,7 @@
 	(footprint "Package_TO_SOT_SMD:TO-263-5_TabPin3"
 		(layer "F.Cu")
 		(uuid "c3f53482-2e62-426b-a8b7-93caa3f57881")
-		(at 51.225 61.035 90)
+		(at 51.225 61.035 -90)
 		(descr "TO-263/D2PAK/DDPAK SMD package, http://www.infineon.com/cms/en/product/packages/PG-TO263/PG-TO263-5-1/")
 		(tags "D2PAK DDPAK TO-263 D2PAK-5 TO-263-5 SOT-426")
 		(property "Reference" "U1"
@@ -16750,7 +16750,7 @@
 	(footprint "Inductor_SMD:L_12x12mm_H8mm"
 		(layer "F.Cu")
 		(uuid "e9b30a31-49ed-4c90-9c57-e3f9ae92411b")
-		(at 52.925 44.035 -90)
+		(at 52.925 44.035 90)
 		(descr "Choke, SMD, 12x12mm 8mm height")
 		(tags "Choke SMD")
 		(property "Reference" "L1"
@@ -18894,15 +18894,6 @@
 		(uuid "0f07d8ea-47a1-475a-851c-db1f09db958b")
 	)
 	(segment
-		(start 52.925 68.685)
-		(end 52.925 70.1)
-		(width 0.25)
-		(layer "F.Cu")
-		(net "+5V")
-		(uuid "58b44cf1-65a9-4b22-a4d0-b1bea38617e4")
-		(locked yes)
-	)
-	(segment
 		(start 49.5 52)
 		(end 49.5 51.48)
 		(width 0.25)
@@ -18927,15 +18918,6 @@
 		(layers "F.Cu" "B.Cu")
 		(net "+5V")
 		(uuid "ffa7d70b-d777-4edd-b56d-1e996efe35ec")
-		(locked yes)
-	)
-	(segment
-		(start 52.925 70.1)
-		(end 49.5 52)
-		(width 0.25)
-		(layer "B.Cu")
-		(net "+5V")
-		(uuid "d99d1597-2105-482e-b383-dca99a5c30fe")
 		(locked yes)
 	)
 	(zone
