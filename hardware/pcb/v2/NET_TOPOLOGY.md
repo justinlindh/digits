@@ -42,6 +42,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `R4` | 27 Ω | USB D+ series termination | 0402 |
 | `R5` | 10 kΩ | RP2040 RUN pullup | 0402 |
 | `R7` | 10 kΩ | Codec `/RESET` pullup to +3V3 | 0402 |
+| `R9` | 1 kΩ | XOUT series damping resistor (per RPi "Hardware design with RP2040" §2 for IOVDD = 3.3 V) | 0402 |
 | `R8` | 2.2 kΩ | Mic bias series (MICBIAS → mic) | 0402 |
 | `C1` | 680 µF | +12 V bulk input | CP_Elec 10×10.5 |
 | `C2` | 220 µF | +5 V bulk output | CP_Elec 8×6.5 |
@@ -182,7 +183,7 @@ KiCad symbol `MCU_RaspberryPi:RP2040`; pin numbering matches the RP2040 datashee
 | 18 | GPIO15 | RINGER_IN2 | To DRV8871 IN2 |
 | 19 | TESTEN | GND | Normal operation |
 | 20 | XIN | XIN | 12 MHz crystal input |
-| 21 | XOUT | XOUT | 12 MHz crystal output |
+| 21 | XOUT | XOUT_MCU | Drives XOUT side of crystal through R9 (1 kΩ series damping) to net `XOUT` at Y1 |
 | 22 | IOVDD | +3V3 | |
 | 23 | DVDD | DVDD_1V1 | RP2040 core supply from internal regulator |
 | 24 | SWCLK | SWD_SWCLK | To Pi GPIO25 |
@@ -340,10 +341,13 @@ J8 and J10 both expose the earpiece pair to allow either to be used as the prima
 
 Load caps C5/C6 = **15 pF C0G 0402** computed as `C_load = 2·(CL − C_stray)` with CL = 10 pF and C_stray ≈ 2.5 pF (typical for a clean 4-pad SMD layout). Previous revisions of this doc specified 22 pF, which corresponds to no real-world crystal and is a must-not-use value.
 
+A 1 kΩ series damping resistor (**R9**) sits on the XOUT side between the RP2040 and the crystal. This is mandated by Raspberry Pi's *Hardware design with RP2040* guide §2 for designs running IOVDD = 3.3 V and limits the drive level into the crystal. Do not omit it or substitute 0 Ω.
+
 ```
- U3.20 XIN ── Y1.1          U3.21 XOUT ── Y1.2
-              Y1 ABM8-272-T3 (12 MHz, CL=10 pF)
- C5 15 pF ── GND             C6 15 pF ── GND
+ U3.20 XIN ───────────────── Y1.1
+                              Y1 ABM8-272-T3 (12 MHz, CL=10 pF)
+ U3.21 XOUT ── R9 1 kΩ ───── Y1.2
+ C5 15 pF ── GND              C6 15 pF ── GND
 ```
 
 ## RP2040 cluster per-pin decoupling placement

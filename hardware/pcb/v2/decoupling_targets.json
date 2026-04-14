@@ -76,17 +76,17 @@
     },
     {
       "cap": "C5",
-      "target": "U3.20",
+      "target": "Y1.1",
       "value": "15pF",
-      "max_distance_mm": 3.0,
-      "rationale": "Crystal load cap on XIN (U3 pin 20); short trace critical for XOSC startup"
+      "max_distance_mm": 1.5,
+      "rationale": "Crystal load cap for XIN side. The critical short-trace path is Y1.pad->C5->GND, not U3->C5; the Y1->U3 trace is a separate constraint. 15 pF = 2*(10 pF CL - 2.5 pF stray)."
     },
     {
       "cap": "C6",
-      "target": "U3.21",
+      "target": "Y1.3",
       "value": "15pF",
-      "max_distance_mm": 3.0,
-      "rationale": "Crystal load cap on XOUT (U3 pin 21); short trace critical for XOSC startup"
+      "max_distance_mm": 1.5,
+      "rationale": "Crystal load cap for XOUT side. Same short-trace imperative as C5."
     },
     {
       "cap": "C10",
