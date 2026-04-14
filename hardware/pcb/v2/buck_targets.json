@@ -26,8 +26,8 @@
     {
       "cap": "C1",
       "target": "U1.1",
-      "value": "680uF",
-      "rationale": "Input bulk reservoir on +12V rail at U1.1. 10x10.5mm SMD aluminum electrolytic; precise position not critical because the HF transient demand is handled by C4. Sits on the U1.1 VIN side, OUTSIDE the SW loop. 15mm gives realistic freedom to fit the can near VIN.",
+      "value": "470uF",
+      "rationale": "Input bulk reservoir on +12V rail at U1.1. Panasonic FK series EEEFK1E471P (LCSC C248607), 10x10.2mm SMD aluminum electrolytic, 260°C reflow rated. 470uF is TI's LM2596 datasheet reference value (SNVS124 Fig 9-13). Precise position not critical because the HF transient demand is handled by C4. Sits on the U1.1 VIN side, OUTSIDE the SW loop. 15mm gives realistic freedom to fit the can near VIN.",
       "max_distance_mm": 15.0
     },
     {

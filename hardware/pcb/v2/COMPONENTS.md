@@ -18,7 +18,7 @@ Converts the 12V wall adapter input to 5V for the Raspberry Pi and the 3.3V LDO.
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U1 | LM2596S-5 | TO-263-5 | C347421 | +12V in, +5V out, L1, D1, C1, C2 | 5V 3A fixed-output switching step-down regulator. Converts 12V to 5V at up to 3A. The fixed-output version eliminates the feedback resistor divider. |
-| C1 | 680uF 25V electrolytic | 10x10.5mm SMD | C976031 | +12V rail, GND | Input bulk capacitor for U1. Absorbs input voltage ripple and provides instantaneous energy during switching transients. 680uF is per the LM2596 datasheet recommendation for the input side. |
+| C1 | 470uF 25V electrolytic | 10x10.2mm SMD | C248607 | +12V rail, GND | Input bulk capacitor for U1 (Panasonic EEEFK1E471P, FK series HIGH TEMP REFLOW, 260°C rated, 80mΩ ESR). Absorbs input voltage ripple and provides instantaneous energy during switching transients. 470uF matches TI's LM2596 datasheet reference value (SNVS124 Fig 9-13). **Previously C976031 (DMBJ RVT1E681M1010, 680uF) — rejected by JLCPCB due to 235°C reflow limit below lead-free reflow profile.** |
 | C2 | 220uF 25V electrolytic | 8x6.5mm SMD | C2895286 | +5V rail, GND | Output bulk capacitor for U1. Smooths the 5V output ripple. 220uF is the LM2596 datasheet minimum for stable regulation. |
 | L1 | 33uH shielded inductor | 12x12mm SMD | C9400 | U1 output pin, D1/C2 junction | Energy storage inductor for the buck topology. During U1's on-time, current ramps up through L1 storing energy in the magnetic field. During off-time, L1 releases energy through D1 to maintain current flow. 33uH is sized per the LM2596 datasheet for 5V/3A output from 12V input. Shielded to reduce EMI. |
 | D1 | SS54 Schottky diode | SMA (DO-214AC) | C22452 | L1/U1 junction, GND | Freewheeling (catch) diode for the buck converter. When U1's internal switch turns off, L1's magnetic field collapses and current must continue flowing -- D1 provides that path. Schottky type for low forward voltage drop (0.5V vs 0.7V for standard diodes), improving efficiency and reducing heat. 5A/40V rated, matching the LM2596's current capability. |
@@ -87,7 +87,7 @@ H-bridge motor driver that drives the phone's mechanical bell. The RP2040 genera
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U2 | DRV8871DDAR | HTSOP-8 with EP | C75864 | +12V (VM pin 5), RP2040 GPIO19/15 (IN1/IN2 via RINGER_IN1/RINGER_IN2), R2 (ILIM pin 4), J7 (OUT1/OUT2 pins 6/8), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
-| C4 | 100nF 50V X7R | 0805 | C49678 | +12V (near U2 VM pin 5), GND | VCC decoupling capacitor for U2. Filters high-frequency noise on the 12V supply to U2. Note: for heavy bell loads, the PCB trace to C1 (680uF bulk cap) should be low-impedance for inductive kickback absorption. |
+| C4 | 100nF 50V X7R | 0805 | C49678 | +12V (near U2 VM pin 5), GND | VCC decoupling capacitor for U2. Filters high-frequency noise on the 12V supply to U2. Note: for heavy bell loads, the PCB trace to C1 (470uF bulk cap) should be low-impedance for inductive kickback absorption. Separate ringer bulk cap C55 (47uF electrolytic) sits local to U2.5 for the same purpose. |
 | R2 | 33k 1% | 2512 | C25779 | U2 ILIM (pin 4), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet Equation 1. The 33 kΩ value and the resulting I_TRIP (A) are TBD pending a fresh datasheet recalculation -- previous revisions of this doc recorded both ~0.94 A and ~1.94 A and the two are not reconcilable without the datasheet in hand. **Do not rely on the numeric I_TRIP until Phase B4 cluster audit re-derives it.** Minimum allowed R_ILIM is 15 kΩ per the datasheet. |
 
 ## Audio Codec
@@ -139,7 +139,7 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 
 | Rail | Voltage | Source | Consumers | Decoupling |
 |------|---------|--------|-----------|------------|
-| +12V | 12V | J3 barrel jack via F1 fuse | U1 (buck input), U2 (motor driver VCC) | C1 (680uF bulk) |
+| +12V | 12V | J3 barrel jack via F1 fuse | U1 (buck input), U2 (motor driver VCC) | C1 (470uF bulk), C4 (100nF HF), C54 (100nF ringer HF), C55 (47uF ringer bulk) |
 | +5V | 5V | U1 LM2596S-5 | Pi Zero 2 W (via J1 pin 2), U5 (LDO input) | C2 (220uF bulk), C11 (10uF LDO input) |
 | +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD/DVDD/USB_VDD/ADC_AVDD), U4 (flash VCC), U6 (codec AVDD/DRVDD/IOVDD) | C9 (10uF LDO output bulk), C12-C16 + C28 (RP2040 IOVDD per-pin), C31 (VREG_VIN 1uF), C32 (USB_VDD), C33 (ADC_AVDD), C34 (flash VCC), C35 (RUN POR), C17-C22 (codec) |
 | DVDD_1V1 | 1.1V | U3 internal VREG | U3 (RP2040 digital core) | Internal to U3 |
