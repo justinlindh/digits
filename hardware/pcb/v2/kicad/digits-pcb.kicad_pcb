@@ -131,7 +131,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "02e50742-4b72-41d1-8127-270f39d5949f")
-		(at 58.685 89.545)
+		(at 43.1742 25.7018)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C41"
@@ -748,13 +748,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "038f058f-5702-4185-b86d-ffee46631390")
-		(at 58.685 85.605)
+		(at 37.7633 20.3789 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C39"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "2465445c-acd2-4a3d-9971-2273b5f17604")
+			(uuid "2cb56dc3-dfd8-4b7a-aaa8-3fa7a5b2427e")
 			(effects
 				(font
 					(size 1 1)
@@ -763,9 +763,9 @@
 			)
 		)
 		(property "Value" "1uF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "a8adf2f6-4d5a-4075-a5d6-5f306ed4d366")
+			(uuid "cd055009-3742-46fa-8e76-ccfd185aedba")
 			(effects
 				(font
 					(size 1 1)
@@ -774,10 +774,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "f3ad20dd-94f6-49dd-86ac-1ed72d24a611")
+			(uuid "33fce979-51e7-43bd-a8e8-77ac35a0c1ef")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -785,10 +785,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "de9023f2-ddde-4cc9-8fc7-b55d7f112f99")
+			(uuid "00f69692-32f0-45bc-9155-b8298fa7a782")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -796,7 +796,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "8a9c2957-f2ca-4b17-b0af-9ca2a3d568ef")
@@ -862,7 +862,7 @@
 			(uuid "118f2d8f-0aa0-4ac6-bced-0acd669564b8")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "60aa8ee7-d879-472c-a2bc-a81672af93b9")
 			(effects
@@ -873,7 +873,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -882,7 +882,7 @@
 			(uuid "5ae58c19-8870-4a78-93f4-fa481d430696")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -1193,7 +1193,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "08dae751-7618-4236-9afb-bb117bf6e31c")
-		(at 47 32.409999 90)
+		(at 47 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C32"
@@ -1808,7 +1808,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "1a48dbc3-b509-4a53-892d-7723c4ba0cb0")
-		(at 48.6 32.409999 90)
+		(at 48.6 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C31"
@@ -2307,11 +2307,11 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "2b45468d-b98f-4fba-a451-b77e271dd7a8")
-		(at 61.555 79.695)
+		(at 40.7994 20.3791 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C43"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
 			(uuid "02a13ae9-0f60-4861-8e8e-c9bddf72c20d")
 			(effects
@@ -2322,7 +2322,7 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
 			(uuid "e6df1720-fc80-4a18-aefb-adbb9de90673")
 			(effects
@@ -2333,7 +2333,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "327d6ccb-2177-4826-bc6e-5d7d71a76fbb")
@@ -2344,7 +2344,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "bab07bdd-4264-412e-9570-9294b706a59e")
@@ -2355,7 +2355,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "422a1c88-0e69-4a17-9ca1-a434477ef268")
@@ -2421,7 +2421,7 @@
 			(uuid "ff47fbb6-c8be-41b2-8edf-f6c91a9ddd2a")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "610d2ccd-b2ab-4c8f-af35-c6e1e2031d70")
 			(effects
@@ -2432,7 +2432,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -2441,7 +2441,7 @@
 			(uuid "988e795d-0b6b-4b13-b998-20994e43c081")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -2465,7 +2465,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "3185dceb-a93f-4321-94fd-83e0c029bd9c")
-		(at 61.555 81.665)
+		(at 35.2981 21.7756)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C44"
@@ -2623,13 +2623,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "365a2f55-960d-497d-8dd1-38711cdb8751")
-		(at 64.425 79.695)
+		(at 39.671 28.5716 -90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C50"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "9010ba23-ffec-4ce2-b293-5b5316f3debf")
+			(uuid "b8717338-e2a2-4fef-917a-8778d96373ec")
 			(effects
 				(font
 					(size 1 1)
@@ -2638,9 +2638,9 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "ff6cf381-0036-47c3-9bd5-5aa90289008a")
+			(uuid "60f2cf75-6be8-41ee-bcd0-c62c65928bca")
 			(effects
 				(font
 					(size 1 1)
@@ -2649,10 +2649,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "1e8077b2-dec1-4d73-961a-79c283854c89")
+			(uuid "373eb874-035f-4583-b40f-f4f3af091679")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2660,10 +2660,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "d3e01da2-ee7a-4d73-89e0-93339ecfae46")
+			(uuid "13f9bad0-113a-4c5b-bd0c-f40b8255cda6")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2671,7 +2671,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "59df3976-d606-4a27-bd4c-b23134657725")
@@ -2695,16 +2695,6 @@
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start -0.107836 -0.36)
-			(end 0.107836 -0.36)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "9de78954-6f60-42dc-9e9d-238d3b6f37d1")
-		)
-		(fp_line
 			(start -0.107836 0.36)
 			(end 0.107836 0.36)
 			(stroke
@@ -2713,6 +2703,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "e9aa596e-42d7-4137-96ad-4d20f5fda7cf")
+		)
+		(fp_line
+			(start -0.107836 -0.36)
+			(end 0.107836 -0.36)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "9de78954-6f60-42dc-9e9d-238d3b6f37d1")
 		)
 		(fp_rect
 			(start -0.91 -0.46)
@@ -2737,7 +2737,7 @@
 			(uuid "c7ca9a58-b291-4eba-9387-10045dfc2b3b")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "b35b4663-2def-4dfd-a6ef-ce29035b8098")
 			(effects
@@ -2748,7 +2748,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -2757,7 +2757,7 @@
 			(uuid "b8ac2904-9775-4fb3-b6bc-9f16d796b358")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -2952,7 +2952,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "3b3e8e60-5078-483f-8fcd-3c8b72f74d41")
-		(at 46.2 32.409999 90)
+		(at 46.2 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C28"
@@ -3281,7 +3281,7 @@
 	(footprint "Package_TO_SOT_SMD:SOT-23"
 		(layer "F.Cu")
 		(uuid "3f9fa902-3e58-4169-b57f-2e5ddf4018f3")
-		(at 68.315 80.935)
+		(at 34.0611 17.4569)
 		(descr "SOT, 3 Pin (JEDEC TO-236 Var AB https://www.jedec.org/document_search?search_api_views_fulltext=TO-236)")
 		(tags "SOT TO_SOT_SMD")
 		(property "Reference" "U7"
@@ -3663,7 +3663,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "41464d90-368d-461d-b170-69e0af62eb3d")
-		(at 58.685 91.515)
+		(at 43.1208 22.7243)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C42"
@@ -3821,13 +3821,13 @@
 	(footprint "Package_DFN_QFN:Texas_RHB0032E_VQFN-32-1EP_5x5mm_P0.5mm_EP3.45x3.45mm"
 		(layer "F.Cu")
 		(uuid "482ed270-39e1-4438-9f04-f317d08529bb")
-		(at 83.5 84.5225)
+		(at 39.0625 24.46)
 		(descr "Texas RHB0032E VQFN, 32 Pin (http://www.ti.com/lit/ds/symlink/msp430f1122.pdf#page=54)")
 		(tags "Texas VQFN NoLead")
 		(property "Reference" "U6"
 			(at 0.0625 -3.75 0)
 			(layer "F.SilkS")
-			(uuid "4d74fe79-ae30-45de-b49e-947357d818f4")
+			(uuid "7e4e64ae-16e7-4fe9-82bc-293e51f77d65")
 			(effects
 				(font
 					(size 1 1)
@@ -3836,9 +3836,9 @@
 			)
 		)
 		(property "Value" "TLV320AIC3104IRHBR"
-			(at 3.715 -0.39 0)
+			(at 0 3.9375 0)
 			(layer "F.Fab")
-			(uuid "b9937aab-ee05-4dd0-ba79-185685ce9338")
+			(uuid "8302981a-2a59-4103-a593-4ed7e89dda74")
 			(effects
 				(font
 					(size 1 1)
@@ -3850,7 +3850,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "404eec14-630d-421c-a8bd-5e08061893ea")
+			(uuid "7852b2f4-7e49-4b6a-8cd8-46e9ef75306f")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3861,7 +3861,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "abe5b928-6bd2-46e7-ba79-0b6a19056a42")
+			(uuid "eb407711-70fe-4bb3-a02f-1e1f19ddfdef")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4632,7 +4632,7 @@
 	(footprint "Resistor_SMD:R_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "48b6f2ae-4714-44a7-9a83-64fe9c8bf34c")
-		(at 67.315 84.155)
+		(at 38.8492 30.0087)
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R10"
@@ -4790,7 +4790,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "4acd8e53-84e9-4e1a-8468-606dbc32f34f")
-		(at 58.685 87.575)
+		(at 34.9652 25.2213)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C40"
@@ -4948,7 +4948,7 @@
 	(footprint "Capacitor_SMD:C_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "54c9488e-dd8c-4208-9654-4d5f7f0775e5")
-		(at 31.8 24.71)
+		(at 30.5 28.71)
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C4"
@@ -5118,13 +5118,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "57067854-bdf8-41ac-a7f8-f9eedefef81d")
-		(at 61.555 85.605)
+		(at 36.7964 28.566 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C46"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "599a099d-aaa7-4b06-8b64-a0f1aa4928df")
+			(uuid "c0c813bf-4ddc-44e1-a29a-25e5f98ab2f4")
 			(effects
 				(font
 					(size 1 1)
@@ -5133,9 +5133,9 @@
 			)
 		)
 		(property "Value" "0.47uF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "42d6becb-690d-4ce1-ab4d-ecef70807536")
+			(uuid "e3fe99e0-b3f1-4351-a712-664d1067693f")
 			(effects
 				(font
 					(size 1 1)
@@ -5144,10 +5144,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "978aecfb-4c99-4983-98e3-bb1a322055b9")
+			(uuid "3121b465-75bd-4bdc-80c1-e5dc1467f1df")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5155,10 +5155,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "61ae79b0-04c3-4523-983a-047575fd9b47")
+			(uuid "e388e2cc-5fc6-45e3-87ec-33a33a5f1565")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5166,7 +5166,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "148df7a1-97f6-41a5-accf-efd1db838273")
@@ -5232,7 +5232,7 @@
 			(uuid "70284043-e670-4637-9907-7f3a3c5b4881")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "2bd18c4a-863f-4116-bc2f-81d7d9a9f864")
 			(effects
@@ -5243,7 +5243,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -5252,7 +5252,7 @@
 			(uuid "ae462994-df89-4710-a819-e18b90361301")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -6752,7 +6752,7 @@
 	(footprint "Resistor_SMD:R_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "5f30f859-80d8-431c-9461-7353ae36d505")
-		(at 67.315 86.145)
+		(at 35.2894 20.8335)
 		(descr "Resistor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 72, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "resistor")
 		(property "Reference" "R11"
@@ -6910,7 +6910,7 @@
 	(footprint "Capacitor_SMD:C_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "629e6b3b-23ec-4bc4-ad31-394bbfd601ee")
-		(at 77.95 29.42)
+		(at 80.3 16.71 180)
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C3"
@@ -6994,16 +6994,6 @@
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start -0.261252 -0.735)
-			(end 0.261252 -0.735)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "2b60f081-649e-4b9c-895f-4d2dd6521397")
-		)
-		(fp_line
 			(start -0.261252 0.735)
 			(end 0.261252 0.735)
 			(stroke
@@ -7012,6 +7002,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "6e710803-b574-49df-b13c-dbcd1baaed3a")
+		)
+		(fp_line
+			(start -0.261252 -0.735)
+			(end 0.261252 -0.735)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "2b60f081-649e-4b9c-895f-4d2dd6521397")
 		)
 		(fp_rect
 			(start -1.7 -0.98)
@@ -7047,7 +7047,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.95 0)
+			(at -0.95 0 180)
 			(size 1 1.45)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -7056,7 +7056,7 @@
 			(uuid "fb7f4158-fa1d-4de9-8c2c-b7cf573d2b48")
 		)
 		(pad "2" smd roundrect
-			(at 0.95 0)
+			(at 0.95 0 180)
 			(size 1 1.45)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -8494,11 +8494,11 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "7b5e1513-0f5f-4440-a272-7503e423a9d7")
-		(at 64.425 85.605)
+		(at 38.7211 20.3781 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C53"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
 			(uuid "a3aa1554-1280-40ee-bef2-f2977175e217")
 			(effects
@@ -8509,7 +8509,7 @@
 			)
 		)
 		(property "Value" "1nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
 			(uuid "63b1d685-fdd8-47c6-8c99-9976e6d36550")
 			(effects
@@ -8520,7 +8520,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "bdf401a0-b4eb-41a4-b5c3-68d904d4a5e1")
@@ -8531,7 +8531,7 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
 			(uuid "644e65a7-d60e-4a15-8fb1-1774de28b3fa")
@@ -8542,7 +8542,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "f335daf4-baa1-459d-aa31-fc7f1531bd0b")
@@ -8608,7 +8608,7 @@
 			(uuid "4ae5a50f-6341-4771-a1cd-5b8922e49b0c")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "61db3f9b-44b0-4dd9-bf51-bbc4ff3ef1b8")
 			(effects
@@ -8619,7 +8619,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -8628,7 +8628,7 @@
 			(uuid "fe2d0f35-fab7-4304-96c7-6fdc1f9c1e8f")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -8823,13 +8823,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "88de4672-a30e-42a1-bb49-b6b59cd7472a")
-		(at 61.555 87.575)
+		(at 37.7619 28.5715 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C47"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "317ec80e-03f3-488f-af23-8ae059122d91")
+			(uuid "2dd2c397-119f-4805-aadc-090bc6a2bf32")
 			(effects
 				(font
 					(size 1 1)
@@ -8838,9 +8838,9 @@
 			)
 		)
 		(property "Value" "0.47uF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "e5edcd25-fb55-4795-aff4-d4410f9b24c0")
+			(uuid "d5f40b7e-d474-419a-90c8-dce98dcbffc3")
 			(effects
 				(font
 					(size 1 1)
@@ -8849,10 +8849,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "b41e38fa-52da-4022-b684-3e8df0f4f36a")
+			(uuid "a62f56ee-0eee-484f-98bb-22f5c68411d5")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8860,10 +8860,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "d7ef26b4-d827-47ed-bb02-b38afbd5c57c")
+			(uuid "9e37a686-b397-48f0-b5a4-bed85c8896b7")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -8871,7 +8871,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "6500f459-df6a-4b41-8725-333fa2797422")
@@ -8937,7 +8937,7 @@
 			(uuid "c17d6445-4e79-49cd-87dd-b4fff7082775")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "93ae6a8b-2327-4f2b-93f5-548606e0f278")
 			(effects
@@ -8948,7 +8948,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -8957,7 +8957,7 @@
 			(uuid "886ee12c-6416-408b-8b52-145130f409a5")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -9322,7 +9322,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "8db62b0d-8638-437d-a7b5-541bcd1da8ed")
-		(at 58.685 79.695)
+		(at 36.9786 17.4569)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C36"
@@ -9651,13 +9651,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "939bb57b-ed8b-4529-89eb-f21cdecd72e9")
-		(at 61.555 89.545)
+		(at 40.6357 28.574 -90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C48"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "ecdc0829-6e59-465b-81e6-40f5cb559037")
+			(uuid "14daf7ca-cd52-435d-976d-850c3cea67f1")
 			(effects
 				(font
 					(size 1 1)
@@ -9666,9 +9666,9 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "b718e15b-bdd5-414a-8fcc-074b8d57f86c")
+			(uuid "be4d59d3-9fed-47d6-a72d-02739b5ba39a")
 			(effects
 				(font
 					(size 1 1)
@@ -9677,10 +9677,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "af081240-4849-4b0b-8000-1faaa973981b")
+			(uuid "314ced17-c646-4435-a6a3-8319a0b3e0d0")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9688,10 +9688,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "a49cd5d3-9680-4d09-b221-48ae7f410383")
+			(uuid "175e39cb-6656-4ae6-afd8-e03be648b1e0")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9699,7 +9699,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "414f7f6b-b884-4bd4-a000-be96441edc0b")
@@ -9723,16 +9723,6 @@
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start -0.107836 -0.36)
-			(end 0.107836 -0.36)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "0df2e68d-6e69-45b3-8b9f-1825e3ae1838")
-		)
-		(fp_line
 			(start -0.107836 0.36)
 			(end 0.107836 0.36)
 			(stroke
@@ -9741,6 +9731,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "59cd75c6-1caf-4906-9aaa-d538564f6811")
+		)
+		(fp_line
+			(start -0.107836 -0.36)
+			(end 0.107836 -0.36)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "0df2e68d-6e69-45b3-8b9f-1825e3ae1838")
 		)
 		(fp_rect
 			(start -0.91 -0.46)
@@ -9765,7 +9765,7 @@
 			(uuid "26632ed8-fd74-4a0d-9c1d-276c4151f2b1")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "1e389947-d63d-4189-a9a9-94cfc7119f46")
 			(effects
@@ -9776,7 +9776,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -9785,7 +9785,7 @@
 			(uuid "1016cc1e-7681-419a-af8a-9710e923e26c")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -9809,13 +9809,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "9868ffd1-2abb-4000-b6b9-e4cabe1c0785")
-		(at 58.685 83.635)
+		(at 36.8125 20.3775 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C38"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "17b2e24f-d7fb-424a-9955-04e3d248faa1")
+			(uuid "690dffea-5f8f-430e-9fd4-6302d3bace2f")
 			(effects
 				(font
 					(size 1 1)
@@ -9824,9 +9824,9 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "6e13a209-0c6a-4dc9-b72a-a199f57e6db0")
+			(uuid "cac69901-ad49-40e5-8b24-825722e090d9")
 			(effects
 				(font
 					(size 1 1)
@@ -9835,10 +9835,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "6a3793e3-90c5-4638-99a3-2d7440d05db0")
+			(uuid "9915ef11-cf33-4dbc-854e-9de552f1e8a5")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9846,10 +9846,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "7639010c-1e52-41a0-990d-178ce6af49aa")
+			(uuid "4844d1c1-5129-4b98-b9c5-0f1cd091dd26")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -9857,7 +9857,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "3af085be-92f1-4154-9320-e35e2dd211ef")
@@ -9923,7 +9923,7 @@
 			(uuid "9ec0500c-695c-4e5e-8204-cfffa62feeed")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "69b7941e-4f33-4e03-bea1-a8e8c42f7b42")
 			(effects
@@ -9934,7 +9934,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -9943,7 +9943,7 @@
 			(uuid "c3106bfa-01b4-42fb-9cdc-afd63f62a2b1")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 90)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -10307,13 +10307,13 @@
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_2x20_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "a70c7adc-02c7-44d1-accc-7cd3b50016f8")
-		(at 100.5 25.73)
+		(at 72.71 18.38)
 		(descr "Through hole straight pin header, 2x20, 2.54mm pitch, double rows")
 		(tags "Through hole pin header THT 2x20 2.54mm double row")
 		(property "Reference" "J1"
 			(at 1.27 -2.38 0)
 			(layer "F.SilkS")
-			(uuid "a0ab7c01-fe3d-432e-b650-8af7bd5baa9d")
+			(uuid "9e5b7ac1-d04a-4050-8593-544f05c5f4b1")
 			(effects
 				(font
 					(size 1 1)
@@ -10324,7 +10324,7 @@
 		(property "Value" "Conn_02x20_Odd_Even"
 			(at 5.18 38.91 0)
 			(layer "F.Fab")
-			(uuid "d73d1c10-32c4-4012-8ea2-909f8131b427")
+			(uuid "e0dcfd7a-ecde-4b99-a61b-6d3aeaf6c597")
 			(effects
 				(font
 					(size 1 1)
@@ -10336,7 +10336,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "9c32ce7f-6059-44b0-adf7-2d18f2259e0b")
+			(uuid "c0fd082e-da17-445b-9e8a-606ed4d3bc36")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -10347,7 +10347,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "4837c55e-fb9e-4e0c-8d8a-a61e79510dde")
+			(uuid "e634cebc-e7de-4a41-97f4-3ec476ef2feb")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11361,7 +11361,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "ad1cb8d2-85b9-46ec-aa83-a5cc986aee6c")
-		(at 58.685 81.665)
+		(at 35.2286 19.7069)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C37"
@@ -11519,13 +11519,13 @@
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "b7eadc65-a97f-484c-b676-74c21cb77f4e")
-		(at 77 23.67)
+		(at 84.25 19.71)
 		(descr "Through hole straight pin header, 1x02, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x02 2.54mm single row")
 		(property "Reference" "J10"
 			(at 0 -2.38 0)
 			(layer "F.SilkS")
-			(uuid "4fe06af6-d8f1-4907-aa98-af7ecbce3387")
+			(uuid "451cb178-7767-4936-925a-b33fc87a3691")
 			(effects
 				(font
 					(size 1 1)
@@ -11536,7 +11536,7 @@
 		(property "Value" "Conn_01x02"
 			(at 0 4.92 0)
 			(layer "F.Fab")
-			(uuid "b29bde8a-8199-4a69-a2ed-3522db9dded0")
+			(uuid "695d4002-0c2d-4685-991d-e1e474d67eac")
 			(effects
 				(font
 					(size 1 1)
@@ -11548,7 +11548,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "d9263ce0-ae04-4d4d-9213-83d0b4f0fef4")
+			(uuid "e8e66cd5-b71b-44f9-ac75-7127a87c88fd")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -11559,7 +11559,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "69b12882-645b-4c96-b0d1-59d0cc7de6e5")
+			(uuid "4926cb28-b523-4c09-83c2-2b5ba75a3138")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12804,13 +12804,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "c21ab841-7112-4ebc-a6d7-248ed9133ede")
-		(at 64.425 81.665)
+		(at 41.6047 28.574 -90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C51"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "5aa23009-241a-4053-b940-32f7bc8b862b")
+			(uuid "1e91ecb0-dfec-413f-b8cf-ebdca7eaf316")
 			(effects
 				(font
 					(size 1 1)
@@ -12819,9 +12819,9 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "ef4fcf0c-396c-42d7-82ea-e075570a3ed1")
+			(uuid "a5be2468-00e7-4a47-ab3c-c0638b95f740")
 			(effects
 				(font
 					(size 1 1)
@@ -12830,10 +12830,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "e52703a5-1e04-4e19-8163-daadaf00d6c2")
+			(uuid "a8758982-c89f-4a28-b048-1f5c18098cec")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12841,10 +12841,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "804e5caa-50a3-43a3-8836-f928b4b058a2")
+			(uuid "824d9895-8414-4832-9ef2-52aa0a840d96")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -12852,7 +12852,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "c8e736b8-93a1-48a0-acbd-11f31772be42")
@@ -12876,16 +12876,6 @@
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start -0.107836 -0.36)
-			(end 0.107836 -0.36)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "b7ba0b31-53b1-4bcf-9e26-39219dfc6067")
-		)
-		(fp_line
 			(start -0.107836 0.36)
 			(end 0.107836 0.36)
 			(stroke
@@ -12894,6 +12884,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "2c9fed5a-fcfe-4957-9dab-b4b5d2a822ac")
+		)
+		(fp_line
+			(start -0.107836 -0.36)
+			(end 0.107836 -0.36)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "b7ba0b31-53b1-4bcf-9e26-39219dfc6067")
 		)
 		(fp_rect
 			(start -0.91 -0.46)
@@ -12918,7 +12918,7 @@
 			(uuid "f0ad2ae2-5926-48b1-bc5b-8518b462443c")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "2fc52d29-284b-480a-9798-2f3ca81684e0")
 			(effects
@@ -12929,7 +12929,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -12938,7 +12938,7 @@
 			(uuid "a1416404-2cb2-4df2-a6ee-1bd120625fce")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -13132,13 +13132,13 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "c2c22ace-c95b-4799-870e-a5103b19a996")
-		(at 61.555 91.515)
+		(at 38.7089 28.5677 -90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C49"
-			(at 0 -1.16 0)
+			(at 0 -1.16 90)
 			(layer "F.SilkS")
-			(uuid "d39838dc-cf27-4dfe-995e-1f0243e8e00d")
+			(uuid "c3a84696-690d-4989-8e3d-4c21b4b870aa")
 			(effects
 				(font
 					(size 1 1)
@@ -13147,9 +13147,9 @@
 			)
 		)
 		(property "Value" "100nF"
-			(at 0 1.16 0)
+			(at 0 1.16 90)
 			(layer "F.Fab")
-			(uuid "4cd5da8d-d7b4-4d9e-831b-ed702b8155b6")
+			(uuid "a3754eef-5f4c-4c00-a3d5-484053efe64b")
 			(effects
 				(font
 					(size 1 1)
@@ -13158,10 +13158,10 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "76039cf9-9a29-432b-9948-b5940da956a7")
+			(uuid "2e68a8f2-0e4b-4f63-b765-fd1d81959634")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13169,10 +13169,10 @@
 			)
 		)
 		(property "Description" ""
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "f09a58f3-0252-4139-966a-b47ff59212bd")
+			(uuid "545fef3c-8fc2-40fd-8295-65c9fa7bc010")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13180,7 +13180,7 @@
 			)
 		)
 		(property "KiLib_Generator" "SMD_2terminal_chip_molded"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.SilkS")
 			(hide yes)
 			(uuid "ce697267-bf3f-4c92-ab4a-d6808bfc1a04")
@@ -13204,16 +13204,6 @@
 		(attr smd)
 		(duplicate_pad_numbers_are_jumpers no)
 		(fp_line
-			(start -0.107836 -0.36)
-			(end 0.107836 -0.36)
-			(stroke
-				(width 0.12)
-				(type solid)
-			)
-			(layer "F.SilkS")
-			(uuid "fb056abe-b8b3-453d-8524-d10441cc471d")
-		)
-		(fp_line
 			(start -0.107836 0.36)
 			(end 0.107836 0.36)
 			(stroke
@@ -13222,6 +13212,16 @@
 			)
 			(layer "F.SilkS")
 			(uuid "ef650b97-c0a2-47fb-815a-6bf3e41cebc2")
+		)
+		(fp_line
+			(start -0.107836 -0.36)
+			(end 0.107836 -0.36)
+			(stroke
+				(width 0.12)
+				(type solid)
+			)
+			(layer "F.SilkS")
+			(uuid "fb056abe-b8b3-453d-8524-d10441cc471d")
 		)
 		(fp_rect
 			(start -0.91 -0.46)
@@ -13246,7 +13246,7 @@
 			(uuid "c2b157ba-6e41-4de6-8db1-29bc187eb9fc")
 		)
 		(fp_text user "${REFERENCE}"
-			(at 0 0 0)
+			(at 0 0 90)
 			(layer "F.Fab")
 			(uuid "880c9090-5668-44b3-9811-df5711e35a02")
 			(effects
@@ -13257,7 +13257,7 @@
 			)
 		)
 		(pad "1" smd roundrect
-			(at -0.48 0)
+			(at -0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -13266,7 +13266,7 @@
 			(uuid "6835a720-d592-4427-b989-83f4a69df266")
 		)
 		(pad "2" smd roundrect
-			(at 0.48 0)
+			(at 0.48 0 270)
 			(size 0.56 0.62)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
@@ -13743,7 +13743,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "c5b1c9f2-fb36-491a-bae0-5b487f5ce618")
-		(at 47.8 32.409999 90)
+		(at 47.8 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C10"
@@ -14423,13 +14423,13 @@
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "c9589420-1509-43a0-898e-2f7ed8b02ad1")
-		(at 73 23.63)
+		(at 80.25 19.67)
 		(descr "Through hole straight pin header, 1x03, 2.54mm pitch, single row")
 		(tags "Through hole pin header THT 1x03 2.54mm single row")
 		(property "Reference" "J9"
 			(at 0 -2.38 0)
 			(layer "F.SilkS")
-			(uuid "83b27161-6003-45a1-babc-a482e2317360")
+			(uuid "c14f8d2e-e229-4520-84bd-dd6a15cf45e9")
 			(effects
 				(font
 					(size 1 1)
@@ -14440,7 +14440,7 @@
 		(property "Value" "Conn_01x03"
 			(at 0 7.46 0)
 			(layer "F.Fab")
-			(uuid "f66a42a0-03df-4802-8437-0d524988a138")
+			(uuid "e5483eb9-ae74-4476-b1bf-a130268a7c6d")
 			(effects
 				(font
 					(size 1 1)
@@ -14452,7 +14452,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "56e38501-c453-49b6-9640-3bcc8a2f7c23")
+			(uuid "9bb9e958-f21f-44db-8f79-e01410f44d23")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14463,7 +14463,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "8ef8356c-c644-4c61-bb1f-1bed14ef5c4a")
+			(uuid "699cbf3e-d78b-43ac-a928-518e3a2c084e")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -14688,7 +14688,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "cc292505-fae3-468f-9220-ce58fb6bdb3c")
-		(at 45.4 32.409999 90)
+		(at 45.4 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C30"
@@ -15505,7 +15505,7 @@
 	(footprint "Capacitor_SMD:C_0805_2012Metric"
 		(layer "F.Cu")
 		(uuid "d2183335-216a-4fca-a324-839695e2cd4a")
-		(at 68.25 49.71)
+		(at 64.55 54.71)
 		(descr "Capacitor SMD 0805 (2012 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf, https://docs.google.com/spreadsheets/d/1BsfQQcO9C6DZCsRaXUlFlo91Tg2WpOkGARC1WS5S8t0/edit?usp=sharing)")
 		(tags "capacitor")
 		(property "Reference" "C20"
@@ -15834,7 +15834,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "d59d09cb-ceab-4367-848b-09e86833d087")
-		(at 64.425 83.635)
+		(at 42.7925 27.1475)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C52"
@@ -16911,7 +16911,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "e8ec0337-2ea3-4747-82ab-b2e80877c498")
-		(at 61.555 83.635)
+		(at 42.2925 21.1864)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C45"
@@ -18367,7 +18367,7 @@
 	(footprint "Capacitor_SMD:C_0402_1005Metric"
 		(layer "F.Cu")
 		(uuid "f81a9d26-b124-4c8c-84f9-b2f44a037a8b")
-		(at 49.4 32.409999 90)
+		(at 49.4 32.41 90)
 		(descr "Capacitor SMD 0402 (1005 Metric), square (rectangular) end terminal, IPC-7351 nominal, (Body size source: IPC-SM-782 page 76, https://www.pcb-3d.com/wordpress/wp-content/uploads/ipc-sm-782a_amendment_1_and_2.pdf)")
 		(tags "capacitor")
 		(property "Reference" "C33"
