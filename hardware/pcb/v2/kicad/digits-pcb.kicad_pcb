@@ -18587,6 +18587,7 @@
 		(layer "Edge.Cuts")
 		(uuid "8168e090-0c47-4172-9a3a-5ec4372d1d8b")
 	)
+
 	(segment
 		(start 32.75 36.41)
 		(end 32.95 33.84)
@@ -18838,24 +18839,6 @@
 		(layer "F.Cu")
 		(net "/codec/MIC2R_INT")
 		(uuid "c7660272-7fc9-43c4-9190-a4828395e8a9")
-	)
-	(segment
-		(start 22.1625 22.9725)
-		(end 23.0711 21.8081)
-		(width 0.25)
-		(locked yes)
-		(layer "F.Cu")
-		(net "CODEC_RESET")
-		(uuid "4e402962-549e-43e6-b4e3-69d6c4d9f64d")
-	)
-	(segment
-		(start 29.05 50.55)
-		(end 27.07 50.55)
-		(width 0.2)
-		(locked yes)
-		(layer "F.Cu")
-		(net "XIN")
-		(uuid "acd45c02-f5dc-41bb-b7a5-45a912d9f964")
 	)
 	(segment
 		(start 30.35 36.41)
