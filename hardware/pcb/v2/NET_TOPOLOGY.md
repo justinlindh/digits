@@ -23,7 +23,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `U4` | W25Q16JVSNIQ | RP2040 QSPI boot flash | SOIC-8 narrow |
 | `U5` | AMS1117-3.3 | +5V → +3V3 LDO | SOT-223-3 |
 | `U6` | TLV320AIC3104IRHBR | Stereo audio codec | VQFN-32 5×5 mm |
-| `Y1` | 12 MHz | RP2040 crystal | Crystal_SMD_3225-4Pin |
+| `Y1` | ABM8-272-T3 (12 MHz) | RP2040 crystal, per RP2040 DS §2.16.1.1 | Crystal_SMD_3225-4Pin |
 | `J1` | Conn_02x20_Odd_Even | Raspberry Pi 40-pin header | PinHeader 2×20 2.54 mm |
 | `J3` | Barrel_Jack_Switch | +12 V power input | BarrelJack_Horizontal |
 | `J4` | Conn_01x07 | Keypad flex ribbon | JST ZH B7B-ZR-SM4-TF |
@@ -41,18 +41,23 @@ All component references, values, footprints, and placements are fixed by the ph
 | `R3` | 27 Ω | USB D- series termination | 0402 |
 | `R4` | 27 Ω | USB D+ series termination | 0402 |
 | `R5` | 10 kΩ | RP2040 RUN pullup | 0402 |
-| `R6` | 10 kΩ | QSPI_SS pullup (redundant, RP2040 drives actively) | 0402 |
 | `R7` | 10 kΩ | Codec `/RESET` pullup to +3V3 | 0402 |
 | `R8` | 2.2 kΩ | Mic bias series (MICBIAS → mic) | 0402 |
 | `C1` | 680 µF | +12 V bulk input | CP_Elec 10×10.5 |
 | `C2` | 220 µF | +5 V bulk output | CP_Elec 8×6.5 |
 | `C3` | 100 nF | MIC_HOT/MIC_GND RFI filter | 0805 |
 | `C4` | 100 nF | +12 V high-frequency bypass | 0805 |
-| `C5, C6` | 22 pF | Crystal load caps | 0402 |
+| `C5, C6` | 15 pF C0G | Crystal load caps, `C_load = 2·(CL − C_stray)` for 10 pF CL | 0402 |
 | `C9` | 10 µF | +3V3 bulk near LDO output | 0603 |
-| `C10` | 10 µF | DVDD_1V1 bulk (RP2040 internal 1.1 V rail) | 0603 |
+| `C10` | 1 µF | DVDD_1V1 bulk at VREG_VOUT, matches Pico reference | 0402 |
 | `C11` | 10 µF | +5 V bulk near LDO input | 0603 |
-| `C12–C16` | 100 nF | RP2040 IOVDD high-frequency decap | 0805 |
+| `C12–C16, C28` | 100 nF | RP2040 IOVDD per-pin HF decap (§2.9.1; one per IOVDD pin, 6 total) | 0402 |
+| `C29, C30` | 100 nF | RP2040 DVDD per-pin decap on DVDD_1V1 (§2.9.2; pins 23, 50) | 0402 |
+| `C31` | 1 µF | RP2040 VREG_VIN local cap (§2.9.3; pin 44) | 0402 |
+| `C32` | 100 nF | RP2040 USB_VDD decap (§2.9.4; pin 48) | 0402 |
+| `C33` | 100 nF | RP2040 ADC_AVDD decap (§2.9.5; pin 43) | 0402 |
+| `C34` | 100 nF | W25Q16JV flash VCC decap (Winbond DS + RP2040 reference practice) | 0402 |
+| `C35` | 100 nF | RUN pin POR filter at U3.26 (Pico reference) | 0402 |
 | `C17, C19, C22` | 10 µF | Codec AVDD/DRVDD/IOVDD bulk | 0402 |
 | `C18, C20, C21` | 100 nF | Codec AVDD/DRVDD/IOVDD high-frequency decap | 0805 |
 | `C23` | 100 nF | Mic1LP DC-blocking coupling cap | 0402 |
@@ -91,17 +96,22 @@ U5 AMS1117-3.3
     pin 3 VI         ← +5 V
 
 +3V3 rail            ├── C9 10 µF bulk
-                     ├── C12–C16 100 nF (RP2040 IOVDD HF decap; 5 caps shared across 6 IOVDD pins — pre-existing BOM, not one-per-pin)
+                     ├── C12, C13, C14, C15, C16, C28 — 6 × 100 nF, one per RP2040 IOVDD pin (§2.9.1)
+                     ├── C31 1 µF local at U3.44 VREG_VIN (§2.9.3)
+                     ├── C32 100 nF at U3.48 USB_VDD (§2.9.4)
+                     ├── C33 100 nF at U3.43 ADC_AVDD (§2.9.5)
+                     ├── C34 100 nF at U4.8 W25Q16 VCC (Winbond DS)
                      ├── C17, C19, C22 10 µF bulk (codec AVDD, DRVDD, IOVDD)
                      ├── C18, C20, C21 100 nF HF (codec power decap pairs)
                      ├── R5 pullup  → U3.26 RUN
-                     ├── R6 pullup  → QSPI_SS
                      ├── R7 pullup  → CODEC_RESET
                      ├── U3 IOVDD ×6, ADC_AVDD, VREG_VIN, USB_VDD
                      └── U6 AVDD, DRVDD ×2, IOVDD
 
 DVDD_1V1 (RP2040 internal 1.1 V regulator output)
-                     ├── C10 10 µF bulk
+                     ├── C10 1 µF bulk at U3.45 VREG_VOUT
+                     ├── C29 100 nF local at U3.23 DVDD (§2.9.2)
+                     ├── C30 100 nF local at U3.50 DVDD (§2.9.2)
                      ├── U3 pin 45 VREG_VOUT (source)
                      └── U3 pins 23, 50 DVDD (sink)
 
@@ -177,7 +187,7 @@ KiCad symbol `MCU_RaspberryPi:RP2040`; pin numbering matches the RP2040 datashee
 | 23 | DVDD | DVDD_1V1 | RP2040 core supply from internal regulator |
 | 24 | SWCLK | SWD_SWCLK | To Pi GPIO25 |
 | 25 | SWDIO | SWD_SWDIO | To Pi GPIO24 |
-| 26 | RUN | RUN | Pulled up to +3V3 via R5 10 kΩ |
+| 26 | RUN | RUN | Pulled up to +3V3 via R5 10 kΩ, decoupled to GND via C35 100 nF (POR filter, Pico reference) |
 | 27 | GPIO16 | LED_OUT | Via R1 220 Ω to status LED on J6 |
 | 28, 29 | GPIO17, GPIO18 | (NC) | Reserved |
 | 30 | GPIO19 | RINGER_IN1 | To DRV8871 IN1 |
@@ -193,7 +203,7 @@ KiCad symbol `MCU_RaspberryPi:RP2040`; pin numbering matches the RP2040 datashee
 | 40 | GPIO28/ADC2 | UART_RX_PI | UART0 TX alt → Pi GPIO15 (RXD0) |
 | 41 | GPIO29/ADC3 | UART_TX_PI | UART0 RX alt ← Pi GPIO14 (TXD0) |
 | 42 | IOVDD | +3V3 | |
-| 43 | ADC_AVDD | +3V3 | No separate analog filter; short trace, reference ground plane |
+| 43 | ADC_AVDD | +3V3 | C33 100 nF local decap (§2.9.5); no separate analog filter, short trace, reference ground plane |
 | 44 | VREG_VIN | +3V3 | Internal LDO input |
 | 45 | VREG_VOUT | DVDD_1V1 | Internal LDO output (1.1 V), drives DVDD pins |
 | 46 | USB_DM | USB_DM | Via R3 27 Ω to USB_DM_PAD test stub |
@@ -226,7 +236,7 @@ Standard Winbond SPI NOR flash, SOIC-8 narrow (150-mil) package. The `SN` suffix
 | 7 | ~HOLD / IO3 | QSPI_SD3 |
 | 8 | VCC | +3V3 |
 
-R6 (10 kΩ) pulls `QSPI_SS` to +3V3. Redundant in normal operation because the RP2040 drives /CS actively, but provides a defined state before the RP2040 boots.
+No external pullup on `QSPI_SS`. The RP2040 bootrom actively drives /CS within nanoseconds of reset, and the official Pico + all three Raspberry Pi Press reference designs (`eg/ch05`, `eg/ch10`, `eg/ch11`) omit it. C34 (100 nF, 0402) decouples the flash VCC directly at U4.8 per the Winbond W25Q16JV datasheet.
 
 ## DRV8871 ringer driver (U2)
 
@@ -326,13 +336,26 @@ J8 and J10 both expose the earpiece pair to allow either to be used as the prima
 
 ## Crystal oscillator
 
-12 MHz fundamental crystal between `U3.20 XIN` and `U3.21 XOUT`, with 22 pF load caps (C5, C6) from each side to GND. Load cap value assumes a crystal rated for ~18 pF load capacitance minus ~5 pF stray — verify against the specific crystal datasheet during BOM review.
+12 MHz fundamental crystal between `U3.20 XIN` and `U3.21 XOUT`. Y1 is explicitly specified as **Abracon ABM8-272-T3** (CL = 10 pF, ESR ≤ 50 Ω, 3.2 × 2.5 mm 4-pad SMD) per RP2040 datasheet §2.16.1.1, which states the Pico's clock tree has been tuned specifically for this part. Substituting a different crystal is a blocker without re-validation.
+
+Load caps C5/C6 = **15 pF C0G 0402** computed as `C_load = 2·(CL − C_stray)` with CL = 10 pF and C_stray ≈ 2.5 pF (typical for a clean 4-pad SMD layout). Previous revisions of this doc specified 22 pF, which corresponds to no real-world crystal and is a must-not-use value.
 
 ```
  U3.20 XIN ── Y1.1          U3.21 XOUT ── Y1.2
-              Y1 (12 MHz)
- C5 22 pF ── GND             C6 22 pF ── GND
+              Y1 ABM8-272-T3 (12 MHz, CL=10 pF)
+ C5 15 pF ── GND             C6 15 pF ── GND
 ```
+
+## RP2040 cluster per-pin decoupling placement
+
+The schematic places 13 decoupling caps (C12–C16, C28 on IOVDD; C29, C30 on DVDD_1V1; C31 on VREG_VIN; C32 on USB_VDD; C33 on ADC_AVDD; C34 on W25Q16 VCC) on the correct rails, but the **KiCad schematic symbol collapses all IOVDD pins and both DVDD pins into single nodes** — so electrical connectivity alone does not prove that each cap is physically adjacent to its named pin after PCB layout. RP2040 DS §2.9 requires each cap within a few millimeters of the pin it decouples.
+
+To make this requirement enforceable instead of a human discipline problem, the mapping is committed as a machine-checkable contract:
+
+- **Source of truth:** [`decoupling_targets.json`](./decoupling_targets.json) — each constrained cap lists its target pad (`U3.<pin>` or `U4.8`), datasheet-justified max distance, and citation.
+- **Checker:** [`tools/check_decoupling.py`](./tools/check_decoupling.py) parses `digits-pcb.kicad_pcb`, computes the centroid-to-pad distance for every entry, and exits non-zero on violation.
+- **Mandatory:** any session that moves a component in the RP2040 cluster on the PCB, or runs F8 to sync from schematic, MUST run the checker before committing. See [`tools/README.md`](./tools/README.md) for the full list of when to run it and how to interpret results.
+- **Current status at commit time:** newly-added caps C28–C34 land at the PCB origin after F8 and require placement; the checker is the punch list.
 
 ## USB
 

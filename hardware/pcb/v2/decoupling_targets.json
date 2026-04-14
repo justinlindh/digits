@@ -1,0 +1,106 @@
+{
+  "$schema_doc": "Per-pin decoupling placement constraints. Each entry maps a capacitor reference to the IC pad it must be placed adjacent to, with a maximum centroid-to-pad distance in millimeters. Validated by tools/check_decoupling.py against the routed PCB. Edit this file when adding or removing decoupling caps; do NOT let the PCB silently drift away from these requirements. See hardware/pcb/v2/tools/README.md for usage and the rationale behind each entry.",
+  "default_max_distance_mm": 2.5,
+  "constraints": [
+    {
+      "cap": "C12",
+      "target": "U3.1",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 1 per-pin decap"
+    },
+    {
+      "cap": "C13",
+      "target": "U3.10",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 10 per-pin decap"
+    },
+    {
+      "cap": "C14",
+      "target": "U3.22",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 22 per-pin decap"
+    },
+    {
+      "cap": "C15",
+      "target": "U3.33",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 33 per-pin decap"
+    },
+    {
+      "cap": "C16",
+      "target": "U3.42",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 42 per-pin decap"
+    },
+    {
+      "cap": "C28",
+      "target": "U3.49",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.1 IOVDD pin 49 per-pin decap"
+    },
+    {
+      "cap": "C29",
+      "target": "U3.23",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.2 DVDD pin 23 per-pin decap"
+    },
+    {
+      "cap": "C30",
+      "target": "U3.50",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.2 DVDD pin 50 per-pin decap"
+    },
+    {
+      "cap": "C31",
+      "target": "U3.44",
+      "value": "1uF",
+      "rationale": "RP2040 DS §2.9.3 VREG_VIN pin 44 1uF local cap"
+    },
+    {
+      "cap": "C32",
+      "target": "U3.48",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.4 USB_VDD pin 48 per-pin decap"
+    },
+    {
+      "cap": "C33",
+      "target": "U3.43",
+      "value": "100nF",
+      "rationale": "RP2040 DS §2.9.5 ADC_AVDD pin 43 per-pin decap"
+    },
+    {
+      "cap": "C34",
+      "target": "U4.8",
+      "value": "100nF",
+      "rationale": "W25Q16JV DS + universal RP2040 reference practice: 100nF at flash VCC"
+    },
+    {
+      "cap": "C5",
+      "target": "U3.20",
+      "value": "15pF",
+      "max_distance_mm": 3.0,
+      "rationale": "Crystal load cap on XIN (U3 pin 20); short trace critical for XOSC startup"
+    },
+    {
+      "cap": "C6",
+      "target": "U3.21",
+      "value": "15pF",
+      "max_distance_mm": 3.0,
+      "rationale": "Crystal load cap on XOUT (U3 pin 21); short trace critical for XOSC startup"
+    },
+    {
+      "cap": "C10",
+      "target": "U3.45",
+      "value": "1uF",
+      "max_distance_mm": 3.5,
+      "rationale": "RP2040 DS §2.9.2 DVDD_1V1 bulk at VREG_VOUT pin 45 (Pico reference places 1uF bulk here)"
+    },
+    {
+      "cap": "C35",
+      "target": "U3.26",
+      "value": "100nF",
+      "max_distance_mm": 3.0,
+      "rationale": "POR filter on RUN per Pico reference schematic (Pico-Datasheet §2.2); smooths power-up ramp so the RP2040 releases reset cleanly. Must be close to U3.26 to keep trace loop short."
+    }
+  ]
+}

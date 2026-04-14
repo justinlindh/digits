@@ -40,9 +40,14 @@ Bare RP2040 chip (replacing the Pico H module from V1) with its minimal support 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U3 | RP2040 | QFN-56 (7x7mm) | C2040 | Everything | Dual-core ARM Cortex-M0+ microcontroller. Runs the phone firmware: scans the 4x3 keypad matrix (GPIO2-8), detects hook switch state (GPIO10), drives the ringer bell via DRV8871 (GPIO11, GPIO15), controls the indicator LED (GPIO14), and communicates with the Pi over UART (GPIO0/1). Also provides SWD debug pins for firmware flashing from the Pi. |
-| C12-C16 | 5x 100nF 50V X7R | 0805 | C49678 | +3V3 to GND, near each IOVDD/DVDD pin | Bypass/decoupling capacitors for U3. One per IOVDD/DVDD power pin group, placed as close to the pins as possible. Filter high-frequency switching noise from the power pins. Required by the RP2040 hardware design guide. |
-| C10 | 10uF 6.3V X5R | 0603 | C109455 | +3V3 to GND, near U3 | Bulk bypass capacitor for RP2040. Provides a local charge reservoir for transient current demands (e.g., when both cores wake simultaneously). Supplements the smaller 100nF caps. |
+| C12-C16, C28 | 6x 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, one per RP2040 IOVDD pin (1, 10, 22, 33, 42, 49) | Per-pin high-frequency decoupling for U3 IOVDD pins per RP2040 datasheet §2.9.1. The RP2040 has 6 IOVDD pins and the datasheet mandates one 100 nF cap near each. |
+| C29, C30 | 2x 100nF 50V X7R | 0402 | C1525 | DVDD_1V1 to GND, at U3 pins 23 and 50 | Per-pin decoupling for U3 DVDD pins per RP2040 §2.9.2. DVDD_1V1 is the RP2040's internal 1.1V rail sourced at VREG_VOUT (pin 45). |
+| C10 | 1uF 10V X7R | 0402 | C52923 | DVDD_1V1 at U3.45 VREG_VOUT to GND | Bulk cap on the DVDD_1V1 rail at the internal regulator output. Matches the Pico reference design. Previous rev spec'd 10uF 0603 which is overkill and wrong package. |
+| C31 | 1uF 10V X7R | 0402 | C52923 | +3V3 to GND, at U3.44 VREG_VIN | Local cap at VREG_VIN per RP2040 §2.9.3 ("a 1 µF capacitor should be connected between VREG_VIN and ground close to the chip's VREG_VIN pin"). |
+| C32 | 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, at U3.48 USB_VDD | USB_VDD decap per §2.9.4. |
+| C33 | 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, at U3.43 ADC_AVDD | ADC_AVDD decap per §2.9.5. Even though the ADC is unused on this board, the datasheet mandates the decap because ADC_AVDD powers internal bandgap and reset/brownout reference circuitry. |
 | R5 | 10k 1% | 0402 | C25744 | RUN pin (U3 pin 26) to +3V3 | Pull-up resistor on the RUN (reset) pin. Keeps the RP2040 out of reset during normal operation. The RUN pin is active-low -- pulling it to GND resets the chip. Without R5, the pin could float and cause intermittent resets. |
+| C35 | 100nF 50V X7R | 0402 | C1525 | RUN (U3 pin 26) to GND | POR filter cap on RUN. Together with R5 (10k) forms an RC with ~1 µs time constant that smooths the power-up ramp so the RP2040 releases reset cleanly after +3V3 stabilizes. Matches the official Pico reference schematic. |
 
 ## RP2040 Crystal Oscillator
 
@@ -50,9 +55,9 @@ Provides the 12MHz reference clock that the RP2040's PLL multiplies up to the op
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| Y1 | 12MHz crystal | 3225 (3.2x2.5mm) | C9002 | U3 XIN (pin 20), XOUT (pin 21) | 12MHz crystal oscillator. The RP2040 requires a 12MHz crystal for its system PLL and USB clock generation. The PLL multiplies 12MHz to the target CPU frequency. |
-| C5 | 22pF 50V C0G | 0402 | C1555 | Y1 pin 1, GND | Crystal load capacitor (XIN side). Together with C6 and PCB stray capacitance, provides the load capacitance specified by Y1's datasheet for accurate oscillation frequency. C0G dielectric for temperature stability. |
-| C6 | 22pF 50V C0G | 0402 | C1555 | Y1 pin 3, GND | Crystal load capacitor (XOUT side). Matches C5. |
+| Y1 | Abracon ABM8-272-T3 (12MHz, CL=10pF, ESR≤50Ω) | 3225 (3.2x2.5mm) | C9002 | U3 XIN (pin 20), XOUT (pin 21) | 12MHz crystal mandated by RP2040 datasheet §2.16.1.1 ("Raspberry Pi Pico has been specifically tuned for the specifications of the Abracon ABM8-272-T3"). Do not substitute. |
+| C5 | 15pF 50V C0G | 0402 | -- | Y1 pin 1, GND | Crystal load cap (XIN side). `C_load = 2·(CL − C_stray) = 2·(10 − 2.5) = 15 pF` for CL = 10 pF and typical 2.5 pF stray. C0G dielectric for temperature stability. Previous rev spec'd 22pF which corresponds to no real crystal. |
+| C6 | 15pF 50V C0G | 0402 | -- | Y1 pin 3, GND | Crystal load cap (XOUT side). Matches C5. |
 
 ## QSPI Flash
 
@@ -60,8 +65,10 @@ External flash memory storing the RP2040's firmware. Connected via a 4-bit QSPI 
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| U4 | W25Q16JVSSIQ | SOIC-8 | C131025 | U3 QSPI pins (SS, SCLK, SD0-3), +3V3, GND | 2MB SPI NOR flash. Stores the RP2040 firmware image (UF2 format). Connected via 4-bit QSPI for fast sequential reads during boot. The RP2040 boots by reading code from this chip into internal SRAM. 2MB is more than sufficient for the phone firmware. |
-| R6 | 10k 1% | 0402 | C25744 | QSPI_SS (U3 pin 51), +3V3 | Pull-up on QSPI chip select. Keeps the flash CS high (deselected) during power-up to prevent bus glitches. Also doubles as the BOOTSEL function -- shorting QSPI_SS to GND during reset enters UF2 boot mode. |
+| U4 | W25Q16JVSSIQ | SOIC-8 | C131025 | U3 QSPI pins (SS, SCLK, SD0-3), +3V3, GND | 2MB SPI NOR flash. Stores the RP2040 firmware image (UF2 format). Connected via 4-bit QSPI for fast sequential reads during boot. The RP2040 boots by reading code from this chip into internal SRAM. |
+| C34 | 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, at U4.8 VCC | Flash VCC decoupling cap. Winbond W25Q16JV datasheet requires a 100 nF ceramic as close as possible to pin 8. QSPI read bursts draw ~20 mA transients; without this cap they couple back into +3V3 and can corrupt XIP instruction fetches. All 3 Raspberry Pi Press RP2040 references (ch05, ch10, ch11) and the official Pico include this cap. |
+
+**QSPI_SS has no external pullup.** The RP2040 bootrom drives /CS actively within nanoseconds of reset, and neither the Pico nor any of the 3 Raspberry Pi Press RP2040 references populate a pullup here. Earlier revs of this board had R6 = 10k pullup with a note about BOOTSEL — that note was incorrect: a pullup to +3V3 does not enable BOOTSEL mode (BOOTSEL on the Pico is a *button that grounds* /CS through a series resistor, relying on the RP2040's internal pull to restore it). BOOTSEL mode also requires a USB connector, which this board does not have; the RP2040 is programmed via SWD from the Pi. R6 has been removed.
 
 ## USB
 
