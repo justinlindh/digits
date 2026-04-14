@@ -1,6 +1,17 @@
 # PCB v2 tools
 
-Small Python checkers that enforce constraints KiCad's native DRC cannot express.
+Small Python checkers that enforce constraints KiCad's native DRC cannot express, and working scripts from the RP2040 cluster audit session. See also `../CLUSTER_AUDIT_RUNBOOK.md` for the end-to-end process these tools support.
+
+## Inventory
+
+| tool | purpose | used in phase |
+|---|---|---|
+| `check_decoupling.py` | validates placement contract in `../decoupling_targets.json` against the `.kicad_pcb` | ongoing, every commit |
+| `check_rp2040_bom.py` | validates that each RP2040 datasheet §2.9 requirement is met in the canonical netlist | after any schematic change to the RP2040 cluster |
+| `inspect_cluster.py` | dumps ground-truth footprint/pad positions for the RP2040 cluster | Step 1 of the audit runbook |
+| `plan_rp2040_cluster.py` | computes target placement positions from the Minimal-KiCAD reference's 3.05 mm radial offset pattern | Step 3 of the audit runbook |
+
+All scripts are pure Python stdlib (no KiCad install required). They use a minimal s-expression parser so they work on both KiCad 7/8 footprint files (`fp_text reference`) and KiCad 10 (`property "Reference"`).
 
 ## `check_decoupling.py` — per-pin decoupling placement check
 

@@ -30,8 +30,8 @@ Linear regulator converting the 5V buck output to 3.3V for the RP2040 I/O, flash
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U5 | AMS1117-3.3 | SOT-223 | C6186 | +5V in, +3V3 out | 3.3V 1A fixed-output low-dropout regulator. Replaces the Pico H module's onboard RT6150 regulator. Dropout voltage is ~1.1V, so the 5V input provides comfortable headroom. Powers RP2040 IOVDD/DVDD/USB_VDD/ADC_AVDD, W25Q16 flash, and TLV320AIC3104 codec (AVDD/DRVDD/IOVDD). |
-| C9 | 10uF 6.3V X5R | 0603 | C109455 | +5V rail (U5 input), GND | Input capacitor for U5. Stabilizes the 5V supply at the LDO's input pin. Required by the AMS1117 datasheet for stable operation. |
-| C11 | 10uF 6.3V X5R | 0603 | C109455 | +3V3 rail (U5 output), GND | Output capacitor for U5. Required for LDO stability -- without it, the LDO can oscillate. Also provides local charge reservoir for transient loads on the 3.3V rail. |
+| C9 | 10uF 6.3V X5R | 0603 | C109455 | +3V3 rail (U5 output), GND | Output bulk cap for U5 AMS1117 LDO. Required by the AMS1117 datasheet for stable operation -- without it the LDO can oscillate. Also provides local charge reservoir for transient loads on the 3.3V rail. |
+| C11 | 10uF 6.3V X5R | 0603 | C109455 | +5V rail (U5 input), GND | Input bulk cap for U5. Stabilizes the 5V supply at the LDO's input pin. |
 
 ## RP2040 Microcontroller
 
@@ -56,9 +56,9 @@ Provides the 12MHz reference clock that the RP2040's PLL multiplies up to the op
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | Y1 | Abracon ABM8-272-T3 (12MHz, CL=10pF, ESR≤50Ω) | 3225 (3.2x2.5mm) | C9002 | U3 XIN (pin 20), XOUT (pin 21) | 12MHz crystal mandated by RP2040 datasheet §2.16.1.1 ("Raspberry Pi Pico has been specifically tuned for the specifications of the Abracon ABM8-272-T3"). Do not substitute. |
-| C5 | 15pF 50V C0G | 0402 | -- | Y1 pin 1, GND | Crystal load cap (XIN side). `C_load = 2·(CL − C_stray) = 2·(10 − 2.5) = 15 pF` for CL = 10 pF and typical 2.5 pF stray. C0G dielectric for temperature stability. Previous rev spec'd 22pF which corresponds to no real crystal. |
-| C6 | 15pF 50V C0G | 0402 | -- | Y1 pin 3 (Xo), GND | Crystal load cap (XOUT side). Wired to footprint pad 3 (the actual Xo signal); pad 2 is case GND per ABM8 datasheet. Matches C5. |
-| R9 | 1k 1% | 0402 | -- | U3.21 (XOUT) in series to Y1.2 | XOUT series damping resistor. RPi "Hardware design with RP2040" §2 explicitly specifies this for IOVDD = 3.3 V designs. Limits crystal drive level and prevents overdrive. Net U3.21 -> XOUT_MCU -> R9.1, R9.2 -> XOUT -> Y1.2, C6. |
+| C5 | 15pF 50V C0G | 0402 | -- | Y1.1 (Xi signal pad), GND | Crystal load cap (XIN side). `C_load = 2·(CL − C_stray) = 2·(10 − 2.5) = 15 pF` for CL = 10 pF and typical 2.5 pF stray. C0G dielectric for temperature stability. Y1.1 is the Xi signal pad per Abracon ABM8 pinout (pads 1/3 signal, 2/4 case GND). Previous rev spec'd 22pF which corresponds to no real crystal. |
+| C6 | 15pF 50V C0G | 0402 | -- | Y1.3 (Xo signal pad), GND | Crystal load cap (XOUT side). Y1.3 is the Xo signal pad. The RP2040's XOUT drive reaches Y1.3 through the R9 damping resistor, NOT directly. |
+| R9 | 1k 1% | 0402 | -- | U3.21 (XOUT) in series to Y1.3 (Xo pad) | XOUT series damping resistor. RPi "Hardware design with RP2040" §2 explicitly specifies this for IOVDD = 3.3 V designs. Limits crystal drive level and prevents overdrive. Net topology: U3.21 -> XOUT_MCU -> R9.1, R9.2 -> XOUT -> Y1.3 (Xo), C6.1. Y1.2 and Y1.4 are case GND, NOT signal. |
 
 ## QSPI Flash
 
@@ -105,7 +105,6 @@ Onboard audio codec replacing the external Codec Zero HAT ($20/unit). Provides I
 | C25 | 10uF 6.3V X5R | 0402 | C15525 | U6 DVDD (pin 24), GND | Internal LDO output decoupling. DVDD is the output of U6's internal 1.8V digital LDO -- do NOT connect to +3V3. This cap stabilizes the internal regulator's output. |
 | C22 | 10uF 6.3V X5R | 0402 | C15525 | +3V3, GND (near AVSS pins) | Analog ground section bulk capacitor. Provides additional energy storage near the codec's analog ground pins (AVSS1/AVSS2) to reduce noise coupling between digital and analog sections. |
 | C23 | 1uF 25V X5R | 0402 | C52923 | U6 MIC1LP (pin 2), MIC_FROM_SW net | AC coupling capacitor for mic input. Blocks the DC bias voltage from R8/MICBIAS while passing the audio signal from the electret mic through to the codec's mic preamp input. 1uF gives a -3dB cutoff around 50Hz with the preamp's input impedance, well below the telephony band (300Hz-3.4kHz). |
-| C24 | 10uF 6.3V X5R | 0402 | C15525 | U6 HPLOUT (pin 11), EAR_P net | AC coupling capacitor for earpiece output. Blocks the DC offset from the headphone amp while passing audio to the earpiece. 10uF with a ~150 ohm vintage earpiece gives a -3dB cutoff around 100Hz. |
 | R7 | 10k 1% | 0402 | C25744 | U6 ~{RESET} (pin 23), +3V3 | RESET pullup. Keeps the codec out of hardware reset during normal operation. Active-low reset -- the driver can soft-reset via I2C register writes if needed. |
 | C27 | 1nF 50V X7R | 0402 | C1523 | U6 ~{RESET} (pin 23), GND | RESET ESD protection capacitor. Filters transient voltage spikes on the RESET pin that could cause spurious resets. Recommended by TI application notes. |
 | R8 | 2.2k | 0402 | C25879 | U6 MICBIAS (pin 7), MIC_FROM_SW net | MICBIAS series resistor. The codec's MICBIAS output provides ~2V DC through R8 to bias the electret microphone element. The mic needs DC bias to operate -- the electret's internal FET modulates current flow in response to sound pressure, creating the audio signal. R8 limits current and sets the bias point. |
@@ -121,7 +120,7 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 | J4 | JST ZH 7-pin | SMD | RP2040 GPIO2-8 | Keypad connector. Connects to the phone's 4x3 button matrix. Four row lines (KP_ROW0-3) are scanned as outputs by the RP2040; three column lines (KP_COL0-2) are read as inputs to detect which button is pressed. |
 | J6 | JST ZH 2-pin | SMD | R1 (LED_OUT), GND | LED connector. Drives an indicator LED in the phone housing through R1 (220 ohm current limiter). The RP2040 controls the LED via GPIO14. |
 | J7 | Phoenix 2-pos screw terminal (5mm) | THT | U2 OUT1/OUT2 (BELL_A, BELL_B) | Bell/ringer output. Connects to the phone's mechanical bell mechanism. The DRV8871 (U2) drives this bidirectionally to make the bell hammer oscillate. Screw terminals for easy connection to the existing bell wiring. |
-| J8 | JST ZH 4-pin | SMD | MIC_HOT, EAR_P, EAR_N, MIC_GND | Handset connector. Four-wire cable to the phone handset carrying mic signal (MIC_HOT/MIC_GND) and earpiece audio (EAR_P/EAR_N). The mic signal routes through J9 (kill switch) before reaching the codec. Earpiece audio comes from the codec's headphone amp (HPLOUT) through C24. |
+| J8 | JST ZH 4-pin | SMD | MIC_HOT, EAR_P, EAR_N, MIC_GND | Handset connector. Four-wire cable to the phone handset carrying mic signal (MIC_HOT/MIC_GND) and earpiece audio (EAR_P/EAR_N). The mic signal routes through J9 (kill switch) before reaching the codec. Earpiece audio comes directly from the codec's headphone amp in capless BTL mode (no coupling cap needed -- see NET_TOPOLOGY.md "Earpiece BTL path"). |
 | J9 | 1x3 pin header 2.54mm | THT | MIC_HOT, MIC_FROM_SW, MIC_GND | Microphone kill switch connector. A physical switch interrupts the mic signal path. When the switch is open, the mic is muted at the hardware level -- no software can override it. MIC_FROM_SW is the signal after the switch, which feeds both R8 (DC bias from codec) and C23 (AC-coupled to codec input). |
 | J10 | 1x2 pin header 2.54mm | THT | EAR_P, EAR_N | Earpiece output connector. Directly parallels J8's earpiece pins for an alternative wiring path. EAR_P carries the AC-coupled audio from the codec headphone amp. EAR_N is the return path through the handset cable. |
 
@@ -141,8 +140,8 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 | Rail | Voltage | Source | Consumers | Decoupling |
 |------|---------|--------|-----------|------------|
 | +12V | 12V | J3 barrel jack via F1 fuse | U1 (buck input), U2 (motor driver VCC) | C1 (680uF bulk) |
-| +5V | 5V | U1 LM2596S-5 | Pi Zero 2 W (via J1 pin 2), U5 (LDO input) | C2 (220uF bulk), C9 (10uF LDO input) |
-| +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD/DVDD/USB_VDD/ADC_AVDD), U4 (flash VCC), U6 (codec AVDD/DRVDD/IOVDD), Y1 circuit | C11, C12-C16, C17-C22 |
+| +5V | 5V | U1 LM2596S-5 | Pi Zero 2 W (via J1 pin 2), U5 (LDO input) | C2 (220uF bulk), C11 (10uF LDO input) |
+| +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD/DVDD/USB_VDD/ADC_AVDD), U4 (flash VCC), U6 (codec AVDD/DRVDD/IOVDD) | C9 (10uF LDO output bulk), C12-C16 + C28 (RP2040 IOVDD per-pin), C31 (VREG_VIN 1uF), C32 (USB_VDD), C33 (ADC_AVDD), C34 (flash VCC), C35 (RUN POR), C17-C22 (codec) |
 | DVDD_1V1 | 1.1V | U3 internal VREG | U3 (RP2040 digital core) | Internal to U3 |
 | CODEC_DVDD | 1.8V | U6 internal LDO | U6 (codec digital core) | C25 (10uF) |
 | GND | 0V | Common return | All components | Copper pour on F.Cu and B.Cu |
@@ -175,7 +174,7 @@ All connectors are through-hole, hand-soldered after JLCPCB assembly. They carry
 | MIC_HOT | J8 pin 1 | C3, J9 pin 1 | Microphone hot signal from handset. Passes through C3 (RF filter) and J9 (kill switch). |
 | MIC_FROM_SW | J9 pin 2 | R8 (bias), C23 (AC coupling to U6) | Mic signal after kill switch. This node carries both the DC bias from MICBIAS (via R8) and the AC audio signal. C23 strips the DC and passes only the audio to the codec's MIC1LP input. |
 | MICBIAS_OUT | U6 pin 7 | R8 | Mic bias voltage output from codec. ~2V through R8 to power the electret mic element. |
-| EAR_P | C24 output | J8 pin 2, J10 pin 1 | Earpiece positive. AC-coupled audio from the codec's headphone amplifier. |
+| EAR_P | U6 HPLOUT (pin 11) | J8 pin 2, J10 pin 1 | Earpiece positive. Direct capless BTL output from the codec's headphone amplifier. |
 | EAR_N | J8 pin 3 | J10 pin 2 | Earpiece negative/return. Ground reference for the earpiece, routed through the handset cable. |
 | CODEC_UNUSED_IN | U6 pins 4/5/6/8 | C26 to GND | Grounded unused analog inputs. Prevents noise pickup per TI guidance. |
 | RUN | R5 pullup | U3 pin 26 | RP2040 reset (active low). Held high by R5 for normal operation. |
