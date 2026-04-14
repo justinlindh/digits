@@ -41,11 +41,10 @@ Exactly **13 ports**, no more, no less. The `check_codec_subsheet.py` checker in
 | 9 | `I2C_SCL` | input | digital | 3.3 V open-drain, same speed | Pi J1 pin 5 (GPIO3, I2C1 SCL) |
 | 10 | `CODEC_RESET` | input | digital | 3.3 V active-low, driven by Pi GPIO during boot, tristated normally | Pi GPIO (specific pin TBD by the parent — e.g. GPIO26) |
 | 11 | `MIC_IN` | input | analog | mono electret signal + MICBIAS pass-through (~2.5 V DC + ~10 mV AC audio) | Handset mic hot wire through the D2F-01F mic kill switch |
-| 12 | `MIC_RETURN` | — | analog ground | mic reference, nominally 0 V | Handset mic cold wire (the other electret terminal), routed back to local GND |
-| 13 | `EAR_P` | output | analog | ~1.5 V DC + differential AC audio (one leg of BTL) | Handset earpiece terminal A |
-| 14 | `EAR_N` | output | analog | ~1.5 V DC + differential AC audio (opposite leg of BTL) | Handset earpiece terminal B |
+| 12 | `EAR_P` | output | analog | ~1.5 V DC + differential AC audio (one leg of BTL) | Handset earpiece terminal A |
+| 13 | `EAR_N` | output | analog | ~1.5 V DC + differential AC audio (opposite leg of BTL) | Handset earpiece terminal B |
 
-(Counts to 14 lines in the table because the header row is not a port; there are exactly 13 ports. The checker counts ports, not table rows.)
+The handset mic's cold wire terminates at local GND inside the codec sheet, not at a dedicated return port. A separate `MIC_RETURN` port would enable Kelvin-return routing on the PCB to reject ground-loop hum, but is not needed for phone-band speech audio on a short handset cable. If bring-up shows audible hum, a later rev can add `MIC_RETURN` as a 14th port and route it as a dedicated analog return.
 
 ## 4. Power architecture
 
@@ -97,16 +96,15 @@ The datasheet allows (but does not mandate) a ferrite bead between DVDD and AVDD
 
 ### 5.1 Microphone (mono single-ended with differential codec input)
 
-The handset has one electret mic with two wires. The mic is externally biased from MICBIAS through a series resistor, then capacitively coupled into the codec's MIC1L differential input pair.
+The handset has one electret mic with two wires. The mic is externally biased from MICBIAS through a series resistor, then capacitively coupled into the codec's MIC1L differential input pair. The mic's cold-wire return lands on the codec sheet's local GND (same net as the +3V3 return).
 
 ```
 MICBIAS (pin 15) ──[R_BIAS 2.2k]──► MIC_IN port ──► [handset mic "+" terminal]
                                                         │
                                                    [mic element]
                                                         │
-                      MIC_RETURN port ◄── [handset mic "-" terminal]
-                             │
-                             └── local AGND on the codec sheet
+                      local GND ◄── [handset mic "-" terminal routed to the parent's handset
+                                      connector, which ties back to GND at that connector]
 ```
 
 And the signal tap into the codec:
@@ -247,12 +245,16 @@ The checker will parse `codec.kicad_sch` and assert all of the following. Any fa
 10. **Exposed pad (pin 33)** is on the GND net.
 11. **`check_codec_symbol.py` still passes** (the library symbol did not regress).
 
-## 10. Open items to resolve during Phase 2 implementation
+## 10. Open items resolved during Phase 2 implementation
 
-- Actual reference designators (U1/U2 will be renumbered by annotate; caps and resistors need C/R numbers that don't conflict with the existing main schematic).
-- Where exactly the +1V8 rail cap C_DVDD_2 (optional 1 µF) lands — may be consolidated with the LDO output 10 µF if placement geometry allows.
-- Whether the hierarchical sheet's "PI_I2S_*" port names on the parent side are already assigned in the main schematic from the RP2040 cluster work, or if we need to create them during Phase 3 integration.
-- Whether the parent schematic already has a `MIC_IN` / `EAR_P` / `EAR_N` net structure from the old broken U6 wiring that needs to be reused or torn out first. (The Phase 3 tear-down covers this regardless.)
+- **Reference designators:** initial U1/U2/R1/R2/C1–C18 used during standalone construction. Phase 3 will re-annotate the whole project at integration time.
+- **LDO symbol source:** resolved to `Regulator_Linear:APE8865N-12-HF-3` (stock KiCad). The `XC6206PxxxMR` symbol in the same library extends APE8865N-12-HF-3, and the two have identical pinout (pin 1 = GND, pin 2 = VOUT, pin 3 = VIN) — verified three ways (stock library, PicoAudioBoard reference wiring, datasheet). Value property overridden to "XC6206P182MR" and footprint to `Package_TO_SOT_SMD:SOT-23`.
+- **MIC_RETURN:** dropped from the interface. The handset mic cold wire ties to GND inside the codec sheet. Can be reinstated as a 14th port in a later rev if ground-loop hum shows up during bring-up.
+- **PWR_FLAG virtual symbols:** two added (`#FLG01` on +3V3, `#FLG02` on GND) so the sheet's standalone ERC recognizes the externally-driven power rails. These use the `#` prefix and do not appear in the BOM.
+
+### Still open, to resolve during Phase 3 integration
+
+- Whether the parent schematic already has `PI_I2S_*`, `PI_I2C1_*`, and handset connector net names that match our sheet ports verbatim, or if we need to create/rename them during Phase 3 wiring.
 
 ## 11. References
 
