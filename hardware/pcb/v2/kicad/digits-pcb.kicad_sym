@@ -103,7 +103,7 @@
 					(hide yes)
 				)
 			)
-			(symbol "TLV320AIC3104IRHBT_1_1"
+			(symbol "TLV320AIC3104IRHBR_1_1"
 				(rectangle
 					(start 5.08 17.78)
 					(end 30.48 -48.26)
