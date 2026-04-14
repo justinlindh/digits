@@ -1,0 +1,27 @@
+{
+  "$schema_doc": "Placement constraints for the 12MHz crystal (Y1) and load caps (C5, C6) near the RP2040 (U3) XIN/XOUT pins. Run `python3 hardware/pcb/v2/tools/check_crystal_placement.py`. RP2040 datasheet 2.9.1: 'Place the crystal as close to XIN as possible'.",
+  "default_max_distance_mm": 3.0,
+  "constraints": [
+    {
+      "cap": "Y1",
+      "target": "U3.20",
+      "value": "12MHz",
+      "rationale": "Crystal placed as close as possible to U3 XIN (pin 20) per RP2040 datasheet 2.9.1. Keeps oscillator loop impedance and parasitic coupling controlled.",
+      "max_distance_mm": 5.0
+    },
+    {
+      "cap": "C5",
+      "target": "Y1.1",
+      "value": "15pF",
+      "rationale": "Crystal load cap on XIN side. Must be tight to Y1 pin 1 for correct oscillator tuning.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C6",
+      "target": "Y1.3",
+      "value": "15pF",
+      "rationale": "Crystal load cap on XOUT side. Must be tight to Y1 pin 3 for correct oscillator tuning.",
+      "max_distance_mm": 2.0
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "$schema_doc": "Placement constraints for the LM2596S-5 buck converter (U1 + L1 + D1 + C1 + C2 + C4). The switching loop (U1.SW -> L1 -> D1 -> C2 GND -> back) should be as tight as physical footprint dimensions allow. Distances are measured from the target component's footprint CENTER to the referenced pin, so they include half the target's body width. Values below are calibrated against the actual footprint sizes, not an ideal textbook diagram. Run `python3 hardware/pcb/v2/tools/check_buck_placement.py`. Datasheet: LM2596 (TI SNVS124).",
+  "default_max_distance_mm": 10.0,
+  "constraints": [
+    {
+      "cap": "L1",
+      "target": "U1.2",
+      "value": "33uH",
+      "rationale": "Inductor input at U1 SW pin. The 12x12mm inductor body (half-width 6mm) plus U1 pin pad half-width (2.3mm) plus clearance sets a geometric minimum of ~9.3mm center-to-center. 10mm gives a small margin. Rotate L1 so pad 1 faces U1 to keep the SW_NODE trace itself short.",
+      "max_distance_mm": 10.0
+    },
+    {
+      "cap": "D1",
+      "target": "U1.2",
+      "value": "SS54",
+      "rationale": "Catch diode anode at U1 SW node. SMA body (4x2.6mm) can tuck above or below U1 pin 2 with anode pointing at the SW_NODE/L1.1 junction. ~5-6mm center-to-center is achievable; 7mm gives routing margin.",
+      "max_distance_mm": 7.0
+    },
+    {
+      "cap": "C2",
+      "target": "L1.2",
+      "value": "220uF",
+      "rationale": "Output bulk on +5V rail, directly at the far side of L1 (L1.2). 8x6.5mm electrolytic (half-width 4mm) plus L1 pad half-width (1.45mm) plus clearance ~= 6mm min; 7mm gives margin. Measured to L1.2 rather than U1.2 because C2 belongs to the post-inductor output node, not the switching node.",
+      "max_distance_mm": 7.0
+    },
+    {
+      "cap": "C1",
+      "target": "U1.1",
+      "value": "680uF",
+      "rationale": "Input bulk reservoir on +12V rail. 10x10.5mm electrolytic is large; precise position is not critical because the high-frequency transient demand is handled by C4. 15mm gives realistic freedom to fit the cap body near the VIN pin.",
+      "max_distance_mm": 15.0
+    },
+    {
+      "cap": "C4",
+      "target": "U1.1",
+      "value": "100nF",
+      "rationale": "High-frequency +12V bypass directly at U1 VIN pin. 0402 body is trivially small (half-width 0.5mm) so it can sit right next to the pin pad; 3mm is a comfortable bound.",
+      "max_distance_mm": 3.0
+    }
+  ]
+}
