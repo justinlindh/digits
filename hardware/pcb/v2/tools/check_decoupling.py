@@ -140,10 +140,53 @@ def rotate(px, py, deg):
 
 # ---------- PCB data extraction ----------
 
+def _courtyard_rect(fp):
+    """Return the (xmin, ymin, xmax, ymax) of the footprint's F.CrtYd rect in
+    LOCAL coordinates, or None if no courtyard rect is defined.
+
+    A TO-263 body is ~15 mm wide but only has pad pins on one side — the pad
+    extent alone underestimates the physical keep-out by 7-10 mm. The
+    F.CrtYd layer carries the real assembly keep-out rectangle from the
+    footprint library; using it catches the collisions that pad-center math
+    misses.
+    """
+    for item in fp:
+        if not is_list(item) or not item or item[0] != "fp_rect":
+            continue
+        # Find the (layer ...) child and verify it is F.CrtYd.
+        layer_node = find_first(item, "layer")
+        if not layer_node or len(layer_node) < 2 or layer_node[1] != "F.CrtYd":
+            continue
+        start = find_first(item, "start")
+        end = find_first(item, "end")
+        if not start or not end or len(start) < 3 or len(end) < 3:
+            continue
+        sx, sy = float(start[1]), float(start[2])
+        ex, ey = float(end[1]), float(end[2])
+        return (min(sx, ex), min(sy, ey), max(sx, ex), max(sy, ey))
+    return None
+
+
+def _rotated_rect_aabb(xmin, ymin, xmax, ymax, rot):
+    """Rotate a local rectangle by `rot` degrees and return the axis-aligned
+    bounding box of the result. The AABB is conservative — for 90/180/270
+    rotations it's exact; for arbitrary angles it's an upper bound.
+    """
+    corners = [
+        rotate(xmin, ymin, rot),
+        rotate(xmax, ymin, rot),
+        rotate(xmax, ymax, rot),
+        rotate(xmin, ymax, rot),
+    ]
+    xs = [c[0] for c in corners]
+    ys = [c[1] for c in corners]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def load_pcb(path: pathlib.Path):
     text = path.read_text()
     tree = parse(text)
-    footprints = {}  # ref -> {"x","y","rot","pads":{num:(abs_x,abs_y)}}
+    footprints = {}  # ref -> {"x","y","rot","pads":{num:(abs_x,abs_y)},"courtyard":(x0,y0,x1,y1) or None}
     for fp in find_all(tree, "footprint"):
         at = get_at(fp)
         if at is None:
@@ -164,8 +207,35 @@ def load_pcb(path: pathlib.Path):
             # pad offset is relative to footprint origin, rotated by footprint rotation
             rx, ry = rotate(px, py, frot)
             pads[str(num)] = (fx + rx, fy + ry)
-        footprints[ref] = {"x": fx, "y": fy, "rot": frot, "pads": pads}
+        # Courtyard in absolute coordinates (AABB after rotation).
+        court_local = _courtyard_rect(fp)
+        if court_local is not None:
+            cxl0, cyl0, cxl1, cyl1 = court_local
+            rx0, ry0, rx1, ry1 = _rotated_rect_aabb(cxl0, cyl0, cxl1, cyl1, frot)
+            court_abs = (fx + rx0, fy + ry0, fx + rx1, fy + ry1)
+        else:
+            court_abs = None
+        footprints[ref] = {
+            "x": fx, "y": fy, "rot": frot,
+            "pads": pads,
+            "courtyard": court_abs,
+        }
     return footprints
+
+
+def courtyards_overlap(a, b):
+    """Return True if two (xmin, ymin, xmax, ymax) rectangles overlap.
+    Either argument may be None (no courtyard = return False).
+    """
+    if a is None or b is None:
+        return False
+    ax0, ay0, ax1, ay1 = a
+    bx0, by0, bx1, by1 = b
+    if ax1 <= bx0 or bx1 <= ax0:
+        return False
+    if ay1 <= by0 or by1 <= ay0:
+        return False
+    return True
 
 
 # ---------- check ----------
@@ -219,9 +289,22 @@ def main():
         dx = cap["x"] - pad[0]
         dy = cap["y"] - pad[1]
         dist = math.hypot(dx, dy)
-        status = "PASS" if dist <= max_d else "FAIL"
+        allow_overlap = bool(c.get("allow_body_overlap", False))
+        if dist > max_d:
+            status = "FAIL"
+        elif not allow_overlap and courtyards_overlap(cap.get("courtyard"), ic.get("courtyard")):
+            # Pad-center distance is within tolerance, but the cap's body
+            # courtyard physically overlaps the IC's body courtyard. The cap
+            # is sitting ON the IC package, not beside it. This is a real
+            # assembly-time collision — unless the constraint explicitly sets
+            # `"allow_body_overlap": true`, which is the right call for
+            # designed-adjacent parts like crystal load caps sharing the
+            # oscillator courtyard with the crystal.
+            status = "COLLIDE"
+        else:
+            status = "PASS"
         rows.append((status, cap_ref, target, dist, max_d, c.get("rationale", "")))
-        if status == "FAIL":
+        if status != "PASS":
             fails += 1
 
     # ANSI colors, auto-disabled when stdout is not a TTY or NO_COLOR is set.
@@ -234,19 +317,33 @@ def main():
     if not args.quiet:
         print(f"{'res':5} {'cap':6} {'target':10} {'dist':>9} {'max':>6}  rationale")
         print("-" * 80)
+    YELLOW = "\033[33m" if use_color else ""
     for status, cap_ref, target, dist, max_d, note in rows:
         if args.quiet and status == "PASS":
             continue
         dist_s = f"{dist:6.2f}mm" if dist is not None else "    n/a"
-        color = GREEN if status == "PASS" else RED
-        line = f"{status:5} {cap_ref:6} {target:10} {dist_s:>9} {max_d:5.2f}  {note}"
+        if status == "PASS":
+            color = GREEN
+        elif status == "COLLIDE":
+            color = YELLOW
+        else:
+            color = RED
+        tag = status if status != "COLLIDE" else "COLL"
+        line = f"{tag:5} {cap_ref:6} {target:10} {dist_s:>9} {max_d:5.2f}  {note}"
         print(f"{color}{line}{RESET}")
 
     print()
     if fails:
-        print(f"{BOLD}{RED}FAIL: {fails} of {len(constraints)} decoupling constraints violated.{RESET}")
+        collisions = sum(1 for r in rows if r[0] == "COLLIDE")
+        distance_fails = fails - collisions
+        msg_parts = []
+        if distance_fails:
+            msg_parts.append(f"{distance_fails} over distance")
+        if collisions:
+            msg_parts.append(f"{collisions} body courtyard collision{'s' if collisions != 1 else ''}")
+        print(f"{BOLD}{RED}FAIL: {fails} of {len(constraints)} constraints ({', '.join(msg_parts)}).{RESET}")
         return 1
-    print(f"{BOLD}{GREEN}OK: all {len(constraints)} decoupling constraints satisfied.{RESET}")
+    print(f"{BOLD}{GREEN}OK: all {len(constraints)} decoupling constraints satisfied (distance + body clearance).{RESET}")
     return 0
 
 

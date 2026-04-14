@@ -14,14 +14,16 @@
       "target": "Y1.1",
       "value": "15pF",
       "rationale": "Crystal load cap on XIN side. Must be tight to Y1 pin 1 for correct oscillator tuning.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 2.0,
+      "allow_body_overlap": true
     },
     {
       "cap": "C6",
       "target": "Y1.3",
       "value": "15pF",
       "rationale": "Crystal load cap on XOUT side. Must be tight to Y1 pin 3 for correct oscillator tuning.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 2.0,
+      "allow_body_overlap": true
     }
   ]
 }
