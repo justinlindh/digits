@@ -1,0 +1,146 @@
+{
+  "$schema_doc": "Per-pin placement constraints for the TLV320AIC3104 codec cluster (U6 + U7 LDO + 18 caps + 2 resistors). Each entry maps a component reference to the IC pad it must be placed adjacent to, with a maximum centroid-to-pad distance in millimeters. Validated by tools/check_decoupling.py against the current PCB: run `python3 hardware/pcb/v2/tools/check_codec_placement.py` to check just the codec cluster, or `python3 hardware/pcb/v2/tools/check_decoupling.py --targets hardware/pcb/v2/codec_targets.json` with the full checker. Source of design intent: hardware/pcb/v2/codec-module-spec.md. Datasheet: SLAS510G (TLV320AIC3104) and XC6206P182MR (Torex).",
+  "default_max_distance_mm": 2.0,
+  "constraints": [
+    {
+      "cap": "C36",
+      "target": "U7.3",
+      "value": "100nF",
+      "rationale": "LDO VIN input decoupling cap. Datasheet: XC6206 typical app.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C37",
+      "target": "U7.2",
+      "value": "10uF",
+      "rationale": "LDO VOUT bulk + DVDD feed. Datasheet: XC6206 typical app; TLV320AIC3104 SLAS510G §11.2 Fig 11-1 DVDD bulk.",
+      "max_distance_mm": 2.5
+    },
+    {
+      "cap": "C38",
+      "target": "U6.32",
+      "value": "100nF",
+      "rationale": "DVDD (pin 32) close-in decoupling per SLAS510G §13.1 'decoupling capacitors as close as possible to the device power supply terminals'.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C39",
+      "target": "U6.32",
+      "value": "1uF",
+      "rationale": "DVDD (pin 32) close-in bulk per SLAS510G §11.2 Fig 11-1. Second cap on the same pin; can be slightly further than C38.",
+      "max_distance_mm": 3.0
+    },
+    {
+      "cap": "C40",
+      "target": "U6.7",
+      "value": "100nF",
+      "rationale": "IOVDD (pin 7) close-in decoupling per SLAS510G §13.1.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C41",
+      "target": "U6.18",
+      "value": "100nF",
+      "rationale": "DRVDD (pin 18) close-in decoupling per SLAS510G §13.1.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C42",
+      "target": "U6.24",
+      "value": "100nF",
+      "rationale": "DRVDD (pin 24) close-in decoupling per SLAS510G §13.1.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C43",
+      "target": "U6.25",
+      "value": "100nF",
+      "rationale": "AVDD (pin 25) close-in decoupling per SLAS510G §13.1.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C44",
+      "target": "U6.33",
+      "value": "1uF",
+      "rationale": "+3V3 rail bulk cap; placed near U6 EP (pin 33 = chip center). Not pin-specific; 6 mm radius is fine.",
+      "max_distance_mm": 6.0
+    },
+    {
+      "cap": "C45",
+      "target": "U6.33",
+      "value": "10uF",
+      "rationale": "+3V3 rail bulk cap; placed near U6 EP. Not pin-specific; 6 mm radius is fine.",
+      "max_distance_mm": 6.0
+    },
+    {
+      "cap": "C46",
+      "target": "U6.10",
+      "value": "0.47uF",
+      "rationale": "MIC1LP (pin 10) AC coupling from MIC_FROM_SW. Speech-band HPF; placement tight to keep trace short and noise low.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C47",
+      "target": "U6.11",
+      "value": "0.47uF",
+      "rationale": "MIC1LM (pin 11) AC coupling to AGND. Tight placement for differential symmetry with C46.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C48",
+      "target": "U6.15",
+      "value": "100nF",
+      "rationale": "MICBIAS (pin 15) bypass to AGND per SLAS510G §10.3.9 and Fig 11-1.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "C49",
+      "target": "U6.12",
+      "value": "100nF",
+      "rationale": "MIC1RP (pin 12) unused input termination. Low criticality - datasheet says 'termination or NC'; 4 mm is fine.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "C50",
+      "target": "U6.13",
+      "value": "100nF",
+      "rationale": "MIC1RM (pin 13) unused input termination. Same criticality as C49.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "C51",
+      "target": "U6.14",
+      "value": "100nF",
+      "rationale": "MIC2L (pin 14) unused input termination. Same criticality as C49.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "C52",
+      "target": "U6.16",
+      "value": "100nF",
+      "rationale": "MIC2R (pin 16) unused input termination. Same criticality as C49.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "C53",
+      "target": "U6.31",
+      "value": "1nF",
+      "rationale": "RESET (pin 31) ESD protection cap. Tight placement so the ESD path to ground is short.",
+      "max_distance_mm": 2.0
+    },
+    {
+      "cap": "R10",
+      "target": "U6.15",
+      "value": "2.2k",
+      "rationale": "MICBIAS series bias resistor (pin 15 -> MIC_FROM_SW). Placement flexible but should be in the mic signal path; 4 mm from pin 15 is fine.",
+      "max_distance_mm": 4.0
+    },
+    {
+      "cap": "R11",
+      "target": "U6.31",
+      "value": "10k",
+      "rationale": "RESET (pin 31) 10k pullup to +3V3. Placement flexible; 4 mm from pin 31 is fine.",
+      "max_distance_mm": 4.0
+    }
+  ]
+}
