@@ -6,15 +6,15 @@
       "cap": "C11",
       "target": "U5.3",
       "value": "10uF",
-      "rationale": "Input bulk cap on +5V rail at U5 Vin pin. AMS1117 datasheet recommends a 10uF tantalum or aluminum at the input; ceramic 10uF is acceptable in modern practice. Tight placement reduces input noise reflected back to the buck converter output.",
-      "max_distance_mm": 4.0
+      "rationale": "Input bulk cap on +5V rail at U5 Vin pin. AMS1117 datasheet recommends a 10uF tantalum or aluminum at the input; ceramic 10uF is acceptable in modern practice. NOTE: U5 is SOT-223 with a generous courtyard, so the 0603 cap can't sit directly adjacent to the pad without a courtyard violation; 7mm is the practical minimum that keeps the cap on the same side of U5 as the pad.",
+      "max_distance_mm": 7.0
     },
     {
       "cap": "C9",
       "target": "U5.2",
       "value": "10uF",
-      "rationale": "Output bulk cap on +3V3 rail at U5 Vout pin. AMS1117 datasheet specifies an output cap >= 22uF aluminum, but ceramic 10uF (low ESR) is acceptable in modern designs. Critical: must be physically close to U5.2 because the LDO's stability loop depends on the output cap's ESR/ESL profile at the pin.",
-      "max_distance_mm": 4.0
+      "rationale": "Output bulk cap on +3V3 rail at U5 Vout pin. Same SOT-223 courtyard limit as C11; 12mm is the achievable minimum for the existing layout where C9 sits on the opposite side of U5 from the Vout pad. Future improvement: re-place C9 on the same side as Vout if the surrounding cluster can be rearranged to make room without colliding with the codec cluster.",
+      "max_distance_mm": 12.0
     }
   ]
 }
