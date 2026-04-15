@@ -502,7 +502,7 @@
         "pcb_color": "rgba(0, 0, 0, 0.000)",
         "priority": 0,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.75,
+        "track_width": 0.4,
         "tuning_profile": "",
         "via_diameter": 0.8,
         "via_drill": 0.4
@@ -528,15 +528,7 @@
       },
       {
         "netclass": "Power",
-        "pattern": "+3V3"
-      },
-      {
-        "netclass": "Power",
         "pattern": "VIN_RAW"
-      },
-      {
-        "netclass": "Power",
-        "pattern": "DVDD_1V1"
       }
     ]
   },
@@ -545,7 +537,7 @@
       "idf": "",
       "netlist": "",
       "plot": "",
-      "specctra_dsn": "digits-pcb_v1.dsn",
+      "specctra_dsn": "../../../../../../digits-pcb_v1.dsn",
       "vrml": ""
     },
     "page_layout_descr_file": ""
