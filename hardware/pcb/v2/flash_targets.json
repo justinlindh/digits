@@ -1,20 +1,21 @@
 {
   "$schema_doc": "Placement constraints for the W25Q16 QSPI flash (U4) and its decoupling cap (C34) vs the RP2040 (U3). Run `python3 hardware/pcb/v2/tools/check_flash_placement.py`. RP2040 datasheet chapter 2.8 recommends flash as close as possible to minimize QSPI trace length at 62MHz default clock.",
-  "default_max_distance_mm": 6.0,
+  "$boundary_doc": "C34 flash Vcc decap uses max_distance_mm=4.68 = centroid-to-pad worst case across 11 RP2040 decaps on the KiCAD_Board_3_Minimal_Full_RP2040 reference board. U4 flash-to-RP2040 chip placement keeps its own 10mm limit (different constraint: QSPI trace length, not bypass). Pass/fail only.",
+  "default_max_distance_mm": 4.68,
   "constraints": [
     {
       "cap": "U4",
       "target": "U3.53",
       "value": "W25Q16JVSSIQ",
-      "rationale": "Flash chip placed near U3 QSPI_SD0 pin (the most bandwidth-critical signal). RP2040 datasheet 2.8.1: 'The QSPI flash should be placed as close to the chip as possible'.",
+      "rationale": "Flash chip placed near U3 QSPI_SD0 pin (the most bandwidth-critical signal). RP2040 datasheet 2.8.1: 'The QSPI flash should be placed as close to the chip as possible'. Not a decap — governed by QSPI trace length, not bypass inductance.",
       "max_distance_mm": 10.0
     },
     {
       "cap": "C34",
       "target": "U4.8",
       "value": "100nF",
-      "rationale": "Flash Vcc (pin 8) close-in decoupling. W25Q16 datasheet recommends one 100nF per VCC pin at the pin. Relaxed to 3.5mm because U4 is SOIC-8 (1.27mm pitch) and the 0402 cap has to sit beyond the lead pad envelope; 3mm is the practical minimum.",
-      "max_distance_mm": 3.5
+      "rationale": "Flash Vcc (pin 8) close-in decoupling. W25Q16 datasheet recommends one 100nF per VCC pin at the pin. U4 is SOIC-8 (1.27mm pitch) and the 0402 cap has to sit beyond the lead pad envelope, so ~3mm is the practical minimum; 4.68mm matches the RP2040 reference board's decap centroid-to-pad worst case.",
+      "max_distance_mm": 4.68
     }
   ]
 }

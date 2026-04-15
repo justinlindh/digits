@@ -22,7 +22,7 @@ Seven cluster placement validators all PASS (52/52 constraints):
 | Ringer (U2) | `ringer_targets.json` | 3 ✅ |
 | LDO (U5) | `ldo_targets.json` | 2 ✅ |
 
-Comprehensive IC supply pin audit (25 pins across U1–U7): every pin has a decoupling cap within 6 mm.
+Comprehensive IC supply pin audit (25 pins across U1–U7): every pin has a decoupling cap. RP2040, codec, and flash bypass caps use a single centroid-to-pad limit of **4.68 mm**, derived from the worst-case decap distance across 11 RP2040 decaps on the KiCAD_Board_3_Minimal_Full_RP2040 reference board. Pass/fail only, no tiers. Buck, crystal, ringer, and LDO clusters keep their own rules because they are governed by different physical constraints (switching-loop area, oscillator SI, DRV8871 §10.1, LDO stability).
 
 32 critical traces are routed and `(locked yes)` on F.Cu — close-in decoupling for RP2040, codec, buck, ringer, LDO, crystal, and flash. Two GND copper pours on F.Cu and B.Cu cover the full board outline.
 

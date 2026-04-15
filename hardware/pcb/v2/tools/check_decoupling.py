@@ -314,10 +314,10 @@ def main():
     BOLD = "\033[1m" if use_color else ""
     RESET = "\033[0m" if use_color else ""
 
+    YELLOW = "\033[33m" if use_color else ""
     if not args.quiet:
         print(f"{'res':5} {'cap':6} {'target':10} {'dist':>9} {'max':>6}  rationale")
         print("-" * 80)
-    YELLOW = "\033[33m" if use_color else ""
     for status, cap_ref, target, dist, max_d, note in rows:
         if args.quiet and status == "PASS":
             continue
@@ -338,7 +338,7 @@ def main():
         distance_fails = fails - collisions
         msg_parts = []
         if distance_fails:
-            msg_parts.append(f"{distance_fails} over distance")
+            msg_parts.append(f"{distance_fails} over max")
         if collisions:
             msg_parts.append(f"{collisions} body courtyard collision{'s' if collisions != 1 else ''}")
         print(f"{BOLD}{RED}FAIL: {fails} of {len(constraints)} constraints ({', '.join(msg_parts)}).{RESET}")

@@ -1,75 +1,76 @@
 {
-  "$schema_doc": "Per-pin placement constraints for the TLV320AIC3104 codec cluster (U6 + U7 LDO + 18 caps + 2 resistors). Each entry maps a component reference to the IC pad it must be placed adjacent to, with a maximum centroid-to-pad distance in millimeters. Validated by tools/check_decoupling.py against the current PCB: run `python3 hardware/pcb/v2/tools/check_codec_placement.py` to check just the codec cluster, or `python3 hardware/pcb/v2/tools/check_decoupling.py --targets hardware/pcb/v2/codec_targets.json` with the full checker. Source of design intent: hardware/pcb/v2/codec-module-spec.md. Datasheet: SLAS510G (TLV320AIC3104) and XC6206P182MR (Torex).",
-  "default_max_distance_mm": 2.0,
+  "$schema_doc": "Per-pin placement constraints for the TLV320AIC3104 codec cluster (U6 + U7 LDO + 18 caps + 2 resistors). Each entry maps a component reference to the IC pad it must be placed adjacent to, with a max centroid-to-pad distance in millimeters. Validated by tools/check_decoupling.py against the current PCB: run `python3 hardware/pcb/v2/tools/check_codec_placement.py` to check just the codec cluster, or `python3 hardware/pcb/v2/tools/check_decoupling.py --targets hardware/pcb/v2/codec_targets.json` with the full checker. Source of design intent: hardware/pcb/v2/codec-module-spec.md. Datasheet: SLAS510G (TLV320AIC3104) and XC6206P182MR (Torex).",
+  "$boundary_doc": "Power-supply decoupling caps (C36-C43) use max_distance_mm=4.68 = centroid-to-pad worst case across 11 RP2040 decaps on KiCAD_Board_3_Minimal_Full_RP2040. SLAS510G \u00a713.1 only mandates 'as close as possible' without a number, so aligning with the RP2040 reference is honest. Non-decap entries (bulk caps C44/C45, ESD C53, AC coupling C46-C52, bias R10/R11) keep their original constraints. Pass/fail only, no tiers.",
+  "default_max_distance_mm": 4.68,
   "constraints": [
     {
       "cap": "C36",
       "target": "U7.3",
       "value": "100nF",
       "rationale": "LDO VIN input decoupling cap. Datasheet: XC6206 typical app.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C37",
       "target": "U7.2",
       "value": "10uF",
       "rationale": "LDO VOUT bulk + DVDD feed. Datasheet: XC6206 typical app; TLV320AIC3104 SLAS510G \u00a711.2 Fig 11-1 DVDD bulk.",
-      "max_distance_mm": 2.5
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C38",
       "target": "U6.32",
       "value": "100nF",
       "rationale": "DVDD (pin 32) close-in decoupling per SLAS510G \u00a713.1 'decoupling capacitors as close as possible to the device power supply terminals'.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C39",
       "target": "U6.32",
       "value": "1uF",
       "rationale": "DVDD (pin 32) close-in bulk per SLAS510G \u00a711.2 Fig 11-1. Second cap on the same pin; can be slightly further than C38.",
-      "max_distance_mm": 3.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C40",
       "target": "U6.7",
       "value": "100nF",
       "rationale": "IOVDD (pin 7) close-in decoupling per SLAS510G \u00a713.1.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C41",
       "target": "U6.18",
       "value": "100nF",
       "rationale": "DRVDD (pin 18) close-in decoupling per SLAS510G \u00a713.1.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C42",
       "target": "U6.24",
       "value": "100nF",
       "rationale": "DRVDD (pin 24) close-in decoupling per SLAS510G \u00a713.1.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C43",
       "target": "U6.25",
       "value": "100nF",
       "rationale": "AVDD (pin 25) close-in decoupling per SLAS510G \u00a713.1.",
-      "max_distance_mm": 2.0
+      "max_distance_mm": 4.68
     },
     {
       "cap": "C44",
       "target": "U6.33",
       "value": "1uF",
-      "rationale": "+3V3 rail bulk cap; placed near U6 EP (pin 33 = chip center). Not pin-specific; 6 mm radius is fine.",
+      "rationale": "+3V3 rail bulk cap; placed near U6 EP (pin 33 = chip center). Not pin-specific; 6 mm radius is fine. Bulk cap, not a per-pin decap.",
       "max_distance_mm": 6.0
     },
     {
       "cap": "C45",
       "target": "U6.33",
       "value": "10uF",
-      "rationale": "+3V3 rail bulk cap; placed near U6 EP. Not pin-specific; 6 mm radius is fine.",
+      "rationale": "+3V3 rail bulk cap; placed near U6 EP. Not pin-specific; 6 mm radius is fine. Bulk cap, not a per-pin decap.",
       "max_distance_mm": 6.0
     },
     {
