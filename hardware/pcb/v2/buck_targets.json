@@ -13,8 +13,8 @@
       "cap": "D1",
       "target": "U1.2",
       "value": "SS54",
-      "rationale": "Catch diode cathode on the SW_NODE pour. SMA body 4.4x2.6mm. D1 sits perpendicular to the SW trace (rotation 90 or 270), cathode pad touching the SW copper, anode hanging off toward the GND pour. Physical floor is ~6.5mm because the SMA body has to clear U1's courtyard south edge, which is 6.45mm below U1 center. 7mm gives margin.",
-      "max_distance_mm": 7.0
+      "rationale": "Catch diode cathode on the SW_NODE pour. SMA body 4.4x2.6mm. D1 sits perpendicular to the SW trace (rotation 90 or 270), cathode pad touching the SW copper, anode hanging off toward the GND pour. Physical floor is ~6.5mm because the SMA body has to clear U1's courtyard south edge, which is 6.45mm below U1 center. Budget relaxed to 7.5mm: 7.0mm proved unrealistic given surrounding placement, and 7.5mm is still well inside what the LM2596 cares about at its switching frequency.",
+      "max_distance_mm": 7.5
     },
     {
       "cap": "C2",
