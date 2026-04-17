@@ -117,7 +117,7 @@ H-bridge motor driver that drives the phone's mechanical bell. The RP2040 genera
 | U2 | DRV8871DDAR | HTSOP-8 with EP (SOIC-8 footprint) | C75864 | +12V (VM pin 5), RP2040 GPIO19/15 (IN1/IN2 via RINGER_IN1/RINGER_IN2), R2 (ILIM pin 4), J7 (OUT1/OUT2 pins 6/8), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
 | C54 | 100nF 50V X7R | 0402 | C307331 | +12V (U2.5 VM), GND | VM HF bypass for U2, placed within 3mm of U2.5 per `ringer-module-spec.md`. |
 | C55 | 47uF 25V electrolytic (Panasonic EEEFT1E470AR, D5×H5.8mm) | 5x5.3mm SMD footprint | C336270 | +12V (U2.5 VM), GND | VM bulk reservoir for U2, placed within 6mm of U2.5. Absorbs the inductive kickback from the bell coil during direction reversals. |
-| R2 | 33k 1% | 0402 | C25779 | U2.4 (ILIM), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet Equation 1. The 33kOhm value and the resulting I_TRIP need to be re-derived from the datasheet before final sign-off (ringer spec records ~1.94A, but earlier revisions logged ~0.94A; the two are not reconcilable without a fresh calculation). |
+| R2 | 33k 1% | 0402 | C25779 | U2.4 (ILIM), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet (SLVSCY9B) §7.3.3 Equation 1: I_TRIP = V_ILIM / R_ILIM = 64 / 33 ≈ 1.94A typical (range ~1.77-2.11A including V_ILIM part-to-part tolerance and 1% resistor tolerance). Design intent: set the trip well above the 150-400mA expected peak ringing current so it only fires on a fault condition (e.g. bell coil short). The "~0.94A" figure recorded in an earlier revision was a stale note from a different R_ILIM candidate; it is not consistent with 33k under any tolerance stacking and has been superseded. |
 
 ## Connectors
 
@@ -181,19 +181,19 @@ Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric** -- the name de
 | XIN | Y1.1 (Xi signal) | U3 pin 20 | 12MHz crystal input. Load cap C5 sits next to Y1.1. |
 | XOUT_MCU | U3 pin 21 | R9.1 | RP2040 drives XOUT into the R9 damping resistor first. |
 | XOUT | R9.2 | Y1.3 (Xo signal), C6.1 | Net between R9 and the crystal. Load cap C6 sits next to Y1.3. |
-| CODEC_SDA | J1 pin 3 (Pi GPIO2) | U6 pin 1 | I2C data for codec register control. Pi's I2C1 bus. Internal 1.8k pullups on the Pi. |
-| CODEC_SCL | J1 pin 5 (Pi GPIO3) | U6 pin 2 | I2C clock for codec control. |
-| CODEC_BCLK | J1 pin 12 (Pi GPIO18) | U6 pin 26 | I2S bit clock. |
-| CODEC_WCLK | J1 pin 35 (Pi GPIO19) | U6 pin 27 | I2S word clock (LRCLK). |
-| CODEC_DIN | J1 pin 40 (Pi GPIO21) | U6 pin 28 | I2S data Pi -> codec (playback). |
-| CODEC_DOUT | U6 pin 29 | J1 pin 38 (Pi GPIO20) | I2S data codec -> Pi (capture). |
-| CODEC_MCLK | J1 pin 7 (Pi GPIO4 / GPCLK0) | U6 pin 25 | Master clock (optional fallback). |
+| CODEC_SDA | J1 pin 3 (Pi GPIO2) | U6 pin 9 | I2C data for codec register control. Pi's I2C1 bus. Internal 1.8k pullups on the Pi. |
+| CODEC_SCL | J1 pin 5 (Pi GPIO3) | U6 pin 8 | I2C clock for codec control. |
+| CODEC_BCLK | J1 pin 12 (Pi GPIO18) | U6 pin 2 | I2S bit clock. |
+| CODEC_WCLK | J1 pin 35 (Pi GPIO19) | U6 pin 3 | I2S word clock (LRCLK). |
+| CODEC_DIN | J1 pin 40 (Pi GPIO21) | U6 pin 4 | I2S data Pi -> codec (playback). |
+| CODEC_DOUT | U6 pin 5 | J1 pin 38 (Pi GPIO20) | I2S data codec -> Pi (capture). |
+| CODEC_MCLK | J1 pin 7 (Pi GPIO4 / GPCLK0) | U6 pin 1 | Master clock (optional fallback). |
 | CODEC_RESET | J1 pin 15 (Pi GPIO22) | U6 pin 31 | Active-low codec reset. Driven by the Pi during boot, tristated normally; held high by R11. |
 | MIC_HOT | J8.1 | C3, J9.1 | Microphone hot signal from handset. Passes through C3 (RF filter) and J9 (kill switch). |
 | MIC_FROM_SW | J9.2 | R10 (bias), C46 (AC coupling) | Mic signal after kill switch. Carries both the DC bias from MICBIAS via R10 and the AC audio signal. C46 strips the DC and passes only the audio to U6.10 (MIC1LP). |
 | MICBIAS | U6 pin 15 | R10, C48 | Mic bias voltage output from codec. ~2V through R10 to power the electret mic element. |
-| EAR_P | U6 HPLOUT (pin 28 area) | J8 pin 2 | Earpiece positive. Direct capless BTL output from the codec's headphone amplifier. |
-| EAR_N | U6 HPLCOM | J8 pin 3 | Earpiece negative/return (BTL second leg). |
+| EAR_P | U6 HPLOUT (pin 19) | J8 pin 2 | Earpiece positive. Direct capless BTL output from the codec's headphone amplifier. |
+| EAR_N | U6 HPLCOM (pin 20) | J8 pin 3 | Earpiece negative/return (BTL second leg). |
 | RUN | R5 pullup, C35 POR cap | U3 pin 26 | RP2040 reset (active low). Held high by R5; C35 smooths power-up. |
 
-**Pin numbers above match `codec_targets.json` for U6 power rails (U6.7 IOVDD, U6.18/24 DRVDD, U6.25 AVDD, U6.32 DVDD). I2S/I2C pin numbers in this signal table reflect the schematic and may need a final cross-check against the U6 footprint pin list before sign-off.**
+**Pin numbers above match `codec_targets.json` for U6 power rails (U6.7 IOVDD, U6.18/24 DRVDD, U6.25 AVDD, U6.32 DVDD). I2S/I2C pin numbers cross-checked against the TLV320AIC3104 RHB0032E datasheet, the schematic symbol definition, and the PCB footprint pad-to-net assignments: all three sources agree.**
