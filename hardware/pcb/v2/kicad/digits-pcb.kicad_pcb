@@ -7026,7 +7026,7 @@
 			(size 1 1.45)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "MIC_GND")
+			(net "GND")
 			(pintype "passive")
 			(uuid "b2791ce0-1e8f-431b-b2c6-9fc99d92a28a")
 		)
@@ -13409,7 +13409,7 @@
 			(size 0.7 3.7)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "MIC_GND")
+			(net "GND")
 			(pinfunction "Pin_4_4")
 			(pintype "passive")
 			(uuid "39ed8450-43dd-41d1-a7f8-e2f8a773ca9c")
@@ -13898,7 +13898,7 @@
 			(size 0.7 3.7)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
-			(net "MIC_GND")
+			(net "GND")
 			(pinfunction "Pin_3_3")
 			(pintype "passive")
 			(uuid "dffe4c36-b7c7-40e8-ae44-4c4f7dd031ab")
@@ -24977,7 +24977,7 @@
 		(end 89.9355 41.3048)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "048fd0f9-e655-4b12-819f-07a681d2f279")
 	)
 	(segment
@@ -24985,7 +24985,7 @@
 		(end 80.25 35.7479)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "0c7a61ff-7d42-4911-8854-bce4d9dcf8bf")
 	)
 	(segment
@@ -24993,7 +24993,7 @@
 		(end 88.8466 37.91)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "32a24390-d1ca-488c-91cd-0357ff06e98d")
 	)
 	(segment
@@ -25001,7 +25001,7 @@
 		(end 76.6 34.91)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "7dfc74a7-574f-49b3-9938-dfcc6f8a9612")
 	)
 	(segment
@@ -25009,7 +25009,7 @@
 		(end 80.25 35.51)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "89338c07-8ff9-493f-a2b0-eee8cff8b372")
 	)
 	(segment
@@ -25017,7 +25017,7 @@
 		(end 89.9355 38.9989)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "8b96e192-9ca8-43a6-83d0-3015128ce3a2")
 	)
 	(segment
@@ -25025,7 +25025,7 @@
 		(end 77.2 35.51)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "934546e9-a37c-4c48-9f2b-3e45e0c5ed28")
 	)
 	(segment
@@ -25033,7 +25033,7 @@
 		(end 89.6995 41.5408)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "aaef31ad-3cb8-45b6-bdb6-9ab777f1acfa")
 	)
 	(segment
@@ -25041,7 +25041,7 @@
 		(end 86.0429 41.5408)
 		(width 0.2)
 		(layer "F.Cu")
-		(net "MIC_GND")
+		(net "GND")
 		(uuid "df3ba661-527a-4129-92e9-8f93c604eb2d")
 	)
 	(segment

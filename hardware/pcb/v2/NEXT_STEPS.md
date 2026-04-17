@@ -123,7 +123,7 @@ Route the critical analog/clock/power nets that span clusters or are too signal-
 
 - [ ] `MIC_FROM_SW`: J9.2 (mic kill switch) → C46 (codec sheet port → MIC1LP coupling cap inside sheet). Keep short and away from clock nets.
 - [ ] `MIC_HOT`: J8 → J9 (handset to mic kill switch). Short trace.
-- [ ] `MIC_GND`: J8 → J9. Mic return reference; pair with MIC_HOT.
+- [ ] (mic cold return): J8.4 (handset mic cold) ties directly to GND, formerly a separate MIC_GND net. The GND pour on B.Cu provides the return.
 - [ ] `EAR_P`: U6.HPLOUT → J8 (earpiece BTL+). Short, F.Cu, away from mic path.
 - [ ] `EAR_N`: U6.HPLCOM → J8 (earpiece BTL−). Short, F.Cu, parallel to EAR_P.
 

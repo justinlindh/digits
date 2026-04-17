@@ -46,7 +46,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `R8` | 2.2 kΩ | Mic bias series (MICBIAS → mic) | 0402 |
 | `C1` | 680 µF | +12 V bulk input | CP_Elec 10×10.5 |
 | `C2` | 220 µF | +5 V bulk output | CP_Elec 8×6.5 |
-| `C3` | 100 nF | MIC_HOT/MIC_GND RFI filter | 0805 |
+| `C3` | 100 nF | MIC_HOT to GND RFI filter | 0805 |
 | `C4` | 100 nF | +12 V high-frequency bypass | 0805 |
 | `C5, C6` | 15 pF C0G | Crystal load caps, `C_load = 2·(CL − C_stray)` for 10 pF CL | 0402 |
 | `C9` | 10 µF | +3V3 bulk near LDO output | 0603 |
