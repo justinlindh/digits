@@ -3,9 +3,12 @@ package portal
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digits-setup/internal/wifi"
 )
@@ -13,9 +16,20 @@ import (
 //go:embed static/*
 var staticFiles embed.FS
 
+// apTeardownDelay defers `digits-ap-check down` after a successful configure
+// so two things can happen in order: (1) the HTTP response bytes leave wlan0
+// before hostapd stops, and (2) the client has a moment to read them before
+// losing AP association.
+const apTeardownDelay = 2 * time.Second
+
 // NewHandler returns the HTTP mux for the captive portal.
-func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator) http.Handler {
+func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.APController) http.Handler {
 	mux := http.NewServeMux()
+
+	// teardownScheduled gates the deferred AP teardown so a duplicate or
+	// retried /api/configure cannot stack multiple `digits-ap-check down`
+	// goroutines.
+	var teardownScheduled atomic.Bool
 
 	// Captive portal detection — redirect to setup page
 	captiveRedirect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,16 +73,32 @@ func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator) http.Handl
 
 		if err := configurator.Configure(req); err != nil {
 			log.Printf("configure error: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			status := http.StatusInternalServerError
+			if errors.Is(err, wifi.ErrInvalidRequest) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status":  "ok",
-			"message": "Configuration saved. Rebooting in 5 seconds...",
+			"message": "Configuration saved. Reconnect to your normal network.",
 		}); err != nil {
 			log.Printf("configure: encode response: %v", err)
+		}
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		if teardownScheduled.CompareAndSwap(false, true) {
+			go func() {
+				time.Sleep(apTeardownDelay)
+				if err := ap.Down(); err != nil {
+					log.Printf("configure: ap down failed: %v", err)
+				}
+			}()
 		}
 	})
 

@@ -1,8 +1,10 @@
 package wifi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +13,10 @@ import (
 	"time"
 )
 
+// ErrInvalidRequest is returned by ConfigureWithDeps for user-facing validation
+// failures (missing SSID, etc.) so handlers can return 400 vs. 500.
+var ErrInvalidRequest = errors.New("invalid configure request")
+
 // ConfigRequest is the JSON body for POST /api/configure.
 type ConfigRequest struct {
 	SSID     string `json:"ssid"`
@@ -18,7 +24,7 @@ type ConfigRequest struct {
 	Hidden   bool   `json:"hidden"`
 }
 
-// Configurator writes Wi-Fi config and triggers reboot.
+// Configurator writes Wi-Fi config.
 type Configurator interface {
 	Configure(req ConfigRequest) error
 }
@@ -27,13 +33,8 @@ type Configurator interface {
 type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
-	ReadFile(name string) ([]byte, error)
 	Remove(name string) error
-}
-
-// Rebooter abstracts the system reboot.
-type Rebooter interface {
-	ScheduleReboot(delay time.Duration)
+	Rename(oldpath, newpath string) error
 }
 
 // OSFileSystem is the real filesystem.
@@ -47,38 +48,77 @@ func (OSFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error 
 	return os.WriteFile(name, data, perm)
 }
 
-func (OSFileSystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
-}
-
 func (OSFileSystem) Remove(name string) error {
 	return os.Remove(name)
 }
 
-// SystemRebooter calls `systemctl reboot`.
-type SystemRebooter struct{}
+func (OSFileSystem) Rename(oldpath, newpath string) error {
+	return os.Rename(oldpath, newpath)
+}
 
-func (SystemRebooter) ScheduleReboot(delay time.Duration) {
-	go func() {
-		time.Sleep(delay)
-		out, err := exec.Command("systemctl", "reboot").CombinedOutput()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "reboot failed: %v: %s\n", err, out)
-		}
-	}()
+// Mounter abstracts remounting the root filesystem.
+type Mounter interface {
+	RemountRW() error
+	RemountRO() error
+}
+
+// SystemMounter calls `mount -o remount,{rw,ro} /`.
+type SystemMounter struct{}
+
+func (SystemMounter) RemountRW() error {
+	out, err := exec.Command("mount", "-o", "remount,rw", "/").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("remount rw: %w: %s", err, out)
+	}
+	return nil
+}
+
+func (SystemMounter) RemountRO() error {
+	out, err := exec.Command("mount", "-o", "remount,ro", "/").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("remount ro: %w: %s", err, out)
+	}
+	return nil
+}
+
+// APController abstracts tearing down the captive-portal AP.
+type APController interface {
+	Down() error
+}
+
+const apCheckBinary = "/usr/local/bin/digits-ap-check"
+
+// SystemAPController calls `digits-ap-check down` with a bounded timeout so a
+// hung script cannot wedge the captive portal request goroutine.
+type SystemAPController struct{}
+
+func (SystemAPController) Down() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, apCheckBinary, "down").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("digits-ap-check down: %w: %s", err, out)
+	}
+	return nil
 }
 
 // SystemConfigurator is the production configurator.
 type SystemConfigurator struct{}
 
 func (c *SystemConfigurator) Configure(req ConfigRequest) error {
-	return ConfigureWithDeps(req, OSFileSystem{}, SystemRebooter{})
+	return ConfigureWithDeps(req, OSFileSystem{}, SystemMounter{})
 }
 
-// uuidForSSID returns a stable UUID-shaped string derived from the SSID.
-// Format: 8-4-4-4-12 hex chars. Not a real UUID, but NetworkManager accepts
-// anything UUID-shaped in this field. Deterministic so reconfiguring the
-// same SSID overwrites the previous file rather than creating a duplicate.
+const (
+	backupDir          = "/data/wifi"
+	operationalDir     = "/etc/NetworkManager/system-connections"
+	wifiConfiguredFlag = "/data/wifi-configured"
+	legacyConnFilename = "digits-wifi.nmconnection"
+)
+
+// uuidForSSID returns a UUID-shaped string derived from the SSID so
+// reconfiguring the same SSID overwrites the previous file rather than
+// creating a duplicate. It is a stable identifier, not an RFC 4122 UUID.
 func uuidForSSID(ssid string) string {
 	h := sha256.Sum256([]byte(ssid))
 	s := hex.EncodeToString(h[:16])
@@ -86,27 +126,26 @@ func uuidForSSID(ssid string) string {
 }
 
 // ConfigureWithDeps performs configuration with injectable dependencies.
-func ConfigureWithDeps(req ConfigRequest, fs FileSystem, rebooter Rebooter) error {
+//
+// The flag at wifiConfiguredFlag is written last so a partial failure during
+// the operational write does not promote the device to station mode on next
+// boot with a half-written config.
+func ConfigureWithDeps(req ConfigRequest, fs FileSystem, mounter Mounter) error {
 	if req.SSID == "" {
-		return fmt.Errorf("ssid is required")
-	}
-	// Write wpa_supplicant.conf
-	wpaDir := "/data/wifi"
-	if err := fs.MkdirAll(wpaDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", wpaDir, err)
+		return fmt.Errorf("%w: ssid is required", ErrInvalidRequest)
 	}
 
 	safeName := SanitizeSSID(req.SSID)
 	uuid := uuidForSSID(req.SSID)
 	connID := "digits-wifi-" + safeName + "-" + uuid[:6]
+	filename := connID + ".nmconnection"
 
 	hiddenLine := ""
 	if req.Hidden {
 		hiddenLine = "hidden=true\n"
 	}
 
-	// Write NetworkManager connection file (NM manages wlan0 on the working Pi)
-	nmConn := fmt.Sprintf(`[connection]
+	data := []byte(fmt.Sprintf(`[connection]
 id=%s
 uuid=%s
 type=wifi
@@ -127,40 +166,59 @@ addr-gen-mode=default
 method=auto
 
 [proxy]
-`, connID, uuid, hiddenLine, req.SSID, req.Password)
+`, connID, uuid, hiddenLine, req.SSID, req.Password))
 
-	nmPath := filepath.Join(wpaDir, "digits-wifi-"+safeName+"-"+uuid[:6]+".nmconnection")
-	if err := fs.WriteFile(nmPath, []byte(nmConn), 0600); err != nil {
-		return fmt.Errorf("write nmconnection: %w", err)
+	backupPath := filepath.Join(backupDir, filename)
+	if err := writeAtomic(fs, backupPath, data, 0600); err != nil {
+		return fmt.Errorf("backup write: %w", err)
 	}
 
-	// Read back and verify the file was written correctly
-	readBack, err := fs.ReadFile(nmPath)
-	if err != nil {
-		return fmt.Errorf("verify nmconnection: read-back failed: %w", err)
+	if err := mounter.RemountRW(); err != nil {
+		return fmt.Errorf("remount rw: %w", err)
 	}
-	if string(readBack) != nmConn {
-		return fmt.Errorf("verify nmconnection: read-back mismatch (wrote %d bytes, read %d bytes)", len(nmConn), len(readBack))
+	defer func() {
+		if err := mounter.RemountRO(); err != nil {
+			log.Printf("configure: remount ro failed: %v", err)
+		}
+	}()
+
+	opPath := filepath.Join(operationalDir, filename)
+	if err := writeAtomic(fs, opPath, data, 0600); err != nil {
+		return fmt.Errorf("operational write: %w", err)
 	}
 
-	// Best-effort cleanup: remove the legacy single-file nmconnection left over
-	// from pre-multi-network devices so NetworkManager doesn't load a stale
-	// profile alongside the new per-SSID file.
-	legacyPath := filepath.Join(wpaDir, "digits-wifi.nmconnection")
-	if err := fs.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
-		// Log but do not fail the configure; a failure here should not block
-		// the user's provisioning attempt.
-		log.Printf("configure: legacy cleanup of %s failed: %v", legacyPath, err)
+	// The pre-PR-170 scheme produced exactly one file with this hardcoded
+	// name; removing it by name (not by pattern) is deliberate so we don't
+	// accidentally stomp on current digits-wifi-*.nmconnection entries.
+	for _, p := range []string{
+		filepath.Join(backupDir, legacyConnFilename),
+		filepath.Join(operationalDir, legacyConnFilename),
+	} {
+		if err := fs.Remove(p); err != nil && !os.IsNotExist(err) {
+			log.Printf("configure: legacy cleanup of %s failed: %v", p, err)
+		}
 	}
 
-	// Set wifi-configured flag
-	flagPath := "/data/wifi-configured"
-	if err := fs.WriteFile(flagPath, []byte("1\n"), 0644); err != nil {
+	if err := fs.WriteFile(wifiConfiguredFlag, []byte("1\n"), 0600); err != nil {
 		return fmt.Errorf("write flag: %w", err)
 	}
 
-	// Schedule reboot
-	rebooter.ScheduleReboot(5 * time.Second)
+	return nil
+}
 
+// writeAtomic writes data to path via a sibling temp file and atomic rename.
+func writeAtomic(fs FileSystem, path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := fs.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	tmp := path + ".tmp"
+	if err := fs.WriteFile(tmp, data, perm); err != nil {
+		return fmt.Errorf("write temp %s: %w", tmp, err)
+	}
+	if err := fs.Rename(tmp, path); err != nil {
+		_ = fs.Remove(tmp)
+		return fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
 	return nil
 }
