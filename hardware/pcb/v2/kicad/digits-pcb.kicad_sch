@@ -4465,7 +4465,7 @@
     (property "Description" "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)" (at 49.53 34.29 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
-    (property "LCSC Part #" "C265115" (at 52.07 33.0199 0) (show_name)
+    (property "LCSC Part #" "C489717" (at 52.07 33.0199 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
     (pin "1" (uuid ed48bf87-dd93-4964-8dd1-ce771f454144))
