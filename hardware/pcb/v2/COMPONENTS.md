@@ -12,7 +12,7 @@ Every component on the board, what it does, what it connects to, and why it exis
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| J3 | JST ZH 2-pin SMD (`VIN_BARREL_PIGTAIL`) | JST_ZH_B2B-ZR-SM4-TF | -- | +12V, GND | 12V DC power input. The board uses a 2-pin JST that mates with an external pigtail terminating in a barrel jack. The phone runs on a 12V supply because the ringer bell needs 12V, and the LM2596 buck converter steps it down for everything else. |
+| J3 | JST ZH 2-pin SMD (`VIN_BARREL_PIGTAIL`) | JST_ZH_B2B-ZR-SM4-TF | C265284 | +12V, GND | 12V DC power input. The board uses a 2-pin JST that mates with an external pigtail terminating in a barrel jack. The phone runs on a 12V supply because the ringer bell needs 12V, and the LM2596 buck converter steps it down for everything else. |
 | F1 | 1.5A PTC fuse | 1210 | C70102 | J3 -> +12V rail | Resettable overcurrent protection on the +12V input. Trips at 1.5A to protect the board from shorts or excessive draw. Resets automatically when the fault clears. Placed between J3 and all downstream 12V consumers. |
 | C4 | 100nF 50V X7R | 0805 | C49678 | +12V, GND | High-frequency bypass on the +12V rail. Filters supply noise visible to U2 (DRV8871) and other +12V consumers. Pairs with C1 (470uF +12V bulk) and the ringer-local C54/C55 pair on the ringer sheet. |
 
@@ -27,7 +27,7 @@ Converts the 12V wall adapter input to 5V for the Pi Zero 2 W and the 3.3V LDO. 
 | C2 | 220uF 25V electrolytic | 8x6.5mm SMD | C2895286 | +5V, GND | Output bulk capacitor for U1. Smooths the 5V output ripple. 220uF is the LM2596 datasheet minimum for stable regulation. |
 | L1 | 33uH shielded inductor | 12x12mm SMD | C9400 | U1 SW pin, D1 cathode / C2 junction | Energy storage inductor for the buck topology. During U1's on-time, current ramps up through L1 storing energy in the magnetic field. During off-time, L1 releases energy through D1 to maintain current flow. 33uH is sized per the LM2596 datasheet for 5V/3A output from 12V input. Shielded to reduce EMI. |
 | D1 | SS54 Schottky diode | SMA (DO-214AC) | C22452 | L1 / U1 SW junction, GND | Freewheeling (catch) diode for the buck converter. When U1's internal switch turns off, L1's magnetic field collapses and current must continue flowing -- D1 provides that path. Schottky type for low forward voltage drop (0.5V vs 0.7V for standard diodes), improving efficiency and reducing heat. 5A/40V rated, matching the LM2596's current capability. |
-| C56 | 100nF 50V X7R | 0402 | C1525 | +5V, GND | High-frequency bypass at the buck output, complementing C2's bulk role. Added in Phase G ringer work to give the +5V rail a short-loop HF return path before it fans out to the Pi header and U5. |
+| C56 | 100nF 50V X7R | 0402 | C307331 | +5V, GND | High-frequency bypass at the buck output, complementing C2's bulk role. Added in Phase G ringer work to give the +5V rail a short-loop HF return path before it fans out to the Pi header and U5. |
 
 ## 5V to 3.3V LDO
 
@@ -46,14 +46,14 @@ Bare RP2040 chip (replacing the Pico H module from V1) with its minimal support 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U3 | RP2040 | QFN-56 (7x7mm) | C2040 | Everything | Dual-core ARM Cortex-M0+ microcontroller. Runs the phone firmware: scans the 4x3 keypad matrix, detects hook switch state, drives the ringer bell via DRV8871, controls the indicator LED, and communicates with the Pi over UART. Also exposes SWD pins for firmware flashing from the Pi. |
-| C12-C16, C28 | 6x 100nF 50V X7R | 0402 | C1525 | +3V3 to GND, one per RP2040 IOVDD pin (1, 10, 22, 33, 42, 49) | Per-pin high-frequency decoupling for U3 IOVDD pins per RP2040 datasheet section 2.9.1. The RP2040 has 6 IOVDD pins and the datasheet mandates one 100nF cap near each. |
-| C29, C30 | 2x 100nF 50V X7R | 0402 | C1525 | DVDD_1V1 to GND, at U3 pins 23 and 50 | Per-pin decoupling for U3 DVDD pins per RP2040 section 2.9.2. DVDD_1V1 is the RP2040's internal 1.1V rail sourced at VREG_VOUT (pin 45). |
+| C12-C16, C28 | 6x 100nF 50V X7R | 0402 | C307331 | +3V3 to GND, one per RP2040 IOVDD pin (1, 10, 22, 33, 42, 49) | Per-pin high-frequency decoupling for U3 IOVDD pins per RP2040 datasheet section 2.9.1. The RP2040 has 6 IOVDD pins and the datasheet mandates one 100nF cap near each. |
+| C29, C30 | 2x 100nF 50V X7R | 0402 | C307331 | DVDD_1V1 to GND, at U3 pins 23 and 50 | Per-pin decoupling for U3 DVDD pins per RP2040 section 2.9.2. DVDD_1V1 is the RP2040's internal 1.1V rail sourced at VREG_VOUT (pin 45). |
 | C10 | 1uF 10V X7R | 0402 | C52923 | DVDD_1V1, GND, at U3.45 VREG_VOUT | Bulk cap on the DVDD_1V1 rail at the internal regulator output. Matches the Pico reference design. |
 | C31 | 1uF 10V X7R | 0402 | C52923 | +3V3, GND, at U3.44 VREG_VIN | Local cap at VREG_VIN per RP2040 section 2.9.3 ("a 1uF capacitor should be connected between VREG_VIN and ground close to the chip's VREG_VIN pin"). |
-| C32 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U3.48 USB_VDD | USB_VDD decap per section 2.9.4. Even though no USB connector is populated, USB_VDD is still tied to +3V3 and needs decoupling because the internal USB PHY remains powered. |
-| C33 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U3.43 ADC_AVDD | ADC_AVDD decap per section 2.9.5. Even though the ADC is unused on this board, the datasheet mandates the decap because ADC_AVDD powers internal bandgap and reset/brownout reference circuitry. |
-| R5 | 10k 1% | 0402 | C25744 | RUN (U3.26), +3V3 | Pull-up resistor on the RUN (reset) pin. Keeps the RP2040 out of reset during normal operation. The RUN pin is active-low, pulling it to GND resets the chip. Without R5 the pin could float and cause intermittent resets. |
-| C35 | 100nF 50V X7R | 0402 | C1525 | RUN (U3.26), GND | POR filter cap on RUN. Together with R5 (10k) forms an RC with ~1us time constant that smooths the power-up ramp so the RP2040 releases reset cleanly after +3V3 stabilizes. Matches the official Pico reference schematic. |
+| C32 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U3.48 USB_VDD | USB_VDD decap per section 2.9.4. Even though no USB connector is populated, USB_VDD is still tied to +3V3 and needs decoupling because the internal USB PHY remains powered. |
+| C33 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U3.43 ADC_AVDD | ADC_AVDD decap per section 2.9.5. Even though the ADC is unused on this board, the datasheet mandates the decap because ADC_AVDD powers internal bandgap and reset/brownout reference circuitry. |
+| R5 | 10k 1% | 0402 | C60490 | RUN (U3.26), +3V3 | Pull-up resistor on the RUN (reset) pin. Keeps the RP2040 out of reset during normal operation. The RUN pin is active-low, pulling it to GND resets the chip. Without R5 the pin could float and cause intermittent resets. |
+| C35 | 100nF 50V X7R | 0402 | C307331 | RUN (U3.26), GND | POR filter cap on RUN. Together with R5 (10k) forms an RC with ~1us time constant that smooths the power-up ramp so the RP2040 releases reset cleanly after +3V3 stabilizes. Matches the official Pico reference schematic. |
 
 ## RP2040 Crystal Oscillator
 
@@ -62,9 +62,9 @@ Provides the 12MHz reference clock that the RP2040's PLL multiplies up to the op
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | Y1 | Abracon ABM8-272-T3 (12MHz, CL=10pF, ESR<=50Ohm) | 3225 (3.2x2.5mm) | C9002 | U3 XIN (pin 20), Y1.3 -> R9 -> U3 XOUT (pin 21) | 12MHz crystal mandated by RP2040 datasheet section 2.16.1.1 ("Raspberry Pi Pico has been specifically tuned for the specifications of the Abracon ABM8-272-T3"). Do not substitute. |
-| C5 | 15pF 50V C0G | 0402 | -- | Y1.1 (Xi signal pad), GND | Crystal load cap (XIN side). C_load = 2*(CL - C_stray) = 2*(10 - 2.5) = 15pF for CL = 10pF and typical 2.5pF stray. C0G dielectric for temperature stability. Y1.1 is the Xi signal pad per Abracon ABM8 pinout (pads 1/3 signal, 2/4 case GND). |
-| C6 | 15pF 50V C0G | 0402 | -- | Y1.3 (Xo signal pad), GND | Crystal load cap (XOUT side). Y1.3 is the Xo signal pad. The RP2040's XOUT drive reaches Y1.3 through the R9 damping resistor, NOT directly. |
-| R9 | 1k 1% | 0402 | -- | U3.21 (XOUT) in series to Y1.3 | XOUT series damping resistor. RPi "Hardware design with RP2040" section 2 explicitly specifies this for IOVDD = 3.3V designs. Limits crystal drive level and prevents overdrive. Net topology: U3.21 -> XOUT_MCU -> R9.1, R9.2 -> XOUT -> Y1.3, C6.1. Y1.2 and Y1.4 are case GND, NOT signal. |
+| C5 | 15pF 50V C0G | 0402 | C1548 | Y1.1 (Xi signal pad), GND | Crystal load cap (XIN side). C_load = 2*(CL - C_stray) = 2*(10 - 2.5) = 15pF for CL = 10pF and typical 2.5pF stray. C0G dielectric for temperature stability. Y1.1 is the Xi signal pad per Abracon ABM8 pinout (pads 1/3 signal, 2/4 case GND). |
+| C6 | 15pF 50V C0G | 0402 | C1548 | Y1.3 (Xo signal pad), GND | Crystal load cap (XOUT side). Y1.3 is the Xo signal pad. The RP2040's XOUT drive reaches Y1.3 through the R9 damping resistor, NOT directly. |
+| R9 | 1k 1% | 0402 | C11702 | U3.21 (XOUT) in series to Y1.3 | XOUT series damping resistor. RPi "Hardware design with RP2040" section 2 explicitly specifies this for IOVDD = 3.3V designs. Limits crystal drive level and prevents overdrive. Net topology: U3.21 -> XOUT_MCU -> R9.1, R9.2 -> XOUT -> Y1.3, C6.1. Y1.2 and Y1.4 are case GND, NOT signal. |
 
 ## QSPI Flash
 
@@ -73,7 +73,7 @@ External flash memory storing the RP2040's firmware. Connected via a 4-bit QSPI 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U4 | W25Q16JVSSIQ | SOIC-8 | C131025 | U3 QSPI pins (SS, SCLK, SD0-3), +3V3, GND | 2MB SPI NOR flash. Stores the RP2040 firmware image (UF2 format). Connected via 4-bit QSPI for fast sequential reads during boot. The RP2040 boots by reading code from this chip into internal SRAM. |
-| C34 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U4.8 VCC | Flash VCC decoupling cap. Winbond W25Q16JV datasheet requires a 100nF ceramic as close as possible to pin 8. QSPI read bursts draw ~20mA transients; without this cap they couple back into +3V3 and can corrupt XIP instruction fetches. |
+| C34 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U4.8 VCC | Flash VCC decoupling cap. Winbond W25Q16JV datasheet requires a 100nF ceramic as close as possible to pin 8. QSPI read bursts draw ~20mA transients; without this cap they couple back into +3V3 and can corrupt XIP instruction fetches. |
 
 **QSPI_SS has no external pullup.** The RP2040 bootrom drives /CS actively within nanoseconds of reset, and neither the Pico nor any of the Raspberry Pi Press RP2040 references populate a pullup here.
 
@@ -87,26 +87,26 @@ Onboard audio codec replacing the external Codec Zero HAT (~$20/unit). Provides 
 |-----|------|---------|------|----------|---------|
 | U6 | TLV320AIC3104IRHBR | VQFN-32 5x5mm (Texas_RHB0032E) | C181753 | I2S bus (CODEC_BCLK/WCLK/DIN/DOUT/MCLK), I2C bus (CODEC_SDA/SCL), mic frontend, earpiece BTL outputs, +3V3, +1V8 (DVDD), GND | Low-power stereo audio codec with 24-bit ADC/DAC, 8-96kHz sample rates. Mic preamp with 59.5dB gain and AGC (ideal for telephony). Headphone amp drives the earpiece directly in BTL mode. Clocks derived from BCLK via internal PLL (no MCLK strictly required, though GPCLK0 is wired as fallback). I2C address fixed at 0x18. Linux driver: `tlv320aic3x.c` (mainline). |
 | U7 | XC6206P182MR | SOT-23-3 | C347373 | +3V3 in, +1V8 out (-> U6.32 DVDD), GND | 1.8V fixed-output LDO. Generates the codec's DVDD rail externally. The TLV320AIC3104 has an internal DVDD LDO option, but we feed DVDD from this external part to keep the digital supply quiet and allow the internal LDO to be disabled in software. |
-| C36 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U7.3 (VIN) | LDO input decoupling for U7. Per XC6206 datasheet typical application. |
+| C36 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U7.3 (VIN) | LDO input decoupling for U7. Per XC6206 datasheet typical application. |
 | C37 | 10uF 6.3V X7R | 0402 | C15525 | +1V8, GND, at U7.2 (VOUT) | LDO output bulk for U7. Stabilizes the +1V8 rail and supplies bulk current for U6's digital core. |
-| C38 | 100nF 50V X7R | 0402 | C1525 | +1V8, GND, at U6.32 (DVDD) | DVDD close-in decoupling per SLAS510G section 13.1. Tightly coupled to the DVDD pin to suppress digital switching noise. |
+| C38 | 100nF 50V X7R | 0402 | C307331 | +1V8, GND, at U6.32 (DVDD) | DVDD close-in decoupling per SLAS510G section 13.1. Tightly coupled to the DVDD pin to suppress digital switching noise. |
 | C39 | 1uF 10V X7R | 0402 | C52923 | +1V8, GND, at U6.32 (DVDD) | DVDD close-in bulk per SLAS510G Fig 11-1. Second cap on the same pin; lower-frequency complement to C38. |
-| C40 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U6.7 (IOVDD) | IOVDD close-in decoupling per SLAS510G section 13.1. |
-| C41 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U6.18 (DRVDD) | First DRVDD pin close-in decoupling. Drives one half of the headphone amp output stage. |
-| C42 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U6.24 (DRVDD) | Second DRVDD pin close-in decoupling. Drives the other half of the headphone amp output stage. |
-| C43 | 100nF 50V X7R | 0402 | C1525 | +3V3, GND, at U6.25 (AVDD) | AVDD close-in decoupling. Filters analog supply noise for the ADC/DAC analog stages. |
+| C40 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U6.7 (IOVDD) | IOVDD close-in decoupling per SLAS510G section 13.1. |
+| C41 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U6.18 (DRVDD) | First DRVDD pin close-in decoupling. Drives one half of the headphone amp output stage. |
+| C42 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U6.24 (DRVDD) | Second DRVDD pin close-in decoupling. Drives the other half of the headphone amp output stage. |
+| C43 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U6.25 (AVDD) | AVDD close-in decoupling. Filters analog supply noise for the ADC/DAC analog stages. |
 | C44 | 1uF 10V X7R | 0402 | C52923 | +3V3, GND, near U6 EP | +3V3 rail bulk cap shared across U6 power pins. Placed near the EP / chip center where it can serve all power pins with short loops. |
 | C45 | 10uF 6.3V X7R | 0402 | C15525 | +3V3, GND, near U6 EP | +3V3 rail main bulk. Larger sibling of C44 for low-frequency reservoir. |
-| C46 | 0.47uF X7R | 0402 | -- | U6.10 (MIC1LP) <- MIC_FROM_SW | Mic input AC coupling, hot side. Blocks DC bias from R10/MICBIAS while passing the audio signal from the electret mic through to the codec's mic preamp input. 0.47uF gives a ~3.4Hz HPF corner well below the telephony band. |
-| C47 | 0.47uF X7R | 0402 | -- | U6.11 (MIC1LM) <- AGND | Mic input AC coupling, return side. Maintains differential symmetry with C46. |
-| C48 | 100nF 50V X7R | 0402 | C1525 | U6.15 (MICBIAS), GND | MICBIAS bypass per SLAS510G section 10.3.9 / Fig 11-1. Cleans up the codec's bias output before it reaches the mic. |
-| C49 | 100nF 50V X7R | 0402 | C1525 | U6.12 (MIC1RP), GND | Unused mic input termination. Per TI guidance, floating analog inputs can pick up noise that couples into the active signal path. |
-| C50 | 100nF 50V X7R | 0402 | C1525 | U6.13 (MIC1RM), GND | Unused mic input termination (companion to C49). |
-| C51 | 100nF 50V X7R | 0402 | C1525 | U6.14 (MIC2L), GND | Unused mic input termination. |
-| C52 | 100nF 50V X7R | 0402 | C1525 | U6.16 (MIC2R), GND | Unused mic input termination. |
+| C46 | 0.47uF 10V X5R | 0402 | C47339 | U6.10 (MIC1LP) <- MIC_FROM_SW | Mic input AC coupling, hot side. Blocks DC bias from R10/MICBIAS while passing the audio signal from the electret mic through to the codec's mic preamp input. 0.47uF gives a ~3.4Hz HPF corner well below the telephony band. |
+| C47 | 0.47uF 10V X5R | 0402 | C47339 | U6.11 (MIC1LM) <- AGND | Mic input AC coupling, return side. Maintains differential symmetry with C46. |
+| C48 | 100nF 50V X7R | 0402 | C307331 | U6.15 (MICBIAS), GND | MICBIAS bypass per SLAS510G section 10.3.9 / Fig 11-1. Cleans up the codec's bias output before it reaches the mic. |
+| C49 | 100nF 50V X7R | 0402 | C307331 | U6.12 (MIC1RP), GND | Unused mic input termination. Per TI guidance, floating analog inputs can pick up noise that couples into the active signal path. |
+| C50 | 100nF 50V X7R | 0402 | C307331 | U6.13 (MIC1RM), GND | Unused mic input termination (companion to C49). |
+| C51 | 100nF 50V X7R | 0402 | C307331 | U6.14 (MIC2L), GND | Unused mic input termination. |
+| C52 | 100nF 50V X7R | 0402 | C307331 | U6.16 (MIC2R), GND | Unused mic input termination. |
 | C53 | 1nF 50V X7R | 0402 | C1523 | U6.31 (RESET), GND | RESET ESD protection cap. Filters transient voltage spikes on the active-low RESET pin. |
 | R10 | 2.2k 1% | 0402 | C25879 | U6.15 (MICBIAS) -> MIC_FROM_SW | MICBIAS series resistor. The codec's MICBIAS output provides ~2V DC through R10 to bias the electret mic element. R10 limits current and sets the bias point. |
-| R11 | 10k 1% | 0402 | C25744 | U6.31 (RESET), +3V3 | RESET pullup. Keeps the codec out of hardware reset during normal operation. The driver can soft-reset via I2C register writes if needed. |
+| R11 | 10k 1% | 0402 | C60490 | U6.31 (RESET), +3V3 | RESET pullup. Keeps the codec out of hardware reset during normal operation. The driver can soft-reset via I2C register writes if needed. |
 
 ## Motor Driver / Ringer (`/ringer/` hierarchical sheet)
 
@@ -115,8 +115,8 @@ H-bridge motor driver that drives the phone's mechanical bell. The RP2040 genera
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
 | U2 | DRV8871DDAR | HTSOP-8 with EP (SOIC-8 footprint) | C75864 | +12V (VM pin 5), RP2040 GPIO19/15 (IN1/IN2 via RINGER_IN1/RINGER_IN2), R2 (ILIM pin 4), J7 (OUT1/OUT2 pins 6/8), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
-| C54 | 100nF 50V X7R | 0402 | C1525 | +12V (U2.5 VM), GND | VM HF bypass for U2, placed within 3mm of U2.5 per `ringer-module-spec.md`. |
-| C55 | 47uF >=25V electrolytic | 5x5.3mm SMD | -- | +12V (U2.5 VM), GND | VM bulk reservoir for U2, placed within 6mm of U2.5. Absorbs the inductive kickback from the bell coil during direction reversals. |
+| C54 | 100nF 50V X7R | 0402 | C307331 | +12V (U2.5 VM), GND | VM HF bypass for U2, placed within 3mm of U2.5 per `ringer-module-spec.md`. |
+| C55 | 47uF 25V electrolytic (Panasonic EEEFT1E470AR, D5×H5.8mm) | 5x5.3mm SMD footprint | C336270 | +12V (U2.5 VM), GND | VM bulk reservoir for U2, placed within 6mm of U2.5. Absorbs the inductive kickback from the bell coil during direction reversals. |
 | R2 | 33k 1% | 0402 | C25779 | U2.4 (ILIM), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet Equation 1. The 33kOhm value and the resulting I_TRIP need to be re-derived from the datasheet before final sign-off (ringer spec records ~1.94A, but earlier revisions logged ~0.94A; the two are not reconcilable without a fresh calculation). |
 
 ## Connectors

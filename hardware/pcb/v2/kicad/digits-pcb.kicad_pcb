@@ -17664,63 +17664,59 @@
 		)
 	)
 	(footprint "Connector_PinHeader_2.54mm:PinHeader_2x20_P2.54mm_Vertical"
-		(layer "B.Cu")
+		(layer "F.Cu")
 		(uuid "a70c7adc-02c7-44d1-accc-7cd3b50016f8")
 		(at 29.21 66.9)
 		(descr "Through hole straight pin header, 2x20, 2.54mm pitch, double rows")
 		(tags "Through hole pin header THT 2x20 2.54mm double row")
 		(property "Reference" "J1"
 			(at 1.27 2.38 0)
-			(layer "B.SilkS")
-			(uuid "3421bc1c-7194-4022-833f-e89fa67614ad")
+			(layer "F.SilkS")
+			(uuid "b8772508-0d05-4430-8bab-4db12d9ae875")
 			(effects
 				(font
 					(size 0.6 0.6)
 					(thickness 0.1)
 				)
-				(justify mirror)
 			)
 		)
 		(property "Value" "Conn_02x20_Odd_Even"
 			(at 5.18 -38.91 0)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(hide yes)
-			(uuid "badb7b6a-ef28-4cd1-944b-00f2f313d9d5")
+			(uuid "441e8381-2a60-454f-afeb-d7925a22d759")
 			(effects
 				(font
 					(size 1 1)
 					(thickness 0.15)
 				)
-				(justify mirror)
 			)
 		)
 		(property "Datasheet" ""
 			(at 0 0 0)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(hide yes)
-			(uuid "f7efc156-bf50-495e-ac1a-3b6b93938a9f")
+			(uuid "aaf35759-3b43-4d23-86a9-c5b020841c74")
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify mirror)
 			)
 		)
 		(property "Description" "Generic connector, double row, 02x20, odd/even pin numbering scheme (row 1 odd numbers, row 2 even numbers), script generated (kicad-library-utils/schlib/autogen/connector/)"
 			(at 0 0 0)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(hide yes)
-			(uuid "fdd3e772-43fb-4482-8866-a30d9706d0f5")
+			(uuid "ea85892a-4831-445d-9022-5358930b281d")
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify mirror)
 			)
 		)
 		(property "KiLib_Generator" "connector/pin_header_socket"
 			(at 0 0 0)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(hide yes)
 			(uuid "5de8e6e0-f04d-4923-a34c-8adb93a533d6")
 			(effects
@@ -17728,13 +17724,12 @@
 					(size 1 1)
 					(thickness 0.15)
 				)
-				(justify mirror)
 			)
 		)
 		(property "LCSC Part #" ""
 			(at 0 0 0)
 			(unlocked yes)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(hide yes)
 			(uuid "68580fbd-77f2-4858-8b8b-e70a02a8e25e")
 			(effects
@@ -17742,7 +17737,6 @@
 					(size 1 1)
 					(thickness 0.15)
 				)
-				(justify mirror)
 			)
 		)
 		(property ki_fp_filters "Connector*:*_2x??_*")
@@ -17767,7 +17761,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "07526368-8a0e-4463-a933-26d9c22c81b0")
 		)
 		(fp_line
@@ -17777,7 +17771,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "cf819983-332d-4299-820b-9ecdf44c6041")
 		)
 		(fp_line
@@ -17787,7 +17781,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "9b763a56-f76e-4c18-91e4-efe64706c363")
 		)
 		(fp_line
@@ -17797,7 +17791,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "9941ba23-6c47-43ab-80f0-6440f41391ab")
 		)
 		(fp_line
@@ -17807,7 +17801,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "c6a0d039-4386-4c85-ac23-5a8fc7e43a07")
 		)
 		(fp_line
@@ -17817,7 +17811,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "ec1d4a27-fbcf-4284-827a-ca97d2d1fe17")
 		)
 		(fp_line
@@ -17827,7 +17821,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "14a493ee-3c71-4474-bdcd-41e75f1e4089")
 		)
 		(fp_line
@@ -17837,7 +17831,7 @@
 				(width 0.12)
 				(type solid)
 			)
-			(layer "B.SilkS")
+			(layer "F.SilkS")
 			(uuid "4e2d8af7-98ba-4b54-8bd0-b2efee7b9570")
 		)
 		(fp_rect
@@ -17848,7 +17842,7 @@
 				(type solid)
 			)
 			(fill no)
-			(layer "B.CrtYd")
+			(layer "F.CrtYd")
 			(uuid "7f522aed-8017-4659-8096-2258a525967f")
 		)
 		(fp_line
@@ -17858,7 +17852,7 @@
 				(width 0.1)
 				(type solid)
 			)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "fa442477-4b77-4bfb-83aa-66d133d8af19")
 		)
 		(fp_line
@@ -17868,7 +17862,7 @@
 				(width 0.1)
 				(type solid)
 			)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "90d7fe9e-79a6-4ba0-bb7e-61fa100295b5")
 		)
 		(fp_line
@@ -17878,7 +17872,7 @@
 				(width 0.1)
 				(type solid)
 			)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "4013ffa4-9981-4fea-b830-80a5d580a528")
 		)
 		(fp_line
@@ -17888,7 +17882,7 @@
 				(width 0.1)
 				(type solid)
 			)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "ff5b0339-df6b-4ded-9aad-8cffba78d04d")
 		)
 		(fp_line
@@ -17898,19 +17892,18 @@
 				(width 0.1)
 				(type solid)
 			)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "cdeca3cc-f011-4086-b24f-1e3f85fbbf0c")
 		)
 		(fp_text user "${REFERENCE}"
 			(at 1.27 -24.13 90)
-			(layer "B.Fab")
+			(layer "F.Fab")
 			(uuid "69dd7f4a-800c-4c9b-b701-99ba9a6e4d9a")
 			(effects
 				(font
 					(size 1 1)
 					(thickness 0.15)
 				)
-				(justify mirror)
 			)
 		)
 		(pad "1" thru_hole rect

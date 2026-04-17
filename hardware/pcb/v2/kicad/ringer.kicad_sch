@@ -337,6 +337,9 @@
     (property "Description" "" (at 130.0 80.0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
+    (property "LCSC Part #" "C75864" (at 0 0 0) (show_name)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "digits-pcb"
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -366,6 +369,9 @@
     )
     (property "Description" "" (at 148.0 88.89 0)
       (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "LCSC Part #" "C25779" (at 0 0 0) (show_name)
+      (effects (font (size 1.27 1.27)))
     )
     (instances
       (project "digits-pcb"
@@ -397,6 +403,9 @@
     (property "Description" "" (at 115.0 73.65 0)
       (effects (font (size 1.27 1.27)) hide)
     )
+    (property "LCSC Part #" "C307331" (at 0 0 0) (show_name)
+      (effects (font (size 1.27 1.27)))
+    )
     (instances
       (project "digits-pcb"
         (path "/a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -426,6 +435,9 @@
     )
     (property "Description" "" (at 105.0 73.65 0)
       (effects (font (size 1.27 1.27)) hide)
+    )
+    (property "LCSC Part #" "C336270" (at 0 0 0) (show_name)
+      (effects (font (size 1.27 1.27)))
     )
     (instances
       (project "digits-pcb"
