@@ -2,6 +2,10 @@
 
 Issues discovered during board review (2026-04-09). These apply to all 30 fabricated v1 boards.
 
+**v1.1 design supersedes these fixes.** The current schematic + project files in this directory are being evolved toward a v1.1 respin that resolves the items below in the design itself, so future fabrications don't need the physical workarounds. Fabricated v1 boards still need the workarounds.
+
+Per-item v1.1 status is called out at the bottom of each section.
+
 ---
 
 ## Must Fix Before Assembly
@@ -16,6 +20,8 @@ The trace connecting U1 OUT (pin 2), D1 cathode, and L1 is routed at 0.25mm (Def
 
 **Fix for future revisions:** Add `Net-(D1*` to the Power net class patterns in the project file, or give the switching node an explicit label (e.g., `SW_NODE`) and add it to the Power pattern list.
 
+**v1.1 status: APPLIED.** Switching node labeled `VSW` in the schematic, `VSW` added to the Power netclass patterns in `digits-pcb.kicad_pro`. Future v1.1 fabs get 0.75mm routing automatically.
+
 ### 2. J1 (Pi header) pin 1 orientation -- column swap when mounting Pi underneath
 
 The 2x20 header (J1) is placed on B.Cu with 180-degree rotation. The combination of KiCad's automatic B.Cu mirror and the 180-degree rotation causes the odd/even pin columns to swap compared to what's needed for correct Pi mating from below.
@@ -23,6 +29,8 @@ The 2x20 header (J1) is placed on B.Cu with 180-degree rotation. The combination
 **Workaround:** Mount the entire PCB "upside down" from the original plan. The Pi + Codec Zero stack goes on top through a standard female stacking header. Move the hook switch (SW1) and any connectors that need physical access to the opposite side of the board.
 
 **Fix for future revisions:** Remove the 180-degree rotation on J1. The B.Cu mirror alone produces correct mating orientation.
+
+**v1.1 status: PENDING.** Needs PCB layout change (rotate J1 to 0°). Relevant even in the planned v1.1 J_CODEC arrangement, since the Pi still plugs into J1.
 
 ---
 
@@ -34,15 +42,21 @@ J3 (barrel jack) connects directly to the +12V rail with no protection. A miside
 
 **Workaround:** Solder a 1N5822 Schottky diode in series with the barrel jack positive lead before it reaches the board. Can be done inline on the wire.
 
+**v1.1 status: PENDING.** Add a 1N5822 (or SMD equivalent) footprint in series with J3's positive leg.
+
 ### 4. Add decoupling cap near Pico VSYS
 
 The Pico receives +5V on VSYS with no local decoupling cap on the carrier board. The LM2596 switching noise could affect the Pico's onboard regulator.
 
 **Workaround:** Tack a 100nF ceramic cap between VSYS and GND on the back of the Pico header or on the carrier board near the Pico's power pins.
 
+**v1.1 status: PENDING.** Add a 100nF 0402/0603 next to the Pico footprint.
+
 ### 5. Connect J1 pin 4 (+5V) in addition to pin 2
 
 Only pin 2 carries +5V to the Pi. Connecting pin 4 as well halves contact resistance and adds redundancy. Not critical at current draw levels (~500mA peak for Pi + Codec Zero).
+
+**v1.1 status: PENDING.** Trivial: tie J1 pin 4 to the +5V rail alongside pin 2.
 
 ---
 
