@@ -506,6 +506,17 @@
         "tuning_profile": "",
         "via_diameter": 0.5,
         "via_drill": 0.3
+      },
+      {
+        "clearance": 0.13,
+        "name": "Switching",
+        "pcb_color": "rgba(0, 0, 0, 0.000)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.75,
+        "tuning_profile": "",
+        "via_diameter": 0.6,
+        "via_drill": 0.3
       }
     ],
     "meta": {
@@ -528,7 +539,23 @@
       },
       {
         "netclass": "Power",
-        "pattern": "VIN_RAW"
+        "pattern": "/VIN_RAW"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "+3V3"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "BELL_A"
+      },
+      {
+        "netclass": "Power",
+        "pattern": "BELL_B"
+      },
+      {
+        "netclass": "Switching",
+        "pattern": "SW_NODE"
       }
     ]
   },
