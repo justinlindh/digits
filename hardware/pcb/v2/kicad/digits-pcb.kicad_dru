@@ -1,0 +1,31 @@
+(version 1)
+
+# Catch netclass-assignment regressions before fab. Motivated by the 2026-04-18
+# SW_NODE incident (v2 was sent to fab with a 2A switching node on 0.2mm Default
+# trace because the schematic label existed but the project netclass pattern was
+# missing). See hardware/pcb/v2/ERRATA.md.
+
+# Switching node must be routed at Switching class (0.75mm) on F.Cu only, no vias.
+(rule "sw_node_min_width"
+    (condition "A.NetName == 'SW_NODE'")
+    (constraint track_width (min 0.75mm))
+    (severity error))
+
+(rule "sw_node_no_vias"
+    (condition "A.Type == 'Via' && A.NetName == 'SW_NODE'")
+    (constraint disallow via)
+    (severity error))
+
+(rule "sw_node_front_only"
+    (condition "A.NetName == 'SW_NODE' && A.Type == 'Track' && A.Layer != 'F.Cu'")
+    (constraint disallow track)
+    (severity error))
+
+# Power nets that carry >0.5A peak must be at least 0.4mm (IPC-2221 at 20C rise).
+# Catches unmatched patterns (e.g., /VIN_RAW vs VIN_RAW hierarchical-prefix
+# mismatches) and accidental Default class fall-through on high-current rails.
+# +3V3 is intentionally omitted: peak 400mA on 0.2mm is within IPC spec (+4C rise).
+(rule "power_rail_min_width"
+    (condition "A.NetName == '+5V' || A.NetName == '+12V' || A.NetName == '/VIN_RAW' || A.NetName == 'BELL_A' || A.NetName == 'BELL_B'")
+    (constraint track_width (min 0.4mm))
+    (severity error))

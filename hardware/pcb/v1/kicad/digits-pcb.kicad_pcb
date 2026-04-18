@@ -13716,6 +13716,17 @@
 		(layer "Edge.Cuts")
 		(uuid "8168e090-0c47-4172-9a3a-5ec4372d1d8b")
 	)
+	(gr_text "Digits v1.1"
+		(at 53 68 0)
+		(layer "F.SilkS")
+		(uuid "13c58d0d-79c0-4c28-8236-5c527888b591")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
 	(segment
 		(start 59.5589 68.4226)
 		(end 58.6237 69.3578)
