@@ -22,6 +22,7 @@ fabrication-toolkit-options.json
 # DRC / ERC output artifacts
 *_drc_violations.json
 *-erc.rpt
+*-drc.rpt
 
 # kicad-mcp-server snapshots
 snapshots/

@@ -5820,6 +5820,16 @@
 		)
 		(uuid "02610f39-ec01-4f9d-98c0-dd6d7b78937b")
 	)
+	(label "VSW"
+		(at 140.97 170.18 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "c938d8a0-8a8a-4c8e-bf65-b5331735869a")
+	)
 	(label "KP_ROW3"
 		(at 85.09 95.25 180)
 		(effects
