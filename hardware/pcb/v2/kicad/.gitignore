@@ -6,6 +6,13 @@
 
 # KiCad local history
 .history/
+.history_trim/
+
+# Local pre-routing / checkpoint snapshots (not part of board source)
+*-pre-freeroute.*
+
+# Fabrication toolkit plugin-local config
+fabrication-toolkit-options.json
 
 # Autorouter intermediate files
 *.dsn

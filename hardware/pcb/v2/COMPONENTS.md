@@ -81,7 +81,7 @@ External flash memory storing the RP2040's firmware. Connected via a 4-bit QSPI 
 
 ## Audio Codec (`/codec/` hierarchical sheet)
 
-Onboard audio codec replacing the external Codec Zero HAT (~$20/unit). Provides I2S ADC/DAC with built-in mic preamp and headphone amplifier. Controlled by the Pi over I2C, audio data streams over I2S. Detailed in `codec-module-spec.md`. Per-pin placement constraints in `codec_targets.json`.
+Onboard audio codec replacing the external Codec Zero HAT (~$20/unit). Provides I2S ADC/DAC with built-in mic preamp and headphone amplifier. Controlled by the Pi over I2C, audio data streams over I2S. Detailed in `codec-module-spec.md`.
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
@@ -110,7 +110,7 @@ Onboard audio codec replacing the external Codec Zero HAT (~$20/unit). Provides 
 
 ## Motor Driver / Ringer (`/ringer/` hierarchical sheet)
 
-H-bridge motor driver that drives the phone's mechanical bell. The RP2040 generates a square wave on IN1/IN2 to make the bell hammer oscillate. Detailed in `ringer-module-spec.md`. Per-pin placement constraints in `ringer_targets.json`.
+H-bridge motor driver that drives the phone's mechanical bell. The RP2040 generates a square wave on IN1/IN2 to make the bell hammer oscillate. Detailed in `ringer-module-spec.md`.
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
@@ -196,4 +196,4 @@ Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric** -- the name de
 | EAR_N | U6 HPLCOM (pin 20) | J8 pin 3 | Earpiece negative/return (BTL second leg). |
 | RUN | R5 pullup, C35 POR cap | U3 pin 26 | RP2040 reset (active low). Held high by R5; C35 smooths power-up. |
 
-**Pin numbers above match `codec_targets.json` for U6 power rails (U6.7 IOVDD, U6.18/24 DRVDD, U6.25 AVDD, U6.32 DVDD). I2S/I2C pin numbers cross-checked against the TLV320AIC3104 RHB0032E datasheet, the schematic symbol definition, and the PCB footprint pad-to-net assignments: all three sources agree.**
+**U6 power-pin assignments (U6.7 IOVDD, U6.18/24 DRVDD, U6.25 AVDD, U6.32 DVDD) and I²S/I²C pin numbers are cross-checked against the TLV320AIC3104 RHB0032E datasheet, the schematic symbol definition, and the PCB footprint pad-to-net assignments: all three sources agree.**

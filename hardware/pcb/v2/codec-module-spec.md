@@ -2,7 +2,6 @@
 
 **Module:** TLV320AIC3104 audio codec, self-contained on hierarchical sheet `codec.kicad_sch`
 **Scope:** The codec and every component required to make it work as an I²S + I²C peripheral for a Raspberry Pi Zero 2 W, driving a mono handset earpiece and accepting mono handset mic audio. Nothing outside this module.
-**Status:** Draft — awaiting user sign-off before implementation (Phase 2 Task 2.2 of `docs/superpowers/plans/2026-04-13-codec-compartmentalized-rebuild.md`)
 
 ---
 
@@ -77,7 +76,7 @@ Total caps on DVDD net: C_LDO_OUT (10 µF) + C_DVDD_1 (100 nF) + optionally C_DV
 
 ### 4.4 +3V3 decoupling — per-pin close-in caps
 
-One 100 nF 0402 X7R per power pin on the codec, each close to its pin, each to GND. Placement limit is set by `codec_targets.json`: **≤ 4.68 mm** centroid-to-pad, derived from the worst-case decap distance on the KiCAD_Board_3_Minimal_Full_RP2040 reference board (11 decaps measured). Datasheet §13.1 only says "as close as possible to the device power supply terminals" without a number, so aligning with a proven reference is the honest calibration. This layer was deliberately omitted from PicoAudioBoard but is present in the Teensy 4 8×8 Audio Board reference; we include it.
+One 100 nF 0402 X7R per power pin on the codec, each close to its pin, each to GND. Placement target is **≤ 4.68 mm** centroid-to-pad, derived from the worst-case decap distance on the KiCAD_Board_3_Minimal_Full_RP2040 reference board (11 decaps measured). Datasheet §13.1 only says "as close as possible to the device power supply terminals" without a number, so aligning with a proven reference is the honest calibration. This layer was deliberately omitted from PicoAudioBoard but is present in the Teensy 4 8×8 Audio Board reference; we include it.
 
 - **C_IOVDD:** 100 nF 0402 close-in at pin 7 (IOVDD), to GND
 - **C_DRVDD1:** 100 nF 0402 close-in at pin 18 (DRVDD #1), to GND

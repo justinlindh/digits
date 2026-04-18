@@ -355,14 +355,7 @@ A 1 kΩ series damping resistor (**R9**) sits on the XOUT side between the RP204
 
 ## RP2040 cluster per-pin decoupling placement
 
-The schematic places 13 decoupling caps (C12–C16, C28 on IOVDD; C29, C30 on DVDD_1V1; C31 on VREG_VIN; C32 on USB_VDD; C33 on ADC_AVDD; C34 on W25Q16 VCC) on the correct rails, but the **KiCad schematic symbol collapses all IOVDD pins and both DVDD pins into single nodes** — so electrical connectivity alone does not prove that each cap is physically adjacent to its named pin after PCB layout. RP2040 DS §2.9 requires each cap within a few millimeters of the pin it decouples.
-
-To make this requirement enforceable instead of a human discipline problem, the mapping is committed as a machine-checkable contract:
-
-- **Source of truth:** [`decoupling_targets.json`](./decoupling_targets.json) — each constrained cap lists its target pad (`U3.<pin>` or `U4.8`), datasheet-justified max distance, and citation.
-- **Checker:** [`tools/check_decoupling.py`](./tools/check_decoupling.py) parses `digits-pcb.kicad_pcb`, computes the centroid-to-pad distance for every entry, and exits non-zero on violation.
-- **Mandatory:** any session that moves a component in the RP2040 cluster on the PCB, or runs F8 to sync from schematic, MUST run the checker before committing. See [`tools/README.md`](./tools/README.md) for the full list of when to run it and how to interpret results.
-- **Current status at commit time:** newly-added caps C28–C34 land at the PCB origin after F8 and require placement; the checker is the punch list.
+The schematic places 13 decoupling caps (C12–C16, C28 on IOVDD; C29, C30 on DVDD_1V1; C31 on VREG_VIN; C32 on USB_VDD; C33 on ADC_AVDD; C34 on W25Q16 VCC) on the correct rails, but the KiCad schematic symbol collapses all IOVDD pins and both DVDD pins into single nodes — so electrical connectivity alone does not prove each cap is physically adjacent to its named pin after PCB layout. RP2040 DS §2.9 requires each cap within a few millimetres of the pin it decouples. The per-pin target mapping is derived from the Raspberry Pi Minimal-KiCAD reference geometry (3.05 mm uniform radial decoupling ring around the QFN) and enforced at placement time.
 
 ## USB
 
