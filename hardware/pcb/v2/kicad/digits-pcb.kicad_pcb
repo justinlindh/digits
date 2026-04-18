@@ -18766,7 +18766,7 @@
 		(layer "Edge.Cuts")
 		(uuid "438fff65-6b59-43f9-a6ee-9fca25f516d8")
 	)
-	(gr_text "Digits V2"
+	(gr_text "Digits V2.0"
 		(at 55 68.5 0)
 		(layer "F.SilkS")
 		(uuid "b29840af-d232-4312-8af4-245411ce1483")
