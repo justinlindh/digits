@@ -9,6 +9,16 @@ set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
+# Hardware revision. Controls GPIO assignments that differ between the v1
+# ElectroCookie protoboard (L298N ringer on GP11) and the v2 carrier PCB
+# (DRV8871 ringer on GP19). Defaults to 1 so prototype devices continue
+# to work; pass -DHARDWARE_REV=2 for v2 carrier boards.
+set(HARDWARE_REV 1 CACHE STRING "Target hardware revision (1 = ElectroCookie prototype, 2 = v2 carrier PCB)")
+if(NOT HARDWARE_REV MATCHES "^[12]$")
+    message(FATAL_ERROR "HARDWARE_REV must be 1 or 2 (got '${HARDWARE_REV}')")
+endif()
+message(STATUS "Building for HARDWARE_REV=${HARDWARE_REV}")
+
 add_executable(digits
     src/main.c
     src/hook.c
@@ -61,6 +71,7 @@ endif()
 target_compile_definitions(digits PRIVATE
     FIRMWARE_VERSION="${DIGITS_VERSION}"
     FIRMWARE_COMMIT="${DIGITS_COMMIT}"
+    HARDWARE_REV=${HARDWARE_REV}
 )
 
 # USB serial for debug console; UART0 reserved for Pi comms
