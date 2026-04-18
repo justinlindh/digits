@@ -29,13 +29,16 @@ if [ -z "${PICO_SDK_PATH:-}" ]; then
     exit 1
 fi
 
+HARDWARE_REV="${HARDWARE_REV:-1}"
+
 echo "Building Digits firmware..."
 echo "  PICO_SDK_PATH=$PICO_SDK_PATH"
+echo "  HARDWARE_REV=$HARDWARE_REV"
 echo "  Build dir: $BUILD_DIR"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
-cmake "$FIRMWARE_DIR" -DPICO_SDK_PATH="$PICO_SDK_PATH"
+cmake "$FIRMWARE_DIR" -DPICO_SDK_PATH="$PICO_SDK_PATH" -DHARDWARE_REV="$HARDWARE_REV"
 make -j"$(nproc)"
 
 echo ""
