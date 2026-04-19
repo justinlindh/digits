@@ -113,13 +113,6 @@ do_station_up() {
 do_ap_up() {
     log "Wi-Fi not configured -- entering AP mode"
 
-    # Clear boot counter -- reaching AP mode means the device booted
-    # successfully. Without this, power-cycling 3 times during initial
-    # setup (before WiFi is configured and digitsd can clear it) would
-    # trip the recovery threshold.
-    BOOT_COUNTER="/data/digits/boot-counter"
-    echo "0" > "$BOOT_COUNTER" 2>/dev/null || true
-
     # Kill NetworkManager -- it fights hostapd for wlan0 and re-blocks rfkill
     systemctl stop NetworkManager.service 2>/dev/null || true
 
