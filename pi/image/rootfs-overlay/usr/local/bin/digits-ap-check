@@ -185,7 +185,14 @@ do_ap_down() {
 
     systemctl start NetworkManager
 
-    log "AP mode down -- NetworkManager started"
+    # do_ap_up stops digitsd.service when entering AP mode. Before the
+    # drop-reboot-on-configure change (PR #175), a reboot brought digitsd
+    # back on the next boot; without the reboot, nothing else restarts
+    # it. Start it here so the device is usable immediately after configure.
+    # --no-block so systemctl returns even if digitsd startup is slow.
+    systemctl start --no-block digitsd.service 2>/dev/null || true
+
+    log "AP mode down -- NetworkManager started, digitsd starting"
 
     systemctl stop digits-setup.service 2>/dev/null || true
 }
