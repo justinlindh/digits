@@ -6,7 +6,18 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func newTestGitHubReleases(owner, repo string) *GitHubReleases {
+	return &GitHubReleases{
+		owner:   owner,
+		repo:    repo,
+		apiBase: "https://api.github.com",
+		client:  &http.Client{},
+		ttl:     300 * time.Second,
+	}
+}
 
 func TestGitHubReleases_BuildsIndex(t *testing.T) {
 	sha256fw := "abc123deadbeef"
@@ -68,9 +79,10 @@ func TestGitHubReleases_BuildsIndex(t *testing.T) {
 	releases[0].Assets[1].BrowserDownloadURL = srv.URL + "/sha256fw"
 	releases[1].Assets[1].BrowserDownloadURL = srv.URL + "/sha256pi"
 
-	gh := NewGitHubReleases("test-owner", "test-repo", 300)
+	gh := newTestGitHubReleases("test-owner", "test-repo")
 	gh.apiBase = srv.URL
 	gh.client = srv.Client()
+	gh.refresh()
 
 	idx := gh.ReleaseIndex()
 	if idx == nil {
@@ -128,11 +140,12 @@ func TestGitHubReleases_CachesTTL(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	gh := NewGitHubReleases("test-owner", "test-repo", 300)
+	gh := newTestGitHubReleases("test-owner", "test-repo")
 	gh.apiBase = srv.URL
 	gh.client = srv.Client()
 
-	// Call multiple times
+	// Fetch once, then read from cache
+	gh.refresh()
 	gh.ReleaseIndex()
 	gh.ReleaseIndex()
 	gh.ReleaseIndex()
@@ -149,10 +162,11 @@ func TestGitHubReleases_APIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	gh := NewGitHubReleases("test-owner", "test-repo", 300)
+	gh := newTestGitHubReleases("test-owner", "test-repo")
 	gh.apiBase = srv.URL
 	gh.client = srv.Client()
 
+	gh.refresh()
 	idx := gh.ReleaseIndex()
 	if idx != nil {
 		t.Errorf("expected nil ReleaseIndex on API error, got %+v", idx)
