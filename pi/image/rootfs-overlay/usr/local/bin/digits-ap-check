@@ -170,7 +170,13 @@ do_ap_up() {
 do_ap_down() {
     log "Tearing down AP mode -- handing wlan0 back to NetworkManager"
 
-    systemctl stop digits-setup.service 2>/dev/null || true
+    # digits-setup.service is stopped LAST. This script is often invoked from
+    # inside its cgroup (the captive portal's /api/configure handler calls
+    # digits-ap-check down via exec). systemd's default KillMode=control-group
+    # means stopping digits-setup.service kills every process in that cgroup,
+    # including this shell. Any commands after that stop will not run.
+    # Stopping hostapd + dnsmasq + starting NetworkManager first ensures the
+    # AP is actually down before we kill ourselves.
     systemctl stop digits-dnsmasq-ap.service 2>/dev/null || true
     systemctl stop digits-ap.service 2>/dev/null || true
 
@@ -179,7 +185,16 @@ do_ap_down() {
 
     systemctl start NetworkManager
 
-    log "AP mode down -- NetworkManager started"
+    # do_ap_up stops digitsd.service when entering AP mode. Before the
+    # drop-reboot-on-configure change (PR #175), a reboot brought digitsd
+    # back on the next boot; without the reboot, nothing else restarts
+    # it. Start it here so the device is usable immediately after configure.
+    # --no-block so systemctl returns even if digitsd startup is slow.
+    systemctl start --no-block digitsd.service 2>/dev/null || true
+
+    log "AP mode down -- NetworkManager started, digitsd starting"
+
+    systemctl stop digits-setup.service 2>/dev/null || true
 }
 
 # restore_from_backup copies every valid backup file into the operational
