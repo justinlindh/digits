@@ -88,16 +88,29 @@ type APController interface {
 
 const apCheckBinary = "/usr/local/bin/digits-ap-check"
 
-// SystemAPController calls `digits-ap-check down` with a bounded timeout so a
-// hung script cannot wedge the captive portal request goroutine.
+// SystemAPController calls `digits-ap-check down` as a detached transient
+// systemd unit via systemd-run --no-block. We cannot invoke digits-ap-check
+// directly as a child process because its do_ap_down routine stops
+// digits-setup.service, which -- under systemd's default
+// KillMode=control-group -- terminates every process in the service's
+// cgroup including a child digits-ap-check. By spawning digits-ap-check in
+// its own transient cgroup, the teardown script survives the death of its
+// caller and runs to completion.
 type SystemAPController struct{}
 
 func (SystemAPController) Down() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, apCheckBinary, "down").CombinedOutput()
+	out, err := exec.CommandContext(
+		ctx,
+		"systemd-run",
+		"--no-block",
+		"--collect",
+		"--unit=digits-ap-teardown",
+		apCheckBinary, "down",
+	).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("digits-ap-check down: %w: %s", err, out)
+		return fmt.Errorf("digits-ap-check down (systemd-run): %w: %s", err, out)
 	}
 	return nil
 }
