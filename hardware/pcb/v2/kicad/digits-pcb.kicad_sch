@@ -5090,7 +5090,7 @@
     (property "Value" "W25Q16JVSSIQ" (at 170 52.54 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm" (at 170 50 0) (show_name)
+    (property "Footprint" "Package_SO:SOIC-8_5.3x5.3mm_P1.27mm" (at 170 50 0) (show_name)
       (effects (font (size 1.27 1.27)))
     )
     (property "Datasheet" "~" (at 170 50 0) (show_name)
