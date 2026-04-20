@@ -43,28 +43,23 @@ type GitHubReleases struct {
 	client  *http.Client
 	ttl     time.Duration
 
-	mu        sync.RWMutex
-	cached    *ReleaseIndex
-	fetchedAt time.Time
+	mu     sync.RWMutex
+	cached *ReleaseIndex
 }
 
 // NewGitHubReleases creates a GitHubReleases that polls the given repo.
 // It fetches immediately in the background and refreshes every ttlSeconds.
-func NewGitHubReleases(owner, repo string, ttlSeconds int) *GitHubReleases {
+func NewGitHubReleases(owner, repo, token string, ttlSeconds int) *GitHubReleases {
 	g := &GitHubReleases{
 		owner:   owner,
 		repo:    repo,
 		apiBase: "https://api.github.com",
+		token:   token,
 		client:  &http.Client{Timeout: 15 * time.Second},
 		ttl:     time.Duration(ttlSeconds) * time.Second,
 	}
 	go g.poll()
 	return g
-}
-
-// SetToken sets an optional GitHub personal access token for authenticated requests.
-func (g *GitHubReleases) SetToken(token string) {
-	g.token = token
 }
 
 // ReleaseIndex returns the cached release index, or nil if not yet fetched.
@@ -92,7 +87,6 @@ func (g *GitHubReleases) refresh() {
 	}
 	g.mu.Lock()
 	g.cached = idx
-	g.fetchedAt = time.Now()
 	g.mu.Unlock()
 }
 

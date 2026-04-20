@@ -11,11 +11,10 @@ import (
 
 func newTestGitHubReleases(owner, repo string) *GitHubReleases {
 	return &GitHubReleases{
-		owner:   owner,
-		repo:    repo,
-		apiBase: "https://api.github.com",
-		client:  &http.Client{},
-		ttl:     300 * time.Second,
+		owner:  owner,
+		repo:   repo,
+		client: &http.Client{},
+		ttl:    300 * time.Second,
 	}
 }
 
