@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 )
 
@@ -98,6 +99,17 @@ func (m *Mixer) Stop() {
 // renderLoop is the single goroutine that writes to hardware.
 // It runs at ALSA's pace: snd_pcm_writei blocks ~20ms per period.
 func (m *Mixer) renderLoop(stop chan struct{}) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("mixer: render loop panic", "panic", r, "stack", string(debug.Stack()))
+			// Keep running in sync with reality so Stop() doesn't try to
+			// close a dead channel and a later Start() can observe the
+			// halted state accurately.
+			m.mu.Lock()
+			m.running = false
+			m.mu.Unlock()
+		}
+	}()
 	buf := make([]int16, m.period)
 	for {
 		select {

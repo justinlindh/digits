@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,6 +25,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
+	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
@@ -86,6 +88,21 @@ type daemonCallbacks struct {
 	isCaller         bool     // true if we initiated the current call
 	isRestartingICE  bool     // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
+}
+
+// sendSignal sends a signaling message and logs failures.
+func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
+	if err := sig.Send(msg); err != nil {
+		slog.Warn("signal send failed", "type", msg.Type, "to", msg.To, "error", err)
+	}
+}
+
+// recoverGoroutine logs a panic with its stack trace so a single bad frame
+// doesn't crash an audio/WebRTC goroutine silently.
+func recoverGoroutine(name string) {
+	if r := recover(); r != nil {
+		slog.Error("goroutine panic recovered", "goroutine", name, "panic", r, "stack", string(debug.Stack()))
+	}
 }
 
 // --- phone.Callbacks implementation ---
@@ -154,6 +171,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	// Handle remote audio track
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
+			defer recoverGoroutine("caller-remote-track")
 			// Live playback — decode and feed into mixer
 			var frameCount int
 			for {
@@ -179,7 +197,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
-		d.sig.Send(&sigclient.Message{ //nolint:errcheck
+		sendSignal(d.sig, &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        targetNumber,
 			Candidate: candidate,
@@ -195,8 +213,8 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	}
 
 	// Send call + SDP, then ungate ICE candidates
-	d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}) //nolint:errcheck
-	d.sig.Send(&sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer}) //nolint:errcheck
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeCall, To: targetNumber})
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer})
 	close(sdpSent)
 
 	// Start audio pipeline
@@ -208,6 +226,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 
 	// Encode and send captured audio
 	go func() {
+		defer recoverGoroutine("caller-encode-loop")
 		for frame := range d.pipeline.OutFrames() {
 			encoded, err := d.encoder.Encode(frame)
 			if err != nil {
@@ -264,6 +283,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	// Handle remote audio track — decode and feed into mixer.
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
+			defer recoverGoroutine("answer-remote-track")
 			var frameCount int
 
 			// Phase 1: Wait for pipeline (user picks up phone).
@@ -342,7 +362,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
-		d.sig.Send(&sigclient.Message{ //nolint:errcheck
+		sendSignal(d.sig, &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        caller,
 			Candidate: candidate,
@@ -367,7 +387,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	d.pendingICE = nil
 
 	// Send answer SDP back to caller, then ungate ICE candidates
-	d.sig.Send(&sigclient.Message{ //nolint:errcheck
+	sendSignal(d.sig, &sigclient.Message{
 		Type: sigclient.TypeAnswer,
 		To:   caller,
 		SDP:  answerSDP,
@@ -383,6 +403,7 @@ func (d *daemonCallbacks) AnswerCall() {
 
 	// Encode and send captured audio
 	go func() {
+		defer recoverGoroutine("answer-encode-loop")
 		for frame := range d.pipeline.OutFrames() {
 			encoded, err := d.encoder.Encode(frame)
 			if err != nil {
@@ -419,7 +440,7 @@ func (d *daemonCallbacks) HangupCall() {
 		d.restartTimer = nil
 	}
 
-	d.sig.Send(&sigclient.Message{Type: sigclient.TypeHangup, To: peer}) //nolint:errcheck
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
 
 	if d.pipeline != nil {
 		d.pipeline.Stop()
@@ -469,6 +490,19 @@ func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
 	return d.cfg.Save()
 }
 
+// triggerHangup dispatches a hangup to the controller from a fresh goroutine.
+// Callers holding d.mu must use this to avoid deadlock: HandleSignal calls
+// back into HangupCall, which also acquires d.mu.
+//
+// d.ctrl is assigned once in main() before the event loop starts and is
+// never mutated, so the unsynchronized nil read here is safe.
+func (d *daemonCallbacks) triggerHangup() {
+	if d.ctrl == nil {
+		return
+	}
+	go d.ctrl.HandleSignal("hangup")
+}
+
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
@@ -495,7 +529,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 
 		if alreadyRestarting {
 			slog.Warn("webrtc: ICE restart failed, hanging up")
-			go d.ctrl.HandleSignal("hangup")
+			d.triggerHangup()
 			return
 		}
 
@@ -520,7 +554,7 @@ func (d *daemonCallbacks) attemptICERestart() {
 
 	if d.peerMgr == nil {
 		slog.Warn("ice-restart: no peer manager, hanging up")
-		go d.ctrl.HandleSignal("hangup")
+		d.triggerHangup()
 		return
 	}
 
@@ -530,7 +564,7 @@ func (d *daemonCallbacks) attemptICERestart() {
 	if err != nil {
 		slog.Error("ice-restart: create offer failed", "error", err)
 		d.isRestartingICE = false
-		go d.ctrl.HandleSignal("hangup")
+		d.triggerHangup()
 		return
 	}
 
@@ -538,7 +572,7 @@ func (d *daemonCallbacks) attemptICERestart() {
 	d.startRestartTimeout()
 
 	slog.Info("ice-restart: sending restart offer", "peer", peer, "bytes", len(offer))
-	d.sig.Send(&sigclient.Message{ //nolint:errcheck
+	sendSignal(d.sig, &sigclient.Message{
 		Type: sigclient.TypeICERestart,
 		To:   peer,
 		SDP:  offer,
@@ -554,7 +588,7 @@ func (d *daemonCallbacks) startRestartTimeout() {
 		d.mu.Unlock()
 		if restarting {
 			slog.Warn("webrtc: ICE restart timed out, hanging up")
-			d.ctrl.HandleSignal("hangup")
+			d.triggerHangup()
 		}
 	})
 }
@@ -1181,6 +1215,20 @@ func main() {
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
 
+	// 8b. Contacts cache — optional dial safelist, persisted to disk.
+	// An empty cache leaves the checker nil so no-contacts phones allow
+	// every call (matching the pre-wiring behavior).
+	contactsPath := filepath.Join(filepath.Dir(*configPath), "contacts.json")
+	contactsCache := contacts.NewCache(contactsPath)
+	if err := contactsCache.Load(); err != nil {
+		slog.Warn("contacts: load failed", "path", contactsPath, "error", err)
+	} else if n := contactsCache.Count(); n > 0 {
+		ctrl.SetContactChecker(contactsCache)
+		slog.Info("contacts: loaded safelist", "path", contactsPath, "count", n)
+	} else {
+		slog.Info("contacts: no local list, filter disabled", "path", contactsPath)
+	}
+
 	// 9. Start socket server (backward compat for debugging + latclient auto-answer)
 	sockSrv, err := phone.NewSocketServer(*socketPath, cb)
 	if err != nil {
@@ -1314,7 +1362,7 @@ func main() {
 					peer := cb.callPeer
 					cb.mu.Unlock()
 					if peer != "" {
-						sig.Send(&sigclient.Message{ //nolint:errcheck
+						sendSignal(sig, &sigclient.Message{
 							Type:  sigclient.TypeDTMF,
 							To:    peer,
 							Digit: key,
@@ -1378,7 +1426,6 @@ func main() {
 			if event == "HOOK:ON" {
 				mixer.StopAll()
 				easterEggs.Reset()
-				svcCodes.Reset()
 				svcCodes.Reset()
 			}
 
@@ -1477,18 +1524,27 @@ func main() {
 				}()
 			case sigclient.TypeSDP:
 				cb.mu.Lock()
-				if cb.peerMgr != nil {
-					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc: set answer failed", "error", err)
-					}
-				} else {
+				switch {
+				case cb.peerMgr == nil:
+					// Incoming call: offer arrived before we've answered.
+					// Stash it for AnswerCall to pick up.
 					cb.pendingOffer = msg.SDP
-					// Also capture caller from SDP message if not already set by ring
 					if cb.pendingCaller == "" && msg.From != "" {
 						cb.pendingCaller = msg.From
 						slog.Info("set pendingCaller from SDP", "from", msg.From)
 					}
 					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
+				case cb.isRestartingICE:
+					// Mid-call: the only legitimate reason to receive an SDP
+					// with an active peerMgr is the restart-answer we asked
+					// for when we initiated an ICE restart.
+					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
+						slog.Error("webrtc: set restart answer failed", "error", err)
+					} else {
+						slog.Info("webrtc: applied restart answer", "from", msg.From, "bytes", len(msg.SDP))
+					}
+				default:
+					slog.Warn("webrtc: unexpected SDP with active peer, ignoring", "from", msg.From, "bytes", len(msg.SDP))
 				}
 				cb.mu.Unlock()
 			case sigclient.TypeICE:
@@ -1506,7 +1562,7 @@ func main() {
 			case sigclient.TypeUpdateTrigger:
 				slog.Info("signal: received update trigger from server", "target_pi", msg.TargetPiVersion, "target_fw", msg.TargetFWVersion)
 				statusReporter := func(status, detail string) {
-					sig.Send(&sigclient.Message{ //nolint:errcheck
+					sendSignal(sig, &sigclient.Message{
 						Type:         sigclient.TypeUpdateStatus,
 						UpdateStatus: status,
 						UpdateDetail: detail,
@@ -1518,6 +1574,19 @@ func main() {
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
 				go triggerFactoryReset()
+
+			case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
+				entries := make([]contacts.Entry, 0, len(msg.Contacts))
+				for _, c := range msg.Contacts {
+					entries = append(entries, contacts.Entry{Number: c.Number, Name: c.Name})
+				}
+				contactsCache.Update(entries)
+				if len(entries) > 0 {
+					ctrl.SetContactChecker(contactsCache)
+				} else {
+					ctrl.SetContactChecker(nil)
+				}
+				slog.Info("contacts: updated", "count", len(entries), "type", msg.Type)
 
 			case sigclient.TypeICERestart:
 				cb.mu.Lock()
@@ -1545,7 +1614,7 @@ func main() {
 					peer = msg.From
 				}
 				slog.Info("ice-restart: sending restart answer", "peer", peer, "bytes", len(answerSDP))
-				sig.Send(&sigclient.Message{ //nolint:errcheck
+				sendSignal(sig, &sigclient.Message{
 					Type: sigclient.TypeSDP,
 					To:   peer,
 					SDP:  answerSDP,
@@ -1601,7 +1670,7 @@ func main() {
 				slog.Info("received restart command", "mode", mode)
 				switch mode {
 				case "service":
-					sig.Send(&sigclient.Message{ //nolint:errcheck
+					sendSignal(sig, &sigclient.Message{
 						Type:         sigclient.TypeUpdateStatus,
 						UpdateStatus: "restarting",
 						UpdateDetail: "Service restart requested",
@@ -1612,7 +1681,7 @@ func main() {
 						os.Exit(0)
 					}()
 				case "reboot":
-					sig.Send(&sigclient.Message{ //nolint:errcheck
+					sendSignal(sig, &sigclient.Message{
 						Type:         sigclient.TypeUpdateStatus,
 						UpdateStatus: "rebooting",
 						UpdateDetail: "Device reboot requested",
@@ -1690,9 +1759,7 @@ func main() {
 
 // requestICEServers asks signald for STUN/TURN server configs.
 func requestICEServers(sig *sigclient.Client) {
-	if err := sig.Send(&sigclient.Message{Type: sigclient.TypeRequestICE}); err != nil {
-		slog.Warn("ice: request failed", "error", err)
-	}
+	sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRequestICE})
 }
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
