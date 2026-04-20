@@ -38,6 +38,7 @@ type Mixer struct {
 
 	mu      sync.Mutex
 	stopCh  chan struct{}
+	doneCh  chan struct{} // closed by renderLoop on exit; Stop blocks on it
 	running bool
 
 	// Loop source: loops named tone until StopTone is called.
@@ -77,28 +78,33 @@ func (m *Mixer) Start() {
 	}
 	m.running = true
 	m.stopCh = make(chan struct{})
-	go m.renderLoop(m.stopCh)
+	m.doneCh = make(chan struct{})
+	go m.renderLoop(m.stopCh, m.doneCh)
 	slog.Info("mixer: render loop started")
 }
 
-// Stop halts the render loop. Blocks until the goroutine has exited.
+// Stop halts the render loop. Blocks until the goroutine has exited so callers
+// can safely observe everything the loop wrote.
 func (m *Mixer) Stop() {
 	m.mu.Lock()
 	if !m.running {
 		m.mu.Unlock()
 		return
 	}
-	ch := m.stopCh
-	close(ch)
+	close(m.stopCh)
 	m.running = false
+	done := m.doneCh
 	m.mu.Unlock()
-	// Wait for render loop to drain — it exits on next select check
+	<-done
 	slog.Info("mixer: render loop stopped")
 }
 
 // renderLoop is the single goroutine that writes to hardware.
 // It runs at ALSA's pace: snd_pcm_writei blocks ~20ms per period.
-func (m *Mixer) renderLoop(stop chan struct{}) {
+func (m *Mixer) renderLoop(stop, done chan struct{}) {
+	// Defers run LIFO: close(done) is registered first so it runs LAST,
+	// guaranteeing Stop() unblocks even if the loop panics.
+	defer close(done)
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("mixer: render loop panic", "panic", r, "stack", string(debug.Stack()))

@@ -5,11 +5,24 @@ import (
 	"time"
 )
 
+// waitForClip receives the next clip name played from the easter-egg detector
+// (which fires its callback in a goroutine), or fails the test on timeout.
+func waitForClip(t *testing.T, ch <-chan string) string {
+	t.Helper()
+	select {
+	case clip := <-ch:
+		return clip
+	case <-time.After(time.Second):
+		t.Fatal("easter-egg callback never fired")
+		return ""
+	}
+}
+
 func TestEasterEggFunkyTown(t *testing.T) {
-	var played string
+	played := make(chan string, 1)
 	d := NewEasterEggDetector([]EasterEgg{
 		{Name: "Funky Town", Trigger: "5542", Clip: "funkytown"},
-	}, func(clip string) { played = clip })
+	}, func(clip string) { played <- clip })
 	d.MinGap = 0
 
 	for _, k := range "554" {
@@ -20,17 +33,16 @@ func TestEasterEggFunkyTown(t *testing.T) {
 	if !d.AddKey("2") {
 		t.Error("5542 should trigger")
 	}
-	time.Sleep(10 * time.Millisecond)
-	if played != "funkytown" {
-		t.Errorf("expected 'funkytown', got %q", played)
+	if got := waitForClip(t, played); got != "funkytown" {
+		t.Errorf("expected 'funkytown', got %q", got)
 	}
 }
 
 func TestEasterEggRickRoll(t *testing.T) {
-	var played string
+	played := make(chan string, 1)
 	d := NewEasterEggDetector([]EasterEgg{
 		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
-	}, func(clip string) { played = clip })
+	}, func(clip string) { played <- clip })
 	d.MinGap = 0
 
 	for _, k := range "000" {
@@ -39,38 +51,34 @@ func TestEasterEggRickRoll(t *testing.T) {
 	if !d.AddKey("0") {
 		t.Error("0000 should trigger")
 	}
-	time.Sleep(10 * time.Millisecond)
-	if played != "rickroll" {
-		t.Errorf("expected 'rickroll', got %q", played)
+	if got := waitForClip(t, played); got != "rickroll" {
+		t.Errorf("expected 'rickroll', got %q", got)
 	}
 }
 
 func TestEasterEggMultiple(t *testing.T) {
-	var played string
+	played := make(chan string, 2)
 	eggs := []EasterEgg{
 		{Name: "Funky Town", Trigger: "5542", Clip: "funkytown"},
 		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
 	}
-	d := NewEasterEggDetector(eggs, func(clip string) { played = clip })
+	d := NewEasterEggDetector(eggs, func(clip string) { played <- clip })
 	d.MinGap = 0
 
 	// Trigger funky town
 	for _, k := range "5542" {
 		d.AddKey(string(k))
 	}
-	time.Sleep(10 * time.Millisecond)
-	if played != "funkytown" {
-		t.Errorf("expected 'funkytown', got %q", played)
+	if got := waitForClip(t, played); got != "funkytown" {
+		t.Errorf("expected 'funkytown', got %q", got)
 	}
 
 	// Then trigger rick roll
-	played = ""
 	for _, k := range "0000" {
 		d.AddKey(string(k))
 	}
-	time.Sleep(10 * time.Millisecond)
-	if played != "rickroll" {
-		t.Errorf("expected 'rickroll', got %q", played)
+	if got := waitForClip(t, played); got != "rickroll" {
+		t.Errorf("expected 'rickroll', got %q", got)
 	}
 }
 
@@ -118,10 +126,10 @@ func TestEasterEggNoFalsePositive(t *testing.T) {
 }
 
 func TestEasterEggAfterOtherDigits(t *testing.T) {
-	var played string
+	played := make(chan string, 1)
 	d := NewEasterEggDetector([]EasterEgg{
 		{Name: "Funky Town", Trigger: "5542", Clip: "funkytown"},
-	}, func(clip string) { played = clip })
+	}, func(clip string) { played <- clip })
 	d.MinGap = 0
 
 	for _, k := range "123" {
@@ -130,9 +138,8 @@ func TestEasterEggAfterOtherDigits(t *testing.T) {
 	for _, k := range "5542" {
 		d.AddKey(string(k))
 	}
-	time.Sleep(10 * time.Millisecond)
-	if played != "funkytown" {
-		t.Errorf("expected 'funkytown' after prefix, got %q", played)
+	if got := waitForClip(t, played); got != "funkytown" {
+		t.Errorf("expected 'funkytown' after prefix, got %q", got)
 	}
 }
 

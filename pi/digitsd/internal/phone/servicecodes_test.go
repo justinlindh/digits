@@ -2,6 +2,7 @@ package phone
 
 import (
 	"testing"
+	"time"
 )
 
 func TestServiceCodeShutdown(t *testing.T) {
@@ -125,9 +126,9 @@ func TestServiceCodeReset(t *testing.T) {
 
 // TestServiceCodeSetup verifies that *#73887# triggers the setup callback.
 func TestServiceCodeSetup(t *testing.T) {
-	called := false
+	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() { called = true })
+	h.SetSetupCallback(func() { called <- struct{}{} })
 
 	code := "*#73887#"
 	var triggered bool
@@ -143,8 +144,11 @@ func TestServiceCodeSetup(t *testing.T) {
 	if !triggered {
 		t.Error("*#73887# should trigger setup code")
 	}
-	// The goroutine may not have run yet; we just verify the trigger happened.
-	_ = called
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Error("setup callback never fired")
+	}
 }
 
 // TestServiceCodeSetupNotTriggeredByPrefix verifies that partial sequences
@@ -199,9 +203,9 @@ func TestServiceCodeSetupRegistered(t *testing.T) {
 }
 
 func TestServiceCodeRepair(t *testing.T) {
-	called := false
+	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetRepairCallback(func() { called = true })
+	h.SetRepairCallback(func() { called <- struct{}{} })
 
 	code := "*#0*"
 	var triggered bool
@@ -214,13 +218,17 @@ func TestServiceCodeRepair(t *testing.T) {
 	if !triggered {
 		t.Error("*#0* should trigger repair")
 	}
-	_ = called
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Error("repair callback never fired")
+	}
 }
 
 func TestServiceCodeFactoryReset(t *testing.T) {
-	called := false
+	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetFactoryResetCallback(func() { called = true })
+	h.SetFactoryResetCallback(func() { called <- struct{}{} })
 
 	code := "*#00000#"
 	var triggered bool
@@ -233,7 +241,11 @@ func TestServiceCodeFactoryReset(t *testing.T) {
 	if !triggered {
 		t.Error("*#00000# should trigger factory reset")
 	}
-	_ = called
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Error("factory-reset callback never fired")
+	}
 }
 
 func TestServiceCodeRepairDoesNotTriggerShutdown(t *testing.T) {

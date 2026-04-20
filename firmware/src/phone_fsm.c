@@ -15,8 +15,8 @@
 #include "pico/time.h"
 
 #define DIAL_DIGITS_REQUIRED 7
-#define DIAL_TIMEOUT_MS 30000  // 30s for bench testing (restore to 5000 for real phone)
-#define DIAL_TONE_TIMEOUT_MS 30000  // 30s of dial tone before off-hook timeout → busy
+#define DIAL_TIMEOUT_MS 15000        // 15s between digits before partial dial → off-hook timeout
+#define DIAL_TONE_TIMEOUT_MS 15000   // 15s of dial tone with no keys → off-hook timeout (Bellcore GR-506-CORE)
 
 static phone_state_t s_state = PHONE_STATE_IDLE;
 static char s_digits[DIAL_DIGITS_REQUIRED + 1];
