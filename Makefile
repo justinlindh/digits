@@ -47,6 +47,8 @@ flash: ## Flash the most recent image to SD card (auto-detects or SD=/dev/sdX)
 		SD_DEV=$$(lsblk -d -n -o NAME,SIZE,TRAN,SUBSYSTEMS | awk '/(usb|mmc)/ && /[0-9]+\.?[0-9]*G/ { dev="/dev/"$$1; size=$$2+0; if (size >= 4 && size <= 64) print dev }' | head -1); \
 		if [ -z "$$SD_DEV" ]; then echo "No SD card detected. Specify manually: make flash SD=/dev/sdX"; exit 1; fi; \
 	fi; \
+	if [ ! -e "$$SD_DEV" ]; then echo "ERROR: $$SD_DEV does not exist. Is the card inserted?"; exit 1; fi; \
+	if [ ! -b "$$SD_DEV" ]; then echo "ERROR: $$SD_DEV is not a block device (it is $$(stat -c %F "$$SD_DEV")). Refusing to flash. If a stale regular file is shadowing the device, remove it with 'sudo rm $$SD_DEV' and re-insert the card."; exit 1; fi; \
 	echo "Flashing $$IMAGE -> $$SD_DEV"; \
 	lsblk "$$SD_DEV"; \
 	echo "WARNING: This will overwrite all data on $$SD_DEV."; \
