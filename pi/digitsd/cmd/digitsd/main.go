@@ -90,9 +90,7 @@ type daemonCallbacks struct {
 	restartTimer     *time.Timer // timeout for ICE restart attempt
 }
 
-// sendSignal sends a signaling message and logs failures. Signaling send
-// errors were previously silenced with //nolint:errcheck, which made lost
-// call setup, hangup, and ICE messages invisible during debugging.
+// sendSignal sends a signaling message and logs failures.
 func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
 	if err := sig.Send(msg); err != nil {
 		slog.Warn("signal send failed", "type", msg.Type, "to", msg.To, "error", err)
@@ -100,12 +98,7 @@ func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
 }
 
 // recoverGoroutine logs a panic with its stack trace so a single bad frame
-// in an audio/WebRTC goroutine doesn't crash the daemon silently. Usage:
-//
-//	go func() {
-//	    defer recoverGoroutine("remote-track")
-//	    ...
-//	}()
+// doesn't crash an audio/WebRTC goroutine silently.
 func recoverGoroutine(name string) {
 	if r := recover(); r != nil {
 		slog.Error("goroutine panic recovered", "goroutine", name, "panic", r, "stack", string(debug.Stack()))
@@ -497,12 +490,9 @@ func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
 	return d.cfg.Save()
 }
 
-// triggerHangup dispatches a hangup signal to the controller from a fresh
-// goroutine.  Callers that already hold d.mu (e.g. attemptICERestart) must
-// use this indirection: Controller.HandleSignal will eventually call back
-// into HangupCall, which also takes d.mu.  Callers that do NOT hold d.mu
-// still benefit from the goroutine — it isolates them from the potentially
-// long POTS off-hook sequence kicked off by onSignalHangup.
+// triggerHangup dispatches a hangup to the controller from a fresh goroutine.
+// Callers holding d.mu must use this to avoid deadlock: HandleSignal calls
+// back into HangupCall, which also acquires d.mu.
 func (d *daemonCallbacks) triggerHangup() {
 	if d.ctrl == nil {
 		return
@@ -1222,12 +1212,9 @@ func main() {
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
 
-	// 8b. Contacts cache — optional dial safelist. The server pushes contact
-	// updates via "contacts"/"contacts_updated" signaling messages, and the
-	// cache is also persisted to disk so the last-known list survives
-	// reboots. When the cache is empty the filter stays disabled (nil
-	// checker) so no-contacts phones allow every call, matching the
-	// previous behavior when contacts weren't wired in at all.
+	// 8b. Contacts cache — optional dial safelist, persisted to disk.
+	// An empty cache leaves the checker nil so no-contacts phones allow
+	// every call (matching the pre-wiring behavior).
 	contactsPath := filepath.Join(filepath.Dir(*configPath), "contacts.json")
 	contactsCache := contacts.NewCache(contactsPath)
 	if err := contactsCache.Load(); err != nil {
@@ -1769,9 +1756,7 @@ func main() {
 
 // requestICEServers asks signald for STUN/TURN server configs.
 func requestICEServers(sig *sigclient.Client) {
-	if err := sig.Send(&sigclient.Message{Type: sigclient.TypeRequestICE}); err != nil {
-		slog.Warn("ice: request failed", "error", err)
-	}
+	sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRequestICE})
 }
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
