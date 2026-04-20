@@ -493,6 +493,9 @@ func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
 // triggerHangup dispatches a hangup to the controller from a fresh goroutine.
 // Callers holding d.mu must use this to avoid deadlock: HandleSignal calls
 // back into HangupCall, which also acquires d.mu.
+//
+// d.ctrl is assigned once in main() before the event loop starts and is
+// never mutated, so the unsynchronized nil read here is safe.
 func (d *daemonCallbacks) triggerHangup() {
 	if d.ctrl == nil {
 		return
