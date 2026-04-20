@@ -43,56 +43,51 @@ type GitHubReleases struct {
 	client  *http.Client
 	ttl     time.Duration
 
-	mu        sync.RWMutex
-	cached    *ReleaseIndex
-	fetchedAt time.Time
+	mu     sync.RWMutex
+	cached *ReleaseIndex
 }
 
-// NewGitHubReleases creates a GitHubReleases that polls the given repo with
-// the specified cache TTL in seconds.
-func NewGitHubReleases(owner, repo string, ttlSeconds int) *GitHubReleases {
-	return &GitHubReleases{
+// NewGitHubReleases creates a GitHubReleases that polls the given repo.
+// It fetches immediately in the background and refreshes every ttlSeconds.
+func NewGitHubReleases(owner, repo, token string, ttlSeconds int) *GitHubReleases {
+	g := &GitHubReleases{
 		owner:   owner,
 		repo:    repo,
 		apiBase: "https://api.github.com",
+		token:   token,
 		client:  &http.Client{Timeout: 15 * time.Second},
 		ttl:     time.Duration(ttlSeconds) * time.Second,
 	}
+	go g.poll()
+	return g
 }
 
-// SetToken sets an optional GitHub personal access token for authenticated requests.
-func (g *GitHubReleases) SetToken(token string) {
-	g.token = token
-}
-
-// ReleaseIndex returns the cached release index if fresh, otherwise fetches
-// from GitHub. On fetch error it returns stale cached data if available.
+// ReleaseIndex returns the cached release index, or nil if not yet fetched.
 func (g *GitHubReleases) ReleaseIndex() *ReleaseIndex {
 	g.mu.RLock()
-	if g.cached != nil && time.Since(g.fetchedAt) < g.ttl {
-		defer g.mu.RUnlock()
-		return g.cached
+	defer g.mu.RUnlock()
+	return g.cached
+}
+
+// poll fetches immediately, then refreshes on the TTL interval.
+func (g *GitHubReleases) poll() {
+	g.refresh()
+	ticker := time.NewTicker(g.ttl)
+	defer ticker.Stop()
+	for range ticker.C {
+		g.refresh()
 	}
-	g.mu.RUnlock()
+}
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	// Double-check after acquiring write lock.
-	if g.cached != nil && time.Since(g.fetchedAt) < g.ttl {
-		return g.cached
-	}
-
+func (g *GitHubReleases) refresh() {
 	idx, err := g.fetch()
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
-		// Graceful degradation: return stale cache if available.
-		return g.cached
+		return
 	}
-
+	g.mu.Lock()
 	g.cached = idx
-	g.fetchedAt = time.Now()
-	return g.cached
+	g.mu.Unlock()
 }
 
 // ServeReleases returns an HTTP handler that serves the release index as JSON.

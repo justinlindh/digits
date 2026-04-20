@@ -123,10 +123,7 @@ func main() {
 	if ghRepo := os.Getenv("GITHUB_REPO"); ghRepo != "" {
 		parts := strings.SplitN(ghRepo, "/", 2)
 		if len(parts) == 2 {
-			gh := updates.NewGitHubReleases(parts[0], parts[1], 300) // 5 min cache
-			if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-				gh.SetToken(token)
-			}
+			gh := updates.NewGitHubReleases(parts[0], parts[1], os.Getenv("GITHUB_TOKEN"), 300) // 5 min cache
 			handler.Releases = gh
 			slog.Info("updates: release index from GitHub", "repo", ghRepo)
 		} else {
