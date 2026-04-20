@@ -1,11 +1,17 @@
 package phone
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
 
+// mockCallbacks captures controller side-effects for assertions. All methods
+// are safe to call from controller-spawned goroutines; tests must read state
+// through the accessor methods (Tones, Calls, ...) so reads are synchronized
+// against the writers.
 type mockCallbacks struct {
+	mu                 sync.Mutex
 	tones              []string
 	rings              []bool
 	leds               []string
@@ -15,36 +21,103 @@ type mockCallbacks struct {
 	callConnectedCalls int
 }
 
-func (m *mockCallbacks) SendTone(name string)       { m.tones = append(m.tones, name) }
-func (m *mockCallbacks) OncePlaying() bool          { return false }
-func (m *mockCallbacks) SendRing(start bool)        { m.rings = append(m.rings, start) }
-func (m *mockCallbacks) SendLED(mode string)        { m.leds = append(m.leds, mode) }
-func (m *mockCallbacks) InitiateCall(number string) { m.calls = append(m.calls, number) }
-func (m *mockCallbacks) AnswerCall()                { m.answers++ }
-func (m *mockCallbacks) HangupCall()                { m.hangups++ }
-func (m *mockCallbacks) NotifyCallConnected()       { m.callConnectedCalls++ }
+func (m *mockCallbacks) SendTone(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.tones = append(m.tones, name)
+}
+func (m *mockCallbacks) OncePlaying() bool { return false }
+func (m *mockCallbacks) SendRing(start bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rings = append(m.rings, start)
+}
+func (m *mockCallbacks) SendLED(mode string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.leds = append(m.leds, mode)
+}
+func (m *mockCallbacks) InitiateCall(number string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, number)
+}
+func (m *mockCallbacks) AnswerCall() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.answers++
+}
+func (m *mockCallbacks) HangupCall() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hangups++
+}
+func (m *mockCallbacks) NotifyCallConnected() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callConnectedCalls++
+}
 
-// 1. Full outgoing call flow: HOOK:OFF → keys → DIAL:5551234 → answer → HOOK:ON
+// Snapshot accessors — return copies under lock so test assertions are
+// race-free against goroutines started by the controller.
+func (m *mockCallbacks) Tones() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.tones...)
+}
+func (m *mockCallbacks) Rings() []bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]bool(nil), m.rings...)
+}
+func (m *mockCallbacks) LEDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.leds...)
+}
+func (m *mockCallbacks) Calls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.calls...)
+}
+func (m *mockCallbacks) Hangups() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.hangups
+}
+func (m *mockCallbacks) Answers() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.answers
+}
+func (m *mockCallbacks) CallConnectedCalls() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callConnectedCalls
+}
+
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
 func waitForCall(cb *mockCallbacks) {
 	for i := 0; i < 20; i++ {
-		if len(cb.calls) > 0 {
+		if len(cb.Calls()) > 0 {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-// waitForTone waits up to 2s for a specific tone to appear.
-func waitForTone(cb *mockCallbacks, tone string) {
+// waitForTone waits up to 2s for a specific tone to appear. Returns true if
+// found, false on timeout.
+func waitForTone(cb *mockCallbacks, tone string) bool {
 	for i := 0; i < 20; i++ {
-		for _, t := range cb.tones {
+		for _, t := range cb.Tones() {
 			if t == tone {
-				return
+				return true
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	return false
 }
 
 func TestController_OutgoingCallFlow(t *testing.T) {
@@ -56,10 +129,10 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	if c.State() != StateDIALTONE {
 		t.Fatalf("expected DIAL_TONE, got %s", c.State())
 	}
-	if len(cb.tones) == 0 || cb.tones[len(cb.tones)-1] != "DIAL" {
+	if len(cb.Tones()) == 0 || cb.Tones()[len(cb.Tones())-1] != "DIAL" {
 		t.Error("expected SendTone(DIAL) on HOOK:OFF")
 	}
-	if len(cb.leds) == 0 || cb.leds[len(cb.leds)-1] != "ON" {
+	if len(cb.LEDs()) == 0 || cb.LEDs()[len(cb.LEDs())-1] != "ON" {
 		t.Error("expected SendLED(ON) on HOOK:OFF")
 	}
 
@@ -68,8 +141,8 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	if c.State() != StateDIALING {
 		t.Fatalf("expected DIALING after first key, got %s", c.State())
 	}
-	tonesSoFar := len(cb.tones)
-	if cb.tones[tonesSoFar-1] != "STOP" {
+	tonesSoFar := len(cb.Tones())
+	if cb.Tones()[tonesSoFar-1] != "STOP" {
 		t.Error("expected SendTone(STOP) on first key")
 	}
 
@@ -87,11 +160,11 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 		t.Fatalf("expected CALLING after DIAL, got %s", c.State())
 	}
 	waitForCall(cb)
-	if len(cb.calls) == 0 || cb.calls[0] != "5551234" {
-		t.Errorf("expected InitiateCall(5551234), got %v", cb.calls)
+	if len(cb.Calls()) == 0 || cb.Calls()[0] != "5551234" {
+		t.Errorf("expected InitiateCall(5551234), got %v", cb.Calls())
 	}
 	waitForTone(cb, "RINGBACK")
-	lastTone := cb.tones[len(cb.tones)-1]
+	lastTone := cb.Tones()[len(cb.Tones())-1]
 	if lastTone != "RINGBACK" {
 		t.Errorf("expected SendTone(RINGBACK), got %s", lastTone)
 	}
@@ -101,7 +174,7 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED after answer signal, got %s", c.State())
 	}
-	lastTone = cb.tones[len(cb.tones)-1]
+	lastTone = cb.Tones()[len(cb.Tones())-1]
 	if lastTone != "STOP" {
 		t.Errorf("expected SendTone(STOP) on answer, got %s", lastTone)
 	}
@@ -111,10 +184,10 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	if c.State() != StateIDLE {
 		t.Fatalf("expected IDLE after HOOK:ON, got %s", c.State())
 	}
-	if cb.hangups != 1 {
-		t.Errorf("expected 1 HangupCall, got %d", cb.hangups)
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall, got %d", cb.Hangups())
 	}
-	lastLED := cb.leds[len(cb.leds)-1]
+	lastLED := cb.LEDs()[len(cb.LEDs())-1]
 	if lastLED != "OFF" {
 		t.Errorf("expected SendLED(OFF) on hang up, got %s", lastLED)
 	}
@@ -130,10 +203,10 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	if c.State() != StateRINGING {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
-	if len(cb.rings) == 0 || cb.rings[0] != true {
+	if len(cb.Rings()) == 0 || cb.Rings()[0] != true {
 		t.Error("expected SendRing(true)")
 	}
-	if len(cb.leds) == 0 || cb.leds[0] != "BLINK" {
+	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
 		t.Error("expected SendLED(BLINK)")
 	}
 
@@ -142,11 +215,11 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED after HOOK:OFF during RINGING, got %s", c.State())
 	}
-	if cb.answers != 1 {
-		t.Errorf("expected 1 AnswerCall, got %d", cb.answers)
+	if cb.Answers() != 1 {
+		t.Errorf("expected 1 AnswerCall, got %d", cb.Answers())
 	}
 	// Ring should have been stopped
-	lastRing := cb.rings[len(cb.rings)-1]
+	lastRing := cb.Rings()[len(cb.Rings())-1]
 	if lastRing != false {
 		t.Error("expected SendRing(false) when answering")
 	}
@@ -157,8 +230,8 @@ func TestController_IncomingCallFlow(t *testing.T) {
 		t.Fatalf("expected REMOTE_HANGUP after hangup signal, got %s", c.State())
 	}
 	// Verify call was torn down
-	if cb.hangups != 1 {
-		t.Errorf("expected 1 HangupCall, got %d", cb.hangups)
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall, got %d", cb.Hangups())
 	}
 
 	// User hangs up (on-hook) → IDLE
@@ -166,7 +239,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	if c.State() != StateIDLE {
 		t.Fatalf("expected IDLE after HOOK:ON in REMOTE_HANGUP, got %s", c.State())
 	}
-	lastLED := cb.leds[len(cb.leds)-1]
+	lastLED := cb.LEDs()[len(cb.LEDs())-1]
 	if lastLED != "OFF" {
 		t.Errorf("expected SendLED(OFF) after local hangup, got %s", lastLED)
 	}
@@ -182,7 +255,7 @@ func TestController_IgnoreKeyInIdle(t *testing.T) {
 	if c.State() != StateIDLE {
 		t.Errorf("expected IDLE, got %s", c.State())
 	}
-	if len(cb.tones) != 0 || len(cb.leds) != 0 || len(cb.calls) != 0 {
+	if len(cb.Tones()) != 0 || len(cb.LEDs()) != 0 || len(cb.Calls()) != 0 {
 		t.Error("expected no callbacks for KEY in IDLE")
 	}
 }
@@ -199,8 +272,8 @@ func TestController_HangupDuringDialing(t *testing.T) {
 	if c.State() != StateIDLE {
 		t.Errorf("expected IDLE, got %s", c.State())
 	}
-	if cb.hangups != 0 {
-		t.Errorf("expected 0 HangupCall during DIALING, got %d", cb.hangups)
+	if cb.Hangups() != 0 {
+		t.Errorf("expected 0 HangupCall during DIALING, got %d", cb.Hangups())
 	}
 }
 
@@ -217,8 +290,8 @@ func TestController_HangupDuringCalling(t *testing.T) {
 	if c.State() != StateIDLE {
 		t.Errorf("expected IDLE, got %s", c.State())
 	}
-	if cb.hangups != 1 {
-		t.Errorf("expected 1 HangupCall during CALLING, got %d", cb.hangups)
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall during CALLING, got %d", cb.Hangups())
 	}
 }
 
@@ -235,20 +308,20 @@ func TestController_BusySignal(t *testing.T) {
 		t.Fatalf("expected CALLING, got %s", c.State())
 	}
 
-	tonesBefore := len(cb.tones)
+	tonesBefore := len(cb.Tones())
 	c.HandleSignal("busy")
 
 	// SendTone("STOP") should have been called
-	if len(cb.tones) <= tonesBefore {
+	if len(cb.Tones()) <= tonesBefore {
 		t.Error("expected SendTone to be called on busy")
 	}
-	lastTone := cb.tones[len(cb.tones)-1]
+	lastTone := cb.Tones()[len(cb.Tones())-1]
 	if lastTone != "BUSY" {
 		t.Errorf("expected SendTone(BUSY) on busy, got %s", lastTone)
 	}
 	// No hangup call triggered by signal
-	if cb.hangups != 0 {
-		t.Errorf("expected 0 HangupCall on busy signal, got %d", cb.hangups)
+	if cb.Hangups() != 0 {
+		t.Errorf("expected 0 HangupCall on busy signal, got %d", cb.Hangups())
 	}
 }
 
@@ -275,8 +348,8 @@ func TestController_DialAllowedContact(t *testing.T) {
 		t.Fatalf("expected CALLING, got %s", c.State())
 	}
 	waitForCall(cb)
-	if len(cb.calls) != 1 || cb.calls[0] != "5551234" {
-		t.Errorf("expected InitiateCall(5551234), got %v", cb.calls)
+	if len(cb.Calls()) != 1 || cb.Calls()[0] != "5551234" {
+		t.Errorf("expected InitiateCall(5551234), got %v", cb.Calls())
 	}
 }
 
@@ -293,19 +366,19 @@ func TestController_DialBlockedContact(t *testing.T) {
 	if c.State() != StateCALLING {
 		t.Fatalf("expected CALLING (rejection sequence), got %s", c.State())
 	}
-	if len(cb.calls) != 0 {
-		t.Errorf("expected NO InitiateCall for blocked number, got %v", cb.calls)
+	if len(cb.Calls()) != 0 {
+		t.Errorf("expected NO InitiateCall for blocked number, got %v", cb.Calls())
 	}
 	// Should have sent RINGBACK tone (rejection mimics unreachable number)
 	found := false
-	for _, tone := range cb.tones {
+	for _, tone := range cb.Tones() {
 		if tone == "RINGBACK" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected RINGBACK tone for blocked number, got tones: %v", cb.tones)
+		t.Errorf("expected RINGBACK tone for blocked number, got tones: %v", cb.Tones())
 	}
 }
 
@@ -323,8 +396,8 @@ func TestController_NoContactChecker_AllowsAll(t *testing.T) {
 		t.Fatalf("expected CALLING, got %s", c.State())
 	}
 	waitForCall(cb)
-	if len(cb.calls) != 1 {
-		t.Errorf("expected call to proceed with no checker, got %v", cb.calls)
+	if len(cb.Calls()) != 1 {
+		t.Errorf("expected call to proceed with no checker, got %v", cb.Calls())
 	}
 }
 
@@ -340,10 +413,10 @@ func TestController_SelfDial(t *testing.T) {
 	if c.State() != StateCALLING {
 		t.Fatalf("expected CALLING, got %s", c.State())
 	}
-	if len(cb.calls) != 0 {
-		t.Errorf("expected no InitiateCall for self-dial, got %v", cb.calls)
+	if len(cb.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall for self-dial, got %v", cb.Calls())
 	}
-	lastTone := cb.tones[len(cb.tones)-1]
+	lastTone := cb.Tones()[len(cb.Tones())-1]
 	if lastTone != "BUSY" {
 		t.Errorf("expected BUSY tone for self-dial, got %s", lastTone)
 	}
@@ -364,17 +437,17 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 		t.Fatalf("expected IDLE after caller hangup during ring, got %s", c.State())
 	}
 	// Ring must have been stopped
-	lastRing := cb.rings[len(cb.rings)-1]
+	lastRing := cb.Rings()[len(cb.Rings())-1]
 	if lastRing != false {
 		t.Error("expected SendRing(false) when caller hangs up during ring")
 	}
-	lastLED := cb.leds[len(cb.leds)-1]
+	lastLED := cb.LEDs()[len(cb.LEDs())-1]
 	if lastLED != "OFF" {
 		t.Error("expected SendLED(OFF) when caller hangs up during ring")
 	}
 	// No HangupCall — there was no active WebRTC session
-	if cb.hangups != 0 {
-		t.Errorf("expected 0 HangupCall (no active call), got %d", cb.hangups)
+	if cb.Hangups() != 0 {
+		t.Errorf("expected 0 HangupCall (no active call), got %d", cb.Hangups())
 	}
 }
 
@@ -395,8 +468,8 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 		t.Fatalf("expected StateCALLING, got %s", c.State())
 	}
 
-	if cb.callConnectedCalls != 0 {
-		t.Errorf("NotifyCallConnected should not be called before answer, got %d", cb.callConnectedCalls)
+	if cb.CallConnectedCalls() != 0 {
+		t.Errorf("NotifyCallConnected should not be called before answer, got %d", cb.CallConnectedCalls())
 	}
 
 	c.HandleSignal("answer")
@@ -404,8 +477,8 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 	if c.State() != StateCONNECTED {
 		t.Errorf("expected StateCONNECTED after answer, got %s", c.State())
 	}
-	if cb.callConnectedCalls != 1 {
-		t.Errorf("expected NotifyCallConnected to be called once, got %d", cb.callConnectedCalls)
+	if cb.CallConnectedCalls() != 1 {
+		t.Errorf("expected NotifyCallConnected to be called once, got %d", cb.CallConnectedCalls())
 	}
 }
 
@@ -424,11 +497,11 @@ func TestRingbackMustPlayUntilAnswer(t *testing.T) {
 	// The last tone recorded must still be RINGBACK: no STOP should have been
 	// sent between RINGBACK and now.
 	lastTone := ""
-	if len(cb.tones) > 0 {
-		lastTone = cb.tones[len(cb.tones)-1]
+	if len(cb.Tones()) > 0 {
+		lastTone = cb.Tones()[len(cb.Tones())-1]
 	}
 	if lastTone != "RINGBACK" {
-		t.Errorf("expected last tone to be RINGBACK (ringback should still be playing), got %q; full sequence: %v", lastTone, cb.tones)
+		t.Errorf("expected last tone to be RINGBACK (ringback should still be playing), got %q; full sequence: %v", lastTone, cb.Tones())
 	}
 }
 
@@ -448,7 +521,7 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 		t.Fatalf("expected CONNECTED, got %s", c.State())
 	}
 
-	ringsBefore := len(cb.rings)
+	ringsBefore := len(cb.Rings())
 	c.HandleSignal("ring")
 
 	// State should still be CONNECTED
@@ -456,8 +529,97 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 		t.Errorf("expected CONNECTED after ring signal during active call, got %s", c.State())
 	}
 	// No new ring callbacks
-	if len(cb.rings) != ringsBefore {
+	if len(cb.Rings()) != ringsBefore {
 		t.Error("expected no SendRing call when ring arrives during CONNECTED")
+	}
+}
+
+// 10. Dial-tone timeout (Pico fired TIMEOUT:DIAL_TONE) → POTS off-hook treatment.
+// Caller leaves handset off-hook with no digits dialed: state transitions out of
+// DIALTONE, reorder tone starts after the brief CO silence, keys are silently
+// ignored, and going on-hook restores IDLE.
+func TestController_DialToneTimeout(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	if c.State() != StateDIALTONE {
+		t.Fatalf("expected DIALTONE, got %s", c.State())
+	}
+
+	c.HandleEvent("TIMEOUT:DIAL_TONE")
+	if c.State() != StateOFFHOOK_TIMEOUT {
+		t.Fatalf("expected OFFHOOK_TIMEOUT after TIMEOUT:DIAL_TONE, got %s", c.State())
+	}
+
+	// Dial tone must be cut and reorder tone must start (after brief silence).
+	if !waitForTone(cb, "REORDER") {
+		t.Errorf("expected REORDER tone after dial-tone timeout, got tones: %v", cb.Tones())
+	}
+
+	// Keypresses during off-hook treatment must be silently ignored.
+	stateBefore := c.State()
+	callsBefore := len(cb.Calls())
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("KEY:5")
+	if c.State() != stateBefore {
+		t.Errorf("expected state to stay %s after keys, got %s", stateBefore, c.State())
+	}
+	if len(cb.Calls()) != callsBefore {
+		t.Errorf("expected no call attempts during off-hook treatment, got %v", cb.Calls())
+	}
+
+	// Hook-on returns to IDLE; nothing to hang up.
+	hangupsBefore := cb.Hangups()
+	c.HandleEvent("HOOK:ON")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after HOOK:ON, got %s", c.State())
+	}
+	if cb.Hangups() != hangupsBefore {
+		t.Errorf("expected no HangupCall on off-hook timeout recovery, got %d new", cb.Hangups()-hangupsBefore)
+	}
+}
+
+// Close() aborts a running off-hook treatment goroutine so daemon shutdown
+// isn't blocked waiting for the 4-minute sequence to drain. The pre-REORDER
+// silence is 1s; if Close is honored, REORDER must never fire.
+func TestController_CloseAbortsOffHookTreatment(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("TIMEOUT:DIAL_TONE")
+	c.Close()
+
+	time.Sleep(1500 * time.Millisecond)
+	for _, tone := range cb.Tones() {
+		if tone == ToneReorder {
+			t.Errorf("REORDER fired despite Close(); tones=%v", cb.Tones())
+		}
+	}
+}
+
+// 11. TIMEOUT:DIAL_TONE outside DIALTONE state is ignored (defensive).
+func TestController_DialToneTimeout_IgnoredOutsideDialTone(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	// Idle: no off-hook → timeout makes no sense
+	c.HandleEvent("TIMEOUT:DIAL_TONE")
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE (timeout ignored), got %s", c.State())
+	}
+
+	// Mid-dial: user already pressed keys, don't slam them into off-hook treatment
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	if c.State() != StateDIALING {
+		t.Fatalf("expected DIALING, got %s", c.State())
+	}
+	c.HandleEvent("TIMEOUT:DIAL_TONE")
+	if c.State() != StateDIALING {
+		t.Errorf("expected DIALING (timeout ignored mid-dial), got %s", c.State())
 	}
 }
 
@@ -474,6 +636,7 @@ func TestIsCallActive(t *testing.T) {
 		{"ringing", StateRINGING, true},
 		{"connected", StateCONNECTED, true},
 		{"remote hangup", StateREMOTE_HANGUP, false},
+		{"offhook timeout", StateOFFHOOK_TIMEOUT, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

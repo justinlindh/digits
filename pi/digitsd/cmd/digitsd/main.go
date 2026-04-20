@@ -110,21 +110,21 @@ func recoverGoroutine(name string) {
 func (d *daemonCallbacks) SendTone(name string) {
 	// Map controller tone names to WAV file names.
 	switch strings.ToUpper(name) {
-	case "DIAL":
+	case phone.ToneDial:
 		d.mixer.PlayLoop("tone_dial")
-	case "RINGBACK":
+	case phone.ToneRingback:
 		d.mixer.PlayLoop("tone_ringback")
-	case "BUSY":
+	case phone.ToneBusy:
 		d.mixer.PlayLoop("tone_busy")
-	case "REORDER":
+	case phone.ToneReorder:
 		d.mixer.PlayLoop("tone_reorder")
-	case "HOWLER":
+	case phone.ToneHowler:
 		d.mixer.PlayLoop("tone_howler")
-	case "INTERCEPT":
+	case phone.ToneIntercept:
 		d.mixer.PlayOnce("intercept")
-	case "STOP":
+	case phone.ToneStop:
 		d.mixer.StopTone()
-	case "STOPALL":
+	case phone.ToneStopAll:
 		d.mixer.StopAll()
 	default:
 		slog.Warn("tone: unknown", "name", name)
@@ -614,13 +614,13 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 	if strings.HasPrefix(cmd, "TONE:") {
 		tone := cmd[5:]
 		switch tone {
-		case "STOP":
+		case phone.ToneStop:
 			d.mixer.StopTone()
-		case "DIAL":
+		case phone.ToneDial:
 			d.mixer.PlayLoop("tone_dial")
-		case "RINGBACK":
+		case phone.ToneRingback:
 			d.mixer.PlayLoop("tone_ringback")
-		case "BUSY":
+		case phone.ToneBusy:
 			d.mixer.PlayLoop("tone_busy")
 		}
 		return "OK"
@@ -1312,6 +1312,7 @@ func main() {
 		select {
 		case <-quit:
 			slog.Info("digitsd shutting down")
+			ctrl.Close()
 			mixer.Stop()
 			if err := sig.Close(); err != nil {
 				slog.Warn("sig close failed", "error", err)

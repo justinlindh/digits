@@ -10,18 +10,31 @@ import (
 type State string
 
 const (
-	StateIDLE           State = "IDLE"
-	StateDIALTONE       State = "DIAL_TONE"
-	StateDIALING        State = "DIALING"
-	StateCALLING        State = "CALLING"
-	StateRINGING        State = "RINGING"
-	StateCONNECTED      State = "CONNECTED"
-	StateREMOTE_HANGUP  State = "REMOTE_HANGUP" // Far end hung up; handset still off-hook
+	StateIDLE            State = "IDLE"
+	StateDIALTONE        State = "DIAL_TONE"
+	StateDIALING         State = "DIALING"
+	StateCALLING         State = "CALLING"
+	StateRINGING         State = "RINGING"
+	StateCONNECTED       State = "CONNECTED"
+	StateREMOTE_HANGUP   State = "REMOTE_HANGUP"   // Far end hung up; handset still off-hook
+	StateOFFHOOK_TIMEOUT State = "OFFHOOK_TIMEOUT" // Off-hook with no dialing; CO permanent-signal treatment
+)
+
+// Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
+const (
+	ToneDial      = "DIAL"
+	ToneRingback  = "RINGBACK"
+	ToneBusy      = "BUSY"
+	ToneReorder   = "REORDER"
+	ToneHowler    = "HOWLER"
+	ToneIntercept = "INTERCEPT"
+	ToneStop      = "STOP"
+	ToneStopAll   = "STOPALL"
 )
 
 // Callbacks is the interface the controller uses to drive hardware and network.
 type Callbacks interface {
-	SendTone(name string)       // Play a tone: DIAL, RINGBACK, BUSY, REORDER, HOWLER, INTERCEPT, STOP, STOPALL
+	SendTone(name string)       // Play a tone (use one of the Tone* constants)
 	OncePlaying() bool          // Reports whether a one-shot tone (e.g. intercept) is still playing
 	SendRing(start bool)        // Send RING:START or RING:STOP
 	SendLED(mode string)        // Send LED:<mode>
@@ -44,6 +57,15 @@ type Controller struct {
 	digits         string
 	ownNumber      string
 	contactChecker ContactChecker
+	// treatmentGen is incremented each time runPermanentSignalTreatment starts.
+	// The spawned goroutine captures the value and aborts on mismatch, so a
+	// hook-flap that re-enters off-hook treatment within ~4 min won't let the
+	// previous goroutine step the new session forward.
+	treatmentGen uint64
+	// done is closed by Close(); long-lived goroutines (off-hook treatment) abort
+	// their sleeps when it fires so daemon shutdown isn't blocked.
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 // NewController creates a new Controller starting in StateIDLE.
@@ -53,6 +75,24 @@ func NewController(cb Callbacks, ownNumber string) *Controller {
 		state:     StateIDLE,
 		cb:        cb,
 		ownNumber: ownNumber,
+		done:      make(chan struct{}),
+	}
+}
+
+// Close signals long-lived background goroutines (off-hook treatment) to exit
+// their sleep loops promptly. Safe to call multiple times.
+func (c *Controller) Close() {
+	c.closeOnce.Do(func() { close(c.done) })
+}
+
+// sleepOrDone blocks for d, returning false if Close was called during the
+// wait (so the caller can short-circuit its sequence).
+func (c *Controller) sleepOrDone(d time.Duration) bool {
+	select {
+	case <-time.After(d):
+		return true
+	case <-c.done:
+		return false
 	}
 }
 
@@ -111,6 +151,8 @@ func (c *Controller) HandleEvent(event string) {
 		c.onKey(evVal)
 	case evType == "DIAL":
 		c.onDial(evVal)
+	case evType == "TIMEOUT" && evVal == "DIAL_TONE":
+		c.onTimeoutDialTone()
 	case evType == "RING" && (evVal == "ACK" || evVal == "DONE"):
 		// Informational — ring ack/done from Pico, no action needed
 	case event == "PONG":
@@ -147,13 +189,13 @@ func (c *Controller) onHookOff() {
 		// Outgoing: pick up → dial tone
 		c.state = StateDIALTONE
 		c.digits = ""
-		c.cb.SendTone("DIAL")
+		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
 		// Incoming: answer the call
 		c.state = StateCONNECTED
 		c.cb.SendRing(false)
-		c.cb.SendTone("STOP")
+		c.cb.SendTone(ToneStop)
 		c.cb.SendLED("ON")
 		c.cb.AnswerCall()
 	default:
@@ -168,13 +210,13 @@ func (c *Controller) onHookOn() {
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
 	c.state = StateIDLE
 	c.digits = ""
-	c.cb.SendTone("STOP")
+	c.cb.SendTone(ToneStop)
 	c.cb.SendRing(false)
 	c.cb.SendLED("OFF")
 	if wasConnectedOrCalling {
 		c.cb.HangupCall()
 	}
-	// REMOTE_HANGUP: call already torn down, just clean up tones/LED (done above)
+	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
 
 func (c *Controller) onKey(digit string) {
@@ -186,7 +228,7 @@ func (c *Controller) onKey(digit string) {
 		// First key: stop dial tone, start collecting digits
 		c.state = StateDIALING
 		c.digits = digit
-		c.cb.SendTone("STOP")
+		c.cb.SendTone(ToneStop)
 	case StateDIALING:
 		c.digits += digit
 		// Service codes (*#*N) are handled by ServiceCodeHandler.
@@ -214,7 +256,7 @@ func (c *Controller) onDial(number string) {
 	if c.ownNumber != "" && number == c.ownNumber {
 		slog.Info("phone: self-call detected, busy tone")
 		c.state = StateCALLING
-		c.cb.SendTone("BUSY")
+		c.cb.SendTone(ToneBusy)
 		return
 	}
 
@@ -223,7 +265,7 @@ func (c *Controller) onDial(number string) {
 	if c.contactChecker != nil && !c.contactChecker.IsContact(number) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
-		c.cb.SendTone("RINGBACK")
+		c.cb.SendTone(ToneRingback)
 		// Rejection sequence runs async (same as server-side "not connected" error)
 		go func() {
 			checkState := func() bool {
@@ -238,8 +280,8 @@ func (c *Controller) onDial(number string) {
 			}
 
 			// SIT + disconnected announcement
-			c.cb.SendTone("STOP")
-			c.cb.SendTone("INTERCEPT")
+			c.cb.SendTone(ToneStop)
+			c.cb.SendTone(ToneIntercept)
 			deadline := time.Now().Add(15 * time.Second)
 			for c.cb.OncePlaying() {
 				time.Sleep(200 * time.Millisecond)
@@ -256,7 +298,7 @@ func (c *Controller) onDial(number string) {
 			if !checkState() {
 				return
 			}
-			c.cb.SendTone("BUSY")
+			c.cb.SendTone(ToneBusy)
 		}()
 		return
 	}
@@ -271,7 +313,7 @@ func (c *Controller) onDial(number string) {
 		if c.state != StateCALLING {
 			return
 		}
-		c.cb.SendTone("RINGBACK")
+		c.cb.SendTone(ToneRingback)
 		c.cb.InitiateCall(number)
 	}()
 }
@@ -292,7 +334,7 @@ func (c *Controller) onSignalAnswer() {
 		return
 	}
 	c.state = StateCONNECTED
-	c.cb.SendTone("STOP")
+	c.cb.SendTone(ToneStop)
 	c.cb.NotifyCallConnected()
 }
 
@@ -309,48 +351,64 @@ func (c *Controller) onSignalHangup() {
 		slog.Info("phone: hangup signal ignored (not CONNECTED)", "state", c.state)
 		return
 	}
-	// POTS remote-hangup sequence (Bellcore GR-506-CORE permanent signal treatment):
-	//   1. Tear down call, brief silence (~1s, CO processing delay)
-	//   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
-	//   3. Howler/ROH tone (loud multi-freq) for ~3 min
-	//   4. Line lockout (silence until user hangs up)
 	c.state = StateREMOTE_HANGUP
 	c.cb.HangupCall()
-	c.cb.SendTone("STOPALL")
-	slog.Info("phone: remote hangup -- starting POTS off-hook sequence")
+	c.cb.SendTone(ToneStopAll)
+	c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
+}
+
+// onTimeoutDialTone handles the Pico's TIMEOUT:DIAL_TONE event: the user picked
+// up the handset but never dialed. Same CO treatment as a remote hangup with
+// the handset still off-hook.
+func (c *Controller) onTimeoutDialTone() {
+	if c.state != StateDIALTONE {
+		slog.Info("phone: TIMEOUT:DIAL_TONE ignored", "state", c.state)
+		return
+	}
+	c.state = StateOFFHOOK_TIMEOUT
+	c.cb.SendTone(ToneStopAll)
+	c.runPermanentSignalTreatment(StateOFFHOOK_TIMEOUT, "dial-tone timeout")
+}
+
+// runPermanentSignalTreatment plays the 90s POTS off-hook sequence
+// (Bellcore GR-506-CORE permanent signal treatment) in a goroutine:
+//   1. Brief silence (~1s CO processing delay)
+//   2. Reorder tone (fast busy, 480+620 Hz) for ~45s
+//   3. Howler/ROH tone (loud multi-freq) for ~3 min
+//   4. Line lockout (silence until user hangs up)
+//
+// The sequence aborts at any step if the controller leaves treatmentState or
+// if a newer treatment run has started (tracked via treatmentGen). Caller must
+// hold c.mu and have already set c.state = treatmentState.
+func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason string) {
+	c.treatmentGen++
+	gen := c.treatmentGen
+	slog.Info("phone: starting POTS off-hook sequence", "reason", reason)
 	go func() {
-		// Helper to check we're still in REMOTE_HANGUP state
-		stillOffHook := func() bool {
+		stillInTreatment := func() bool {
 			c.mu.Lock()
 			defer c.mu.Unlock()
-			return c.state == StateREMOTE_HANGUP
+			return c.state == treatmentState && c.treatmentGen == gen
 		}
 
-		// 1. Brief silence (~1s CO processing delay)
-		time.Sleep(1 * time.Second)
-		if !stillOffHook() {
+		if !c.sleepOrDone(1 * time.Second) || !stillInTreatment() {
 			return
 		}
 
-		// 2. Reorder tone for ~45 seconds
-		slog.Info("phone: remote hangup -- reorder tone")
-		c.cb.SendTone("REORDER")
-		time.Sleep(45 * time.Second)
-		if !stillOffHook() {
+		slog.Info("phone: off-hook sequence -- reorder tone", "reason", reason)
+		c.cb.SendTone(ToneReorder)
+		if !c.sleepOrDone(45 * time.Second) || !stillInTreatment() {
 			return
 		}
 
-		// 3. Howler tone for ~3 minutes
-		slog.Info("phone: remote hangup -- howler tone")
-		c.cb.SendTone("HOWLER")
-		time.Sleep(3 * time.Minute)
-		if !stillOffHook() {
+		slog.Info("phone: off-hook sequence -- howler tone", "reason", reason)
+		c.cb.SendTone(ToneHowler)
+		if !c.sleepOrDone(3 * time.Minute) || !stillInTreatment() {
 			return
 		}
 
-		// 4. Line lockout -- silence until hang-up
-		slog.Info("phone: remote hangup -- line lockout")
-		c.cb.SendTone("STOP")
+		slog.Info("phone: off-hook sequence -- line lockout", "reason", reason)
+		c.cb.SendTone(ToneStop)
 	}()
 }
 
@@ -360,6 +418,6 @@ func (c *Controller) onSignalBusy() {
 		return
 	}
 	slog.Info("phone: busy signal received -- call rejected")
-	c.cb.SendTone("BUSY")
+	c.cb.SendTone(ToneBusy)
 	// Stay in CALLING -- caller should hang up
 }

@@ -36,12 +36,9 @@ jobs:
       - name: Build digitsd
         working-directory: pi/digitsd
         run: go build ./...
-      - name: Test digitsd
+      - name: Test digitsd (with race detector)
         working-directory: pi/digitsd
-        run: go test ./...
-      - name: Race test wififallback supervisor
-        working-directory: pi/digitsd
-        run: go test -race ./internal/wififallback/...
+        run: go test -race ./...
 
   test-digits-setup:
     name: test-digits-setup

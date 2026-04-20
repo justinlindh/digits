@@ -105,8 +105,11 @@ func TestMixerPlayLoopOutputsToneSamples(t *testing.T) {
 	}
 	mx.LoadTone("test_tone", tone)
 
-	mx.Start()
+	// Queue the loop BEFORE Start so the first rendered period is deterministic.
+	// (If queued after Start, the render loop may have already written one or
+	// more silence periods before PlayLoop returns, making periods[0] a race.)
 	mx.PlayLoop("test_tone")
+	mx.Start()
 	time.Sleep(50 * time.Millisecond)
 	mx.StopTone()
 	mx.Stop()
@@ -185,8 +188,10 @@ func TestMixerPlayOnce(t *testing.T) {
 	}
 	mx.LoadTone("beep", tone)
 
-	mx.Start()
+	// Queue the one-shot BEFORE Start so the first rendered period is the tone.
+	// Otherwise the render loop may emit a silence period before PlayOnce queues.
 	mx.PlayOnce("beep")
+	mx.Start()
 	time.Sleep(50 * time.Millisecond)
 	mx.Stop()
 
