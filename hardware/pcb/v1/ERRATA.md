@@ -24,6 +24,16 @@ The 2x20 header (J1) is placed on B.Cu with 180-degree rotation. The combination
 
 **Fix for future revisions:** Remove the 180-degree rotation on J1. The B.Cu mirror alone produces correct mating orientation.
 
+### 3. MIC_GND is a floating net -- no connection to board GND
+
+The schematic uses a local label `MIC_GND` for the handset mic return instead of the global `GND` power symbol. The net connects only to C3 pin 2, J8 pin 4 (RJ9 mic return), and J9 pin 3 (kill-switch GND terminal). It does not reach the board's GND pour anywhere. This was verified in both the schematic netlist and the PCB trace list (10 segments on B.Cu, all within the J8/J9/C3 cluster; no via to GND).
+
+**Symptom:** on a build where the handset mic return depends on MIC_GND reaching the codec's ground (i.e., any build where the HAT/codec ground only reaches the handset through a single external wire), capture alone works and playback alone works, but any full-duplex audio (real call, digitsd audio test with denoise off) produces pure noise on the captured stream. The mic capsule's return current shares its single ground wire with the codec's playback current, and ground bounce from the DAC modulates the mic reference. Discovered on Digits 3 on 2026-04-19 after several hours of software debugging.
+
+**Workaround for fabricated boards:** solder a short bodge wire from any MIC_GND-net pad (J8 pin 4 solder side is easiest) to any real GND pad on V1 PCB (e.g., U1 LM2596 pin 3, or a decoupling cap's GND leg, or a grounded mounting hole). 20-22 AWG, short as possible. This makes MIC_GND a proper low-impedance return and the duplex-capture failure goes away.
+
+**Fix for future revisions:** Use the global `GND` power symbol for the RJ9 mic-return pin, not a local label. (V2 already does this correctly -- verified: J8 pin 4 in V2 is on the global GND net, and the whole MIC_GND-style local-label pattern does not recur.)
+
 ---
 
 ## Recommended Improvements
