@@ -44,16 +44,6 @@ J7 (Phoenix 5mm screw terminal intended for the bell coil) has no trace to anyth
 
 **Fix for V1.1:** Remove J7 from the schematic and PCB, or relabel it as a passive wire-junction block if keeping a physical terminal for the bell wires is useful. V2 addresses the root cause properly by bringing the H-bridge onboard (DRV8871) and routing its outputs to J7.
 
-### 5. J6 status-LED connector pin polarity is swapped from stock cable
-
-J6 (JST ZH 2-pin, status LED) is wired with pin 1 as the driven anode side (from Pico GP14 through R1) and pin 2 as GND. The stock LED pigtail cable arrives with the opposite polarity at the JST end, so plugging it in back-biases the LED: the cathode lands on the driven node and the anode lands on GND. The LED stays dark.
-
-**Root cause:** Same class of defect as the V2 J8 handset-cable pinout errata (see `hardware/pcb/v2/ERRATA.md` section 1). The schematic author assumed a cable polarity without verifying the color-to-pin map against a physical cable. Every connector that mates to an external cable must explicitly assert its wire-to-function map; J6 did not, and the default it silently adopted is the wrong one.
-
-**Workaround for fabricated boards:** Re-crimp the LED pigtail so the anode wire lands on pin 1 and the cathode wire on pin 2 at the JST end. Or flip the LED around physically at the panel so the anode connects to whichever wire drops into J6.1. Confirm polarity first by measuring: with the LED unplugged and firmware driving GP14 high, J6.1 sits at ~3.3 V minus the drop across R1, J6.2 sits at GND.
-
-**Fix for V1.1:** Swap the two net assignments on J6 in the schematic so that pin 1 = GND and pin 2 = LED anode (through R1 from GP14). This matches the stock cable directly with no per-unit rework. V2 has the same defect and is fixed in V2.1.
-
 ---
 
 ## Recommended Improvements
