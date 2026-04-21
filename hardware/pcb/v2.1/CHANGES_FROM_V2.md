@@ -1,8 +1,21 @@
 # Changes from V2 to V2.1
 
-V2.1 is a minor revision. V2 fabricated boards remain usable with a per-unit cable adapter rework (see `hardware/pcb/v2/ERRATA.md` section 1).
+V2.1 is a minor revision. V2 fabricated boards remain usable with per-unit cable adapter rework on the affected connectors (see `hardware/pcb/v2/ERRATA.md` sections 1 and the V1 errata that also applies to V2).
 
 ## Electrical
+
+### J6 status-LED connector pin polarity
+
+The J6 pin-to-net mapping was swapped so that plugging in the stock LED pigtail lights the LED without re-crimping. In V2, J6.1 was the driven anode side (through R1) and J6.2 was GND; the stock pigtail crimps the opposite polarity at the JST end and back-biased the LED.
+
+| J6 pin | V2 net | V2.1 net |
+|---|---|---|
+| 1 | `LED_A` (driven through R1 from GPIO16) | `GND` |
+| 2 | `GND` | `LED_A` (driven through R1 from GPIO16) |
+
+Same class of defect as the J8 issue below (and as V1 ERRATA #5): a connector whose polarity was adopted without an explicit wire-to-pin assertion against a physical cable. V2.1 matches the as-crimped pigtail.
+
+Implementation: two global-label text swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves). Update PCB from Schematic then re-route the two short nets around J6.
 
 ### J8 handset connector pin assignment
 
