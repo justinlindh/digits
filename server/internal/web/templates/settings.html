@@ -123,16 +123,16 @@
     </div>
     <script>
     (function() {
-      var select = document.getElementById('timezone');
+      var tz = document.getElementById('timezone');
       var current = '{{.Household.Timezone}}';
-      for (var i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === current) { select.selectedIndex = i; break; }
+      for (var i = 0; i < tz.options.length; i++) {
+        if (tz.options[i].value === current) { tz.selectedIndex = i; break; }
       }
       if (current === 'UTC') {
         try {
           var detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          for (var j = 0; j < select.options.length; j++) {
-            if (select.options[j].value === detected) { select.selectedIndex = j; break; }
+          for (var j = 0; j < tz.options.length; j++) {
+            if (tz.options[j].value === detected) { tz.selectedIndex = j; break; }
           }
         } catch(e) {}
       }

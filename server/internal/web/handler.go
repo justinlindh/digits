@@ -1617,6 +1617,10 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	theme := auth.Theme(r.FormValue("theme"))
 	if err := h.authStore.SetTheme(user.ID, theme); err != nil {
 		slog.Error("set theme failed", "err", err, "theme", theme)

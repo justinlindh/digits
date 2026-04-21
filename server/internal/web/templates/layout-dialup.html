@@ -132,17 +132,13 @@
     {{if .Version}}<span class="num">{{.Version}}</span>{{end}}
   </div>
 
-</div>
-{{else}}
-<!-- Login / unauthenticated: show bare content with no client chrome -->
-{{block "content" .}}{{end}}
-{{end}}
-
 {{/* Post-login welcome audio. Auth handlers redirect to /?welcome=1 on
      successful sign-in. The sound only exists in this layout, so it is
-     naturally gated to the dial-up theme. The inline JS also strips the query
-     param so a page reload doesn't replay it. */}}
-<audio id="dialup-welcome" src="/static/audio/welcome.wav" preload="auto"></audio>
+     naturally gated to the dial-up theme. preload="none" keeps the file
+     off the wire on every navigation; the browser only fetches it when
+     play() is called below (i.e. once, right after login). The inline JS
+     also strips the query param so a page reload doesn't replay it. */}}
+<audio id="dialup-welcome" src="/static/audio/welcome.mp3" preload="none"></audio>
 <script>
 (function () {
   var params = new URLSearchParams(window.location.search);
@@ -157,6 +153,12 @@
   window.history.replaceState({}, '', clean);
 })();
 </script>
+
+</div>
+{{else}}
+<!-- Login / unauthenticated: show bare content with no client chrome -->
+{{block "content" .}}{{end}}
+{{end}}
 
 </body>
 </html>
