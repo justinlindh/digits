@@ -15517,23 +15517,23 @@
 				)
 			)
 		)
-		(pad "1" smd roundrect
+		(pad "2" smd roundrect
 			(at -0.75 0.7 90)
 			(size 0.7 3.7)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
 			(net "LED_A")
-			(pinfunction "Pin_1_1")
+			(pinfunction "Pin_2_2")
 			(pintype "passive")
 			(uuid "c9c926ca-cda0-4f77-97ee-888a4a0eaf7c")
 		)
-		(pad "2" smd roundrect
+		(pad "1" smd roundrect
 			(at 0.75 0.7 90)
 			(size 0.7 3.7)
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(roundrect_rratio 0.25)
 			(net "GND")
-			(pinfunction "Pin_2_2")
+			(pinfunction "Pin_1_1")
 			(pintype "passive")
 			(uuid "ce57bd80-14b2-4fe2-b6f5-993fe9bd3467")
 		)

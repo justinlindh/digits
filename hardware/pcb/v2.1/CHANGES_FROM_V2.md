@@ -15,7 +15,7 @@ The J6 pin-to-net mapping was swapped so that plugging in the stock LED pigtail 
 
 Same class of defect as the J8 issue below (and as V1 ERRATA #5): a connector whose polarity was adopted without an explicit wire-to-pin assertion against a physical cable. V2.1 matches the as-crimped pigtail.
 
-Implementation: two global-label text swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves). Update PCB from Schematic then re-route the two short nets around J6.
+Implementation: two global-label text swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves), plus a pad-number swap on the J6 footprint instance in `kicad/digits-pcb.kicad_pcb` (copper unchanged; only the "1"/"2" labels on the two pads are flipped so the PCB netlist matches the schematic without a physical re-route). This adds one new `lib_footprint_mismatch` DRC warning on J6 because the instance now differs from the library template; it's a local override the same way six pre-existing footprint-instance tweaks already are.
 
 ### J8 handset connector pin assignment
 
