@@ -92,7 +92,7 @@ func TestHandleConferenceMerge_Success(t *testing.T) {
 			}
 		}
 	}
-	if !(bInit && !cInit) {
+	if !bInit || cInit {
 		t.Fatalf("expected B to be initiator (smaller phone number), B=%v C=%v", bInit, cInit)
 	}
 }
