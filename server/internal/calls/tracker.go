@@ -24,6 +24,7 @@ type Call struct {
 type activeCall struct {
 	Caller string
 	Callee string
+	callID int64
 }
 
 type Tracker struct {
@@ -43,18 +44,19 @@ func callKey(a, b string) string {
 	return a + "→" + b
 }
 
-func (t *Tracker) OnCallInitiated(from, to string) error {
-	_, err := t.db.DB.Exec(
-		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated')",
-		from, to,
-	)
-	if err != nil {
-		return fmt.Errorf("track call: %w", err)
-	}
+func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to}
-	t.mu.Unlock()
-	return nil
+	defer t.mu.Unlock()
+
+	var id int64
+	if err := t.db.DB.QueryRow(
+		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
+		from, to,
+	).Scan(&id); err != nil {
+		return 0, fmt.Errorf("insert call: %w", err)
+	}
+	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, callID: id}
+	return id, nil
 }
 
 func (t *Tracker) OnCallAnswered(caller, callee string) error {

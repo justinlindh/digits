@@ -33,7 +33,7 @@ func TestCallLifecycle(t *testing.T) {
 	tr := New(d)
 
 	// Initiate
-	err := tr.OnCallInitiated("3140001", "3140002")
+	_, err := tr.OnCallInitiated("3140001", "3140002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -63,11 +63,23 @@ func TestCallLifecycle(t *testing.T) {
 	}
 }
 
+func TestOnCallInitiatedReturnsCallID(t *testing.T) {
+	db := setupTestDB(t)
+	tr := New(db)
+	id, err := tr.OnCallInitiated("5550001", "5550002")
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	if id <= 0 {
+		t.Fatalf("expected positive call id, got %d", id)
+	}
+}
+
 func TestActiveCalls(t *testing.T) {
 	d := setupTestDB(t)
 	tr := New(d)
 
-	_ = tr.OnCallInitiated("3140001", "3140002")
+	_, _ = tr.OnCallInitiated("3140001", "3140002")
 	_ = tr.OnCallAnswered("3140001", "3140002")
 
 	active := tr.Active()

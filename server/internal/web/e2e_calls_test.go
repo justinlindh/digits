@@ -138,7 +138,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 
 	// === Step 4: Insert call records via tracker ===
 	// Call A: household-A phone calls an external number
-	if err := tracker.OnCallInitiated(phoneNumA, "5559999"); err != nil {
+	if _, err := tracker.OnCallInitiated(phoneNumA, "5559999"); err != nil {
 		t.Fatalf("initiate call A: %v", err)
 	}
 	if err := tracker.OnCallEnded(phoneNumA, "5559999"); err != nil {
@@ -146,7 +146,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	}
 
 	// Call B: household-B phone calls a different external number
-	if err := tracker.OnCallInitiated(phoneNumB, "5558888"); err != nil {
+	if _, err := tracker.OnCallInitiated(phoneNumB, "5558888"); err != nil {
 		t.Fatalf("initiate call B: %v", err)
 	}
 	if err := tracker.OnCallEnded(phoneNumB, "5558888"); err != nil {

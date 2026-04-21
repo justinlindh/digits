@@ -17,10 +17,10 @@ func newMockTracker() *mockTracker {
 	return &mockTracker{calls: make(map[string]bool)}
 }
 
-func (m *mockTracker) OnCallInitiated(from, to string) error {
+func (m *mockTracker) OnCallInitiated(from, to string) (int64, error) {
 	m.initiated = append(m.initiated, from+"→"+to)
 	m.calls[from+"→"+to] = true
-	return nil
+	return 0, nil
 }
 func (m *mockTracker) OnCallAnswered(caller, callee string) error {
 	m.answered = append(m.answered, caller+"→"+callee)
