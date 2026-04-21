@@ -56,7 +56,7 @@ func NewConferenceTracker() *ConferenceTracker {
 }
 
 var (
-	ErrConferenceCapExceeded     = errors.New("conference cap of 3 exceeded")
+	ErrInvalidConferenceSize     = errors.New("conference requires exactly 3 members (host + 2 added)")
 	ErrMemberAlreadyInConference = errors.New("member already in an active conference")
 	ErrHostAlreadyHosting        = errors.New("host already has an active conference")
 	ErrConferenceNotFound        = errors.New("conference not found")
@@ -70,7 +70,7 @@ func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int
 	defer ct.mu.Unlock()
 
 	if 1+len(addedMembers) != 3 {
-		return nil, ErrConferenceCapExceeded
+		return nil, ErrInvalidConferenceSize
 	}
 	if _, ok := ct.memberIndex[host]; ok {
 		return nil, ErrHostAlreadyHosting
