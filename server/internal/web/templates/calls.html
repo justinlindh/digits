@@ -17,10 +17,10 @@
            hx-select=".panel">
     <header class="panel__head">
       <h2 class="panel__title">All calls</h2>
-      <span class="panel__title-sub">{{len .Calls}} records</span>
+      <span class="panel__title-sub">{{len .Entries}} records</span>
     </header>
 
-    {{if .Calls}}
+    {{if .Entries}}
     <!-- Desktop table -->
     <div class="hide-sm">
       <table class="t">
@@ -34,28 +34,44 @@
           </tr>
         </thead>
         <tbody>
-          {{range .Calls}}
-          <tr>
-            <td class="num" style="color: var(--ink);">{{fmtPhone .Caller}}</td>
-            <td class="num" style="color: var(--ink);">{{fmtPhone .Callee}}</td>
+          {{range .Entries}}
+          {{if .IsConference}}
+          <tr class="row-conf">
+            <td class="num conf-participants" colspan="2" style="color: var(--ink);">
+              {{range $i, $m := .Conference.Members}}{{if $i}} <span class="muted">·</span> {{end}}{{fmtPhone $m}}{{end}}
+            </td>
             <td>
-              {{if eq .Status "ended"}}
+              <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
+            </td>
+            <td class="num">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&mdash;{{end}}</td>
+          </tr>
+          {{else}}
+          <tr>
+            <td class="num" style="color: var(--ink);">{{fmtPhone .Call.Caller}}</td>
+            <td class="num" style="color: var(--ink);">
+              {{fmtPhone .Call.Callee}}
+              {{if .Call.OriginatingConferenceID}}<span class="badge-from3way">from 3-way</span>{{end}}
+            </td>
+            <td>
+              {{if eq .Call.Status "ended"}}
                 <span class="chip"><span class="chip__dot"></span>ended</span>
-              {{else if eq .Status "connected"}}
+              {{else if eq .Call.Status "connected"}}
                 <span class="chip chip--on"><span class="chip__dot"></span>connected</span>
-              {{else if eq .Status "missed"}}
+              {{else if eq .Call.Status "missed"}}
                 <span class="chip chip--err"><span class="chip__dot"></span>missed</span>
-              {{else if eq .Status "initiated"}}
+              {{else if eq .Call.Status "initiated"}}
                 <span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
-              {{else if eq .Status "ringing"}}
+              {{else if eq .Call.Status "ringing"}}
                 <span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
               {{else}}
-                <span class="chip"><span class="chip__dot"></span>{{.Status}}</span>
+                <span class="chip"><span class="chip__dot"></span>{{.Call.Status}}</span>
               {{end}}
             </td>
-            <td class="num">{{.StartedAt.Format "Jan 2 15:04:05"}}</td>
-            <td class="num">{{if gt .DurationS 0}}{{.DurationS}}s{{else}}—{{end}}</td>
+            <td class="num">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="num">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&mdash;{{end}}</td>
           </tr>
+          {{end}}
           {{end}}
         </tbody>
       </table>
@@ -63,23 +79,36 @@
 
     <!-- Mobile card list -->
     <ul class="show-sm" style="list-style: none; margin: 0; padding: 0;">
-      {{range .Calls}}
+      {{range .Entries}}
       <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);">
-        <div class="hstack num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
-          <span>{{fmtPhone .Caller}}</span>
-          <span class="muted">→</span>
-          <span>{{fmtPhone .Callee}}</span>
+        {{if .IsConference}}
+        <div class="num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
+          3-way:
+          {{range $i, $m := .Conference.Members}}{{if $i}}, {{end}}{{fmtPhone $m}}{{end}}
         </div>
         <div class="hstack hstack--wrap" style="font-size: 12px;">
-          {{if eq .Status "ended"}}<span class="chip"><span class="chip__dot"></span>ended</span>
-          {{else if eq .Status "connected"}}<span class="chip chip--on"><span class="chip__dot"></span>connected</span>
-          {{else if eq .Status "missed"}}<span class="chip chip--err"><span class="chip__dot"></span>missed</span>
-          {{else if eq .Status "initiated"}}<span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
-          {{else if eq .Status "ringing"}}<span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
-          {{else}}<span class="chip"><span class="chip__dot"></span>{{.Status}}</span>{{end}}
-          <span class="num muted">{{.StartedAt.Format "Jan 2 15:04:05"}}</span>
-          {{if gt .DurationS 0}}<span class="num muted">· {{.DurationS}}s</span>{{end}}
+          <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
+          <span class="num muted">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</span>
+          {{if gt .Conference.DurationS 0}}<span class="num muted">· {{.Conference.DurationS}}s</span>{{end}}
         </div>
+        {{else}}
+        <div class="hstack num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
+          <span>{{fmtPhone .Call.Caller}}</span>
+          <span class="muted">→</span>
+          <span>{{fmtPhone .Call.Callee}}</span>
+          {{if .Call.OriginatingConferenceID}}<span class="badge-from3way">from 3-way</span>{{end}}
+        </div>
+        <div class="hstack hstack--wrap" style="font-size: 12px;">
+          {{if eq .Call.Status "ended"}}<span class="chip"><span class="chip__dot"></span>ended</span>
+          {{else if eq .Call.Status "connected"}}<span class="chip chip--on"><span class="chip__dot"></span>connected</span>
+          {{else if eq .Call.Status "missed"}}<span class="chip chip--err"><span class="chip__dot"></span>missed</span>
+          {{else if eq .Call.Status "initiated"}}<span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
+          {{else if eq .Call.Status "ringing"}}<span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
+          {{else}}<span class="chip"><span class="chip__dot"></span>{{.Call.Status}}</span>{{end}}
+          <span class="num muted">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</span>
+          {{if gt .Call.DurationS 0}}<span class="num muted">· {{.Call.DurationS}}s</span>{{end}}
+        </div>
+        {{end}}
       </li>
       {{end}}
     </ul>
