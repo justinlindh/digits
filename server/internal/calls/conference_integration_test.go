@@ -132,3 +132,48 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 		t.Fatalf("dropped member should not be busy")
 	}
 }
+
+func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
+	d := openTestDB(t)
+
+	tr := calls.New(d)
+	callID, err := tr.OnCallInitiated("5550200", "5550201")
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+
+	// Pre-condition: 2-party call is active, both phones busy, InCall true.
+	if !tr.InCall("5550200", "5550201") {
+		t.Fatalf("expected InCall true before conference")
+	}
+	for _, p := range []string{"5550200", "5550201"} {
+		if !tr.Busy(p) {
+			t.Fatalf("expected %s busy before conference", p)
+		}
+	}
+
+	// Add a second active call so we can verify only conference-related entries get evicted.
+	if _, err := tr.OnCallInitiated("5550300", "5550301"); err != nil {
+		t.Fatalf("second OnCallInitiated: %v", err)
+	}
+
+	_, err = tr.CreateConferencePersistent("5550200", callID, []string{"5550201", "5550202"})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// After merge: the 2-party A<->B entry must be gone from the active map.
+	if tr.InCall("5550200", "5550201") {
+		t.Fatalf("expected 2-party A<->B entry evicted from active map")
+	}
+	// Unrelated 2-party call must still be present.
+	if !tr.InCall("5550300", "5550301") {
+		t.Fatalf("expected unrelated 2-party call to survive")
+	}
+	// All three conference members should be Busy (via conference).
+	for _, p := range []string{"5550200", "5550201", "5550202"} {
+		if !tr.Busy(p) {
+			t.Fatalf("expected conference member %s busy", p)
+		}
+	}
+}

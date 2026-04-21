@@ -315,12 +315,8 @@ func (t *Tracker) EndConferencePersistent(confID uuid.UUID, reason string) error
 // originating_conference_id so Busy() and call history stay consistent after the
 // conference ends but the surviving pair's PC continues as a regular 2-party call.
 func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
-	// Snapshot the conference BEFORE dropping in-memory so we still know the full
-	// set if the in-memory drop succeeds but DB writes fail. We deliberately do NOT
-	// roll back the in-memory state on DB failure (symmetric with EndConferencePersistent).
-	// The preDrop snapshot is kept here as a marker for future reconciliation if needed.
-	preDrop := t.conferences.ConferenceByPhone(phone)
-	if preDrop == nil {
+	// Bail early with a useful error if the phone has no active conference.
+	if t.conferences.ConferenceByPhone(phone) == nil {
 		return nil, false, fmt.Errorf("phone %s is not in any active conference", phone)
 	}
 
@@ -329,6 +325,8 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 		return nil, false, err
 	}
 
+	// DB failure past this point does not roll back the in-memory state
+	// (symmetric with EndConferencePersistent).
 	tx, err := t.db.DB.Begin()
 	if err != nil {
 		return nil, false, fmt.Errorf("begin tx: %w", err)
@@ -395,7 +393,6 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 		t.mu.Unlock()
 	}
 
-	_ = preDrop // kept for future reconciliation if we ever want to restore on DB failure
 	return remaining, ended, nil
 }
 
