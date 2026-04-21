@@ -106,6 +106,23 @@ Hidden codes entered on the keypad during an active call.
 - **Shutdown:** 3 beeps, then powers off.
 - **Reboot:** 2 beeps, then reboots.
 
+## Party Line (Three-Way Calling)
+
+Classic 90s residential three-way calling. During an active call, press and briefly release the hook switch (a "flash", 100-600 ms on-hook) and you'll hear a second dial tone. Dial a third number, talk to them privately, then flash again to merge all three into a single call. Everyone hears everyone.
+
+| Gesture | What happens |
+|---------|--------------|
+| Flash during an active call | Held party drops to silent hold; you hear a second dial tone |
+| Dial a number | Ringback; third party's phone rings |
+| Flash again after they answer | All three merged into the conference |
+| Flash before they answer | Drops the add attempt; returns to the held party |
+| Hang up (host) | Collapses the conference for everyone |
+| Hang up (non-host) | Remaining pair keeps talking as a normal 2-party call |
+
+Hard-capped at three parties, matching residential TWC on 5ESS / DMS-100 switches. Audio stays end-to-end encrypted on three independent DTLS-SRTP legs; the server never sees media, and mixing happens locally on each phone.
+
+See [Party Line](docs/architecture/party-line.md) for the state machine, media topology, signalling protocol, and failure-mode coverage.
+
 ## Easter Eggs
 
 Hidden sequences that play audio clips through the earpiece. Each keypress must be within ~1.5 s of the last.
@@ -127,6 +144,7 @@ Status: boards ordered, components sourced, pending assembly and validation.
 - [Why Digits?](https://digits.family/why) -- the problem and vision
 - [How it works](https://digits.family/how-it-works) -- overview for parents and curious people
 - [Architecture](docs/architecture/overview.md) -- technical deep-dive
+- [Party Line](docs/architecture/party-line.md) -- three-way calling end-to-end
 - [Build one](docs/build/components.md) -- BOM and hardware guide
 - [Wiring](docs/build/wiring.md) -- electrical spec and GPIO map
 - [Self-hosting](docs/hosting/self-hosting.md) -- run your own signaling server
