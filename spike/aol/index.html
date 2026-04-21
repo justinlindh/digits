@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digits — AOL theme</title>
+<style>
+  :root { --ink:#2a1f18; --paper:#f5f1ea; --rule:#d6ccb8; --muted:#6a5d48; --brass:#c48b3a; --aol-blue:#003da7; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { background:var(--paper); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:20px 14px 64px; max-width:1100px; margin:0 auto; }
+  h1 { margin:0 0 4px; font-size:22px; font-weight:600; }
+  .lede { color:var(--muted); font-size:14px; margin:0 0 18px; }
+  .lede a { color:var(--aol-blue); }
+  nav.toc { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:22px; padding-bottom:14px; border-bottom:1px solid var(--rule); }
+  nav.toc a { display:inline-block; padding:4px 10px; border:1px solid var(--rule); border-radius:999px; text-decoration:none; color:var(--ink); font-size:12.5px; background:#faf5e8; }
+  nav.toc a:hover { background:var(--aol-blue); color:#fff; border-color:var(--aol-blue); }
+  section { border-top:1px solid var(--rule); padding-top:18px; margin-top:24px; scroll-margin-top:14px; }
+  section h2 { margin:0 0 4px; font-size:17px; font-weight:600; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .pair { display:grid; gap:10px; }
+  @media (min-width:760px) { .pair { grid-template-columns:2fr 1fr; align-items:start; } }
+  .shot { border:1px solid var(--rule); background:#fff; overflow:hidden; margin-bottom:8px; }
+  .shot img { width:100%; height:auto; display:block; }
+  .cap { font-size:11px; color:var(--muted); padding:5px 8px; background:#faf5e8; border-top:1px solid var(--rule); text-transform:uppercase; letter-spacing:0.08em; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--rule); color:var(--muted); font-size:13px; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:#ece4d1; padding:1px 5px; border-radius:3px; }
+  .branch { color:var(--aol-blue); font-family:ui-monospace,monospace; font-size:12.5px; font-weight:500; }
+</style>
+</head>
+<body>
+
+<h1>Digits — AOL Desktop 1997 theme</h1>
+<p class="lede">Full alternate theme, user-selectable from Settings. Same Go handler, same DOM from every template. Only the layout wrapper + stylesheet change. Login and onboard stay in direction C because the user isn't authenticated yet. <a href="../full/index.html">Back to direction C spike →</a></p>
+
+<nav class="toc">
+  <a href="#dashboard">Home</a>
+  <a href="#phones">My Phones</a>
+  <a href="#phone-detail">Line detail</a>
+  <a href="#links">Families</a>
+  <a href="#calls">Call Log</a>
+  <a href="#settings">Settings + switcher</a>
+  <a href="#switcher">Theme switcher</a>
+</nav>
+
+<section id="dashboard">
+  <h2>Home / Dashboard</h2>
+  <p class="sub">Title bar, menu bar, toolbar, Keyword bar, CHANNELS sidebar, status bar reading "Connection: Direct · 56000 bps". Stats cells, line list, Welcome! toolbar greeting.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/dashboard.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/dashboard.png" alt=""><div class="cap">Mobile 375 — channels rail wraps</div></div>
+  </div>
+</section>
+
+<section id="phones">
+  <h2>My Phones — with AOL-skinned keypad</h2>
+  <p class="sub">Dark-blue keypad chassis. Chunky cream buttons. Yellow DIGITS strip. Table rows with hover highlight.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/phones.png" alt=""><div class="cap">Desktop</div></div>
+    <div class="shot"><img src="mobile/phones.png" alt=""><div class="cap">Mobile</div></div>
+  </div>
+</section>
+
+<section id="phone-detail">
+  <h2>Line detail</h2>
+  <p class="sub">Cherry-red phone silhouette preserved (embedded SVG colors, not theme-controlled). Voice style radio cards, update disclosures, chunky device-control buttons, Recovery mode in red.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/phone-detail.png" alt=""><div class="cap">Desktop</div></div>
+    <div class="shot"><img src="mobile/phone-detail.png" alt=""><div class="cap">Mobile</div></div>
+  </div>
+</section>
+
+<section id="links">
+  <h2>Families — hub-and-spoke in AOL chrome</h2>
+  <p class="sub">Blue-outlined house silhouettes, dashed brass rail still does its job. Per-family detail panels below.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/links.png" alt=""><div class="cap">Desktop · 3 households</div></div>
+    <div class="shot"><img src="mobile/links.png" alt=""><div class="cap">Mobile</div></div>
+  </div>
+</section>
+
+<section id="calls">
+  <h2>Call Log</h2>
+  <p class="sub">Chunky-bevel table with status chips, tabular-mono times and durations.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/calls.png" alt=""><div class="cap">Desktop</div></div>
+    <div class="shot"><img src="mobile/calls.png" alt=""><div class="cap">Mobile</div></div>
+  </div>
+</section>
+
+<section id="settings">
+  <h2>Settings (+ theme switcher is here)</h2>
+  <p class="sub">Account, Household, Timezone, Theme (!), Privacy, Session. Green checkmark on the chunky checkbox indicates Call History is on.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/settings-aol-with-switcher.png" alt=""><div class="cap">Desktop · AOL theme (full page)</div></div>
+    <div class="shot"><img src="mobile/settings.png" alt=""><div class="cap">Mobile</div></div>
+  </div>
+</section>
+
+<section id="switcher">
+  <h2>Theme switcher, compared</h2>
+  <p class="sub">Same panel, rendered in each theme. Radio cards with a "default" meta tag on Home intercom. Posting saves the preference; next page load dispatches to the chosen layout.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/settings-c-with-switcher.png" alt=""><div class="cap">Home intercom (direction C) · full page</div></div>
+    <div class="shot"><img src="desktop/settings-aol-with-switcher.png" alt=""><div class="cap">AOL Desktop 1997 · full page</div></div>
+  </div>
+</section>
+
+<footer>
+  Branch <a href="https://github.com/justinlindh/digits/tree/feat/webapp-redesign-spike" class="branch">feat/webapp-redesign-spike</a> · stylesheet at <code>server/internal/web/static/aol.css</code> · layout at <code>server/internal/web/templates/layout-aol.html</code>. Users get a free choice of theme; default is <code>c</code>. Login/onboard remain in direction C.
+</footer>
+
+</body>
+</html>
