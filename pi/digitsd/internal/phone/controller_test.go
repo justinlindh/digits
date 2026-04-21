@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/signal"
 )
 
 // mockCallbacks captures controller side-effects for assertions. All methods
@@ -22,6 +24,8 @@ type mockCallbacks struct {
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
 	mergeRequests      [][2]string       // [held, active] pairs
+	meshPeers          map[string]bool   // phone -> initiator flag
+	allTorndown        bool              // true if TearDownAllMeshPeers was called
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -77,6 +81,24 @@ func (m *mockCallbacks) RequestConferenceMerge(held, active string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mergeRequests = append(m.mergeRequests, [2]string{held, active})
+}
+func (m *mockCallbacks) AddMeshPeer(phone string, initiator bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.meshPeers == nil {
+		m.meshPeers = make(map[string]bool)
+	}
+	m.meshPeers[phone] = initiator
+}
+func (m *mockCallbacks) RemoveMeshPeer(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.torndownPeers = append(m.torndownPeers, phone)
+}
+func (m *mockCallbacks) TearDownAllMeshPeers() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allTorndown = true
 }
 
 // Snapshot accessors — return copies under lock so test assertions are
@@ -158,6 +180,28 @@ func (m *mockCallbacks) mergeRequested(held, active string) bool {
 		}
 	}
 	return false
+}
+
+// peerAdded returns whether AddMeshPeer was called for the given phone.
+func (m *mockCallbacks) peerAdded(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.meshPeers[phone]
+	return ok
+}
+
+// peerInitiator returns whether the given phone was added as initiator.
+func (m *mockCallbacks) peerInitiator(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.meshPeers[phone]
+}
+
+// allPeersTorndown returns whether TearDownAllMeshPeers was called.
+func (m *mockCallbacks) allPeersTorndown() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.allTorndown
 }
 
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
@@ -785,7 +829,10 @@ func TestController_NonHostFlashIsNoop(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550002")
 	c.setStateForTest(StateCONNECTED)
-	c.MarkAsConferenceMember("conf-abc", false)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"},
+		{Phone: "5550002", Role: "added"},
+	})
 
 	c.HandleEvent("HOOK:FLASH")
 
@@ -798,7 +845,10 @@ func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateCONFERENCE_MERGED)
-	c.MarkAsConferenceMember("conf-abc", true)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"},
+		{Phone: "5550002", Role: "added"},
+	})
 
 	c.HandleEvent("HOOK:FLASH")
 
@@ -927,4 +977,120 @@ func TestController_ThirdHangupDuringPrivateGoesToAddIntercept(t *testing.T) {
 func TestController_ThirdRingTimeoutGoesToAddIntercept(t *testing.T) {
 	// Ring timeout not modeled locally; handled by server responding with TypeBusy.
 	t.Skip("ring timeout not modeled locally; handled by server responding with TypeBusy")
+}
+
+func TestController_ConferenceMemberMarksHostRole(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"},
+		{Phone: "5550002", Role: "added"},
+		{Phone: "5550003", Role: "added"},
+	})
+
+	if c.ConferenceID() != "conf-abc" {
+		t.Fatalf("expected conf id conf-abc, got %s", c.ConferenceID())
+	}
+	if !c.IsConferenceHost() {
+		t.Fatalf("5550001 should be host")
+	}
+}
+
+func TestController_ConferenceMemberNonHost(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"},
+		{Phone: "5550002", Role: "added"},
+		{Phone: "5550003", Role: "added"},
+	})
+	if c.IsConferenceHost() {
+		t.Fatalf("5550002 should not be host")
+	}
+}
+
+func TestController_ConferenceConnectOpensPeer(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+	})
+
+	c.HandleConferenceConnect("conf-abc", "5550003", true)
+
+	if !mock.peerAdded("5550003") {
+		t.Fatalf("expected AddMeshPeer(5550003)")
+	}
+	if !mock.peerInitiator("5550003") {
+		t.Fatalf("expected 5550003 to be added as initiator")
+	}
+}
+
+func TestController_ConferenceConnectWrongConfIDIgnored(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+	})
+
+	c.HandleConferenceConnect("conf-wrong", "5550003", true)
+
+	if mock.peerAdded("5550003") {
+		t.Fatalf("AddMeshPeer should not be called for wrong conf id")
+	}
+}
+
+func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+	})
+
+	c.HandleConferenceLeave("conf-abc", "5550002", "hangup")
+
+	if !mock.peerTorndown("5550002") {
+		t.Fatalf("expected RemoveMeshPeer(5550002) / TearDownPeer(5550002)")
+	}
+}
+
+func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+	})
+
+	c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after conference end, got %v", c.State())
+	}
+	if !mock.allPeersTorndown() {
+		t.Fatalf("expected TearDownAllMeshPeers")
+	}
+	if c.ConferenceID() != "" {
+		t.Fatalf("expected conf state cleared, got %q", c.ConferenceID())
+	}
+}
+
+func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleConferenceRejected("", "merge_failed")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED on rejection, got %v", c.State())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("expected intercept tone on rejection")
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected A->C torn down")
+	}
 }

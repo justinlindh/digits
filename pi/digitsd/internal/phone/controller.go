@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/signal"
 )
 
 type State string
@@ -51,6 +53,9 @@ type Callbacks interface {
 	MutePeer(phone string, muted bool)                    // Mute or unmute the A↔B audio path for a peer
 	TearDownPeer(phone string)                            // Hang up and tear down the connection to a peer
 	RequestConferenceMerge(held, active string)           // Request server-side three-way merge
+	AddMeshPeer(phone string, initiator bool)             // Open a WebRTC peer connection to a conference member
+	RemoveMeshPeer(phone string)                          // Tear down the WebRTC connection to a conference member
+	TearDownAllMeshPeers()                                // Tear down all conference WebRTC connections
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -588,14 +593,97 @@ func (c *Controller) requestMerge() {
 	c.cb.RequestConferenceMerge(c.heldPeer, c.addingPeer)
 }
 
-// MarkAsConferenceMember is invoked from the signal handler when a
-// ConferenceMember message arrives for this phone. Safe to call from
-// outside the controller's lock.
-func (c *Controller) MarkAsConferenceMember(confID string, isHost bool) {
+// HandleConferenceMember is invoked when a ConferenceMember message arrives
+// from the server. It updates the local conference-membership state (confID,
+// isConfHost) for use by onHookFlash and other conference-aware paths.
+func (c *Controller) HandleConferenceMember(confID string, members []signal.ConferenceMemberInfo) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.confID = confID
-	c.isConfHost = isHost
+	c.isConfHost = false
+	for _, m := range members {
+		if m.Phone == c.ownNumber && m.Role == "host" {
+			c.isConfHost = true
+			break
+		}
+	}
+}
+
+// HandleConferenceConnect is invoked when the server instructs us to open a
+// PC to another conference member. Delegates to the AddMeshPeer callback.
+func (c *Controller) HandleConferenceConnect(confID, peer string, initiator bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.confID != confID {
+		return
+	}
+	c.cb.AddMeshPeer(peer, initiator)
+}
+
+// HandleConferenceLeave is invoked when another member leaves the conference.
+// Tears down the PC to that member via RemoveMeshPeer callback.
+func (c *Controller) HandleConferenceLeave(confID, peer, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.confID != confID {
+		return
+	}
+	c.cb.RemoveMeshPeer(peer)
+}
+
+// HandleConferenceEnd is invoked when the conference ends for any reason.
+// Tears down all mesh peers and returns to IDLE.
+func (c *Controller) HandleConferenceEnd(confID, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.confID != confID {
+		return
+	}
+	c.cb.TearDownAllMeshPeers()
+	c.confID = ""
+	c.isConfHost = false
+	c.heldPeer = ""
+	c.addingPeer = ""
+	c.state = StateIDLE
+}
+
+// HandleConferenceRejected is invoked when the server rejects our merge request.
+// Plays a SIT intercept tone locally and returns the host to StateCONNECTED
+// with the held peer.
+func (c *Controller) HandleConferenceRejected(confID, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateCONFERENCE_MERGED {
+		return // probably stale; ignore
+	}
+	c.cb.SendTone(ToneIntercept)
+	// Drop the A↔C peer; B is still in A's active 2-party state.
+	if c.addingPeer != "" {
+		c.cb.TearDownPeer(c.addingPeer)
+		c.addingPeer = ""
+	}
+	// Clear conference state; host is back to 2-party with held peer.
+	c.confID = ""
+	c.isConfHost = false
+	// Restore state: held peer unmute, return to CONNECTED.
+	if c.heldPeer != "" {
+		c.cb.MutePeer(c.heldPeer, false)
+	}
+	c.state = StateCONNECTED
+}
+
+// ConferenceID returns the current conference ID, or empty string if not in a conference.
+func (c *Controller) ConferenceID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.confID
+}
+
+// IsConferenceHost reports whether this controller is the host of the current conference.
+func (c *Controller) IsConferenceHost() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.isConfHost
 }
 
 // --- test-only setters (internal: test only) ---

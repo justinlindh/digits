@@ -71,6 +71,7 @@ type daemonCallbacks struct {
 	ctrl             *phone.Controller
 	mu               sync.Mutex
 	peerMgr          *owebrtc.PeerManager
+	mesh             *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
 	pipeline         *audio.Pipeline
 	encoder          *codec.Encoder
 	decoder          *codec.Decoder
@@ -439,11 +440,96 @@ func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
 }
 
 func (d *daemonCallbacks) TearDownPeer(phone string) {
-	// TODO: wired up via MeshManager in Task 16
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.mesh != nil {
+		d.mesh.RemovePeer(phone)
+	}
+	d.mixer.RemoveWebRTCSource(phone)
 }
 
 func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
-	// TODO: wired up via signal client in Task 16
+	d.mu.Lock()
+	sig := d.sig
+	d.mu.Unlock()
+	sendSignal(sig, &sigclient.Message{
+		Type:       sigclient.TypeConferenceMerge,
+		HeldPeer:   held,
+		ActivePeer: active,
+	})
+}
+
+func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
+	d.mu.Lock()
+	if d.mesh == nil {
+		iceCfg := owebrtc.NewICEConfig(d.iceServers)
+		d.mesh = owebrtc.NewMeshManager(iceCfg)
+	}
+	mesh := d.mesh
+	d.mu.Unlock()
+
+	pm, err := mesh.AddPeer(phone)
+	if err != nil {
+		slog.Error("conference: add mesh peer failed", "phone", phone, "err", err)
+		return
+	}
+
+	// Wire remote audio track into the mixer.
+	webrtcCh := d.mixer.AddWebRTCSource(phone)
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("conf-remote-track-" + phone)
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("conference: remote track ended", "phone", phone)
+					return
+				}
+				pcm, err := d.decoder.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				select {
+				case webrtcCh <- frame:
+				default:
+					// drop frame if consumer is behind
+				}
+			}
+		}()
+	}
+
+	if initiator {
+		// TODO(Task 20): full SDP offer/ICE dance for conference peers.
+		// Send TypeSDP with ConfID set through the signal client, handle answer
+		// and ICE trickle tagged with conf_id. Stubbed here; integration tests
+		// in Task 20 cover the full handshake.
+		slog.Info("conference: initiator path stubbed -- SDP offer not yet sent", "phone", phone)
+	}
+}
+
+func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
+	d.mu.Lock()
+	mesh := d.mesh
+	d.mu.Unlock()
+	if mesh != nil {
+		mesh.RemovePeer(phone)
+	}
+	d.mixer.RemoveWebRTCSource(phone)
+}
+
+func (d *daemonCallbacks) TearDownAllMeshPeers() {
+	d.mu.Lock()
+	mesh := d.mesh
+	d.mu.Unlock()
+	if mesh == nil {
+		return
+	}
+	for _, p := range mesh.ActivePeers() {
+		d.mixer.RemoveWebRTCSource(p)
+	}
+	mesh.CloseAll()
 }
 
 func (d *daemonCallbacks) HangupCall() {
@@ -1748,6 +1834,17 @@ func main() {
 				if err := cb.setVoiceStyleConfig(style); err != nil {
 					slog.Warn("line_settings: config save failed", "err", err)
 				}
+
+			case sigclient.TypeConferenceMember:
+				ctrl.HandleConferenceMember(msg.ConfID, msg.Members)
+			case sigclient.TypeConferenceConnect:
+				ctrl.HandleConferenceConnect(msg.ConfID, msg.Peer, msg.Initiator)
+			case sigclient.TypeConferenceLeave:
+				ctrl.HandleConferenceLeave(msg.ConfID, msg.Peer, msg.Reason)
+			case sigclient.TypeConferenceEnd:
+				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
+			case sigclient.TypeConferenceRejected:
+				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
