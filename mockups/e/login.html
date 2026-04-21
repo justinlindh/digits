@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digits — Sign On</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body {
+    background: #0a5a95;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .signon-window {
+    width: 420px;
+    background: #f5f1dd; /* AOL cream */
+    border: 2px outset #dfdfdf;
+    box-shadow: 6px 6px 0 rgba(0,0,0,0.4);
+  }
+  .signon-banner {
+    background: linear-gradient(to bottom, #003da7 0%, #0066cc 40%, #003da7 100%);
+    color: #ffcc00;
+    padding: 10px 14px;
+    text-align: center;
+    font-family: "Times New Roman", Times, serif;
+    border-bottom: 2px solid #ffcc00;
+    position: relative;
+  }
+  .signon-banner h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: bold;
+    text-shadow: 2px 2px 0 rgba(0,0,0,0.6);
+    font-style: italic;
+    letter-spacing: 1px;
+  }
+  .signon-banner .subtitle {
+    color: #fff;
+    font-family: "Tahoma", sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+  .signon-body {
+    padding: 16px 22px;
+    background: #f5f1dd;
+    color: #000;
+  }
+  .welcome-heading {
+    text-align: center;
+    font-family: "Times New Roman", serif;
+    color: #003da7;
+    font-style: italic;
+    font-size: 18px;
+    margin: 0 0 12px 0;
+  }
+  .signon-window .fld { margin-bottom: 10px; }
+  .signon-window .fld span { width: 110px; }
+  .signon-window select,
+  .signon-window input[type="password"] { min-width: 220px; }
+  .signon-footer {
+    background: #c0c0c0;
+    border-top: 2px groove #dfdfdf;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .runman-wrap {
+    position: absolute;
+    left: 18px; top: 18px;
+  }
+</style>
+</head>
+<body>
+
+<div class="signon-window">
+
+  <!-- AOL-style wavy banner -->
+  <div class="signon-banner">
+    <div class="runman-wrap">
+      <svg width="40" height="48" viewBox="0 0 40 48">
+        <circle cx="20" cy="10" r="6" fill="#ffcc99" stroke="#000" stroke-width="1.5"/>
+        <rect x="14" y="15" width="12" height="18" fill="#ffcc00" stroke="#000" stroke-width="1.5"/>
+        <line x1="14" y1="18" x2="6" y2="24" stroke="#000" stroke-width="2.5"/>
+        <line x1="26" y1="18" x2="34" y2="14" stroke="#000" stroke-width="2.5"/>
+        <rect x="30" y="8" width="10" height="8" fill="#fff" stroke="#000" stroke-width="1"/>
+        <polyline points="30,8 35,14 40,8" fill="none" stroke="#000"/>
+        <line x1="16" y1="33" x2="10" y2="46" stroke="#000" stroke-width="2.5"/>
+        <line x1="24" y1="33" x2="30" y2="46" stroke="#000" stroke-width="2.5"/>
+      </svg>
+    </div>
+    <h1>Digits</h1>
+    <div class="subtitle">Welcome &middot; Version 4.0 for Windows</div>
+  </div>
+
+  <div class="signon-body">
+    <h2 class="welcome-heading">Welcome, please sign on.</h2>
+
+    <label class="fld">
+      <span>Screen Name:</span>
+      <select>
+        <option selected>LindhFamily</option>
+        <option>Guest</option>
+        <option>&mdash; New Screen Name &mdash;</option>
+      </select>
+    </label>
+
+    <label class="fld">
+      <span>Password:</span>
+      <input type="password" value="hunter2">
+    </label>
+
+    <label style="display:block; margin:8px 0 4px 0; font-size:10px; padding-left:4px;">
+      <input type="checkbox"> Store password
+    </label>
+
+    <div style="margin-top:6px; background:#fffae0; border:1px inset #dfdfdf; padding:8px; font-size:10px; line-height:1.5;">
+      <b style="color:#003da7;">&#9432; Did you know?</b><br>
+      Digits keeps your family's calls <b>private</b> and
+      <b>encrypted</b>. No ads, no surveillance, no strangers.
+    </div>
+
+    <div style="margin-top:14px; text-align:center;">
+      <a href="#" style="font-size:10px;">Forgot Password?</a>
+      &nbsp; &middot; &nbsp;
+      <a href="#" style="font-size:10px;">New User? Sign Up!</a>
+      &nbsp; &middot; &nbsp;
+      <a href="#" style="font-size:10px;">Help</a>
+    </div>
+  </div>
+
+  <div class="signon-footer">
+    <a href="#" class="aol-btn gray">SETUP</a>
+    <div style="font-size:10px;">
+      &#9679; Connecting via <b>TCP/IP</b>
+    </div>
+    <a href="index.html" class="aol-btn gold">&#9654; SIGN ON</a>
+  </div>
+
+</div>
+
+</body>
+</html>

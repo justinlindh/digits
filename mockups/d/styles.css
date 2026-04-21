@@ -1,0 +1,491 @@
+/* === THE LINDH FAMILY PHONE NETWORK === */
+/* Last updated 11/14/98 by Tommy L. (age 11) */
+/* Best viewed in Netscape Navigator 4 at 800x600 */
+
+/* ---- TILED STARFIELD BACKGROUND ---- */
+body {
+  margin: 0;
+  padding: 8px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  color: #ffff00;
+  background-color: #000066;
+  /* tiled 64x64 starfield, inline SVG data URI */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><rect width='64' height='64' fill='%23000066'/><circle cx='8' cy='12' r='0.8' fill='%23ffffff'/><circle cx='44' cy='6' r='0.6' fill='%23ffffff'/><circle cx='22' cy='28' r='1.1' fill='%23ffff99'/><circle cx='56' cy='40' r='0.7' fill='%23ffffff'/><circle cx='14' cy='50' r='0.9' fill='%23ffffff'/><circle cx='36' cy='58' r='0.6' fill='%23ffff99'/><circle cx='60' cy='18' r='0.5' fill='%23ffffff'/><circle cx='30' cy='44' r='0.4' fill='%23ffffff'/><circle cx='4' cy='36' r='0.6' fill='%23ffffff'/><circle cx='50' cy='54' r='0.5' fill='%23ffffff'/></svg>");
+  background-repeat: repeat;
+}
+
+/* ---- OUTER PAGE FRAME ---- */
+.page {
+  width: 960px;
+  margin: 0 auto;
+  background: #c0c0c0;
+  border: 4px ridge #ffff00;
+  padding: 6px;
+  color: #000000;
+}
+
+/* ---- HEADER ---- */
+.masthead {
+  background: #000000;
+  border: 3px outset #ffff00;
+  padding: 10px 8px;
+  text-align: center;
+  color: #ffffff;
+}
+
+/* WordArt-style rainbow -- layered fill + outline so it reads on black.
+   .rainbow is a positioned wrapper. The ::before draws a solid fat outline,
+   the real text on top uses background-clip:text for the gradient fill. */
+.rainbow {
+  position: relative;
+  display: inline-block;
+  font-family: "Times New Roman", Times, serif;
+  font-weight: 900;
+  font-size: 34px;
+  letter-spacing: 1px;
+  margin: 6px 0;
+  /* gradient fill on top */
+  background: linear-gradient(90deg,
+      #ff1a1a 0%, #ff8800 14%, #ffdd00 28%, #ffff33 40%,
+      #33dd22 55%, #22ccff 70%, #4466ff 85%, #cc33ff 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  text-shadow: none;
+}
+.rainbow::before {
+  content: attr(data-text);
+  position: absolute;
+  left: 0; top: 0;
+  z-index: -1;
+  color: #ffffff;
+  -webkit-text-stroke: 4px #ffffff;
+  background: none;
+  -webkit-background-clip: initial;
+          background-clip: initial;
+  text-shadow:
+     3px 3px 0 #000,
+    -2px -2px 0 #000,
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  0px 0 #000,
+    -2px  0px 0 #000,
+     0px  2px 0 #000,
+     0px -2px 0 #000;
+  pointer-events: none;
+}
+
+.subhead {
+  font-family: "Comic Sans MS", "Comic Sans", cursive;
+  color: #ffff00;
+  font-size: 14px;
+  margin: 4px 0 0 0;
+}
+
+.aim-line {
+  font-family: "Courier New", Courier, monospace;
+  color: #66ffff;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+/* ---- NAV BAR (tables-for-layout flavor) ---- */
+.navbar {
+  background: #ff00ff;
+  border: 3px outset #ffffff;
+  margin: 8px 0;
+  padding: 4px 2px;
+  text-align: center;
+}
+.navbar a {
+  font-family: "Comic Sans MS", cursive;
+  font-weight: bold;
+  color: #ffff00;
+  text-decoration: none;
+  font-size: 14px;
+  padding: 2px 8px;
+  border-right: 2px groove #ffffff;
+}
+.navbar a:last-child { border-right: none; }
+.navbar a:hover { background: #330033; color: #00ff00; text-decoration: underline; }
+
+/* ---- LAYOUT (fake table columns) ---- */
+.layout {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 6px;
+}
+.layout td { vertical-align: top; }
+
+.sidebar {
+  width: 200px;
+  background: #008080;
+  color: #ffffff;
+  border: 3px ridge #00ffff;
+  padding: 6px;
+}
+
+.sidebar h3 {
+  font-family: "Times New Roman", Times, serif;
+  background: #ffff00;
+  color: #cc0066;
+  margin: 0 0 4px 0;
+  padding: 2px 4px;
+  font-size: 14px;
+  border: 2px outset #ff00ff;
+  text-align: center;
+}
+
+.sidebar ul {
+  list-style: none;
+  margin: 0 0 8px 0;
+  padding: 0;
+  font-family: "Comic Sans MS", cursive;
+  font-size: 12px;
+}
+.sidebar ul li {
+  background: #004040;
+  border: 2px outset #66ffff;
+  margin: 2px 0;
+  padding: 2px 4px;
+}
+.sidebar ul li a { color: #ffff66; text-decoration: none; }
+.sidebar ul li a:hover { color: #ff66ff; text-decoration: underline; }
+
+.sidebar-box {
+  background: #ffffcc;
+  color: #000066;
+  border: 2px inset #000066;
+  padding: 4px;
+  margin: 6px 0;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+}
+
+.main {
+  background: #ffffff;
+  border: 3px ridge #ff00ff;
+  padding: 10px;
+  color: #000000;
+}
+
+/* ---- HEADINGS in main ---- */
+.main h1 {
+  font-family: "Times New Roman", Times, serif;
+  color: #cc0000;
+  font-size: 26px;
+  margin: 0 0 6px 0;
+  border-bottom: 4px ridge #ff9900;
+  padding-bottom: 2px;
+}
+.main h2 {
+  font-family: "Times New Roman", Times, serif;
+  color: #000099;
+  font-size: 18px;
+  margin: 14px 0 4px 0;
+  background: #ffff66;
+  border: 2px groove #cc6600;
+  padding: 2px 6px;
+}
+.main p, .main li, .main td {
+  font-family: "Comic Sans MS", cursive;
+  font-size: 13px;
+  color: #000033;
+}
+
+/* ---- RETRO HR ---- */
+hr.retro {
+  border: 0;
+  height: 4px;
+  background: repeating-linear-gradient(90deg,
+    #ff0000 0 20px, #ffff00 20px 40px, #00ff00 40px 60px,
+    #00ccff 60px 80px, #cc00cc 80px 100px);
+  margin: 10px 0;
+}
+
+/* ---- MARQUEE FALLBACK (using CSS for browsers that dropped <marquee>) ---- */
+.marquee-wrap {
+  background: #000000;
+  border: 3px inset #00ff00;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 3px 0;
+  color: #00ff00;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  font-weight: bold;
+}
+.marquee-wrap span {
+  display: inline-block;
+  padding-left: 100%;
+  animation: scroll-left 28s linear infinite;
+}
+@keyframes scroll-left {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+
+/* ---- BLINK ---- */
+.blink { animation: blinky 1s steps(2, start) infinite; }
+@keyframes blinky { to { visibility: hidden; } }
+
+/* ---- RAINBOW ANIMATED TEXT (headline) ---- */
+.rainbow-move {
+  background: linear-gradient(90deg,
+    #ff0000, #ff9900, #ffff00, #33cc33, #00ccff, #3333ff, #cc00cc, #ff0000);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+  animation: hue 6s linear infinite;
+  font-weight: bold;
+}
+@keyframes hue { to { background-position: -200% 0; } }
+
+/* ---- LED-LIKE VISITOR COUNTER ---- */
+.counter {
+  display: inline-block;
+  background: #000000;
+  color: #ff3300;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: bold;
+  letter-spacing: 3px;
+  border: 3px inset #666666;
+  padding: 2px 6px;
+  font-size: 18px;
+  text-shadow: 0 0 4px #ff3300;
+}
+
+/* ---- CALL LOG TABLE (tables-for-layout!) ---- */
+table.data {
+  border-collapse: collapse;
+  width: 100%;
+  background: #ffffcc;
+  border: 3px ridge #cc6600;
+}
+table.data th {
+  background: #000099;
+  color: #ffff66;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 2px outset #ccccff;
+  text-align: left;
+}
+table.data td {
+  border: 1px solid #996633;
+  padding: 4px 6px;
+  font-family: "Comic Sans MS", cursive;
+  font-size: 12px;
+  color: #000033;
+}
+table.data tr:nth-child(even) td { background: #fff8dc; }
+
+.dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  border: 1px solid #000;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+.dot.online { background: #00cc00; box-shadow: 0 0 4px #00ff00; }
+.dot.offline { background: #888888; }
+
+/* ---- BEVELED STAT BOXES ---- */
+.stat-row { display: table; width: 100%; border-collapse: separate; border-spacing: 6px; }
+.stat { display: table-cell; width: 25%; background: #ffcc00; border: 3px outset #cc9900;
+        text-align: center; padding: 6px; font-family: "Times New Roman", serif; }
+.stat .num { font-size: 30px; font-weight: bold; color: #990000; display: block; }
+.stat .lbl { font-family: "Comic Sans MS", cursive; font-size: 11px; color: #333300; }
+
+/* ---- BUTTONS ---- */
+.bigbtn {
+  font-family: "Comic Sans MS", cursive;
+  font-weight: bold;
+  font-size: 18px;
+  color: #ffff00;
+  background: #cc0099;
+  border: 4px outset #ff99cc;
+  padding: 8px 20px;
+  cursor: pointer;
+}
+.bigbtn:active { border-style: inset; }
+
+input[type="text"], input[type="email"], input[type="password"], select, textarea {
+  font-family: "Courier New", monospace;
+  font-size: 13px;
+  border: 2px inset #666;
+  background: #ffffff;
+  padding: 2px 4px;
+}
+
+/* ---- UNDER CONSTRUCTION SIGN (inline SVG styled block) ---- */
+.construction {
+  text-align: center;
+  background: #000;
+  border: 3px dashed #ffff00;
+  padding: 10px;
+  margin: 10px 0;
+  color: #ffff00;
+  font-family: "Comic Sans MS", cursive;
+}
+.construction svg { vertical-align: middle; margin: 0 6px; animation: wobble 1.6s ease-in-out infinite; }
+@keyframes wobble { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+
+/* ---- NEW! BADGE ---- */
+.new-badge {
+  display: inline-block;
+  background: #ff0000;
+  color: #ffff00;
+  font-family: "Arial Black", Arial, sans-serif;
+  font-weight: bold;
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 2px outset #ffcccc;
+  margin-left: 4px;
+  animation: blinky 0.8s steps(2, start) infinite;
+}
+
+/* ---- FOOTER ---- */
+.footer {
+  background: #000000;
+  color: #cccccc;
+  border: 3px ridge #666666;
+  padding: 8px;
+  margin-top: 10px;
+  text-align: center;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11px;
+}
+.footer a { color: #66ccff; }
+.badges { margin: 8px 0; }
+.badges .badge {
+  display: inline-block;
+  margin: 2px 4px;
+  padding: 3px 6px;
+  font-family: "Arial Black", Arial, sans-serif;
+  font-size: 10px;
+  border: 2px outset #888;
+  background: #ddd;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  vertical-align: middle;
+}
+.badges .badge.y2k   { background: #ffff00; color: #000; border-color: #cc9900; }
+.badges .badge.ns4   { background: #003366; color: #ffffff; border-color: #66ccff; }
+.badges .badge.ring  { background: #ff66cc; color: #660033; }
+.badges .badge.pink  { background: #ffccff; color: #cc0066; }
+.badges .badge.html  { background: #ff6600; color: #ffffff; }
+
+/* ---- WEBRING ---- */
+.webring {
+  background: #ffccff;
+  border: 3px ridge #cc0099;
+  padding: 8px;
+  text-align: center;
+  font-family: "Comic Sans MS", cursive;
+  color: #330033;
+}
+.webring a { font-weight: bold; color: #660099; }
+.arrow-anim { display: inline-block; animation: arrowbounce 1.2s ease-in-out infinite; }
+@keyframes arrowbounce { 0%,100%{transform:translateX(0)} 50%{transform:translateX(6px)} }
+
+/* ---- GUESTBOOK ---- */
+.guestbook {
+  background: #fffacd;
+  border: 3px ridge #cc6600;
+  padding: 10px;
+}
+.guestbook .entry {
+  border: 2px inset #cc9966;
+  background: #fff;
+  padding: 4px 8px;
+  margin: 6px 0;
+  font-family: "Comic Sans MS", cursive;
+  color: #330000;
+}
+.guestbook .entry .who { color: #990000; font-weight: bold; }
+.guestbook .entry .when { color: #666; font-size: 10px; }
+
+/* ---- LOGIN CENTER ---- */
+.login-box {
+  width: 420px;
+  margin: 30px auto;
+  background: #ffffff;
+  border: 4px ridge #ff00ff;
+  padding: 16px;
+  text-align: center;
+}
+.login-box h1 { margin-top: 4px; }
+
+/* ---- LITTLE HOUSE ICON ---- */
+.house { vertical-align: middle; margin-right: 4px; }
+
+/* ---- PHONE DETAIL ---- */
+.info-table { width: 100%; border-collapse: collapse; }
+.info-table th { text-align: right; width: 180px; background: #ffcc66; color: #663300;
+                 border: 2px groove #996600; padding: 3px 8px; font-family: "Times New Roman", serif; }
+.info-table td { background: #ffffff; border: 2px groove #996600; padding: 3px 8px;
+                 font-family: "Courier New", monospace; font-size: 12px; color: #003300; }
+
+/* ---- CONNECTED FAMILIES "HOUSES" ---- */
+.homes { text-align: center; padding: 10px; background: #003366; border: 3px inset #66ccff; }
+.homes .home {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 8px;
+  color: #ffff99;
+  font-family: "Comic Sans MS", cursive;
+  font-size: 12px;
+  text-align: center;
+}
+.homes .line-anim {
+  display: inline-block;
+  width: 80px;
+  border-top: 4px dashed #ffff00;
+  vertical-align: middle;
+  animation: dashmove 1s linear infinite;
+}
+@keyframes dashmove { from{opacity:.5} to{opacity:1} }
+
+/* ---- TOGGLE ROW ---- */
+.opt-row {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 4px;
+}
+.opt-row .opt {
+  display: table-row;
+}
+.opt-row .opt > div {
+  display: table-cell;
+  padding: 6px 8px;
+  background: #ffffcc;
+  border: 2px groove #996600;
+  font-family: "Comic Sans MS", cursive;
+  font-size: 13px;
+  vertical-align: middle;
+}
+.opt-row .opt > div:first-child { background: #ccffcc; width: 60%; }
+.toggle {
+  display: inline-block;
+  background: #000;
+  color: #00ff00;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  padding: 2px 10px;
+  border: 3px outset #00aa00;
+  cursor: pointer;
+}
+.toggle.off { color: #cc0000; border-color: #aa0000; }
+
+/* ---- HOME 3D ICON ---- */
+.homeicon {
+  display: inline-block;
+  width: 28px; height: 28px;
+  vertical-align: middle;
+}

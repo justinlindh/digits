@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Digits 1 :: Phone Info</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="masthead">
+    <h1 class="rainbow" data-text="Digits 1 -- Phone Info">Digits 1 -- Phone Info</h1>
+    <div class="subhead">the cherry-red one on the kitchen counter</div>
+    <div class="aim-line">AIM: digits_lindh@aol.com</div>
+  </div>
+
+  <div class="navbar">
+    <a href="index.html"><svg class="house" width="14" height="14" viewBox="0 0 14 14"><polygon points="7,1 13,6 12,6 12,13 2,13 2,6 1,6" fill="#ffff00" stroke="#000" stroke-width="1"/><rect x="5" y="9" width="4" height="4" fill="#cc0000"/></svg> HOME</a>
+    <a href="phones.html">MY PHONES</a>
+    <a href="phone-detail.html">PHONE INFO</a>
+    <a href="links.html">FAMILY LINKS</a>
+    <a href="settings.html">OPTIONS</a>
+    <a href="guestbook.html">GUESTBOOK</a>
+    <a href="login.html">SIGN IN</a>
+  </div>
+
+  <div class="marquee-wrap">
+    <span>
+      &#9742; You are looking at Digits 1 ... &nbsp;&nbsp; press RESTART if it starts sounding like a seagull ... &nbsp;&nbsp;
+      the voice-style option is brand new!! try "Grandpa" for fun &nbsp;&nbsp;
+    </span>
+  </div>
+
+  <hr class="retro">
+
+  <table class="layout"><tr>
+
+    <td class="sidebar">
+      <h3>~ This Phone ~</h3>
+      <div class="sidebar-box" style="text-align:center;">
+        <!-- Tiny inline SVG of the cherry-red desk phone -->
+        <svg width="140" height="120" viewBox="0 0 140 120">
+          <!-- base -->
+          <rect x="15" y="70" width="110" height="35" rx="6" fill="#cc0000" stroke="#660000" stroke-width="2"/>
+          <!-- keypad -->
+          <rect x="45" y="78" width="50" height="22" fill="#ffcccc" stroke="#660000"/>
+          <g fill="#660000">
+            <rect x="48" y="80" width="10" height="5"/><rect x="61" y="80" width="10" height="5"/><rect x="74" y="80" width="10" height="5"/>
+            <rect x="48" y="87" width="10" height="5"/><rect x="61" y="87" width="10" height="5"/><rect x="74" y="87" width="10" height="5"/>
+            <rect x="48" y="94" width="10" height="5"/><rect x="61" y="94" width="10" height="5"/><rect x="74" y="94" width="10" height="5"/>
+          </g>
+          <!-- handset -->
+          <path d="M20,40 Q70,15 120,40 L115,52 Q70,30 25,52 Z" fill="#cc0000" stroke="#660000" stroke-width="2"/>
+          <circle cx="25" cy="48" r="6" fill="#660000"/>
+          <circle cx="115" cy="48" r="6" fill="#660000"/>
+          <!-- cord -->
+          <path d="M70 58 Q70 62 65 64 Q70 66 70 70" stroke="#660000" stroke-width="2" fill="none"/>
+        </svg>
+        <br>
+        <b style="color:#cc0000;">Digits 1</b><br>
+        <span style="font-family:'Courier New',monospace;">245-6390</span>
+      </div>
+
+      <h3>Quick Actions</h3>
+      <ul>
+        <li><a href="#">&raquo; Rename</a></li>
+        <li><a href="#">&raquo; Restart</a></li>
+        <li><a href="#">&raquo; Test Ring</a></li>
+        <li><a href="#">&raquo; Unpair</a></li>
+      </ul>
+
+      <h3>Visitors</h3>
+      <div style="text-align:center; padding:4px;">
+        <span class="counter">000013</span>
+      </div>
+    </td>
+
+    <td class="main">
+
+      <h1>&#9742; Digits 1 -- 245-6390</h1>
+      <p>
+        <span class="dot online"></span> <b style="color:#006600;">ONLINE</b>
+        &nbsp;|&nbsp; last heard from: <b>just now</b>
+        &nbsp;|&nbsp; calls today: <b>1</b>
+      </p>
+
+      <h2>&#9742; Hardware Info</h2>
+      <table class="info-table">
+        <tr><th>Phone model:</th>   <td>Western Electric 2500-series (cherry red, 1978)</td></tr>
+        <tr><th>Serial number:</th> <td>WE-2500-LNDH-001</td></tr>
+        <tr><th>Brains:</th>        <td>Raspberry Pi Zero 2 W  +  Pico H microcontroller</td></tr>
+        <tr><th>digitsd version:</th> <td>v0.4.2-lindh  (built 11/08/98)</td></tr>
+        <tr><th>Uptime:</th>        <td>3 days, 14 hours, 22 minutes</td></tr>
+        <tr><th>IP address:</th>    <td>192.168.2.142</td></tr>
+        <tr><th>Paired:</th>        <td>10/02/98</td></tr>
+        <tr><th>Where it lives:</th><td>Kitchen counter (next to the toaster)</td></tr>
+      </table>
+
+      <h2>&#9742; Voice Style</h2>
+      <p>Change what the phone sounds like when it talks to you:</p>
+      <table class="data" border="1" cellpadding="4" cellspacing="0" style="background:#ffffcc;">
+        <tr>
+          <td style="background:#ffcc66; width:180px;"><b>Current voice:</b></td>
+          <td>
+            <select name="voice" style="font-size:14px;">
+              <option>Grandpa (slow, friendly)</option>
+              <option selected>Operator (1960s) &laquo; current</option>
+              <option>Robot</option>
+              <option>Tommy's choice</option>
+              <option>Announcer (loud)</option>
+            </select>
+            &nbsp;<button class="bigbtn" type="button" style="font-size:14px; padding:4px 10px;">SAVE</button>
+          </td>
+        </tr>
+      </table>
+
+      <h2>&#9742; Controls</h2>
+      <table class="data" border="1" cellpadding="6" cellspacing="0">
+        <tr>
+          <td style="background:#ccffcc; width:50%;">
+            <b>Restart this phone</b><br>
+            <span style="font-size:11px;">Use this if it sounds weird or won't ring.</span>
+          </td>
+          <td style="text-align:center;">
+            <button class="bigbtn" type="button">&#8635; RESTART</button>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#ffffcc;">
+            <b>Test ring</b><br>
+            <span style="font-size:11px;">Makes the phone ring for 5 seconds so you can find it.</span>
+          </td>
+          <td style="text-align:center;">
+            <button class="bigbtn" type="button" style="background:#009900; border-color:#66ff99;">&#9742; RING IT!</button>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#ffcccc;">
+            <b>Unpair from network</b><br>
+            <span style="font-size:11px; color:#990000;"><b>WARNING:</b> this phone will stop working!!!</span>
+          </td>
+          <td style="text-align:center;">
+            <button class="bigbtn" type="button" style="background:#990000; border-color:#ff6666;">&times; UNPAIR</button>
+          </td>
+        </tr>
+      </table>
+
+      <h2>&#9742; Recent Calls from Digits 1</h2>
+      <table class="data" border="1" cellpadding="4" cellspacing="0">
+        <tr>
+          <th>To</th><th>When</th><th>Length</th>
+        </tr>
+        <tr>
+          <td>612-8844 (Patel Kitchen)</td>
+          <td>TODAY 3:42 PM</td>
+          <td>124 sec</td>
+        </tr>
+        <tr>
+          <td>248-6881 (Digits 2)</td>
+          <td>11/13/98 7:05 PM</td>
+          <td>42 sec</td>
+        </tr>
+      </table>
+
+      <hr class="retro">
+
+      <p style="text-align:center;">
+        <a href="phones.html">&laquo; back to all phones</a>
+        &nbsp; | &nbsp;
+        <a href="index.html">home</a>
+      </p>
+
+    </td>
+  </tr></table>
+
+  <div class="footer">
+    <div class="badges">
+      <span class="badge y2k">Y2K Compliant</span>
+      <span class="badge ns4">Netscape Navigator 4 Optimized</span>
+      <span class="badge ring">Phone Webring Member</span>
+    </div>
+    Made by the Lindh family with <span style="color:#ff3366;">&hearts;</span>
+    &#8212; Best viewed in Netscape Navigator 4 at 800&times;600<br>
+    Last updated: 11/14/98
+  </div>
+
+</div>
+</body>
+</html>
