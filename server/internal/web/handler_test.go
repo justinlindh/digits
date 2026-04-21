@@ -108,7 +108,7 @@ func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authS
 
 func TestDashboardReturns200(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -116,8 +116,9 @@ func TestDashboardReturns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "Household dashboard") {
-		t.Errorf("dashboard missing expected content")
+	body := w.Body.String()
+	if !strings.Contains(body, hh.Name) {
+		t.Errorf("dashboard missing household name %q", hh.Name)
 	}
 }
 
