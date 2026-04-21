@@ -218,6 +218,8 @@ BEGIN
 END $$;`,
 		// v11: per-line settings JSONB column (voice_style, etc.)
 		`ALTER TABLE lines ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
+		// v12: user-selectable webapp theme ('c' = home intercom default, 'aol' = AOL desktop 1997)
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'c'`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

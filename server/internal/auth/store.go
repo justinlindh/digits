@@ -17,6 +17,7 @@ type User struct {
 	Email       string
 	Name        string
 	GoogleID    *string
+	Theme       string // "c" (home intercom, default) or "aol"
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
 }
@@ -58,9 +59,9 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 	u := &User{}
 	err := s.db.QueryRow(
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, created_at, last_login_at`,
+		 RETURNING id, email, name, google_id, theme, created_at, last_login_at`,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -71,9 +72,9 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, created_at, last_login_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -87,9 +88,9 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, created_at, last_login_at FROM users WHERE google_id = $1`,
+		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE google_id = $1`,
 		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -103,9 +104,9 @@ func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 func (s *Store) GetUserByID(id string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, created_at, last_login_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -124,6 +125,15 @@ func (s *Store) UpdateLastLogin(userID string) error {
 // LinkGoogleID associates a Google OAuth subject ID with an existing user.
 func (s *Store) LinkGoogleID(userID, googleID string) error {
 	_, err := s.db.Exec(`UPDATE users SET google_id = $1 WHERE id = $2`, googleID, userID)
+	return err
+}
+
+// SetTheme updates the user's selected webapp theme ("c" or "aol").
+func (s *Store) SetTheme(userID, theme string) error {
+	if theme != "c" && theme != "aol" {
+		return fmt.Errorf("invalid theme: %q", theme)
+	}
+	_, err := s.db.Exec(`UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
 	return err
 }
 

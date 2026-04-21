@@ -1,0 +1,1099 @@
+/* =========================================================================
+   Digits — AOL Desktop 1997 theme
+   Companion to digits.css (direction C). Imitates the AOL 4.0 client:
+   title bar, menu bar, toolbar, Keyword bar, CHANNELS sidebar, status bar,
+   chunky 3D bevels, Tahoma/MS Sans Serif, AOL blue + yellow palette.
+   Redefines every semantic component class from digits.css in the AOL
+   aesthetic so the same page templates render with either theme.
+   ========================================================================= */
+
+/* --------- Tokens --------- */
+
+:root {
+  --aol-blue:       #0066cc;
+  --aol-blue-dark:  #003da7;
+  --aol-blue-mid:   #1f5fb5;
+  --aol-blue-light: #b8d0ed;
+  --aol-gold:       #ffcc00;
+  --aol-gold-dark:  #d69e00;
+  --aol-white:      #ffffff;
+  --aol-cream:      #fffbf0;
+  --aol-chrome:     #d4d0c8;
+  --aol-chrome-l:   #ece9d8;
+  --aol-chrome-d:   #808080;
+  --aol-chrome-dd:  #404040;
+  --aol-bevel-hi:   #ffffff;
+  --aol-bevel-lo:   #808080;
+  --aol-bevel-ll:  #404040;
+  --aol-desktop:    #008080;
+  --aol-ink:        #000000;
+  --aol-ink-soft:   #333333;
+  --aol-ink-muted:  #606060;
+  --aol-accent-red: #c41e16;
+  --aol-accent-grn: #007a1f;
+  --aol-accent-org: #e87a0f;
+
+  /* Aliases so the shared component vocabulary (--ink, --rust, --brass...)
+     keeps working in inline styles that leak through from the template. */
+  --ink:       var(--aol-ink);
+  --ink-soft:  var(--aol-ink-soft);
+  --ink-muted: var(--aol-ink-muted);
+  --paper:     var(--aol-white);
+  --paper-2:   var(--aol-chrome-l);
+  --rule:      var(--aol-chrome-d);
+  --rule-soft: var(--aol-chrome);
+  --brass:     var(--aol-gold-dark);
+  --forest:    var(--aol-accent-grn);
+  --rust:      var(--aol-accent-red);
+  --ochre:     var(--aol-accent-org);
+  --radius-1:  0;
+  --radius-2:  0;
+}
+
+/* --------- Reset / base --------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html { font-size: 12px; }
+
+body.aol {
+  background: var(--aol-desktop);
+  color: var(--aol-ink);
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  min-height: 100vh;
+  padding: 8px;
+}
+
+a { color: var(--aol-blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-chrome); border: 0; }
+
+/* --------- AOL window chrome --------- */
+
+.aol-window {
+  background: var(--aol-chrome);
+  border-top: 2px solid var(--aol-bevel-hi);
+  border-left: 2px solid var(--aol-bevel-hi);
+  border-right: 2px solid var(--aol-bevel-ll);
+  border-bottom: 2px solid var(--aol-bevel-ll);
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 16px);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+}
+
+.aol-title {
+  background: linear-gradient(90deg, var(--aol-blue-dark) 0%, var(--aol-blue) 50%, var(--aol-blue-light) 100%);
+  color: #fff;
+  padding: 3px 4px 3px 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: bold;
+  font-size: 12px;
+  min-height: 22px;
+}
+.aol-title__app {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+}
+.aol-title__icon {
+  width: 16px; height: 16px;
+  background:
+    radial-gradient(circle at 30% 30%, #fff 0 2px, transparent 2.5px),
+    conic-gradient(var(--aol-gold) 0 25%, var(--aol-accent-red) 0 50%, var(--aol-accent-grn) 0 75%, var(--aol-blue-light) 0 100%);
+  border: 1px solid var(--aol-bevel-ll);
+  display: inline-block;
+  flex-shrink: 0;
+}
+.aol-title__controls { display: flex; gap: 2px; }
+.aol-title__btn {
+  width: 18px; height: 18px;
+  background: var(--aol-chrome);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  color: var(--aol-ink);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.aol-menu {
+  background: var(--aol-chrome-l);
+  border-bottom: 1px solid var(--aol-bevel-lo);
+  padding: 1px 4px;
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+.aol-menu__item { padding: 2px 6px; color: var(--aol-ink); cursor: default; }
+.aol-menu__item:hover { background: var(--aol-blue); color: #fff; }
+.aol-menu__item--right { margin-left: auto; }
+
+.aol-toolbar {
+  background: var(--aol-chrome);
+  border-bottom: 1px solid var(--aol-bevel-lo);
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.aol-toolbar__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-width: 52px;
+  padding: 3px 4px;
+  background: var(--aol-chrome);
+  border: 1px solid transparent;
+  color: var(--aol-ink);
+  text-decoration: none;
+  font-size: 11px;
+  line-height: 1.15;
+}
+.aol-toolbar__btn:hover {
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  background: var(--aol-chrome-l);
+  text-decoration: none;
+}
+.aol-toolbar__btn:active,
+.aol-toolbar__btn.is-active {
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+}
+.aol-toolbar__btn--link { background: none; cursor: pointer; }
+.aol-toolbar__sep { width: 1px; height: 36px; background: var(--aol-bevel-lo); margin: 0 6px; border-right: 1px solid var(--aol-bevel-hi); }
+.aol-toolbar__icon { width: 32px; height: 32px; flex-shrink: 0; }
+.aol-toolbar__welcome {
+  margin-left: auto;
+  padding-right: 6px;
+  font-size: 11px;
+  color: var(--aol-ink);
+  font-style: italic;
+}
+
+.aol-keyword {
+  background: var(--aol-chrome);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-lo);
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.aol-keyword__fav, .aol-keyword__history {
+  padding: 2px 6px;
+  background: var(--aol-chrome);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  cursor: default;
+}
+.aol-keyword__label { font-weight: bold; }
+.aol-keyword__wrap {
+  flex: 1;
+  min-width: 180px;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  background: #fff;
+}
+.aol-keyword__input {
+  width: 100%;
+  padding: 3px 5px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--aol-ink);
+}
+.aol-keyword__input:focus { outline: none; }
+.aol-keyword__go {
+  padding: 3px 12px;
+  background: var(--aol-gold);
+  border-top: 1px solid #fff6c0;
+  border-left: 1px solid #fff6c0;
+  border-right: 1px solid var(--aol-gold-dark);
+  border-bottom: 1px solid var(--aol-gold-dark);
+  color: var(--aol-ink);
+  font-weight: bold;
+}
+
+.aol-body {
+  display: flex;
+  flex: 1;
+  min-height: 500px;
+}
+
+.aol-channels {
+  width: 140px;
+  flex-shrink: 0;
+  background: var(--aol-blue-dark);
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.aol-channels__header {
+  color: var(--aol-gold);
+  font-size: 10px;
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 0.1em;
+  padding: 4px 0 6px;
+  text-shadow: 1px 1px 0 #000;
+}
+.aol-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  text-decoration: none;
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  letter-spacing: 0.02em;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+.aol-channel:hover { text-decoration: none; filter: brightness(1.1); }
+.aol-channel.is-active {
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  filter: brightness(0.92);
+}
+.aol-channel__icon { width: 24px; height: 24px; flex-shrink: 0; }
+.aol-channel--green { background: linear-gradient(180deg, #2a9b3e, #18722a); }
+.aol-channel--red   { background: linear-gradient(180deg, #d8362c, #9b1e15); }
+.aol-channel--gold  { background: linear-gradient(180deg, #e4a414, #a97808); color: #1a0e00; text-shadow: 1px 1px 0 rgba(255,255,255,0.25); }
+.aol-channel--teal  { background: linear-gradient(180deg, #2998a0, #116670); }
+.aol-channel--grey  { background: linear-gradient(180deg, #808080, #4a4a4a); }
+
+.aol-main {
+  flex: 1;
+  background: var(--aol-chrome-l);
+  padding: 10px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.aol-status {
+  background: var(--aol-chrome);
+  border-top: 1px solid var(--aol-bevel-hi);
+  padding: 2px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--aol-ink-soft);
+}
+.aol-status__dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--aol-accent-grn);
+  box-shadow: 0 0 4px var(--aol-accent-grn);
+}
+.aol-status__sep { color: var(--aol-ink-muted); }
+.aol-status__spacer { flex: 1; }
+
+/* --------- Toolbar/channel icons (inline CSS pixel art) --------- */
+
+.aol-toolbar__icon,
+.aol-channel__icon {
+  position: relative;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+.aol-ic-mail {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='8' width='26' height='18' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/><path d='M3 8 L16 20 L29 8' fill='none' stroke='%23000' stroke-width='1.5'/><rect x='22' y='4' width='6' height='8' fill='%23c41e16' stroke='%23000' stroke-width='1'/></svg>");
+}
+.aol-ic-phone {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='10' width='20' height='18' fill='%23c41e16' stroke='%23000' stroke-width='1.5' rx='2'/><rect x='9' y='14' width='14' height='10' fill='%23a01a12'/><g fill='%23efe5d1' stroke='%23000' stroke-width='0.5'><rect x='10' y='15' width='3' height='2'/><rect x='14.5' y='15' width='3' height='2'/><rect x='19' y='15' width='3' height='2'/><rect x='10' y='18' width='3' height='2'/><rect x='14.5' y='18' width='3' height='2'/><rect x='19' y='18' width='3' height='2'/><rect x='10' y='21' width='3' height='2'/><rect x='14.5' y='21' width='3' height='2'/><rect x='19' y='21' width='3' height='2'/></g><rect x='4' y='6' width='24' height='5' fill='%23d8362c' stroke='%23000' stroke-width='1.5' rx='2.5'/></svg>");
+}
+.aol-ic-people {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='11' cy='11' r='4' fill='%23ffcc00' stroke='%23000' stroke-width='1.2'/><circle cx='21' cy='11' r='4' fill='%23d8362c' stroke='%23000' stroke-width='1.2'/><path d='M4 27 Q4 19 11 19 Q18 19 18 27' fill='%23ffcc00' stroke='%23000' stroke-width='1.2'/><path d='M14 27 Q14 19 21 19 Q28 19 28 27' fill='%23d8362c' stroke='%23000' stroke-width='1.2'/></svg>");
+}
+.aol-ic-log {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='5' y='3' width='22' height='26' fill='%23fff' stroke='%23000' stroke-width='1.5'/><line x1='9' y1='9' x2='23' y2='9' stroke='%23000' stroke-width='1'/><line x1='9' y1='14' x2='23' y2='14' stroke='%23000' stroke-width='1'/><line x1='9' y1='19' x2='23' y2='19' stroke='%23000' stroke-width='1'/><line x1='9' y1='24' x2='19' y2='24' stroke='%23000' stroke-width='1'/></svg>");
+}
+.aol-ic-prefs {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='9' fill='%23d4d0c8' stroke='%23000' stroke-width='1.5'/><circle cx='16' cy='16' r='3' fill='%230066cc'/><g fill='%23000'><rect x='15' y='2' width='2' height='5'/><rect x='15' y='25' width='2' height='5'/><rect x='2' y='15' width='5' height='2'/><rect x='25' y='15' width='5' height='2'/></g></svg>");
+}
+.aol-ic-signoff {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='6' width='18' height='20' fill='%23fff' stroke='%23000' stroke-width='1.5'/><path d='M14 16 L28 16 M24 12 L28 16 L24 20' stroke='%23c41e16' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+.aol-ic-welcome {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 14 L16 4 L28 14 L28 28 L4 28 Z' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/><rect x='13' y='18' width='6' height='10' fill='%238e5a10'/></svg>");
+}
+.aol-ic-kids { /* reserved */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/></svg>");
+}
+
+/* Channel icons are same set but scaled smaller; adjust padding */
+.aol-channel__icon { width: 22px; height: 22px; }
+
+/* =========================================================================
+   Re-skin shared components in AOL chrome
+   ========================================================================= */
+
+/* --------- Page container --------- */
+
+.page {
+  max-width: none;
+  padding: 0;
+}
+.page__head {
+  background: linear-gradient(90deg, var(--aol-blue-dark), var(--aol-blue));
+  color: #fff;
+  margin: 0 0 10px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  flex-wrap: wrap;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
+}
+.page__title {
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 14px;
+  color: #fff;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+.page__sub { color: rgba(255,255,255,0.85); font-size: 12px; }
+.page__foot {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--aol-chrome-d);
+  font-size: 11px;
+  color: var(--aol-ink-muted);
+  display: flex;
+  gap: 6px;
+}
+
+/* --------- Panels (AOL window-in-window) --------- */
+
+.panel {
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  box-shadow: inset 1px 1px 0 var(--aol-chrome-l);
+  overflow: hidden;
+  padding: 2px;
+  margin-bottom: 8px;
+}
+.panel__head {
+  background: linear-gradient(90deg, var(--aol-blue-dark), var(--aol-blue-mid));
+  color: #fff;
+  padding: 3px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  min-height: 20px;
+}
+.panel__title {
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 12px;
+  color: #fff;
+  margin: 0;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+}
+.panel__title-sub {
+  font-size: 11px;
+  color: rgba(255,255,255,0.9);
+}
+.panel__action { font-size: 11px; color: var(--aol-gold); font-weight: bold; }
+.panel__action:hover { color: #fff; text-decoration: none; }
+.panel__body { padding: 10px; }
+.panel__body--tight { padding: 6px 10px; }
+
+/* --------- Buttons (chunky beveled) --------- */
+
+.btn, button.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1.2;
+  color: var(--aol-ink);
+  background: var(--aol-chrome);
+  border-top: 2px solid var(--aol-bevel-hi);
+  border-left: 2px solid var(--aol-bevel-hi);
+  border-right: 2px solid var(--aol-bevel-ll);
+  border-bottom: 2px solid var(--aol-bevel-ll);
+  border-radius: 0;
+  cursor: pointer;
+  min-height: 24px;
+}
+.btn:hover { background: var(--aol-chrome-l); }
+.btn:active, .btn.is-pressed {
+  border-top: 2px solid var(--aol-bevel-ll);
+  border-left: 2px solid var(--aol-bevel-ll);
+  border-right: 2px solid var(--aol-bevel-hi);
+  border-bottom: 2px solid var(--aol-bevel-hi);
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:focus-visible { outline: 1px dotted var(--aol-ink); outline-offset: -4px; }
+
+.btn--primary {
+  background: linear-gradient(180deg, var(--aol-gold), var(--aol-gold-dark));
+  color: var(--aol-ink);
+}
+.btn--primary:hover { background: linear-gradient(180deg, #fff000, var(--aol-gold-dark)); }
+
+.btn--brass {
+  background: linear-gradient(180deg, var(--aol-gold), var(--aol-gold-dark));
+  color: var(--aol-ink);
+}
+.btn--brass:hover { background: linear-gradient(180deg, #fff000, var(--aol-gold-dark)); }
+
+.btn--danger {
+  background: linear-gradient(180deg, #e04a42, var(--aol-accent-red));
+  color: #fff;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
+}
+.btn--danger:hover { background: linear-gradient(180deg, #ef5850, var(--aol-accent-red)); }
+
+.btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--aol-blue);
+  font-weight: normal;
+  text-decoration: underline;
+  min-height: 0;
+  padding: 1px 4px;
+}
+.btn--quiet:hover { color: var(--aol-blue-dark); background: transparent; }
+
+.btn--sm { padding: 2px 8px; font-size: 11px; min-height: 0; }
+
+/* --------- Forms --------- */
+
+.field { margin-bottom: 8px; }
+.field__label {
+  display: block;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--aol-ink);
+  letter-spacing: 0;
+  text-transform: none;
+  margin-bottom: 3px;
+}
+.field__input,
+.field__select,
+.field__textarea {
+  width: 100%;
+  padding: 3px 5px;
+  background: #fff;
+  color: var(--aol-ink);
+  font: inherit;
+  font-size: 12px;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  box-shadow: inset 1px 1px 0 var(--aol-chrome-d);
+  border-radius: 0;
+  min-height: 22px;
+}
+.field__input:focus,
+.field__select:focus,
+.field__textarea:focus {
+  outline: 1px dotted var(--aol-ink);
+  outline-offset: -3px;
+}
+.field__input::placeholder { color: var(--aol-ink-muted); }
+.field__input--mono { font-family: "Courier New", Courier, monospace; letter-spacing: 0.05em; }
+.field__input--center { text-align: center; }
+.field__input--big { font-size: 18px; padding: 5px 8px; letter-spacing: 0.25em; }
+.field__hint { font-size: 11px; color: var(--aol-ink-muted); margin-top: 2px; }
+.field__hint--err { color: var(--aol-accent-red); font-weight: bold; }
+.field__input[aria-invalid="true"], .field__input.is-invalid { border-color: var(--aol-accent-red); }
+
+.form-row { display: grid; gap: 8px; }
+@media (min-width: 720px) {
+  .form-row { grid-template-columns: repeat(3, 1fr); }
+  .form-row--2 { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* --------- Toggle (stand-in for AOL "Enabled?" checkbox with chunky check) --------- */
+
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 16px; height: 16px;
+  flex-shrink: 0;
+}
+.toggle input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.toggle__track {
+  position: absolute; inset: 0;
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-radius: 0;
+}
+.toggle__track::after {
+  content: "";
+  position: absolute;
+  top: 1px; left: 3px;
+  width: 10px; height: 10px;
+  background: transparent;
+  transition: background 0.08s;
+}
+.toggle input:checked ~ .toggle__track::after {
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'><path d='M1 5 L4 8 L9 2' stroke='%23007a1f' stroke-width='2.5' fill='none' stroke-linecap='square'/></svg>") no-repeat center / contain;
+}
+
+/* --------- Chip / state badge --------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px 1px 4px;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 1.3;
+  background: var(--aol-chrome);
+  color: var(--aol-ink);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-radius: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aol-ink-muted); }
+.chip--on   { background: #d3f0d8; color: var(--aol-accent-grn); }
+.chip--on   .chip__dot { background: var(--aol-accent-grn); box-shadow: 0 0 3px var(--aol-accent-grn); }
+.chip--warn { background: #fff3ce; color: #8a5a00; }
+.chip--warn .chip__dot { background: var(--aol-accent-org); }
+.chip--live { background: var(--aol-gold); color: #1a0e00; }
+.chip--live .chip__dot { background: var(--aol-accent-red); animation: aol-pulse 1s steps(2,end) infinite; }
+.chip--err  { background: #f4d4d2; color: var(--aol-accent-red); }
+.chip--err  .chip__dot { background: var(--aol-accent-red); }
+
+@keyframes aol-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* --------- Banner --------- */
+
+.banner {
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  background: var(--aol-chrome-l);
+  color: var(--aol-ink);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-radius: 0;
+  font-weight: bold;
+}
+.banner--ok   { background: #d3f0d8; color: var(--aol-accent-grn); }
+.banner--warn { background: #fff3ce; color: #8a5a00; }
+.banner--err  { background: #f4d4d2; color: var(--aol-accent-red); }
+
+/* --------- Key-value list --------- */
+
+.kv { margin: 0; padding: 0; }
+.kv__row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 12px;
+  padding: 5px 10px;
+  border-bottom: 1px dotted var(--aol-chrome-d);
+  font-size: 12px;
+  align-items: baseline;
+}
+.kv__row:last-child { border-bottom: 0; }
+.kv__key {
+  color: var(--aol-ink);
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.kv__val { color: var(--aol-ink); }
+.kv__val--mono { font-family: "Courier New", Courier, monospace; }
+.kv__val--muted { color: var(--aol-ink-muted); font-style: italic; }
+@media (max-width: 640px) {
+  .kv__row { grid-template-columns: 1fr; gap: 1px; padding: 6px 10px; }
+}
+
+/* --------- Radio card (voice style, update pick) --------- */
+
+.radio-card {
+  display: block;
+  padding: 6px 8px;
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  cursor: pointer;
+  border-radius: 0;
+  margin: 0;
+}
+.radio-card + .radio-card { margin-top: 4px; }
+.radio-card:hover { background: var(--aol-blue-light); }
+.radio-card input { position: absolute; opacity: 0; pointer-events: none; }
+.radio-card:has(input:checked) {
+  background: var(--aol-gold);
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+}
+.radio-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--aol-ink);
+}
+.radio-card__indicator {
+  width: 11px; height: 11px;
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  position: relative;
+  flex-shrink: 0;
+}
+.radio-card:has(input:checked) .radio-card__indicator::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--aol-accent-red);
+}
+.radio-card__desc {
+  margin: 3px 0 0 18px;
+  font-size: 11px;
+  color: var(--aol-ink-soft);
+}
+.radio-card__meta { margin-left: auto; font-size: 11px; color: var(--aol-ink-muted); font-family: "Courier New", Courier, monospace; }
+
+/* --------- Empty state --------- */
+
+.empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--aol-ink-muted);
+  font-size: 12px;
+}
+.empty__icon { color: var(--aol-chrome-d); margin-bottom: 8px; }
+.empty a { color: var(--aol-blue); font-weight: bold; }
+
+/* --------- Tables --------- */
+
+.t {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+}
+.t thead th {
+  text-align: left;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--aol-ink);
+  background: var(--aol-chrome);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-top: 1px solid var(--aol-bevel-hi);
+}
+.t tbody td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--aol-chrome-l);
+  vertical-align: middle;
+}
+.t tbody tr:hover { background: var(--aol-blue-light); }
+.t td.num, .t th.num { font-family: "Courier New", Courier, monospace; color: var(--aol-ink); }
+.t td.r, .t th.r { text-align: right; }
+
+/* --------- Stats strip (dashboard) --------- */
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 10px;
+}
+.strip__cell {
+  flex: 1 1 140px;
+  padding: 6px 10px;
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+  text-align: center;
+}
+.strip__cell--muted { background: var(--aol-chrome-l); }
+.strip__label {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--aol-blue-dark);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+.strip__value {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--aol-ink);
+}
+.strip__value--forest { color: var(--aol-accent-grn); }
+.strip__value--brass  { color: var(--aol-accent-red); }
+.strip__cell--muted .strip__value { color: var(--aol-ink-muted); }
+
+/* --------- Line list (dashboard, mobile card) --------- */
+
+.lines { list-style: none; margin: 0; padding: 0; background: #fff; }
+.lines__row {
+  display: grid;
+  grid-template-columns: 14px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--aol-chrome-l);
+  min-height: 24px;
+  color: var(--aol-ink);
+}
+.lines__row:last-child { border-bottom: 0; }
+.lines__row:hover { background: var(--aol-blue-light); text-decoration: none; }
+.lines__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--aol-ink-muted); }
+.lines__dot--on { background: var(--aol-accent-grn); box-shadow: 0 0 4px var(--aol-accent-grn); }
+.lines__name { font-weight: bold; color: var(--aol-ink); font-size: 12px; }
+.lines__num { font-family: "Courier New", Courier, monospace; font-size: 12px; color: var(--aol-ink-soft); }
+.lines__state { font-size: 11px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
+.lines__state--on { color: var(--aol-accent-grn); }
+
+/* --------- Keypad (chunky AOL treatment) --------- */
+
+.keypad {
+  --kp-w: 240px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  width: var(--kp-w);
+  margin: 0 auto;
+  padding: 10px;
+  background: #1a3d72;
+  border-top: 2px solid var(--aol-bevel-hi);
+  border-left: 2px solid var(--aol-bevel-hi);
+  border-right: 2px solid var(--aol-bevel-ll);
+  border-bottom: 2px solid var(--aol-bevel-ll);
+  border-radius: 0;
+  box-shadow: none;
+}
+.keypad__btn {
+  aspect-ratio: 1 / 1;
+  background: linear-gradient(180deg, #f5f5f5, #c4c4c4);
+  border-top: 2px solid var(--aol-bevel-hi);
+  border-left: 2px solid var(--aol-bevel-hi);
+  border-right: 2px solid var(--aol-bevel-ll);
+  border-bottom: 2px solid var(--aol-bevel-ll);
+  border-radius: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  color: var(--aol-ink);
+}
+.keypad__btn:hover { background: linear-gradient(180deg, #fff, #d8d8d8); }
+.keypad__btn:active, .keypad__btn.is-pressed {
+  background: linear-gradient(180deg, #c4c4c4, #a0a0a0);
+  border-top: 2px solid var(--aol-bevel-ll);
+  border-left: 2px solid var(--aol-bevel-ll);
+  border-right: 2px solid var(--aol-bevel-hi);
+  border-bottom: 2px solid var(--aol-bevel-hi);
+}
+.keypad__num {
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--aol-ink);
+}
+.keypad__letters {
+  font-size: 8px;
+  font-weight: bold;
+  color: var(--aol-ink-soft);
+  letter-spacing: 0.1em;
+}
+.keypad__btn--symbol .keypad__num { color: var(--aol-blue-dark); }
+.keypad-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.keypad-wrap__strip {
+  background: var(--aol-gold);
+  border-top: 1px solid #fff6c0;
+  border-left: 1px solid #fff6c0;
+  border-right: 1px solid var(--aol-gold-dark);
+  border-bottom: 1px solid var(--aol-gold-dark);
+  padding: 2px 16px;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--aol-ink);
+  letter-spacing: 0.15em;
+}
+
+/* --------- Pin slots (code entry) --------- */
+
+.pin { display: flex; gap: 4px; justify-content: center; margin-bottom: 6px; }
+.pin__slot {
+  width: 32px; height: 40px;
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--aol-ink);
+}
+.pin__slot.is-filled { background: var(--aol-gold); }
+.pin__slot.is-active { border-bottom-color: var(--aol-accent-red); box-shadow: inset 0 -2px 0 var(--aol-accent-red); }
+
+/* --------- Hub-and-spoke (Connected Families) --------- */
+
+.hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 10px;
+  gap: 10px;
+  background: #fff;
+}
+.hub__spokes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 16px 24px;
+  max-width: 760px;
+}
+.hub__spoke {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 14px;
+  position: relative;
+  max-width: 140px;
+}
+.hub__spoke::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 12px;
+  border-left: 2px dashed var(--aol-gold-dark);
+}
+.hub__house { width: 40px; height: 40px; color: var(--aol-blue-dark); }
+.hub__label {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--aol-ink);
+  text-align: center;
+}
+.hub__since { font-size: 10px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
+.hub__rail {
+  width: calc(100% - 16px);
+  max-width: 560px;
+  height: 0;
+  border-top: 2px dashed var(--aol-gold-dark);
+  background: none;
+}
+.hub__center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 12px; }
+.hub__center::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 12px;
+  border-left: 2px dashed var(--aol-gold-dark);
+}
+.hub__center-house { width: 60px; height: 60px; color: var(--aol-blue-dark); }
+.hub__center-name { font-weight: bold; font-size: 13px; color: var(--aol-ink); font-style: normal; }
+.hub__center-sub { font-size: 10px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
+
+/* --------- Disclosure (details/summary) --------- */
+
+details.disclosure {
+  background: #fff;
+  border-top: 1px solid var(--aol-bevel-ll);
+  border-left: 1px solid var(--aol-bevel-ll);
+  border-right: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 var(--aol-chrome-d);
+}
+details.disclosure summary {
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--aol-blue);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+details.disclosure summary::-webkit-details-marker { display: none; }
+details.disclosure summary::before {
+  content: "+";
+  font-family: "Courier New", Courier, monospace;
+  font-weight: bold;
+  color: var(--aol-ink);
+  font-size: 14px;
+  width: 14px;
+  text-align: center;
+  background: var(--aol-chrome);
+  border-top: 1px solid var(--aol-bevel-hi);
+  border-left: 1px solid var(--aol-bevel-hi);
+  border-right: 1px solid var(--aol-bevel-ll);
+  border-bottom: 1px solid var(--aol-bevel-ll);
+}
+details.disclosure[open] summary::before { content: "−"; }
+details.disclosure summary:hover { text-decoration: underline; }
+details.disclosure > *:not(summary) { border-top: 1px dotted var(--aol-chrome-d); padding: 8px 10px; }
+
+/* --------- Auth screens (login/onboard) keep separate chrome --------- */
+
+.auth { /* reuse the digits.css .auth layout but AOL-skinned */
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 12px;
+  background: var(--aol-desktop);
+}
+.auth__frame { width: 100%; max-width: 400px; text-align: center; }
+.auth__mark {
+  font-family: "Times New Roman", Times, serif;
+  font-weight: bold;
+  font-size: 32px;
+  color: #fff;
+  letter-spacing: 0.02em;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
+  margin: 0 0 2px;
+}
+.auth__mark em { font-style: italic; color: var(--aol-gold); }
+.auth__tagline { color: var(--aol-chrome-l); font-size: 12px; margin: 0 0 16px; text-shadow: 1px 1px 0 rgba(0,0,0,0.3); }
+.auth__card {
+  background: var(--aol-chrome);
+  border-top: 2px solid var(--aol-bevel-hi);
+  border-left: 2px solid var(--aol-bevel-hi);
+  border-right: 2px solid var(--aol-bevel-ll);
+  border-bottom: 2px solid var(--aol-bevel-ll);
+  padding: 12px;
+  text-align: left;
+}
+.auth__divider {
+  display: flex; align-items: center; gap: 8px;
+  margin: 10px 0; color: var(--aol-ink-muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: bold;
+}
+.auth__divider::before, .auth__divider::after { content: ""; flex: 1; height: 1px; background: var(--aol-chrome-d); }
+.auth__phone { width: 96px; height: 96px; margin: 0 auto 12px; color: var(--aol-ink); }
+
+/* --------- Utilities --------- */
+
+.num { font-family: "Courier New", Courier, monospace; }
+.muted { color: var(--aol-ink-muted); }
+.soft  { color: var(--aol-ink-soft); }
+.brass { color: var(--aol-gold-dark); }
+.serif { font-family: "Times New Roman", Times, serif; }
+.italic { font-style: italic; }
+.center { text-align: center; }
+.hidden { display: none !important; }
+.stack-sm > * + * { margin-top: 4px; }
+.stack-md > * + * { margin-top: 8px; }
+.stack-lg > * + * { margin-top: 12px; }
+.hstack { display: flex; align-items: center; gap: 8px; }
+.hstack--wrap { flex-wrap: wrap; }
+.spread { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* --------- Columns --------- */
+
+.cols { display: grid; gap: 8px; grid-template-columns: 1fr; }
+@media (min-width: 880px) {
+  .cols--2 { grid-template-columns: 1fr 1fr; }
+  .cols--side { grid-template-columns: 3fr 2fr; }
+}
+
+/* --------- Responsive helpers --------- */
+
+.show-sm { display: none; }
+@media (max-width: 720px) {
+  .hide-sm { display: none !important; }
+  .show-sm { display: block; }
+  .aol-body { flex-direction: column; }
+  .aol-channels { width: auto; flex-direction: row; flex-wrap: wrap; }
+  .aol-channel { flex: 1 1 120px; }
+}

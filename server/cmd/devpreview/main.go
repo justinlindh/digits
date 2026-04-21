@@ -58,14 +58,14 @@ func main() {
 		return t
 	}
 
-	tDash := parse("templates/layout-v2.html", "templates/dashboard.html")
-	tPhones := parse("templates/layout-v2.html", "templates/phones.html")
-	tPhoneDetail := parse("templates/layout-v2.html", "templates/phone-detail.html")
-	tLinks := parse("templates/layout-v2.html", "templates/links.html")
-	tCalls := parse("templates/layout-v2.html", "templates/calls.html")
-	tSettings := parse("templates/layout-v2.html", "templates/settings.html")
-	tOnboard := parse("templates/layout-v2.html", "templates/onboard.html")
-	tLogin := parse("templates/layout-v2.html", "templates/login.html")
+	tDash := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/dashboard.html")
+	tPhones := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phones.html")
+	tPhoneDetail := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phone-detail.html")
+	tLinks := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/links.html")
+	tCalls := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/calls.html")
+	tSettings := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/settings.html")
+	tOnboard := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/onboard.html")
+	tLogin := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/login.html")
 
 	// ---- Fixture data ----
 
@@ -101,9 +101,16 @@ func main() {
 
 	// ---- Handlers ----
 
-	render := func(w http.ResponseWriter, t *template.Template, name string, data any) {
-		if err := t.ExecuteTemplate(w, name, data); err != nil {
-			log.Printf("render %s: %v", name, err)
+	layoutFor := func(r *http.Request) string {
+		if r.URL.Query().Get("theme") == "aol" {
+			return "layout-aol.html"
+		}
+		return "layout-v2.html"
+	}
+
+	render := func(w http.ResponseWriter, r *http.Request, t *template.Template, data any) {
+		if err := t.ExecuteTemplate(w, layoutFor(r), data); err != nil {
+			log.Printf("render %s: %v", layoutFor(r), err)
 			http.Error(w, err.Error(), 500)
 		}
 	}
@@ -118,13 +125,13 @@ func main() {
 		data := baseCtx("dashboard")
 		data["Stats"] = dashStats{TotalLines: 3, OnlineLines: 2, ActiveCalls: 0, CallsToday: 1}
 		data["Lines"] = lines
-		render(w, tDash, "layout-v2.html", data)
+		render(w, r, tDash, data)
 	})
 
 	mux.HandleFunc("/phones", func(w http.ResponseWriter, r *http.Request) {
 		data := baseCtx("phones")
 		data["Lines"] = lines
-		render(w, tPhones, "layout-v2.html", data)
+		render(w, r, tPhones, data)
 	})
 
 	mux.HandleFunc("/phones/2456390", func(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +157,7 @@ func main() {
 			{Version: "v0.8.2", Date: "2026-04-14"},
 			{Version: "v0.8.1", Date: "2026-03-30"},
 		}
-		render(w, tPhoneDetail, "layout-v2.html", data)
+		render(w, r, tPhoneDetail, data)
 	})
 
 	mux.HandleFunc("/links", func(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +196,7 @@ func main() {
 		data["PendingInvites"] = []linkRow{
 			{ID: "inv-1", InviteCode: "K7F-Q29", Status: "pending", CreatedAt: time.Now().Add(-2 * 24 * time.Hour)},
 		}
-		render(w, tLinks, "layout-v2.html", data)
+		render(w, r, tLinks, data)
 	})
 
 	mux.HandleFunc("/links/solo", func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +214,7 @@ func main() {
 			},
 		}
 		data["PendingInvites"] = []linkRow{}
-		render(w, tLinks, "layout-v2.html", data)
+		render(w, r, tLinks, data)
 	})
 
 	mux.HandleFunc("/links/created", func(w http.ResponseWriter, r *http.Request) {
@@ -216,7 +223,7 @@ func main() {
 		data["CreatedCode"] = "K7F-Q29"
 		data["LinkedFamilies"] = []linkedFamily{}
 		data["PendingInvites"] = []linkRow{}
-		render(w, tLinks, "layout-v2.html", data)
+		render(w, r, tLinks, data)
 	})
 
 	mux.HandleFunc("/calls", func(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +235,7 @@ func main() {
 			{ID: 3, Caller: "2486881", Callee: "6128844", Status: "connected", StartedAt: now.Add(-4 * time.Minute), DurationS: 240},
 			{ID: 4, Caller: "2456390", Callee: "6128801", Status: "ended", StartedAt: now.Add(-3 * 24 * time.Hour), DurationS: 38},
 		}
-		render(w, tCalls, "layout-v2.html", data)
+		render(w, r, tCalls, data)
 	})
 
 	mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
@@ -236,7 +243,7 @@ func main() {
 		data["User"] = user
 		data["Household"] = household_
 		data["Saved"] = false
-		render(w, tSettings, "layout-v2.html", data)
+		render(w, r, tSettings, data)
 	})
 
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +252,7 @@ func main() {
 			"Version":       version,
 			"GoogleEnabled": true,
 		}
-		render(w, tLogin, "layout-v2.html", data)
+		render(w, r, tLogin, data)
 	})
 
 	mux.HandleFunc("/onboard", func(w http.ResponseWriter, r *http.Request) {
@@ -254,7 +261,7 @@ func main() {
 			"Version":       version,
 			"SuggestedName": "Justin Lindh's Family",
 		}
-		render(w, tOnboard, "layout-v2.html", data)
+		render(w, r, tOnboard, data)
 	})
 
 	mux.HandleFunc("/auth/logout", func(w http.ResponseWriter, r *http.Request) {

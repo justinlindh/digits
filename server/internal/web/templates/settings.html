@@ -142,6 +142,38 @@
     </script>
   </section>
 
+  <!-- Theme -->
+  {{if .User}}
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Theme</h2>
+      <span class="panel__title-sub">Pick the look you'd like for this app.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/theme" method="POST" class="stack-md">
+        <label class="radio-card">
+          <input type="radio" name="theme" value="c" {{if or (eq .User.Theme "c") (eq .User.Theme "")}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Home intercom
+            <span class="radio-card__meta">default</span>
+          </div>
+          <p class="radio-card__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</p>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="theme" value="aol" {{if eq .User.Theme "aol"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            AOL Desktop 1997
+          </div>
+          <p class="radio-card__desc">Blue gradients, chunky 3D bevels, Tahoma, a Keyword bar, "Welcome!" energy.</p>
+        </label>
+        <button type="submit" class="btn btn--primary">Save theme</button>
+      </form>
+    </div>
+  </section>
+  {{end}}
+
   <!-- Privacy -->
   <section class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
