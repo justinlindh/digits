@@ -254,6 +254,21 @@ func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int6
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 	committed = true
+
+	// Remove conference members from the 2-party active map. Membership is
+	// now tracked exclusively through the conference tracker.
+	t.mu.Lock()
+	for k, ac := range t.active {
+		if _, ok := conf.Members[ac.Caller]; ok {
+			delete(t.active, k)
+			continue
+		}
+		if _, ok := conf.Members[ac.Callee]; ok {
+			delete(t.active, k)
+		}
+	}
+	t.mu.Unlock()
+
 	return conf, nil
 }
 
@@ -292,6 +307,96 @@ func (t *Tracker) EndConferencePersistent(confID uuid.UUID, reason string) error
 	}
 	committed = true
 	return nil
+}
+
+// DropMemberPersistent drops a single member from an active conference, ends the
+// conference (v1 caps at 3; any drop to 2 terminates), persists all state changes,
+// and (for the 2 surviving members) inserts a fresh calls row stamped with
+// originating_conference_id so Busy() and call history stay consistent after the
+// conference ends but the surviving pair's PC continues as a regular 2-party call.
+func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
+	// Snapshot the conference BEFORE dropping in-memory so we still know the full
+	// set if the in-memory drop succeeds but DB writes fail. We deliberately do NOT
+	// roll back the in-memory state on DB failure (symmetric with EndConferencePersistent).
+	// The preDrop snapshot is kept here as a marker for future reconciliation if needed.
+	preDrop := t.conferences.ConferenceByPhone(phone)
+	if preDrop == nil {
+		return nil, false, fmt.Errorf("phone %s is not in any active conference", phone)
+	}
+
+	remaining, ended, err = t.conferences.DropMember(confID, phone, reason)
+	if err != nil {
+		return nil, false, err
+	}
+
+	tx, err := t.db.DB.Begin()
+	if err != nil {
+		return nil, false, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(
+		`UPDATE conference_members SET left_at = NOW(), left_reason = $1
+		 WHERE conference_id = $2 AND phone = $3`,
+		reason, confID, phone,
+	); err != nil {
+		return nil, false, fmt.Errorf("update dropped member: %w", err)
+	}
+	if _, err = tx.Exec(
+		`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = 'member_left'
+		 WHERE id = $1`,
+		confID,
+	); err != nil {
+		return nil, false, fmt.Errorf("end conference: %w", err)
+	}
+	if _, err = tx.Exec(
+		`UPDATE conference_members SET left_at = NOW(), left_reason = 'conference_ended'
+		 WHERE conference_id = $1 AND left_at IS NULL`,
+		confID,
+	); err != nil {
+		return nil, false, fmt.Errorf("end remaining members: %w", err)
+	}
+
+	if len(remaining) == 2 {
+		// Sort for stable caller/callee ordering.
+		a, b := remaining[0], remaining[1]
+		if b < a {
+			a, b = b, a
+		}
+		if _, err = tx.Exec(
+			`INSERT INTO calls (caller, callee, status, originating_conference_id)
+			 VALUES ($1, $2, 'connected', $3)`,
+			a, b, confID,
+		); err != nil {
+			return nil, false, fmt.Errorf("insert continuation call: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("commit: %w", err)
+	}
+	committed = true
+
+	// Register the surviving pair in the 2-party active map so Busy() and
+	// InCall() continue to work after the conference ends. The conference
+	// tracker already removed them from its own memberIndex in DropMember.
+	if len(remaining) == 2 {
+		a, b := remaining[0], remaining[1]
+		if b < a {
+			a, b = b, a
+		}
+		t.mu.Lock()
+		t.active[callKey(a, b)] = &activeCall{Caller: a, Callee: b}
+		t.mu.Unlock()
+	}
+
+	_ = preDrop // kept for future reconciliation if we ever want to restore on DB failure
+	return remaining, ended, nil
 }
 
 // RecentForPhones returns the most recent calls where either caller or callee

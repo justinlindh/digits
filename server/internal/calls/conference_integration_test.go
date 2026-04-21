@@ -89,3 +89,46 @@ func TestConferencePersistence_Integration(t *testing.T) {
 		t.Fatalf("expected state=ended end_reason=test_end, got state=%s end_reason=%s", state, endReason)
 	}
 }
+
+func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
+	d := openTestDB(t)
+
+	tr := calls.New(d)
+	callID, _ := tr.OnCallInitiated("5550100", "5550101")
+	conf, _ := tr.CreateConferencePersistent("5550100", callID, []string{"5550101", "5550102"})
+
+	remaining, ended, err := tr.DropMemberPersistent(conf.ID, "5550101", "hangup")
+	if err != nil {
+		t.Fatalf("DropMemberPersistent: %v", err)
+	}
+	if !ended {
+		t.Fatalf("expected conference ended")
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 remaining, got %d", len(remaining))
+	}
+
+	// A new calls row must exist with originating_conference_id set and status = 'connected'
+	var count int
+	err = d.DB.QueryRow(
+		`SELECT COUNT(*) FROM calls WHERE originating_conference_id = $1 AND status = 'connected'`,
+		conf.ID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("count continuation calls: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 continuation calls row, got %d", count)
+	}
+
+	// Verify surviving members are busy via tr.active and Tracker.Busy reports them so.
+	for _, p := range remaining {
+		if !tr.Busy(p) {
+			t.Fatalf("expected surviving member %s to be busy after continuation", p)
+		}
+	}
+	// The dropped member is not busy.
+	if tr.Busy("5550101") {
+		t.Fatalf("dropped member should not be busy")
+	}
+}
