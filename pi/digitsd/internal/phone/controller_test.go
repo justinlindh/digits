@@ -23,6 +23,7 @@ type mockCallbacks struct {
 	callConnectedCalls int
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
+	removedMeshPeers   []string          // peers that had RemoveMeshPeer called
 	mergeRequests      [][2]string       // [held, active] pairs
 	meshPeers          map[string]bool   // phone -> initiator flag
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
@@ -93,7 +94,7 @@ func (m *mockCallbacks) AddMeshPeer(phone string, initiator bool) {
 func (m *mockCallbacks) RemoveMeshPeer(phone string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.torndownPeers = append(m.torndownPeers, phone)
+	m.removedMeshPeers = append(m.removedMeshPeers, phone)
 }
 func (m *mockCallbacks) TearDownAllMeshPeers() {
 	m.mu.Lock()
@@ -151,6 +152,18 @@ func (m *mockCallbacks) peerTorndown(phone string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, p := range m.torndownPeers {
+		if p == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// meshPeerRemoved returns whether RemoveMeshPeer was called for the given phone.
+func (m *mockCallbacks) meshPeerRemoved(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.removedMeshPeers {
 		if p == phone {
 			return true
 		}
@@ -1049,8 +1062,11 @@ func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
 
 	c.HandleConferenceLeave("conf-abc", "5550002", "hangup")
 
-	if !mock.peerTorndown("5550002") {
-		t.Fatalf("expected RemoveMeshPeer(5550002) / TearDownPeer(5550002)")
+	if !mock.meshPeerRemoved("5550002") {
+		t.Fatalf("expected RemoveMeshPeer(5550002)")
+	}
+	if mock.peerTorndown("5550002") {
+		t.Fatalf("RemoveMeshPeer should not push to torndownPeers")
 	}
 }
 
@@ -1078,11 +1094,17 @@ func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
 func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
+	// Establish conference ID via HandleConferenceMember so the confID guard is satisfied.
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"},
+		{Phone: "5550002", Role: "added"},
+		{Phone: "5550003", Role: "added"},
+	})
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
 
-	c.HandleConferenceRejected("", "merge_failed")
+	c.HandleConferenceRejected("conf-abc", "merge_failed")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected StateCONNECTED on rejection, got %v", c.State())
@@ -1092,5 +1114,8 @@ func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	}
 	if !mock.peerTorndown("5550003") {
 		t.Fatalf("expected A->C torn down")
+	}
+	if c.ConferenceID() != "" {
+		t.Fatalf("expected conference state cleared, got %q", c.ConferenceID())
 	}
 }

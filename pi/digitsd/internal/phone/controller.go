@@ -653,11 +653,20 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Only skip if both sides have a conf ID and they don't match.
+	// If we have no conf ID yet (rejection arrived before Member message),
+	// fall through so the user hears the intercept tone.
+	if c.confID != "" && confID != "" && c.confID != confID {
+		return
+	}
 	if c.state != StateCONFERENCE_MERGED {
 		return // probably stale; ignore
 	}
+	// ToneIntercept is the SIT triple-beep tone used for merge-failed intercept,
+	// matching 90s residential TWC semantics (e.g. AT&T / Time Warner Cable).
+	slog.Warn("conference: merge rejected", "conf_id", confID, "reason", reason)
 	c.cb.SendTone(ToneIntercept)
-	// Drop the A↔C peer; B is still in A's active 2-party state.
+	// Drop the A-C peer; B is still in A's active 2-party state.
 	if c.addingPeer != "" {
 		c.cb.TearDownPeer(c.addingPeer)
 		c.addingPeer = ""
@@ -669,6 +678,7 @@ func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	if c.heldPeer != "" {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
+	c.heldPeer = ""
 	c.state = StateCONNECTED
 }
 
