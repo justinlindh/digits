@@ -85,35 +85,42 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 	}
-	parse := func(pages ...string) (*template.Template, error) {
-		return template.New("").Funcs(funcMap).ParseFS(templateFS, pages...)
+	// parsePage closes over the layout + shared-partials file list so each
+	// page only names itself. Adding a new layout or partial touches one line.
+	parsePage := func(page string) (*template.Template, error) {
+		return template.New("").Funcs(funcMap).ParseFS(templateFS,
+			"templates/_partials.html",
+			"templates/layout-v2.html",
+			"templates/layout-dialup.html",
+			"templates/"+page,
+		)
 	}
 
-	tmplDashboard, err := parse("templates/layout.html", "templates/dashboard.html")
+	tmplDashboard, err := parsePage("dashboard.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplPhones, err := parse("templates/layout.html", "templates/phones.html")
+	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplCalls, err := parse("templates/layout.html", "templates/calls.html")
+	tmplCalls, err := parsePage("calls.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplSettings, err := parse("templates/layout.html", "templates/settings.html")
+	tmplSettings, err := parsePage("settings.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplOnboard, err := parse("templates/layout.html", "templates/onboard.html")
+	tmplOnboard, err := parsePage("onboard.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplPhoneDetail, err := parse("templates/layout.html", "templates/phone-detail.html")
+	tmplPhoneDetail, err := parsePage("phone-detail.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplLinks, err := parse("templates/layout.html", "templates/links.html")
+	tmplLinks, err := parsePage("links.html")
 	if err != nil {
 		return nil, err
 	}
@@ -216,6 +223,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
+	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -319,7 +327,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.Name != "" {
 		suggested = user.Name + "'s Family"
 	}
-	renderWith(w, h.tmplOnboard, "layout.html", onboardData{
+	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
 		Page:               "onboard",
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
@@ -401,7 +409,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		Lines: ld.Lines,
 	}
-	renderWith(w, h.tmplDashboard, "layout.html", data)
+	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }
 
 func countOnline(lines []lineRow) int {
@@ -474,7 +482,7 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	renderWith(w, h.tmplPhones, "layout.html", h.buildLinesData(r, ""))
+	renderWith(w, h.tmplPhones, layoutFor(r), h.buildLinesData(r, ""))
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
@@ -499,7 +507,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, err.Error())
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -514,7 +522,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -532,14 +540,14 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, "")
 		data.PairError = "invalid phone number: " + err.Error()
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	if h.pairingStore == nil {
 		data := h.buildLinesData(r, "")
 		data.PairError = "pairing is not enabled"
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -557,7 +565,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if householdID == "" {
 		data := h.buildLinesData(r, "")
 		data.PairError = "no household found — please complete onboarding first"
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -565,7 +573,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data := h.buildLinesData(r, "")
 		data.PairError = err.Error()
-		renderWith(w, h.tmplPhones, "layout.html", data)
+		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -649,7 +657,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	devInfo := h.hub.DeviceInfo(number)
 
-	renderWith(w, h.tmplPhoneDetail, "layout.html", lineDetailData{
+	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
 		CallHistoryEnabled:    callHistory,
@@ -983,7 +991,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		recent[i].StartedAt = recent[i].StartedAt.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, "layout.html", callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
 }
 
 // ---- Settings ----
@@ -1011,7 +1019,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if hh != nil {
 		hhName = hh.Name
 	}
-	renderWith(w, h.tmplSettings, "layout.html", settingsData{
+	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
 		Page:               "settings",
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
@@ -1157,7 +1165,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	renderWith(w, h.tmplLinks, "layout.html", data)
+	renderWith(w, h.tmplLinks, layoutFor(r), data)
 }
 
 func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) {
@@ -1603,6 +1611,25 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
+func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	theme := auth.Theme(r.FormValue("theme"))
+	if err := h.authStore.SetTheme(user.ID, theme); err != nil {
+		slog.Error("set theme failed", "err", err, "theme", theme)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
 // householdContext returns the household name, call-history flag, and timezone location for the current user.
 func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
 	if h.householdStore == nil {
@@ -1651,6 +1678,15 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 		slog.Error("template render failed", "template", name, "err", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
+}
+
+// layoutFor returns the layout template name for the current user's theme.
+// Falls back to direction C when no theme is set (unauthenticated or new user).
+func layoutFor(r *http.Request) string {
+	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeDialup {
+		return "layout-dialup.html"
+	}
+	return "layout-v2.html"
 }
 
 func isHTMX(r *http.Request) bool {

@@ -85,7 +85,7 @@ func main() {
 		slog.Info("Google OAuth enabled")
 	}
 
-	loginTmpl, err := template.ParseFS(web.TemplateFS(), "templates/layout.html", "templates/login.html")
+	loginTmpl, err := template.ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/login.html")
 	if err != nil {
 		log.Fatalf("parse login template: %v", err)
 	}

@@ -6,7 +6,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { isServerUp } from './helpers';
+import { isServerUp, navLink } from './helpers';
 
 test.beforeEach(async ({ page }, testInfo) => {
   // Skip if server is down
@@ -26,10 +26,10 @@ test.describe('Dashboard', () => {
 
     // Should be on dashboard
     await expect(page).toHaveURL('/');
-    await expect(page).toHaveTitle(/Dashboard|Digits/i);
+    await expect(page).toHaveTitle(/Dashboard|Overview|Digits/i);
   });
 
-  test('dashboard shows stats grid', async ({ page }) => {
+  test('dashboard shows summary strip with the four stats', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login')) {
       test.skip(true, 'No authenticated session');
@@ -40,56 +40,71 @@ test.describe('Dashboard', () => {
       return;
     }
 
-    // Stats cards: Phones, Online, Active, Today
-    const statsCards = page.locator('.grid > div');
-    await expect(statsCards.first()).toBeVisible();
+    // The redesigned dashboard uses a <section class="strip"> with four
+    // <div class="strip__cell"> children: Lines / Online / Active calls /
+    // Calls today. Verify the section and each cell is present.
+    const strip = page.locator('section.strip');
+    await expect(strip).toBeVisible();
 
-    // At least one stat label should be present
-    const statsText = await page.locator('.grid').first().textContent();
-    const hasStats = ['Lines', 'Online', 'Active Calls', 'Calls Today'].some(s =>
-      statsText?.includes(s)
-    );
-    expect(hasStats).toBeTruthy();
+    const cells = strip.locator('.strip__cell');
+    await expect(cells).toHaveCount(4);
+
+    // All four labels should appear in the strip (case-insensitive match on
+    // label text keeps this robust to copy tweaks like capitalization).
+    const text = (await strip.textContent()) ?? '';
+    const labels = ['Lines', 'Online', 'Active calls', 'Calls today'];
+    for (const label of labels) {
+      expect(text.toLowerCase()).toContain(label.toLowerCase());
+    }
   });
 
-  test('dashboard shows active calls section', async ({ page }) => {
+  test('dashboard shows the Lines panel (linking to /phones)', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    const activeCalls = page.locator('text=Active Calls');
-    await expect(activeCalls).toBeVisible();
+    // The Lines panel heading and a "Manage →" link to /phones both live in
+    // the same panel. Assert both are visible so a regression that drops the
+    // panel entirely is caught.
+    const linesHeading = page.locator('h2.panel__title', { hasText: /^Lines$/i });
+    await expect(linesHeading).toBeVisible();
+
+    const manageLink = page.locator('a.panel__action[href="/phones"]');
+    await expect(manageLink).toBeVisible();
   });
 
-  test('dashboard shows lines section', async ({ page }) => {
+  test('dashboard heading shows the household name (page__title)', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    const linesSection = page.locator('h2', { hasText: 'Lines' });
-    await expect(linesSection).toBeVisible();
+    // The redesigned dashboard uses .page__title for the h1. The content is
+    // the household name (falling back to "Overview" when unset), and the
+    // e2e setup creates "E2E Test Family", so we just assert the h1 is
+    // visible with some non-empty text.
+    const title = page.locator('.page__title').first();
+    await expect(title).toBeVisible();
+    const text = await title.textContent();
+    expect((text ?? '').trim().length).toBeGreaterThan(0);
   });
 
-  test('sidebar navigation is visible', async ({ page }) => {
+  test('page chrome has nav links for core sections', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    // Desktop sidebar should be rendered (even if hidden on mobile via CSS)
-    const sidebar = page.locator('#sidebar');
-    await expect(sidebar).toBeAttached();
-
-    // Nav links for core sections (use sidebar-specific selectors to avoid
-    // matching other links on the page that share the same href)
-    await expect(page.locator('#sidebar a[href="/phones"]')).toBeAttached();
-    await expect(page.locator('#sidebar a[href="/settings"]')).toBeAttached();
-    await expect(page.locator('#sidebar a[href="/links"]')).toBeAttached();
+    // Both layouts (v2 rail, dialup channels/toolbar) expose anchors to the
+    // core pages in the page chrome. Use the layout-agnostic navLink helper
+    // so this test survives a theme switch.
+    for (const href of ['/', '/phones', '/links', '/settings']) {
+      await expect(navLink(page, href).first()).toBeAttached();
+    }
   });
 
   test('unauthenticated visit to / redirects to login', async ({ browser }) => {

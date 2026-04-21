@@ -1,28 +1,26 @@
 {{define "title"}}Welcome to Digits{{end}}
 
 {{define "content"}}
-<div class="flex items-center justify-center min-h-screen bg-surface">
-  <div class="w-full max-w-md mx-auto p-4 md:p-8">
-    <div class="text-center mb-8">
-      <h1 class="text-xl md:text-2xl font-semibold text-[#e6edf3]">Welcome to Digits</h1>
-      <p class="text-sm text-muted mt-2">Let's set up your family. You can change the name later.</p>
-    </div>
+<div class="auth">
+  <div class="auth__frame">
 
-    <div class="bg-panel rounded-lg border border-border p-6">
-      <form action="/onboard" method="POST" class="space-y-4">
-        <div>
-          <label for="name" class="block text-sm font-medium text-muted mb-1.5">Family name</label>
+    <h1 class="auth__mark">Welcome to <em>Digits</em></h1>
+    <p class="auth__tagline">Set up your family. You can change the name later.</p>
+
+    <div class="auth__card">
+      <form action="/onboard" method="POST" class="stack-md">
+        <div class="field" style="margin: 0;">
+          <label for="name" class="field__label">Family name</label>
           <input type="text" id="name" name="name" required
             value="{{.SuggestedName}}"
-            class="w-full px-3 py-2 rounded-md bg-surface border border-border text-[#e6edf3] text-sm placeholder-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
-            placeholder="The Smith Family">
+            placeholder="The Smith Family"
+            class="field__input"
+            autofocus>
         </div>
-        <button type="submit"
-          class="w-full px-4 py-2.5 rounded-md bg-accent text-white font-medium text-sm hover:bg-accent/90 transition-colors">
-          Create household
-        </button>
+        <button type="submit" class="btn btn--brass" style="width: 100%;">Create household</button>
       </form>
     </div>
+
   </div>
 </div>
 {{end}}
