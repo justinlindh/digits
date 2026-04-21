@@ -4,54 +4,8 @@
 <div class="auth">
   <div class="auth__frame">
 
-    <!-- Cherry-red desk phone silhouette (modeled after the actual Digits hardware) -->
-    <svg class="auth__phone" viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Digits phone">
-      <defs>
-        <linearGradient id="bodyGrad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#c8362f"/>
-          <stop offset="1" stop-color="#8e2319"/>
-        </linearGradient>
-        <linearGradient id="handsetGrad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="#d94035"/>
-          <stop offset="1" stop-color="#a12b20"/>
-        </linearGradient>
-      </defs>
-      <!-- base body -->
-      <rect x="42" y="46" width="80" height="80" rx="8" fill="url(#bodyGrad)" stroke="#6b1a12" stroke-width="1"/>
-      <!-- raised keypad platform -->
-      <rect x="50" y="60" width="64" height="54" rx="5" fill="#a62a21" stroke="#6b1a12" stroke-width="0.8"/>
-      <!-- 12 buttons (3x4) -->
-      <g fill="#efe5d1" stroke="#8a7a5d" stroke-width="0.4">
-        <rect x="55"  y="64" width="14" height="10" rx="2"/>
-        <rect x="73"  y="64" width="14" height="10" rx="2"/>
-        <rect x="91"  y="64" width="14" height="10" rx="2"/>
-        <rect x="55"  y="76" width="14" height="10" rx="2"/>
-        <rect x="73"  y="76" width="14" height="10" rx="2"/>
-        <rect x="91"  y="76" width="14" height="10" rx="2"/>
-        <rect x="55"  y="88" width="14" height="10" rx="2"/>
-        <rect x="73"  y="88" width="14" height="10" rx="2"/>
-        <rect x="91"  y="88" width="14" height="10" rx="2"/>
-        <rect x="55"  y="100" width="14" height="10" rx="2"/>
-        <rect x="73"  y="100" width="14" height="10" rx="2"/>
-        <rect x="91"  y="100" width="14" height="10" rx="2"/>
-      </g>
-      <!-- handset cradle cutouts + hookswitch button -->
-      <rect x="42" y="40" width="20" height="10" rx="3" fill="#6b1a12"/>
-      <rect x="102" y="40" width="20" height="10" rx="3" fill="#6b1a12"/>
-      <circle cx="82" cy="44" r="3" fill="#c48b3a" stroke="#8b6424" stroke-width="0.5"/>
-      <!-- handset: one continuous outline — domed egg-shaped ends flaring smoothly into a narrower middle grip -->
-      <path d="M 30 26 C 40 26, 42 32, 50 32 L 110 32 C 118 32, 120 26, 130 26 A 12 11 0 0 1 130 48 C 120 48, 118 42, 110 42 L 50 42 C 42 42, 40 48, 30 48 A 12 11 0 0 1 30 26 Z"
-            fill="url(#handsetGrad)" stroke="#6b1a12" stroke-width="1" stroke-linejoin="round"/>
-      <!-- earpiece + mouthpiece speaker discs -->
-      <circle cx="30" cy="37" r="6" fill="rgba(40,8,6,0.28)"/>
-      <circle cx="130" cy="37" r="6" fill="rgba(40,8,6,0.28)"/>
-      <!-- glossy top sheen on each dome + faint grip highlight -->
-      <ellipse cx="26" cy="30" rx="6" ry="2" fill="rgba(255,255,255,0.35)"/>
-      <ellipse cx="126" cy="30" rx="6" ry="2" fill="rgba(255,255,255,0.35)"/>
-      <rect x="55" y="32" width="50" height="1.2" rx="0.6" fill="rgba(255,255,255,0.28)"/>
-      <!-- coiled cord hint -->
-      <path d="M 25 47 Q 17 58 21 70 Q 29 80 17 90 Q 7 100 19 114" stroke="#6b1a12" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-    </svg>
+    <img class="auth__phone" src="/static/images/phone-silhouette.png" alt="Digits phone">
+
 
     <h1 class="auth__mark">Digits</h1>
     <p class="auth__tagline">Sign in to manage your phones</p>
