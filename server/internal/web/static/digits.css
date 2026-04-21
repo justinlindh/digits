@@ -1151,10 +1151,10 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   background: var(--rule-soft);
 }
 .auth__phone {
-  width: 120px;
-  height: 120px;
+  display: block;
+  width: 160px;
+  height: auto;
   margin: 0 auto 20px;
-  color: var(--ink);
 }
 
 /* --------- Utilities --------- */
