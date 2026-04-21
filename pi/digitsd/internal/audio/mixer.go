@@ -51,9 +51,10 @@ type Mixer struct {
 	onceQueue [][]int16
 	oncePos   int
 
-	// WebRTC source: decoded PCM frames from remote peer.
-	// Non-blocking read in render loop — frames are dropped if behind.
-	webrtcCh chan []int16
+	// WebRTC sources: decoded PCM frames from remote peers, keyed by peer identifier.
+	// Non-blocking reads in render loop — frames are dropped if behind.
+	webrtcMu      sync.Mutex
+	webrtcSources map[string]chan []int16
 
 	// Loaded tones (name → PCM samples, S16_LE mono 48kHz)
 	tones map[string][]int16
@@ -62,10 +63,10 @@ type Mixer struct {
 // NewMixer creates a Mixer that writes to the given FrameWriter.
 func NewMixer(w FrameWriter) *Mixer {
 	return &Mixer{
-		w:        w,
-		period:   w.PeriodSize(),
-		tones:    make(map[string][]int16),
-		webrtcCh: make(chan []int16, 8),
+		w:             w,
+		period:        w.PeriodSize(),
+		tones:         make(map[string][]int16),
+		webrtcSources: make(map[string]chan []int16),
 	}
 }
 
@@ -159,14 +160,8 @@ func (m *Mixer) renderLoop(stop, done chan struct{}) {
 
 		m.mu.Unlock()
 
-		// 3. Mix WebRTC audio (non-blocking — drop if channel is empty)
-		select {
-		case webrtcPCM := <-m.webrtcCh:
-			for i := 0; i < len(buf) && i < len(webrtcPCM); i++ {
-				buf[i] = clampAdd(buf[i], webrtcPCM[i])
-			}
-		default:
-		}
+		// 3. Mix WebRTC audio from all sources (non-blocking — drop if channel is empty)
+		m.readWebRTCSources(buf)
 
 		// 4. Write the mixed period to hardware (only this goroutine does this)
 		m.w.WriteFrame(buf) //nolint:errcheck
@@ -275,7 +270,7 @@ func (m *Mixer) StopTone() {
 	// clearing onceQueue here would eat the just-queued tone.
 }
 
-// StopAll stops all audio: loops, one-shots, and drains the WebRTC channel.
+// StopAll stops all audio: loops, one-shots, and drains all WebRTC source channels.
 // Use on hang-up to guarantee silence.
 func (m *Mixer) StopAll() {
 	m.mu.Lock()
@@ -285,13 +280,18 @@ func (m *Mixer) StopAll() {
 	m.onceQueue = nil
 	m.oncePos = 0
 	m.mu.Unlock()
-	// Drain any queued WebRTC frames
-	for {
-		select {
-		case <-m.webrtcCh:
-		default:
-			return
+	// Drain any queued WebRTC frames from all sources
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	for _, ch := range m.webrtcSources {
+		for {
+			select {
+			case <-ch:
+			default:
+				goto drained
+			}
 		}
+	drained:
 	}
 }
 
@@ -332,20 +332,50 @@ func (m *Mixer) PlayOnceSamples(samples []int16) {
 	m.onceQueue = append(m.onceQueue, samples)
 }
 
-// FeedWebRTC sends decoded PCM from a WebRTC remote track into the mixer.
-// Non-blocking: drops the frame if the render loop isn't keeping up.
-// Call from the WebRTC track reader goroutine.
-func (m *Mixer) FeedWebRTC(samples []int16) {
-	select {
-	case m.webrtcCh <- samples:
-	default:
-		// Drop frame — mixer is behind
+// AddWebRTCSource registers a named WebRTC audio source and returns the channel
+// to send decoded PCM frames into. If the key already exists, the existing
+// channel is returned. Callers write into this channel; the render loop reads
+// non-blocking and mixes all sources together.
+func (m *Mixer) AddWebRTCSource(key string) chan []int16 {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	if existing, ok := m.webrtcSources[key]; ok {
+		return existing
+	}
+	ch := make(chan []int16, 8)
+	m.webrtcSources[key] = ch
+	return ch
+}
+
+// RemoveWebRTCSource removes a named WebRTC audio source and closes its channel.
+// Safe to call from any goroutine.
+func (m *Mixer) RemoveWebRTCSource(key string) {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	if ch, ok := m.webrtcSources[key]; ok {
+		close(ch)
+		delete(m.webrtcSources, key)
 	}
 }
 
-// WebRTCChan returns the WebRTC feed channel for callers that want direct access.
-func (m *Mixer) WebRTCChan() chan<- []int16 {
-	return m.webrtcCh
+// readWebRTCSources reads one frame (non-blocking) from each registered source
+// and accumulates it into buf via clampAdd. Called only from the render loop.
+func (m *Mixer) readWebRTCSources(buf []int16) {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	for _, ch := range m.webrtcSources {
+		select {
+		case frame, ok := <-ch:
+			if !ok {
+				continue
+			}
+			for i := 0; i < len(buf) && i < len(frame); i++ {
+				buf[i] = clampAdd(buf[i], frame[i])
+			}
+		default:
+			// no frame available from this source right now
+		}
+	}
 }
 
 // loadWAV reads a WAV file and returns the PCM samples as []int16.

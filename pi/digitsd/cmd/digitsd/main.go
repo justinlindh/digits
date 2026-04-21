@@ -169,6 +169,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	}
 
 	// Handle remote audio track
+	webrtcCh := d.mixer.AddWebRTCSource(targetNumber)
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("caller-remote-track")
@@ -188,7 +189,11 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
 				frameCount++
-				d.mixer.FeedWebRTC(frame)
+				select {
+				case webrtcCh <- frame:
+				default:
+					// Drop frame — mixer is behind
+				}
 			}
 		}()
 	}
@@ -281,6 +286,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	}
 
 	// Handle remote audio track — decode and feed into mixer.
+	webrtcCh := d.mixer.AddWebRTCSource(caller)
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("answer-remote-track")
@@ -349,7 +355,11 @@ func (d *daemonCallbacks) AnswerCall() {
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
 				frameCount++
-				d.mixer.FeedWebRTC(frame)
+				select {
+				case webrtcCh <- frame:
+				default:
+					// Drop frame — mixer is behind
+				}
 
 				if frameCount <= 10 || frameCount%50 == 0 {
 					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
