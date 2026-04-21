@@ -615,6 +615,27 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
 .chip--live .chip__dot { background: var(--dialup-accent-red); animation: dialup-pulse 1s steps(2,end) infinite; }
 .chip--err  { background: #f4d4d2; color: var(--dialup-accent-red); }
 .chip--err  .chip__dot { background: var(--dialup-accent-red); }
+/* conference / 3-way: muted purple, distinct from all alert variants */
+.chip--conf { background: #e8e0f4; color: #4a2d7a; }
+.chip--conf .chip__dot { background: #6b44b8; }
+
+/* --------- Conference row / from-3way badge --------- */
+.conf-participants { font-style: italic; }
+.badge-from3way {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-body);
+  font-style: normal;
+  color: #4a2d7a;
+  background: #e8e0f4;
+  border: 1px solid #b8a0e0;
+  border-radius: 0;
+  vertical-align: middle;
+  white-space: nowrap;
+  font-weight: bold;
+}
 
 @keyframes dialup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 

@@ -615,6 +615,26 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 .chip--live  .chip__dot { background: var(--brass); animation: pulse 1.6s ease-in-out infinite; }
 .chip--err   { color: var(--rust); background: rgba(160,90,58,0.08); border-color: rgba(160,90,58,0.25); }
 .chip--err   .chip__dot { background: var(--rust); }
+/* conference / 3-way: warm walnut tone, distinct from all alert variants */
+.chip--conf  { color: #7a5a2a; background: rgba(122,90,42,0.09); border-color: rgba(122,90,42,0.25); }
+.chip--conf  .chip__dot { background: #7a5a2a; }
+
+/* --------- Conference row / from-3way badge --------- */
+.conf-participants { font-style: italic; }
+.badge-from3way {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-body);
+  font-style: normal;
+  color: #7a5a2a;
+  background: rgba(122,90,42,0.09);
+  border: 1px solid rgba(122,90,42,0.25);
+  border-radius: 4px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
 
 @keyframes pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(196,139,58,0.4); }
