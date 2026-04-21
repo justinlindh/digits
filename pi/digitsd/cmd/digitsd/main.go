@@ -462,6 +462,9 @@ func (d *daemonCallbacks) HangupCall() {
 		}
 		d.peerMgr = nil
 	}
+	if peer != "" {
+		d.mixer.RemoveWebRTCSource(peer)
+	}
 
 	slog.Info("call ended")
 }

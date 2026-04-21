@@ -19,7 +19,7 @@ type FrameWriter interface {
 }
 
 // Mixer is a single-threaded audio render loop. All playback goes through it.
-// External callers set state (PlayLoop, PlayOnce, FeedWebRTC, StopTone).
+// External callers set state (PlayLoop, PlayOnce, AddWebRTCSource / RemoveWebRTCSource, StopTone).
 // The render goroutine reads state and writes one mixed period per tick.
 //
 // The render thread is the sole writer to the FrameWriter — no other goroutine
@@ -270,7 +270,7 @@ func (m *Mixer) StopTone() {
 	// clearing onceQueue here would eat the just-queued tone.
 }
 
-// StopAll stops all audio: loops, one-shots, and drains all WebRTC source channels.
+// StopAll stops all audio: loops, one-shots, and clears all WebRTC sources.
 // Use on hang-up to guarantee silence.
 func (m *Mixer) StopAll() {
 	m.mu.Lock()
@@ -280,19 +280,10 @@ func (m *Mixer) StopAll() {
 	m.onceQueue = nil
 	m.oncePos = 0
 	m.mu.Unlock()
-	// Drain any queued WebRTC frames from all sources
+	// Clear all WebRTC sources. Channels are GC'd when senders release them.
 	m.webrtcMu.Lock()
 	defer m.webrtcMu.Unlock()
-	for _, ch := range m.webrtcSources {
-		for {
-			select {
-			case <-ch:
-			default:
-				goto drained
-			}
-		}
-	drained:
-	}
+	m.webrtcSources = make(map[string]chan []int16)
 }
 
 // OncePlaying returns true if any one-shot tones are still in the queue.
@@ -347,15 +338,14 @@ func (m *Mixer) AddWebRTCSource(key string) chan []int16 {
 	return ch
 }
 
-// RemoveWebRTCSource removes a named WebRTC audio source and closes its channel.
-// Safe to call from any goroutine.
+// RemoveWebRTCSource removes a named WebRTC audio source. The channel is not
+// closed — senders may continue writing until they exit; frames accumulate in
+// the buffer and are GC'd when the sender releases its reference. Safe to call
+// from any goroutine.
 func (m *Mixer) RemoveWebRTCSource(key string) {
 	m.webrtcMu.Lock()
 	defer m.webrtcMu.Unlock()
-	if ch, ok := m.webrtcSources[key]; ok {
-		close(ch)
-		delete(m.webrtcSources, key)
-	}
+	delete(m.webrtcSources, key)
 }
 
 // readWebRTCSources reads one frame (non-blocking) from each registered source

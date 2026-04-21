@@ -504,6 +504,9 @@ func TestMixer_AddAndRemoveSource(t *testing.T) {
 	if ch3 == nil {
 		t.Fatal("expected non-nil channel after re-adding")
 	}
+	if ch3 == ch {
+		t.Error("expected fresh channel after remove+re-add, but got the same channel")
+	}
 	mx.RemoveWebRTCSource("peerX")
 }
 
