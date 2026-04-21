@@ -8,11 +8,26 @@
 // DEBOUNCE_MS consecutive milliseconds.
 #define DEBOUNCE_MS 50
 
+// Flash detection: an on→off→on sequence where the "off" duration is within
+// [FLASH_MIN_MS, FLASH_MAX_MS] is treated as a hook-flash, not a hangup.
+// Shorter durations are bounce (ignored). Longer durations commit to HOOK_EVENT_OFF.
+#define FLASH_MIN_MS 100
+#define FLASH_MAX_MS 600
+
 static bool s_off_hook = false;       // Committed (debounced) physical state
 static bool s_raw_last = false;       // Last raw physical reading
 static absolute_time_t s_stable_since;
-static bool s_event_pending = false;
-static bool s_event_off_hook = false;
+
+// Flash-detection window state.
+// When the debouncer first commits to "off-hook", we don't emit HOOK_EVENT_OFF
+// immediately. Instead we set s_flash_pending and record the transition time.
+// If the hook returns to on-hook within FLASH_MAX_MS we emit HOOK_EVENT_FLASH
+// (or suppress it if under FLASH_MIN_MS). If it stays off past FLASH_MAX_MS
+// we emit HOOK_EVENT_OFF.
+static bool s_flash_pending = false;
+static absolute_time_t s_flash_start;
+
+static hook_event_t s_event = HOOK_EVENT_NONE;
 
 // Software override mode/state.
 static bool s_force_mode = false;
@@ -35,7 +50,8 @@ void hook_init(void) {
     s_raw_last = read_physical_off_hook();
     s_off_hook = s_raw_last;
     s_stable_since = get_absolute_time();
-    s_event_pending = false;
+    s_flash_pending = false;
+    s_event = HOOK_EVENT_NONE;
 
     s_force_mode = false;
     s_forced_state = false;
@@ -56,14 +72,47 @@ void hook_poll(void) {
         return;
     }
 
-    // Pin is same as last read — check if stable long enough.
+    // Pin is same as last read. Check if it has been stable long enough to
+    // be a committed debounced transition.
     if (raw != s_off_hook) {
         int64_t stable_ms = absolute_time_diff_us(s_stable_since,
                                                   get_absolute_time()) / 1000;
         if (stable_ms >= DEBOUNCE_MS) {
+            // Debounced transition detected.
             s_off_hook = raw;
-            s_event_off_hook = raw;
-            s_event_pending = true;
+
+            if (raw) {
+                // Debounced transition to off-hook. Don't emit HOOK_EVENT_OFF yet;
+                // start the flash-detection window instead.
+                s_flash_pending = true;
+                s_flash_start = get_absolute_time();
+            } else {
+                // Debounced transition to on-hook.
+                if (s_flash_pending) {
+                    // The hook returned to on-hook while the flash window is open.
+                    int64_t off_ms = absolute_time_diff_us(s_flash_start,
+                                                           get_absolute_time()) / 1000;
+                    s_flash_pending = false;
+                    if (off_ms >= FLASH_MIN_MS && off_ms <= FLASH_MAX_MS) {
+                        s_event = HOOK_EVENT_FLASH;
+                    }
+                    // Shorter than FLASH_MIN_MS: bounce, suppress.
+                } else {
+                    // Normal hangup from a committed off-hook state.
+                    s_event = HOOK_EVENT_ON;
+                }
+            }
+        }
+    }
+
+    // While a flash window is open, check whether the timeout has expired
+    // without the hook returning to on-hook (commits to a real off-hook event).
+    if (s_flash_pending) {
+        int64_t off_ms = absolute_time_diff_us(s_flash_start,
+                                               get_absolute_time()) / 1000;
+        if (off_ms > FLASH_MAX_MS) {
+            s_flash_pending = false;
+            s_event = HOOK_EVENT_OFF;
         }
     }
 }
@@ -75,16 +124,10 @@ bool hook_is_off_hook(void) {
     return s_off_hook;
 }
 
-bool hook_get_event(bool *off_hook) {
-    if (!s_event_pending) {
-        return false;
-    }
-
-    if (off_hook != NULL) {
-        *off_hook = s_event_off_hook;
-    }
-    s_event_pending = false;
-    return true;
+hook_event_t hook_get_event(void) {
+    hook_event_t ev = s_event;
+    s_event = HOOK_EVENT_NONE;
+    return ev;
 }
 
 void hook_force_off_hook(bool off_hook) {
@@ -92,12 +135,12 @@ void hook_force_off_hook(bool off_hook) {
 
     s_force_mode = true;
     s_forced_state = off_hook;
+    s_flash_pending = false;
 
     // In force mode, events should reflect forced state.
-    s_event_pending = false;
+    s_event = HOOK_EVENT_NONE;
     if (off_hook != prev_effective) {
-        s_event_off_hook = off_hook;
-        s_event_pending = true;
+        s_event = off_hook ? HOOK_EVENT_OFF : HOOK_EVENT_ON;
     }
 }
 
@@ -106,6 +149,7 @@ void hook_clear_force(void) {
     bool physical = read_physical_off_hook();
 
     s_force_mode = false;
+    s_flash_pending = false;
 
     // Re-sync debounce state with physical pin.
     s_raw_last = physical;
@@ -113,10 +157,9 @@ void hook_clear_force(void) {
     s_stable_since = get_absolute_time();
 
     // Clear any stale forced event and emit transition if effective state changed.
-    s_event_pending = false;
+    s_event = HOOK_EVENT_NONE;
     if (physical != prev_effective) {
-        s_event_off_hook = physical;
-        s_event_pending = true;
+        s_event = physical ? HOOK_EVENT_OFF : HOOK_EVENT_ON;
     }
 }
 
@@ -135,7 +178,8 @@ void hook_set_inverted(bool inverted) {
     s_raw_last = physical;
     s_off_hook = physical;
     s_stable_since = get_absolute_time();
-    s_event_pending = false;
+    s_flash_pending = false;
+    s_event = HOOK_EVENT_NONE;
 }
 
 bool hook_is_inverted(void) {

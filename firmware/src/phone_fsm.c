@@ -121,8 +121,7 @@ static void process_pi_command(const char *cmd) {
     if (strcmp(cmd, "RING:START") == 0) {
         // Flush any pending hook event (e.g. from HOOK:FORCE:ON sent just before)
         // to prevent the on-hook event from immediately reverting us to IDLE.
-        bool dummy;
-        hook_get_event(&dummy);
+        hook_get_event();
         set_state(PHONE_STATE_RINGING);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
         // Direct hardware test — bypass FSM entirely.
@@ -310,13 +309,27 @@ void phone_fsm_update(void) {
     }
 
     // Normal FSM operation
-    bool off_hook_event = false;
-    if (hook_get_event(&off_hook_event)) {
-        printf("HOOK:%s\n", off_hook_event ? "OFF" : "ON");
-        stdio_flush();
-        uart_proto_send(off_hook_event ? "HOOK:OFF" : "HOOK:ON");
-        if (!off_hook_event) {
-            set_state(PHONE_STATE_IDLE);
+    hook_event_t hook_ev = hook_get_event();
+    if (hook_ev != HOOK_EVENT_NONE) {
+        switch (hook_ev) {
+            case HOOK_EVENT_OFF:
+                printf("HOOK:OFF\n");
+                stdio_flush();
+                uart_proto_send("HOOK:OFF");
+                break;
+            case HOOK_EVENT_ON:
+                printf("HOOK:ON\n");
+                stdio_flush();
+                uart_proto_send("HOOK:ON");
+                set_state(PHONE_STATE_IDLE);
+                break;
+            case HOOK_EVENT_FLASH:
+                printf("HOOK:FLASH\n");
+                stdio_flush();
+                uart_proto_send("HOOK:FLASH");
+                break;
+            default:
+                break;
         }
     }
 
