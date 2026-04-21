@@ -124,7 +124,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, loginRedirectFor(user), http.StatusSeeOther)
 }
 
 // HandleDevSession creates an authenticated session in one round-trip for e2e testing.
@@ -175,7 +175,17 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, loginRedirectFor(user), http.StatusSeeOther)
+}
+
+// loginRedirectFor returns the URL to redirect a newly-authenticated user to.
+// For dial-up theme users, the welcome=1 query param triggers the login
+// greeting sound in layout-dialup.html; other themes get a plain "/".
+func loginRedirectFor(u *User) string {
+	if u != nil && u.Theme == ThemeDialup {
+		return "/?welcome=1"
+	}
+	return "/"
 }
 
 // HandleLogout destroys the session and clears the cookie.

@@ -54,7 +54,7 @@ func main() {
 		t, err := template.New("").Funcs(funcs).ParseFS(tmplFS,
 			"templates/_partials.html",
 			"templates/layout-v2.html",
-			"templates/layout-aol.html",
+			"templates/layout-dialup.html",
 			"templates/"+page,
 		)
 		if err != nil {
@@ -107,8 +107,8 @@ func main() {
 	// ---- Handlers ----
 
 	layoutFor := func(r *http.Request) string {
-		if r.URL.Query().Get("theme") == "aol" {
-			return "layout-aol.html"
+		if r.URL.Query().Get("theme") == "dialup" {
+			return "layout-dialup.html"
 		}
 		return "layout-v2.html"
 	}

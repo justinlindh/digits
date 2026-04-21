@@ -91,7 +91,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		return template.New("").Funcs(funcMap).ParseFS(templateFS,
 			"templates/_partials.html",
 			"templates/layout-v2.html",
-			"templates/layout-aol.html",
+			"templates/layout-dialup.html",
 			"templates/"+page,
 		)
 	}
@@ -1679,8 +1679,8 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 // layoutFor returns the layout template name for the current user's theme.
 // Falls back to direction C when no theme is set (unauthenticated or new user).
 func layoutFor(r *http.Request) string {
-	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeAOL {
-		return "layout-aol.html"
+	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeDialup {
+		return "layout-dialup.html"
 	}
 	return "layout-v2.html"
 }

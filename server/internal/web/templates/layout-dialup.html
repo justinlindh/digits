@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1024">
+<title>{{block "title" .}}Digits{{end}} — Digits</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/dialup.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body class="dialup">
+
+{{if ne .Page "login"}}
+<div class="dialup-window">
+
+  <!-- Title bar -->
+  <div class="dialup-title">
+    <div class="dialup-title__app">
+      <span class="dialup-title__icon" aria-hidden="true"></span>
+      <span>Digits — {{if .HouseholdName}}{{.HouseholdName}}{{else}}Phone Network{{end}}</span>
+    </div>
+    <div class="dialup-title__controls" aria-hidden="true">
+      <span class="dialup-title__btn">_</span>
+      <span class="dialup-title__btn">▢</span>
+      <span class="dialup-title__btn">✕</span>
+    </div>
+  </div>
+
+  <!-- Menu bar -->
+  <div class="dialup-menu">
+    <span class="dialup-menu__item"><u>F</u>ile</span>
+    <span class="dialup-menu__item"><u>E</u>dit</span>
+    <span class="dialup-menu__item"><u>G</u>o</span>
+    <span class="dialup-menu__item">Mail <u>C</u>enter</span>
+    <span class="dialup-menu__item"><u>M</u>embers</span>
+    <span class="dialup-menu__item"><u>W</u>indow</span>
+    <span class="dialup-menu__item">Sign O<u>f</u>f</span>
+    <span class="dialup-menu__item dialup-menu__item--right"><u>H</u>elp</span>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="dialup-toolbar">
+    <a href="/" class="dialup-toolbar__btn">
+      <div class="dialup-toolbar__icon dialup-ic-mail" aria-hidden="true"></div>
+      <span>Home</span>
+    </a>
+    <a href="/phones" class="dialup-toolbar__btn">
+      <div class="dialup-toolbar__icon dialup-ic-phone" aria-hidden="true"></div>
+      <span>Phones</span>
+    </a>
+    <a href="/links" class="dialup-toolbar__btn">
+      <div class="dialup-toolbar__icon dialup-ic-people" aria-hidden="true"></div>
+      <span>Families</span>
+    </a>
+    {{if .CallHistoryEnabled}}
+    <a href="/calls" class="dialup-toolbar__btn">
+      <div class="dialup-toolbar__icon dialup-ic-log" aria-hidden="true"></div>
+      <span>Call Log</span>
+    </a>
+    {{end}}
+    <a href="/settings" class="dialup-toolbar__btn">
+      <div class="dialup-toolbar__icon dialup-ic-prefs" aria-hidden="true"></div>
+      <span>Prefs</span>
+    </a>
+    <div class="dialup-toolbar__sep"></div>
+    <form method="POST" action="/auth/logout" style="display: inline;">
+      <button type="submit" class="dialup-toolbar__btn dialup-toolbar__btn--link">
+        <div class="dialup-toolbar__icon dialup-ic-signoff" aria-hidden="true"></div>
+        <span>Sign Off</span>
+      </button>
+    </form>
+    <div class="dialup-toolbar__welcome">Welcome, <b>{{if .HouseholdName}}{{.HouseholdName}}{{else}}LindhFamily{{end}}</b>!</div>
+  </div>
+
+  <!-- Keyword bar -->
+  <div class="dialup-keyword">
+    <span class="dialup-keyword__fav">▼ Favorites</span>
+    <label class="dialup-keyword__label">Keyword:</label>
+    <div class="dialup-keyword__wrap">
+      <input type="text" class="dialup-keyword__input" value="digits {{if eq .Page "phones"}}phones{{else if eq .Page "links"}}families{{else if eq .Page "calls"}}call log{{else if eq .Page "settings"}}preferences{{else}}home{{end}}">
+    </div>
+    <button type="button" class="dialup-keyword__go">▶ GO</button>
+    <span class="dialup-keyword__history">History ▼</span>
+  </div>
+
+  <!-- Main body: sidebar + content -->
+  <div class="dialup-body">
+
+    <!-- Channel list sidebar -->
+    <aside class="dialup-channels" aria-label="Channels">
+      <div class="dialup-channels__header">★ CHANNELS ★</div>
+      <a href="/" class="dialup-channel dialup-channel--green {{if eq .Page "dashboard"}}is-active{{end}}">
+        <div class="dialup-channel__icon dialup-ic-welcome" aria-hidden="true"></div>
+        <span>WELCOME</span>
+      </a>
+      <a href="/phones" class="dialup-channel dialup-channel--red {{if eq .Page "phones"}}is-active{{end}}">
+        <div class="dialup-channel__icon dialup-ic-phone" aria-hidden="true"></div>
+        <span>MY PHONES</span>
+      </a>
+      <a href="/links" class="dialup-channel dialup-channel--gold {{if eq .Page "links"}}is-active{{end}}">
+        <div class="dialup-channel__icon dialup-ic-people" aria-hidden="true"></div>
+        <span>FAMILIES</span>
+      </a>
+      {{if .CallHistoryEnabled}}
+      <a href="/calls" class="dialup-channel dialup-channel--teal {{if eq .Page "calls"}}is-active{{end}}">
+        <div class="dialup-channel__icon dialup-ic-log" aria-hidden="true"></div>
+        <span>CALL LOG</span>
+      </a>
+      {{end}}
+      <a href="/settings" class="dialup-channel dialup-channel--grey {{if eq .Page "settings"}}is-active{{end}}">
+        <div class="dialup-channel__icon dialup-ic-prefs" aria-hidden="true"></div>
+        <span>SETTINGS</span>
+      </a>
+    </aside>
+
+    <!-- Page content -->
+    <main class="dialup-main">
+      {{block "content" .}}{{end}}
+    </main>
+
+  </div>
+
+  <!-- Status bar -->
+  <div class="dialup-status">
+    <span class="dialup-status__dot"></span>
+    <span>Connection: <b>Direct</b></span>
+    <span class="dialup-status__sep">·</span>
+    <span class="num">56000 bps</span>
+    <span class="dialup-status__sep">·</span>
+    <span>Welcome, <b>{{if .HouseholdName}}{{.HouseholdName}}{{else}}Digits{{end}}@digits.family</b></span>
+    <span class="dialup-status__spacer"></span>
+    {{if .Version}}<span class="num">{{.Version}}</span>{{end}}
+  </div>
+
+</div>
+{{else}}
+<!-- Login / unauthenticated: show bare content with no client chrome -->
+{{block "content" .}}{{end}}
+{{end}}
+
+{{/* Post-login welcome audio. Auth handlers redirect to /?welcome=1 on
+     successful sign-in. The sound only exists in this layout, so it is
+     naturally gated to the dial-up theme. The inline JS also strips the query
+     param so a page reload doesn't replay it. */}}
+<audio id="dialup-welcome" src="/static/audio/welcome.wav" preload="auto"></audio>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('welcome') !== '1') return;
+  var audio = document.getElementById('dialup-welcome');
+  if (audio) {
+    audio.play().catch(function () { /* browser blocked autoplay; silent */ });
+  }
+  params.delete('welcome');
+  var q = params.toString();
+  var clean = window.location.pathname + (q ? '?' + q : '') + window.location.hash;
+  window.history.replaceState({}, '', clean);
+})();
+</script>
+
+</body>
+</html>

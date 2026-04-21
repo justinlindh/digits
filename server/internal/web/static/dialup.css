@@ -1,51 +1,51 @@
 /* =========================================================================
-   Digits — AOL Desktop 1997 theme
-   Companion to digits.css (direction C). Imitates the AOL 4.0 client:
+   Digits — dial-up online service 1997 theme
+   Companion to digits.css (direction C). Imitates the dial-up client client:
    title bar, menu bar, toolbar, Keyword bar, CHANNELS sidebar, status bar,
-   chunky 3D bevels, Tahoma/MS Sans Serif, AOL blue + yellow palette.
-   Redefines every semantic component class from digits.css in the AOL
+   chunky 3D bevels, Tahoma/MS Sans Serif, dial-up blue + yellow palette.
+   Redefines every semantic component class from digits.css in the dial-up
    aesthetic so the same page templates render with either theme.
    ========================================================================= */
 
 /* --------- Tokens --------- */
 
 :root {
-  --aol-blue:       #0066cc;
-  --aol-blue-dark:  #003da7;
-  --aol-blue-mid:   #1f5fb5;
-  --aol-blue-light: #b8d0ed;
-  --aol-gold:       #ffcc00;
-  --aol-gold-dark:  #d69e00;
-  --aol-white:      #ffffff;
-  --aol-cream:      #fffbf0;
-  --aol-chrome:     #d4d0c8;
-  --aol-chrome-l:   #ece9d8;
-  --aol-chrome-d:   #808080;
-  --aol-chrome-dd:  #404040;
-  --aol-bevel-hi:   #ffffff;
-  --aol-bevel-lo:   #808080;
-  --aol-bevel-ll:  #404040;
-  --aol-desktop:    #008080;
-  --aol-ink:        #000000;
-  --aol-ink-soft:   #333333;
-  --aol-ink-muted:  #606060;
-  --aol-accent-red: #c41e16;
-  --aol-accent-grn: #007a1f;
-  --aol-accent-org: #e87a0f;
+  --dialup-blue:       #0066cc;
+  --dialup-blue-dark:  #003da7;
+  --dialup-blue-mid:   #1f5fb5;
+  --dialup-blue-light: #b8d0ed;
+  --dialup-gold:       #ffcc00;
+  --dialup-gold-dark:  #d69e00;
+  --dialup-white:      #ffffff;
+  --dialup-cream:      #fffbf0;
+  --dialup-chrome:     #d4d0c8;
+  --dialup-chrome-l:   #ece9d8;
+  --dialup-chrome-d:   #808080;
+  --dialup-chrome-dd:  #404040;
+  --dialup-bevel-hi:   #ffffff;
+  --dialup-bevel-lo:   #808080;
+  --dialup-bevel-ll:  #404040;
+  --dialup-desktop:    #008080;
+  --dialup-ink:        #000000;
+  --dialup-ink-soft:   #333333;
+  --dialup-ink-muted:  #606060;
+  --dialup-accent-red: #c41e16;
+  --dialup-accent-grn: #007a1f;
+  --dialup-accent-org: #e87a0f;
 
   /* Aliases so the shared component vocabulary (--ink, --rust, --brass...)
      keeps working in inline styles that leak through from the template. */
-  --ink:       var(--aol-ink);
-  --ink-soft:  var(--aol-ink-soft);
-  --ink-muted: var(--aol-ink-muted);
-  --paper:     var(--aol-white);
-  --paper-2:   var(--aol-chrome-l);
-  --rule:      var(--aol-chrome-d);
-  --rule-soft: var(--aol-chrome);
-  --brass:     var(--aol-gold-dark);
-  --forest:    var(--aol-accent-grn);
-  --rust:      var(--aol-accent-red);
-  --ochre:     var(--aol-accent-org);
+  --ink:       var(--dialup-ink);
+  --ink-soft:  var(--dialup-ink-soft);
+  --ink-muted: var(--dialup-ink-muted);
+  --paper:     var(--dialup-white);
+  --paper-2:   var(--dialup-chrome-l);
+  --rule:      var(--dialup-chrome-d);
+  --rule-soft: var(--dialup-chrome);
+  --brass:     var(--dialup-gold-dark);
+  --forest:    var(--dialup-accent-grn);
+  --rust:      var(--dialup-accent-red);
+  --ochre:     var(--dialup-accent-org);
   --radius-1:  0;
   --radius-2:  0;
 }
@@ -56,9 +56,9 @@
 html, body { margin: 0; padding: 0; }
 html { font-size: 12px; }
 
-body.aol {
-  background: var(--aol-desktop);
-  color: var(--aol-ink);
+body.dialup {
+  background: var(--dialup-desktop);
+  color: var(--dialup-ink);
   font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
   font-size: 12px;
   line-height: 1.35;
@@ -66,26 +66,26 @@ body.aol {
   padding: 8px;
 }
 
-a { color: var(--aol-blue); text-decoration: none; }
+a { color: var(--dialup-blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
-button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-chrome); border: 0; }
+button { font: inherit; color: inherit; cursor: pointer; background: var(--dialup-chrome); border: 0; }
 
-/* --------- AOL window chrome --------- */
+/* --------- dial-up window chrome --------- */
 
-.aol-window {
-  background: var(--aol-chrome);
-  border-top: 2px solid var(--aol-bevel-hi);
-  border-left: 2px solid var(--aol-bevel-hi);
-  border-right: 2px solid var(--aol-bevel-ll);
-  border-bottom: 2px solid var(--aol-bevel-ll);
+.dialup-window {
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 16px);
   box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
-.aol-title {
-  background: linear-gradient(90deg, var(--aol-blue-dark) 0%, var(--aol-blue) 50%, var(--aol-blue-light) 100%);
+.dialup-title {
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 50%, var(--dialup-blue-light) 100%);
   color: #fff;
   padding: 3px 4px 3px 5px;
   display: flex;
@@ -95,7 +95,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-size: 12px;
   min-height: 22px;
 }
-.aol-title__app {
+.dialup-title__app {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -103,52 +103,52 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   min-width: 0;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.3);
 }
-.aol-title__icon {
+.dialup-title__icon {
   width: 16px; height: 16px;
   background:
     radial-gradient(circle at 30% 30%, #fff 0 2px, transparent 2.5px),
-    conic-gradient(var(--aol-gold) 0 25%, var(--aol-accent-red) 0 50%, var(--aol-accent-grn) 0 75%, var(--aol-blue-light) 0 100%);
-  border: 1px solid var(--aol-bevel-ll);
+    conic-gradient(var(--dialup-gold) 0 25%, var(--dialup-accent-red) 0 50%, var(--dialup-accent-grn) 0 75%, var(--dialup-blue-light) 0 100%);
+  border: 1px solid var(--dialup-bevel-ll);
   display: inline-block;
   flex-shrink: 0;
 }
-.aol-title__controls { display: flex; gap: 2px; }
-.aol-title__btn {
+.dialup-title__controls { display: flex; gap: 2px; }
+.dialup-title__btn {
   width: 18px; height: 18px;
-  background: var(--aol-chrome);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
-  color: var(--aol-ink);
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  color: var(--dialup-ink);
   font-size: 10px;
   line-height: 16px;
   text-align: center;
   font-weight: bold;
 }
 
-.aol-menu {
-  background: var(--aol-chrome-l);
-  border-bottom: 1px solid var(--aol-bevel-lo);
+.dialup-menu {
+  background: var(--dialup-chrome-l);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
   padding: 1px 4px;
   display: flex;
   gap: 10px;
   font-size: 12px;
 }
-.aol-menu__item { padding: 2px 6px; color: var(--aol-ink); cursor: default; }
-.aol-menu__item:hover { background: var(--aol-blue); color: #fff; }
-.aol-menu__item--right { margin-left: auto; }
+.dialup-menu__item { padding: 2px 6px; color: var(--dialup-ink); cursor: default; }
+.dialup-menu__item:hover { background: var(--dialup-blue); color: #fff; }
+.dialup-menu__item--right { margin-left: auto; }
 
-.aol-toolbar {
-  background: var(--aol-chrome);
-  border-bottom: 1px solid var(--aol-bevel-lo);
+.dialup-toolbar {
+  background: var(--dialup-chrome);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
   padding: 4px 6px;
   display: flex;
   align-items: center;
   gap: 2px;
   flex-wrap: wrap;
 }
-.aol-toolbar__btn {
+.dialup-toolbar__btn {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -156,43 +156,43 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   gap: 2px;
   min-width: 52px;
   padding: 3px 4px;
-  background: var(--aol-chrome);
+  background: var(--dialup-chrome);
   border: 1px solid transparent;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   text-decoration: none;
   font-size: 11px;
   line-height: 1.15;
 }
-.aol-toolbar__btn:hover {
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
-  background: var(--aol-chrome-l);
+.dialup-toolbar__btn:hover {
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  background: var(--dialup-chrome-l);
   text-decoration: none;
 }
-.aol-toolbar__btn:active,
-.aol-toolbar__btn.is-active {
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+.dialup-toolbar__btn:active,
+.dialup-toolbar__btn.is-active {
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
 }
-.aol-toolbar__btn--link { background: none; cursor: pointer; }
-.aol-toolbar__sep { width: 1px; height: 36px; background: var(--aol-bevel-lo); margin: 0 6px; border-right: 1px solid var(--aol-bevel-hi); }
-.aol-toolbar__icon { width: 32px; height: 32px; flex-shrink: 0; }
-.aol-toolbar__welcome {
+.dialup-toolbar__btn--link { background: none; cursor: pointer; }
+.dialup-toolbar__sep { width: 1px; height: 36px; background: var(--dialup-bevel-lo); margin: 0 6px; border-right: 1px solid var(--dialup-bevel-hi); }
+.dialup-toolbar__icon { width: 32px; height: 32px; flex-shrink: 0; }
+.dialup-toolbar__welcome {
   margin-left: auto;
   padding-right: 6px;
   font-size: 11px;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   font-style: italic;
 }
 
-.aol-keyword {
-  background: var(--aol-chrome);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-lo);
+.dialup-keyword {
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
   padding: 3px 6px;
   display: flex;
   align-items: center;
@@ -200,62 +200,62 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-size: 12px;
   flex-wrap: wrap;
 }
-.aol-keyword__fav, .aol-keyword__history {
+.dialup-keyword__fav, .dialup-keyword__history {
   padding: 2px 6px;
-  background: var(--aol-chrome);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   cursor: default;
 }
-.aol-keyword__label { font-weight: bold; }
-.aol-keyword__wrap {
+.dialup-keyword__label { font-weight: bold; }
+.dialup-keyword__wrap {
   flex: 1;
   min-width: 180px;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   background: #fff;
 }
-.aol-keyword__input {
+.dialup-keyword__input {
   width: 100%;
   padding: 3px 5px;
   border: 0;
   background: transparent;
   font: inherit;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
-.aol-keyword__input:focus { outline: none; }
-.aol-keyword__go {
+.dialup-keyword__input:focus { outline: none; }
+.dialup-keyword__go {
   padding: 3px 12px;
-  background: var(--aol-gold);
+  background: var(--dialup-gold);
   border-top: 1px solid #fff6c0;
   border-left: 1px solid #fff6c0;
-  border-right: 1px solid var(--aol-gold-dark);
-  border-bottom: 1px solid var(--aol-gold-dark);
-  color: var(--aol-ink);
+  border-right: 1px solid var(--dialup-gold-dark);
+  border-bottom: 1px solid var(--dialup-gold-dark);
+  color: var(--dialup-ink);
   font-weight: bold;
 }
 
-.aol-body {
+.dialup-body {
   display: flex;
   flex: 1;
   min-height: 500px;
 }
 
-.aol-channels {
+.dialup-channels {
   width: 140px;
   flex-shrink: 0;
-  background: var(--aol-blue-dark);
+  background: var(--dialup-blue-dark);
   padding: 6px 4px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.aol-channels__header {
-  color: var(--aol-gold);
+.dialup-channels__header {
+  color: var(--dialup-gold);
   font-size: 10px;
   font-weight: bold;
   text-align: center;
@@ -263,7 +263,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   padding: 4px 0 6px;
   text-shadow: 1px 1px 0 #000;
 }
-.aol-channel {
+.dialup-channel {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -272,93 +272,93 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-weight: bold;
   color: #fff;
   text-decoration: none;
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   letter-spacing: 0.02em;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
 }
-.aol-channel:hover { text-decoration: none; filter: brightness(1.1); }
-.aol-channel.is-active {
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+.dialup-channel:hover { text-decoration: none; filter: brightness(1.1); }
+.dialup-channel.is-active {
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   filter: brightness(0.92);
 }
-.aol-channel__icon { width: 24px; height: 24px; flex-shrink: 0; }
-.aol-channel--green { background: linear-gradient(180deg, #2a9b3e, #18722a); }
-.aol-channel--red   { background: linear-gradient(180deg, #d8362c, #9b1e15); }
-.aol-channel--gold  { background: linear-gradient(180deg, #e4a414, #a97808); color: #1a0e00; text-shadow: 1px 1px 0 rgba(255,255,255,0.25); }
-.aol-channel--teal  { background: linear-gradient(180deg, #2998a0, #116670); }
-.aol-channel--grey  { background: linear-gradient(180deg, #808080, #4a4a4a); }
+.dialup-channel__icon { width: 24px; height: 24px; flex-shrink: 0; }
+.dialup-channel--green { background: linear-gradient(180deg, #2a9b3e, #18722a); }
+.dialup-channel--red   { background: linear-gradient(180deg, #d8362c, #9b1e15); }
+.dialup-channel--gold  { background: linear-gradient(180deg, #e4a414, #a97808); color: #1a0e00; text-shadow: 1px 1px 0 rgba(255,255,255,0.25); }
+.dialup-channel--teal  { background: linear-gradient(180deg, #2998a0, #116670); }
+.dialup-channel--grey  { background: linear-gradient(180deg, #808080, #4a4a4a); }
 
-.aol-main {
+.dialup-main {
   flex: 1;
-  background: var(--aol-chrome-l);
+  background: var(--dialup-chrome-l);
   padding: 10px;
   min-width: 0;
   overflow: auto;
 }
 
-.aol-status {
-  background: var(--aol-chrome);
-  border-top: 1px solid var(--aol-bevel-hi);
+.dialup-status {
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
   padding: 2px 6px;
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: var(--aol-ink-soft);
+  color: var(--dialup-ink-soft);
 }
-.aol-status__dot {
+.dialup-status__dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: var(--aol-accent-grn);
-  box-shadow: 0 0 4px var(--aol-accent-grn);
+  background: var(--dialup-accent-grn);
+  box-shadow: 0 0 4px var(--dialup-accent-grn);
 }
-.aol-status__sep { color: var(--aol-ink-muted); }
-.aol-status__spacer { flex: 1; }
+.dialup-status__sep { color: var(--dialup-ink-muted); }
+.dialup-status__spacer { flex: 1; }
 
 /* --------- Toolbar/channel icons (inline CSS pixel art) --------- */
 
-.aol-toolbar__icon,
-.aol-channel__icon {
+.dialup-toolbar__icon,
+.dialup-channel__icon {
   position: relative;
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
 }
-.aol-ic-mail {
+.dialup-ic-mail {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='8' width='26' height='18' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/><path d='M3 8 L16 20 L29 8' fill='none' stroke='%23000' stroke-width='1.5'/><rect x='22' y='4' width='6' height='8' fill='%23c41e16' stroke='%23000' stroke-width='1'/></svg>");
 }
-.aol-ic-phone {
+.dialup-ic-phone {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='10' width='20' height='18' fill='%23c41e16' stroke='%23000' stroke-width='1.5' rx='2'/><rect x='9' y='14' width='14' height='10' fill='%23a01a12'/><g fill='%23efe5d1' stroke='%23000' stroke-width='0.5'><rect x='10' y='15' width='3' height='2'/><rect x='14.5' y='15' width='3' height='2'/><rect x='19' y='15' width='3' height='2'/><rect x='10' y='18' width='3' height='2'/><rect x='14.5' y='18' width='3' height='2'/><rect x='19' y='18' width='3' height='2'/><rect x='10' y='21' width='3' height='2'/><rect x='14.5' y='21' width='3' height='2'/><rect x='19' y='21' width='3' height='2'/></g><rect x='4' y='6' width='24' height='5' fill='%23d8362c' stroke='%23000' stroke-width='1.5' rx='2.5'/></svg>");
 }
-.aol-ic-people {
+.dialup-ic-people {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='11' cy='11' r='4' fill='%23ffcc00' stroke='%23000' stroke-width='1.2'/><circle cx='21' cy='11' r='4' fill='%23d8362c' stroke='%23000' stroke-width='1.2'/><path d='M4 27 Q4 19 11 19 Q18 19 18 27' fill='%23ffcc00' stroke='%23000' stroke-width='1.2'/><path d='M14 27 Q14 19 21 19 Q28 19 28 27' fill='%23d8362c' stroke='%23000' stroke-width='1.2'/></svg>");
 }
-.aol-ic-log {
+.dialup-ic-log {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='5' y='3' width='22' height='26' fill='%23fff' stroke='%23000' stroke-width='1.5'/><line x1='9' y1='9' x2='23' y2='9' stroke='%23000' stroke-width='1'/><line x1='9' y1='14' x2='23' y2='14' stroke='%23000' stroke-width='1'/><line x1='9' y1='19' x2='23' y2='19' stroke='%23000' stroke-width='1'/><line x1='9' y1='24' x2='19' y2='24' stroke='%23000' stroke-width='1'/></svg>");
 }
-.aol-ic-prefs {
+.dialup-ic-prefs {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='9' fill='%23d4d0c8' stroke='%23000' stroke-width='1.5'/><circle cx='16' cy='16' r='3' fill='%230066cc'/><g fill='%23000'><rect x='15' y='2' width='2' height='5'/><rect x='15' y='25' width='2' height='5'/><rect x='2' y='15' width='5' height='2'/><rect x='25' y='15' width='5' height='2'/></g></svg>");
 }
-.aol-ic-signoff {
+.dialup-ic-signoff {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='4' y='6' width='18' height='20' fill='%23fff' stroke='%23000' stroke-width='1.5'/><path d='M14 16 L28 16 M24 12 L28 16 L24 20' stroke='%23c41e16' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
 }
-.aol-ic-welcome {
+.dialup-ic-welcome {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 14 L16 4 L28 14 L28 28 L4 28 Z' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/><rect x='13' y='18' width='6' height='10' fill='%238e5a10'/></svg>");
 }
-.aol-ic-kids { /* reserved */
+.dialup-ic-kids { /* reserved */
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='12' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/></svg>");
 }
 
 /* Channel icons are same set but scaled smaller; adjust padding */
-.aol-channel__icon { width: 22px; height: 22px; }
+.dialup-channel__icon { width: 22px; height: 22px; }
 
 /* =========================================================================
-   Re-skin shared components in AOL chrome
+   Re-skin shared components in dial-up-era chrome
    ========================================================================= */
 
 /* --------- Page container --------- */
@@ -368,7 +368,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   padding: 0;
 }
 .page__head {
-  background: linear-gradient(90deg, var(--aol-blue-dark), var(--aol-blue));
+  background: linear-gradient(90deg, var(--dialup-blue-dark), var(--dialup-blue));
   color: #fff;
   margin: 0 0 10px;
   padding: 4px 8px;
@@ -376,10 +376,10 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   flex-wrap: wrap;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
@@ -395,35 +395,35 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
 .page__foot {
   margin-top: 16px;
   padding-top: 8px;
-  border-top: 1px dashed var(--aol-chrome-d);
+  border-top: 1px dashed var(--dialup-chrome-d);
   font-size: 11px;
-  color: var(--aol-ink-muted);
+  color: var(--dialup-ink-muted);
   display: flex;
   gap: 6px;
 }
 
-/* --------- Panels (AOL window-in-window) --------- */
+/* --------- Panels (dial-up window-in-window) --------- */
 
 .panel {
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
-  box-shadow: inset 1px 1px 0 var(--aol-chrome-l);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  box-shadow: inset 1px 1px 0 var(--dialup-chrome-l);
   overflow: hidden;
   padding: 2px;
   margin-bottom: 8px;
 }
 .panel__head {
-  background: linear-gradient(90deg, var(--aol-blue-dark), var(--aol-blue-mid));
+  background: linear-gradient(90deg, var(--dialup-blue-dark), var(--dialup-blue-mid));
   color: #fff;
   padding: 3px 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   min-height: 20px;
 }
 .panel__title {
@@ -438,7 +438,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-size: 11px;
   color: rgba(255,255,255,0.9);
 }
-.panel__action { font-size: 11px; color: var(--aol-gold); font-weight: bold; }
+.panel__action { font-size: 11px; color: var(--dialup-gold); font-weight: bold; }
 .panel__action:hover { color: #fff; text-decoration: none; }
 .panel__body { padding: 10px; }
 .panel__body--tight { padding: 6px 10px; }
@@ -455,55 +455,55 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-size: 12px;
   font-weight: bold;
   line-height: 1.2;
-  color: var(--aol-ink);
-  background: var(--aol-chrome);
-  border-top: 2px solid var(--aol-bevel-hi);
-  border-left: 2px solid var(--aol-bevel-hi);
-  border-right: 2px solid var(--aol-bevel-ll);
-  border-bottom: 2px solid var(--aol-bevel-ll);
+  color: var(--dialup-ink);
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
   border-radius: 0;
   cursor: pointer;
   min-height: 24px;
 }
-.btn:hover { background: var(--aol-chrome-l); }
+.btn:hover { background: var(--dialup-chrome-l); }
 .btn:active, .btn.is-pressed {
-  border-top: 2px solid var(--aol-bevel-ll);
-  border-left: 2px solid var(--aol-bevel-ll);
-  border-right: 2px solid var(--aol-bevel-hi);
-  border-bottom: 2px solid var(--aol-bevel-hi);
+  border-top: 2px solid var(--dialup-bevel-ll);
+  border-left: 2px solid var(--dialup-bevel-ll);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
 }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.btn:focus-visible { outline: 1px dotted var(--aol-ink); outline-offset: -4px; }
+.btn:focus-visible { outline: 1px dotted var(--dialup-ink); outline-offset: -4px; }
 
 .btn--primary {
-  background: linear-gradient(180deg, var(--aol-gold), var(--aol-gold-dark));
-  color: var(--aol-ink);
+  background: linear-gradient(180deg, var(--dialup-gold), var(--dialup-gold-dark));
+  color: var(--dialup-ink);
 }
-.btn--primary:hover { background: linear-gradient(180deg, #fff000, var(--aol-gold-dark)); }
+.btn--primary:hover { background: linear-gradient(180deg, #fff000, var(--dialup-gold-dark)); }
 
 .btn--brass {
-  background: linear-gradient(180deg, var(--aol-gold), var(--aol-gold-dark));
-  color: var(--aol-ink);
+  background: linear-gradient(180deg, var(--dialup-gold), var(--dialup-gold-dark));
+  color: var(--dialup-ink);
 }
-.btn--brass:hover { background: linear-gradient(180deg, #fff000, var(--aol-gold-dark)); }
+.btn--brass:hover { background: linear-gradient(180deg, #fff000, var(--dialup-gold-dark)); }
 
 .btn--danger {
-  background: linear-gradient(180deg, #e04a42, var(--aol-accent-red));
+  background: linear-gradient(180deg, #e04a42, var(--dialup-accent-red));
   color: #fff;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
-.btn--danger:hover { background: linear-gradient(180deg, #ef5850, var(--aol-accent-red)); }
+.btn--danger:hover { background: linear-gradient(180deg, #ef5850, var(--dialup-accent-red)); }
 
 .btn--quiet {
   background: transparent;
   border-color: transparent;
-  color: var(--aol-blue);
+  color: var(--dialup-blue);
   font-weight: normal;
   text-decoration: underline;
   min-height: 0;
   padding: 1px 4px;
 }
-.btn--quiet:hover { color: var(--aol-blue-dark); background: transparent; }
+.btn--quiet:hover { color: var(--dialup-blue-dark); background: transparent; }
 
 .btn--sm { padding: 2px 8px; font-size: 11px; min-height: 0; }
 
@@ -514,7 +514,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   display: block;
   font-size: 11px;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   letter-spacing: 0;
   text-transform: none;
   margin-bottom: 3px;
@@ -525,30 +525,30 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   width: 100%;
   padding: 3px 5px;
   background: #fff;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   font: inherit;
   font-size: 12px;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
-  box-shadow: inset 1px 1px 0 var(--aol-chrome-d);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  box-shadow: inset 1px 1px 0 var(--dialup-chrome-d);
   border-radius: 0;
   min-height: 22px;
 }
 .field__input:focus,
 .field__select:focus,
 .field__textarea:focus {
-  outline: 1px dotted var(--aol-ink);
+  outline: 1px dotted var(--dialup-ink);
   outline-offset: -3px;
 }
-.field__input::placeholder { color: var(--aol-ink-muted); }
+.field__input::placeholder { color: var(--dialup-ink-muted); }
 .field__input--mono { font-family: "Courier New", Courier, monospace; letter-spacing: 0.05em; }
 .field__input--center { text-align: center; }
 .field__input--big { font-size: 18px; padding: 5px 8px; letter-spacing: 0.25em; }
-.field__hint { font-size: 11px; color: var(--aol-ink-muted); margin-top: 2px; }
-.field__hint--err { color: var(--aol-accent-red); font-weight: bold; }
-.field__input[aria-invalid="true"], .field__input.is-invalid { border-color: var(--aol-accent-red); }
+.field__hint { font-size: 11px; color: var(--dialup-ink-muted); margin-top: 2px; }
+.field__hint--err { color: var(--dialup-accent-red); font-weight: bold; }
+.field__input[aria-invalid="true"], .field__input.is-invalid { border-color: var(--dialup-accent-red); }
 
 .form-row { display: grid; gap: 8px; }
 @media (min-width: 720px) {
@@ -556,7 +556,7 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   .form-row--2 { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* --------- Toggle (stand-in for AOL "Enabled?" checkbox with chunky check) --------- */
+/* --------- Toggle (stand-in for dial-up "Enabled?" checkbox with chunky check) --------- */
 
 .toggle {
   position: relative;
@@ -568,10 +568,10 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
 .toggle__track {
   position: absolute; inset: 0;
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   border-radius: 0;
 }
 .toggle__track::after {
@@ -596,27 +596,27 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-size: 11px;
   font-weight: bold;
   line-height: 1.3;
-  background: var(--aol-chrome);
-  color: var(--aol-ink);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   border-radius: 0;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aol-ink-muted); }
-.chip--on   { background: #d3f0d8; color: var(--aol-accent-grn); }
-.chip--on   .chip__dot { background: var(--aol-accent-grn); box-shadow: 0 0 3px var(--aol-accent-grn); }
+.chip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dialup-ink-muted); }
+.chip--on   { background: #d3f0d8; color: var(--dialup-accent-grn); }
+.chip--on   .chip__dot { background: var(--dialup-accent-grn); box-shadow: 0 0 3px var(--dialup-accent-grn); }
 .chip--warn { background: #fff3ce; color: #8a5a00; }
-.chip--warn .chip__dot { background: var(--aol-accent-org); }
-.chip--live { background: var(--aol-gold); color: #1a0e00; }
-.chip--live .chip__dot { background: var(--aol-accent-red); animation: aol-pulse 1s steps(2,end) infinite; }
-.chip--err  { background: #f4d4d2; color: var(--aol-accent-red); }
-.chip--err  .chip__dot { background: var(--aol-accent-red); }
+.chip--warn .chip__dot { background: var(--dialup-accent-org); }
+.chip--live { background: var(--dialup-gold); color: #1a0e00; }
+.chip--live .chip__dot { background: var(--dialup-accent-red); animation: dialup-pulse 1s steps(2,end) infinite; }
+.chip--err  { background: #f4d4d2; color: var(--dialup-accent-red); }
+.chip--err  .chip__dot { background: var(--dialup-accent-red); }
 
-@keyframes aol-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+@keyframes dialup-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
 
 /* --------- Banner --------- */
 
@@ -624,18 +624,18 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   padding: 6px 10px;
   font-size: 12px;
   margin-bottom: 10px;
-  background: var(--aol-chrome-l);
-  color: var(--aol-ink);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  background: var(--dialup-chrome-l);
+  color: var(--dialup-ink);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   border-radius: 0;
   font-weight: bold;
 }
-.banner--ok   { background: #d3f0d8; color: var(--aol-accent-grn); }
+.banner--ok   { background: #d3f0d8; color: var(--dialup-accent-grn); }
 .banner--warn { background: #fff3ce; color: #8a5a00; }
-.banner--err  { background: #f4d4d2; color: var(--aol-accent-red); }
+.banner--err  { background: #f4d4d2; color: var(--dialup-accent-red); }
 
 /* --------- Key-value list --------- */
 
@@ -645,21 +645,21 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   grid-template-columns: 140px 1fr auto;
   gap: 12px;
   padding: 5px 10px;
-  border-bottom: 1px dotted var(--aol-chrome-d);
+  border-bottom: 1px dotted var(--dialup-chrome-d);
   font-size: 12px;
   align-items: baseline;
 }
 .kv__row:last-child { border-bottom: 0; }
 .kv__key {
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   font-size: 11px;
   font-weight: bold;
   text-transform: none;
   letter-spacing: 0;
 }
-.kv__val { color: var(--aol-ink); }
+.kv__val { color: var(--dialup-ink); }
 .kv__val--mono { font-family: "Courier New", Courier, monospace; }
-.kv__val--muted { color: var(--aol-ink-muted); font-style: italic; }
+.kv__val--muted { color: var(--dialup-ink-muted); font-style: italic; }
 @media (max-width: 640px) {
   .kv__row { grid-template-columns: 1fr; gap: 1px; padding: 6px 10px; }
 }
@@ -670,23 +670,23 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   display: block;
   padding: 6px 8px;
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   cursor: pointer;
   border-radius: 0;
   margin: 0;
 }
 .radio-card + .radio-card { margin-top: 4px; }
-.radio-card:hover { background: var(--aol-blue-light); }
+.radio-card:hover { background: var(--dialup-blue-light); }
 .radio-card input { position: absolute; opacity: 0; pointer-events: none; }
 .radio-card:has(input:checked) {
-  background: var(--aol-gold);
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  background: var(--dialup-gold);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
 }
 .radio-card__title {
   display: flex;
@@ -694,15 +694,15 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   gap: 6px;
   font-size: 12px;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
 .radio-card__indicator {
   width: 11px; height: 11px;
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   position: relative;
   flex-shrink: 0;
 }
@@ -710,25 +710,25 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   content: "";
   position: absolute;
   inset: 2px;
-  background: var(--aol-accent-red);
+  background: var(--dialup-accent-red);
 }
 .radio-card__desc {
   margin: 3px 0 0 18px;
   font-size: 11px;
-  color: var(--aol-ink-soft);
+  color: var(--dialup-ink-soft);
 }
-.radio-card__meta { margin-left: auto; font-size: 11px; color: var(--aol-ink-muted); font-family: "Courier New", Courier, monospace; }
+.radio-card__meta { margin-left: auto; font-size: 11px; color: var(--dialup-ink-muted); font-family: "Courier New", Courier, monospace; }
 
 /* --------- Empty state --------- */
 
 .empty {
   padding: 18px 12px;
   text-align: center;
-  color: var(--aol-ink-muted);
+  color: var(--dialup-ink-muted);
   font-size: 12px;
 }
-.empty__icon { color: var(--aol-chrome-d); margin-bottom: 8px; }
-.empty a { color: var(--aol-blue); font-weight: bold; }
+.empty__icon { color: var(--dialup-chrome-d); margin-bottom: 8px; }
+.empty a { color: var(--dialup-blue); font-weight: bold; }
 
 /* --------- Tables --------- */
 
@@ -745,19 +745,19 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-weight: bold;
   letter-spacing: 0;
   text-transform: none;
-  color: var(--aol-ink);
-  background: var(--aol-chrome);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
-  border-top: 1px solid var(--aol-bevel-hi);
+  color: var(--dialup-ink);
+  background: var(--dialup-chrome);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  border-top: 1px solid var(--dialup-bevel-hi);
 }
 .t tbody td {
   padding: 3px 8px;
-  border-bottom: 1px solid var(--aol-chrome-l);
+  border-bottom: 1px solid var(--dialup-chrome-l);
   vertical-align: middle;
 }
-.t tbody tr:hover { background: var(--aol-blue-light); }
-.t td.num, .t th.num { font-family: "Courier New", Courier, monospace; color: var(--aol-ink); }
+.t tbody tr:hover { background: var(--dialup-blue-light); }
+.t td.num, .t th.num { font-family: "Courier New", Courier, monospace; color: var(--dialup-ink); }
 .t td.r, .t th.r { text-align: right; }
 
 /* --------- Stats strip (dashboard) --------- */
@@ -776,17 +776,17 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   flex: 1 1 140px;
   padding: 6px 10px;
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
   text-align: center;
 }
-.strip__cell--muted { background: var(--aol-chrome-l); }
+.strip__cell--muted { background: var(--dialup-chrome-l); }
 .strip__label {
   font-size: 11px;
   font-weight: bold;
-  color: var(--aol-blue-dark);
+  color: var(--dialup-blue-dark);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 3px;
@@ -795,11 +795,11 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-family: "Courier New", Courier, monospace;
   font-size: 22px;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
-.strip__value--forest { color: var(--aol-accent-grn); }
-.strip__value--brass  { color: var(--aol-accent-red); }
-.strip__cell--muted .strip__value { color: var(--aol-ink-muted); }
+.strip__value--forest { color: var(--dialup-accent-grn); }
+.strip__value--brass  { color: var(--dialup-accent-red); }
+.strip__cell--muted .strip__value { color: var(--dialup-ink-muted); }
 
 /* --------- Line list (dashboard, mobile card) --------- */
 
@@ -810,20 +810,20 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   align-items: center;
   gap: 10px;
   padding: 4px 10px;
-  border-bottom: 1px solid var(--aol-chrome-l);
+  border-bottom: 1px solid var(--dialup-chrome-l);
   min-height: 24px;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
 .lines__row:last-child { border-bottom: 0; }
-.lines__row:hover { background: var(--aol-blue-light); text-decoration: none; }
-.lines__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--aol-ink-muted); }
-.lines__dot--on { background: var(--aol-accent-grn); box-shadow: 0 0 4px var(--aol-accent-grn); }
-.lines__name { font-weight: bold; color: var(--aol-ink); font-size: 12px; }
-.lines__num { font-family: "Courier New", Courier, monospace; font-size: 12px; color: var(--aol-ink-soft); }
-.lines__state { font-size: 11px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
-.lines__state--on { color: var(--aol-accent-grn); }
+.lines__row:hover { background: var(--dialup-blue-light); text-decoration: none; }
+.lines__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dialup-ink-muted); }
+.lines__dot--on { background: var(--dialup-accent-grn); box-shadow: 0 0 4px var(--dialup-accent-grn); }
+.lines__name { font-weight: bold; color: var(--dialup-ink); font-size: 12px; }
+.lines__num { font-family: "Courier New", Courier, monospace; font-size: 12px; color: var(--dialup-ink-soft); }
+.lines__state { font-size: 11px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
+.lines__state--on { color: var(--dialup-accent-grn); }
 
-/* --------- Keypad (chunky AOL treatment) --------- */
+/* --------- Keypad (chunky dial-up treatment) --------- */
 
 .keypad {
   --kp-w: 240px;
@@ -834,20 +834,20 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   margin: 0 auto;
   padding: 10px;
   background: #1a3d72;
-  border-top: 2px solid var(--aol-bevel-hi);
-  border-left: 2px solid var(--aol-bevel-hi);
-  border-right: 2px solid var(--aol-bevel-ll);
-  border-bottom: 2px solid var(--aol-bevel-ll);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
   border-radius: 0;
   box-shadow: none;
 }
 .keypad__btn {
   aspect-ratio: 1 / 1;
   background: linear-gradient(180deg, #f5f5f5, #c4c4c4);
-  border-top: 2px solid var(--aol-bevel-hi);
-  border-left: 2px solid var(--aol-bevel-hi);
-  border-right: 2px solid var(--aol-bevel-ll);
-  border-bottom: 2px solid var(--aol-bevel-ll);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
   border-radius: 0;
   padding: 4px;
   display: flex;
@@ -855,41 +855,41 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   align-items: center;
   justify-content: center;
   gap: 1px;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
 .keypad__btn:hover { background: linear-gradient(180deg, #fff, #d8d8d8); }
 .keypad__btn:active, .keypad__btn.is-pressed {
   background: linear-gradient(180deg, #c4c4c4, #a0a0a0);
-  border-top: 2px solid var(--aol-bevel-ll);
-  border-left: 2px solid var(--aol-bevel-ll);
-  border-right: 2px solid var(--aol-bevel-hi);
-  border-bottom: 2px solid var(--aol-bevel-hi);
+  border-top: 2px solid var(--dialup-bevel-ll);
+  border-left: 2px solid var(--dialup-bevel-ll);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
 }
 .keypad__num {
   font-family: inherit;
   font-weight: bold;
   font-size: 18px;
   line-height: 1;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
 .keypad__letters {
   font-size: 8px;
   font-weight: bold;
-  color: var(--aol-ink-soft);
+  color: var(--dialup-ink-soft);
   letter-spacing: 0.1em;
 }
-.keypad__btn--symbol .keypad__num { color: var(--aol-blue-dark); }
+.keypad__btn--symbol .keypad__num { color: var(--dialup-blue-dark); }
 .keypad-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .keypad-wrap__strip {
-  background: var(--aol-gold);
+  background: var(--dialup-gold);
   border-top: 1px solid #fff6c0;
   border-left: 1px solid #fff6c0;
-  border-right: 1px solid var(--aol-gold-dark);
-  border-bottom: 1px solid var(--aol-gold-dark);
+  border-right: 1px solid var(--dialup-gold-dark);
+  border-bottom: 1px solid var(--dialup-gold-dark);
   padding: 2px 16px;
   font-size: 11px;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   letter-spacing: 0.15em;
 }
 
@@ -899,10 +899,10 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
 .pin__slot {
   width: 32px; height: 40px;
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   border-radius: 0;
   display: flex;
   align-items: center;
@@ -910,10 +910,10 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   font-family: "Courier New", Courier, monospace;
   font-size: 22px;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
 }
-.pin__slot.is-filled { background: var(--aol-gold); }
-.pin__slot.is-active { border-bottom-color: var(--aol-accent-red); box-shadow: inset 0 -2px 0 var(--aol-accent-red); }
+.pin__slot.is-filled { background: var(--dialup-gold); }
+.pin__slot.is-active { border-bottom-color: var(--dialup-accent-red); box-shadow: inset 0 -2px 0 var(--dialup-accent-red); }
 
 /* --------- Hub-and-spoke (Connected Families) --------- */
 
@@ -950,23 +950,23 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   transform: translateX(-50%);
   width: 0;
   height: 12px;
-  border-left: 2px dashed var(--aol-gold-dark);
+  border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__house { width: 40px; height: 40px; color: var(--aol-blue-dark); }
+.hub__house { width: 40px; height: 40px; color: var(--dialup-blue-dark); }
 .hub__label {
   font-family: inherit;
   font-style: normal;
   font-weight: bold;
   font-size: 12px;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   text-align: center;
 }
-.hub__since { font-size: 10px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
+.hub__since { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
 .hub__rail {
   width: calc(100% - 16px);
   max-width: 560px;
   height: 0;
-  border-top: 2px dashed var(--aol-gold-dark);
+  border-top: 2px dashed var(--dialup-gold-dark);
   background: none;
 }
 .hub__center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 12px; }
@@ -978,29 +978,29 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--aol-c
   transform: translateX(-50%);
   width: 0;
   height: 12px;
-  border-left: 2px dashed var(--aol-gold-dark);
+  border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__center-house { width: 60px; height: 60px; color: var(--aol-blue-dark); }
-.hub__center-name { font-weight: bold; font-size: 13px; color: var(--aol-ink); font-style: normal; }
-.hub__center-sub { font-size: 10px; color: var(--aol-ink-muted); text-transform: uppercase; font-weight: bold; }
+.hub__center-house { width: 60px; height: 60px; color: var(--dialup-blue-dark); }
+.hub__center-name { font-weight: bold; font-size: 13px; color: var(--dialup-ink); font-style: normal; }
+.hub__center-sub { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
 
 /* --------- Disclosure (details/summary) --------- */
 
 details.disclosure {
   background: #fff;
-  border-top: 1px solid var(--aol-bevel-ll);
-  border-left: 1px solid var(--aol-bevel-ll);
-  border-right: 1px solid var(--aol-bevel-hi);
-  border-bottom: 1px solid var(--aol-bevel-hi);
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
   border-radius: 0;
-  box-shadow: inset 1px 1px 0 var(--aol-chrome-d);
+  box-shadow: inset 1px 1px 0 var(--dialup-chrome-d);
 }
 details.disclosure summary {
   cursor: pointer;
   padding: 4px 10px;
   font-size: 12px;
   font-weight: bold;
-  color: var(--aol-blue);
+  color: var(--dialup-blue);
   list-style: none;
   display: flex;
   align-items: center;
@@ -1011,28 +1011,28 @@ details.disclosure summary::before {
   content: "+";
   font-family: "Courier New", Courier, monospace;
   font-weight: bold;
-  color: var(--aol-ink);
+  color: var(--dialup-ink);
   font-size: 14px;
   width: 14px;
   text-align: center;
-  background: var(--aol-chrome);
-  border-top: 1px solid var(--aol-bevel-hi);
-  border-left: 1px solid var(--aol-bevel-hi);
-  border-right: 1px solid var(--aol-bevel-ll);
-  border-bottom: 1px solid var(--aol-bevel-ll);
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
 }
 details.disclosure[open] summary::before { content: "−"; }
 details.disclosure summary:hover { text-decoration: underline; }
-details.disclosure > *:not(summary) { border-top: 1px dotted var(--aol-chrome-d); padding: 8px 10px; }
+details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome-d); padding: 8px 10px; }
 
 /* --------- Auth screens (login/onboard) keep separate chrome --------- */
 
-.auth { /* reuse the digits.css .auth layout but AOL-skinned */
+.auth { /* reuse the digits.css .auth layout but dial-up-skinned */
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px 12px;
-  background: var(--aol-desktop);
+  background: var(--dialup-desktop);
 }
 .auth__frame { width: 100%; max-width: 400px; text-align: center; }
 .auth__mark {
@@ -1044,30 +1044,30 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--aol-chrome-d)
   text-shadow: 2px 2px 0 rgba(0,0,0,0.4);
   margin: 0 0 2px;
 }
-.auth__mark em { font-style: italic; color: var(--aol-gold); }
-.auth__tagline { color: var(--aol-chrome-l); font-size: 12px; margin: 0 0 16px; text-shadow: 1px 1px 0 rgba(0,0,0,0.3); }
+.auth__mark em { font-style: italic; color: var(--dialup-gold); }
+.auth__tagline { color: var(--dialup-chrome-l); font-size: 12px; margin: 0 0 16px; text-shadow: 1px 1px 0 rgba(0,0,0,0.3); }
 .auth__card {
-  background: var(--aol-chrome);
-  border-top: 2px solid var(--aol-bevel-hi);
-  border-left: 2px solid var(--aol-bevel-hi);
-  border-right: 2px solid var(--aol-bevel-ll);
-  border-bottom: 2px solid var(--aol-bevel-ll);
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
   padding: 12px;
   text-align: left;
 }
 .auth__divider {
   display: flex; align-items: center; gap: 8px;
-  margin: 10px 0; color: var(--aol-ink-muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: bold;
+  margin: 10px 0; color: var(--dialup-ink-muted); font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; font-weight: bold;
 }
-.auth__divider::before, .auth__divider::after { content: ""; flex: 1; height: 1px; background: var(--aol-chrome-d); }
-.auth__phone { width: 96px; height: 96px; margin: 0 auto 12px; color: var(--aol-ink); }
+.auth__divider::before, .auth__divider::after { content: ""; flex: 1; height: 1px; background: var(--dialup-chrome-d); }
+.auth__phone { width: 96px; height: 96px; margin: 0 auto 12px; color: var(--dialup-ink); }
 
 /* --------- Utilities --------- */
 
 .num { font-family: "Courier New", Courier, monospace; }
-.muted { color: var(--aol-ink-muted); }
-.soft  { color: var(--aol-ink-soft); }
-.brass { color: var(--aol-gold-dark); }
+.muted { color: var(--dialup-ink-muted); }
+.soft  { color: var(--dialup-ink-soft); }
+.brass { color: var(--dialup-gold-dark); }
 .serif { font-family: "Times New Roman", Times, serif; }
 .italic { font-style: italic; }
 .center { text-align: center; }
@@ -1093,7 +1093,7 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--aol-chrome-d)
 @media (max-width: 720px) {
   .hide-sm { display: none !important; }
   .show-sm { display: block; }
-  .aol-body { flex-direction: column; }
-  .aol-channels { width: auto; flex-direction: row; flex-wrap: wrap; }
-  .aol-channel { flex: 1 1 120px; }
+  .dialup-body { flex-direction: column; }
+  .dialup-channels { width: auto; flex-direction: row; flex-wrap: wrap; }
+  .dialup-channel { flex: 1 1 120px; }
 }
