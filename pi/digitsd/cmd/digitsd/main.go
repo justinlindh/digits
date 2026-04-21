@@ -1676,7 +1676,6 @@ func main() {
 						cb.mesh = owebrtc.NewMeshManager(iceCfg)
 					}
 					mesh = cb.mesh
-					confID := ctrl.ConferenceID()
 					cb.mu.Unlock()
 
 					pm := mesh.GetPeer(msg.From)
@@ -1727,6 +1726,9 @@ func main() {
 							})
 						}
 						// Accept the offer and send back an answer.
+						// Use msg.ConfID (from the offer) rather than ctrl.ConferenceID() so
+						// the answer is correctly routed even if our ConferenceMember message
+						// has not yet arrived (possible on reconnect or out-of-order delivery).
 						answerSDP, err := pm.AcceptOffer(msg.SDP)
 						if err != nil {
 							slog.Error("conference: accept offer failed", "from", msg.From, "err", err)
@@ -1739,11 +1741,11 @@ func main() {
 						sendSignal(s, &sigclient.Message{
 							Type:   sigclient.TypeSDP,
 							To:     msg.From,
-							ConfID: confID,
+							ConfID: msg.ConfID,
 							SDP:    answerSDP,
 						})
 						close(sdpSent)
-						slog.Info("conference: sent SDP answer to initiator", "to", msg.From, "conf_id", confID)
+						slog.Info("conference: sent SDP answer to initiator", "to", msg.From, "conf_id", msg.ConfID)
 					} else {
 						// Peer already exists: we were the initiator and this is the answer.
 						if err := pm.SetAnswer(msg.SDP); err != nil {

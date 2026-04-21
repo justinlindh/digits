@@ -666,20 +666,20 @@ func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	// matching 90s residential TWC semantics (e.g. AT&T / Time Warner Cable).
 	slog.Warn("conference: merge rejected", "conf_id", confID, "reason", reason)
 	c.cb.SendTone(ToneIntercept)
-	// Drop the A-C peer; B is still in A's active 2-party state.
+	// Drop the A→C peer; B is still in A's active 2-party state.
 	if c.addingPeer != "" {
 		c.cb.TearDownPeer(c.addingPeer)
 		c.addingPeer = ""
 	}
-	// Clear conference state; host is back to 2-party with held peer.
-	c.confID = ""
-	c.isConfHost = false
 	// Restore state: held peer unmute, return to CONNECTED.
 	if c.heldPeer != "" {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
 	c.heldPeer = ""
 	c.state = StateCONNECTED
+	// Clear conference state after state assignment, consistent with HandleConferenceEnd.
+	c.confID = ""
+	c.isConfHost = false
 }
 
 // ConferenceID returns the current conference ID, or empty string if not in a conference.

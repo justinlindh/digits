@@ -1119,3 +1119,27 @@ func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 		t.Fatalf("expected conference state cleared, got %q", c.ConferenceID())
 	}
 }
+
+func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+	})
+
+	// Rejection for a different conf -- should be ignored.
+	c.HandleConferenceRejected("conf-xyz", "merge_failed")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("state should remain StateCONFERENCE_MERGED on mismatched confID, got %v", c.State())
+	}
+	if c.ConferenceID() != "conf-abc" {
+		t.Fatalf("confID should remain conf-abc, got %q", c.ConferenceID())
+	}
+	if mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("intercept tone should not play for mismatched rejection")
+	}
+}
