@@ -26,13 +26,7 @@ func (s *Store) RequireAuth(next http.Handler) http.Handler {
 		}
 		sess, err := s.ValidateSession(cookie.Value)
 		if err != nil {
-			// Clear invalid cookie
-			http.SetCookie(w, &http.Cookie{
-				Name:   CookieName,
-				Domain: s.CookieDomain,
-				MaxAge: -1,
-				Path:   "/",
-			})
+			clearSessionCookie(w, s.CookieDomain)
 			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 			return
 		}
@@ -55,4 +49,26 @@ func (s *Store) RequireAuth(next http.Handler) http.Handler {
 func UserFromContext(ctx context.Context) *User {
 	u, _ := ctx.Value(UserContextKey).(*User)
 	return u
+}
+
+// clearSessionCookie emits expiring Set-Cookie headers for both the
+// domain-scoped cookie (current config) and the host-scoped cookie (no Domain
+// attribute). Early sessions set without an explicit Domain stick around under
+// the origin host and are invisible to a domain-scoped clear, so after a
+// COOKIE_DOMAIN change they can persist and keep failing validation forever.
+// Writing both variants mops up either form.
+func clearSessionCookie(w http.ResponseWriter, domain string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   CookieName,
+		Domain: domain,
+		MaxAge: -1,
+		Path:   "/",
+	})
+	if domain != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:   CookieName,
+			MaxAge: -1,
+			Path:   "/",
+		})
+	}
 }
