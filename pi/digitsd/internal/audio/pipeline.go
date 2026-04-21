@@ -53,6 +53,7 @@ type Pipeline struct {
 	filters   *BiquadChain // pre-denoise bandpass (optional)
 	character atomic.Pointer[BiquadChain] // post-denoise POTS character, swappable live
 	denoiser  *Denoiser
+	muted     atomic.Bool
 	outPCM    chan []int16 // denoised mono 20ms frames for WebRTC to encode
 	stop      chan struct{}
 	wg        sync.WaitGroup
@@ -95,6 +96,27 @@ func (p *Pipeline) SetVoiceStyle(style string) {
 // be nil).
 func (p *Pipeline) loadCharacter() *BiquadChain {
 	return p.character.Load()
+}
+
+// SetMuted toggles the outbound mic mute. When true, outbound PCM frames are
+// replaced with zero-samples. With Opus DTX enabled on the encoder, the
+// receiving end renders low-level comfort noise, matching 90s POTS silent
+// hold. Safe to call concurrently from any goroutine.
+func (p *Pipeline) SetMuted(v bool) { p.muted.Store(v) }
+
+// Muted reports the current mute state.
+func (p *Pipeline) Muted() bool { return p.muted.Load() }
+
+// maybeMute zeroes all samples in frame when muted is true.
+// In-place mutation is safe here: the frame slice is freshly allocated or
+// about to be discarded after the outPCM send.
+func maybeMute(frame []int16, muted bool) {
+	if !muted {
+		return
+	}
+	for i := range frame {
+		frame[i] = 0
+	}
 }
 
 // Start opens the ALSA capture device and begins the capture goroutine.
@@ -167,6 +189,8 @@ func (p *Pipeline) captureLoop() {
 		if ch := p.character.Load(); ch != nil {
 			mono = ch.Process(mono)
 		}
+
+		maybeMute(mono, p.muted.Load())
 
 		// Non-blocking send — drop frame if consumer is slow.
 		select {

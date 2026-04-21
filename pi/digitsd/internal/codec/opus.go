@@ -31,6 +31,13 @@ func NewEncoder(sampleRate, channels, bitrate int) (*Encoder, error) {
 	if err := enc.SetInBandFEC(true); err != nil {
 		return nil, fmt.Errorf("SetInBandFEC: %w", err)
 	}
+	// DTX: when the pipeline sends zero-sample (muted) frames, the encoder
+	// emits SID (silence-indicator) comfort-noise packets. The receiving
+	// decoder regenerates low-level background noise, matching 90s POTS
+	// silent-hold semantics while the host is in the ADD_PARTY flow.
+	if err := enc.SetDTX(true); err != nil {
+		return nil, fmt.Errorf("SetDTX: %w", err)
+	}
 	return &Encoder{
 		enc: enc,
 		buf: make([]byte, 1024),
