@@ -73,6 +73,9 @@ func (m *MeshManager) ActivePeers() []string {
 // encodes the frame independently using its own Opus encoder, respecting per-peer
 // outbound mute: muted peers encode silence (Opus DTX comfort noise) while
 // unmuted peers encode the live mic audio. The input frame is never modified.
+//
+// With two or more peers, each encode runs in its own goroutine so that a
+// WriteSample stall on one peer does not delay the others.
 func (m *MeshManager) SendPCMFrameToAll(frame []int16) {
 	m.mu.Lock()
 	peers := make([]*PeerManager, 0, len(m.peers))
@@ -81,9 +84,23 @@ func (m *MeshManager) SendPCMFrameToAll(frame []int16) {
 	}
 	m.mu.Unlock()
 
-	for _, pm := range peers {
-		pm.SendPCMFrame(frame)
+	if len(peers) == 0 {
+		return
 	}
+	if len(peers) == 1 {
+		// Single-peer fast path: no goroutine overhead.
+		peers[0].SendPCMFrame(frame)
+		return
+	}
+	var wg sync.WaitGroup
+	wg.Add(len(peers))
+	for _, pm := range peers {
+		go func(p *PeerManager) {
+			defer wg.Done()
+			p.SendPCMFrame(frame)
+		}(pm)
+	}
+	wg.Wait()
 }
 
 // Adopt inserts an existing PeerManager into the mesh under phone. Unlike

@@ -1,6 +1,8 @@
 package owebrtc
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMesh_AddRemovePeers(t *testing.T) {
 	m := NewMeshManager(NewICEConfig(nil))
@@ -89,5 +91,43 @@ func TestMesh_AdoptPreservesExisting(t *testing.T) {
 
 	if got := m.GetPeer("5550001"); got != pm1 {
 		t.Fatalf("Adopt-collision: expected pm1 retained, got different")
+	}
+}
+
+// TestMesh_SendPCMFrameToAll_NoMutation verifies that SendPCMFrameToAll does not
+// modify the caller's frame slice, even when multiple goroutines encode in parallel.
+// SendPCMFrame may replace its local frame pointer when muted but must never write
+// back to the shared input slice.
+func TestMesh_SendPCMFrameToAll_NoMutation(t *testing.T) {
+	m := NewMeshManager(NewICEConfig(nil))
+	defer m.CloseAll()
+
+	// Add two peers so the parallel fan-out path is exercised.
+	pm1, err := m.AddPeer("5550001")
+	if err != nil {
+		t.Fatalf("AddPeer 1: %v", err)
+	}
+	pm2, err := m.AddPeer("5550002")
+	if err != nil {
+		t.Fatalf("AddPeer 2: %v", err)
+	}
+	// Mute both peers so SendPCMFrame's zeroBuf logic runs.
+	pm1.SetOutboundMuted(true)
+	pm2.SetOutboundMuted(true)
+
+	const frameLen = 960
+	frame := make([]int16, frameLen)
+	for i := range frame {
+		frame[i] = int16(i + 1) // non-zero sentinel values
+	}
+	snapshot := make([]int16, frameLen)
+	copy(snapshot, frame)
+
+	m.SendPCMFrameToAll(frame)
+
+	for i := range frame {
+		if frame[i] != snapshot[i] {
+			t.Fatalf("frame[%d] was mutated: got %d, want %d", i, frame[i], snapshot[i])
+		}
 	}
 }
