@@ -251,9 +251,21 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 }
 
 // CreateConferencePersistent creates an in-memory conference and writes it to
-// the database atomically. The originating 2-party call is marked 'ended' in
-// the same transaction to reflect that it was merged into the conference.
+// the database atomically. All pre-merge 2-party calls involving conference
+// members are marked ended with end_reason='merged_to_conference' in the same
+// transaction so they are excluded from call history.
 func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*Conference, error) {
+	// Collect the call IDs for every added member (A↔C, A↔D, …) before
+	// creating the conference so the active map is still intact.
+	addedCallIDs := make([]int64, 0, len(addedMembers))
+	for _, member := range addedMembers {
+		cid := t.CallIDFor(host, member)
+		if cid == 0 {
+			return nil, fmt.Errorf("no active call between %s and %s", host, member)
+		}
+		addedCallIDs = append(addedCallIDs, cid)
+	}
+
 	conf, err := t.conferences.CreateConference(host, originatingCallID, addedMembers)
 	if err != nil {
 		return nil, err
@@ -278,13 +290,17 @@ func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int6
 				return fmt.Errorf("insert member %s: %w", m.Phone, err)
 			}
 		}
-		// Mark the originating 2-party call as ended; the merge reason is carried
-		// on the conferences row only (calls has no end_reason column).
-		if _, err := tx.Exec(
-			`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE id = $1`,
-			conf.OriginatingCallID,
-		); err != nil {
-			return fmt.Errorf("mark call ended: %w", err)
+		// Mark ALL pre-merge calls (originating + every add-leg) as ended with
+		// end_reason='merged_to_conference' so they are excluded from call history.
+		allPreMergeIDs := append([]int64{conf.OriginatingCallID}, addedCallIDs...)
+		for _, cid := range allPreMergeIDs {
+			if _, err := tx.Exec(
+				`UPDATE calls SET status = 'ended', end_reason = 'merged_to_conference',
+				 ended_at = CURRENT_TIMESTAMP WHERE id = $1`,
+				cid,
+			); err != nil {
+				return fmt.Errorf("mark call %d ended: %w", cid, err)
+			}
 		}
 		return nil
 	})
