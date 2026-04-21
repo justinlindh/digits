@@ -678,7 +678,7 @@ func (d *daemonCallbacks) triggerHangup() {
 	if d.ctrl == nil {
 		return
 	}
-	go d.ctrl.HandleSignal("hangup")
+	go d.ctrl.HandleSignal("hangup", "")
 }
 
 // handleConnectionStateChange is called (without d.mu held) from a pion
@@ -1599,8 +1599,17 @@ func main() {
 				continue
 			}
 
-			// Forward all events to the FSM controller
-			ctrl.HandleEvent(event)
+			// Forward all events to the FSM controller.
+			// HOOK:FLASH is special: it requires the active peer from the daemon
+			// layer, so it bypasses HandleEvent and goes through HandleHookFlash.
+			if event == "HOOK:FLASH" {
+				cb.mu.Lock()
+				activePeer := cb.callPeer
+				cb.mu.Unlock()
+				ctrl.HandleHookFlash(activePeer)
+			} else {
+				ctrl.HandleEvent(event)
+			}
 
 			// Hang-up: kill ALL audio immediately
 			if event == "HOOK:ON" {
@@ -1628,8 +1637,7 @@ func main() {
 				cb.mu.Lock()
 				cb.pendingCaller = msg.From
 				cb.mu.Unlock()
-				ctrl.SetActivePeer(msg.From)
-				ctrl.HandleSignal("ring")
+				ctrl.HandleSignal("ring", "")
 			case sigclient.TypeAnswer:
 				// Set remote description from the answer SDP before poking the FSM.
 				cb.mu.Lock()
@@ -1641,11 +1649,11 @@ func main() {
 					}
 				}
 				cb.mu.Unlock()
-				ctrl.HandleSignal("answer")
+				ctrl.HandleSignal("answer", msg.From)
 			case sigclient.TypeHangup:
-				ctrl.HandleSignal("hangup")
+				ctrl.HandleSignal("hangup", msg.From)
 			case sigclient.TypeBusy:
-				ctrl.HandleSignal("busy")
+				ctrl.HandleSignal("busy", msg.From)
 			case sigclient.TypeDTMF:
 				// Remote peer pressed a digit during the call. Play the local
 				// DTMF sample so the user hears what their peer is pressing,

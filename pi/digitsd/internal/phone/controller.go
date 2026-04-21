@@ -82,11 +82,6 @@ type Controller struct {
 	done      chan struct{}
 	closeOnce sync.Once
 
-	// activePeer is the phone number of the current 2-party remote peer, if any.
-	// Set on outgoing calls in onDial, and on incoming calls via SetActivePeer
-	// (called from main.go before HandleSignal("ring")). Cleared in onHookOn.
-	activePeer string
-
 	// Conference / call-waiting state.
 	confID     string // non-empty when part of a conference (Member message received)
 	isConfHost bool   // true if this controller is the host of the conference
@@ -173,8 +168,6 @@ func (c *Controller) HandleEvent(event string) {
 		c.onHookOff()
 	case evType == "HOOK" && evVal == "ON":
 		c.onHookOn()
-	case evType == "HOOK" && evVal == "FLASH":
-		c.onHookFlash()
 	case evType == "KEY":
 		c.onKey(evVal)
 	case evType == "DIAL":
@@ -191,16 +184,12 @@ func (c *Controller) HandleEvent(event string) {
 }
 
 // HandleSignal processes signaling messages (e.g. "ring", "answer", "hangup", "busy").
-// The optional from parameter identifies which peer sent the signal; it is used
-// to route signals correctly during ADD_* states where two peers may be active.
-func (c *Controller) HandleSignal(msgType string, from ...string) {
+// sender identifies which peer sent the signal; pass "" when the sender is unknown
+// or irrelevant. It is used to route signals correctly during ADD_* states where
+// two peers may be active.
+func (c *Controller) HandleSignal(msgType, sender string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	sender := ""
-	if len(from) > 0 {
-		sender = from[0]
-	}
 
 	switch msgType {
 	case "ring":
@@ -245,7 +234,6 @@ func (c *Controller) onHookOn() {
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
 	c.state = StateIDLE
 	c.digits = ""
-	c.activePeer = ""
 	c.heldPeer = ""
 	c.addingPeer = ""
 	c.confID = ""
@@ -355,7 +343,6 @@ func (c *Controller) onDial(number string) {
 	}
 
 	c.state = StateCALLING
-	c.activePeer = number
 	// Brief silence before ringback — simulates PSTN call setup delay.
 	// Old rotary phones had a variable pause between last digit and first ring.
 	go func() {
@@ -387,15 +374,6 @@ func (c *Controller) dialThirdParty(number string) {
 		c.cb.SendTone(ToneRingback)
 		c.cb.InitiateCall(number)
 	}()
-}
-
-// SetActivePeer records the phone number of the current call peer. Call this
-// before HandleSignal("ring") for incoming calls so the controller knows who
-// is calling when the handset is picked up.
-func (c *Controller) SetActivePeer(number string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.activePeer = number
 }
 
 func (c *Controller) onSignalRing() {
@@ -534,16 +512,26 @@ func (c *Controller) onSignalBusy(sender string) {
 	}
 }
 
+// HandleHookFlash dispatches a HOOK:FLASH event per 90s residential TWC semantics.
+// activePeer is the phone number of the currently connected 2-party peer; it is
+// captured from the daemon's callPeer field at the moment of the flash. Pass ""
+// if no 2-party peer is active.
+func (c *Controller) HandleHookFlash(activePeer string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onHookFlash(activePeer)
+}
+
 // onHookFlash dispatches the HOOK:FLASH event per 90s residential TWC semantics.
-// Called with c.mu already held by HandleEvent.
-func (c *Controller) onHookFlash() {
+// Called with c.mu already held.
+func (c *Controller) onHookFlash(activePeer string) {
 	// Non-host in an active conference: flash is a no-op (historical accuracy).
 	if c.confID != "" && !c.isConfHost {
 		return
 	}
 	switch c.state {
 	case StateCONNECTED:
-		c.enterAddDialtone()
+		c.enterAddDialtone(activePeer)
 	case StateADD_DIALTONE, StateADD_DIALING:
 		c.abortAdd()
 	case StateADD_CALLING:
@@ -559,8 +547,8 @@ func (c *Controller) onHookFlash() {
 	}
 }
 
-func (c *Controller) enterAddDialtone() {
-	c.heldPeer = c.activePeer
+func (c *Controller) enterAddDialtone(activePeer string) {
+	c.heldPeer = activePeer
 	c.state = StateADD_DIALTONE
 	if c.heldPeer != "" {
 		c.cb.MigrateToMesh(c.heldPeer) // move B's PC from peerMgr into mesh
@@ -713,13 +701,6 @@ func (c *Controller) setStateForTest(s State) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = s
-}
-
-// setCurrentPeerForTest sets the active peer for unit test setup.
-func (c *Controller) setCurrentPeerForTest(peer string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.activePeer = peer
 }
 
 // setHeldPeerForTest sets the held peer for unit test setup.

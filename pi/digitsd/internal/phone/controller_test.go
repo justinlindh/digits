@@ -307,7 +307,7 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	}
 
 	// Remote answers
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED after answer signal, got %s", c.State())
 	}
@@ -336,7 +336,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	c := NewController(cb, "")
 
 	// Incoming ring
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 	if c.State() != StateRINGING {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
@@ -362,7 +362,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	}
 
 	// Remote hangs up — enters REMOTE_HANGUP (off-hook warning sequence)
-	c.HandleSignal("hangup")
+	c.HandleSignal("hangup", "")
 	if c.State() != StateREMOTE_HANGUP {
 		t.Fatalf("expected REMOTE_HANGUP after hangup signal, got %s", c.State())
 	}
@@ -446,7 +446,7 @@ func TestController_BusySignal(t *testing.T) {
 	}
 
 	tonesBefore := len(cb.Tones())
-	c.HandleSignal("busy")
+	c.HandleSignal("busy", "")
 
 	// SendTone("STOP") should have been called
 	if len(cb.Tones()) <= tonesBefore {
@@ -564,12 +564,12 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
 
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 	if c.State() != StateRINGING {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
 
-	c.HandleSignal("hangup")
+	c.HandleSignal("hangup", "")
 	if c.State() != StateIDLE {
 		t.Fatalf("expected IDLE after caller hangup during ring, got %s", c.State())
 	}
@@ -609,7 +609,7 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 		t.Errorf("NotifyCallConnected should not be called before answer, got %d", cb.CallConnectedCalls())
 	}
 
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 
 	if c.State() != StateCONNECTED {
 		t.Errorf("expected StateCONNECTED after answer, got %s", c.State())
@@ -652,14 +652,14 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 	c.HandleEvent("KEY:5")
 	c.HandleEvent("DIAL:5551234")
 	waitForCall(cb)
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED, got %s", c.State())
 	}
 
 	ringsBefore := len(cb.Rings())
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 
 	// State should still be CONNECTED
 	if c.State() != StateCONNECTED {
@@ -789,9 +789,8 @@ func TestController_FlashFromConnectedEntersAddDialtone(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
-	c.setCurrentPeerForTest("5550002")
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("5550002")
 
 	if c.State() != StateADD_DIALTONE {
 		t.Fatalf("expected StateADD_DIALTONE, got %v", c.State())
@@ -810,7 +809,7 @@ func TestController_FlashInAddDialtoneAborts(t *testing.T) {
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected StateCONNECTED, got %v", c.State())
@@ -827,7 +826,7 @@ func TestController_FlashInAddCallingAbortsAndTearsDown(t *testing.T) {
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected StateCONNECTED, got %v", c.State())
@@ -844,7 +843,7 @@ func TestController_FlashInAddPrivateMerges(t *testing.T) {
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONFERENCE_MERGED {
 		t.Fatalf("expected StateCONFERENCE_MERGED, got %v", c.State())
@@ -863,7 +862,7 @@ func TestController_NonHostFlashIsNoop(t *testing.T) {
 		{Phone: "5550002", Role: "added"},
 	})
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("non-host flash should be no-op; state changed to %v", c.State())
@@ -879,7 +878,7 @@ func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
 		{Phone: "5550002", Role: "added"},
 	})
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONFERENCE_MERGED {
 		t.Fatalf("flash during CONFERENCE_MERGED should be no-op; state changed to %v", c.State())
@@ -892,7 +891,7 @@ func TestController_FlashInAddInterceptAborts(t *testing.T) {
 	c.setStateForTest(StateADD_INTERCEPT)
 	c.setHeldPeerForTest("5550002")
 
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected return to StateCONNECTED from ADD_INTERCEPT, got %v", c.State())
@@ -1140,10 +1139,9 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
-	c.setCurrentPeerForTest("5550002")
 
 	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B, true) and enters ADD_DIALTONE.
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("5550002")
 	if c.State() != StateADD_DIALTONE {
 		t.Fatalf("expected StateADD_DIALTONE after flash, got %v", c.State())
 	}
@@ -1181,7 +1179,7 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 	}
 
 	// Flash to merge: B should be unmuted and C migrated into mesh before merge request.
-	c.HandleEvent("HOOK:FLASH")
+	c.HandleHookFlash("")
 	if c.State() != StateCONFERENCE_MERGED {
 		t.Fatalf("expected StateCONFERENCE_MERGED after flash, got %v", c.State())
 	}
