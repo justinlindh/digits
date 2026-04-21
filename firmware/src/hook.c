@@ -81,22 +81,39 @@ void hook_poll(void) {
             // Debounced transition detected.
             s_off_hook = raw;
 
-            if (raw) {
-                // Debounced transition to off-hook. Don't emit HOOK_EVENT_OFF yet;
-                // start the flash-detection window instead.
+            // Hook-switch physical mapping (normal desk phone with GPIO pull-up):
+                //   raw == true  => handset LIFTED  (off-hook; GPIO high via pull-up)
+                //   raw == false => handset CRADLED (on-hook;  GPIO pulled low by switch)
+                //
+                // A hook-flash is a brief on-hook pulse DURING an active off-hook call:
+                //   off-hook (true) -> on-hook (false, <600 ms) -> off-hook (true)
+                //
+                // Detection strategy:
+                //   1. Debounced transition to off-hook (raw == true): don't emit
+                //      HOOK_EVENT_OFF yet. Open a flash-detection window and record the
+                //      time (s_flash_start). If the handset returns to on-hook within
+                //      [FLASH_MIN_MS, FLASH_MAX_MS] we emit HOOK_EVENT_FLASH. If it stays
+                //      off-hook past FLASH_MAX_MS we emit HOOK_EVENT_OFF (checked below).
+                //   2. Debounced transition to on-hook (raw == false) while the window is
+                //      open: measure the off-hook duration. Emit FLASH if in range, or
+                //      suppress if under FLASH_MIN_MS (contact bounce). If the window is
+                //      not open the user is simply hanging up: emit HOOK_EVENT_ON.
+                if (raw) {
+                // Transition to off-hook: open flash-detection window instead of
+                // emitting HOOK_EVENT_OFF immediately (see comment above).
                 s_flash_pending = true;
                 s_flash_start = get_absolute_time();
             } else {
-                // Debounced transition to on-hook.
+                // Transition to on-hook.
                 if (s_flash_pending) {
-                    // The hook returned to on-hook while the flash window is open.
+                    // On-hook arrived while flash window is open: measure duration.
                     int64_t off_ms = absolute_time_diff_us(s_flash_start,
                                                            get_absolute_time()) / 1000;
                     s_flash_pending = false;
                     if (off_ms >= FLASH_MIN_MS && off_ms <= FLASH_MAX_MS) {
                         s_event = HOOK_EVENT_FLASH;
                     }
-                    // Shorter than FLASH_MIN_MS: bounce, suppress.
+                    // Under FLASH_MIN_MS: contact bounce, suppress.
                 } else {
                     // Normal hangup from a committed off-hook state.
                     s_event = HOOK_EVENT_ON;
