@@ -40,8 +40,8 @@ Exactly **13 ports**, no more, no less. The `check_codec_subsheet.py` checker in
 | 9 | `CODEC_SCL` | input | digital | 3.3 V open-drain, same speed | Pi J1 pin 5 (GPIO3, I2C1 SCL) |
 | 10 | `CODEC_RESET` | input | digital | 3.3 V active-low, driven by Pi GPIO during boot, tristated normally | Pi J1 pin 15 (GPIO22) |
 | 11 | `MIC_FROM_SW` | input | analog | mono electret signal after passing through the D2F-01F on-cradle kill switch | Parent net `MIC_FROM_SW` from J9 (mic kill switch interface) |
-| 12 | `EAR_P` | output | analog | ~1.5 V DC + differential AC audio (one leg of BTL) | Parent net `EAR_P` routed to J8 (handset RJ9 connector) pin 3 |
-| 13 | `EAR_N` | output | analog | ~1.5 V DC + differential AC audio (opposite leg of BTL) | Parent net `EAR_N` routed to J8 pin 4 |
+| 12 | `EAR_P` | output | analog | ~1.5 V DC + differential AC audio (one leg of BTL) | Parent net `EAR_P` routed to J8 (handset connector). Specific J8 pin assignment is a board-level wiring decision documented in `NET_TOPOLOGY.md`. |
+| 13 | `EAR_N` | output | analog | ~1.5 V DC + differential AC audio (opposite leg of BTL) | Parent net `EAR_N` routed to J8. |
 
 **Port naming note:** these names match the existing parent schematic's net names exactly, so Phase 3 integration is a straightforward sheet instance + wire-stub-to-existing-net connection. Not `I2S_*`/`I2C_*` as a first draft might suggest — the parent already uses `CODEC_*` conventions from the pre-rebuild work.
 
