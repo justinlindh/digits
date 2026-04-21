@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Digits · Home</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Inter+Tight:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail__family">
+    <svg class="rail__mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="#c48b3a" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="3" fill="#c48b3a"/>
+      <g stroke="#2a1f18" stroke-width="1.2" stroke-linecap="round">
+        <line x1="16" y1="4" x2="16" y2="7"/>
+        <line x1="16" y1="25" x2="16" y2="28"/>
+        <line x1="4" y1="16" x2="7" y2="16"/>
+        <line x1="25" y1="16" x2="28" y2="16"/>
+      </g>
+    </svg>
+    <span class="rail__family-name">Justin Lindh&rsquo;s Family</span>
+  </div>
+  <nav class="rail__nav">
+    <a href="dashboard.html" class="active">Home</a>
+    <a href="phones.html">Phones</a>
+    <a href="links.html">Families</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="rail__end">
+    <span class="mono">3:48 pm</span>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="eyebrow">This afternoon</div>
+  <p class="lede">
+    There are <em>three phones</em> in your family. <span class="pause">Two are answering.</span> One is quiet.
+  </p>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat__value">3</div>
+      <div class="stat__label">Lines</div>
+    </div>
+    <div class="stat">
+      <div class="stat__value">2</div>
+      <div class="stat__label">Online</div>
+    </div>
+    <div class="stat">
+      <div class="stat__value">0</div>
+      <div class="stat__label">In a call</div>
+    </div>
+    <div class="stat">
+      <div class="stat__value stat__value--accent">1</div>
+      <div class="stat__label">Call today</div>
+    </div>
+  </div>
+
+  <div class="section-head">
+    <h2>Your phones</h2>
+    <span class="section-head__note">Last check-in 4:12pm</span>
+  </div>
+
+  <div class="lines-grid">
+
+    <a href="phone-detail.html" class="line-card">
+      <div class="line-card__phone">
+        <!-- rotary phone silhouette -->
+        <svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- base -->
+          <path d="M 26 110 Q 26 92 44 92 L 136 92 Q 154 92 154 110 L 154 144 Q 154 152 146 152 L 34 152 Q 26 152 26 144 Z" fill="#2a1f18"/>
+          <!-- top ridge -->
+          <rect x="26" y="96" width="128" height="3" fill="#0f0907" opacity="0.35"/>
+          <!-- dial outer -->
+          <circle cx="90" cy="126" r="22" fill="#3a2c22" stroke="#141010" stroke-width="1.2"/>
+          <circle cx="90" cy="126" r="18" fill="none" stroke="#c48b3a" stroke-width="0.7" opacity="0.8"/>
+          <!-- finger holes -->
+          <g fill="#1a1310">
+            <circle cx="90" cy="112" r="2.5"/>
+            <circle cx="100" cy="114.5" r="2.5"/>
+            <circle cx="106" cy="122" r="2.5"/>
+            <circle cx="106" cy="131" r="2.5"/>
+            <circle cx="100" cy="138" r="2.5"/>
+            <circle cx="90" cy="140" r="2.5"/>
+            <circle cx="80" cy="138" r="2.5"/>
+            <circle cx="74" cy="131" r="2.5"/>
+            <circle cx="74" cy="122" r="2.5"/>
+            <circle cx="80" cy="114.5" r="2.5"/>
+          </g>
+          <circle cx="90" cy="126" r="6" fill="#c48b3a"/>
+          <!-- cradle posts -->
+          <rect x="42" y="86" width="14" height="10" rx="2" fill="#1a1310"/>
+          <rect x="124" y="86" width="14" height="10" rx="2" fill="#1a1310"/>
+          <!-- handset -->
+          <path d="M 40 60 Q 44 38 64 38 L 116 38 Q 136 38 140 60 L 130 64 Q 126 50 110 50 L 70 50 Q 54 50 50 64 Z" fill="#2a1f18"/>
+          <ellipse cx="50" cy="62" rx="8" ry="5" fill="#1a1310"/>
+          <ellipse cx="130" cy="62" rx="8" ry="5" fill="#1a1310"/>
+          <!-- cord -->
+          <path d="M 140 58 Q 160 60 162 72 Q 164 84 150 86" fill="none" stroke="#2a1f18" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="line-card__body">
+        <div class="line-card__name">Digits 1</div>
+        <div class="line-card__number">(245) 639&#8209;0000</div>
+        <div class="line-card__meta">
+          <span class="dot dot--online"></span>
+          <span>Online &middot; Hallway</span>
+        </div>
+      </div>
+    </a>
+
+    <a href="phone-detail.html" class="line-card">
+      <div class="line-card__phone">
+        <!-- push-button desk phone silhouette -->
+        <svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- base -->
+          <path d="M 24 112 Q 24 96 40 96 L 140 96 Q 156 96 156 112 L 156 146 Q 156 152 150 152 L 30 152 Q 24 152 24 146 Z" fill="#2a1f18"/>
+          <!-- keypad -->
+          <g fill="#1a1310">
+            <rect x="60" y="112" width="60" height="28" rx="3"/>
+          </g>
+          <g fill="#8a7a62">
+            <rect x="64" y="115" width="12" height="6" rx="1"/>
+            <rect x="82" y="115" width="12" height="6" rx="1"/>
+            <rect x="100" y="115" width="12" height="6" rx="1"/>
+            <rect x="64" y="124" width="12" height="6" rx="1"/>
+            <rect x="82" y="124" width="12" height="6" rx="1"/>
+            <rect x="100" y="124" width="12" height="6" rx="1"/>
+            <rect x="64" y="133" width="12" height="4" rx="1" opacity="0.6"/>
+            <rect x="82" y="133" width="12" height="4" rx="1" opacity="0.6"/>
+            <rect x="100" y="133" width="12" height="4" rx="1" opacity="0.6"/>
+          </g>
+          <!-- indicator light -->
+          <circle cx="38" cy="120" r="3" fill="#c48b3a"/>
+          <!-- cradle posts -->
+          <rect x="44" y="90" width="14" height="10" rx="2" fill="#1a1310"/>
+          <rect x="122" y="90" width="14" height="10" rx="2" fill="#1a1310"/>
+          <!-- handset -->
+          <path d="M 40 64 Q 44 42 64 42 L 116 42 Q 136 42 140 64 L 130 68 Q 126 54 110 54 L 70 54 Q 54 54 50 68 Z" fill="#2a1f18"/>
+          <ellipse cx="50" cy="66" rx="8" ry="5" fill="#1a1310"/>
+          <ellipse cx="130" cy="66" rx="8" ry="5" fill="#1a1310"/>
+          <path d="M 140 62 Q 158 64 162 76 Q 163 86 150 88" fill="none" stroke="#2a1f18" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="line-card__body">
+        <div class="line-card__name">Digits 2</div>
+        <div class="line-card__number">(248) 688&#8209;1000</div>
+        <div class="line-card__meta">
+          <span class="dot dot--online"></span>
+          <span>Online &middot; Kitchen counter</span>
+        </div>
+      </div>
+    </a>
+
+    <a href="phone-detail.html" class="line-card">
+      <div class="line-card__phone">
+        <!-- muted rotary silhouette (offline state) -->
+        <svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="opacity:0.55">
+          <path d="M 26 110 Q 26 92 44 92 L 136 92 Q 154 92 154 110 L 154 144 Q 154 152 146 152 L 34 152 Q 26 152 26 144 Z" fill="#4a3d32"/>
+          <circle cx="90" cy="126" r="22" fill="#5a4d40" stroke="#3a2c22" stroke-width="1"/>
+          <g fill="#3a2c22">
+            <circle cx="90" cy="112" r="2.5"/>
+            <circle cx="100" cy="114.5" r="2.5"/>
+            <circle cx="106" cy="122" r="2.5"/>
+            <circle cx="106" cy="131" r="2.5"/>
+            <circle cx="100" cy="138" r="2.5"/>
+            <circle cx="90" cy="140" r="2.5"/>
+            <circle cx="80" cy="138" r="2.5"/>
+            <circle cx="74" cy="131" r="2.5"/>
+            <circle cx="74" cy="122" r="2.5"/>
+            <circle cx="80" cy="114.5" r="2.5"/>
+          </g>
+          <circle cx="90" cy="126" r="6" fill="#6b5a4a"/>
+          <rect x="42" y="86" width="14" height="10" rx="2" fill="#3a2c22"/>
+          <rect x="124" y="86" width="14" height="10" rx="2" fill="#3a2c22"/>
+          <path d="M 40 60 Q 44 38 64 38 L 116 38 Q 136 38 140 60 L 130 64 Q 126 50 110 50 L 70 50 Q 54 50 50 64 Z" fill="#4a3d32"/>
+        </svg>
+      </div>
+      <div class="line-card__body">
+        <div class="line-card__name">Digits 3</div>
+        <div class="line-card__number">(579) 372&#8209;1000</div>
+        <div class="line-card__meta">
+          <span class="dot dot--offline"></span>
+          <span>Quiet since yesterday, 8:14pm</span>
+        </div>
+      </div>
+    </a>
+
+  </div>
+
+  <div class="section-head">
+    <h2>Today&rsquo;s calls</h2>
+    <a href="#" class="section-head__note" style="color: var(--brass-deep);">See all</a>
+  </div>
+
+  <div class="activity">
+    <div class="activity__row">
+      <div class="activity__icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+      </div>
+      <div class="activity__text">
+        <div class="activity__title">Digits 1 &rarr; Ravi&rsquo;s Phone</div>
+        <div class="activity__sub">Connected &middot; 3:42 pm today</div>
+      </div>
+      <div class="activity__nums">245&middot;6390 &rarr; 612&middot;8844</div>
+      <div class="activity__duration">2:04</div>
+    </div>
+  </div>
+
+  <div class="house-note">
+    <span>Signald v1.14.1-4 &middot; Last check-in 4:12pm</span>
+    <span>A household on Digits.</span>
+  </div>
+</main>
+
+<script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    try { localStorage.setItem('digits-theme', next); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem('digits-theme');
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>

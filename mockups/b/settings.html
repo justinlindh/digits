@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — SETTINGS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html" class="active"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow">&gt; /settings · operator preferences</div>
+        <h1 id="title">SETTINGS<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          Configuration for your operator account and household. Changes take effect
+          immediately. No save button required.
+        </div>
+      </div>
+
+      <!-- Account -->
+      <div class="frame">
+        <div class="frame-title">// Account</div>
+        <div class="frame-meta">this operator</div>
+        <div class="kv">
+          <div class="k">Signed In As</div><div class="v">Justin Lindh <span class="dim">· justin@lindh.family</span></div>
+          <div class="k">Auth Method</div><div class="v">Google OAuth <span class="dim">· since 2026-01-14</span></div>
+          <div class="k">Role</div><div class="v">Household Admin</div>
+          <div class="k">Sessions</div><div class="v">2 active <span class="dim">· this device · iPad Mini (kitchen)</span></div>
+        </div>
+        <div class="mt-m row">
+          <a href="#" class="btn small">REVOKE OTHER SESSIONS</a>
+          <a href="#" class="btn small">CHANGE EMAIL</a>
+        </div>
+      </div>
+
+      <!-- Household -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Household</div>
+        <div class="frame-meta">shared by all lines</div>
+        <div class="grid-2">
+          <div class="kv">
+            <div class="k">Household Name</div><div class="v glow">Lindh Family</div>
+            <div class="k">Household Tag</div><div class="v mono-num">#LINDH-01</div>
+            <div class="k">Admins</div><div class="v">Justin Lindh · Molly Lindh</div>
+            <div class="k">Members</div><div class="v">4 people · 3 lines</div>
+            <div class="k">Created</div><div class="v mono-num">2026-01-14</div>
+          </div>
+          <div class="kv">
+            <div class="k">Timezone</div><div class="v">America/Detroit <span class="dim">· UTC-4 DST</span></div>
+            <div class="k">Locale</div><div class="v">en-US</div>
+            <div class="k">Date Format</div><div class="v mono-num">YYYY-MM-DD</div>
+            <div class="k">Time Format</div><div class="v">24-hour</div>
+            <div class="k">First Day</div><div class="v">Monday</div>
+          </div>
+        </div>
+        <div class="mt-m"><a href="#" class="btn small">EDIT HOUSEHOLD</a></div>
+      </div>
+
+      <!-- Privacy -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Privacy</div>
+        <div class="frame-meta">what we keep</div>
+
+        <div class="muted" style="font-size:12px; line-height:1.7; margin-bottom:18px; max-width:80ch">
+          Digits records no call audio, ever. What you see below is the only metadata kept
+          on our servers and you can switch it off. The phones themselves keep no history.
+        </div>
+
+        <div class="row sp" style="padding:14px 4px 14px 4px; border-top:1px dashed var(--amber-ink)">
+          <div>
+            <div class="up glow" style="font-size:12px">CALL HISTORY</div>
+            <div class="muted" style="font-size:11.5px; margin-top:4px">
+              Who called whom, when, and for how long. Used for the Calls channel.
+            </div>
+          </div>
+          <div class="toggle">
+            <span class="on">ON</span>
+            <span>OFF</span>
+          </div>
+        </div>
+
+        <div class="row sp" style="padding:14px 4px; border-top:1px dashed var(--amber-ink)">
+          <div>
+            <div class="up glow" style="font-size:12px">AGGREGATE STATS</div>
+            <div class="muted" style="font-size:11.5px; margin-top:4px">
+              Anonymous usage counters so we know if the network is healthy. No numbers
+              or names included.
+            </div>
+          </div>
+          <div class="toggle">
+            <span class="on">ON</span>
+            <span>OFF</span>
+          </div>
+        </div>
+
+        <div class="row sp" style="padding:14px 4px; border-top:1px dashed var(--amber-ink)">
+          <div>
+            <div class="up glow" style="font-size:12px">CRASH REPORTS</div>
+            <div class="muted" style="font-size:11.5px; margin-top:4px">
+              Daemon and firmware backtraces, scrubbed of identifying data.
+            </div>
+          </div>
+          <div class="toggle">
+            <span class="on">ON</span>
+            <span>OFF</span>
+          </div>
+        </div>
+
+        <div class="row sp" style="padding:14px 4px; border-top:1px dashed var(--amber-ink)">
+          <div>
+            <div class="up" style="font-size:12px; color:var(--amber-soft)">MARKETING EMAIL</div>
+            <div class="muted" style="font-size:11.5px; margin-top:4px">
+              Occasional product updates. We send maybe three a year. Default off.
+            </div>
+          </div>
+          <div class="toggle">
+            <span>ON</span>
+            <span class="on">OFF</span>
+          </div>
+        </div>
+
+        <div class="mt-m row">
+          <a href="#" class="btn small">EXPORT MY DATA</a>
+          <a href="#" class="btn small danger">DELETE HOUSEHOLD</a>
+        </div>
+      </div>
+
+      <!-- sign out -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Session</div>
+        <div class="frame-meta">end operator shift</div>
+        <div class="muted" style="font-size:12px; line-height:1.65; margin-bottom:14px">
+          Signing out ends this operator session on this device. Lines keep running.
+          Calls keep flowing. You just won't see them from here until you sign back in.
+        </div>
+        <a href="login.html" class="btn">SIGN OUT OF OPERATOR CONSOLE</a>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 55);
+        }
+      }
+      step();
+    })();
+
+    // toggle click
+    document.querySelectorAll(".toggle").forEach(function(t){
+      t.addEventListener("click", function(){
+        t.querySelectorAll("span").forEach(function(s){ s.classList.toggle("on"); });
+      });
+    });
+  </script>
+</body>
+</html>

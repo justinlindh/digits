@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — DASHBOARD</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <!-- ============== SIDEBAR (patch panel) ============== -->
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html" class="active"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <!-- ============== MAIN ============== -->
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow">&gt; /dashboard · operator overview</div>
+        <h1 id="title">DASHBOARD<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          Three lines attached · two currently on-hook and reachable · one off-network.
+          Last inbound event 14 minutes ago.
+        </div>
+      </div>
+
+      <!-- STAT READOUTS -->
+      <div class="grid-4">
+        <div class="readout">
+          <div class="r-label">Lines · Total</div>
+          <div class="r-val mono-digits">03</div>
+          <div class="r-unit">attached</div>
+          <div class="r-meter">
+            <span class="on"></span><span class="on"></span><span class="on"></span>
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="readout">
+          <div class="r-label">Lines · Online</div>
+          <div class="r-val green mono-digits">02</div>
+          <div class="r-unit">heartbeat ok</div>
+          <div class="r-meter">
+            <span class="on green"></span><span class="on green"></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="readout">
+          <div class="r-label">Active Calls</div>
+          <div class="r-val mono-digits">00</div>
+          <div class="r-unit">none in flight</div>
+          <div class="r-meter">
+            <span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="readout">
+          <div class="r-label">Calls Today</div>
+          <div class="r-val mono-digits">01</div>
+          <div class="r-unit">since 00:00 local</div>
+          <div class="r-meter">
+            <span class="on"></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- LINES TABLE -->
+      <div class="frame" style="margin-top:32px">
+        <div class="frame-title">// Lines Attached</div>
+        <div class="frame-meta">03 units · polled every 15s</div>
+        <table class="ptable">
+          <thead>
+            <tr>
+              <th style="width:56px">ST</th>
+              <th style="width:40px">#</th>
+              <th>Name</th>
+              <th>Number</th>
+              <th>Firmware</th>
+              <th>Pi Build</th>
+              <th>Last Heartbeat</th>
+              <th style="width:120px">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="led green"></span></td>
+              <td class="dim mono-num">01</td>
+              <td class="glow">DIGITS 1</td>
+              <td class="mono-num">245-6390</td>
+              <td class="muted">v0.8.2</td>
+              <td class="muted">1.14.1-4</td>
+              <td class="mono-num">2026-04-21 15:46:48 <span class="dim">· 14s ago</span></td>
+              <td><a href="phone-detail.html" class="btn small">INSPECT</a></td>
+            </tr>
+            <tr>
+              <td><span class="led green"></span></td>
+              <td class="dim mono-num">02</td>
+              <td class="glow">DIGITS 2</td>
+              <td class="mono-num">248-6881</td>
+              <td class="muted">v0.8.2</td>
+              <td class="muted">1.14.1-4</td>
+              <td class="mono-num">2026-04-21 15:46:52 <span class="dim">· 10s ago</span></td>
+              <td><a href="#" class="btn small">INSPECT</a></td>
+            </tr>
+            <tr>
+              <td><span class="led red"></span></td>
+              <td class="dim mono-num">03</td>
+              <td>DIGITS 3</td>
+              <td class="mono-num">579-3721</td>
+              <td class="muted">v0.8.1</td>
+              <td class="muted">1.14.1-3</td>
+              <td class="mono-num">2026-04-19 21:03:14 <span class="dim">· 1d 18h ago</span></td>
+              <td><a href="#" class="btn small">INSPECT</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- RECENT ACTIVITY + LINKS -->
+      <div class="grid-3-2" style="margin-top:22px">
+        <div class="frame">
+          <div class="frame-title">// Recent Traffic</div>
+          <div class="frame-meta">last 24h</div>
+          <table class="ptable">
+            <thead>
+              <tr>
+                <th style="width:92px">Time</th>
+                <th style="width:46px">Dir</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Duration</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="mono-num muted">15:42:11</td>
+                <td class="dim up">OUT</td>
+                <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+                <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel Fam</span></td>
+                <td class="mono-num">00:02:04</td>
+                <td class="green up">· CONNECTED</td>
+              </tr>
+              <tr>
+                <td class="mono-num muted">09:18:02</td>
+                <td class="dim up">IN</td>
+                <td class="mono-num">612-8801 <span class="dim">· Kitchen · Patel Fam</span></td>
+                <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+                <td class="dim mono-num">00:00:00</td>
+                <td class="muted up">· NO ANSWER</td>
+              </tr>
+              <tr>
+                <td class="mono-num muted">yesterday 19:44</td>
+                <td class="dim up">INT</td>
+                <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+                <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+                <td class="mono-num">00:11:37</td>
+                <td class="green up">· CONNECTED</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="mt-m" style="text-align:right">
+            <a href="calls.html" class="btn small">FULL LOG</a>
+          </div>
+        </div>
+
+        <div class="frame">
+          <div class="frame-title">// Patched Families</div>
+          <div class="frame-meta">01 linked</div>
+          <div class="link-list">
+            <div class="lrow">
+              <span class="led green"></span>
+              <div>
+                <div class="name">THE PATEL FAMILY</div>
+                <div class="meta">patched · 14 Mar 2026 · 2 lines reachable</div>
+              </div>
+              <div class="muted up mono-num">02/02</div>
+              <a href="links.html" class="btn small">OPEN</a>
+            </div>
+          </div>
+          <div class="rule"><span>Available ports</span></div>
+          <div style="color:var(--amber-soft); font-size:12px; line-height:1.7;">
+            Four more patches available on this household.
+            Generate an invite from the Links channel to connect another family.
+          </div>
+          <div class="mt-m"><a href="links.html" class="btn">+ CREATE INVITE</a></div>
+        </div>
+      </div>
+
+      <!-- SYSTEM STATUS STRIP -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// System Status</div>
+        <div class="frame-meta">self-test ok</div>
+        <div class="grid-3">
+          <div class="kv">
+            <div class="k">Signaling</div><div class="v ok">● reachable · 42ms</div>
+            <div class="k">Turn Relay</div><div class="v ok">● reachable · 67ms</div>
+          </div>
+          <div class="kv">
+            <div class="k">Audio Path</div><div class="v ok">● G.711 · 300-3400</div>
+            <div class="k">Encryption</div><div class="v ok">● DTLS-SRTP</div>
+          </div>
+          <div class="kv">
+            <div class="k">Release Track</div><div class="v">stable · v0.8.2</div>
+            <div class="k">Next Poll</div><div class="v mono-digits">in 00:00:07</div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // brief type-on reveal across the page title on load
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 40);
+        }
+      }
+      step();
+    })();
+  </script>
+</body>
+</html>

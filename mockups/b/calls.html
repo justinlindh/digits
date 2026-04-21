@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — CALL LOG</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html" class="active"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow">&gt; /calls · connection log · printout</div>
+        <h1 id="title">CALL LOG<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          Every connection attempted or received on any line you own. No audio is
+          recorded or stored. Retained 90 days; toggle off in Settings / Privacy.
+        </div>
+      </div>
+
+      <!-- Featured current call slot -->
+      <div class="frame">
+        <div class="frame-title">// Most Recent</div>
+        <div class="frame-meta">today · 15:42 local</div>
+        <div class="call-card">
+          <div>
+            <div class="cc-meta">ORIGIN</div>
+            <div class="cc-src mono-num">245-6390</div>
+            <div class="cc-meta dim">DIGITS 1 · LINDH</div>
+          </div>
+          <div style="text-align:center">
+            <div class="cc-arrow">───&gt;&gt;&gt;───</div>
+            <div class="cc-meta" style="margin-top:6px">
+              <span class="status-tag online"><span class="led green"></span> CONNECTED · 00:02:04</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div class="cc-meta">DESTINATION</div>
+            <div class="cc-dst mono-num">612-8844</div>
+            <div class="cc-meta dim">RAVI'S PHONE · PATEL</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters bar -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Filter</div>
+        <div class="frame-meta">working set</div>
+        <div class="row" style="flex-wrap:wrap; gap:22px;">
+          <div>
+            <div class="up dim mb-s">RANGE</div>
+            <div class="toggle">
+              <span>TODAY</span>
+              <span class="on">7 DAYS</span>
+              <span>30 DAYS</span>
+              <span>ALL</span>
+            </div>
+          </div>
+          <div>
+            <div class="up dim mb-s">DIRECTION</div>
+            <div class="toggle">
+              <span class="on">ANY</span>
+              <span>IN</span>
+              <span>OUT</span>
+              <span>INT</span>
+            </div>
+          </div>
+          <div>
+            <div class="up dim mb-s">RESULT</div>
+            <div class="toggle">
+              <span class="on">ANY</span>
+              <span>CONNECTED</span>
+              <span>MISSED</span>
+              <span>FAILED</span>
+            </div>
+          </div>
+          <div style="margin-left:auto">
+            <div class="up dim mb-s">EXPORT</div>
+            <a href="#" class="btn small">CSV</a>
+            <a href="#" class="btn small">PRINT</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Print-out log -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Connection Log · PRINTOUT</div>
+        <div class="frame-meta">page 001 · 14 rows</div>
+
+        <div class="muted mono-num" style="font-size:10.5px; letter-spacing:0.14em; color:var(--amber-dim); margin-bottom:10px">
+          #=== LINDH FAMILY · HOUSEHOLD #LINDH-01 · REPORT 2026-04-21 · PAGE 001 ====================================#
+        </div>
+
+        <table class="ptable greenbar">
+          <thead>
+            <tr>
+              <th style="width:34px">#</th>
+              <th style="width:120px">Timestamp</th>
+              <th style="width:40px">Dir</th>
+              <th>From</th>
+              <th>To</th>
+              <th style="width:84px">Duration</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="dim mono-num">001</td>
+              <td class="mono-num">04-21 15:42:11</td>
+              <td class="dim up">OUT</td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">00:02:04</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">002</td>
+              <td class="mono-num">04-21 09:18:02</td>
+              <td class="dim up">IN</td>
+              <td class="mono-num">612-8801 <span class="dim">· Kitchen · Patel</span></td>
+              <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+              <td class="dim mono-num">—</td>
+              <td class="muted up">· NO ANSWER · 24s</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">003</td>
+              <td class="mono-num">04-20 19:44:10</td>
+              <td class="dim up">INT</td>
+              <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">00:11:37</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">004</td>
+              <td class="mono-num">04-20 17:02:58</td>
+              <td class="dim up">OUT</td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">00:06:12</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">005</td>
+              <td class="mono-num">04-20 08:11:47</td>
+              <td class="dim up">OUT</td>
+              <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+              <td class="mono-num">612-8801 <span class="dim">· Kitchen · Patel</span></td>
+              <td class="dim mono-num">—</td>
+              <td class="red up">· FAILED · ENDPOINT BUSY</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">006</td>
+              <td class="mono-num">04-19 20:33:04</td>
+              <td class="dim up">IN</td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">00:14:21</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">007</td>
+              <td class="mono-num">04-18 22:15:00</td>
+              <td class="dim up">INT</td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">579-3721 <span class="dim">· Digits 3</span></td>
+              <td class="dim mono-num">—</td>
+              <td class="muted up">· NO ANSWER · 18s</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">008</td>
+              <td class="mono-num">04-17 14:48:29</td>
+              <td class="dim up">IN</td>
+              <td class="mono-num">612-8801 <span class="dim">· Kitchen · Patel</span></td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">00:04:52</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">009</td>
+              <td class="mono-num">04-17 09:02:11</td>
+              <td class="dim up">INT</td>
+              <td class="mono-num">248-6881 <span class="dim">· Digits 2</span></td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">00:00:54</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">010</td>
+              <td class="mono-num">04-16 18:19:44</td>
+              <td class="dim up">OUT</td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">00:22:08</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">011</td>
+              <td class="mono-num">04-15 11:48:12</td>
+              <td class="dim up">IN</td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">579-3721 <span class="dim">· Digits 3</span></td>
+              <td class="dim mono-num">—</td>
+              <td class="red up">· FAILED · LINE OFFLINE</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">012</td>
+              <td class="mono-num">04-14 20:30:55</td>
+              <td class="dim up">IN</td>
+              <td class="mono-num">612-8844 <span class="dim">· Ravi · Patel</span></td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">00:08:18</td>
+              <td class="green up">· CONNECTED</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">013</td>
+              <td class="mono-num">04-14 14:19:03</td>
+              <td class="dim up">OUT</td>
+              <td class="mono-num">245-6390 <span class="dim">· Digits 1</span></td>
+              <td class="mono-num">612-8801 <span class="dim">· Kitchen · Patel</span></td>
+              <td class="mono-num">00:01:42</td>
+              <td class="green up">· CONNECTED · FIRST CALL TO PATEL</td>
+            </tr>
+            <tr>
+              <td class="dim mono-num">014</td>
+              <td class="mono-num">04-14 14:16:40</td>
+              <td class="dim up">SYS</td>
+              <td class="mono-num">—</td>
+              <td class="mono-num">—</td>
+              <td class="dim mono-num">—</td>
+              <td class="muted up">· PATCH · PATEL FAMILY LINKED</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="muted mono-num" style="font-size:10.5px; letter-spacing:0.14em; color:var(--amber-dim); margin-top:12px">
+          #=== END OF PAGE · 14 ROWS · NEXT PAGE &gt;&gt; ===================================================================#
+        </div>
+
+        <div class="row mt-m">
+          <a href="#" class="btn small">&lt; PREV</a>
+          <span class="dim up mono-num">PAGE 001 / 008</span>
+          <a href="#" class="btn small">NEXT &gt;</a>
+          <span style="margin-left:auto" class="muted up">total · <span class="glow mono-num">112</span> rows · since 2026-01-14</span>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 55);
+        }
+      }
+      step();
+    })();
+  </script>
+</body>
+</html>

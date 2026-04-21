@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // STATION 01 — DIGITS 1</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html" class="active"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+          <span><span class="k">VIEWING </span><span class="v">STATION 01 / DIGITS 1</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow"><a href="phones.html" style="color:var(--amber-dim); text-decoration:none">&gt; /lines</a> / station 01</div>
+        <h1 id="title">DIGITS 1<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          <span class="status-tag online"><span class="led green"></span> ONLINE · HEARTBEAT OK</span>
+          &nbsp;·&nbsp;
+          <span class="muted up">last check-in 16:12:04 · 00:34s ago</span>
+        </div>
+      </div>
+
+      <!-- top: details + hardware -->
+      <div class="grid-2" style="gap:22px">
+        <div class="frame">
+          <div class="frame-title">// Line Details</div>
+          <div class="frame-meta">editable</div>
+          <div class="kv">
+            <div class="k">Number</div><div class="v mono-num glow">245-6390</div>
+            <div class="k">Display Name</div><div class="v">DIGITS 1</div>
+            <div class="k">Household</div><div class="v">Lindh Family</div>
+            <div class="k">Added</div><div class="v mono-num">2026-01-14 · 14:22 local</div>
+            <div class="k">Voice Style</div><div class="v">Copper Wire <span class="dim">· 300-3400 Hz</span></div>
+            <div class="k">Ring Cadence</div><div class="v">2s on / 4s off · classic</div>
+            <div class="k">Room</div><div class="v">Entryway</div>
+          </div>
+          <div class="mt-m row">
+            <a href="#" class="btn small">EDIT DETAILS</a>
+            <a href="#" class="btn small danger">RETIRE LINE</a>
+          </div>
+        </div>
+
+        <div class="frame">
+          <div class="frame-title">// Hardware &amp; Software</div>
+          <div class="frame-meta">live</div>
+          <div class="kv">
+            <div class="k">Pi Build</div><div class="v mono-num">1.14.1-4 · stable</div>
+            <div class="k">Firmware</div><div class="v mono-num">v0.8.2</div>
+            <div class="k">Pico SN</div><div class="v mono-num">E66164084367A831</div>
+            <div class="k">Pi Model</div><div class="v">Zero 2 W · rev 1.0</div>
+            <div class="k">Last Check-in</div><div class="v mono-num">16:12:04 <span class="dim">· 34s ago</span></div>
+            <div class="k">Uptime</div><div class="v mono-num">14d 06:22:11</div>
+            <div class="k">Wi-Fi</div><div class="v"><span class="status-tag online"><span class="led green"></span> LINDH-HOME-5G</span> <span class="dim">· -52 dBm</span></div>
+            <div class="k">Temp / CPU</div><div class="v mono-num">44.2 °C · 6% avg</div>
+            <div class="k">Storage</div><div class="v mono-num">1.2G / 15G · 8%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- voice style -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Voice Style</div>
+        <div class="frame-meta">affects outbound audio</div>
+        <div class="muted" style="font-size:12px; max-width:72ch; margin-bottom:18px">
+          The far-end caller hears whichever style you pick. Copper Wire squeezes the
+          signal into a 300-3400 Hz band and adds the subtle hiss of a hundred-mile copper
+          pair. Modern HD is full-bandwidth voice, clean and flat.
+        </div>
+        <div class="choice-set">
+          <div class="choice selected">
+            <div class="mark"></div>
+            <div class="c-title">COPPER WIRE</div>
+            <div class="c-desc">
+              The real thing. Band-limited 300-3400 Hz with faint line noise.
+              Warm, grainy, slightly imperfect. What your grandmother's phone sounds like.
+            </div>
+            <div class="c-spec">300-3400 HZ · G.711 µ-LAW · -3 dB LINE NOISE</div>
+          </div>
+          <div class="choice">
+            <div class="mark"></div>
+            <div class="c-title">MODERN HD</div>
+            <div class="c-desc">
+              Full-bandwidth wideband voice. Clean, flat, modern. Best for long calls
+              where intelligibility matters more than atmosphere.
+            </div>
+            <div class="c-spec">80-8000 HZ · OPUS 24 kbps · NR ON</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- controls -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Device Controls</div>
+        <div class="frame-meta">use sparingly</div>
+        <div class="grid-3">
+          <div>
+            <div class="up glow mb-s">RESTART SERVICE</div>
+            <div class="muted" style="font-size:11.5px; line-height:1.6">
+              Bounces the digitsd daemon. Drops any in-progress call. Takes ~4 seconds.
+              Service auto-restarts under systemd.
+            </div>
+            <div class="mt-m"><a href="#" class="btn">EXECUTE</a></div>
+          </div>
+          <div>
+            <div class="up glow mb-s">REBOOT DEVICE</div>
+            <div class="muted" style="font-size:11.5px; line-height:1.6">
+              Full power cycle of the Pi. Takes ~45 seconds to come back online.
+              Use when the daemon itself is stuck.
+            </div>
+            <div class="mt-m"><a href="#" class="btn">EXECUTE</a></div>
+          </div>
+          <div>
+            <div class="up" style="color:var(--red)"><span class="glow" style="text-shadow:var(--glow-red)">RECOVERY MODE</span></div>
+            <div class="muted mt-s" style="font-size:11.5px; line-height:1.6">
+              Brings the phone up in a minimal console that rejoins Wi-Fi and waits
+              for a fresh image. No calls in or out. Requires physical visit to exit.
+            </div>
+            <div class="mt-m"><a href="#" class="btn danger">EXECUTE</a></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- event log -->
+      <div class="frame" style="margin-top:22px">
+        <div class="frame-title">// Event Log</div>
+        <div class="frame-meta">last 20 events · tail -f</div>
+        <pre style="margin:0; color:var(--amber-soft); font-size:11.5px; line-height:1.7; white-space:pre-wrap;">
+<span style="color:var(--amber-dim)">15:46:48</span>  <span style="color:var(--green)">[OK]</span>    heartbeat sent · rtt 42ms
+<span style="color:var(--amber-dim)">15:42:11</span>  <span style="color:var(--amber)">[CALL]</span>  dialed 612-8844 · connected · 00:02:04
+<span style="color:var(--amber-dim)">14:01:03</span>  <span style="color:var(--green)">[OK]</span>    certificate renewed · expires 2026-10-18
+<span style="color:var(--amber-dim)">13:58:40</span>  <span style="color:var(--amber-soft)">[CFG]</span>   voice style set · Copper Wire
+<span style="color:var(--amber-dim)">09:17:22</span>  <span style="color:var(--amber)">[CALL]</span>  inbound 612-8801 · no answer · rang 24s
+<span style="color:var(--amber-dim)">07:02:11</span>  <span style="color:var(--green)">[OK]</span>    firmware check · v0.8.2 · up to date
+<span style="color:var(--amber-dim)">yesterday</span> <span style="color:var(--amber)">[CALL]</span>  inbound 248-6881 · connected · 00:11:37
+        </pre>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 55);
+        }
+      }
+      step();
+    })();
+  </script>
+</body>
+</html>

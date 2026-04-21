@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Digits · Direction C mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Inter+Tight:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail__family">
+    <svg class="rail__mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="#c48b3a" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="3" fill="#c48b3a"/>
+      <g stroke="#2a1f18" stroke-width="1.2" stroke-linecap="round">
+        <line x1="16" y1="4" x2="16" y2="7"/><line x1="16" y1="25" x2="16" y2="28"/>
+        <line x1="4" y1="16" x2="7" y2="16"/><line x1="25" y1="16" x2="28" y2="16"/>
+      </g>
+    </svg>
+    <span class="rail__family-name">Digits &middot; Direction C</span>
+  </div>
+  <nav class="rail__nav"></nav>
+  <div class="rail__end">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="eyebrow">Mockups</div>
+  <p class="lede">Direction C. <em>Home intercom.</em> Soft domestic hardware.</p>
+  <p style="max-width:62ch; color:var(--ink-2); font-size:15px; line-height:1.6; margin-top:14px;">An interface that looks and feels like a piece of beautifully made household hardware. Warm off-white paper, walnut ink, brass used sparingly as a rare spice. Seven pages, one system, light and dark modes.</p>
+
+  <div class="index-grid">
+    <a href="dashboard.html" class="index-card">
+      <span class="eyebrow">1</span>
+      <h3>Dashboard</h3>
+      <p>Sentence-led household overview with line cards and phone silhouettes.</p>
+    </a>
+    <a href="phones.html" class="index-card">
+      <span class="eyebrow">2</span>
+      <h3>Phones &amp; pairing</h3>
+      <p>Line list and the signature rotary-dial pairing ceremony.</p>
+    </a>
+    <a href="phone-detail.html" class="index-card">
+      <span class="eyebrow">3</span>
+      <h3>Phone detail</h3>
+      <p>Household front, plus a service panel behind a hinged door for the operator hat.</p>
+    </a>
+    <a href="links.html" class="index-card">
+      <span class="eyebrow">4</span>
+      <h3>Connected families</h3>
+      <p>Two houses joined by a thread. Not an API key page.</p>
+    </a>
+    <a href="settings.html" class="index-card">
+      <span class="eyebrow">5</span>
+      <h3>Settings</h3>
+      <p>Account, household, timezone, privacy with the thoughtful copy.</p>
+    </a>
+    <a href="login.html" class="index-card">
+      <span class="eyebrow">6</span>
+      <h3>Login</h3>
+      <p>First impression. Sells the direction in three seconds.</p>
+    </a>
+    <a href="onboard.html" class="index-card">
+      <span class="eyebrow">7</span>
+      <h3>Onboard</h3>
+      <p>Ceremonial one-field: what do you call your family?</p>
+    </a>
+  </div>
+
+  <div class="house-note">
+    <span>Toggle the moon icon, top right, for dark mode.</span>
+    <span>A household on Digits.</span>
+  </div>
+</main>
+
+<script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    try { localStorage.setItem('digits-theme', next); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem('digits-theme');
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>

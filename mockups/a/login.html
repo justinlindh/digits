@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digits — Operator Sign-in</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Public+Sans:ital,wght@0,300..700;1,300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { display:flex; align-items:flex-start; justify-content:center; min-height:100vh; }
+</style>
+</head>
+<body>
+
+<div class="login-page">
+
+  <div class="login-mark">
+    <div class="wordmark">DIGITS</div>
+    <div class="tagline">The private family exchange. <em>Please identify yourself.</em></div>
+  </div>
+
+  <div style="border-top:1px solid var(--ink); padding-top:28px;">
+    <div style="font-family:var(--sans); font-size:10.5px; text-transform:uppercase; letter-spacing:0.3em; color:var(--ink-quiet); font-weight:600; margin-bottom:14px; text-align:center;">Operator sign-in</div>
+
+    <a href="dashboard.html" class="btn big" style="display:block; text-align:center; border-color:var(--ink);">
+      Continue with Google
+    </a>
+  </div>
+
+  <div class="divider-or">or send a magic link</div>
+
+  <form onsubmit="window.location='dashboard.html'; return false;">
+    <div class="input-block">
+      <label for="email">Email address</label>
+      <input type="email" id="email" placeholder="you@household.com" autocomplete="email">
+      <div class="help">A one-time link will arrive within a minute. It expires in fifteen.</div>
+    </div>
+
+    <a href="dashboard.html" class="btn copper big" style="display:block; text-align:center; margin-top:6px;">Send the link</a>
+  </form>
+
+  <p class="note" style="text-align:center; margin-top:42px; font-size:14px;">
+    No accounts to remember. No passwords to lose. Just an email, or Google.
+  </p>
+
+  <div style="margin-top:32px; text-align:center; font-family:var(--serif); font-style:italic; font-weight:300; font-size:13px; color:var(--ink-quiet);">
+    First time here? <a href="onboard.html" style="color:var(--copper); border-bottom:0.5px solid var(--copper); text-decoration:none; padding-bottom:1px;">Start a new household →</a>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — SIGN IN</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Top chrome strip, minimal -->
+  <div style="max-width:1200px; margin:0 auto; padding:22px 28px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--amber-dim);">
+    <div style="font-weight:700; font-size:18px; letter-spacing:0.22em; color:var(--amber); text-shadow: var(--glow-amber);">
+      <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--green); box-shadow: var(--glow-green); margin-right:10px; vertical-align:2px; animation:pulse-green 2.4s ease-in-out infinite;"></span>DIGITS
+    </div>
+    <div style="color:var(--amber-soft); font-size:11px; letter-spacing:0.22em; text-transform:uppercase;">
+      Operator Console · v0.8.2 · <span class="v mono-digits" style="color:var(--amber)">21 APR 2026 · 15:47</span> <span class="blink">█</span>
+    </div>
+  </div>
+
+  <div class="login-wrap">
+
+    <pre class="login-ascii">
+  +-------------------------------------------------+
+  |                                                 |
+  |   D I G I T S   ·   O P E R A T O R   C O N S   |
+  |                                                 |
+  |      .-"""""""-.                                |
+  |     /  o     o  \      IDLE · AWAITING PATCH   |
+  |    |     __      |                              |
+  |     \   '--'    /         ___                   |
+  |      '-.______.-'       .'   '.                 |
+  |         (___)          /  o    \                |
+  |          | |          |    __   |               |
+  |       ___| |___        \  '--' /                |
+  |      |.-""""-.|         '-.__.'                 |
+  |      ||      ||        patch in                 |
+  |      '----||-'         to begin                 |
+  |           ||                                    |
+  +-------------------------------------------------+
+    </pre>
+
+    <div class="login-frame">
+      <div class="frame-title">// Sign In</div>
+      <div class="frame-meta">one operator per session</div>
+
+      <div class="muted" style="font-size:12.5px; line-height:1.7; margin-bottom:22px">
+        Operator access is limited to household admins. Sign in with Google or request
+        a one-time link by email. Sessions last 30 days; revoke from settings anytime.
+      </div>
+
+      <a href="dashboard.html" class="btn primary" style="width:100%; text-align:center; padding:14px 0; font-size:13px; letter-spacing:0.22em">
+        CONTINUE WITH GOOGLE
+      </a>
+
+      <div class="rule"><span>or · magic link</span></div>
+
+      <div class="prompt-block">
+        <div class="prompt-row">
+          <span class="sigil">&gt;</span>
+          <span class="label">email</span>
+          <input class="prompt-input" style="min-width:340px" placeholder="you@yourfamily.com" value=""/>
+          <span class="blink-char">█</span>
+        </div>
+        <div class="prompt-hint">
+          We will send a sign-in link that expires in 10 minutes. Open the email on
+          this device and click once. That is the whole flow.
+        </div>
+        <div class="mt-m row">
+          <a href="#" class="btn primary" style="white-space:nowrap">SEND MAGIC LINK</a>
+          <span class="dim up" style="margin-left:auto; white-space:nowrap">no password · no phone number</span>
+        </div>
+      </div>
+
+      <!-- Log strip -->
+      <div style="margin-top:28px; border-top:1px dashed var(--amber-ink); padding-top:16px; color:var(--amber-dim); font-size:10.5px; letter-spacing:0.16em; line-height:1.9; font-variant-numeric:tabular-nums;">
+        <div>15:46:48  <span style="color:var(--green)">[OK]</span>   signal server handshake · 42 ms</div>
+        <div>15:46:48  <span style="color:var(--amber-soft)">[TLS]</span>  verified · issued by lets-encrypt r3</div>
+        <div>15:46:49  <span style="color:var(--amber-soft)">[AUTH]</span> awaiting operator credentials <span class="blink-char" style="color:var(--amber-soft)">█</span></div>
+      </div>
+    </div>
+
+    <div style="text-align:center; margin-top:22px; color:var(--amber-dim); font-size:10.5px; letter-spacing:0.26em; text-transform:uppercase;">
+      no ads · no tracking · no recordings · family owned
+    </div>
+
+  </div>
+</body>
+</html>

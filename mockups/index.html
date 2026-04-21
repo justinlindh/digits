@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digits — three design directions</title>
+<style>
+  :root {
+    --ink: #1a1510;
+    --paper: #f4ede0;
+    --rule: #c4b59a;
+    --muted: #6a5d48;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 24px 16px 64px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 22px;
+    margin: 0 0 8px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .lede { color: var(--muted); font-size: 15px; margin: 0 0 24px; }
+  .lede a { color: var(--ink); }
+  section {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    margin-top: 32px;
+  }
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .section-header h2 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+  }
+  .section-header .tagline {
+    color: var(--muted);
+    font-size: 13px;
+    font-style: italic;
+  }
+  .links {
+    font-size: 13px;
+    display: flex;
+    gap: 16px;
+    margin: 6px 0 14px;
+  }
+  .links a {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .shots {
+    display: grid;
+    gap: 10px;
+  }
+  @media (min-width: 640px) {
+    .shots { grid-template-columns: 1fr 1fr; }
+  }
+  .shot {
+    border: 1px solid var(--rule);
+    background: #fff;
+    overflow: hidden;
+  }
+  .shot img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .shot-caption {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-top: 1px solid var(--rule);
+    background: #faf5e8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .compare {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  @media (min-width: 700px) {
+    .compare { grid-template-columns: repeat(3, 1fr); }
+  }
+  .compare .shot-caption { text-align: center; }
+  footer {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Digits — three design directions</h1>
+<p class="lede">Mockups only. Each direction has the same set of pages (dashboard, lines, line detail, connected families, settings, login, onboard). Tap "open navigable mockup" to actually click around in a direction; the raw screenshots below are a quick scroll-through for comparison.</p>
+
+<!-- Side-by-side dashboard comparison -->
+<section>
+  <div class="section-header">
+    <h2>Dashboard — side by side</h2>
+  </div>
+  <div class="compare">
+    <div class="shot">
+      <img src="a/screenshots/dashboard.png" alt="Direction A dashboard">
+      <div class="shot-caption">A · editorial</div>
+    </div>
+    <div class="shot">
+      <img src="b/screenshots/dashboard.png" alt="Direction B dashboard">
+      <div class="shot-caption">B · switchboard</div>
+    </div>
+    <div class="shot">
+      <img src="c/screenshots/dashboard.png" alt="Direction C dashboard">
+      <div class="shot-caption">C · intercom</div>
+    </div>
+  </div>
+</section>
+
+<!-- Direction A -->
+<section>
+  <div class="section-header">
+    <h2>A — Ma Bell 1962, editorial operator</h2>
+    <span class="tagline">Cream paper, copper spice, Fraunces serif, phone numbers as headlines.</span>
+  </div>
+  <div class="links">
+    <a href="a/index.html">open navigable mockup →</a>
+  </div>
+  <div class="shots">
+    <div class="shot"><img src="a/screenshots/dashboard.png" alt=""><div class="shot-caption">Dashboard</div></div>
+    <div class="shot"><img src="a/screenshots/phones.png" alt=""><div class="shot-caption">Lines · Pair a Device</div></div>
+    <div class="shot"><img src="a/screenshots/phone-detail.png" alt=""><div class="shot-caption">Line detail</div></div>
+    <div class="shot"><img src="a/screenshots/links.png" alt=""><div class="shot-caption">Connected Families</div></div>
+    <div class="shot"><img src="a/screenshots/settings.png" alt=""><div class="shot-caption">Settings</div></div>
+    <div class="shot"><img src="a/screenshots/login.png" alt=""><div class="shot-caption">Login</div></div>
+  </div>
+</section>
+
+<!-- Direction B -->
+<section>
+  <div class="section-header">
+    <h2>B — Midcentury switchboard, warm CRT</h2>
+    <span class="tagline">Warm phosphor amber on near-black, JetBrains Mono everywhere, LED dots, ASCII framing.</span>
+  </div>
+  <div class="links">
+    <a href="b/index.html">open navigable mockup →</a>
+  </div>
+  <div class="shots">
+    <div class="shot"><img src="b/screenshots/dashboard.png" alt=""><div class="shot-caption">Dashboard</div></div>
+    <div class="shot"><img src="b/screenshots/phones.png" alt=""><div class="shot-caption">Lines · Pair a Device</div></div>
+    <div class="shot"><img src="b/screenshots/phone-detail.png" alt=""><div class="shot-caption">Line detail</div></div>
+    <div class="shot"><img src="b/screenshots/links.png" alt=""><div class="shot-caption">Connected Families</div></div>
+    <div class="shot"><img src="b/screenshots/calls.png" alt=""><div class="shot-caption">Call log (greenbar printout)</div></div>
+    <div class="shot"><img src="b/screenshots/settings.png" alt=""><div class="shot-caption">Settings</div></div>
+    <div class="shot"><img src="b/screenshots/login.png" alt=""><div class="shot-caption">Login</div></div>
+  </div>
+</section>
+
+<!-- Direction C -->
+<section>
+  <div class="section-header">
+    <h2>C — Home intercom, soft domestic hardware</h2>
+    <span class="tagline">Warm paper + walnut, brass single accent, rotary-dial pairing, phone silhouettes.</span>
+  </div>
+  <div class="links">
+    <a href="c/index.html">open navigable mockup →</a>
+  </div>
+  <div class="shots">
+    <div class="shot"><img src="c/screenshots/dashboard.png" alt=""><div class="shot-caption">Dashboard</div></div>
+    <div class="shot"><img src="c/screenshots/phones.png" alt=""><div class="shot-caption">Lines · rotary-dial pair</div></div>
+    <div class="shot"><img src="c/screenshots/phone-detail.png" alt=""><div class="shot-caption">Line detail</div></div>
+    <div class="shot"><img src="c/screenshots/links.png" alt=""><div class="shot-caption">Connected Families</div></div>
+    <div class="shot"><img src="c/screenshots/settings.png" alt=""><div class="shot-caption">Settings</div></div>
+    <div class="shot"><img src="c/screenshots/login.png" alt=""><div class="shot-caption">Login</div></div>
+    <div class="shot"><img src="c/screenshots/dashboard-dark.png" alt=""><div class="shot-caption">Dashboard · dark mode</div></div>
+    <div class="shot"><img src="c/screenshots/dashboard-mobile.png" alt=""><div class="shot-caption">Dashboard · mobile</div></div>
+    <div class="shot"><img src="c/screenshots/phone-detail-mobile.png" alt=""><div class="shot-caption">Line detail · mobile</div></div>
+  </div>
+</section>
+
+<footer>
+  Static mockups served from the <code>pr-assets</code> branch. Each direction's <code>index.html</code> links to every page. If an HTML page looks unstyled, the <code>styles.css</code> is a sibling — everything is relative-path so <a href="https://raw.githack.com/justinlindh/digits/pr-assets/mockups/index.html">raw.githack.com</a> serves it correctly.
+</footer>
+
+</body>
+</html>

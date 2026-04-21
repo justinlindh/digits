@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digits — Lines</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Public+Sans:ital,wght@0,300..700;1,300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <div class="wordmark">DIGITS</div>
+      <div class="wordmark-sub">The Private Family Exchange &nbsp;·&nbsp; Est. 2026</div>
+    </div>
+    <div class="masthead-meta">
+      Tuesday, April 21, 2026<br>
+      <span class="vol">Section II &nbsp; The Lines</span>
+    </div>
+  </header>
+
+  <nav class="nav">
+    <a href="dashboard.html">Directory</a>
+    <a href="phones.html" class="current">Lines</a>
+    <a href="links.html">Connected Families</a>
+    <a href="settings.html">Settings</a>
+    <span class="spacer"></span>
+    <span class="who">Signed in as Justin</span>
+  </nav>
+
+  <section class="editorial-hero">
+    <div class="eyebrow">Section II &nbsp;·&nbsp; Roster of Lines</div>
+    <h1>Your lines,<br><em>in order of number.</em></h1>
+    <p class="deck">Each listing below corresponds to a physical instrument sitting on a table in your household. Tap a name to review its record, change its voice, or send it to recovery.</p>
+  </section>
+
+  <div class="section-rule">
+    <span class="kicker">Listing · Three Lines</span>
+    <h2>The roster.</h2>
+  </div>
+
+  <ul class="directory">
+    <li>
+      <span class="idx">01</span>
+      <span class="name">
+        <a href="phone-detail.html">Digits 1</a>
+        <span class="sub">Kitchen · Western Electric 500, beige, 1968</span>
+      </span>
+      <span class="num">245·6390</span>
+      <span class="state online"><span class="dot">●</span>online</span>
+    </li>
+    <li>
+      <span class="idx">02</span>
+      <span class="name">
+        <a href="phone-detail.html">Digits 2</a>
+        <span class="sub">Hallway · Model 302, black, restored 1954</span>
+      </span>
+      <span class="num">248·6881</span>
+      <span class="state online"><span class="dot">●</span>online</span>
+    </li>
+    <li>
+      <span class="idx">03</span>
+      <span class="name">
+        <a href="phone-detail.html">Digits 3</a>
+        <span class="sub">Study · Red rotary, last heard Saturday 11:04 am</span>
+      </span>
+      <span class="num">579·3721</span>
+      <span class="state offline"><span class="dot">○</span>quiet</span>
+    </li>
+  </ul>
+
+  <div class="section-rule">
+    <span class="kicker">Adding a Line · Pairing</span>
+    <h2>Pair a new device.</h2>
+  </div>
+
+  <div class="cols-2" style="margin-top:6px;">
+    <div class="prose">
+      <p>
+        When a phone is first powered on, its daemon prints a six-digit <em>pairing code</em> to the chassis. Enter it below to bind the device to this exchange and assign it a line number.
+      </p>
+      <p style="color:var(--ink-quiet);font-style:italic;">
+        Pairing is one-directional. A device bound to this exchange will not announce itself to any other.
+      </p>
+    </div>
+
+    <div>
+      <form onsubmit="return false;">
+        <div class="input-block">
+          <label for="code">Pairing code</label>
+          <input type="text" id="code" class="mono-input" value="4 7 2 · 8 1 9" maxlength="11">
+          <div class="help">Six digits printed on the setup card in the phone’s handset cradle.</div>
+        </div>
+
+        <div class="input-block">
+          <label for="num">Line number to assign</label>
+          <input type="text" id="num" class="mono-input" value="4 8 2 · 1 1 5 5" style="font-size:24px;letter-spacing:0.18em;">
+          <div class="help">Seven digits. Must be unique on this exchange.</div>
+        </div>
+
+        <div class="input-block">
+          <label for="name">Line name</label>
+          <input type="text" id="name" value="Digits 4 — Front Porch">
+          <div class="help">A friendly label. Only visible to your family.</div>
+        </div>
+
+        <div class="action-row">
+          <a href="#" class="btn copper">Pair Device</a>
+          <a href="#" class="btn ghost">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <footer class="colophon">
+    <div>
+      <div class="cx">Printed on cream stock by the Digits Exchange, for family use.</div>
+      Build 1.14.1 — 4 &nbsp;·&nbsp; 3 lines on record
+    </div>
+    <div style="text-align:right;">
+      Operator desk<br>
+      <span class="cx">open since 6:00 am</span>
+    </div>
+  </footer>
+
+</div>
+
+</body>
+</html>

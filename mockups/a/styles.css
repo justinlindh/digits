@@ -1,0 +1,1073 @@
+/* =========================================================
+   DIGITS — Direction A
+   Ma Bell 1962 Editorial Operator Console
+   ========================================================= */
+
+:root {
+  --paper: #f4ede0;
+  --paper-2: #efe6d3;
+  --ink: #1a1510;
+  --ink-soft: #3a3228;
+  --ink-quiet: #766a58;
+  --rule: #d4c8b0;
+  --rule-strong: #b8a988;
+  --copper: #b56545;
+  --copper-dark: #8a4a30;
+  --enamel: #0f6b4e;
+  --enamel-dark: #0a5239;
+  --crimson: #9a2a2a;
+
+  --serif: "Fraunces", "DM Serif Display", "Cormorant Garamond", Georgia, serif;
+  --sans: "Public Sans", "Manrope", "Inter Tight", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  font-weight: 380;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Paper grain overlay */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.08  0 0 0 0 0.06  0 0 0 0.9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* =========================================================
+   Page frame (thin printed-card border)
+   ========================================================= */
+.page {
+  max-width: 1080px;
+  margin: 28px auto 72px;
+  padding: 42px 56px 72px;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  position: relative;
+}
+
+.page::after {
+  /* inner hairline frame */
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 0.5px solid var(--rule);
+  pointer-events: none;
+}
+
+/* =========================================================
+   Masthead
+   ========================================================= */
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--ink);
+  position: relative;
+}
+
+.masthead::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: -5px;
+  height: 1px;
+  background: var(--ink);
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 40px;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  color: var(--ink);
+  line-height: 1;
+  font-variation-settings: "SOFT" 30, "opsz" 144;
+}
+
+.wordmark-sub {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink-quiet);
+  margin-top: 6px;
+  text-transform: none;
+}
+
+.masthead-meta {
+  text-align: right;
+  font-family: var(--sans);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-quiet);
+  line-height: 1.8;
+}
+
+.masthead-meta .vol {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--ink-soft);
+  display: block;
+  margin-top: 4px;
+}
+
+/* =========================================================
+   Navigation bar
+   ========================================================= */
+.nav {
+  display: flex;
+  gap: 42px;
+  align-items: center;
+  padding: 14px 0 14px;
+  border-bottom: 0.5px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-weight: 500;
+}
+
+.nav a {
+  color: var(--ink);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+}
+
+.nav a:hover { border-bottom-color: var(--ink); }
+
+.nav a.current {
+  border-bottom: 2px solid var(--copper);
+  padding-bottom: 1px;
+}
+
+.nav .spacer { flex: 1; }
+
+.nav .who {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--ink-quiet);
+  text-transform: none;
+}
+
+/* =========================================================
+   Section headers — directory style
+   ========================================================= */
+.section-rule {
+  margin-top: 56px;
+  margin-bottom: 18px;
+  border-top: 1px solid var(--ink);
+  position: relative;
+  padding-top: 14px;
+}
+
+.section-rule .kicker {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  color: var(--ink-quiet);
+  font-weight: 600;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.section-rule h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 32px;
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+  line-height: 1.1;
+}
+
+/* =========================================================
+   Hero headline (dashboard top)
+   ========================================================= */
+.editorial-hero {
+  padding: 42px 0 18px;
+}
+
+.editorial-hero .eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.32em;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.editorial-hero h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 78px;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  margin: 0 0 20px;
+  color: var(--ink);
+  font-variation-settings: "SOFT" 50, "opsz" 144;
+}
+
+.editorial-hero h1 em {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--copper);
+}
+
+.editorial-hero .deck {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  max-width: 640px;
+  margin: 0;
+}
+
+/* =========================================================
+   Stat line — horizontal directory row
+   ========================================================= */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  margin: 42px 0 0;
+  padding: 22px 0 24px;
+}
+
+.stat {
+  padding: 0 24px;
+  border-left: 0.5px solid var(--rule);
+}
+
+.stat:first-child { border-left: none; padding-left: 0; }
+
+.stat .label {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--ink-quiet);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.stat .num {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 58px;
+  line-height: 1;
+  color: var(--ink);
+  letter-spacing: -0.03em;
+  font-feature-settings: "tnum";
+}
+
+.stat .num.accent { color: var(--copper); }
+
+.stat .foot {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 13px;
+  color: var(--ink-quiet);
+  margin-top: 6px;
+}
+
+/* =========================================================
+   Directory list (the canonical line listing)
+   ========================================================= */
+.directory {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: ln;
+}
+
+.directory li {
+  display: grid;
+  grid-template-columns: 44px 1fr auto 180px;
+  align-items: baseline;
+  padding: 22px 0;
+  border-top: 0.5px solid var(--rule);
+  gap: 24px;
+}
+
+.directory li:last-child { border-bottom: 0.5px solid var(--rule); }
+
+.directory .idx {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-quiet);
+  font-feature-settings: "tnum";
+}
+
+.directory .name {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 24px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.directory .name a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 0.5px solid transparent;
+  padding-bottom: 2px;
+  transition: border-color 0.15s ease;
+}
+
+.directory .name a:hover { border-bottom-color: var(--ink); }
+
+.directory .name .sub {
+  display: block;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 13px;
+  color: var(--ink-quiet);
+  margin-top: 2px;
+  letter-spacing: 0.01em;
+}
+
+.directory .num {
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 34px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  font-feature-settings: "tnum";
+  text-align: right;
+  white-space: nowrap;
+}
+
+.directory .state {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 14px;
+  color: var(--ink-quiet);
+  text-align: right;
+  letter-spacing: 0.01em;
+  font-variant: small-caps;
+  text-transform: lowercase;
+  letter-spacing: 0.1em;
+}
+
+.directory .state .dot {
+  font-family: var(--sans);
+  font-size: 14px;
+  margin-right: 8px;
+  position: relative;
+  top: 0;
+}
+
+.directory .state.online .dot { color: var(--enamel); }
+.directory .state.offline .dot { color: var(--ink-quiet); }
+
+/* Staggered reveal */
+.directory li {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: reveal 0.5s ease-out forwards;
+}
+.directory li:nth-child(1) { animation-delay: 0.08s; }
+.directory li:nth-child(2) { animation-delay: 0.16s; }
+.directory li:nth-child(3) { animation-delay: 0.24s; }
+.directory li:nth-child(4) { animation-delay: 0.32s; }
+.directory li:nth-child(5) { animation-delay: 0.40s; }
+
+@keyframes reveal {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================================================
+   Two-column reader layout
+   ========================================================= */
+.cols-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  margin-top: 18px;
+}
+
+.cols-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 40px;
+  margin-top: 18px;
+}
+
+/* =========================================================
+   Definition lists (detail card, settings, etc.)
+   ========================================================= */
+dl.fields {
+  margin: 0;
+  padding: 0;
+}
+
+dl.fields .row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 24px;
+  padding: 16px 0;
+  border-top: 0.5px solid var(--rule);
+  align-items: baseline;
+}
+
+dl.fields .row:first-child { border-top: none; }
+dl.fields .row:last-child { border-bottom: 0.5px solid var(--rule); }
+
+dl.fields dt {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--ink-quiet);
+  font-weight: 600;
+}
+
+dl.fields dd {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+dl.fields dd .mono {
+  font-family: var(--mono);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  font-feature-settings: "tnum";
+}
+
+dl.fields dd .big-num {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  font-feature-settings: "tnum";
+}
+
+dl.fields dd em {
+  font-style: italic;
+  color: var(--ink-quiet);
+  font-weight: 300;
+}
+
+/* =========================================================
+   Buttons / actions — ink-on-paper, no fills
+   ========================================================= */
+.btn {
+  display: inline-block;
+  font-family: var(--sans);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  padding: 12px 22px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn.copper {
+  color: var(--copper-dark);
+  border-color: var(--copper-dark);
+}
+.btn.copper:hover { background: var(--copper-dark); color: var(--paper); }
+
+.btn.enamel {
+  color: var(--enamel);
+  border-color: var(--enamel);
+}
+.btn.enamel:hover { background: var(--enamel); color: var(--paper); }
+
+.btn.ghost {
+  border-color: var(--rule-strong);
+  color: var(--ink-soft);
+}
+
+.btn.danger { color: var(--crimson); border-color: var(--crimson); }
+.btn.danger:hover { background: var(--crimson); color: var(--paper); }
+
+.btn.big {
+  padding: 18px 32px;
+  font-size: 12px;
+  letter-spacing: 0.28em;
+}
+
+.action-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+/* =========================================================
+   Inputs
+   ========================================================= */
+.input-block {
+  margin: 18px 0;
+}
+
+.input-block label {
+  display: block;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--ink-quiet);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.input-block input[type=text],
+.input-block input[type=email],
+.input-block select {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink);
+  padding: 8px 0 10px;
+  font-family: var(--serif);
+  font-size: 22px;
+  color: var(--ink);
+  outline: none;
+  border-radius: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.input-block input[type=text]:focus,
+.input-block input[type=email]:focus {
+  border-bottom-color: var(--copper);
+}
+
+.input-block .help {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 13px;
+  color: var(--ink-quiet);
+  margin-top: 8px;
+}
+
+.input-block input.mono-input {
+  font-family: var(--mono);
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-feature-settings: "tnum";
+}
+
+/* =========================================================
+   Choice cards (e.g. Voice Style)
+   ========================================================= */
+.choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.choice {
+  padding: 26px 28px 28px;
+  border-left: 0.5px solid var(--rule);
+  cursor: pointer;
+  position: relative;
+}
+
+.choice:first-child { border-left: none; }
+
+.choice.selected {
+  background: rgba(181, 101, 69, 0.05);
+}
+
+.choice.selected::before {
+  content: "●";
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  color: var(--copper);
+  font-size: 12px;
+}
+
+.choice:not(.selected)::before {
+  content: "○";
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  color: var(--ink-quiet);
+  font-size: 12px;
+}
+
+.choice h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 26px;
+  margin: 0 0 4px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.choice .tag {
+  font-family: var(--sans);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--copper);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.choice p {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+/* =========================================================
+   Deck / note block (editorial quote-like)
+   ========================================================= */
+.note {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  padding: 18px 0 0;
+  border-top: 1px solid var(--rule);
+  margin-top: 22px;
+}
+
+.pull {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--ink);
+  padding-left: 24px;
+  border-left: 2px solid var(--copper);
+  margin: 24px 0;
+}
+
+/* =========================================================
+   Footer
+   ========================================================= */
+.colophon {
+  margin-top: 68px;
+  padding-top: 22px;
+  border-top: 1px solid var(--ink);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--ink-quiet);
+  line-height: 1.8;
+}
+
+.colophon .cx {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  color: var(--ink-soft);
+}
+
+/* =========================================================
+   Tables (hardware, settings)
+   ========================================================= */
+.sheet {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+}
+
+.sheet th, .sheet td {
+  text-align: left;
+  padding: 14px 0;
+  border-bottom: 0.5px solid var(--rule);
+  vertical-align: baseline;
+}
+
+.sheet th {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--ink-quiet);
+  font-weight: 600;
+  border-bottom-color: var(--ink);
+}
+
+.sheet td {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.sheet td.mono {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-feature-settings: "tnum";
+}
+
+/* =========================================================
+   Connected household card
+   ========================================================= */
+.household {
+  padding: 28px 0 12px;
+  border-top: 1px solid var(--ink);
+}
+
+.household-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.household-name {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 34px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.household-since {
+  font-family: var(--sans);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.26em;
+  color: var(--ink-quiet);
+  font-weight: 500;
+  text-align: right;
+}
+
+.household-since .date {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--ink-soft);
+  display: block;
+  margin-top: 3px;
+}
+
+/* =========================================================
+   Toggle — swiss directory style, not a pill
+   ========================================================= */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 17px;
+  color: var(--ink);
+}
+
+.toggle-mark {
+  width: 44px;
+  height: 22px;
+  border: 1px solid var(--ink);
+  position: relative;
+  background: transparent;
+  border-radius: 0;
+}
+
+.toggle-mark::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--ink);
+  transition: left 0.2s ease, background 0.2s ease;
+}
+
+.toggle.on .toggle-mark { border-color: var(--enamel); }
+.toggle.on .toggle-mark::after {
+  left: 25px;
+  background: var(--enamel);
+}
+
+/* =========================================================
+   Login layout
+   ========================================================= */
+.login-page {
+  max-width: 640px;
+  margin: 100px auto 72px;
+  padding: 56px 64px 72px;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  position: relative;
+}
+
+.login-page::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 0.5px solid var(--rule);
+  pointer-events: none;
+}
+
+.login-mark {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.login-mark .wordmark {
+  font-size: 52px;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  display: inline-block;
+}
+
+.login-mark .tagline {
+  display: block;
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 16px;
+  color: var(--ink-quiet);
+  margin-top: 14px;
+  letter-spacing: 0.02em;
+}
+
+.divider-or {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 32px 0;
+  color: var(--ink-quiet);
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 14px;
+}
+
+.divider-or::before,
+.divider-or::after {
+  content: "";
+  flex: 1;
+  height: 0.5px;
+  background: var(--rule);
+}
+
+/* =========================================================
+   Index page
+   ========================================================= */
+.index-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.index-list li {
+  padding: 28px 0;
+  border-top: 0.5px solid var(--rule);
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 24px;
+  align-items: baseline;
+}
+
+.index-list li:last-child { border-bottom: 0.5px solid var(--rule); }
+
+.index-list .idx {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-quiet);
+}
+
+.index-list .title {
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.index-list .title a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 0.5px solid transparent;
+  padding-bottom: 2px;
+  transition: border-color 0.15s ease;
+}
+
+.index-list .title a:hover { border-bottom-color: var(--ink); }
+
+.index-list .blurb {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 15px;
+  color: var(--ink-quiet);
+  max-width: 540px;
+}
+
+.index-list .go {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--copper);
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+/* =========================================================
+   Small utility
+   ========================================================= */
+.hairline { border-top: 0.5px solid var(--rule); margin: 0; }
+.mt-0 { margin-top: 0 !important; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mt-32 { margin-top: 32px; }
+.mb-0 { margin-bottom: 0 !important; }
+
+.prose p {
+  font-family: var(--serif);
+  font-weight: 380;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+}
+
+.small-caps {
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+  font-weight: 500;
+}
+
+.num-mono {
+  font-family: var(--mono);
+  font-feature-settings: "tnum";
+  letter-spacing: 0.04em;
+}
+
+/* Calls ledger */
+.ledger {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.ledger li {
+  display: grid;
+  grid-template-columns: 80px 1fr auto 80px;
+  gap: 24px;
+  align-items: baseline;
+  padding: 16px 0;
+  border-top: 0.5px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.ledger li:last-child { border-bottom: 0.5px solid var(--rule); }
+
+.ledger .time {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-quiet);
+  font-feature-settings: "tnum";
+}
+
+.ledger .route {
+  font-family: var(--mono);
+  font-size: 16px;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+  font-feature-settings: "tnum";
+}
+
+.ledger .route .arr {
+  display: inline-block;
+  margin: 0 10px;
+  color: var(--copper);
+  font-family: var(--serif);
+  font-style: italic;
+  letter-spacing: 0;
+}
+
+.ledger .dur {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-quiet);
+  text-align: right;
+}
+
+.ledger .tag {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--enamel);
+  text-align: right;
+}

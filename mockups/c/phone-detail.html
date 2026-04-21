@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Digits · Digits 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Inter+Tight:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail__family">
+    <svg class="rail__mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="#c48b3a" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="3" fill="#c48b3a"/>
+      <g stroke="#2a1f18" stroke-width="1.2" stroke-linecap="round">
+        <line x1="16" y1="4" x2="16" y2="7"/><line x1="16" y1="25" x2="16" y2="28"/>
+        <line x1="4" y1="16" x2="7" y2="16"/><line x1="25" y1="16" x2="28" y2="16"/>
+      </g>
+    </svg>
+    <span class="rail__family-name">Justin Lindh&rsquo;s Family</span>
+  </div>
+  <nav class="rail__nav">
+    <a href="dashboard.html">Home</a>
+    <a href="phones.html" class="active">Phones</a>
+    <a href="links.html">Families</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="rail__end">
+    <span class="mono">3:48 pm</span>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page">
+  <div style="display:flex; align-items:center; gap:10px; color:var(--ink-3); font-size:13px;">
+    <a href="phones.html" style="color:var(--ink-3);">&larr; Phones</a>
+    <span>&middot;</span>
+    <span>Digits 1</span>
+  </div>
+
+  <div class="detail-grid">
+
+    <!-- Warm household front -->
+    <div class="detail-hero">
+      <svg viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- base -->
+        <path d="M 30 134 Q 30 112 54 112 L 166 112 Q 190 112 190 134 L 190 176 Q 190 186 180 186 L 40 186 Q 30 186 30 176 Z" fill="#2a1f18"/>
+        <rect x="30" y="116" width="160" height="4" fill="#0f0907" opacity="0.35"/>
+        <!-- dial -->
+        <circle cx="110" cy="152" r="28" fill="#3a2c22" stroke="#141010" stroke-width="1.5"/>
+        <circle cx="110" cy="152" r="23" fill="none" stroke="#c48b3a" stroke-width="0.8" opacity="0.9"/>
+        <g fill="#14100d">
+          <circle cx="110" cy="134" r="3"/><circle cx="123" cy="137" r="3"/>
+          <circle cx="131" cy="147" r="3"/><circle cx="131" cy="158" r="3"/>
+          <circle cx="123" cy="167" r="3"/><circle cx="110" cy="170" r="3"/>
+          <circle cx="97" cy="167" r="3"/><circle cx="89" cy="158" r="3"/>
+          <circle cx="89" cy="147" r="3"/><circle cx="97" cy="137" r="3"/>
+        </g>
+        <circle cx="110" cy="152" r="8" fill="#c48b3a"/>
+        <!-- cradle posts -->
+        <rect x="52" y="104" width="16" height="12" rx="2" fill="#1a1310"/>
+        <rect x="152" y="104" width="16" height="12" rx="2" fill="#1a1310"/>
+        <!-- handset -->
+        <path d="M 48 76 Q 52 48 78 48 L 142 48 Q 168 48 172 76 L 160 80 Q 156 62 138 62 L 82 62 Q 64 62 60 80 Z" fill="#2a1f18"/>
+        <ellipse cx="60" cy="78" rx="10" ry="6" fill="#1a1310"/>
+        <ellipse cx="160" cy="78" rx="10" ry="6" fill="#1a1310"/>
+        <!-- cord -->
+        <path d="M 172 74 Q 198 76 202 92 Q 204 108 186 112" fill="none" stroke="#2a1f18" stroke-width="2.5" stroke-linecap="round"/>
+        <!-- brass name plate -->
+        <rect x="76" y="176" width="68" height="6" rx="1" fill="#c48b3a" opacity="0.9"/>
+      </svg>
+
+      <h1 class="detail-hero__name">Digits 1</h1>
+      <div class="detail-hero__num">(245) 639&#8209;0000</div>
+      <div class="detail-hero__status">
+        <span class="dot dot--online"></span>
+        Online &middot; resting on the hallway table
+      </div>
+
+      <div class="detail-hero__actions">
+        <button class="btn btn--brass">Ring this phone</button>
+        <button class="btn">Rename</button>
+      </div>
+    </div>
+
+    <!-- Household metadata -->
+    <div class="detail-meta">
+
+      <div class="meta-card">
+        <h3>How it sounds</h3>
+        <div class="meta-row">
+          <span class="meta-row__label">Voice style</span>
+          <span class="meta-row__value">1952 Bell (POTS band)</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-row__label">Ringer</span>
+          <span class="meta-row__value">Brass bell</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-row__label">Volume</span>
+          <span class="meta-row__value num">7 / 10</span>
+        </div>
+      </div>
+
+      <div class="meta-card">
+        <h3>Where it lives</h3>
+        <div class="meta-row">
+          <span class="meta-row__label">Location</span>
+          <span class="meta-row__value">Hallway table</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-row__label">Paired since</span>
+          <span class="meta-row__value">February 2, 2026</span>
+        </div>
+        <div class="meta-row">
+          <span class="meta-row__label">Today&rsquo;s calls</span>
+          <span class="meta-row__value">1 outgoing</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Service drawer (operator hat) -->
+  <section class="drawer" id="drawer">
+    <div class="drawer__handle" onclick="toggleDrawer()">
+      <div class="drawer__label">
+        <span class="eyebrow">Service panel</span>
+        <strong>Device &amp; firmware</strong>
+      </div>
+      <div class="drawer__screws">
+        <span class="drawer__screw"></span>
+        <span class="drawer__screw"></span>
+      </div>
+    </div>
+    <div class="drawer__body">
+      <div class="meta-row">
+        <span class="meta-row__label">digitsd</span>
+        <span class="meta-row__value num">1.14.1&#8209;4</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-row__label">Firmware</span>
+        <span class="meta-row__value num">v0.8.2</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-row__label">Last check&#8209;in</span>
+        <span class="meta-row__value num">4:12 pm</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-row__label">Pi serial</span>
+        <span class="meta-row__value num">10000000a8f2b174</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-row__label">IP</span>
+        <span class="meta-row__value num">192.168.2.142</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-row__label">Uptime</span>
+        <span class="meta-row__value num">6d 14h 22m</span>
+      </div>
+      <div class="drawer__ops">
+        <button class="btn btn--small">Restart digitsd</button>
+        <button class="btn btn--small">Reboot Pi</button>
+        <button class="btn btn--small btn--ghost">Recovery mode</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="house-note">
+    <span>Digits 1 &middot; paired Feb 2</span>
+    <span>A household on Digits.</span>
+  </div>
+</main>
+
+<script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    try { localStorage.setItem('digits-theme', next); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem('digits-theme');
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  })();
+
+  function toggleDrawer() {
+    const d = document.getElementById('drawer');
+    const body = d.querySelector('.drawer__body');
+    if (body.style.display === 'none') { body.style.display = ''; }
+    else { body.style.display = 'none'; }
+  }
+</script>
+</body>
+</html>

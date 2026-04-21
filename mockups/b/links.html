@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — LINKS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html" class="active"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow">&gt; /links · connected families</div>
+        <h1 id="title">LINKS<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          Patch your household to another family and their lines become dialable
+          from yours. Links are bidirectional and can be severed by either side.
+        </div>
+      </div>
+
+      <!-- Patched families -->
+      <div class="frame">
+        <div class="frame-title">// Patched Families</div>
+        <div class="frame-meta">01 active · 00 pending</div>
+
+        <table class="ptable">
+          <thead>
+            <tr>
+              <th style="width:40px">ST</th>
+              <th>Family</th>
+              <th>Patched</th>
+              <th>Lines</th>
+              <th>Last Call</th>
+              <th style="width:180px">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="led green"></span></td>
+              <td class="glow">THE PATEL FAMILY</td>
+              <td class="mono-num muted">2026-03-14 <span class="dim">· 38 days</span></td>
+              <td class="muted">2 lines <span class="dim">· both online</span></td>
+              <td class="mono-num muted">today 15:42 <span class="green">· connected</span></td>
+              <td>
+                <a href="#" class="btn small">ROSTER</a>
+                <a href="#" class="btn small danger">CUT</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Patel roster -->
+        <div class="rule"><span>Patel Family · Roster</span></div>
+        <div class="link-list" style="border:1px solid var(--amber-ink); padding:4px 12px">
+          <div class="lrow">
+            <span class="led green"></span>
+            <div>
+              <div class="name">RAVI'S PHONE</div>
+              <div class="meta">den · added 14 Mar 2026</div>
+            </div>
+            <div class="mono-num muted">612-8844</div>
+            <a href="#" class="btn small">DIAL</a>
+          </div>
+          <div class="lrow">
+            <span class="led green"></span>
+            <div>
+              <div class="name">KITCHEN</div>
+              <div class="meta">kitchen · added 14 Mar 2026</div>
+            </div>
+            <div class="mono-num muted">612-8801</div>
+            <a href="#" class="btn small">DIAL</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- create + accept -->
+      <div class="grid-2" style="margin-top:28px">
+        <div class="frame">
+          <div class="frame-title">// Create Invite</div>
+          <div class="frame-meta">one-time code</div>
+
+          <div class="muted" style="font-size:12px; line-height:1.65; margin-bottom:18px">
+            Generate a six-character code to share with another family. They enter it on
+            their operator console; both households confirm before the patch is live.
+          </div>
+
+          <div style="border:1px dashed var(--amber-dim); padding:14px 16px 18px; background:var(--bg-sunk)">
+            <div class="up dim" style="font-size:10.5px; letter-spacing:0.32em; text-align:center">
+              INVITE CODE · EXPIRES IN 06:48:12
+            </div>
+            <div class="code-display mono-num">K7F-Q29</div>
+            <div class="up muted" style="text-align:center; font-size:10.5px; letter-spacing:0.28em">
+              share by voice · text · or paper
+            </div>
+          </div>
+
+          <div class="mt-m row">
+            <a href="#" class="btn">REGENERATE</a>
+            <a href="#" class="btn">COPY CODE</a>
+            <a href="#" class="btn small" style="margin-left:auto">EXPIRE NOW</a>
+          </div>
+
+          <div class="rule"><span>Pending invites</span></div>
+          <div class="muted" style="font-size:12px">
+            No invites awaiting acceptance. Codes auto-expire after 24 hours.
+          </div>
+        </div>
+
+        <div class="frame">
+          <div class="frame-title">// Accept Invite</div>
+          <div class="frame-meta">enter their code</div>
+
+          <div class="muted" style="font-size:12px; line-height:1.65; margin-bottom:18px">
+            Someone gave you a six-character invite code? Enter it here. Both
+            households see a preview of the other before the patch is confirmed.
+          </div>
+
+          <div class="prompt-block">
+            <div class="prompt-row">
+              <span class="sigil">&gt;</span>
+              <span class="label">invite code</span>
+              <input class="prompt-input mono-digits" placeholder="· · · - · · ·" maxlength="8" value=""/>
+              <span class="blink-char">█</span>
+            </div>
+            <div class="prompt-row">
+              <span class="sigil">&gt;</span>
+              <span class="label">note to them</span>
+              <input class="prompt-input" placeholder="optional greeting" value=""/>
+            </div>
+
+            <div class="prompt-hint">
+              Codes are case-insensitive. Dashes optional. If the code has expired
+              the operator will ask them to regenerate.
+            </div>
+
+            <div class="mt-m row">
+              <a href="#" class="btn primary">ACCEPT INVITE</a>
+              <a href="#" class="btn">CLEAR</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Call routing preferences -->
+      <div class="frame" style="margin-top:28px">
+        <div class="frame-title">// Routing Defaults</div>
+        <div class="frame-meta">per patched family</div>
+        <div class="grid-2">
+          <div class="kv">
+            <div class="k">Accept Calls From</div><div class="v">any patched line <span class="dim">· default</span></div>
+            <div class="k">Ring All Lines</div><div class="v ok">● enabled</div>
+            <div class="k">After Hours</div><div class="v">ring only 245-6390 · 21:00 - 07:00</div>
+          </div>
+          <div class="kv">
+            <div class="k">Record History</div><div class="v ok">● enabled · 90 days</div>
+            <div class="k">Encryption</div><div class="v ok">● DTLS-SRTP · end-to-end</div>
+            <div class="k">Block List</div><div class="v muted">empty</div>
+          </div>
+        </div>
+        <div class="mt-m"><a href="#" class="btn small">EDIT ROUTING</a></div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 55);
+        }
+      }
+      step();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digits — Open a New Exchange</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Public+Sans:ital,wght@0,300..700;1,300..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  body { display:flex; align-items:flex-start; justify-content:center; min-height:100vh; }
+</style>
+</head>
+<body>
+
+<div class="login-page">
+
+  <div class="login-mark">
+    <div class="wordmark">DIGITS</div>
+    <div class="tagline">Open a new exchange. <em>One of one.</em></div>
+  </div>
+
+  <div style="border-top:1px solid var(--ink); padding-top:24px; margin-bottom:6px;">
+    <div style="font-family:var(--sans); font-size:10.5px; text-transform:uppercase; letter-spacing:0.3em; color:var(--copper); font-weight:600; text-align:center; margin-bottom:18px;">Step 1 of 3 · Your household</div>
+
+    <h1 style="font-family:var(--serif); font-weight:400; font-size:44px; line-height:1.05; letter-spacing:-0.01em; margin:0 0 18px; text-align:center;">What shall we<br><em>call your family?</em></h1>
+
+    <p style="font-family:var(--serif); font-style:italic; font-weight:300; font-size:16px; color:var(--ink-quiet); line-height:1.5; text-align:center; max-width:440px; margin:0 auto 28px;">
+      This name appears in the top of your console and beside your lines when you dial connected households. Choose something the children will recognize.
+    </p>
+  </div>
+
+  <form onsubmit="window.location='dashboard.html'; return false;">
+    <div class="input-block">
+      <label for="hname">Household name</label>
+      <input type="text" id="hname" value="Justin Lindh’s Family" autocomplete="off">
+      <div class="help">You can change this later from Settings.</div>
+    </div>
+
+    <div style="margin-top:38px; display:flex; justify-content:space-between; align-items:center;">
+      <a href="login.html" style="font-family:var(--serif); font-style:italic; font-size:15px; color:var(--ink-quiet); text-decoration:none;">← Back</a>
+      <a href="#" class="btn copper big">Continue →</a>
+    </div>
+  </form>
+
+  <div style="margin-top:42px; padding-top:22px; border-top:0.5px solid var(--rule); font-family:var(--sans); font-size:10px; text-transform:uppercase; letter-spacing:0.26em; color:var(--ink-quiet); font-weight:500; text-align:center;">
+    Next: pair your first line · then invite another household
+  </div>
+
+</div>
+
+</body>
+</html>

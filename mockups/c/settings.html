@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Digits · Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Inter+Tight:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail__family">
+    <svg class="rail__mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="#c48b3a" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="3" fill="#c48b3a"/>
+      <g stroke="#2a1f18" stroke-width="1.2" stroke-linecap="round">
+        <line x1="16" y1="4" x2="16" y2="7"/><line x1="16" y1="25" x2="16" y2="28"/>
+        <line x1="4" y1="16" x2="7" y2="16"/><line x1="25" y1="16" x2="28" y2="16"/>
+      </g>
+    </svg>
+    <span class="rail__family-name">Justin Lindh&rsquo;s Family</span>
+  </div>
+  <nav class="rail__nav">
+    <a href="dashboard.html">Home</a>
+    <a href="phones.html">Phones</a>
+    <a href="links.html">Families</a>
+    <a href="settings.html" class="active">Settings</a>
+  </nav>
+  <div class="rail__end">
+    <span class="mono">3:48 pm</span>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page page--narrow">
+  <div class="eyebrow">Settings</div>
+  <p class="lede">The quiet <em>preferences</em> of the house.</p>
+
+  <div class="settings-list">
+
+    <div class="settings-group">
+      <h3>Account</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Email</div>
+          <div class="settings-row__help">We&rsquo;ll use this for magic-link sign-in and the occasional household note.</div>
+        </div>
+        <div class="settings-row__value">justinlindh@gmail.com</div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Google</div>
+          <div class="settings-row__help">Sign in with your Google account.</div>
+        </div>
+        <div>
+          <span class="pill pill--online"><span class="dot dot--online" style="box-shadow:none; width:6px; height:6px;"></span>Connected</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Household</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Family name</div>
+          <div class="settings-row__help">Shown at the top of every page and on pairing invitations.</div>
+        </div>
+        <div class="settings-row__value">Justin Lindh&rsquo;s Family</div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Created</div>
+          <div class="settings-row__help">The date this household first joined Digits.</div>
+        </div>
+        <div class="settings-row__value">January 18, 2026</div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Timezone</div>
+          <div class="settings-row__help">Used for call logs and check-in times.</div>
+        </div>
+        <div class="settings-row__value">America/Detroit</div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Privacy</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Call history</div>
+          <div class="settings-row__help">Keep a log of when phones rang and for how long. We never keep the audio. If this is a kid&rsquo;s phone, you might want to turn this off. Digits is meant to feel more like a phone and less like a screen.</div>
+        </div>
+        <div class="toggle toggle--on" onclick="this.classList.toggle('toggle--on')"></div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Audio quality log</div>
+          <div class="settings-row__help">Occasional anonymized readings about call clarity. Helps us make the POTS filter sound right.</div>
+        </div>
+        <div class="toggle" onclick="this.classList.toggle('toggle--on')"></div>
+      </div>
+    </div>
+
+    <div class="settings-group">
+      <h3>Session</h3>
+      <div class="settings-row">
+        <div>
+          <div class="settings-row__label">Sign out</div>
+          <div class="settings-row__help">You&rsquo;ll need your email or Google account to come back.</div>
+        </div>
+        <button class="btn btn--ghost btn--small">Sign out</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="house-note">
+    <span>Signald v1.14.1-4</span>
+    <span>A household on Digits.</span>
+  </div>
+</main>
+
+<script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    try { localStorage.setItem('digits-theme', next); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem('digits-theme');
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>

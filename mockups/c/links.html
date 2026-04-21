@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Digits · Families</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..700,0..100;1,9..144,300..700,0..100&family=Inter+Tight:wght@400;450;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="rail">
+  <div class="rail__family">
+    <svg class="rail__mark" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="#c48b3a" stroke-width="1.5"/>
+      <circle cx="16" cy="16" r="3" fill="#c48b3a"/>
+      <g stroke="#2a1f18" stroke-width="1.2" stroke-linecap="round">
+        <line x1="16" y1="4" x2="16" y2="7"/><line x1="16" y1="25" x2="16" y2="28"/>
+        <line x1="4" y1="16" x2="7" y2="16"/><line x1="25" y1="16" x2="28" y2="16"/>
+      </g>
+    </svg>
+    <span class="rail__family-name">Justin Lindh&rsquo;s Family</span>
+  </div>
+  <nav class="rail__nav">
+    <a href="dashboard.html">Home</a>
+    <a href="phones.html">Phones</a>
+    <a href="links.html" class="active">Families</a>
+    <a href="settings.html">Settings</a>
+  </nav>
+  <div class="rail__end">
+    <span class="mono">3:48 pm</span>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="page">
+  <div class="eyebrow">Connected families</div>
+  <p class="lede">One other household is on the <em>same line</em> as yours.</p>
+
+  <div class="links-grid">
+
+    <div class="link-card">
+      <div class="link-card__header">
+
+        <div class="link-card__house link-card__house--self">
+          <svg viewBox="0 0 90 62" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <!-- house -->
+            <path d="M 10 28 L 45 6 L 80 28 L 80 56 L 10 56 Z" fill="none" stroke="#2a1f18" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="38" y="38" width="14" height="18" fill="none" stroke="#2a1f18" stroke-width="1.3"/>
+            <!-- chimney -->
+            <rect x="62" y="14" width="6" height="10" fill="none" stroke="#2a1f18" stroke-width="1.3"/>
+            <!-- windows -->
+            <rect x="18" y="34" width="10" height="10" fill="none" stroke="#2a1f18" stroke-width="1.2"/>
+            <rect x="62" y="34" width="10" height="10" fill="none" stroke="#2a1f18" stroke-width="1.2"/>
+            <!-- brass dot for "you" -->
+            <circle cx="45" cy="56" r="2.5" fill="#c48b3a"/>
+          </svg>
+          <div class="link-card__house-name">Justin Lindh&rsquo;s Family</div>
+          <div class="link-card__house-since">Your household &middot; 3 lines</div>
+        </div>
+
+        <div class="link-card__thread" aria-hidden="true">
+          <span class="link-card__thread-label">since Mar 14</span>
+          <svg viewBox="0 0 140 40" preserveAspectRatio="none">
+            <path d="M 4 20 Q 40 4, 70 20 T 136 20" fill="none" stroke="#c48b3a" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="1 3"/>
+            <circle cx="4" cy="20" r="3" fill="#c48b3a"/>
+            <circle cx="136" cy="20" r="3" fill="#c48b3a"/>
+          </svg>
+        </div>
+
+        <div class="link-card__house link-card__house--other">
+          <svg viewBox="0 0 90 62" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M 10 28 L 45 6 L 80 28 L 80 56 L 10 56 Z" fill="none" stroke="#2a1f18" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="38" y="38" width="14" height="18" fill="none" stroke="#2a1f18" stroke-width="1.3"/>
+            <rect x="22" y="14" width="6" height="10" fill="none" stroke="#2a1f18" stroke-width="1.3"/>
+            <rect x="18" y="34" width="10" height="10" fill="none" stroke="#2a1f18" stroke-width="1.2"/>
+            <rect x="62" y="34" width="10" height="10" fill="none" stroke="#2a1f18" stroke-width="1.2"/>
+          </svg>
+          <div class="link-card__house-name">The Patel Family</div>
+          <div class="link-card__house-since">Connected since March 14, 2026</div>
+        </div>
+      </div>
+
+      <div style="margin-top:22px; display:flex; align-items:baseline; justify-content:space-between;">
+        <span class="eyebrow" style="color:var(--ink-3);">Phones you can reach</span>
+        <span style="font-size:12.5px; color:var(--ink-3);">2 lines on their side</span>
+      </div>
+
+      <div class="link-card__lines">
+        <div class="link-line">
+          <span class="dot dot--online"></span>
+          <div>
+            <div class="link-line__name">Ravi&rsquo;s Phone</div>
+            <div class="link-line__num">(612) 884&#8209;4000</div>
+          </div>
+        </div>
+        <div class="link-line">
+          <span class="dot dot--online"></span>
+          <div>
+            <div class="link-line__name">Kitchen</div>
+            <div class="link-line__num">(612) 880&#8209;1000</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:22px; display:flex; justify-content:space-between; align-items:center; padding-top:18px; border-top:1px solid var(--hairline);">
+        <span style="font-size:13px; color:var(--ink-3);">Calls between your houses pass through no one else.</span>
+        <button class="btn btn--ghost btn--small">Unlink</button>
+      </div>
+    </div>
+
+    <!-- Invite card -->
+    <div class="link-card" style="background: var(--bg-2); box-shadow: none; border-style: dashed;">
+      <div style="display:flex; gap:20px; align-items:center; justify-content:space-between; flex-wrap:wrap;">
+        <div>
+          <div class="eyebrow" style="color:var(--brass-deep);">Invite</div>
+          <h3 style="font-family:'Fraunces',serif; font-size:22px; font-variation-settings:'opsz' 28,'SOFT' 30; font-weight:420; margin-top:6px;">Connect another family.</h3>
+          <p style="margin:6px 0 0; color:var(--ink-3); font-size:14px; max-width:52ch; line-height:1.55;">Share a six-digit code with cousins, grandparents, or friends. Once they dial it in, your phones can reach each other.</p>
+        </div>
+        <button class="btn btn--brass">Generate invite code</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="house-note">
+    <span>1 connected family &middot; 2 phones on their side</span>
+    <span>A household on Digits.</span>
+  </div>
+</main>
+
+<script>
+  function toggleTheme() {
+    const html = document.documentElement;
+    const next = html.dataset.theme === 'dark' ? 'light' : 'dark';
+    html.dataset.theme = next;
+    try { localStorage.setItem('digits-theme', next); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem('digits-theme');
+      if (saved) document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DIGITS // OPERATOR CONSOLE — LINES</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+
+    <aside class="panel-side">
+      <div class="brand"><span class="dot"></span>DIGITS</div>
+      <div class="sub">Operator Console · v0.8.2</div>
+
+      <div class="ops-label">Channels</div>
+      <ul class="channels">
+        <li><a href="dashboard.html"><span class="ch-num">[01]</span> DASHBOARD</a></li>
+        <li><a href="phones.html" class="active"><span class="ch-num">[02]</span> LINES</a></li>
+        <li><a href="links.html"><span class="ch-num">[03]</span> LINKS</a></li>
+        <li><a href="calls.html"><span class="ch-num">[04]</span> CALLS</a></li>
+        <li><a href="settings.html"><span class="ch-num">[05]</span> SETTINGS</a></li>
+        <li><a href="login.html"><span class="ch-num">[06]</span> SIGN OUT</a></li>
+      </ul>
+
+      <pre class="ascii-op">
+        .----.
+       /      \
+      |  o  o  |    OPERATOR
+      |   __   |    STATION 01
+       \______/
+        |====|
+       /      \
+      '--------'
+      </pre>
+
+      <div class="patch-cords">
+        <div><span class="k">HH</span> · <span class="v">Lindh Family</span></div>
+        <div><span class="k">TZ</span> · <span class="v">AMERICA/DETROIT</span></div>
+        <div><span class="k">UPLINK</span> · <span class="v green">NOMINAL</span></div>
+        <div><span class="k">UPTIME</span> · <span class="v">14d 06:22:11</span></div>
+      </div>
+    </aside>
+
+    <main class="panel-main">
+      <div class="topbar">
+        <div class="tb-left">
+          <span><span class="k">USER </span><span class="v">JUSTIN@LINDH.FAMILY</span></span>
+          <span><span class="k">TERM </span><span class="v">TTY/04</span></span>
+        </div>
+        <div class="tb-right">
+          <span><span class="k">TUE </span><span class="v mono-digits">21 APR 2026</span></span>
+          <span><span class="k">LOCAL </span><span class="v mono-digits">15:47:02</span><span class="blink"> █</span></span>
+        </div>
+      </div>
+
+      <div class="page-head">
+        <div class="eyebrow">&gt; /lines · attached stations</div>
+        <h1 id="title">LINES<span class="cursor">&nbsp;</span></h1>
+        <div class="sublead">
+          Each line is one physical desk phone. Pair a new unit with a six-digit
+          code printed on its label sleeve.
+        </div>
+      </div>
+
+      <!-- PAIRING PROMPT -->
+      <div class="frame">
+        <div class="frame-title">// Pair a Device</div>
+        <div class="frame-meta">codes expire in 10:00</div>
+
+        <div class="prompt-block">
+          <div class="prompt-row">
+            <span class="sigil">&gt;</span>
+            <span class="label">pairing code</span>
+            <input class="prompt-input mono-digits" placeholder="· · · · · ·" maxlength="7" value="A4C 9F2"/>
+            <span class="blink-char">█</span>
+          </div>
+          <div class="prompt-row">
+            <span class="sigil">&gt;</span>
+            <span class="label">line number</span>
+            <input class="prompt-input mono-digits" placeholder="248-____" value=""/>
+          </div>
+          <div class="prompt-row">
+            <span class="sigil">&gt;</span>
+            <span class="label">line name</span>
+            <input class="prompt-input" placeholder="e.g. Kitchen, Basement, Grandpa" value=""/>
+          </div>
+
+          <div class="prompt-hint">
+            HOLD · the receiver on the handset of the new device, then press # to reveal
+            the six-character pairing code.
+          </div>
+
+          <div class="mt-m row">
+            <a href="#" class="btn primary">ATTACH LINE</a>
+            <a href="#" class="btn">CANCEL</a>
+            <span class="dim up" style="margin-left:auto">code · <span class="v mono-digits">A4C-9F2</span> · valid for <span class="mono-digits">09:47</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- LINES TABLE -->
+      <div class="frame" style="margin-top:28px">
+        <div class="frame-title">// Attached Lines</div>
+        <div class="frame-meta">03 stations · polled every 15s</div>
+
+        <table class="ptable">
+          <thead>
+            <tr>
+              <th style="width:56px">ST</th>
+              <th style="width:40px">#</th>
+              <th>Name</th>
+              <th>Number</th>
+              <th>Voice Style</th>
+              <th>Firmware</th>
+              <th>Added</th>
+              <th style="width:180px">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="led green"></span></td>
+              <td class="dim mono-num">01</td>
+              <td class="glow">DIGITS 1</td>
+              <td class="mono-num">245-6390</td>
+              <td class="muted up">COPPER WIRE</td>
+              <td class="muted">v0.8.2</td>
+              <td class="mono-num muted">2026-01-14</td>
+              <td>
+                <a href="phone-detail.html" class="btn small">INSPECT</a>
+                <a href="#" class="btn small">EDIT</a>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="led green"></span></td>
+              <td class="dim mono-num">02</td>
+              <td class="glow">DIGITS 2</td>
+              <td class="mono-num">248-6881</td>
+              <td class="muted up">COPPER WIRE</td>
+              <td class="muted">v0.8.2</td>
+              <td class="mono-num muted">2026-02-02</td>
+              <td>
+                <a href="#" class="btn small">INSPECT</a>
+                <a href="#" class="btn small">EDIT</a>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="led red"></span></td>
+              <td class="dim mono-num">03</td>
+              <td>DIGITS 3</td>
+              <td class="mono-num">579-3721</td>
+              <td class="muted up">MODERN HD</td>
+              <td class="muted">v0.8.1</td>
+              <td class="mono-num muted">2026-03-30</td>
+              <td>
+                <a href="#" class="btn small">INSPECT</a>
+                <a href="#" class="btn small">EDIT</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="rule"><span>Station 03 · offline 1d 18h</span></div>
+        <div style="color:var(--amber-soft); font-size:12px; line-height:1.7; padding-left:4px;">
+          Last heartbeat <span class="glow mono-num">2026-04-19 21:03:14</span>. Wi-Fi reassociation failed.
+          If the desk phone has power, lift the receiver and listen for a brief three-pip
+          off-network tone; the on-board daemon will attempt to reassociate on-hook.
+        </div>
+      </div>
+
+      <!-- RETIRED / LINE POOL -->
+      <div class="grid-2" style="margin-top:28px">
+        <div class="frame">
+          <div class="frame-title">// Line Pool</div>
+          <div class="frame-meta">free numbers</div>
+          <div class="kv">
+            <div class="k">Available</div><div class="v mono-num">248-6881 · reserved</div>
+            <div class="k">Area</div><div class="v">248 · Detroit suburbs</div>
+            <div class="k">Reservation</div><div class="v muted">until 2026-12-31</div>
+            <div class="k">Block</div><div class="v muted">8 numbers · 3 assigned</div>
+          </div>
+          <div class="mt-m"><a href="#" class="btn small">REQUEST ANOTHER BLOCK</a></div>
+        </div>
+        <div class="frame">
+          <div class="frame-title">// Retired Lines</div>
+          <div class="frame-meta">archive</div>
+          <div class="dim up" style="padding:14px 4px 6px 4px">none on record</div>
+          <div class="muted" style="font-size:12px; line-height:1.65;">
+            Retired lines remain here for call-history attribution but cannot place or
+            receive calls. You can un-retire a line within 90 days.
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    (function(){
+      var el = document.getElementById("title");
+      if (!el) return;
+      var text = el.childNodes[0].nodeValue;
+      el.childNodes[0].nodeValue = "";
+      var i = 0;
+      function step(){
+        if (i <= text.length){
+          el.childNodes[0].nodeValue = text.substring(0, i);
+          i++;
+          setTimeout(step, 55);
+        }
+      }
+      step();
+    })();
+  </script>
+</body>
+</html>
