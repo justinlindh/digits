@@ -19,6 +19,9 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	mutedPeers         map[string]bool   // phone -> current mute state
+	torndownPeers      []string          // peers that had TearDownPeer called
+	mergeRequests      [][2]string       // [held, active] pairs
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -57,6 +60,24 @@ func (m *mockCallbacks) NotifyCallConnected() {
 	defer m.mu.Unlock()
 	m.callConnectedCalls++
 }
+func (m *mockCallbacks) MutePeer(phone string, muted bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mutedPeers == nil {
+		m.mutedPeers = make(map[string]bool)
+	}
+	m.mutedPeers[phone] = muted
+}
+func (m *mockCallbacks) TearDownPeer(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.torndownPeers = append(m.torndownPeers, phone)
+}
+func (m *mockCallbacks) RequestConferenceMerge(held, active string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mergeRequests = append(m.mergeRequests, [2]string{held, active})
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -94,6 +115,49 @@ func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callConnectedCalls
+}
+
+// peerMuted returns whether the given peer is currently muted.
+func (m *mockCallbacks) peerMuted(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mutedPeers[phone]
+}
+
+// peerTorndown returns whether TearDownPeer was called for the given phone.
+func (m *mockCallbacks) peerTorndown(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.torndownPeers {
+		if p == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// tonePlayed returns whether the given tone name was ever sent.
+func (m *mockCallbacks) tonePlayed(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.tones {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeRequested returns whether RequestConferenceMerge was called with the given held/active pair.
+func (m *mockCallbacks) mergeRequested(held, active string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.mergeRequests {
+		if r[0] == held && r[1] == active {
+			return true
+		}
+	}
+	return false
 }
 
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
@@ -645,5 +709,87 @@ func TestIsCallActive(t *testing.T) {
 				t.Errorf("IsCallActive() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestController_FlashFromConnectedEntersAddDialtone(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+	c.setCurrentPeerForTest("5550002")
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected A<->B muted")
+	}
+	if !mock.tonePlayed("DIAL") {
+		t.Fatalf("expected dial tone started")
+	}
+}
+
+func TestController_FlashInAddDialtoneAborts(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected A<->B unmuted on abort")
+	}
+}
+
+func TestController_FlashInAddCallingAbortsAndTearsDown(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected A<->C torn down")
+	}
+}
+
+func TestController_FlashInAddPrivateMerges(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_PRIVATE)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("expected StateCONFERENCE_MERGED, got %v", c.State())
+	}
+	if !mock.mergeRequested("5550002", "5550003") {
+		t.Fatalf("expected ConferenceMerge requested with B=5550002, C=5550003")
+	}
+}
+
+func TestController_NonHostFlashIsNoop(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.setStateForTest(StateCONNECTED)
+	c.MarkAsConferenceMember("conf-abc", false)
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("non-host flash should be no-op; state changed to %v", c.State())
 	}
 }

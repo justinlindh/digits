@@ -18,6 +18,12 @@ const (
 	StateCONNECTED       State = "CONNECTED"
 	StateREMOTE_HANGUP   State = "REMOTE_HANGUP"   // Far end hung up; handset still off-hook
 	StateOFFHOOK_TIMEOUT State = "OFFHOOK_TIMEOUT" // Off-hook with no dialing; CO permanent-signal treatment
+	StateADD_DIALTONE    State = "ADD_DIAL_TONE"   // Flash from CONNECTED: B on hold, dialing C
+	StateADD_DIALING     State = "ADD_DIALING"     // Collecting digits for C
+	StateADD_CALLING     State = "ADD_CALLING"     // Ringing C; B still on hold
+	StateADD_PRIVATE     State = "ADD_PRIVATE"     // A↔C connected; B on hold
+	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // C unreachable; B on hold
+	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -42,6 +48,9 @@ type Callbacks interface {
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
+	MutePeer(phone string, muted bool)                    // Mute or unmute the A↔B audio path for a peer
+	TearDownPeer(phone string)                            // Hang up and tear down the connection to a peer
+	RequestConferenceMerge(held, active string)           // Request server-side three-way merge
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -66,6 +75,17 @@ type Controller struct {
 	// their sleeps when it fires so daemon shutdown isn't blocked.
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// activePeer is the phone number of the current 2-party peer. Set when a
+	// call reaches CONNECTED (outgoing: onSignalAnswer; incoming: onHookOff
+	// while RINGING). Cleared on hang-up.
+	activePeer string
+
+	// Conference / call-waiting state.
+	confID     string // non-empty when part of a conference (Member message received)
+	isConfHost bool   // true if this controller is the host of the conference
+	heldPeer   string // phone number of the held party (B) during ADD_*
+	addingPeer string // phone number of the third party (C) during ADD_CALLING/PRIVATE
 }
 
 // NewController creates a new Controller starting in StateIDLE.
@@ -147,6 +167,8 @@ func (c *Controller) HandleEvent(event string) {
 		c.onHookOff()
 	case evType == "HOOK" && evVal == "ON":
 		c.onHookOn()
+	case evType == "HOOK" && evVal == "FLASH":
+		c.onHookFlash()
 	case evType == "KEY":
 		c.onKey(evVal)
 	case evType == "DIAL":
@@ -192,7 +214,7 @@ func (c *Controller) onHookOff() {
 		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
-		// Incoming: answer the call
+		// Incoming: answer the call; activePeer was set when the ring arrived.
 		c.state = StateCONNECTED
 		c.cb.SendRing(false)
 		c.cb.SendTone(ToneStop)
@@ -210,6 +232,9 @@ func (c *Controller) onHookOn() {
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
 	c.state = StateIDLE
 	c.digits = ""
+	c.activePeer = ""
+	c.heldPeer = ""
+	c.addingPeer = ""
 	c.cb.SendTone(ToneStop)
 	c.cb.SendRing(false)
 	c.cb.SendLED("OFF")
@@ -304,6 +329,7 @@ func (c *Controller) onDial(number string) {
 	}
 
 	c.state = StateCALLING
+	c.activePeer = number
 	// Brief silence before ringback — simulates PSTN call setup delay.
 	// Old rotary phones had a variable pause between last digit and first ring.
 	go func() {
@@ -316,6 +342,15 @@ func (c *Controller) onDial(number string) {
 		c.cb.SendTone(ToneRingback)
 		c.cb.InitiateCall(number)
 	}()
+}
+
+// SetActivePeer records the phone number of the current call peer. Call this
+// before HandleSignal("ring") for incoming calls so the controller knows who
+// is calling when the handset is picked up.
+func (c *Controller) SetActivePeer(number string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.activePeer = number
 }
 
 func (c *Controller) onSignalRing() {
@@ -420,4 +455,108 @@ func (c *Controller) onSignalBusy() {
 	slog.Info("phone: busy signal received -- call rejected")
 	c.cb.SendTone(ToneBusy)
 	// Stay in CALLING -- caller should hang up
+}
+
+// onHookFlash dispatches the HOOK:FLASH event per 90s residential TWC semantics.
+// Called with c.mu already held by HandleEvent.
+func (c *Controller) onHookFlash() {
+	// Non-host in an active conference: flash is a no-op (historical accuracy).
+	if c.confID != "" && !c.isConfHost {
+		return
+	}
+	switch c.state {
+	case StateCONNECTED:
+		c.enterAddDialtone()
+	case StateADD_DIALTONE, StateADD_DIALING:
+		c.abortAdd()
+	case StateADD_CALLING:
+		c.abortAddCalling()
+	case StateADD_PRIVATE:
+		c.requestMerge()
+	case StateADD_INTERCEPT:
+		c.abortAdd()
+	case StateCONFERENCE_MERGED:
+		// No-op in v1 (no second add, no drop-last-party).
+	default:
+		// Any other state: no-op.
+	}
+}
+
+func (c *Controller) enterAddDialtone() {
+	c.heldPeer = c.activePeer
+	c.state = StateADD_DIALTONE
+	c.cb.MutePeer(c.heldPeer, true)
+	c.cb.SendTone(ToneDial)
+}
+
+func (c *Controller) abortAdd() {
+	c.cb.SendTone(ToneStop)
+	if c.heldPeer != "" {
+		c.cb.MutePeer(c.heldPeer, false)
+	}
+	c.addingPeer = ""
+	c.state = StateCONNECTED
+}
+
+func (c *Controller) abortAddCalling() {
+	c.cb.SendTone(ToneStop)
+	if c.addingPeer != "" {
+		c.cb.TearDownPeer(c.addingPeer)
+	}
+	if c.heldPeer != "" {
+		c.cb.MutePeer(c.heldPeer, false)
+	}
+	c.addingPeer = ""
+	c.state = StateCONNECTED
+}
+
+func (c *Controller) requestMerge() {
+	c.state = StateCONFERENCE_MERGED
+	c.cb.RequestConferenceMerge(c.heldPeer, c.addingPeer)
+}
+
+// MarkAsConferenceMember is invoked from the signal handler when a
+// ConferenceMember message arrives for this phone. Safe to call from
+// outside the controller's lock.
+func (c *Controller) MarkAsConferenceMember(confID string, isHost bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.confID = confID
+	c.isConfHost = isHost
+}
+
+// currentPeer returns the phone number of the active 2-party peer, or "" if none.
+// Must be called with c.mu held.
+func (c *Controller) currentPeer() string {
+	return c.activePeer
+}
+
+// --- test-only setters (internal: test only) ---
+
+// setStateForTest directly sets the FSM state for unit test setup.
+func (c *Controller) setStateForTest(s State) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state = s
+}
+
+// setCurrentPeerForTest sets the active peer for unit test setup.
+func (c *Controller) setCurrentPeerForTest(peer string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.activePeer = peer
+}
+
+// setHeldPeerForTest sets the held peer for unit test setup.
+func (c *Controller) setHeldPeerForTest(peer string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.heldPeer = peer
+}
+
+// setAddingPeerForTest sets the adding peer for unit test setup.
+func (c *Controller) setAddingPeerForTest(peer string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.addingPeer = peer
 }

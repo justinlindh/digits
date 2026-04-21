@@ -434,6 +434,18 @@ func (d *daemonCallbacks) AnswerCall() {
 	slog.Info("answered call", "caller", caller)
 }
 
+func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
+	// TODO: wired up in Task 17 (per-peer outbound mute)
+}
+
+func (d *daemonCallbacks) TearDownPeer(phone string) {
+	// TODO: wired up via MeshManager in Task 16
+}
+
+func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
+	// TODO: wired up via signal client in Task 16
+}
+
 func (d *daemonCallbacks) HangupCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -1459,6 +1471,7 @@ func main() {
 				cb.mu.Lock()
 				cb.pendingCaller = msg.From
 				cb.mu.Unlock()
+				ctrl.SetActivePeer(msg.From)
 				ctrl.HandleSignal("ring")
 			case sigclient.TypeAnswer:
 				// Set remote description from the answer SDP before poking the FSM.

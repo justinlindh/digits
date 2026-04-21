@@ -142,7 +142,7 @@ func (sp *SerialPort) Close() error {
 // VERSION query.
 func isUnsolicitedEvent(line string) bool {
 	switch {
-	case line == "HOOK:OFF" || line == "HOOK:ON":
+	case line == "HOOK:OFF" || line == "HOOK:ON" || line == "HOOK:FLASH":
 		return true
 	case line == "STATUS:READY":
 		return true
