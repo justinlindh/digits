@@ -2,7 +2,6 @@ package calls
 
 import (
 	"testing"
-	"time"
 )
 
 func TestConferenceTracker_CreateAndCap(t *testing.T) {
@@ -92,7 +91,9 @@ func TestConferenceTracker_EndConference(t *testing.T) {
 
 func TestConferenceTracker_NoDuplicateHost(t *testing.T) {
 	ct := NewConferenceTracker()
-	ct.CreateConference("5550001", 42, []string{"5550002", "5550003"})
+	if _, err := ct.CreateConference("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	// Same host trying to start a second conference should fail
 	_, err := ct.CreateConference("5550001", 99, []string{"5550010", "5550011"})
@@ -103,14 +104,13 @@ func TestConferenceTracker_NoDuplicateHost(t *testing.T) {
 
 func TestConferenceTracker_MemberAlreadyInConference(t *testing.T) {
 	ct := NewConferenceTracker()
-	ct.CreateConference("5550001", 42, []string{"5550002", "5550003"})
+	if _, err := ct.CreateConference("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	// 5550002 already in a conference
 	_, err := ct.CreateConference("5550020", 99, []string{"5550002", "5550021"})
 	if err == nil {
 		t.Fatalf("expected error for member already in conference")
 	}
-
-	now := time.Now()
-	_ = now
 }
