@@ -221,3 +221,149 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 		t.Fatalf("C: expected 1 ConferenceEnd, got %d", countType(cLeaveMsgs, signaling.TypeConferenceEnd))
 	}
 }
+
+// TestHangupDuringADDCalling_Integration verifies that when a host hangs up
+// while in ADD_* flow (two active 2-party calls: A-B and A-C), a single
+// hook-on causes the server to end both calls and notify both peers.
+func TestHangupDuringADDCalling_Integration(t *testing.T) {
+	d := openSignalingTestDB(t)
+	tr := calls.New(d)
+	hub := signaling.NewHub()
+	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
+
+	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	// Prime both active 2-party calls: A-B (held) and A-C (active, adding).
+	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallInitiated A->B: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallAnswered A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallInitiated A->C: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallAnswered A->C: %v", err)
+	}
+
+	// Verify both calls are tracked before hangup.
+	if !tr.InCall("5550001", "5550002") {
+		t.Fatal("expected A-B to be an active call before hangup")
+	}
+	if !tr.InCall("5550001", "5550003") {
+		t.Fatal("expected A-C to be an active call before hangup")
+	}
+
+	// A sends Hangup (hook-on gesture). The To field names C (the active add
+	// peer) as the client would set it; the server must also end A-B.
+	r.HandleMessage("5550001", &signaling.Message{
+		Type: signaling.TypeHangup,
+		To:   "5550003",
+	})
+
+	// Both calls must be gone from the in-memory tracker.
+	if tr.InCall("5550001", "5550002") {
+		t.Error("A-B call still active in tracker after hangup")
+	}
+	if tr.InCall("5550001", "5550003") {
+		t.Error("A-C call still active in tracker after hangup")
+	}
+
+	// Both B and C must receive TypeHangup.
+	bMsgs := drainConn(t, bConn)
+	cMsgs := drainConn(t, cConn)
+	if countType(bMsgs, signaling.TypeHangup) != 1 {
+		t.Fatalf("B: expected 1 TypeHangup, got %d", countType(bMsgs, signaling.TypeHangup))
+	}
+	if countType(cMsgs, signaling.TypeHangup) != 1 {
+		t.Fatalf("C: expected 1 TypeHangup, got %d", countType(cMsgs, signaling.TypeHangup))
+	}
+
+	// Both call rows must be ended in the DB.
+	var openCalls int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM calls WHERE (caller = '5550001' OR callee = '5550001')
+		 AND status IN ('initiated', 'ringing', 'connected')`,
+	).Scan(&openCalls); err != nil {
+		t.Fatalf("count open calls: %v", err)
+	}
+	if openCalls != 0 {
+		t.Fatalf("expected 0 open calls in DB after hangup, got %d", openCalls)
+	}
+}
+
+// TestDisconnectConferenceParticipant_Integration verifies that when a
+// conference member disconnects, the conference is ended in the DB, remaining
+// members receive ConferenceEnd, and IsBusy returns false for them.
+func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
+	d := openSignalingTestDB(t)
+	tr := calls.New(d)
+	hub := signaling.NewHub()
+	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
+
+	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	// Set up an active conference: A hosts, B and C are members.
+	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallInitiated A->B: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallAnswered A->B: %v", err)
+	}
+	callID := tr.CallIDFor("5550001", "5550002")
+	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallInitiated A->C: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallAnswered A->C: %v", err)
+	}
+	if _, err := tr.CreateConferencePersistent("5550001", callID, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Simulate A disconnecting by calling OnDisconnect directly.
+	r.OnDisconnect("5550001")
+
+	// Conference DB row must be ended with reason 'disconnect'.
+	var dbState, dbReason string
+	if err := d.DB.QueryRow(
+		`SELECT state, COALESCE(end_reason, '') FROM conferences LIMIT 1`,
+	).Scan(&dbState, &dbReason); err != nil {
+		t.Fatalf("select conference: %v", err)
+	}
+	if dbState != "ended" {
+		t.Errorf("expected conference state=ended, got %q", dbState)
+	}
+	if dbReason != "disconnect" {
+		t.Errorf("expected end_reason=disconnect, got %q", dbReason)
+	}
+
+	// B and C must receive TypeConferenceEnd.
+	bMsgs := drainConn(t, bConn)
+	cMsgs := drainConn(t, cConn)
+	if countType(bMsgs, signaling.TypeConferenceEnd) != 1 {
+		t.Fatalf("B: expected 1 ConferenceEnd, got %d", countType(bMsgs, signaling.TypeConferenceEnd))
+	}
+	if countType(cMsgs, signaling.TypeConferenceEnd) != 1 {
+		t.Fatalf("C: expected 1 ConferenceEnd, got %d", countType(cMsgs, signaling.TypeConferenceEnd))
+	}
+
+	// IsBusy must return false for B and C after cleanup.
+	if tr.Busy("5550002") {
+		t.Error("B should not be busy after conference disconnect")
+	}
+	if tr.Busy("5550003") {
+		t.Error("C should not be busy after conference disconnect")
+	}
+}
