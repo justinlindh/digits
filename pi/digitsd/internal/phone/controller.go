@@ -232,18 +232,19 @@ func (c *Controller) onHookOn() {
 		return
 	}
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
-
-	// Tear down mesh peers for any conference-related state before calling
-	// HangupCall. This ensures B (migrated into mesh) and any added C are
-	// closed immediately on hang-up rather than leaking until a ConferenceEnd
-	// arrives from the server.
-	if c.confID != "" ||
+	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
 		c.state == StateADD_CALLING ||
 		c.state == StateADD_PRIVATE ||
 		c.state == StateADD_INTERCEPT ||
-		c.state == StateCONFERENCE_MERGED {
+		c.state == StateCONFERENCE_MERGED
+
+	// Tear down mesh peers for any conference-related state before calling
+	// HangupCall. This ensures B (migrated into mesh) and any added C are
+	// closed immediately on hang-up rather than leaking until a ConferenceEnd
+	// arrives from the server.
+	if inConferenceFlow {
 		c.cb.TearDownAllMeshPeers()
 	}
 
@@ -256,7 +257,7 @@ func (c *Controller) onHookOn() {
 	c.cb.SendTone(ToneStop)
 	c.cb.SendRing(false)
 	c.cb.SendLED("OFF")
-	if wasConnectedOrCalling {
+	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.

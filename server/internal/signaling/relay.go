@@ -17,6 +17,7 @@ type CallTracker interface {
 	InCall(a, b string) bool
 	Busy(number string) bool
 	PeerOf(number string) string
+	AllPeersOf(number string) []string
 	Conferences() *calls.ConferenceTracker
 	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
 	CallIDFor(a, b string) int64
@@ -166,18 +167,24 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 		// correctly calls OnCallEnded and forwards Hangup to the peer. No special
 		// handling needed.
 	}
-	// Resolve peer if client didn't specify a To field
-	if msg.To == "" && r.Tracker != nil {
-		if peer := r.Tracker.PeerOf(from); peer != "" {
-			msg.To = peer
-		}
-	}
+	// Resolve the set of peers to notify. In pre-merge ADD_* flows the host
+	// may have multiple active 2-party calls (A-B held and A-C active); a
+	// single hook-on ends both. For the normal 2-party case this is one peer.
+	var peers []string
 	if r.Tracker != nil {
-		if err := r.Tracker.OnCallEnded(from, msg.To); err != nil {
-			slog.Error("failed to track call end", "err", err)
-		}
+		peers = r.Tracker.AllPeersOf(from)
 	}
-	r.forward(msg)
+	if len(peers) == 0 && msg.To != "" {
+		peers = []string{msg.To}
+	}
+	for _, peer := range peers {
+		if r.Tracker != nil {
+			if err := r.Tracker.OnCallEnded(from, peer); err != nil {
+				slog.Error("failed to track call end", "err", err)
+			}
+		}
+		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
+	}
 }
 
 func (r *Relay) handleSDP(from string, msg *Message) {
@@ -268,11 +275,19 @@ func (r *Relay) OnRegistered(number string) {
 	}
 }
 
-// OnDisconnect cleans up any active calls for a phone that disconnected.
+// OnDisconnect cleans up any active calls or conference membership for a
+// phone that disconnected.
 func (r *Relay) OnDisconnect(number string) {
-	if r.Tracker != nil {
-		r.Tracker.ClearByNumber(number)
+	if r.Tracker == nil {
+		return
 	}
+	// If the phone was in a conference, end the conference cleanly: persist
+	// the end, notify remaining members. This runs BEFORE ClearByNumber so
+	// the conference cleanup happens through the structured path.
+	if conf := r.Tracker.Conferences().ConferenceByPhone(number); conf != nil {
+		r.endConference(conf.ID, "disconnect")
+	}
+	r.Tracker.ClearByNumber(number)
 }
 
 func (r *Relay) forward(msg *Message) {

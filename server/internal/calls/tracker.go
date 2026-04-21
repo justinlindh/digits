@@ -178,6 +178,22 @@ func (t *Tracker) Busy(number string) bool {
 	return false
 }
 
+// AllPeersOf returns all remote parties that number has active 2-party calls
+// with. Empty if number has no active calls.
+func (t *Tracker) AllPeersOf(number string) []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var peers []string
+	for _, c := range t.active {
+		if c.Caller == number {
+			peers = append(peers, c.Callee)
+		} else if c.Callee == number {
+			peers = append(peers, c.Caller)
+		}
+	}
+	return peers
+}
+
 // PeerOf returns the other party in an active call involving number,
 // or "" if number is not in any active call.
 func (t *Tracker) PeerOf(number string) string {
@@ -366,6 +382,7 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 		return nil, false, err
 	}
 
+	var continuationCallID int64
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
 	if txErr := withTx(t.db.DB, func(tx *sql.Tx) error {
@@ -396,11 +413,11 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 			if b < a {
 				a, b = b, a
 			}
-			if _, err := tx.Exec(
+			if err := tx.QueryRow(
 				`INSERT INTO calls (caller, callee, status, originating_conference_id)
-				 VALUES ($1, $2, 'connected', $3)`,
+				 VALUES ($1, $2, 'connected', $3) RETURNING id`,
 				a, b, confID,
-			); err != nil {
+			).Scan(&continuationCallID); err != nil {
 				return fmt.Errorf("insert continuation call: %w", err)
 			}
 		}
@@ -418,7 +435,7 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 			a, b = b, a
 		}
 		t.mu.Lock()
-		t.active[callKey(a, b)] = &activeCall{Caller: a, Callee: b}
+		t.active[callKey(a, b)] = &activeCall{Caller: a, Callee: b, callID: continuationCallID}
 		t.mu.Unlock()
 	}
 

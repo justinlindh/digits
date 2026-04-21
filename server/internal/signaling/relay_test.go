@@ -87,6 +87,19 @@ func (m *mockTracker) PeerOf(number string) string {
 	return ""
 }
 
+func (m *mockTracker) AllPeersOf(number string) []string {
+	var peers []string
+	for k := range m.calls {
+		a, b, _ := strings.Cut(k, "→")
+		if a == number {
+			peers = append(peers, b)
+		} else if b == number {
+			peers = append(peers, a)
+		}
+	}
+	return peers
+}
+
 func (m *mockTracker) Conferences() *calls.ConferenceTracker {
 	return m.conferences
 }
