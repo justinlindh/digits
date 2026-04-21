@@ -1,6 +1,7 @@
 package calls
 
 import (
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -18,6 +19,29 @@ const (
 	roleHost  = "host"
 	roleAdded = "added"
 )
+
+// withTx runs fn inside a database transaction. Commits on success,
+// rolls back on error or panic.
+func withTx(d *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := d.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err := fn(tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	committed = true
+	return nil
+}
 
 type Call struct {
 	ID         int64
@@ -230,52 +254,40 @@ func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int6
 	if err != nil {
 		return nil, err
 	}
-	tx, err := t.db.DB.Begin()
-	if err != nil {
-		_, _ = t.conferences.EndConference(conf.ID, "db_error")
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
 
-	if _, err = tx.Exec(
-		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
-		conf.ID, conf.Host, conf.OriginatingCallID,
-	); err != nil {
-		_, _ = t.conferences.EndConference(conf.ID, "db_error")
-		return nil, fmt.Errorf("insert conference: %w", err)
-	}
-	for _, m := range conf.Members {
-		role := roleAdded
-		if m.Role == ConferenceRoleHost {
-			role = roleHost
-		}
-		if _, err = tx.Exec(
-			`INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, $2, $3)`,
-			conf.ID, m.Phone, role,
+	txErr := withTx(t.db.DB, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+			conf.ID, conf.Host, conf.OriginatingCallID,
 		); err != nil {
-			_, _ = t.conferences.EndConference(conf.ID, "db_error")
-			return nil, fmt.Errorf("insert member %s: %w", m.Phone, err)
+			return fmt.Errorf("insert conference: %w", err)
 		}
-	}
-	// Mark the originating 2-party call as ended; the merge reason is carried
-	// on the conferences row only (calls has no end_reason column).
-	if _, err = tx.Exec(
-		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE id = $1`,
-		conf.OriginatingCallID,
-	); err != nil {
+		for _, m := range conf.Members {
+			role := roleAdded
+			if m.Role == ConferenceRoleHost {
+				role = roleHost
+			}
+			if _, err := tx.Exec(
+				`INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, $2, $3)`,
+				conf.ID, m.Phone, role,
+			); err != nil {
+				return fmt.Errorf("insert member %s: %w", m.Phone, err)
+			}
+		}
+		// Mark the originating 2-party call as ended; the merge reason is carried
+		// on the conferences row only (calls has no end_reason column).
+		if _, err := tx.Exec(
+			`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE id = $1`,
+			conf.OriginatingCallID,
+		); err != nil {
+			return fmt.Errorf("mark call ended: %w", err)
+		}
+		return nil
+	})
+	if txErr != nil {
 		_, _ = t.conferences.EndConference(conf.ID, "db_error")
-		return nil, fmt.Errorf("mark call ended: %w", err)
+		return nil, txErr
 	}
-	if err = tx.Commit(); err != nil {
-		_, _ = t.conferences.EndConference(conf.ID, "db_error")
-		return nil, fmt.Errorf("commit: %w", err)
-	}
-	committed = true
 
 	// Remove conference members from the 2-party active map. Membership is
 	// now tracked exclusively through the conference tracker.
@@ -300,35 +312,22 @@ func (t *Tracker) EndConferencePersistent(confID uuid.UUID, reason string) error
 	if _, err := t.conferences.EndConference(confID, reason); err != nil {
 		return err
 	}
-	tx, err := t.db.DB.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
+	return withTx(t.db.DB, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
+			reason, confID,
+		); err != nil {
+			return fmt.Errorf("update conference: %w", err)
 		}
-	}()
-
-	if _, err = tx.Exec(
-		`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
-		reason, confID,
-	); err != nil {
-		return fmt.Errorf("update conference: %w", err)
-	}
-	if _, err = tx.Exec(
-		`UPDATE conference_members SET left_at = NOW(), left_reason = $1
-		 WHERE conference_id = $2 AND left_at IS NULL`,
-		reason, confID,
-	); err != nil {
-		return fmt.Errorf("update members: %w", err)
-	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	committed = true
-	return nil
+		if _, err := tx.Exec(
+			`UPDATE conference_members SET left_at = NOW(), left_reason = $1
+			 WHERE conference_id = $2 AND left_at IS NULL`,
+			reason, confID,
+		); err != nil {
+			return fmt.Errorf("update members: %w", err)
+		}
+		return nil
+	})
 }
 
 // DropMemberPersistent drops a single member from an active conference, ends the
@@ -349,58 +348,46 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
-	tx, err := t.db.DB.Begin()
-	if err != nil {
-		return nil, false, fmt.Errorf("begin tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
-	if _, err = tx.Exec(
-		`UPDATE conference_members SET left_at = NOW(), left_reason = $1
-		 WHERE conference_id = $2 AND phone = $3`,
-		reason, confID, phone,
-	); err != nil {
-		return nil, false, fmt.Errorf("update dropped member: %w", err)
-	}
-	if _, err = tx.Exec(
-		`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = 'member_left'
-		 WHERE id = $1`,
-		confID,
-	); err != nil {
-		return nil, false, fmt.Errorf("end conference: %w", err)
-	}
-	if _, err = tx.Exec(
-		`UPDATE conference_members SET left_at = NOW(), left_reason = 'conference_ended'
-		 WHERE conference_id = $1 AND left_at IS NULL`,
-		confID,
-	); err != nil {
-		return nil, false, fmt.Errorf("end remaining members: %w", err)
-	}
-
-	if len(remaining) == 2 {
-		// Sort for stable caller/callee ordering.
-		a, b := remaining[0], remaining[1]
-		if b < a {
-			a, b = b, a
-		}
-		if _, err = tx.Exec(
-			`INSERT INTO calls (caller, callee, status, originating_conference_id)
-			 VALUES ($1, $2, 'connected', $3)`,
-			a, b, confID,
+	if txErr := withTx(t.db.DB, func(tx *sql.Tx) error {
+		if _, err := tx.Exec(
+			`UPDATE conference_members SET left_at = NOW(), left_reason = $1
+			 WHERE conference_id = $2 AND phone = $3`,
+			reason, confID, phone,
 		); err != nil {
-			return nil, false, fmt.Errorf("insert continuation call: %w", err)
+			return fmt.Errorf("update dropped member: %w", err)
 		}
+		if _, err := tx.Exec(
+			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = 'member_left'
+			 WHERE id = $1`,
+			confID,
+		); err != nil {
+			return fmt.Errorf("end conference: %w", err)
+		}
+		if _, err := tx.Exec(
+			`UPDATE conference_members SET left_at = NOW(), left_reason = 'conference_ended'
+			 WHERE conference_id = $1 AND left_at IS NULL`,
+			confID,
+		); err != nil {
+			return fmt.Errorf("end remaining members: %w", err)
+		}
+		if len(remaining) == 2 {
+			// Sort for stable caller/callee ordering.
+			a, b := remaining[0], remaining[1]
+			if b < a {
+				a, b = b, a
+			}
+			if _, err := tx.Exec(
+				`INSERT INTO calls (caller, callee, status, originating_conference_id)
+				 VALUES ($1, $2, 'connected', $3)`,
+				a, b, confID,
+			); err != nil {
+				return fmt.Errorf("insert continuation call: %w", err)
+			}
+		}
+		return nil
+	}); txErr != nil {
+		return nil, false, txErr
 	}
-
-	if err = tx.Commit(); err != nil {
-		return nil, false, fmt.Errorf("commit: %w", err)
-	}
-	committed = true
 
 	// Register the surviving pair in the 2-party active map so Busy() and
 	// InCall() continue to work after the conference ends. The conference
