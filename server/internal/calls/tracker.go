@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
@@ -197,6 +198,100 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+// CreateConferencePersistent creates an in-memory conference and writes it to
+// the database atomically. The originating 2-party call is marked 'ended' in
+// the same transaction to reflect that it was merged into the conference.
+func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*Conference, error) {
+	conf, err := t.conferences.CreateConference(host, originatingCallID, addedMembers)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := t.db.DB.Begin()
+	if err != nil {
+		_, _ = t.conferences.EndConference(conf.ID, "db_error")
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		conf.ID, conf.Host, conf.OriginatingCallID,
+	); err != nil {
+		_, _ = t.conferences.EndConference(conf.ID, "db_error")
+		return nil, fmt.Errorf("insert conference: %w", err)
+	}
+	for _, m := range conf.Members {
+		role := "added"
+		if m.Role == ConferenceRoleHost {
+			role = "host"
+		}
+		if _, err = tx.Exec(
+			`INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, $2, $3)`,
+			conf.ID, m.Phone, role,
+		); err != nil {
+			_, _ = t.conferences.EndConference(conf.ID, "db_error")
+			return nil, fmt.Errorf("insert member %s: %w", m.Phone, err)
+		}
+	}
+	// Mark the originating 2-party call as ended; the merge reason is carried
+	// on the conferences row only (calls has no end_reason column).
+	if _, err = tx.Exec(
+		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP WHERE id = $1`,
+		conf.OriginatingCallID,
+	); err != nil {
+		_, _ = t.conferences.EndConference(conf.ID, "db_error")
+		return nil, fmt.Errorf("mark call ended: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		_, _ = t.conferences.EndConference(conf.ID, "db_error")
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+	committed = true
+	return conf, nil
+}
+
+// EndConferencePersistent ends the in-memory conference and writes the final
+// state to the database atomically.
+func (t *Tracker) EndConferencePersistent(confID uuid.UUID, reason string) error {
+	if _, err := t.conferences.EndConference(confID, reason); err != nil {
+		return err
+	}
+	tx, err := t.db.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(
+		`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
+		reason, confID,
+	); err != nil {
+		return fmt.Errorf("update conference: %w", err)
+	}
+	if _, err = tx.Exec(
+		`UPDATE conference_members SET left_at = NOW(), left_reason = $1
+		 WHERE conference_id = $2 AND left_at IS NULL`,
+		reason, confID,
+	); err != nil {
+		return fmt.Errorf("update members: %w", err)
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	committed = true
+	return nil
 }
 
 // RecentForPhones returns the most recent calls where either caller or callee
