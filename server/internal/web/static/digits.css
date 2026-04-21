@@ -937,51 +937,129 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   .cols--side { grid-template-columns: 2fr 1fr; }
 }
 
-/* --------- Signature: house + thread graphic for Connected Families --------- */
+/* --------- Signature: hub-and-spoke for Connected Families (N ≥ 1) --------- */
 
-.households {
-  display: grid;
+.hub {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-items: center;
-  gap: 12px;
-  padding: 24px 16px;
-  grid-template-columns: 1fr auto 1fr;
+  padding: 28px 16px 32px;
+  gap: 14px;
 }
-.households__house {
+.hub__spokes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 24px 32px;
+  width: 100%;
+  max-width: 760px;
+}
+.hub__spoke {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+  max-width: 160px;
+  position: relative;
+  padding-bottom: 18px;
+}
+.hub__spoke::after {
+  /* brass dashed thread going down from spoke to rail */
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1.5px;
+  height: 14px;
+  background: repeating-linear-gradient(to bottom, var(--brass) 0 3px, transparent 3px 6px);
+}
+.hub__house {
+  width: 52px;
+  height: 52px;
   color: var(--ink);
-  width: 80px;
-  height: 80px;
 }
-.households__label {
+.hub__label {
   font-family: var(--font-display);
   font-variation-settings: "opsz" 144, "SOFT" 40;
-  font-weight: 500;
-  font-size: 16px;
-  color: var(--ink);
   font-style: italic;
+  font-weight: 500;
+  font-size: 13.5px;
+  color: var(--ink);
   text-align: center;
+  line-height: 1.25;
+  max-width: 140px;
+  overflow-wrap: break-word;
 }
-.households__since {
-  font-size: 11px;
+.hub__since {
+  font-size: 10.5px;
   color: var(--ink-muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-top: 4px;
+  margin-top: 2px;
+  line-height: 1.2;
 }
-.households__thread {
-  width: 120px;
-  height: 30px;
-  color: var(--brass);
+.hub__rail {
+  width: calc(100% - 16px);
+  max-width: 600px;
+  height: 2px;
+  background:
+    radial-gradient(circle at 0 50%, var(--brass) 2px, transparent 2.5px),
+    radial-gradient(circle at 100% 50%, var(--brass) 2px, transparent 2.5px),
+    repeating-linear-gradient(to right, var(--brass) 0 4px, transparent 4px 9px);
+  background-repeat: no-repeat, no-repeat, repeat-x;
+  opacity: 0.85;
 }
-@media (max-width: 560px) {
-  .households {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-  }
-  .households__thread {
-    transform: rotate(90deg);
-    width: 60px;
-  }
+.hub__center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.hub__center::before {
+  /* brass dashed thread going up from rail to center house */
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1.5px;
+  height: 14px;
+  background: repeating-linear-gradient(to bottom, var(--brass) 0 3px, transparent 3px 6px);
+  margin-bottom: 2px;
+}
+.hub__center-house {
+  width: 84px;
+  height: 84px;
+  color: var(--ink);
+}
+.hub__center-name {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 144, "SOFT" 40;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 17px;
+  color: var(--ink);
+  text-align: center;
+}
+.hub__center-sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+@media (max-width: 480px) {
+  .hub { padding: 22px 12px 24px; }
+  .hub__spokes { gap: 18px 22px; }
+  .hub__house { width: 44px; height: 44px; }
+  .hub__center-house { width: 68px; height: 68px; }
+  .hub__label { font-size: 12.5px; }
+  .hub__rail { max-width: none; width: calc(100% - 8px); }
 }
 
 /* --------- Collapsible disclosure (phone-detail service panel) --------- */

@@ -166,10 +166,47 @@ func main() {
 					{Number: "6128801", Name: "Kitchen"},
 				},
 			},
+			{
+				ID:         "link-2",
+				Name:       "The O'Connell Family",
+				Status:     "connected",
+				AcceptedAt: ptrTime(time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)),
+				Lines: []line.Line{
+					{Number: "5031234", Name: "Grandma's Kitchen"},
+					{Number: "5031235", Name: "Den"},
+				},
+			},
+			{
+				ID:         "link-3",
+				Name:       "Uncle Mike",
+				Status:     "connected",
+				AcceptedAt: ptrTime(time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC)),
+				Lines: []line.Line{
+					{Number: "2015550", Name: "Workshop"},
+				},
+			},
 		}
 		data["PendingInvites"] = []linkRow{
 			{ID: "inv-1", InviteCode: "K7F-Q29", Status: "pending", CreatedAt: time.Now().Add(-2 * 24 * time.Hour)},
 		}
+		render(w, tLinks, "layout-v2.html", data)
+	})
+
+	mux.HandleFunc("/links/solo", func(w http.ResponseWriter, r *http.Request) {
+		data := baseCtx("links")
+		data["LinkedFamilies"] = []linkedFamily{
+			{
+				ID:         "link-1",
+				Name:       "The Patel Family",
+				Status:     "connected",
+				AcceptedAt: ptrTime(time.Date(2026, 3, 14, 0, 0, 0, 0, time.UTC)),
+				Lines: []line.Line{
+					{Number: "6128844", Name: "Ravi's Phone"},
+					{Number: "6128801", Name: "Kitchen"},
+				},
+			},
+		}
+		data["PendingInvites"] = []linkRow{}
 		render(w, tLinks, "layout-v2.html", data)
 	})
 

@@ -54,76 +54,91 @@
     </section>
   </div>
 
-  <!-- Connected families list -->
+  <!-- Connected families -->
   <section style="margin-bottom: 22px;">
-    <h2 class="panel__title" style="margin: 0 0 10px 2px; font-size: 13px;">Connected</h2>
+    <h2 class="panel__title" style="margin: 0 0 10px 2px; font-size: 13px;">Connected {{if .LinkedFamilies}}<span class="muted" style="font-weight: 400;">· {{len .LinkedFamilies}} household{{if ne (len .LinkedFamilies) 1}}s{{end}}</span>{{end}}</h2>
+
     {{if .LinkedFamilies}}
+    <!-- Hub-and-spoke hero graphic: linked families converge on your household -->
+    <div class="panel" style="margin-bottom: 14px;">
+      <div class="hub">
+        <div class="hub__spokes">
+          {{range .LinkedFamilies}}
+          <div class="hub__spoke">
+            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
+              <rect x="33" y="50" width="14" height="18" rx="1"/>
+              <rect x="18" y="44" width="10" height="10"/>
+              <rect x="52" y="44" width="10" height="10"/>
+              <path d="M58 12 L58 30" stroke-linecap="round"/>
+              <circle cx="58" cy="10" r="2" fill="currentColor"/>
+            </svg>
+            <div class="hub__label">{{.Name}}</div>
+            {{if .AcceptedAt}}<div class="hub__since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</div>{{end}}
+          </div>
+          {{end}}
+        </div>
+        <div class="hub__rail"></div>
+        <div class="hub__center">
+          <svg class="hub__center-house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
+            <rect x="33" y="50" width="14" height="18" rx="1"/>
+            <rect x="18" y="44" width="10" height="10"/>
+            <rect x="52" y="44" width="10" height="10"/>
+            <path d="M58 12 L58 30" stroke-linecap="round"/>
+            <circle cx="58" cy="10" r="2" fill="currentColor"/>
+          </svg>
+          <div class="hub__center-name">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
+          <div class="hub__center-sub">You</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compact per-family detail list -->
     <div class="stack-md">
       {{range .LinkedFamilies}}
       <div class="panel">
-        <!-- Signature: two households joined by brass thread -->
-        <div class="households">
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-            <svg class="households__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-              <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
-              <rect x="33" y="50" width="14" height="18" rx="1"/>
-              <rect x="18" y="44" width="10" height="10"/>
-              <rect x="52" y="44" width="10" height="10"/>
-              <path d="M58 12 L58 30" stroke-linecap="round"/>
-              <circle cx="58" cy="10" r="2" fill="currentColor"/>
-            </svg>
-            <div class="households__label italic">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
-          </div>
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-            <svg class="households__thread" viewBox="0 0 120 30" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M 2 15 Q 60 2 118 15" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3" stroke-linecap="round"/>
-              <circle cx="2" cy="15" r="3" fill="currentColor"/>
-              <circle cx="118" cy="15" r="3" fill="currentColor"/>
-            </svg>
+        <header class="panel__head">
+          <div class="hstack" style="gap: 10px;">
+            <h3 class="panel__title serif italic" style="font-size: 15px; font-weight: 500;">{{.Name}}</h3>
             <span class="chip chip--on" style="font-size: 10.5px;"><span class="chip__dot"></span>{{.Status}}</span>
-            {{if .AcceptedAt}}<span class="households__since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>{{end}}
           </div>
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-            <svg class="households__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-              <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
-              <rect x="33" y="50" width="14" height="18" rx="1"/>
-              <rect x="18" y="44" width="10" height="10"/>
-              <rect x="52" y="44" width="10" height="10"/>
-              <path d="M58 12 L58 30" stroke-linecap="round"/>
-              <circle cx="58" cy="10" r="2" fill="currentColor"/>
-            </svg>
-            <div class="households__label italic">{{.Name}}</div>
-          </div>
-        </div>
-
-        <!-- Their lines + disconnect -->
-        <div style="border-top: 1px solid var(--rule-soft);">
-          {{if .Lines}}
-          <ul style="list-style: none; margin: 0; padding: 0;">
-            {{range .Lines}}
-            <li class="hstack" style="padding: 8px 16px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;">
-              <span class="lines__dot lines__dot--on" style="width: 6px; height: 6px;"></span>
-              <span style="flex: 1;">{{.Name}}</span>
-              <span class="num muted">{{fmtPhone .Number}}</span>
-            </li>
-            {{end}}
-          </ul>
-          {{else}}
-          <div class="empty" style="padding: 20px 16px;">No lines registered yet.</div>
+          {{if .AcceptedAt}}<span class="panel__title-sub">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>{{end}}
+        </header>
+        {{if .Lines}}
+        <ul style="list-style: none; margin: 0; padding: 0;">
+          {{range .Lines}}
+          <li class="hstack" style="padding: 8px 16px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;">
+            <span class="lines__dot lines__dot--on" style="width: 6px; height: 6px;"></span>
+            <span style="flex: 1;">{{.Name}}</span>
+            <span class="num muted">{{fmtPhone .Number}}</span>
+          </li>
           {{end}}
-          <div style="padding: 12px 16px; display: flex; justify-content: flex-end;">
-            <form method="POST" action="/links/{{.ID}}/revoke"
-              onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
-              <button type="submit" class="btn btn--danger btn--sm">Disconnect</button>
-            </form>
-          </div>
+        </ul>
+        {{else}}
+        <div class="empty" style="padding: 18px 16px;">No lines registered yet.</div>
+        {{end}}
+        <div style="padding: 10px 14px; display: flex; justify-content: flex-end;">
+          <form method="POST" action="/links/{{.ID}}/revoke"
+            onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
+            <button type="submit" class="btn btn--danger btn--sm">Disconnect</button>
+          </form>
         </div>
       </div>
       {{end}}
     </div>
     {{else}}
     <div class="panel">
-      <div class="empty">No connected families yet.</div>
+      <div class="empty">
+        <svg class="empty__icon" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" viewBox="0 0 80 80">
+          <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
+          <rect x="33" y="50" width="14" height="18" rx="1"/>
+          <rect x="18" y="44" width="10" height="10"/>
+          <rect x="52" y="44" width="10" height="10"/>
+        </svg>
+        <div>No connected families yet.</div>
+        <div class="muted" style="font-size: 12px; margin-top: 4px;">Share an invite code to connect with another household.</div>
+      </div>
     </div>
     {{end}}
   </section>
