@@ -52,6 +52,10 @@ func TestConferencePersistence_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
+	// Simulate the add-leg: host dials the third party while B is on hold.
+	if _, err := tr.OnCallInitiated("5550010", "5550012"); err != nil {
+		t.Fatalf("OnCallInitiated add-leg: %v", err)
+	}
 
 	conf, err := tr.CreateConferencePersistent("5550010", callID, []string{"5550011", "5550012"})
 	if err != nil {
@@ -95,6 +99,8 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 
 	tr := calls.New(d)
 	callID, _ := tr.OnCallInitiated("5550100", "5550101")
+	// Simulate add-leg before merge.
+	_, _ = tr.OnCallInitiated("5550100", "5550102")
 	conf, _ := tr.CreateConferencePersistent("5550100", callID, []string{"5550101", "5550102"})
 
 	remaining, ended, err := tr.DropMemberPersistent(conf.ID, "5550101", "hangup")
@@ -155,6 +161,11 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	// Add a second active call so we can verify only conference-related entries get evicted.
 	if _, err := tr.OnCallInitiated("5550300", "5550301"); err != nil {
 		t.Fatalf("second OnCallInitiated: %v", err)
+	}
+
+	// Simulate add-leg: host dials 5550202 while 5550201 is on hold.
+	if _, err := tr.OnCallInitiated("5550200", "5550202"); err != nil {
+		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
 	_, err = tr.CreateConferencePersistent("5550200", callID, []string{"5550201", "5550202"})
