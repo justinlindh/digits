@@ -941,7 +941,7 @@ type callsData struct {
 	Version            string
 	CallHistoryEnabled bool
 	HouseholdName      string
-	Calls              []calls.Call
+	Entries            []calls.HistoryEntry
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
@@ -950,7 +950,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	var recent []calls.Call
+	var entries []calls.HistoryEntry
 
 	// Scope call log to the user's household lines
 	user := auth.UserFromContext(r.Context())
@@ -973,25 +973,32 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 				for i, l := range lines {
 					numbers[i] = l.Number
 				}
-				recentCalls, err := h.tracker.RecentForPhones(numbers, 100)
+				hist, err := h.tracker.RecentHistoryForPhones(numbers, 100)
 				if err != nil {
-					slog.Error("query recent calls failed", "err", err)
+					slog.Error("query recent history failed", "err", err)
 					http.Error(w, "internal server error", http.StatusInternalServerError)
 					return
 				}
-				recent = recentCalls
+				entries = hist
 			}
 		}
 	}
-	if recent == nil {
-		recent = []calls.Call{}
+	if entries == nil {
+		entries = []calls.HistoryEntry{}
 	}
 
-	for i := range recent {
-		recent[i].StartedAt = recent[i].StartedAt.In(loc)
+	// Localize timestamps for display.
+	for i := range entries {
+		if entries[i].Call != nil {
+			entries[i].Call.StartedAt = entries[i].Call.StartedAt.In(loc)
+		}
+		if entries[i].Conference != nil {
+			entries[i].Conference.CreatedAt = entries[i].Conference.CreatedAt.In(loc)
+		}
+		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Entries: entries})
 }
 
 // ---- Settings ----
