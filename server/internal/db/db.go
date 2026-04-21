@@ -218,6 +218,41 @@ BEGIN
 END $$;`,
 		// v11: per-line settings JSONB column (voice_style, etc.)
 		`ALTER TABLE lines ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
+		// v12: party line (three-way calling) support
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 12) THEN
+
+        CREATE TABLE conferences (
+            id UUID PRIMARY KEY,
+            host_phone TEXT NOT NULL,
+            originating_call_id INTEGER NOT NULL REFERENCES calls(id),
+            state TEXT NOT NULL CHECK (state IN ('active', 'ended')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ended_at TIMESTAMPTZ,
+            end_reason TEXT
+        );
+
+        CREATE INDEX conferences_host_phone_idx ON conferences(host_phone);
+        CREATE INDEX conferences_state_idx ON conferences(state);
+
+        CREATE TABLE conference_members (
+            conference_id UUID NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
+            phone TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('host', 'added')),
+            joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            left_at TIMESTAMPTZ,
+            left_reason TEXT,
+            PRIMARY KEY (conference_id, phone)
+        );
+
+        CREATE INDEX conference_members_phone_idx ON conference_members(phone);
+
+        ALTER TABLE calls ADD COLUMN originating_conference_id UUID REFERENCES conferences(id);
+
+        INSERT INTO schema_version (version) VALUES (12);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
