@@ -374,8 +374,25 @@ func (c *Controller) onDial(number string) {
 }
 
 // dialThirdParty initiates an outgoing call to C from ADD_DIALING state.
-// Mirrors the final steps of onDial for the 2-party flow.
+// Mirrors the final steps of onDial for the 2-party flow, including the same
+// self-call and contact-filter guards.
 func (c *Controller) dialThirdParty(number string) {
+	// Self-call guard: dialing own number is immediately rejected.
+	if c.ownNumber != "" && number == c.ownNumber {
+		slog.Info("phone: dialThirdParty self-call detected, intercept")
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneIntercept)
+		return
+	}
+
+	// Contact filter: reject if number is not in the allowed contact list.
+	if c.contactChecker != nil && !c.contactChecker.IsContact(number) {
+		slog.Info("phone: dialThirdParty number not in contacts, rejecting", "number", number)
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneIntercept)
+		return
+	}
+
 	c.addingPeer = number
 	c.digits = ""
 	c.state = StateADD_CALLING
