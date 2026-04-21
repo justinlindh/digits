@@ -44,14 +44,16 @@ func withTx(d *sql.DB, fn func(*sql.Tx) error) error {
 }
 
 type Call struct {
-	ID         int64
-	Caller     string
-	Callee     string
-	Status     string
-	StartedAt  time.Time
-	AnsweredAt *time.Time
-	EndedAt    *time.Time
-	DurationS  int
+	ID                      int64
+	Caller                  string
+	Callee                  string
+	Status                  string
+	StartedAt               time.Time
+	AnsweredAt              *time.Time
+	EndedAt                 *time.Time
+	DurationS               int
+	EndReason               *string
+	OriginatingConferenceID *uuid.UUID
 }
 
 type activeCall struct {
@@ -226,7 +228,8 @@ func (t *Tracker) Active() []activeCall {
 
 func (t *Tracker) Recent(limit int) ([]Call, error) {
 	rows, err := t.db.DB.Query(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
+		        end_reason, originating_conference_id
 		 FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
 	)
 	if err != nil {
@@ -238,7 +241,8 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	for rows.Next() {
 		var c Call
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS); err != nil {
+			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
+			&c.EndReason, &c.OriginatingConferenceID); err != nil {
 			return nil, err
 		}
 		calls = append(calls, c)
@@ -415,8 +419,10 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	// Build IN clause — reuse same $1..$N placeholders for both caller and callee
 	n := len(phoneNumbers)
 	ph := dbutil.Placeholders(n, 0)
-	query := fmt.Sprintf(`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
-		FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
+	query := fmt.Sprintf(
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
+		        end_reason, originating_conference_id
+		 FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
 	args := make([]interface{}, 0, n+1)
 	for _, num := range phoneNumbers {
@@ -434,7 +440,8 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	for rows.Next() {
 		var c Call
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS); err != nil {
+			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
+			&c.EndReason, &c.OriginatingConferenceID); err != nil {
 			return nil, err
 		}
 		calls = append(calls, c)

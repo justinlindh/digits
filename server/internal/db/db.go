@@ -226,6 +226,8 @@ END $$;`,
 		//      (only affects pre-release branches where v12 shipped with DEFAULT 'c')
 		`UPDATE users SET theme = 'intercom' WHERE theme = 'c'`,
 		`ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'intercom'`,
+		// v16: track why a call ended (e.g. 'merged_to_conference' vs a normal hangup)
+		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS end_reason TEXT`,
 		// v15: party line (three-way calling) support
 		`DO $$
 BEGIN
