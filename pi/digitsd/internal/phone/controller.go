@@ -185,19 +185,26 @@ func (c *Controller) HandleEvent(event string) {
 }
 
 // HandleSignal processes signaling messages (e.g. "ring", "answer", "hangup", "busy").
-func (c *Controller) HandleSignal(msgType string) {
+// The optional from parameter identifies which peer sent the signal; it is used
+// to route signals correctly during ADD_* states where two peers may be active.
+func (c *Controller) HandleSignal(msgType string, from ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	sender := ""
+	if len(from) > 0 {
+		sender = from[0]
+	}
 
 	switch msgType {
 	case "ring":
 		c.onSignalRing()
 	case "answer":
-		c.onSignalAnswer()
+		c.onSignalAnswer(sender)
 	case "hangup":
-		c.onSignalHangup()
+		c.onSignalHangup(sender)
 	case "busy":
-		c.onSignalBusy()
+		c.onSignalBusy(sender)
 	default:
 		slog.Warn("phone: unhandled signal", "type", msgType)
 	}
@@ -267,12 +274,23 @@ func (c *Controller) onKey(digit string) {
 			c.state = StateDIALTONE
 			// Service code detected — reset to dial tone without re-sending tone
 		}
+	case StateADD_DIALTONE:
+		// First key during add-dial: stop the second dial tone, start collecting.
+		c.state = StateADD_DIALING
+		c.digits = digit
+		c.cb.SendTone(ToneStop)
+	case StateADD_DIALING:
+		c.digits += digit
 	default:
 		slog.Debug("phone: key ignored", "digit", digit, "state", c.state)
 	}
 }
 
 func (c *Controller) onDial(number string) {
+	if c.state == StateADD_DIALING {
+		c.dialThirdParty(number)
+		return
+	}
 	if c.state != StateDIALING {
 		slog.Info("phone: DIAL event ignored", "state", c.state)
 		return
@@ -346,6 +364,25 @@ func (c *Controller) onDial(number string) {
 	}()
 }
 
+// dialThirdParty initiates an outgoing call to C from ADD_DIALING state.
+// Mirrors the final steps of onDial for the 2-party flow.
+func (c *Controller) dialThirdParty(number string) {
+	c.addingPeer = number
+	c.digits = ""
+	c.state = StateADD_CALLING
+	// Brief silence before ringback — mirrors the 2-party outgoing call setup delay.
+	go func() {
+		time.Sleep(800 * time.Millisecond)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.state != StateADD_CALLING {
+			return
+		}
+		c.cb.SendTone(ToneRingback)
+		c.cb.InitiateCall(number)
+	}()
+}
+
 // SetActivePeer records the phone number of the current call peer. Call this
 // before HandleSignal("ring") for incoming calls so the controller knows who
 // is calling when the handset is picked up.
@@ -365,33 +402,56 @@ func (c *Controller) onSignalRing() {
 	c.cb.SendLED("BLINK")
 }
 
-func (c *Controller) onSignalAnswer() {
-	if c.state != StateCALLING {
-		slog.Info("phone: answer signal ignored (not CALLING)", "state", c.state)
-		return
+func (c *Controller) onSignalAnswer(sender string) {
+	switch c.state {
+	case StateCALLING:
+		c.state = StateCONNECTED
+		c.cb.SendTone(ToneStop)
+		c.cb.NotifyCallConnected()
+	case StateADD_CALLING:
+		if sender != "" && sender != c.addingPeer {
+			slog.Info("phone: answer from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
+			return
+		}
+		c.state = StateADD_PRIVATE
+		c.cb.SendTone(ToneStop)
+	default:
+		slog.Info("phone: answer signal ignored", "state", c.state)
 	}
-	c.state = StateCONNECTED
-	c.cb.SendTone(ToneStop)
-	c.cb.NotifyCallConnected()
 }
 
-func (c *Controller) onSignalHangup() {
-	if c.state == StateRINGING {
+func (c *Controller) onSignalHangup(sender string) {
+	switch c.state {
+	case StateRINGING:
 		// Caller hung up before we answered - stop ringing and return to idle.
 		slog.Info("phone: caller hung up during ring - stopping ring")
 		c.state = StateIDLE
 		c.cb.SendRing(false)
 		c.cb.SendLED("OFF")
-		return
+	case StateCONNECTED:
+		c.state = StateREMOTE_HANGUP
+		c.cb.HangupCall()
+		c.cb.SendTone(ToneStopAll)
+		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
+	case StateADD_CALLING:
+		if sender != "" && sender != c.addingPeer {
+			slog.Info("phone: hangup from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
+			return
+		}
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneIntercept)
+		c.cb.TearDownPeer(c.addingPeer)
+	case StateADD_PRIVATE:
+		if sender != "" && sender != c.addingPeer {
+			slog.Info("phone: hangup from unexpected peer in ADD_PRIVATE", "from", sender, "adding", c.addingPeer)
+			return
+		}
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneIntercept)
+		c.cb.TearDownPeer(c.addingPeer)
+	default:
+		slog.Info("phone: hangup signal ignored", "state", c.state)
 	}
-	if c.state != StateCONNECTED {
-		slog.Info("phone: hangup signal ignored (not CONNECTED)", "state", c.state)
-		return
-	}
-	c.state = StateREMOTE_HANGUP
-	c.cb.HangupCall()
-	c.cb.SendTone(ToneStopAll)
-	c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
 }
 
 // onTimeoutDialTone handles the Pico's TIMEOUT:DIAL_TONE event: the user picked
@@ -449,14 +509,23 @@ func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason st
 	}()
 }
 
-func (c *Controller) onSignalBusy() {
-	if c.state != StateCALLING {
-		slog.Info("phone: busy signal ignored (not CALLING)", "state", c.state)
-		return
+func (c *Controller) onSignalBusy(sender string) {
+	switch c.state {
+	case StateCALLING:
+		slog.Info("phone: busy signal received -- call rejected")
+		c.cb.SendTone(ToneBusy)
+		// Stay in CALLING -- caller should hang up
+	case StateADD_CALLING:
+		if sender != "" && sender != c.addingPeer {
+			slog.Info("phone: busy from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
+			return
+		}
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneIntercept)
+		c.cb.TearDownPeer(c.addingPeer)
+	default:
+		slog.Info("phone: busy signal ignored", "state", c.state)
 	}
-	slog.Info("phone: busy signal received -- call rejected")
-	c.cb.SendTone(ToneBusy)
-	// Stay in CALLING -- caller should hang up
 }
 
 // onHookFlash dispatches the HOOK:FLASH event per 90s residential TWC semantics.

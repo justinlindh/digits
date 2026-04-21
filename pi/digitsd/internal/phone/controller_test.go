@@ -819,3 +819,112 @@ func TestController_FlashInAddInterceptAborts(t *testing.T) {
 		t.Fatalf("expected return to StateCONNECTED from ADD_INTERCEPT, got %v", c.State())
 	}
 }
+
+// calledNumber returns true if InitiateCall was invoked with the given number.
+func (m *mockCallbacks) calledNumber(number string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.calls {
+		if c == number {
+			return true
+		}
+	}
+	return false
+}
+
+func TestController_DialInAddDialtoneEntersAddDialing(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleEvent("KEY:5")
+
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+	// Second dial tone should stop on first digit.
+	if !mock.tonePlayed(ToneStop) {
+		t.Fatalf("expected dial tone stopped on first digit")
+	}
+}
+
+func TestController_DialInAddDialingReachesAddCallingOnDialEvent(t *testing.T) {
+	// The firmware collects digits and sends DIAL:<number> when done —
+	// matching the existing StateDIALING → StateCALLING pattern exactly.
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE → ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+
+	// Firmware sends DIAL event with complete number.
+	c.HandleEvent("DIAL:5550003")
+
+	if c.State() != StateADD_CALLING {
+		t.Fatalf("expected StateADD_CALLING after DIAL event, got %v", c.State())
+	}
+	// InitiateCall fires after brief async delay.
+	waitForCall(mock)
+	if !mock.calledNumber("5550003") {
+		t.Fatalf("expected call placed to 5550003, got calls: %v", mock.Calls())
+	}
+}
+
+func TestController_ThirdAnswersEntersAddPrivate(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("answer", "5550003")
+
+	if c.State() != StateADD_PRIVATE {
+		t.Fatalf("expected StateADD_PRIVATE, got %v", c.State())
+	}
+}
+
+func TestController_ThirdBusyGoesToAddIntercept(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("busy", "5550003")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT, got %v", c.State())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("expected INTERCEPT tone on busy")
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on busy")
+	}
+}
+
+func TestController_ThirdHangupDuringPrivateGoesToAddIntercept(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_PRIVATE)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("hangup", "5550003")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on hangup")
+	}
+}
+
+func TestController_ThirdRingTimeoutGoesToAddIntercept(t *testing.T) {
+	// Ring timeout not modeled locally; handled by server responding with TypeBusy.
+	t.Skip("ring timeout not modeled locally; handled by server responding with TypeBusy")
+}
