@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/turn"
 )
 
@@ -15,6 +16,9 @@ type CallTracker interface {
 	InCall(a, b string) bool
 	Busy(number string) bool
 	PeerOf(number string) string
+	Conferences() *calls.ConferenceTracker
+	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
+	CallIDFor(a, b string) int64
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -57,6 +61,8 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 		r.handleAnswer(from, msg)
 	case TypeHangup:
 		r.handleHangup(from, msg)
+	case TypeConferenceMerge:
+		r.handleConferenceMerge(from, msg)
 	case TypeDTMF:
 		r.forward(msg)
 	case TypeRequestICE:

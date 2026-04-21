@@ -4,17 +4,36 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/justinlindh/digits/server/internal/calls"
 )
 
 type mockTracker struct {
-	initiated []string
-	answered  []string
-	ended     []string
-	calls     map[string]bool // "a→b" keys for active calls
+	initiated   []string
+	answered    []string
+	ended       []string
+	calls       map[string]bool  // "a→b" keys for active calls
+	callIDs     map[string]int64 // "a→b" keys for call IDs
+	conferences *calls.ConferenceTracker
 }
 
 func newMockTracker() *mockTracker {
-	return &mockTracker{calls: make(map[string]bool)}
+	return &mockTracker{
+		calls:       make(map[string]bool),
+		callIDs:     make(map[string]int64),
+		conferences: calls.NewConferenceTracker(),
+	}
+}
+
+// onCallInitiated primes an active call between from and to (test helper).
+func (m *mockTracker) onCallInitiated(from, to string) {
+	m.calls[from+"→"+to] = true
+}
+
+// setCallID sets the call ID for an active call (test helper).
+func (m *mockTracker) setCallID(from, to string, id int64) {
+	m.callIDs[from+"→"+to] = id
+	m.callIDs[to+"→"+from] = id
 }
 
 func (m *mockTracker) OnCallInitiated(from, to string) (int64, error) {
@@ -65,6 +84,24 @@ func (m *mockTracker) PeerOf(number string) string {
 		}
 	}
 	return ""
+}
+
+func (m *mockTracker) Conferences() *calls.ConferenceTracker {
+	return m.conferences
+}
+
+func (m *mockTracker) CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error) {
+	return m.conferences.CreateConference(host, originatingCallID, addedMembers)
+}
+
+func (m *mockTracker) CallIDFor(a, b string) int64 {
+	if id, ok := m.callIDs[a+"→"+b]; ok {
+		return id
+	}
+	if id, ok := m.callIDs[b+"→"+a]; ok {
+		return id
+	}
+	return 0
 }
 
 type mockCallAuthorizer struct {

@@ -160,6 +160,20 @@ func (t *Tracker) PeerOf(number string) string {
 	return ""
 }
 
+// CallIDFor returns the database call ID for an active call between a and b,
+// or 0 if no such call exists.
+func (t *Tracker) CallIDFor(a, b string) int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if c, ok := t.active[callKey(a, b)]; ok {
+		return c.callID
+	}
+	if c, ok := t.active[callKey(b, a)]; ok {
+		return c.callID
+	}
+	return 0
+}
+
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
