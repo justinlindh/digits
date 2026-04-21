@@ -793,3 +793,29 @@ func TestController_NonHostFlashIsNoop(t *testing.T) {
 		t.Fatalf("non-host flash should be no-op; state changed to %v", c.State())
 	}
 }
+
+func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.MarkAsConferenceMember("conf-abc", true)
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("flash during CONFERENCE_MERGED should be no-op; state changed to %v", c.State())
+	}
+}
+
+func TestController_FlashInAddInterceptAborts(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_INTERCEPT)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleEvent("HOOK:FLASH")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected return to StateCONNECTED from ADD_INTERCEPT, got %v", c.State())
+	}
+}

@@ -76,9 +76,9 @@ type Controller struct {
 	done      chan struct{}
 	closeOnce sync.Once
 
-	// activePeer is the phone number of the current 2-party peer. Set when a
-	// call reaches CONNECTED (outgoing: onSignalAnswer; incoming: onHookOff
-	// while RINGING). Cleared on hang-up.
+	// activePeer is the phone number of the current 2-party remote peer, if any.
+	// Set on outgoing calls in onDial, and on incoming calls via SetActivePeer
+	// (called from main.go before HandleSignal("ring")). Cleared in onHookOn.
 	activePeer string
 
 	// Conference / call-waiting state.
@@ -235,6 +235,8 @@ func (c *Controller) onHookOn() {
 	c.activePeer = ""
 	c.heldPeer = ""
 	c.addingPeer = ""
+	c.confID = ""
+	c.isConfHost = false
 	c.cb.SendTone(ToneStop)
 	c.cb.SendRing(false)
 	c.cb.SendLED("OFF")
@@ -495,6 +497,7 @@ func (c *Controller) abortAdd() {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
 	c.addingPeer = ""
+	c.heldPeer = ""
 	c.state = StateCONNECTED
 }
 
@@ -507,6 +510,7 @@ func (c *Controller) abortAddCalling() {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
 	c.addingPeer = ""
+	c.heldPeer = ""
 	c.state = StateCONNECTED
 }
 
@@ -523,12 +527,6 @@ func (c *Controller) MarkAsConferenceMember(confID string, isHost bool) {
 	defer c.mu.Unlock()
 	c.confID = confID
 	c.isConfHost = isHost
-}
-
-// currentPeer returns the phone number of the active 2-party peer, or "" if none.
-// Must be called with c.mu held.
-func (c *Controller) currentPeer() string {
-	return c.activePeer
 }
 
 // --- test-only setters (internal: test only) ---
