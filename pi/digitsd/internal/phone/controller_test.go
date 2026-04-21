@@ -858,8 +858,8 @@ func TestController_NonHostFlashIsNoop(t *testing.T) {
 	c := NewController(mock, "5550002")
 	c.setStateForTest(StateCONNECTED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"},
-		{Phone: "5550002", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
 	})
 
 	c.HandleHookFlash("")
@@ -874,8 +874,8 @@ func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"},
-		{Phone: "5550002", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
 	})
 
 	c.HandleHookFlash("")
@@ -1011,9 +1011,9 @@ func TestController_ConferenceMemberMarksHostRole(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"},
-		{Phone: "5550002", Role: "added"},
-		{Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	if c.ConferenceID() != "conf-abc" {
@@ -1028,9 +1028,9 @@ func TestController_ConferenceMemberNonHost(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"},
-		{Phone: "5550002", Role: "added"},
-		{Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
 	})
 	if c.IsConferenceHost() {
 		t.Fatalf("5550002 should not be host")
@@ -1041,7 +1041,7 @@ func TestController_ConferenceConnectOpensPeer(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	c.HandleConferenceConnect("conf-abc", "5550003", true)
@@ -1058,7 +1058,7 @@ func TestController_ConferenceConnectWrongConfIDIgnored(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	c.HandleConferenceConnect("conf-wrong", "5550003", true)
@@ -1072,7 +1072,7 @@ func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	c.HandleConferenceLeave("conf-abc", "5550002", "hangup")
@@ -1090,7 +1090,7 @@ func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	c.HandleConferenceEnd("conf-abc", "host_hangup")
@@ -1111,9 +1111,9 @@ func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	c := NewController(mock, "5550001")
 	// Establish conference ID via HandleConferenceMember so the confID guard is satisfied.
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"},
-		{Phone: "5550002", Role: "added"},
-		{Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
 	})
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.setHeldPeerForTest("5550002")
@@ -1201,7 +1201,7 @@ func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
-		{Phone: "5550001", Role: "host"}, {Phone: "5550002", Role: "added"}, {Phone: "5550003", Role: "added"},
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
 
 	// Rejection for a different conf -- should be ignored.

@@ -11,6 +11,14 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
+// role strings written to the conference_members table. Must match the DB
+// CHECK constraint defined in db.go and the wire constants in
+// server/internal/signaling (signaling imports calls, so we can't share directly).
+const (
+	roleHost  = "host"
+	roleAdded = "added"
+)
+
 type Call struct {
 	ID         int64
 	Caller     string
@@ -242,9 +250,9 @@ func (t *Tracker) CreateConferencePersistent(host string, originatingCallID int6
 		return nil, fmt.Errorf("insert conference: %w", err)
 	}
 	for _, m := range conf.Members {
-		role := "added"
+		role := roleAdded
 		if m.Role == ConferenceRoleHost {
-			role = "host"
+			role = roleHost
 		}
 		if _, err = tx.Exec(
 			`INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, $2, $3)`,

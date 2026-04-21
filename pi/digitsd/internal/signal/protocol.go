@@ -63,6 +63,13 @@ const (
 	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
 )
 
+// Conference member role constants. These match the server-side DB CHECK
+// constraint and the wire representation in ConferenceMemberInfo.Role.
+const (
+	RoleHost  = "host"
+	RoleAdded = "added"
+)
+
 // ContactEntry represents a single contact in a sync payload.
 type ContactEntry struct {
 	Number string `json:"number"`

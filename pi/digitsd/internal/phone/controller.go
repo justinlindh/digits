@@ -600,7 +600,7 @@ func (c *Controller) HandleConferenceMember(confID string, members []signal.Conf
 	c.confID = confID
 	c.isConfHost = false
 	for _, m := range members {
-		if m.Phone == c.ownNumber && m.Role == "host" {
+		if m.Phone == c.ownNumber && m.Role == signal.RoleHost {
 			c.isConfHost = true
 			break
 		}

@@ -42,9 +42,9 @@ func (r *Relay) handleConferenceMerge(host string, msg *Message) {
 
 	// 4. Notify all three members of the membership snapshot.
 	members := []ConferenceMemberInfo{
-		{Phone: host, Role: "host"},
-		{Phone: held, Role: "added"},
-		{Phone: active, Role: "added"},
+		{Phone: host, Role: RoleHost},
+		{Phone: held, Role: RoleAdded},
+		{Phone: active, Role: RoleAdded},
 	}
 	memberMsg := &Message{Type: TypeConferenceMember, ConfID: conf.ID.String(), Members: members}
 	for _, m := range members {

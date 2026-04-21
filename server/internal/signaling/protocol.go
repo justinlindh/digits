@@ -37,6 +37,13 @@ const (
 	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
 )
 
+// Conference member role constants. These match the DB CHECK constraint in
+// db.go and the wire representation in ConferenceMemberInfo.Role.
+const (
+	RoleHost  = "host"
+	RoleAdded = "added"
+)
+
 // LineSettings is the wire-format copy of server/internal/line.Settings used
 // in signaling messages. Kept as a separate struct (not imported directly
 // from internal/line) so the dependency on internal/line is isolated to
