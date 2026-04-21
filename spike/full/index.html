@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digits webapp spike — all pages</title>
+<style>
+  :root { --ink:#2a1f18; --paper:#f5f1ea; --rule:#d6ccb8; --muted:#6a5d48; --brass:#c48b3a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { background:var(--paper); color:var(--ink); font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding:20px 14px 64px; max-width:1100px; margin:0 auto; }
+  h1 { margin:0 0 4px; font-size:22px; font-weight:600; }
+  .lede { color:var(--muted); font-size:14px; margin:0 0 22px; }
+  .lede a { color:var(--ink); }
+  nav.toc { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:28px; padding-bottom:16px; border-bottom:1px solid var(--rule); }
+  nav.toc a { display:inline-block; padding:4px 10px; border:1px solid var(--rule); border-radius:999px; text-decoration:none; color:var(--ink); font-size:12.5px; background:#faf5e8; }
+  nav.toc a:hover { background:var(--brass); color:#fff; border-color:var(--brass); }
+  section { border-top:1px solid var(--rule); padding-top:18px; margin-top:28px; scroll-margin-top:14px; }
+  section h2 { margin:0 0 4px; font-size:17px; font-weight:600; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .pair { display:grid; gap:10px; }
+  @media (min-width:760px) { .pair { grid-template-columns:2fr 1fr; align-items:start; } }
+  .shot { border:1px solid var(--rule); background:#fff; overflow:hidden; margin-bottom:8px; }
+  .shot img { width:100%; height:auto; display:block; }
+  .cap { font-size:11px; color:var(--muted); padding:5px 8px; background:#faf5e8; border-top:1px solid var(--rule); text-transform:uppercase; letter-spacing:0.08em; }
+  footer { margin-top:40px; padding-top:14px; border-top:1px solid var(--rule); color:var(--muted); font-size:13px; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; background:#ece4d1; padding:1px 5px; border-radius:3px; }
+  .branch { color:var(--brass); font-family:ui-monospace,monospace; font-size:12.5px; }
+</style>
+</head>
+<body>
+
+<h1>Digits — full spike screenshots</h1>
+<p class="lede">Every page migrated to direction C (warm paper / walnut / brass). Hand-rolled CSS, self-hosted fonts, top-rail chrome, inline cherry-red phone silhouette on login + phone-detail, chunky push-button keypad for pair-a-device, two-houses-brass-thread on connected families. Branch: <span class="branch">feat/webapp-redesign-spike</span>.</p>
+
+<nav class="toc">
+  <a href="#dashboard">Overview</a>
+  <a href="#phones">Lines</a>
+  <a href="#phone-detail">Line detail</a>
+  <a href="#links">Connected families</a>
+  <a href="#calls">Call history</a>
+  <a href="#settings">Settings</a>
+  <a href="#login">Login</a>
+  <a href="#onboard">Onboard</a>
+</nav>
+
+<section id="dashboard">
+  <h2>Overview / Dashboard</h2>
+  <p class="sub">Household name as page title. 4-cell stat strip (not KPI tiles). Dense line list at 44px rows.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/dashboard.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/dashboard.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="phones">
+  <h2>Lines — with signature keypad</h2>
+  <p class="sub">Push-button keypad modeled after the cherry-red 2500-series hardware. Clickable, with tactile press state. 6-digit pin slots fill as you tap.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/phones.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/phones.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="phone-detail">
+  <h2>Line detail — cherry-red phone silhouette hero</h2>
+  <p class="sub">Warm household-facing front on the left (silhouette, details, voice style), collapsed operator service panel on the right (hardware versions + update disclosures + device controls).</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/phone-detail.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/phone-detail.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="links">
+  <h2>Connected families — two-houses graphic</h2>
+  <p class="sub">Your household on one side, the linked family on the other, joined by a dashed brass thread with status + since-date between them.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/links.png" alt=""><div class="cap">Desktop 1280 — connected + pending invite</div></div>
+    <div class="shot"><img src="mobile/links.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+  <div class="pair" style="margin-top:10px;">
+    <div class="shot"><img src="desktop/links-created.png" alt=""><div class="cap">Desktop — just generated invite</div></div>
+    <div class="shot"><img src="mobile/links-created.png" alt=""><div class="cap">Mobile — just generated invite</div></div>
+  </div>
+</section>
+
+<section id="calls">
+  <h2>Call history</h2>
+  <p class="sub">Muted table, tabular-nums, chip per status. Auto-refreshing chip pulses brass.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/calls.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/calls.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="settings">
+  <h2>Settings</h2>
+  <p class="sub">Stacked panels. Toggle is brass-filled when on. Session panel uses rust-tinted border to mark the destructive action.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/settings.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/settings.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="login">
+  <h2>Login — cherry-red phone hero</h2>
+  <p class="sub">Standalone centered card. The phone silhouette is the first-impression anchor.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/login.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/login.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<section id="onboard">
+  <h2>Onboard — one-field ceremony</h2>
+  <p class="sub">Welcome to <em>Digits</em> with brass italic, single field for family name.</p>
+  <div class="pair">
+    <div class="shot"><img src="desktop/onboard.png" alt=""><div class="cap">Desktop 1280</div></div>
+    <div class="shot"><img src="mobile/onboard.png" alt=""><div class="cap">Mobile 375</div></div>
+  </div>
+</section>
+
+<footer>
+  Full branch: <a href="https://github.com/justinlindh/digits/tree/feat/webapp-redesign-spike" class="branch">feat/webapp-redesign-spike</a> · stylesheet at <code>server/internal/web/static/digits.css</code> · fonts under <code>server/internal/web/static/fonts/</code> · scratch preview server at <code>server/cmd/devpreview/</code>.
+</footer>
+
+</body>
+</html>
