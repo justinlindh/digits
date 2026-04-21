@@ -6,7 +6,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { isServerUp } from './helpers';
+import { isServerUp, navLink } from './helpers';
 
 test.beforeEach(async ({ page }, testInfo) => {
   const up = await isServerUp();
@@ -18,10 +18,10 @@ function isAuthOrOnboard(url: string) {
 }
 
 const PAGES = [
-  { path: '/',          titlePattern: /Dashboard|Digits/i },
+  { path: '/',          titlePattern: /Dashboard|Overview|Digits/i },
   { path: '/phones',    titlePattern: /Lines|Digits/i },
   { path: '/calls',     titlePattern: /Calls|Digits/i },
-  { path: '/links',     titlePattern: /Connected Families|Digits/i },
+  { path: '/links',     titlePattern: /Connected [Ff]amilies|Digits/i },
   { path: '/settings',  titlePattern: /Settings|Digits/i },
 ];
 
@@ -42,16 +42,19 @@ for (const { path, titlePattern } of PAGES) {
   });
 }
 
-test('sidebar nav links are all present and have correct hrefs', async ({ page }) => {
+test('page chrome exposes nav links for the core sections', async ({ page }) => {
   await page.goto('/');
   if (isAuthOrOnboard(page.url())) {
     test.skip(true, 'No authenticated session or needs onboarding');
     return;
   }
 
+  // Both layouts ship nav anchors to /, /phones, /links, /settings outside
+  // of <main>. The navLink helper scopes to the layout-specific containers
+  // (.rail__nav for v2, .dialup-channels + .dialup-toolbar for dialup).
   const expectedHrefs = ['/', '/phones', '/links', '/settings'];
   for (const href of expectedHrefs) {
-    const link = page.locator(`#sidebar a[href="${href}"]`);
+    const link = navLink(page, href).first();
     await expect(link).toBeAttached();
   }
 });
@@ -63,7 +66,9 @@ test('clicking Phones nav link goes to /phones', async ({ page }) => {
     return;
   }
 
-  await page.locator('#sidebar a[href="/phones"]').click();
+  // In the dialup layout the same page can expose two anchors to /phones
+  // (toolbar button + channel tile). Either works — take the first.
+  await navLink(page, '/phones').first().click();
   await expect(page).toHaveURL('/phones');
   await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 });
@@ -75,7 +80,7 @@ test('clicking Settings nav link goes to /settings', async ({ page }) => {
     return;
   }
 
-  await page.locator('#sidebar a[href="/settings"]').click();
+  await navLink(page, '/settings').first().click();
   await expect(page).toHaveURL('/settings');
   await expect(page.locator('h1', { hasText: 'Settings' })).toBeVisible();
 });
@@ -87,7 +92,7 @@ test('clicking Links nav link goes to /links', async ({ page }) => {
     return;
   }
 
-  await page.locator('#sidebar a[href="/links"]').click();
+  await navLink(page, '/links').first().click();
   await expect(page).toHaveURL('/links');
-  await expect(page.locator('h1', { hasText: 'Connected Families' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: /connected families/i })).toBeVisible();
 });

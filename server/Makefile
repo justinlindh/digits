@@ -9,7 +9,6 @@ LDFLAGS  = -X github.com/justinlindh/digits/server/internal/version.Version=$(VE
 TAILWINDCSS ?= $(shell command -v tailwindcss 2>/dev/null || echo /tmp/tailwindcss-cli-linux-x64)
 
 css:
-	$(TAILWINDCSS) --input internal/web/static/input.css --output internal/web/static/tailwind.css --content 'internal/web/templates/*.html' --minify
 	$(TAILWINDCSS) --input internal/admin/static/input.css --output internal/admin/static/tailwind.css --content 'internal/admin/templates/*.html' --minify
 
 build:

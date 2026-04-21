@@ -218,10 +218,18 @@ BEGIN
 END $$;`,
 		// v11: per-line settings JSONB column (voice_style, etc.)
 		`ALTER TABLE lines ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
-		// v12: party line (three-way calling) support
+		// v12: user-selectable webapp theme ('intercom' = default, 'dialup' = 1997 online-service alternate)
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'intercom'`,
+		// v13: rename earlier theme identifier 'aol' -> 'dialup' (only affects pre-release branches)
+		`UPDATE users SET theme = 'dialup' WHERE theme = 'aol'`,
+		// v14: rename earlier theme identifier 'c' -> 'intercom' and update the column default
+		//      (only affects pre-release branches where v12 shipped with DEFAULT 'c')
+		`UPDATE users SET theme = 'intercom' WHERE theme = 'c'`,
+		`ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'intercom'`,
+		// v15: party line (three-way calling) support
 		`DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 12) THEN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 15) THEN
 
         CREATE TABLE conferences (
             id UUID PRIMARY KEY,
@@ -250,7 +258,7 @@ BEGIN
 
         ALTER TABLE calls ADD COLUMN originating_conference_id UUID REFERENCES conferences(id);
 
-        INSERT INTO schema_version (version) VALUES (12);
+        INSERT INTO schema_version (version) VALUES (15);
     END IF;
 END $$;`,
 	}
