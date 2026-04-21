@@ -17,10 +17,11 @@ type SerialPort struct {
 	port   serial.Port
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
 
-	mu     sync.Mutex
-	respCh atomic.Pointer[chan string] // single-slot response channel for command/response pairs
-	stop   chan struct{}
-	logger *slog.Logger
+	mu           sync.Mutex
+	respCh       atomic.Pointer[chan string] // single-slot response channel for command/response pairs
+	flashEnabled atomic.Bool                 // whether HOOK:FLASH should be forwarded (requires firmware v1.5.0+)
+	stop         chan struct{}
+	logger       *slog.Logger
 }
 
 // OpenSerial opens the serial port and starts the RX reader goroutine.
@@ -110,6 +111,17 @@ func (sp *SerialPort) QueryVersion() (string, string, error) {
 	return parts[1], parts[2], nil
 }
 
+// SetFlashEnabled toggles whether HOOK:FLASH events emitted by the Pico should
+// be forwarded through to the controller. When disabled (pre-v1.5.0 firmware),
+// any stray HOOK:FLASH is dropped with a warning log.
+func (sp *SerialPort) SetFlashEnabled(v bool) {
+	sp.flashEnabled.Store(v)
+}
+
+func (sp *SerialPort) flashEnabledNow() bool {
+	return sp.flashEnabled.Load()
+}
+
 // Ring sends RING:START or RING:STOP to the Pico.
 func (sp *SerialPort) Ring(start bool) {
 	if start {
@@ -193,6 +205,10 @@ func (sp *SerialPort) readLoop() {
 				// Unsolicited Pico events (hook, keypad, boot) always go to
 				// the events channel, never to a pending command response.
 				if isUnsolicitedEvent(line) {
+					if line == "HOOK:FLASH" && !sp.flashEnabledNow() {
+						sp.logger.Warn("HOOK:FLASH received but firmware is not flash-capable; ignoring")
+						continue
+					}
 					select {
 					case sp.events <- line:
 					default:

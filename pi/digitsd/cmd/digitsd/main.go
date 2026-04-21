@@ -1117,6 +1117,12 @@ func main() {
 		}
 	}
 
+	// Gate HOOK:FLASH forwarding on firmware version.
+	// Only v1.5.0+ emits HOOK:FLASH; older firmware must not forward stray events.
+	hookFlash := hookFlashCapable(fwVersion)
+	slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
+	sp.SetFlashEnabled(hookFlash)
+
 	// Configure hook inversion for PCB carrier boards
 	if postOk && cfg.HookInverted {
 		const hookInvertCmd = "HOOK:INVERT:ON"
@@ -1607,6 +1613,9 @@ func main() {
 			if r.version != fwVersion || r.commit != fwCommit {
 				fwVersion, fwCommit = r.version, r.commit
 				slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
+				hookFlash = hookFlashCapable(fwVersion)
+				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
+				sp.SetFlashEnabled(hookFlash)
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
