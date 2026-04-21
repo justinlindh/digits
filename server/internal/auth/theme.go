@@ -4,11 +4,11 @@ package auth
 type Theme string
 
 const (
-	ThemeC      Theme = "c"      // Home intercom, direction C (default)
-	ThemeDialup Theme = "dialup" // Dial-up online service 1997
+	ThemeIntercom Theme = "intercom" // Home intercom (default)
+	ThemeDialup   Theme = "dialup"   // Dial-up online service 1997
 )
 
 // Valid reports whether t is a recognized theme identifier.
 func (t Theme) Valid() bool {
-	return t == ThemeC || t == ThemeDialup
+	return t == ThemeIntercom || t == ThemeDialup
 }

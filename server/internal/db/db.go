@@ -218,10 +218,14 @@ BEGIN
 END $$;`,
 		// v11: per-line settings JSONB column (voice_style, etc.)
 		`ALTER TABLE lines ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}'::jsonb`,
-		// v12: user-selectable webapp theme ('c' = home intercom default, 'dialup' = 1997 online-service alternate)
-		`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'c'`,
+		// v12: user-selectable webapp theme ('intercom' = default, 'dialup' = 1997 online-service alternate)
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT 'intercom'`,
 		// v13: rename earlier theme identifier 'aol' -> 'dialup' (only affects pre-release branches)
 		`UPDATE users SET theme = 'dialup' WHERE theme = 'aol'`,
+		// v14: rename earlier theme identifier 'c' -> 'intercom' and update the column default
+		//      (only affects pre-release branches where v12 shipped with DEFAULT 'c')
+		`UPDATE users SET theme = 'intercom' WHERE theme = 'c'`,
+		`ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'intercom'`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

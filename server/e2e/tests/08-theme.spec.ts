@@ -7,7 +7,7 @@
  *
  * These tests exercise the theme switcher on /settings and verify each
  * layout renders the core pages without error. Each test restores the
- * default theme ("c") in afterEach so it doesn't leak into later files.
+ * default theme ("intercom") in afterEach so it doesn't leak into later files.
  *
  * If no auth session is available (dev-session endpoint missing), the tests
  * skip -- same pattern as every other spec here.
@@ -32,7 +32,7 @@ test.describe('Theme switcher', () => {
     await setTheme(page.request, 'c').catch(() => undefined);
   });
 
-  test('default theme "c" renders layout-v2 (rail)', async ({ page }) => {
+  test('default theme "intercom" renders layout-v2 (rail)', async ({ page }) => {
     await setTheme(page.request, 'c').catch(() => undefined);
     await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
@@ -84,7 +84,7 @@ test.describe('Theme switcher', () => {
     // Flip back to c and confirm.
     await setTheme(page.request, 'c');
     await page.goto('/settings');
-    await expect(page.locator('input[type="radio"][name="theme"][value="c"]')).toBeChecked();
+    await expect(page.locator('input[type="radio"][name="theme"][value="intercom"]')).toBeChecked();
   });
 });
 

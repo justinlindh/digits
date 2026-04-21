@@ -121,12 +121,12 @@ test.describe('Settings', () => {
 
     await expect(page.locator('h2.panel__title', { hasText: /^Theme$/i })).toBeVisible();
 
-    // Two radios: value="c" (home intercom default) and value="dialup"
+    // Two radios: value="intercom" (home intercom default) and value="dialup"
     // (the 1997 online-service alternate).
-    await expect(page.locator('input[type="radio"][name="theme"][value="c"]')).toBeAttached();
+    await expect(page.locator('input[type="radio"][name="theme"][value="intercom"]')).toBeAttached();
     await expect(page.locator('input[type="radio"][name="theme"][value="dialup"]')).toBeAttached();
 
-    // Default user should have theme "c" selected. (We don't assert checked
+    // Default user should have theme "intercom" selected. (We don't assert checked
     // directly because earlier runs on the same DB may have flipped it.)
     const submit = page.locator('button[type="submit"]', { hasText: /save theme/i });
     await expect(submit).toBeVisible();

@@ -42,7 +42,7 @@ export async function navigateTo(page: Page, path: string): Promise<boolean> {
 }
 
 /**
- * Theme identifiers. Match auth.ThemeC / auth.ThemeDialup in the server.
+ * Theme identifiers. Match auth.ThemeIntercom / auth.ThemeDialup in the server.
  */
 export type Theme = 'c' | 'dialup';
 
