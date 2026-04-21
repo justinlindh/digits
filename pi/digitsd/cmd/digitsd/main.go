@@ -23,7 +23,6 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/assets"
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
-	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
@@ -72,7 +71,6 @@ type daemonCallbacks struct {
 	peerMgr          *owebrtc.PeerManager
 	mesh             *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
 	pipeline         *audio.Pipeline
-	decoder          *codec.Decoder
 	number           string
 	cfg              *config.Config
 	pendingOffer     string
@@ -169,6 +167,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 
 	// Handle remote audio track
 	webrtcCh := d.mixer.AddWebRTCSource(targetNumber)
+	localPM := d.peerMgr // capture for goroutine; each PM owns its decoder
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("caller-remote-track")
@@ -180,7 +179,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 					slog.Info("makeCall remote track ended", "frames", frameCount)
 					return
 				}
-				pcm, err := d.decoder.Decode(pkt.Payload)
+				pcm, err := localPM.Decode(pkt.Payload)
 				if err != nil {
 					continue
 				}
@@ -284,6 +283,7 @@ func (d *daemonCallbacks) AnswerCall() {
 
 	// Handle remote audio track — decode and feed into mixer.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
+	answerPM := d.peerMgr // capture for goroutine; each PM owns its decoder
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("answer-remote-track")
@@ -308,7 +308,7 @@ func (d *daemonCallbacks) AnswerCall() {
 					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
 					return
 				}
-				d.decoder.Decode(pkt.Payload) //nolint:errcheck
+				answerPM.Decode(pkt.Payload) //nolint:errcheck
 				discarded++
 			}
 
@@ -325,7 +325,7 @@ func (d *daemonCallbacks) AnswerCall() {
 					slog.Info("remote track ended during drain")
 					return
 				}
-				d.decoder.Decode(pkt.Payload) //nolint:errcheck
+				answerPM.Decode(pkt.Payload) //nolint:errcheck
 				drained++
 				lastSeq = pkt.SequenceNumber
 
@@ -343,7 +343,7 @@ func (d *daemonCallbacks) AnswerCall() {
 					return
 				}
 				recvTime := time.Now()
-				pcm, err := d.decoder.Decode(pkt.Payload)
+				pcm, err := answerPM.Decode(pkt.Payload)
 				if err != nil {
 					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
 					continue
@@ -525,7 +525,8 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 					slog.Info("conference: remote track ended", "phone", phone)
 					return
 				}
-				pcm, err := d.decoder.Decode(pkt.Payload)
+				// pm owns its own decoder — safe to call concurrently with other peers.
+				pcm, err := pm.Decode(pkt.Payload)
 				if err != nil {
 					continue
 				}
@@ -627,7 +628,8 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 					slog.Info("conference: remote track ended (responder)", "phone", peer)
 					return
 				}
-				pcm, err := d.decoder.Decode(pkt.Payload)
+				// pm owns its own decoder — safe to call concurrently with other peers.
+				pcm, err := pm.Decode(pkt.Payload)
 				if err != nil {
 					continue
 				}
@@ -1260,13 +1262,7 @@ func main() {
 	// 4. Create signaling client
 	sig := sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 
-	// 5. Create Opus decoder (encoder is now per-PeerManager; each peer creates its own)
-	dec, err := codec.NewDecoder(48000, 1)
-	if err != nil {
-		log.Fatalf("codec decoder: %v", err)
-	}
-
-	// 6. Create service code handler
+	// 5. Create service code handler
 	// doubleBeep plays two short DTMF star tones as an audible confirmation.
 	doubleBeep := func() {
 		mixer.PlayOnce("dtmf_star")
@@ -1449,7 +1445,6 @@ func main() {
 		sig:          sig,
 		mixer:        mixer,
 		serviceCodes: svcCodes,
-		decoder:      dec,
 		number:       effectiveNumber,
 		cfg:          cfg,
 		debugMode:    os.Getenv("DIGITS_DEBUG") == "1",

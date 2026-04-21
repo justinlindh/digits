@@ -12,13 +12,14 @@ import (
 )
 
 // PeerManager manages a single WebRTC peer connection with an audio track.
-// Each PeerManager owns its own Opus encoder so outbound audio can be muted
-// per-peer without affecting other peers.
+// Each PeerManager owns its own Opus encoder and decoder so concurrent peers
+// in a conference decode independently without sharing mutable buffer state.
 type PeerManager struct {
 	iceCfg        *ICEConfig
 	pc            *webrtc.PeerConnection
 	track         *webrtc.TrackLocalStaticSample
 	encoder       *codec.Encoder
+	decoder       *codec.Decoder
 	outboundMuted atomic.Bool
 	zeroBuf       []int16 // reusable zero slice for muted encodes; allocated once at construction
 
@@ -30,15 +31,22 @@ type PeerManager struct {
 
 // NewPeerManager creates a PeerManager with the given ICE configuration.
 // It creates a PeerConnection, adds a local Opus audio track, and wires up callbacks.
-// Each PeerManager owns its own Opus encoder for per-peer outbound muting.
+// Each PeerManager owns its own Opus encoder (for per-peer outbound muting) and
+// decoder (to eliminate shared-buffer races when multiple peers decode concurrently
+// in a conference).
 func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 	enc, err := codec.NewEncoder(48000, 1, 24000)
 	if err != nil {
 		return nil, fmt.Errorf("create opus encoder: %w", err)
 	}
+	dec, err := codec.NewDecoder(48000, 1)
+	if err != nil {
+		return nil, fmt.Errorf("create opus decoder: %w", err)
+	}
 	m := &PeerManager{
 		iceCfg:  iceCfg,
 		encoder: enc,
+		decoder: dec,
 		// zeroBuf is pre-allocated to match the 20ms Opus frame size at 48 kHz (mono).
 		// It is used in place of a fresh allocation on every muted frame.
 		zeroBuf: make([]int16, 960),
@@ -216,6 +224,15 @@ func (m *PeerManager) SendPCMFrame(frame []int16) {
 		Data:     encoded,
 		Duration: 20 * time.Millisecond,
 	})
+}
+
+// Decode decodes an Opus packet into PCM samples using this peer's dedicated
+// decoder. Each PeerManager has its own decoder so concurrent remote-track
+// goroutines in a conference don't race on a shared internal buffer.
+// Returns a slice of the decoder's internal buffer — valid until the next Decode
+// call on the same PeerManager. Caller must copy the data if it needs to retain it.
+func (m *PeerManager) Decode(pkt []byte) ([]int16, error) {
+	return m.decoder.Decode(pkt)
 }
 
 // LocalTrack returns the local audio track.
