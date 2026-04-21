@@ -1088,6 +1088,7 @@ func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
 func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
+	defer c.Close()
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
@@ -1095,14 +1096,37 @@ func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
 
 	c.HandleConferenceEnd("conf-abc", "host_hangup")
 
-	if c.State() != StateIDLE {
-		t.Fatalf("expected IDLE after conference end, got %v", c.State())
+	// When the user is still off-hook (CONFERENCE_MERGED) when the conference
+	// ends, the controller transitions to REMOTE_HANGUP and plays the permanent-
+	// signal treatment, matching 2-party remote-hangup semantics.
+	if c.State() != StateREMOTE_HANGUP {
+		t.Fatalf("expected REMOTE_HANGUP after conference end (user still off-hook), got %v", c.State())
 	}
 	if !mock.allPeersTorndown() {
 		t.Fatalf("expected TearDownAllMeshPeers")
 	}
 	if c.ConferenceID() != "" {
 		t.Fatalf("expected conf state cleared, got %q", c.ConferenceID())
+	}
+}
+
+func TestController_ConferenceEndFromIdleReturnsIdle(t *testing.T) {
+	// Verify that HandleConferenceEnd from a non-conference state (e.g. IDLE
+	// after the user already hung up) goes to IDLE, not REMOTE_HANGUP.
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	defer c.Close()
+	// Simulate: user hung up, then ConferenceEnd arrives late.
+	c.setStateForTest(StateIDLE)
+	// Bypass confID guard by setting it manually.
+	c.mu.Lock()
+	c.confID = "conf-abc"
+	c.mu.Unlock()
+
+	c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE when conference ends while already idle, got %v", c.State())
 	}
 }
 

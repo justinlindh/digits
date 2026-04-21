@@ -622,7 +622,10 @@ func (c *Controller) HandleConferenceLeave(confID, peer, reason string) {
 }
 
 // HandleConferenceEnd is invoked when the conference ends for any reason.
-// Tears down all mesh peers and returns to IDLE.
+// Tears down all mesh peers and transitions to REMOTE_HANGUP so the
+// permanent-signal treatment plays (reorder → howler → lockout) if the
+// handset is still off-hook. If the phone is already on-hook, the state
+// goes to IDLE directly (onHookOn will have already cleaned up).
 func (c *Controller) HandleConferenceEnd(confID, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -630,11 +633,29 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 		return
 	}
 	c.cb.TearDownAllMeshPeers()
+	c.cb.HangupCall()
+
 	c.confID = ""
 	c.isConfHost = false
 	c.heldPeer = ""
 	c.addingPeer = ""
-	c.state = StateIDLE
+
+	// If the user is still off-hook in any conference-related state, play the
+	// permanent-signal treatment (reorder → howler → lockout) just like a
+	// remote hangup on a 2-party call. If they are already on-hook (StateIDLE)
+	// or in a non-conference state, skip treatment and go straight to IDLE.
+	switch c.state {
+	case StateCONFERENCE_MERGED, StateADD_PRIVATE, StateADD_CALLING,
+		StateADD_DIALING, StateADD_DIALTONE, StateADD_INTERCEPT:
+		c.state = StateREMOTE_HANGUP
+		c.cb.SendTone(ToneStop)
+		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "conference_end_"+reason)
+	default:
+		c.state = StateIDLE
+		c.cb.SendTone(ToneStop)
+		c.cb.SendRing(false)
+		c.cb.SendLED("OFF")
+	}
 }
 
 // HandleConferenceRejected is invoked when the server rejects our merge request.
