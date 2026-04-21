@@ -158,6 +158,13 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 			r.dropMemberFromConference(conf.ID, from, "hangup")
 			return
 		}
+		// NOTE: If a member previously left and a 2-party continuation call was
+		// created (dropMemberFromConference ended the conference and left the
+		// remaining two in the active-call map), the conference is already gone
+		// by the time the host hangs up. ConferenceByPhone(from) returns nil here,
+		// so we fall through to the normal 2-party hangup path below, which
+		// correctly calls OnCallEnded and forwards Hangup to the peer. No special
+		// handling needed.
 	}
 	// Resolve peer if client didn't specify a To field
 	if msg.To == "" && r.Tracker != nil {

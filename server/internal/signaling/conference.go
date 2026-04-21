@@ -78,11 +78,13 @@ func (r *Relay) sendRejection(host, confID, reason string) {
 
 func (r *Relay) endConference(confID uuid.UUID, reason string) {
 	conf := r.Tracker.Conferences().Snapshot(confID)
+	if conf == nil {
+		// Already ended (e.g. a second caller triggers endConference after a
+		// member drop already ended it). No members to notify.
+		return
+	}
 	if err := r.Tracker.EndConferencePersistent(confID, reason); err != nil {
 		slog.Error("end conference persist", "err", err)
-	}
-	if conf == nil {
-		return
 	}
 	for p := range conf.Members {
 		_ = r.Hub.SendTo(p, &Message{
@@ -95,12 +97,14 @@ func (r *Relay) endConference(confID uuid.UUID, reason string) {
 
 func (r *Relay) dropMemberFromConference(confID uuid.UUID, phone, reason string) {
 	conf := r.Tracker.Conferences().Snapshot(confID)
+	if conf == nil {
+		// Already ended; nothing to drop or notify.
+		return
+	}
 	var others []string
-	if conf != nil {
-		for p := range conf.Members {
-			if p != phone {
-				others = append(others, p)
-			}
+	for p := range conf.Members {
+		if p != phone {
+			others = append(others, p)
 		}
 	}
 	remaining, _, err := r.Tracker.DropMemberPersistent(confID, phone, reason)
