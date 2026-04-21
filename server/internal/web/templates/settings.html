@@ -1,79 +1,72 @@
-{{template "layout.html" .}}
+{{template "layout-v2.html" .}}
 
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
-<div class="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
-  <h1 class="text-xl font-semibold text-[#e6edf3]">Settings</h1>
+<div class="page" style="max-width: 720px;">
+
+  <header class="page__head">
+    <h1 class="page__title">Settings</h1>
+  </header>
 
   {{if .Saved}}
-  <div class="p-3 rounded-md bg-[#238636]/10 border border-[#238636]/20 text-[#3fb950] text-sm">
-    Settings saved.
-  </div>
+  <div class="banner banner--ok">Settings saved.</div>
   {{end}}
 
   <!-- Account -->
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Account</h2>
-    </div>
-    <div class="divide-y divide-[#21262d]">
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Account</h2>
+    </header>
+    <dl class="kv" style="margin: 0;">
       {{if .User}}
-      <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Email</span>
-        <span class="text-sm text-[#e6edf3]">{{.User.Email}}</span>
+      <div class="kv__row">
+        <dt class="kv__key">Email</dt>
+        <dd class="kv__val">{{.User.Email}}</dd>
       </div>
-      <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Name</span>
-        <span class="text-sm text-[#e6edf3]">{{if .User.Name}}{{.User.Name}}{{else}}—{{end}}</span>
+      <div class="kv__row">
+        <dt class="kv__key">Name</dt>
+        <dd class="kv__val">{{if .User.Name}}{{.User.Name}}{{else}}<span class="kv__val--muted">Not set</span>{{end}}</dd>
       </div>
       {{if .User.GoogleID}}
-      <div class="px-4 py-3 flex items-center justify-between">
-        <span class="text-sm text-[#8b949e]">Google</span>
-        <span class="text-sm text-[#3fb950]">Connected</span>
+      <div class="kv__row">
+        <dt class="kv__key">Google</dt>
+        <dd class="kv__val"><span class="chip chip--on"><span class="chip__dot"></span>Connected</span></dd>
       </div>
       {{end}}
       {{end}}
-    </div>
-  </div>
+    </dl>
+  </section>
 
-  <!-- Household -->
   {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Household</h2>
-    </div>
-    <div class="p-4">
-      <form action="/settings/household" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
-        <div class="flex-1">
-          <label for="household-name" class="block text-xs text-[#8b949e] mb-1">Family name</label>
-          <input type="text" id="household-name" name="name" value="{{.Household.Name}}" required
-            class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+  <!-- Household -->
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Household</h2>
+      <span class="panel__title-sub">Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/household" method="POST" class="hstack hstack--wrap" style="gap: 10px;">
+        <div class="field" style="flex: 1; min-width: 200px; margin: 0;">
+          <label for="household-name" class="field__label">Family name</label>
+          <input type="text" id="household-name" name="name" value="{{.Household.Name}}" required class="field__input">
         </div>
-        <button type="submit"
-          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
-          Save
-        </button>
+        <button type="submit" class="btn btn--primary" style="align-self: end;">Save</button>
       </form>
-      <p class="text-xs text-[#8b949e] mt-2">
-        Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}
-      </p>
     </div>
-  </div>
-  {{end}}
+  </section>
 
   <!-- Timezone -->
-  {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Timezone</h2>
-    </div>
-    <div class="p-4">
-      <form action="/settings/timezone" method="POST" class="flex flex-col md:flex-row gap-3 md:items-end">
-        <div class="flex-1">
-          <label for="timezone" class="block text-xs text-[#8b949e] mb-1">Display timezone</label>
-          <select id="timezone" name="timezone"
-            class="w-full px-3 py-2 rounded-md bg-[#0d1117] border border-[#21262d] text-[#e6edf3] text-sm focus:outline-none focus:ring-2 focus:ring-[#58a6ff]/50 focus:border-[#58a6ff]">
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Timezone</h2>
+      <span class="panel__title-sub">Used for displayed timestamps.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/timezone" method="POST" class="hstack hstack--wrap" style="gap: 10px;">
+        <div class="field" style="flex: 1; min-width: 220px; margin: 0;">
+          <label for="timezone" class="field__label">Display timezone</label>
+          <select id="timezone" name="timezone" class="field__select">
             <optgroup label="Americas">
               <option value="Pacific/Honolulu">Honolulu (HST)</option>
               <option value="America/Anchorage">Anchorage (AKST)</option>
@@ -127,84 +120,70 @@
             </optgroup>
           </select>
         </div>
-        <button type="submit"
-          class="w-full md:w-auto px-4 py-2 rounded-md bg-[#238636] text-white text-sm font-medium hover:bg-[#2ea043] transition-colors">
-          Save
-        </button>
+        <button type="submit" class="btn btn--primary" style="align-self: end;">Save</button>
       </form>
-      <p class="text-xs text-[#8b949e] mt-2">
-        Timestamps in the app will display in this timezone.
-      </p>
     </div>
     <script>
     (function() {
       var select = document.getElementById('timezone');
       var current = '{{.Household.Timezone}}';
-      // Set current value
       for (var i = 0; i < select.options.length; i++) {
-        if (select.options[i].value === current) {
-          select.selectedIndex = i;
-          break;
-        }
+        if (select.options[i].value === current) { select.selectedIndex = i; break; }
       }
-      // Auto-detect: if still UTC, suggest browser timezone
       if (current === 'UTC') {
         try {
           var detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
           for (var j = 0; j < select.options.length; j++) {
-            if (select.options[j].value === detected) {
-              select.selectedIndex = j;
-              break;
-            }
+            if (select.options[j].value === detected) { select.selectedIndex = j; break; }
           }
         } catch(e) {}
       }
     })();
     </script>
-  </div>
-  {{end}}
+  </section>
 
   <!-- Privacy -->
-  {{if .Household}}
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Privacy</h2>
-    </div>
-    <div class="p-4">
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Privacy</h2>
+    </header>
+    <div class="panel__body">
       <form action="/settings/call-history" method="POST">
-        <div class="flex items-start gap-3">
-          <div class="flex-1">
-            <div class="flex items-center gap-2">
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()"
-                  class="sr-only peer">
-                <div class="w-9 h-5 bg-[#21262d] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#238636]"></div>
-              </label>
-              <span class="text-sm text-[#e6edf3]">Call History</span>
-            </div>
-            <p class="text-xs text-[#8b949e] mt-1.5 leading-relaxed">
+        <div class="hstack" style="align-items: flex-start; gap: 14px;">
+          <label class="toggle" style="margin-top: 2px;">
+            <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()">
+            <span class="toggle__track"></span>
+          </label>
+          <div>
+            <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Call history</div>
+            <p class="muted" style="font-size: 13px; margin: 0; line-height: 1.55;">
               Records phone numbers, timestamps, and duration only. No audio is ever recorded. Worth noting: Digits is built on the idea that kids deserve the same phone privacy you had growing up. Call logs are light, but they're still surveillance. Most families don't need this.
             </p>
           </div>
         </div>
       </form>
     </div>
-  </div>
+  </section>
   {{end}}
 
   <!-- Session -->
-  <div class="bg-[#161b22] border border-[#da3633]/20 rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d]">
-      <h2 class="text-sm font-medium text-[#da3633]">Session</h2>
-    </div>
-    <div class="p-4">
+  <section class="panel" style="border-color: rgba(160,90,58,0.25);">
+    <header class="panel__head">
+      <h2 class="panel__title" style="color: var(--rust);">Session</h2>
+    </header>
+    <div class="panel__body">
       <form action="/auth/logout" method="POST">
-        <button type="submit"
-          class="w-full md:w-auto px-4 py-2 rounded-md border border-[#da3633]/30 text-[#da3633] text-sm hover:bg-[#da3633]/10 transition-colors">
-          Sign out
-        </button>
+        <button type="submit" class="btn btn--danger">Sign out</button>
       </form>
     </div>
-  </div>
+  </section>
+
+  {{if .Version}}
+  <footer class="page__foot">
+    <span>Server</span>
+    <span class="num">{{.Version}}</span>
+  </footer>
+  {{end}}
+
 </div>
 {{end}}

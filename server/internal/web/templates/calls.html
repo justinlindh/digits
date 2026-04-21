@@ -1,112 +1,106 @@
-{{template "layout.html" .}}
+{{template "layout-v2.html" .}}
 
-{{define "title"}}Call History{{end}}
+{{define "title"}}Call history{{end}}
 
 {{define "content"}}
-<div class="p-4 md:p-8">
-  <div class="mb-6 md:mb-8 flex items-start justify-between">
-    <div>
-      <h1 class="text-xl font-semibold text-[#e6edf3]">Call History</h1>
-      <p class="text-sm text-[#8b949e] mt-1">Recent calls</p>
-    </div>
-    <div class="text-xs text-[#8b949e] flex items-center gap-1.5 mt-1">
-      <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#3fb950] animate-pulse"></span>
-      Auto-refreshing
-    </div>
-  </div>
+<div class="page">
 
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg"
-       hx-get="/calls"
-       hx-trigger="every 10s"
-       hx-swap="outerHTML"
-       hx-select=".bg-\\[\\#161b22\\]">
-    <div class="px-4 py-3 border-b border-[#21262d] flex items-center justify-between">
-      <h2 class="text-sm font-medium text-[#e6edf3]">All Calls</h2>
-      <span class="text-xs text-[#8b949e]">{{len .Calls}} records</span>
+  <header class="page__head">
+    <h1 class="page__title">Call history</h1>
+    <div class="muted hstack" style="font-size: 12px;">
+      <span class="chip chip--live"><span class="chip__dot"></span>Auto-refreshing</span>
     </div>
+  </header>
+
+  <section class="panel"
+           hx-get="/calls"
+           hx-trigger="every 10s"
+           hx-swap="outerHTML"
+           hx-select=".panel">
+    <header class="panel__head">
+      <h2 class="panel__title">All calls</h2>
+      <span class="panel__title-sub">{{len .Calls}} records</span>
+    </header>
 
     {{if .Calls}}
-    {{/* Desktop table */}}
-    <div class="hidden md:block">
-      <table class="w-full">
+    <!-- Desktop table -->
+    <div class="hide-sm">
+      <table class="t">
         <thead>
-          <tr class="border-b border-[#21262d]">
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Caller</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Callee</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Status</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Started</th>
-            <th class="text-left px-4 py-2.5 text-xs font-medium text-[#8b949e] uppercase tracking-wider">Duration</th>
+          <tr>
+            <th>Caller</th>
+            <th>Callee</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Duration</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-[#21262d]">
+        <tbody>
           {{range .Calls}}
-          <tr class="hover:bg-[#1c2128]">
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Caller}}</td>
-            <td class="px-4 py-3 font-mono text-sm text-[#e6edf3]">{{fmtPhone .Callee}}</td>
-            <td class="px-4 py-3">
+          <tr>
+            <td class="num" style="color: var(--ink);">{{fmtPhone .Caller}}</td>
+            <td class="num" style="color: var(--ink);">{{fmtPhone .Callee}}</td>
+            <td>
               {{if eq .Status "ended"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">ended</span>
+                <span class="chip"><span class="chip__dot"></span>ended</span>
               {{else if eq .Status "connected"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">connected</span>
+                <span class="chip chip--on"><span class="chip__dot"></span>connected</span>
               {{else if eq .Status "missed"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#3a1a1a] text-[#f85149]">missed</span>
+                <span class="chip chip--err"><span class="chip__dot"></span>missed</span>
               {{else if eq .Status "initiated"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2a3a] text-[#58a6ff]">initiated</span>
+                <span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
               {{else if eq .Status "ringing"}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2a2a1c] text-[#d29922]">ringing</span>
+                <span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
               {{else}}
-                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">{{.Status}}</span>
+                <span class="chip"><span class="chip__dot"></span>{{.Status}}</span>
               {{end}}
             </td>
-            <td class="px-4 py-3 text-xs text-[#8b949e] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</td>
-            <td class="px-4 py-3 text-xs text-[#8b949e] font-mono">
-              {{if gt .DurationS 0}}{{.DurationS}}s{{else}}—{{end}}
-            </td>
+            <td class="num">{{.StartedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="num">{{if gt .DurationS 0}}{{.DurationS}}s{{else}}—{{end}}</td>
           </tr>
           {{end}}
         </tbody>
       </table>
     </div>
 
-    {{/* Mobile card list */}}
-    <div class="md:hidden divide-y divide-[#21262d]">
+    <!-- Mobile card list -->
+    <ul class="show-sm" style="list-style: none; margin: 0; padding: 0;">
       {{range .Calls}}
-      <div class="px-4 py-3">
-        <div class="flex items-center gap-1.5 font-mono text-sm text-[#e6edf3] mb-1.5">
+      <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);">
+        <div class="hstack num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
           <span>{{fmtPhone .Caller}}</span>
-          <span class="text-[#484f58]">→</span>
+          <span class="muted">→</span>
           <span>{{fmtPhone .Callee}}</span>
         </div>
-        <div class="flex items-center gap-2">
-          {{if eq .Status "ended"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">ended</span>
-          {{else if eq .Status "connected"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1a3a25] text-[#3fb950]">connected</span>
-          {{else if eq .Status "missed"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#3a1a1a] text-[#f85149]">missed</span>
-          {{else if eq .Status "initiated"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2a3a] text-[#58a6ff]">initiated</span>
-          {{else if eq .Status "ringing"}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#2a2a1c] text-[#d29922]">ringing</span>
-          {{else}}
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-[#1c2128] text-[#8b949e]">{{.Status}}</span>
-          {{end}}
-          <span class="text-xs text-[#8b949e] font-mono">{{.StartedAt.Format "Jan 2 15:04:05"}}</span>
-          {{if gt .DurationS 0}}
-          <span class="text-xs text-[#8b949e] font-mono">· {{.DurationS}}s</span>
-          {{end}}
+        <div class="hstack hstack--wrap" style="font-size: 12px;">
+          {{if eq .Status "ended"}}<span class="chip"><span class="chip__dot"></span>ended</span>
+          {{else if eq .Status "connected"}}<span class="chip chip--on"><span class="chip__dot"></span>connected</span>
+          {{else if eq .Status "missed"}}<span class="chip chip--err"><span class="chip__dot"></span>missed</span>
+          {{else if eq .Status "initiated"}}<span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
+          {{else if eq .Status "ringing"}}<span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
+          {{else}}<span class="chip"><span class="chip__dot"></span>{{.Status}}</span>{{end}}
+          <span class="num muted">{{.StartedAt.Format "Jan 2 15:04:05"}}</span>
+          {{if gt .DurationS 0}}<span class="num muted">· {{.DurationS}}s</span>{{end}}
         </div>
-      </div>
+      </li>
       {{end}}
-    </div>
+    </ul>
     {{else}}
-    <div class="px-4 py-12 text-center">
-      <svg class="w-8 h-8 text-[#484f58] mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div class="empty">
+      <svg class="empty__icon" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
       </svg>
-      <p class="text-sm text-[#8b949e]">No calls yet</p>
+      <div>No calls yet.</div>
     </div>
     {{end}}
-  </div>
+  </section>
+
+  {{if .Version}}
+  <footer class="page__foot">
+    <span>Server</span>
+    <span class="num">{{.Version}}</span>
+  </footer>
+  {{end}}
+
 </div>
 {{end}}

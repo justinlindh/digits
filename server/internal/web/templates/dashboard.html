@@ -1,73 +1,64 @@
-{{template "layout.html" .}}
+{{template "layout-v2.html" .}}
 
-{{define "title"}}Dashboard{{end}}
+{{define "title"}}Overview{{end}}
 
 {{define "content"}}
-<div class="p-4 md:p-8">
-  <div class="mb-6 md:mb-8">
-    {{if .HouseholdName}}
-    <h1 class="text-xl font-semibold text-[#e6edf3]">{{.HouseholdName}}</h1>
-    <p class="text-sm text-[#8b949e] mt-1">Household dashboard</p>
-    {{else}}
-    <h1 class="text-xl font-semibold text-[#e6edf3]">Network Overview</h1>
-    <p class="text-sm text-[#8b949e] mt-1">Real-time signaling server status</p>
-    {{end}}
-  </div>
+<div class="page">
 
-  <!-- Stats grid -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Lines</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e6edf3]">{{.Stats.TotalLines}}</p>
-    </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Online</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#3fb950]">{{.Stats.OnlineLines}}</p>
-    </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Active Calls</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#58a6ff]">{{.Stats.ActiveCalls}}</p>
-    </div>
-    <div class="bg-[#161b22] border border-[#21262d] rounded-lg p-4">
-      <p class="text-[10px] md:text-xs text-[#8b949e] uppercase tracking-wider mb-1">Calls Today</p>
-      <p class="text-2xl md:text-3xl font-mono font-bold text-[#e6edf3]">{{.Stats.CallsToday}}</p>
-    </div>
-  </div>
+  <header class="page__head">
+    <h1 class="page__title">{{if .HouseholdName}}{{.HouseholdName}}{{else}}Overview{{end}}</h1>
+  </header>
 
-  <!-- Lines -->
-  <div class="bg-[#161b22] border border-[#21262d] rounded-lg">
-    <div class="px-4 py-3 border-b border-[#21262d] flex items-center justify-between">
-      <h2 class="text-sm font-medium text-[#e6edf3]">Lines</h2>
-      <a href="/phones" class="text-xs text-[#58a6ff] hover:text-[#79c0ff] transition-colors">Manage</a>
+  <section class="strip" aria-label="Summary">
+    <div class="strip__cell">
+      <div class="strip__label">Lines</div>
+      <div class="strip__value">{{.Stats.TotalLines}}</div>
     </div>
+    <div class="strip__cell {{if eq .Stats.OnlineLines 0}}strip__cell--muted{{end}}">
+      <div class="strip__label">Online</div>
+      <div class="strip__value {{if gt .Stats.OnlineLines 0}}strip__value--forest{{end}}">{{.Stats.OnlineLines}}</div>
+    </div>
+    <div class="strip__cell {{if eq .Stats.ActiveCalls 0}}strip__cell--muted{{end}}">
+      <div class="strip__label">Active calls</div>
+      <div class="strip__value {{if gt .Stats.ActiveCalls 0}}strip__value--brass{{end}}">{{.Stats.ActiveCalls}}</div>
+    </div>
+    <div class="strip__cell {{if eq .Stats.CallsToday 0}}strip__cell--muted{{end}}">
+      <div class="strip__label">Calls today</div>
+      <div class="strip__value">{{.Stats.CallsToday}}</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Lines</h2>
+      <a class="panel__action" href="/phones">Manage →</a>
+    </header>
     {{if .Lines}}
-    <div class="divide-y divide-[#21262d]">
+    <ul class="lines">
       {{range .Lines}}
-      <a href="/phones/{{.Line.Number}}" class="flex items-center justify-between px-4 py-3 hover:bg-[#21262d]/50 transition-colors">
-        <div class="flex items-center gap-3">
-          {{if .Online}}
-          <span class="w-2 h-2 rounded-full bg-[#3fb950] shrink-0"></span>
-          {{else}}
-          <span class="w-2 h-2 rounded-full bg-[#484f58] shrink-0"></span>
-          {{end}}
-          <div>
-            <p class="text-sm font-medium text-[#e6edf3]">{{.Line.Name}}</p>
-            <p class="text-xs font-mono text-[#8b949e]">{{fmtPhone .Line.Number}}</p>
-          </div>
-        </div>
-        {{if .Online}}
-        <span class="text-xs text-[#3fb950]">online</span>
-        {{else}}
-        <span class="text-xs text-[#484f58]">offline</span>
-        {{end}}
-      </a>
+      <li>
+        <a class="lines__row" href="/phones/{{.Line.Number}}">
+          <span class="lines__dot{{if .Online}} lines__dot--on{{end}}" aria-hidden="true"></span>
+          <span class="lines__name">{{.Line.Name}}</span>
+          <span class="lines__num">{{fmtPhone .Line.Number}}</span>
+          <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
+        </a>
+      </li>
       {{end}}
-    </div>
+    </ul>
     {{else}}
-    <div class="px-4 py-8 text-center text-[#8b949e] text-sm">
-      No lines registered. <a href="/phones" class="text-[#58a6ff] hover:underline">Add one</a>.
+    <div style="padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13px;">
+      No lines registered. <a href="/phones" style="color: var(--brass);">Pair one</a>.
     </div>
     {{end}}
-  </div>
+  </section>
+
+  {{if .Version}}
+  <footer class="page__foot">
+    <span>Server</span>
+    <span class="num">{{.Version}}</span>
+  </footer>
+  {{end}}
+
 </div>
 {{end}}

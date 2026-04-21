@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{block "title" .}}Digits{{end}} — Digits</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preload" href="/static/fonts/fraunces-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/inter-tight-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/digits.css">
+<script src="/static/htmx.min.js"></script>
+</head>
+<body>
+
+{{if ne .Page "login"}}
+<header class="rail">
+  <div class="rail__brand">
+    <span class="rail__mark">Digits</span>
+    {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
+  </div>
+
+  <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>
+
+  <nav class="rail__nav" aria-label="Primary">
+    <a href="/"         class="{{if eq .Page "dashboard"}}is-active{{end}}">Overview</a>
+    <a href="/phones"   class="{{if eq .Page "phones"}}is-active{{end}}">Lines</a>
+    <a href="/links"    class="{{if eq .Page "links"}}is-active{{end}}">Families</a>
+    {{if .CallHistoryEnabled}}
+    <a href="/calls"    class="{{if eq .Page "calls"}}is-active{{end}}">Calls</a>
+    {{end}}
+    <a href="/settings" class="{{if eq .Page "settings"}}is-active{{end}}">Settings</a>
+  </nav>
+
+  <div class="rail__session">
+    <form method="POST" action="/auth/logout"><button type="submit">Sign out</button></form>
+  </div>
+</header>
+{{end}}
+
+<main>
+  {{block "content" .}}{{end}}
+</main>
+
+</body>
+</html>

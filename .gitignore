@@ -54,3 +54,7 @@ hardware/pcb/*/gerber/
 __pycache__/
 *.pyc
 *.png
+
+# scratch devpreview binary (source at server/cmd/devpreview/ is tracked)
+/server/devpreview
+/server/cmd/devpreview/devpreview

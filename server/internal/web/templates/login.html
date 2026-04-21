@@ -1,38 +1,67 @@
-{{define "title"}}Sign In{{end}}
+{{template "layout-v2.html" .}}
+
+{{define "title"}}Sign in{{end}}
 
 {{define "content"}}
-<div class="flex items-center justify-center min-h-screen bg-surface">
-  <div class="w-full max-w-sm mx-auto p-4 md:p-8">
-    <!-- Logo -->
-    <div class="text-center mb-8">
-      <div class="flex items-center justify-center gap-2 mb-2">
-        <svg class="w-8 h-8 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-        </svg>
-        <span class="text-xl font-semibold text-[#e6edf3] tracking-wide">DIGITS</span>
-      </div>
-      <p class="text-sm text-muted">Sign in to manage your phones</p>
-    </div>
+<div class="auth">
+  <div class="auth__frame">
 
-    <!-- Error message -->
-    {{if .Error}}
-    <div class="mb-4 p-3 rounded-md bg-red/10 border border-red/20 text-red text-sm">
-      {{.Error}}
-    </div>
-    {{end}}
+    <!-- Cherry-red desk phone silhouette (modeled after the actual Digits hardware) -->
+    <svg class="auth__phone" viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Digits phone">
+      <defs>
+        <linearGradient id="bodyGrad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#c8362f"/>
+          <stop offset="1" stop-color="#8e2319"/>
+        </linearGradient>
+        <linearGradient id="handsetGrad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#d94035"/>
+          <stop offset="1" stop-color="#a12b20"/>
+        </linearGradient>
+      </defs>
+      <!-- base body -->
+      <rect x="42" y="46" width="80" height="80" rx="8" fill="url(#bodyGrad)" stroke="#6b1a12" stroke-width="1"/>
+      <!-- raised keypad platform -->
+      <rect x="50" y="60" width="64" height="54" rx="5" fill="#a62a21" stroke="#6b1a12" stroke-width="0.8"/>
+      <!-- 12 buttons (3x4) -->
+      <g fill="#efe5d1" stroke="#8a7a5d" stroke-width="0.4">
+        <rect x="55"  y="64" width="14" height="10" rx="2"/>
+        <rect x="73"  y="64" width="14" height="10" rx="2"/>
+        <rect x="91"  y="64" width="14" height="10" rx="2"/>
+        <rect x="55"  y="76" width="14" height="10" rx="2"/>
+        <rect x="73"  y="76" width="14" height="10" rx="2"/>
+        <rect x="91"  y="76" width="14" height="10" rx="2"/>
+        <rect x="55"  y="88" width="14" height="10" rx="2"/>
+        <rect x="73"  y="88" width="14" height="10" rx="2"/>
+        <rect x="91"  y="88" width="14" height="10" rx="2"/>
+        <rect x="55"  y="100" width="14" height="10" rx="2"/>
+        <rect x="73"  y="100" width="14" height="10" rx="2"/>
+        <rect x="91"  y="100" width="14" height="10" rx="2"/>
+      </g>
+      <!-- handset cradle cutouts + hookswitch button -->
+      <rect x="42" y="40" width="20" height="10" rx="3" fill="#6b1a12"/>
+      <rect x="102" y="40" width="20" height="10" rx="3" fill="#6b1a12"/>
+      <circle cx="82" cy="44" r="3" fill="#c48b3a" stroke="#8b6424" stroke-width="0.5"/>
+      <!-- handset on top -->
+      <rect x="28" y="26" width="108" height="22" rx="11" fill="url(#handsetGrad)" stroke="#6b1a12" stroke-width="1"/>
+      <!-- handset earpiece/mouthpiece caps -->
+      <rect x="28" y="28" width="24" height="18" rx="9" fill="#8e2319"/>
+      <rect x="112" y="28" width="24" height="18" rx="9" fill="#8e2319"/>
+      <!-- handset highlight -->
+      <rect x="40" y="29" width="84" height="2" rx="1" fill="rgba(255,255,255,0.28)"/>
+      <!-- coiled cord hint -->
+      <path d="M 26 50 Q 18 60 22 72 Q 30 82 18 92 Q 8 102 20 116" stroke="#6b1a12" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </svg>
 
-    <!-- Success message -->
-    {{if .Success}}
-    <div class="mb-4 p-3 rounded-md bg-green/10 border border-green/20 text-green text-sm">
-      {{.Success}}
-    </div>
-    {{end}}
+    <h1 class="auth__mark">Digits</h1>
+    <p class="auth__tagline">Sign in to manage your phones</p>
 
-    <div class="bg-panel rounded-lg border border-border p-6 space-y-5">
-      <!-- Google OAuth -->
+    <div class="auth__card">
+      {{if .Error}}<div class="banner banner--err" style="margin-top: 0;">{{.Error}}</div>{{end}}
+      {{if .Success}}<div class="banner banner--ok" style="margin-top: 0;">{{.Success}}</div>{{end}}
+
       {{if .GoogleEnabled}}
-      <a href="/auth/google/login" class="flex items-center justify-center gap-3 w-full px-4 py-2.5 rounded-md bg-white text-gray-800 font-medium text-sm hover:bg-gray-100 transition-colors">
-        <svg class="w-5 h-5" viewBox="0 0 24 24">
+      <a href="/auth/google/login" class="btn" style="width: 100%; padding: 10px 14px; border-radius: var(--radius-1);">
+        <svg style="width: 18px; height: 18px; margin-right: 8px;" viewBox="0 0 24 24">
           <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
           <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
           <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -40,35 +69,24 @@
         </svg>
         Continue with Google
       </a>
-
-      <div class="flex items-center gap-3">
-        <div class="flex-1 h-px bg-border"></div>
-        <span class="text-xs text-muted uppercase">or</span>
-        <div class="flex-1 h-px bg-border"></div>
-      </div>
+      <div class="auth__divider">or</div>
+      {{else}}
+      <p class="muted" style="font-size: 12.5px; text-align: center; margin: 0 0 16px;">Google sign-in is not configured. Use a magic link below.</p>
       {{end}}
 
-      {{if not .GoogleEnabled}}
-      <p class="text-xs text-muted text-center">Google sign-in is not configured. Use a magic link below.</p>
-      {{end}}
-
-      <!-- Magic link form -->
-      <form action="/auth/magic" method="POST" class="space-y-4">
-        <div>
-          <label for="email" class="block text-sm font-medium text-muted mb-1.5">Email address</label>
-          <input type="email" id="email" name="email" required
-            class="w-full px-3 py-2 rounded-md bg-surface border border-border text-[#e6edf3] text-sm placeholder-muted/50 focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
-            placeholder="you@example.com">
+      <form action="/auth/magic" method="POST" class="stack-md">
+        <div class="field" style="margin: 0;">
+          <label for="email" class="field__label">Email address</label>
+          <input type="email" id="email" name="email" required placeholder="you@example.com" class="field__input">
         </div>
-        <button type="submit"
-          class="w-full px-4 py-2.5 rounded-md bg-accent text-white font-medium text-sm hover:bg-accent/90 transition-colors">
-          Send sign-in link
-        </button>
+        <button type="submit" class="btn btn--brass" style="width: 100%;">Send sign-in link</button>
       </form>
     </div>
+
     {{if .Version}}
-    <p class="text-center mt-4 text-[10px] text-[#484f58] font-mono">{{.Version}}</p>
+    <p class="num muted" style="text-align: center; font-size: 10.5px; margin: 14px 0 0;">{{.Version}}</p>
     {{end}}
+
   </div>
 </div>
 {{end}}
