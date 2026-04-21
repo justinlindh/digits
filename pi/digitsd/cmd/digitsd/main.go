@@ -469,10 +469,29 @@ func (d *daemonCallbacks) MigrateToMesh(phone string) {
 
 	// Transfer ownership: the existing PeerManager moves into the mesh under
 	// the peer's phone key. d.peerMgr is cleared so future 2-party calls
-	// create a fresh PeerConnection.
+	// create a fresh PeerConnection. d.callPeer is intentionally kept so that
+	// HOOK:FLASH dispatch and other paths can still identify the B party after
+	// migration (the peer is now in the mesh, but its identity doesn't change).
 	d.mesh.Adopt(phone, d.peerMgr)
 	d.peerMgr = nil
-	d.callPeer = ""
+}
+
+// currentPeer returns the phone number of the currently relevant 2-party remote
+// peer for HOOK:FLASH dispatch and similar operations. After MigrateToMesh, the
+// original B party lives in the mesh but callPeer still holds its number. If the
+// daemon is mid-ADD_CALLING and d.callPeer now refers to C (because InitiateCall
+// overwrote it), we fall back to the single mesh peer when exactly one mesh peer
+// is active. Must NOT be called with d.mu held.
+func (d *daemonCallbacks) currentPeer() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.mesh != nil {
+		peers := d.mesh.ActivePeers()
+		if len(peers) == 1 {
+			return peers[0] // post-migration 2-party: B is in the mesh
+		}
+	}
+	return d.callPeer
 }
 
 func (d *daemonCallbacks) TearDownPeer(phone string) {
@@ -1666,10 +1685,7 @@ func main() {
 			// HOOK:FLASH is special: it requires the active peer from the daemon
 			// layer, so it bypasses HandleEvent and goes through HandleHookFlash.
 			if event == "HOOK:FLASH" {
-				cb.mu.Lock()
-				activePeer := cb.callPeer
-				cb.mu.Unlock()
-				ctrl.HandleHookFlash(activePeer)
+				ctrl.HandleHookFlash(cb.currentPeer())
 			} else {
 				ctrl.HandleEvent(event)
 			}
