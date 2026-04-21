@@ -34,6 +34,16 @@ The schematic uses a local label `MIC_GND` for the handset mic return instead of
 
 **Fix for future revisions:** Use the global `GND` power symbol for the RJ9 mic-return pin, not a local label. (V2 already does this correctly -- verified: J8 pin 4 in V2 is on the global GND net, and the whole MIC_GND-style local-label pattern does not recur.)
 
+### 4. J7 bell screw terminal is electrically disconnected
+
+J7 (Phoenix 5mm screw terminal intended for the bell coil) has no trace to anything else on the board. Its two pins drop onto single-pin nets `BELL_1` and `BELL_2` that no other component touches. Verified against both the schematic netlist and the PCB trace list. Plugging a bell coil into J7 produces no signal at all.
+
+**Root cause:** V1's ringer design uses an external L298N driver module that plugs into J5 (IN1 / IN2 logic from Pico GP11/GP15, plus +12V / GND). The L298N's OUT1 / OUT2 terminals drive a step-up transformer whose secondary drives the bell coil (`docs/build/wiring.md` has the canonical wire-color map: yellow pair = primary to L298N, red pair = secondary to bell). J7 was placed on the board as a convenience onboard terminal for the bell coil but was never wired to any driver output, and there is no onboard H-bridge to drive it. The footprint is vestigial.
+
+**Workaround for fabricated boards:** Do not use J7. Wire the transformer primary (yellow) directly to the L298N OUT1 / OUT2, and the transformer secondary (red) directly to the bell coil, matching the off-PCB layout in `docs/build/wiring.md`.
+
+**Fix for V1.1:** Remove J7 from the schematic and PCB, or relabel it as a passive wire-junction block if keeping a physical terminal for the bell wires is useful. V2 addresses the root cause properly by bringing the H-bridge onboard (DRV8871) and routing its outputs to J7.
+
 ---
 
 ## Recommended Improvements
