@@ -329,9 +329,6 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   background-repeat: no-repeat;
   background-position: center;
 }
-.dialup-ic-mail {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='8' width='26' height='18' fill='%23ffcc00' stroke='%23000' stroke-width='1.5'/><path d='M3 8 L16 20 L29 8' fill='none' stroke='%23000' stroke-width='1.5'/><rect x='22' y='4' width='6' height='8' fill='%23c41e16' stroke='%23000' stroke-width='1'/></svg>");
-}
 .dialup-ic-phone {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='6' y='10' width='20' height='18' fill='%23c41e16' stroke='%23000' stroke-width='1.5' rx='2'/><rect x='9' y='14' width='14' height='10' fill='%23a01a12'/><g fill='%23efe5d1' stroke='%23000' stroke-width='0.5'><rect x='10' y='15' width='3' height='2'/><rect x='14.5' y='15' width='3' height='2'/><rect x='19' y='15' width='3' height='2'/><rect x='10' y='18' width='3' height='2'/><rect x='14.5' y='18' width='3' height='2'/><rect x='19' y='18' width='3' height='2'/><rect x='10' y='21' width='3' height='2'/><rect x='14.5' y='21' width='3' height='2'/><rect x='19' y='21' width='3' height='2'/></g><rect x='4' y='6' width='24' height='5' fill='%23d8362c' stroke='%23000' stroke-width='1.5' rx='2.5'/></svg>");
 }
