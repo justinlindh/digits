@@ -35,7 +35,6 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
 )
 
 // iceRestartTimeout is how long to wait for an ICE restart to succeed
@@ -73,7 +72,6 @@ type daemonCallbacks struct {
 	peerMgr          *owebrtc.PeerManager
 	mesh             *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
 	pipeline         *audio.Pipeline
-	encoder          *codec.Encoder
 	decoder          *codec.Decoder
 	number           string
 	cfg              *config.Config
@@ -230,22 +228,20 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 		return
 	}
 
-	// Encode and send captured audio
+	// Encode and send captured audio to the 2-party peer and any conference mesh peers.
+	// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
 	go func() {
 		defer recoverGoroutine("caller-encode-loop")
 		for frame := range d.pipeline.OutFrames() {
-			encoded, err := d.encoder.Encode(frame)
-			if err != nil {
-				continue
-			}
 			d.mu.Lock()
 			pm := d.peerMgr
+			mesh := d.mesh
 			d.mu.Unlock()
 			if pm != nil {
-				pm.LocalTrack().WriteSample(media.Sample{ //nolint:errcheck
-					Data:     encoded,
-					Duration: 20 * time.Millisecond,
-				})
+				pm.SendPCMFrame(frame)
+			}
+			if mesh != nil {
+				mesh.SendPCMFrameToAll(frame)
 			}
 		}
 	}()
@@ -412,22 +408,20 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
-	// Encode and send captured audio
+	// Encode and send captured audio to the 2-party peer and any conference mesh peers.
+	// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
 	go func() {
 		defer recoverGoroutine("answer-encode-loop")
 		for frame := range d.pipeline.OutFrames() {
-			encoded, err := d.encoder.Encode(frame)
-			if err != nil {
-				continue
-			}
 			d.mu.Lock()
 			pm := d.peerMgr
+			mesh := d.mesh
 			d.mu.Unlock()
 			if pm != nil {
-				pm.LocalTrack().WriteSample(media.Sample{ //nolint:errcheck
-					Data:     encoded,
-					Duration: 20 * time.Millisecond,
-				})
+				pm.SendPCMFrame(frame)
+			}
+			if mesh != nil {
+				mesh.SendPCMFrameToAll(frame)
 			}
 		}
 	}()
@@ -436,7 +430,27 @@ func (d *daemonCallbacks) AnswerCall() {
 }
 
 func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
-	// TODO: wired up in Task 17 (per-peer outbound mute)
+	d.mu.Lock()
+	mesh := d.mesh
+	pm := d.peerMgr
+	callPeer := d.callPeer
+	d.mu.Unlock()
+
+	// First try the conference mesh.
+	if mesh != nil {
+		if meshPM := mesh.GetPeer(phone); meshPM != nil {
+			meshPM.SetOutboundMuted(muted)
+			slog.Info("mute peer (mesh)", "phone", phone, "muted", muted)
+			return
+		}
+	}
+	// Fall back to the 2-party peerMgr if phone matches the current 2-party peer.
+	if pm != nil && callPeer == phone {
+		pm.SetOutboundMuted(muted)
+		slog.Info("mute peer (2-party)", "phone", phone, "muted", muted)
+		return
+	}
+	slog.Warn("MutePeer: no peer found", "phone", phone, "muted", muted)
 }
 
 func (d *daemonCallbacks) TearDownPeer(phone string) {
@@ -1150,11 +1164,7 @@ func main() {
 	// 4. Create signaling client
 	sig := sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 
-	// 5. Create Opus encoder and decoder
-	enc, err := codec.NewEncoder(48000, 1, 24000)
-	if err != nil {
-		log.Fatalf("codec encoder: %v", err)
-	}
+	// 5. Create Opus decoder (encoder is now per-PeerManager; each peer creates its own)
 	dec, err := codec.NewDecoder(48000, 1)
 	if err != nil {
 		log.Fatalf("codec decoder: %v", err)
@@ -1343,7 +1353,6 @@ func main() {
 		sig:          sig,
 		mixer:        mixer,
 		serviceCodes: svcCodes,
-		encoder:      enc,
 		decoder:      dec,
 		number:       effectiveNumber,
 		cfg:          cfg,

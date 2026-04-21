@@ -69,6 +69,23 @@ func (m *MeshManager) ActivePeers() []string {
 	return out
 }
 
+// SendPCMFrameToAll sends a PCM frame to every peer's local track. Each peer
+// encodes the frame independently using its own Opus encoder, respecting per-peer
+// outbound mute: muted peers encode silence (Opus DTX comfort noise) while
+// unmuted peers encode the live mic audio. The input frame is never modified.
+func (m *MeshManager) SendPCMFrameToAll(frame []int16) {
+	m.mu.Lock()
+	peers := make([]*PeerManager, 0, len(m.peers))
+	for _, pm := range m.peers {
+		peers = append(peers, pm)
+	}
+	m.mu.Unlock()
+
+	for _, pm := range peers {
+		pm.SendPCMFrame(frame)
+	}
+}
+
 // CloseAll tears down every peer. After CloseAll the MeshManager can be
 // reused: new AddPeer calls will construct fresh PeerManagers.
 func (m *MeshManager) CloseAll() {

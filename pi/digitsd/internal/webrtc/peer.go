@@ -3,15 +3,23 @@ package owebrtc
 import (
 	"fmt"
 	"log/slog"
+	"sync/atomic"
+	"time"
 
+	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v4/pkg/media"
 )
 
 // PeerManager manages a single WebRTC peer connection with an audio track.
+// Each PeerManager owns its own Opus encoder so outbound audio can be muted
+// per-peer without affecting other peers.
 type PeerManager struct {
-	iceCfg *ICEConfig
-	pc     *webrtc.PeerConnection
-	track  *webrtc.TrackLocalStaticSample
+	iceCfg        *ICEConfig
+	pc            *webrtc.PeerConnection
+	track         *webrtc.TrackLocalStaticSample
+	encoder       *codec.Encoder
+	outboundMuted atomic.Bool
 
 	// Callbacks (set by caller before use):
 	OnRemoteTrack     func(track *webrtc.TrackRemote)
@@ -21,8 +29,13 @@ type PeerManager struct {
 
 // NewPeerManager creates a PeerManager with the given ICE configuration.
 // It creates a PeerConnection, adds a local Opus audio track, and wires up callbacks.
+// Each PeerManager owns its own Opus encoder for per-peer outbound muting.
 func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
-	m := &PeerManager{iceCfg: iceCfg}
+	enc, err := codec.NewEncoder(48000, 1, 24000)
+	if err != nil {
+		return nil, fmt.Errorf("create opus encoder: %w", err)
+	}
+	m := &PeerManager{iceCfg: iceCfg, encoder: enc}
 
 	pc, err := webrtc.NewPeerConnection(iceCfg.WebRTCConfig())
 	if err != nil {
@@ -160,6 +173,39 @@ func (m *PeerManager) AddICECandidate(candidate string) error {
 		return fmt.Errorf("add ICE candidate: %w", err)
 	}
 	return nil
+}
+
+// SetOutboundMuted toggles per-peer outbound mute. When true, outbound PCM
+// frames are replaced with zero samples before encoding. With Opus DTX enabled,
+// the receiver renders low-level comfort noise (matches 90s POTS silent hold).
+// Safe to call concurrently.
+func (m *PeerManager) SetOutboundMuted(v bool) {
+	m.outboundMuted.Store(v)
+}
+
+// OutboundMuted reports the current per-peer outbound mute state.
+func (m *PeerManager) OutboundMuted() bool {
+	return m.outboundMuted.Load()
+}
+
+// SendPCMFrame encodes a PCM frame with this peer's encoder and writes it to
+// the local track. If outbound mute is active, a zero-filled frame is encoded
+// instead so the remote end receives Opus comfort noise (DTX SID packets).
+// The input slice is never modified; it is safe to pass the same slice to
+// multiple peers concurrently.
+func (m *PeerManager) SendPCMFrame(frame []int16) {
+	toEncode := frame
+	if m.outboundMuted.Load() {
+		toEncode = make([]int16, len(frame))
+	}
+	encoded, err := m.encoder.Encode(toEncode)
+	if err != nil {
+		return
+	}
+	m.track.WriteSample(media.Sample{ //nolint:errcheck
+		Data:     encoded,
+		Duration: 20 * time.Millisecond,
+	})
 }
 
 // LocalTrack returns the local audio track.

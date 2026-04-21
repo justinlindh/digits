@@ -589,6 +589,9 @@ func (c *Controller) abortAddCalling() {
 }
 
 func (c *Controller) requestMerge() {
+	if c.heldPeer != "" {
+		c.cb.MutePeer(c.heldPeer, false)
+	}
 	c.state = StateCONFERENCE_MERGED
 	c.cb.RequestConferenceMerge(c.heldPeer, c.addingPeer)
 }

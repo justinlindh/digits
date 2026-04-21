@@ -1120,6 +1120,60 @@ func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	}
 }
 
+func TestController_MuteLiftsOnMerge(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+	c.setCurrentPeerForTest("5550002")
+
+	// Flash from CONNECTED: controller calls MutePeer(B, true) and enters ADD_DIALTONE.
+	c.HandleEvent("HOOK:FLASH")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("expected StateADD_DIALTONE after flash, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B muted after flash")
+	}
+
+	// First digit transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+
+	// DIAL event transitions ADD_DIALING -> ADD_CALLING.
+	c.HandleEvent("DIAL:5550003")
+	if c.State() != StateADD_CALLING {
+		t.Fatalf("expected StateADD_CALLING after DIAL, got %v", c.State())
+	}
+	// B should still be muted while dialing C.
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B to remain muted in ADD_CALLING")
+	}
+
+	// C answers: ADD_CALLING -> ADD_PRIVATE.
+	c.HandleSignal("answer", "5550003")
+	if c.State() != StateADD_PRIVATE {
+		t.Fatalf("expected StateADD_PRIVATE after C answers, got %v", c.State())
+	}
+	// B should STILL be muted while A is in ADD_PRIVATE.
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B to remain muted in ADD_PRIVATE")
+	}
+
+	// Flash to merge: B should be unmuted before merge request.
+	c.HandleEvent("HOOK:FLASH")
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("expected StateCONFERENCE_MERGED after flash, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted after merge")
+	}
+	if !mock.mergeRequested("5550002", "5550003") {
+		t.Fatalf("expected ConferenceMerge requested with B=5550002, C=5550003")
+	}
+}
+
 func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")

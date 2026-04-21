@@ -102,6 +102,26 @@ func waitGatherComplete(t *testing.T, pm *PeerManager) {
 	}
 }
 
+func TestPeerManager_SetOutboundMuted(t *testing.T) {
+	pm, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatalf("NewPeerManager: %v", err)
+	}
+	defer func() { _ = pm.Close() }()
+
+	if pm.OutboundMuted() {
+		t.Fatalf("expected unmuted by default")
+	}
+	pm.SetOutboundMuted(true)
+	if !pm.OutboundMuted() {
+		t.Fatalf("expected muted after SetOutboundMuted(true)")
+	}
+	pm.SetOutboundMuted(false)
+	if pm.OutboundMuted() {
+		t.Fatalf("expected unmuted after SetOutboundMuted(false)")
+	}
+}
+
 func TestPeerManager_ICERestart(t *testing.T) {
 	caller, err := NewPeerManager(NewICEConfig(nil))
 	if err != nil {
