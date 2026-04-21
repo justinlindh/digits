@@ -27,6 +27,16 @@ const (
 	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
 )
 
+// Conference message types (three-way calling)
+const (
+	TypeConferenceMerge    = "conference_merge"    // client -> server
+	TypeConferenceMember   = "conference_member"   // server -> client
+	TypeConferenceConnect  = "conference_connect"  // server -> client
+	TypeConferenceLeave    = "conference_leave"    // server -> client
+	TypeConferenceEnd      = "conference_end"      // server -> client
+	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
+)
+
 // LineSettings is the wire-format copy of server/internal/line.Settings used
 // in signaling messages. Kept as a separate struct (not imported directly
 // from internal/line) so the dependency on internal/line is isolated to
@@ -37,6 +47,12 @@ const (
 // added there, in pi/digitsd/internal/config, and in pi/digitsd/internal/signal.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
+}
+
+// ConferenceMemberInfo describes one participant in a conference call.
+type ConferenceMemberInfo struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"` // "host" or "added"
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -82,6 +98,15 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// Conference fields (party-line / three-way calling).
+	ConfID     string                 `json:"conf_id,omitempty"`
+	HeldPeer   string                 `json:"held_peer,omitempty"`
+	ActivePeer string                 `json:"active_peer,omitempty"`
+	Peer       string                 `json:"peer,omitempty"`
+	Initiator  bool                   `json:"initiator,omitempty"`
+	Members    []ConferenceMemberInfo `json:"members,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
 }
 
 func ParseMessage(data []byte) (*Message, error) {
