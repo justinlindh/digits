@@ -232,6 +232,21 @@ func (c *Controller) onHookOn() {
 		return
 	}
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+
+	// Tear down mesh peers for any conference-related state before calling
+	// HangupCall. This ensures B (migrated into mesh) and any added C are
+	// closed immediately on hang-up rather than leaking until a ConferenceEnd
+	// arrives from the server.
+	if c.confID != "" ||
+		c.state == StateADD_DIALTONE ||
+		c.state == StateADD_DIALING ||
+		c.state == StateADD_CALLING ||
+		c.state == StateADD_PRIVATE ||
+		c.state == StateADD_INTERCEPT ||
+		c.state == StateCONFERENCE_MERGED {
+		c.cb.TearDownAllMeshPeers()
+	}
+
 	c.state = StateIDLE
 	c.digits = ""
 	c.heldPeer = ""
