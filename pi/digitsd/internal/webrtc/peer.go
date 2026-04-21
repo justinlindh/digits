@@ -20,6 +20,7 @@ type PeerManager struct {
 	track         *webrtc.TrackLocalStaticSample
 	encoder       *codec.Encoder
 	outboundMuted atomic.Bool
+	zeroBuf       []int16 // reusable zero slice for muted encodes; allocated once at construction
 
 	// Callbacks (set by caller before use):
 	OnRemoteTrack     func(track *webrtc.TrackRemote)
@@ -35,7 +36,13 @@ func NewPeerManager(iceCfg *ICEConfig) (*PeerManager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create opus encoder: %w", err)
 	}
-	m := &PeerManager{iceCfg: iceCfg, encoder: enc}
+	m := &PeerManager{
+		iceCfg:  iceCfg,
+		encoder: enc,
+		// zeroBuf is pre-allocated to match the 20ms Opus frame size at 48 kHz (mono).
+		// It is used in place of a fresh allocation on every muted frame.
+		zeroBuf: make([]int16, 960),
+	}
 
 	pc, err := webrtc.NewPeerConnection(iceCfg.WebRTCConfig())
 	if err != nil {
@@ -196,7 +203,10 @@ func (m *PeerManager) OutboundMuted() bool {
 func (m *PeerManager) SendPCMFrame(frame []int16) {
 	toEncode := frame
 	if m.outboundMuted.Load() {
-		toEncode = make([]int16, len(frame))
+		// Use the pre-allocated zero buffer to avoid a heap allocation on every
+		// muted frame (50 per second per muted peer). The buffer is guaranteed
+		// to be all-zeros because it is never written outside this path.
+		toEncode = m.zeroBuf[:len(frame)]
 	}
 	encoded, err := m.encoder.Encode(toEncode)
 	if err != nil {
