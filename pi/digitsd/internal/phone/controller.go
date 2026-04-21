@@ -417,17 +417,9 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.cb.HangupCall()
 		c.cb.SendTone(ToneStopAll)
 		c.runPermanentSignalTreatment(StateREMOTE_HANGUP, "remote hangup")
-	case StateADD_CALLING:
+	case StateADD_CALLING, StateADD_PRIVATE:
 		if sender != "" && sender != c.addingPeer {
-			slog.Info("phone: hangup from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
-			return
-		}
-		c.state = StateADD_INTERCEPT
-		c.cb.SendTone(ToneIntercept)
-		c.cb.TearDownPeer(c.addingPeer)
-	case StateADD_PRIVATE:
-		if sender != "" && sender != c.addingPeer {
-			slog.Info("phone: hangup from unexpected peer in ADD_PRIVATE", "from", sender, "adding", c.addingPeer)
+			slog.Info("phone: hangup from unexpected peer", "state", c.state, "from", sender, "adding", c.addingPeer)
 			return
 		}
 		c.state = StateADD_INTERCEPT
