@@ -65,3 +65,29 @@ func TestMesh_RemovePeer_UnknownIsNoop(t *testing.T) {
 	// Should not panic.
 	m.RemovePeer("5550999")
 }
+
+func TestMesh_AdoptPreservesExisting(t *testing.T) {
+	m := NewMeshManager(NewICEConfig(nil))
+	defer m.CloseAll()
+
+	pm1, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatalf("NewPeerManager: %v", err)
+	}
+	m.Adopt("5550001", pm1)
+
+	if got := m.GetPeer("5550001"); got != pm1 {
+		t.Fatalf("Adopt: expected pm1 stored, got %p vs %p", got, pm1)
+	}
+
+	// Adopt a second PM with same phone: should not replace; should close the incoming.
+	pm2, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatalf("NewPeerManager: %v", err)
+	}
+	m.Adopt("5550001", pm2)
+
+	if got := m.GetPeer("5550001"); got != pm1 {
+		t.Fatalf("Adopt-collision: expected pm1 retained, got different")
+	}
+}

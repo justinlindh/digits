@@ -52,6 +52,7 @@ type Callbacks interface {
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
 	MutePeer(phone string, muted bool)                    // Mute or unmute the A↔B audio path for a peer
 	TearDownPeer(phone string)                            // Hang up and tear down the connection to a peer
+	MigrateToMesh(phone string)                           // Move the 2-party peer into the mesh under this key
 	RequestConferenceMerge(held, active string)           // Request server-side three-way merge
 	AddMeshPeer(phone string, initiator bool)             // Open a WebRTC peer connection to a conference member
 	RemoveMeshPeer(phone string)                          // Tear down the WebRTC connection to a conference member
@@ -561,7 +562,10 @@ func (c *Controller) onHookFlash() {
 func (c *Controller) enterAddDialtone() {
 	c.heldPeer = c.activePeer
 	c.state = StateADD_DIALTONE
-	c.cb.MutePeer(c.heldPeer, true)
+	if c.heldPeer != "" {
+		c.cb.MigrateToMesh(c.heldPeer) // move B's PC from peerMgr into mesh
+		c.cb.MutePeer(c.heldPeer, true) // silent hold
+	}
 	c.cb.SendTone(ToneDial)
 }
 
@@ -591,6 +595,9 @@ func (c *Controller) abortAddCalling() {
 func (c *Controller) requestMerge() {
 	if c.heldPeer != "" {
 		c.cb.MutePeer(c.heldPeer, false)
+	}
+	if c.addingPeer != "" {
+		c.cb.MigrateToMesh(c.addingPeer) // move C's PC from peerMgr into mesh
 	}
 	c.state = StateCONFERENCE_MERGED
 	c.cb.RequestConferenceMerge(c.heldPeer, c.addingPeer)

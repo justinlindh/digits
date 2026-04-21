@@ -453,6 +453,28 @@ func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
 	slog.Warn("MutePeer: no peer found", "phone", phone, "muted", muted)
 }
 
+func (d *daemonCallbacks) MigrateToMesh(phone string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.peerMgr == nil || d.callPeer != phone {
+		slog.Warn("MigrateToMesh: no matching 2-party peer", "phone", phone, "callPeer", d.callPeer)
+		return
+	}
+
+	// Ensure the mesh exists.
+	if d.mesh == nil {
+		d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(d.iceServers))
+	}
+
+	// Transfer ownership: the existing PeerManager moves into the mesh under
+	// the peer's phone key. d.peerMgr is cleared so future 2-party calls
+	// create a fresh PeerConnection.
+	d.mesh.Adopt(phone, d.peerMgr)
+	d.peerMgr = nil
+	d.callPeer = ""
+}
+
 func (d *daemonCallbacks) TearDownPeer(phone string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

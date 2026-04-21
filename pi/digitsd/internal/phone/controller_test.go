@@ -27,6 +27,7 @@ type mockCallbacks struct {
 	mergeRequests      [][2]string       // [held, active] pairs
 	meshPeers          map[string]bool   // phone -> initiator flag
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
+	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -100,6 +101,14 @@ func (m *mockCallbacks) TearDownAllMeshPeers() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.allTorndown = true
+}
+func (m *mockCallbacks) MigrateToMesh(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.migratedToMesh == nil {
+		m.migratedToMesh = make(map[string]bool)
+	}
+	m.migratedToMesh[phone] = true
 }
 
 // Snapshot accessors — return copies under lock so test assertions are
@@ -215,6 +224,13 @@ func (m *mockCallbacks) allPeersTorndown() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.allTorndown
+}
+
+// wasMigrated returns whether MigrateToMesh was called for the given phone.
+func (m *mockCallbacks) wasMigrated(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.migratedToMesh[phone]
 }
 
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
@@ -1126,10 +1142,13 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 	c.setStateForTest(StateCONNECTED)
 	c.setCurrentPeerForTest("5550002")
 
-	// Flash from CONNECTED: controller calls MutePeer(B, true) and enters ADD_DIALTONE.
+	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B, true) and enters ADD_DIALTONE.
 	c.HandleEvent("HOOK:FLASH")
 	if c.State() != StateADD_DIALTONE {
 		t.Fatalf("expected StateADD_DIALTONE after flash, got %v", c.State())
+	}
+	if !mock.wasMigrated("5550002") {
+		t.Fatalf("expected MigrateToMesh(5550002) on flash to ADD_DIALTONE")
 	}
 	if !mock.peerMuted("5550002") {
 		t.Fatalf("expected B muted after flash")
@@ -1161,13 +1180,16 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 		t.Fatalf("expected B to remain muted in ADD_PRIVATE")
 	}
 
-	// Flash to merge: B should be unmuted before merge request.
+	// Flash to merge: B should be unmuted and C migrated into mesh before merge request.
 	c.HandleEvent("HOOK:FLASH")
 	if c.State() != StateCONFERENCE_MERGED {
 		t.Fatalf("expected StateCONFERENCE_MERGED after flash, got %v", c.State())
 	}
 	if mock.peerMuted("5550002") {
 		t.Fatalf("expected B unmuted after merge")
+	}
+	if !mock.wasMigrated("5550003") {
+		t.Fatalf("expected MigrateToMesh(5550003) on merge")
 	}
 	if !mock.mergeRequested("5550002", "5550003") {
 		t.Fatalf("expected ConferenceMerge requested with B=5550002, C=5550003")

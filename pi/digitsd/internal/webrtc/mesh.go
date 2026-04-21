@@ -86,6 +86,21 @@ func (m *MeshManager) SendPCMFrameToAll(frame []int16) {
 	}
 }
 
+// Adopt inserts an existing PeerManager into the mesh under phone. Unlike
+// AddPeer, no new PeerConnection is constructed; the caller is transferring
+// ownership of pm. If a peer with that phone already exists, the incoming pm
+// is closed to avoid leaking and the existing entry is retained.
+func (m *MeshManager) Adopt(phone string, pm *PeerManager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.peers[phone]; ok {
+		// Don't replace; close the incoming to avoid leak.
+		_ = pm.Close()
+		return
+	}
+	m.peers[phone] = pm
+}
+
 // CloseAll tears down every peer. After CloseAll the MeshManager can be
 // reused: new AddPeer calls will construct fresh PeerManagers.
 func (m *MeshManager) CloseAll() {
