@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -104,11 +105,24 @@ func (m *mockTracker) CallIDFor(a, b string) int64 {
 	return 0
 }
 
+func (m *mockTracker) EndConferencePersistent(id uuid.UUID, reason string) error {
+	_, err := m.conferences.EndConference(id, reason)
+	return err
+}
+
+func (m *mockTracker) DropMemberPersistent(id uuid.UUID, phone, reason string) ([]string, bool, error) {
+	return m.conferences.DropMember(id, phone, reason)
+}
+
 type mockCallAuthorizer struct {
 	allowed map[[2]string]bool
+	denyAll bool
 }
 
 func (m *mockCallAuthorizer) CanCall(fromNumber, toNumber string) (bool, error) {
+	if m.denyAll {
+		return false, nil
+	}
 	return m.allowed[[2]string{fromNumber, toNumber}], nil
 }
 

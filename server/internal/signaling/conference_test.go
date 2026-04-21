@@ -131,6 +131,119 @@ func TestHandleConferenceMerge_RejectsMissingCalls(t *testing.T) {
 	}
 }
 
+func TestHandleSDP_AllowsConferencePeer(t *testing.T) {
+	tr := newMockTracker()
+	hub := NewHub()
+
+	bConn := &Conn{Send: make(chan []byte, 20)}
+	cConn := &Conn{Send: make(chan []byte, 20)}
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{denyAll: true}}
+
+	// Pre-condition: B and C are in the same conference. CanCall denies them directly.
+	tr.onCallInitiated("5550001", "5550002")
+	tr.onCallInitiated("5550001", "5550003")
+	tr.setCallID("5550001", "5550002", 42)
+	conf, err := tr.Conferences().CreateConference("5550001", 42, []string{"5550002", "5550003"})
+	if err != nil {
+		t.Fatalf("CreateConference: %v", err)
+	}
+
+	msg := &Message{Type: TypeSDP, To: "5550003", ConfID: conf.ID.String(), SDP: "v=0..."}
+	r.HandleMessage("5550002", msg)
+
+	// C should receive the SDP despite denyAll authorizer.
+	received := drainAll(map[string]*Conn{"5550003": cConn})
+	found := false
+	for _, m := range received {
+		if m.to == "5550003" && m.msg.Type == TypeSDP && m.msg.SDP == "v=0..." {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected SDP relayed from B to C via conf_id")
+	}
+}
+
+func TestHandleHangup_InConferenceEndsViaLeave(t *testing.T) {
+	tr := newMockTracker()
+	hub := NewHub()
+
+	aConn := &Conn{Send: make(chan []byte, 20)}
+	bConn := &Conn{Send: make(chan []byte, 20)}
+	cConn := &Conn{Send: make(chan []byte, 20)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{}}
+
+	tr.onCallInitiated("5550001", "5550002")
+	tr.onCallInitiated("5550001", "5550003")
+	tr.setCallID("5550001", "5550002", 42)
+	if _, err := tr.CreateConferencePersistent("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("preload conference: %v", err)
+	}
+
+	// B hangs up.
+	r.HandleMessage("5550002", &Message{Type: TypeHangup, To: "5550001"})
+
+	received := drainAll(map[string]*Conn{"5550001": aConn, "5550003": cConn})
+	leaves := 0
+	ends := 0
+	for _, m := range received {
+		if m.msg.Type == TypeConferenceLeave {
+			leaves++
+		}
+		if m.msg.Type == TypeConferenceEnd {
+			ends++
+		}
+	}
+	if leaves != 2 {
+		t.Fatalf("expected 2 ConferenceLeave (to A and C), got %d", leaves)
+	}
+	if ends != 2 {
+		t.Fatalf("expected 2 ConferenceEnd (v1: any drop ends conference), got %d", ends)
+	}
+}
+
+func TestHandleHangup_HostEndsConference(t *testing.T) {
+	tr := newMockTracker()
+	hub := NewHub()
+
+	aConn := &Conn{Send: make(chan []byte, 20)}
+	bConn := &Conn{Send: make(chan []byte, 20)}
+	cConn := &Conn{Send: make(chan []byte, 20)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{}}
+
+	tr.onCallInitiated("5550001", "5550002")
+	tr.onCallInitiated("5550001", "5550003")
+	tr.setCallID("5550001", "5550002", 42)
+	if _, err := tr.CreateConferencePersistent("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("preload conference: %v", err)
+	}
+
+	// Host hangs up.
+	r.HandleMessage("5550001", &Message{Type: TypeHangup, To: "5550002"})
+
+	received := drainAll(map[string]*Conn{"5550002": bConn, "5550003": cConn})
+	ends := 0
+	for _, m := range received {
+		if m.msg.Type == TypeConferenceEnd {
+			ends++
+		}
+	}
+	if ends < 2 {
+		t.Fatalf("expected at least 2 ConferenceEnd (to B and C), got %d", ends)
+	}
+}
+
 func TestHandleConferenceMerge_RejectsIfMemberAlreadyInConference(t *testing.T) {
 	hub := NewHub()
 	tr := newMockTracker()

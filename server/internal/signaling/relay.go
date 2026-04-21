@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/turn"
 )
@@ -19,6 +20,8 @@ type CallTracker interface {
 	Conferences() *calls.ConferenceTracker
 	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
 	CallIDFor(a, b string) int64
+	EndConferencePersistent(confID uuid.UUID, reason string) error
+	DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -52,9 +55,9 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 	case TypeCall:
 		r.handleCall(from, msg)
 	case TypeSDP:
-		r.forward(msg)
+		r.handleSDP(from, msg)
 	case TypeICE:
-		r.forward(msg)
+		r.handleICE(from, msg)
 	case TypeICERestart:
 		r.handleICERestart(from, msg)
 	case TypeAnswer:
@@ -146,6 +149,16 @@ func (r *Relay) handleAnswer(from string, msg *Message) {
 }
 
 func (r *Relay) handleHangup(from string, msg *Message) {
+	if r.Tracker != nil {
+		if conf := r.Tracker.Conferences().ConferenceByPhone(from); conf != nil {
+			if conf.Host == from {
+				r.endConference(conf.ID, "host_hangup")
+				return
+			}
+			r.dropMemberFromConference(conf.ID, from, "hangup")
+			return
+		}
+	}
 	// Resolve peer if client didn't specify a To field
 	if msg.To == "" && r.Tracker != nil {
 		if peer := r.Tracker.PeerOf(from); peer != "" {
@@ -155,6 +168,40 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 	if r.Tracker != nil {
 		if err := r.Tracker.OnCallEnded(from, msg.To); err != nil {
 			slog.Error("failed to track call end", "err", err)
+		}
+	}
+	r.forward(msg)
+}
+
+func (r *Relay) handleSDP(from string, msg *Message) {
+	if msg.ConfID != "" {
+		id, err := uuid.Parse(msg.ConfID)
+		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
+			_ = r.Hub.SendTo(msg.To, &Message{
+				Type:   msg.Type,
+				From:   from,
+				To:     msg.To,
+				ConfID: msg.ConfID,
+				SDP:    msg.SDP,
+			})
+			return
+		}
+	}
+	r.forward(msg)
+}
+
+func (r *Relay) handleICE(from string, msg *Message) {
+	if msg.ConfID != "" {
+		id, err := uuid.Parse(msg.ConfID)
+		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
+			_ = r.Hub.SendTo(msg.To, &Message{
+				Type:      msg.Type,
+				From:      from,
+				To:        msg.To,
+				ConfID:    msg.ConfID,
+				Candidate: msg.Candidate,
+			})
+			return
 		}
 	}
 	r.forward(msg)

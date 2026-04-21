@@ -1,6 +1,10 @@
 package signaling
 
-import "log/slog"
+import (
+	"log/slog"
+
+	"github.com/google/uuid"
+)
 
 // handleConferenceMerge is invoked when a host (A) flashes to merge its two
 // active 2-party calls (A-B, A-C) into a 3-party conference.
@@ -70,4 +74,56 @@ func (r *Relay) sendRejection(host, confID, reason string) {
 		ConfID: confID,
 		Reason: reason,
 	})
+}
+
+func (r *Relay) endConference(confID uuid.UUID, reason string) {
+	conf := r.Tracker.Conferences().Snapshot(confID)
+	if err := r.Tracker.EndConferencePersistent(confID, reason); err != nil {
+		slog.Error("end conference persist", "err", err)
+	}
+	if conf == nil {
+		return
+	}
+	for p := range conf.Members {
+		_ = r.Hub.SendTo(p, &Message{
+			Type:   TypeConferenceEnd,
+			ConfID: confID.String(),
+			Reason: reason,
+		})
+	}
+}
+
+func (r *Relay) dropMemberFromConference(confID uuid.UUID, phone, reason string) {
+	conf := r.Tracker.Conferences().Snapshot(confID)
+	var others []string
+	if conf != nil {
+		for p := range conf.Members {
+			if p != phone {
+				others = append(others, p)
+			}
+		}
+	}
+	remaining, _, err := r.Tracker.DropMemberPersistent(confID, phone, reason)
+	if err != nil {
+		slog.Error("drop member", "err", err)
+		return
+	}
+
+	for _, p := range others {
+		_ = r.Hub.SendTo(p, &Message{
+			Type:   TypeConferenceLeave,
+			ConfID: confID.String(),
+			Peer:   phone,
+			Reason: reason,
+		})
+	}
+	// v1: any drop ends the conference; notify remaining members explicitly so
+	// client controllers know to fully tear down (not just drop the leaver).
+	for _, p := range remaining {
+		_ = r.Hub.SendTo(p, &Message{
+			Type:   TypeConferenceEnd,
+			ConfID: confID.String(),
+			Reason: "member_left",
+		})
+	}
 }

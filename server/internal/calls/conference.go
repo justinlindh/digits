@@ -169,6 +169,26 @@ func (ct *ConferenceTracker) DropMember(confID uuid.UUID, phone, reason string) 
 	return remaining, true, nil
 }
 
+// Snapshot returns a copy of the active conference with the given ID, or nil
+// if no active conference has that ID. The returned pointer and its Members
+// map are independent of the tracker's internal state and safe for the caller
+// to iterate without holding the tracker's mutex.
+func (ct *ConferenceTracker) Snapshot(id uuid.UUID) *Conference {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	c, ok := ct.active[id]
+	if !ok {
+		return nil
+	}
+	cp := *c
+	cp.Members = make(map[string]*ConferenceMember, len(c.Members))
+	for k, m := range c.Members {
+		mm := *m
+		cp.Members[k] = &mm
+	}
+	return &cp
+}
+
 // EndConference ends the conference with the given reason. Returns the list of
 // members that were still active at end-time.
 func (ct *ConferenceTracker) EndConference(confID uuid.UUID, reason string) ([]string, error) {
