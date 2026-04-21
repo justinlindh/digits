@@ -1,6 +1,7 @@
 package signal
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -168,5 +169,30 @@ func TestParseSyncRequest(t *testing.T) {
 	}
 	if parsed.Type != TypeSync {
 		t.Errorf("expected type %q, got %q", TypeSync, parsed.Type)
+	}
+}
+
+func TestConferenceMessageFieldsRoundTrip(t *testing.T) {
+	in := Message{
+		Type:   TypeConferenceMember,
+		ConfID: "abc-123",
+		Members: []ConferenceMemberInfo{
+			{Phone: "5550001", Role: "host"},
+			{Phone: "5550002", Role: "added"},
+		},
+	}
+	b, err := json.Marshal(&in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out Message
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.Type != in.Type || out.ConfID != in.ConfID || len(out.Members) != 2 {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	if out.Members[0].Phone != "5550001" || out.Members[0].Role != "host" {
+		t.Fatalf("member 0 mismatch: %+v", out.Members[0])
 	}
 }

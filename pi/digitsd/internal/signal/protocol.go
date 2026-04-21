@@ -53,6 +53,16 @@ const (
 	TypeLineSettings = "line_settings"
 )
 
+// Conference message types (three-way calling)
+const (
+	TypeConferenceMerge    = "conference_merge"    // client -> server
+	TypeConferenceMember   = "conference_member"   // server -> client
+	TypeConferenceConnect  = "conference_connect"  // server -> client
+	TypeConferenceLeave    = "conference_leave"    // server -> client
+	TypeConferenceEnd      = "conference_end"      // server -> client
+	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
+)
+
 // ContactEntry represents a single contact in a sync payload.
 type ContactEntry struct {
 	Number string `json:"number"`
@@ -68,6 +78,12 @@ type ContactEntry struct {
 // there, in server/internal/line, and in server/internal/signaling.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
+}
+
+// ConferenceMemberInfo describes one participant in a conference call.
+type ConferenceMemberInfo struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"` // "host" or "added"
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -115,6 +131,15 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// Conference fields (party-line / three-way calling).
+	ConfID     string                 `json:"conf_id,omitempty"`
+	HeldPeer   string                 `json:"held_peer,omitempty"`
+	ActivePeer string                 `json:"active_peer,omitempty"`
+	Peer       string                 `json:"peer,omitempty"`
+	Initiator  bool                   `json:"initiator,omitempty"`
+	Members    []ConferenceMemberInfo `json:"members,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.
