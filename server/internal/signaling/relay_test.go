@@ -574,6 +574,97 @@ func TestHubOnlineNumbers(t *testing.T) {
 	}
 }
 
+// TestHandleHangup_EndsAllActivePeers verifies that when a host with two active
+// 2-party calls (ADD_* flow) hangs up, both peers receive TypeHangup and both
+// calls are removed from the tracker.
+func TestHandleHangup_EndsAllActivePeers(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	aConn := &Conn{Send: make(chan []byte, 10)}
+	bConn := &Conn{Send: make(chan []byte, 10)}
+	cConn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	// Prime two active 2-party calls: A-B (held) and A-C (active).
+	tracker.onCallInitiated("5550001", "5550002")
+	tracker.onCallInitiated("5550001", "5550003")
+
+	// A hangs up (targets C, the active add peer, but B is also an active peer).
+	relay.HandleMessage("5550001", &Message{Type: TypeHangup, To: "5550003"})
+
+	// Both B and C must receive TypeHangup.
+	bMsgs := drainConnUnit(t, bConn)
+	cMsgs := drainConnUnit(t, cConn)
+	if countTypeUnit(bMsgs, TypeHangup) != 1 {
+		t.Fatalf("B: expected 1 TypeHangup, got %d", countTypeUnit(bMsgs, TypeHangup))
+	}
+	if countTypeUnit(cMsgs, TypeHangup) != 1 {
+		t.Fatalf("C: expected 1 TypeHangup, got %d", countTypeUnit(cMsgs, TypeHangup))
+	}
+
+	// Both calls must be removed from the tracker.
+	if tracker.Busy("5550001") {
+		t.Error("A should no longer be busy after hangup")
+	}
+	if tracker.Busy("5550002") {
+		t.Error("B should no longer be busy after hangup")
+	}
+	if tracker.Busy("5550003") {
+		t.Error("C should no longer be busy after hangup")
+	}
+
+	// Verify OnCallEnded was recorded for both peers.
+	endedAB := false
+	endedAC := false
+	for _, e := range tracker.ended {
+		if e == "5550001→5550002" || e == "5550002→5550001" {
+			endedAB = true
+		}
+		if e == "5550001→5550003" || e == "5550003→5550001" {
+			endedAC = true
+		}
+	}
+	if !endedAB {
+		t.Errorf("expected OnCallEnded for A-B, ended=%v", tracker.ended)
+	}
+	if !endedAC {
+		t.Errorf("expected OnCallEnded for A-C, ended=%v", tracker.ended)
+	}
+}
+
+// drainConnUnit reads all buffered messages from a Conn without the integration
+// test helpers (no ParseMessage from signaling_test package).
+func drainConnUnit(t *testing.T, conn *Conn) []*Message {
+	t.Helper()
+	var out []*Message
+	for {
+		select {
+		case data := <-conn.Send:
+			msg, err := ParseMessage(data)
+			if err != nil {
+				t.Fatalf("parse message: %v", err)
+			}
+			out = append(out, msg)
+		default:
+			return out
+		}
+	}
+}
+
+func countTypeUnit(msgs []*Message, typ string) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Type == typ {
+			n++
+		}
+	}
+	return n
+}
+
 func TestRelayRestartMessageNotPanics(t *testing.T) {
 	hub := NewHub()
 	relay := NewRelay(hub, nil, nil, nil)

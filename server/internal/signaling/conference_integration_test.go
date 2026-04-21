@@ -298,6 +298,97 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	}
 }
 
+// TestDisconnectNonHostConferenceParticipant_Integration verifies that when a
+// non-host conference member disconnects, the entire conference is ended (not
+// just a member drop), remaining members receive TypeConferenceEnd, and no
+// continuation calls row is created (unlike the hangup/dropMember path).
+func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
+	d := openSignalingTestDB(t)
+	tr := calls.New(d)
+	hub := signaling.NewHub()
+	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
+
+	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	// Set up an active conference: A hosts, B and C are members.
+	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallInitiated A->B: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallAnswered A->B: %v", err)
+	}
+	callID := tr.CallIDFor("5550001", "5550002")
+	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallInitiated A->C: %v", err)
+	}
+	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallAnswered A->C: %v", err)
+	}
+	if _, err := tr.CreateConferencePersistent("5550001", callID, []string{"5550002", "5550003"}); err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Simulate B (non-host) disconnecting by calling OnDisconnect directly.
+	r.OnDisconnect("5550002")
+
+	// Conference DB row must be ended with reason 'disconnect'.
+	var dbState, dbReason string
+	if err := d.DB.QueryRow(
+		`SELECT state, COALESCE(end_reason, '') FROM conferences LIMIT 1`,
+	).Scan(&dbState, &dbReason); err != nil {
+		t.Fatalf("select conference: %v", err)
+	}
+	if dbState != "ended" {
+		t.Errorf("expected conference state=ended, got %q", dbState)
+	}
+	if dbReason != "disconnect" {
+		t.Errorf("expected end_reason=disconnect, got %q", dbReason)
+	}
+
+	// A and C must receive TypeConferenceEnd (not TypeConferenceLeave).
+	// OnDisconnect calls endConference (not dropMemberFromConference), so all
+	// members get ConferenceEnd with reason 'disconnect'.
+	aMsgs := drainConn(t, aConn)
+	cMsgs := drainConn(t, cConn)
+	if countType(aMsgs, signaling.TypeConferenceEnd) != 1 {
+		t.Fatalf("A: expected 1 ConferenceEnd, got %d (msgs: %v)", countType(aMsgs, signaling.TypeConferenceEnd), aMsgs)
+	}
+	if countType(cMsgs, signaling.TypeConferenceEnd) != 1 {
+		t.Fatalf("C: expected 1 ConferenceEnd, got %d (msgs: %v)", countType(cMsgs, signaling.TypeConferenceEnd), cMsgs)
+	}
+	// Disconnect path ends the conference for all — no ConferenceLeave expected.
+	if countType(aMsgs, signaling.TypeConferenceLeave) != 0 {
+		t.Errorf("A: expected 0 ConferenceLeave on disconnect (endConference path), got %d", countType(aMsgs, signaling.TypeConferenceLeave))
+	}
+
+	// No continuation call rows: endConference does NOT create continuations.
+	var continuationCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM calls WHERE originating_conference_id IS NOT NULL AND status = 'connected'`,
+	).Scan(&continuationCount); err != nil {
+		t.Fatalf("count continuation calls: %v", err)
+	}
+	if continuationCount != 0 {
+		t.Errorf("expected 0 continuation calls on disconnect path, got %d", continuationCount)
+	}
+
+	// IsBusy must return false for all three after cleanup.
+	if tr.Busy("5550001") {
+		t.Error("A should not be busy after non-host conference disconnect")
+	}
+	if tr.Busy("5550002") {
+		t.Error("B should not be busy after conference disconnect")
+	}
+	if tr.Busy("5550003") {
+		t.Error("C should not be busy after non-host conference disconnect")
+	}
+}
+
 // TestDisconnectConferenceParticipant_Integration verifies that when a
 // conference member disconnects, the conference is ended in the DB, remaining
 // members receive ConferenceEnd, and IsBusy returns false for them.
