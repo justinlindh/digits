@@ -28,16 +28,23 @@ type activeCall struct {
 }
 
 type Tracker struct {
-	db     *db.Database
-	mu     sync.Mutex
-	active map[string]*activeCall // "caller→callee" → call
+	db          *db.Database
+	mu          sync.Mutex
+	active      map[string]*activeCall // "caller→callee" → call
+	conferences *ConferenceTracker
 }
 
 func New(d *db.Database) *Tracker {
 	return &Tracker{
-		db:     d,
-		active: make(map[string]*activeCall),
+		db:          d,
+		active:      make(map[string]*activeCall),
+		conferences: NewConferenceTracker(),
 	}
+}
+
+// Conferences returns the conference tracker embedded in this Tracker.
+func (t *Tracker) Conferences() *ConferenceTracker {
+	return t.conferences
 }
 
 func callKey(a, b string) string {
@@ -123,6 +130,9 @@ func (t *Tracker) ClearByNumber(number string) {
 }
 
 func (t *Tracker) Busy(number string) bool {
+	if t.conferences.IsBusy(number) {
+		return true
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
