@@ -14,10 +14,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/email"
 )
 
-// minimalTemplate builds a trivial template that satisfies ExecuteTemplate("layout.html", data).
+// minimalTemplate builds a trivial template that satisfies ExecuteTemplate("layout-v2.html", data).
 func minimalTemplate(t *testing.T) *template.Template {
 	t.Helper()
-	tmpl, err := template.New("layout.html").Parse(`{{.Page}} google={{.GoogleEnabled}} error={{.Error}} success={{.Success}}`)
+	tmpl, err := template.New("layout-v2.html").Parse(`{{.Page}} google={{.GoogleEnabled}} error={{.Error}} success={{.Success}}`)
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
 	}

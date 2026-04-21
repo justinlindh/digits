@@ -45,7 +45,7 @@ func (h *Handlers) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 		"Error":         r.URL.Query().Get("error"),
 		"Success":       r.URL.Query().Get("success"),
 	}
-	if err := h.loginTmpl.ExecuteTemplate(w, "layout.html", data); err != nil {
+	if err := h.loginTmpl.ExecuteTemplate(w, "layout-v2.html", data); err != nil {
 		slog.Error("login template render failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
