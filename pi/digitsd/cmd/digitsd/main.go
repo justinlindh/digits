@@ -599,6 +599,74 @@ func (d *daemonCallbacks) TearDownAllMeshPeers() {
 	mesh.CloseAll()
 }
 
+// setupMeshResponder creates a mesh peer for an incoming conference SDP offer,
+// wires the remote track and ICE candidate handlers, and accepts the offer.
+// Returns the answer SDP. Must NOT be called with d.mu held.
+func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (string, error) {
+	d.mu.Lock()
+	if d.mesh == nil {
+		iceCfg := owebrtc.NewICEConfig(d.iceServers)
+		d.mesh = owebrtc.NewMeshManager(iceCfg)
+	}
+	mesh := d.mesh
+	d.mu.Unlock()
+
+	pm, err := mesh.AddPeer(peer)
+	if err != nil {
+		return "", fmt.Errorf("mesh AddPeer: %w", err)
+	}
+
+	// Wire remote audio track BEFORE AcceptOffer so pion cannot miss it.
+	webrtcCh := d.mixer.AddWebRTCSource(peer)
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("conf-remote-track-" + peer)
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("conference: remote track ended (responder)", "phone", peer)
+					return
+				}
+				pcm, err := d.decoder.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind answer SDP send.
+	sdpSent := make(chan struct{})
+	pm.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		d.mu.Lock()
+		sig := d.sig
+		d.mu.Unlock()
+		sendSignal(sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        peer,
+			ConfID:    confID,
+			Candidate: candidate,
+		})
+	}
+
+	// Use confID from the offer rather than ctrl.ConferenceID() so the answer
+	// is correctly routed even if ConferenceMember has not yet arrived.
+	answerSDP, err := pm.AcceptOffer(offerSDP)
+	if err != nil {
+		close(sdpSent)
+		return "", fmt.Errorf("AcceptOffer: %w", err)
+	}
+	close(sdpSent)
+	return answerSDP, nil
+}
+
 func (d *daemonCallbacks) HangupCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -1718,69 +1786,14 @@ func main() {
 				if msg.ConfID != "" {
 					// Conference SDP: route to the mesh peer for this member.
 					cb.mu.Lock()
-					var mesh *owebrtc.MeshManager
-					if cb.mesh == nil {
-						iceCfg := owebrtc.NewICEConfig(cb.iceServers)
-						cb.mesh = owebrtc.NewMeshManager(iceCfg)
-					}
-					mesh = cb.mesh
+					mesh := cb.mesh
 					cb.mu.Unlock()
 
-					pm := mesh.GetPeer(msg.From)
-					if pm == nil {
+					if mesh == nil || mesh.GetPeer(msg.From) == nil {
 						// No peer yet: we are the responder receiving the initiator's offer.
-						// Create the peer and wire callbacks before starting the handshake.
-						var err error
-						pm, err = mesh.AddPeer(msg.From)
+						answerSDP, err := cb.setupMeshResponder(msg.From, msg.SDP, msg.ConfID)
 						if err != nil {
-							slog.Error("conference: mesh AddPeer for incoming offer failed", "from", msg.From, "err", err)
-							break
-						}
-						// Wire remote audio track BEFORE AcceptOffer so pion cannot miss it.
-						webrtcCh := mixer.AddWebRTCSource(msg.From)
-						pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-							go func() {
-								defer recoverGoroutine("conf-remote-track-" + msg.From)
-								for {
-									pkt, _, err := track.ReadRTP()
-									if err != nil {
-										slog.Info("conference: remote track ended (responder)", "phone", msg.From)
-										return
-									}
-									pcm, err := cb.decoder.Decode(pkt.Payload)
-									if err != nil {
-										continue
-									}
-									frame := make([]int16, len(pcm))
-									copy(frame, pcm)
-									select {
-									case webrtcCh <- frame:
-									default:
-									}
-								}
-							}()
-						}
-						sdpSent := make(chan struct{})
-						pm.OnICECandidate = func(candidate string) {
-							<-sdpSent
-							cb.mu.Lock()
-							s := cb.sig
-							cb.mu.Unlock()
-							sendSignal(s, &sigclient.Message{
-								Type:      sigclient.TypeICE,
-								To:        msg.From,
-								ConfID:    msg.ConfID,
-								Candidate: candidate,
-							})
-						}
-						// Accept the offer and send back an answer.
-						// Use msg.ConfID (from the offer) rather than ctrl.ConferenceID() so
-						// the answer is correctly routed even if our ConferenceMember message
-						// has not yet arrived (possible on reconnect or out-of-order delivery).
-						answerSDP, err := pm.AcceptOffer(msg.SDP)
-						if err != nil {
-							slog.Error("conference: accept offer failed", "from", msg.From, "err", err)
-							close(sdpSent)
+							slog.Error("conference: setupMeshResponder failed", "from", msg.From, "err", err)
 							break
 						}
 						cb.mu.Lock()
@@ -1792,11 +1805,10 @@ func main() {
 							ConfID: msg.ConfID,
 							SDP:    answerSDP,
 						})
-						close(sdpSent)
 						slog.Info("conference: sent SDP answer to initiator", "to", msg.From, "conf_id", msg.ConfID)
 					} else {
 						// Peer already exists: we were the initiator and this is the answer.
-						if err := pm.SetAnswer(msg.SDP); err != nil {
+						if err := mesh.GetPeer(msg.From).SetAnswer(msg.SDP); err != nil {
 							slog.Error("conference: set answer failed", "from", msg.From, "err", err)
 						} else {
 							slog.Info("conference: applied SDP answer from peer", "from", msg.From)
