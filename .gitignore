@@ -22,6 +22,9 @@ server/certs/
 
 # Media / images
 images/
+# ...but the webapp ships a small PNG asset under static/images
+!server/internal/web/static/images/
+!server/internal/web/static/images/*
 *.img
 *.img.gz
 *.img.xz
@@ -54,3 +57,5 @@ hardware/pcb/*/gerber/
 __pycache__/
 *.pyc
 *.png
+# Webapp ships a small PNG under static/images/; keep it tracked
+!server/internal/web/static/images/*.png
