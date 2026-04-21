@@ -1,5 +1,3 @@
-{{template "layout-v2.html" .}}
-
 {{define "title"}}Connected families{{end}}
 
 {{define "content"}}
@@ -65,14 +63,7 @@
         <div class="hub__spokes">
           {{range .LinkedFamilies}}
           <div class="hub__spoke">
-            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
-              <rect x="33" y="50" width="14" height="18" rx="1"/>
-              <rect x="18" y="44" width="10" height="10"/>
-              <rect x="52" y="44" width="10" height="10"/>
-              <path d="M58 12 L58 30" stroke-linecap="round"/>
-              <circle cx="58" cy="10" r="2" fill="currentColor"/>
-            </svg>
+            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
             <div class="hub__label">{{.Name}}</div>
             {{if .AcceptedAt}}<div class="hub__since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</div>{{end}}
           </div>
@@ -80,14 +71,7 @@
         </div>
         <div class="hub__rail"></div>
         <div class="hub__center">
-          <svg class="hub__center-house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
-            <rect x="33" y="50" width="14" height="18" rx="1"/>
-            <rect x="18" y="44" width="10" height="10"/>
-            <rect x="52" y="44" width="10" height="10"/>
-            <path d="M58 12 L58 30" stroke-linecap="round"/>
-            <circle cx="58" cy="10" r="2" fill="currentColor"/>
-          </svg>
+          <svg class="hub__center-house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
           <div class="hub__center-name">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
           <div class="hub__center-sub">You</div>
         </div>
@@ -130,12 +114,7 @@
     {{else}}
     <div class="panel">
       <div class="empty">
-        <svg class="empty__icon" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" viewBox="0 0 80 80">
-          <path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/>
-          <rect x="33" y="50" width="14" height="18" rx="1"/>
-          <rect x="18" y="44" width="10" height="10"/>
-          <rect x="52" y="44" width="10" height="10"/>
-        </svg>
+        <svg class="empty__icon" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" viewBox="0 0 80 80">{{template "house-icon"}}</svg>
         <div>No connected families yet.</div>
         <div class="muted" style="font-size: 12px; margin-top: 4px;">Share an invite code to connect with another household.</div>
       </div>
@@ -175,12 +154,7 @@
   </section>
   {{end}}
 
-  {{if .Version}}
-  <footer class="page__foot">
-    <span>Server</span>
-    <span class="num">{{.Version}}</span>
-  </footer>
-  {{end}}
+  {{template "page-footer" .}}
 
 </div>
 {{end}}

@@ -50,22 +50,27 @@ func main() {
 	tmplFS := web.TemplateFS()
 	funcs := template.FuncMap{"fmtPhone": line.FormatNumber}
 
-	parse := func(pages ...string) *template.Template {
-		t, err := template.New("").Funcs(funcs).ParseFS(tmplFS, pages...)
+	parsePage := func(page string) *template.Template {
+		t, err := template.New("").Funcs(funcs).ParseFS(tmplFS,
+			"templates/_partials.html",
+			"templates/layout-v2.html",
+			"templates/layout-aol.html",
+			"templates/"+page,
+		)
 		if err != nil {
-			log.Fatalf("parse %v: %v", pages, err)
+			log.Fatalf("parse %s: %v", page, err)
 		}
 		return t
 	}
 
-	tDash := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/dashboard.html")
-	tPhones := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phones.html")
-	tPhoneDetail := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phone-detail.html")
-	tLinks := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/links.html")
-	tCalls := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/calls.html")
-	tSettings := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/settings.html")
-	tOnboard := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/onboard.html")
-	tLogin := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/login.html")
+	tDash := parsePage("dashboard.html")
+	tPhones := parsePage("phones.html")
+	tPhoneDetail := parsePage("phone-detail.html")
+	tLinks := parsePage("links.html")
+	tCalls := parsePage("calls.html")
+	tSettings := parsePage("settings.html")
+	tOnboard := parsePage("onboard.html")
+	tLogin := parsePage("login.html")
 
 	// ---- Fixture data ----
 

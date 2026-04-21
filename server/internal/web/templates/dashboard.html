@@ -1,5 +1,3 @@
-{{template "layout-v2.html" .}}
-
 {{define "title"}}Overview{{end}}
 
 {{define "content"}}
@@ -53,12 +51,7 @@
     {{end}}
   </section>
 
-  {{if .Version}}
-  <footer class="page__foot">
-    <span>Server</span>
-    <span class="num">{{.Version}}</span>
-  </footer>
-  {{end}}
+  {{template "page-footer" .}}
 
 </div>
 {{end}}

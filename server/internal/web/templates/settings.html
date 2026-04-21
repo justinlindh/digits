@@ -1,5 +1,3 @@
-{{template "layout-v2.html" .}}
-
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
@@ -152,7 +150,7 @@
     <div class="panel__body">
       <form action="/settings/theme" method="POST" class="stack-md">
         <label class="radio-card">
-          <input type="radio" name="theme" value="c" {{if or (eq .User.Theme "c") (eq .User.Theme "")}}checked{{end}}>
+          <input type="radio" name="theme" value="c" {{if eq .User.Theme "c"}}checked{{end}}>
           <div class="radio-card__title">
             <span class="radio-card__indicator"></span>
             Home intercom
@@ -210,12 +208,7 @@
     </div>
   </section>
 
-  {{if .Version}}
-  <footer class="page__foot">
-    <span>Server</span>
-    <span class="num">{{.Version}}</span>
-  </footer>
-  {{end}}
+  {{template "page-footer" .}}
 
 </div>
 {{end}}

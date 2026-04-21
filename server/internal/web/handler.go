@@ -85,35 +85,42 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 	}
-	parse := func(pages ...string) (*template.Template, error) {
-		return template.New("").Funcs(funcMap).ParseFS(templateFS, pages...)
+	// parsePage closes over the layout + shared-partials file list so each
+	// page only names itself. Adding a new layout or partial touches one line.
+	parsePage := func(page string) (*template.Template, error) {
+		return template.New("").Funcs(funcMap).ParseFS(templateFS,
+			"templates/_partials.html",
+			"templates/layout-v2.html",
+			"templates/layout-aol.html",
+			"templates/"+page,
+		)
 	}
 
-	tmplDashboard, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/dashboard.html")
+	tmplDashboard, err := parsePage("dashboard.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplPhones, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phones.html")
+	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplCalls, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/calls.html")
+	tmplCalls, err := parsePage("calls.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplSettings, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/settings.html")
+	tmplSettings, err := parsePage("settings.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplOnboard, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/onboard.html")
+	tmplOnboard, err := parsePage("onboard.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplPhoneDetail, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/phone-detail.html")
+	tmplPhoneDetail, err := parsePage("phone-detail.html")
 	if err != nil {
 		return nil, err
 	}
-	tmplLinks, err := parse("templates/layout-v2.html", "templates/layout-aol.html", "templates/links.html")
+	tmplLinks, err := parsePage("links.html")
 	if err != nil {
 		return nil, err
 	}
@@ -1610,7 +1617,7 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	theme := r.FormValue("theme")
+	theme := auth.Theme(r.FormValue("theme"))
 	if err := h.authStore.SetTheme(user.ID, theme); err != nil {
 		slog.Error("set theme failed", "err", err, "theme", theme)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
@@ -1672,7 +1679,7 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 // layoutFor returns the layout template name for the current user's theme.
 // Falls back to direction C when no theme is set (unauthenticated or new user).
 func layoutFor(r *http.Request) string {
-	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == "aol" {
+	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeAOL {
 		return "layout-aol.html"
 	}
 	return "layout-v2.html"

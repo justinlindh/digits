@@ -17,7 +17,7 @@ type User struct {
 	Email       string
 	Name        string
 	GoogleID    *string
-	Theme       string // "c" (home intercom, default) or "aol"
+	Theme       Theme
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
 }
@@ -128,9 +128,9 @@ func (s *Store) LinkGoogleID(userID, googleID string) error {
 	return err
 }
 
-// SetTheme updates the user's selected webapp theme ("c" or "aol").
-func (s *Store) SetTheme(userID, theme string) error {
-	if theme != "c" && theme != "aol" {
+// SetTheme updates the user's selected webapp theme.
+func (s *Store) SetTheme(userID string, theme Theme) error {
+	if !theme.Valid() {
 		return fmt.Errorf("invalid theme: %q", theme)
 	}
 	_, err := s.db.Exec(`UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
