@@ -196,11 +196,6 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 			slog.Error("failed to delete session", "err", err)
 		}
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:   CookieName,
-		Domain: h.cookieDomain,
-		MaxAge: -1,
-		Path:   "/",
-	})
+	clearSessionCookie(w, h.cookieDomain)
 	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 }
