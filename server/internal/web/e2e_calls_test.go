@@ -202,6 +202,120 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	t.Logf("✓ /calls page correctly scoped: shows %s, hides %s", displayA, displayB)
 }
 
+// TestCallsPageRenders3WayConference verifies that a completed conference
+// renders as a single unified entry with the chip--conf status chip and
+// all participant numbers visible.
+func TestCallsPageRenders3WayConference(t *testing.T) {
+	srv, database, _, tracker, authStore, householdStore := setupCallsTestServer(t)
+
+	user, err := authStore.CreateUser("e2e-calls-conf@example.com", "Conf User", nil)
+	if err != nil {
+		user, err = authStore.GetUserByEmail("e2e-calls-conf@example.com")
+		if err != nil {
+			t.Fatalf("create/get user: %v", err)
+		}
+	}
+
+	hh, err := householdStore.Create("Conf Family", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	if err := householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	pairingStore := pairing.NewStore(database.DB)
+	phones := []string{"5556001", "5556002", "5556003"}
+	hwIDs := []string{"e2e-conf-hw-1", "e2e-conf-hw-2", "e2e-conf-hw-3"}
+
+	for i, num := range phones {
+		code, err := pairingStore.GenerateCode(hwIDs[i])
+		if err != nil {
+			t.Fatalf("generate code %d: %v", i, err)
+		}
+		if _, _, err := pairingStore.ClaimDevice(code, num, "Phone "+num, hh.ID); err != nil {
+			t.Fatalf("claim phone %d: %v", i, err)
+		}
+	}
+
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM conference_members WHERE phone = ANY($1::text[])", "{5556001,5556002,5556003}")
+		_, _ = database.DB.Exec("DELETE FROM conferences WHERE host_phone = ANY($1::text[])", "{5556001,5556002,5556003}")
+		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller = ANY($1::text[]) OR callee = ANY($1::text[])", "{5556001,5556002,5556003}")
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = ANY($1::text[])", "{e2e-conf-hw-1,e2e-conf-hw-2,e2e-conf-hw-3}")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = ANY($1::text[])", "{5556001,5556002,5556003}")
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE user_id = $1", user.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM sessions WHERE user_id = $1", user.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", user.ID)
+	})
+
+	// Create a 3-way call: initiate A->B, add-leg A->C, merge, then end.
+	callID, err := tracker.OnCallInitiated(phones[0], phones[1])
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	if _, err := tracker.OnCallInitiated(phones[0], phones[2]); err != nil {
+		t.Fatalf("OnCallInitiated add-leg: %v", err)
+	}
+	conf, err := tracker.CreateConferencePersistent(phones[0], callID, []string{phones[1], phones[2]})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+	if err := tracker.EndConferencePersistent(conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	token, _, err := authStore.CreateSession(user.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	jar := &testCookieJar{cookie: &http.Cookie{Name: auth.CookieName, Value: token}, url: srv.URL}
+	client := &http.Client{Jar: jar}
+
+	resp, err := client.Get(srv.URL + "/calls")
+	if err != nil {
+		t.Fatalf("GET /calls: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var bodyBuf strings.Builder
+	if _, err := io.Copy(&bodyBuf, resp.Body); err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	body := bodyBuf.String()
+
+	// The page should contain the "3-way" chip.
+	if !strings.Contains(body, "chip--conf") {
+		t.Errorf("expected chip--conf class in body (3-way conference chip)\nbody snippet: %s", truncate(body, 800))
+	}
+	if !strings.Contains(body, "3-way") {
+		t.Errorf("expected '3-way' text in body\nbody snippet: %s", truncate(body, 800))
+	}
+
+	// All three participant phone numbers should be visible.
+	for _, num := range phones {
+		display := line.FormatNumber(num)
+		if !strings.Contains(body, display) {
+			t.Errorf("expected phone %s in body\nbody snippet: %s", display, truncate(body, 800))
+		}
+	}
+
+	// Merged pre-merge legs must NOT appear as plain call rows (no arrow between A and B
+	// that is not inside a conference row). We verify this by checking that there is no
+	// "→" separator in the body (which would indicate a 2-party row rendered), since all
+	// pre-merge calls should be excluded.
+	// Note: the mobile layout uses "→" for 2-party calls; conference rows do not.
+	if strings.Contains(body, "→") {
+		t.Errorf("expected no 2-party arrow (→) in body — merged legs should be hidden\nbody snippet: %s", truncate(body, 800))
+	}
+
+	t.Logf("✓ /calls page renders 3-way conference with chip--conf and all participant numbers")
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
