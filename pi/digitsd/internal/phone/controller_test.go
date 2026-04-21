@@ -1218,6 +1218,167 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 	}
 }
 
+// TestController_OnHookOnFromConferenceStates verifies that hanging up from any
+// conference-related state tears down all mesh peers, calls HangupCall, stops
+// tones, turns off the LED, and resets all conference fields.
+func TestController_OnHookOnFromConferenceStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		state State
+	}{
+		{"ADD_DIALTONE", StateADD_DIALTONE},
+		{"ADD_DIALING", StateADD_DIALING},
+		{"ADD_CALLING", StateADD_CALLING},
+		{"ADD_PRIVATE", StateADD_PRIVATE},
+		{"ADD_INTERCEPT", StateADD_INTERCEPT},
+		{"CONFERENCE_MERGED", StateCONFERENCE_MERGED},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockCallbacks{}
+			c := NewController(mock, "5550001")
+			c.setStateForTest(tc.state)
+			c.setHeldPeerForTest("5550002")
+			c.setAddingPeerForTest("5550003")
+			// Simulate being part of a conference so the guard fires.
+			c.mu.Lock()
+			c.confID = "conf-abc"
+			c.mu.Unlock()
+
+			c.HandleEvent("HOOK:ON")
+
+			if c.State() != StateIDLE {
+				t.Errorf("expected StateIDLE, got %v", c.State())
+			}
+			if !mock.allPeersTorndown() {
+				t.Errorf("expected TearDownAllMeshPeers to be called")
+			}
+			if mock.Hangups() == 0 {
+				t.Errorf("expected HangupCall to be called")
+			}
+			if !mock.tonePlayed(ToneStop) {
+				t.Errorf("expected SendTone(STOP)")
+			}
+			leds := mock.LEDs()
+			if len(leds) == 0 || leds[len(leds)-1] != "OFF" {
+				t.Errorf("expected SendLED(OFF), got %v", leds)
+			}
+			if c.ConferenceID() != "" {
+				t.Errorf("expected confID cleared, got %q", c.ConferenceID())
+			}
+			// Verify heldPeer and addingPeer cleared (via setters using lock — read directly under lock).
+			c.mu.Lock()
+			held, adding := c.heldPeer, c.addingPeer
+			c.mu.Unlock()
+			if held != "" {
+				t.Errorf("expected heldPeer cleared, got %q", held)
+			}
+			if adding != "" {
+				t.Errorf("expected addingPeer cleared, got %q", adding)
+			}
+		})
+	}
+}
+
+// TestController_HandleConferenceEndFromAddStates verifies that HandleConferenceEnd
+// transitions to REMOTE_HANGUP (not IDLE) and tears down all mesh peers when
+// called from any of the ADD_* intermediate states.
+func TestController_HandleConferenceEndFromAddStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		state State
+	}{
+		{"ADD_DIALTONE", StateADD_DIALTONE},
+		{"ADD_DIALING", StateADD_DIALING},
+		{"ADD_CALLING", StateADD_CALLING},
+		{"ADD_PRIVATE", StateADD_PRIVATE},
+		{"ADD_INTERCEPT", StateADD_INTERCEPT},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockCallbacks{}
+			c := NewController(mock, "5550001")
+			defer c.Close()
+			// Set the conference state so the confID guard passes.
+			c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+				{Phone: "5550001", Role: signal.RoleHost},
+				{Phone: "5550002", Role: signal.RoleAdded},
+			})
+			c.setStateForTest(tc.state)
+
+			c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+			if c.State() != StateREMOTE_HANGUP {
+				t.Errorf("expected StateREMOTE_HANGUP from %v, got %v", tc.state, c.State())
+			}
+			if !mock.allPeersTorndown() {
+				t.Errorf("expected TearDownAllMeshPeers to be called")
+			}
+			if c.ConferenceID() != "" {
+				t.Errorf("expected confID cleared, got %q", c.ConferenceID())
+			}
+		})
+	}
+}
+
+// TestController_DialThirdPartyRejectsSelfDial verifies that dialThirdParty
+// rejects a self-call (ADD_DIALING -> ADD_INTERCEPT) without calling InitiateCall.
+func TestController_DialThirdPartyRejectsSelfDial(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING, got %v", c.State())
+	}
+
+	// Dial own number as third party.
+	c.HandleEvent("DIAL:5550001")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT on self-dial, got %v", c.State())
+	}
+	if len(mock.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall on self-dial, got %v", mock.Calls())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Errorf("expected ToneIntercept on self-dial, got tones: %v", mock.Tones())
+	}
+}
+
+// TestController_DialThirdPartyRejectsBlockedContact verifies that dialThirdParty
+// rejects a number not in the contact list (ADD_DIALING -> ADD_INTERCEPT).
+func TestController_DialThirdPartyRejectsBlockedContact(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	// Only 5550002 is allowed; 5550004 is blocked.
+	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5550002": true}})
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING, got %v", c.State())
+	}
+
+	// Dial a blocked number as third party.
+	c.HandleEvent("DIAL:5550004")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT on blocked contact, got %v", c.State())
+	}
+	if len(mock.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall for blocked contact, got %v", mock.Calls())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Errorf("expected ToneIntercept on blocked contact, got tones: %v", mock.Tones())
+	}
+}
+
 func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
