@@ -7,7 +7,7 @@ Index of the Digits project's printed-circuit-board revisions. Each revision liv
 | Rev  | Status        | Construction                    | Notes |
 |------|---------------|---------------------------------|-------|
 | V1   | Fabricated    | Hand-assembled                  | First PCB attempt. External Codec Zero HAT for audio; external L298N plus step-up transformer for ringer. Has documented defects (see `v1/ERRATA.md`). |
-| V1.1 | In progress   | Hand-assembled                  | Incremental revision of V1 that corrects the V1 errata. Gerbers drafted in `v1/gerber-v1.1/`; no separate directory split yet. |
+| V1.1 | Planned       | Hand-assembled                  | Incremental revision of V1 that corrects the V1 errata. Fix targets tracked per-entry in `v1/ERRATA.md`. |
 | V2   | Fabricated    | Contract-assembly (JLCPCB PCBA) | Onboard TLV320AIC3104 audio codec and onboard DRV8871 H-bridge ringer driver. Not practical to hand-solder. Shipped with a J8 pinout errata (see `v2/ERRATA.md`). |
 | V2.1 | In progress   | Contract-assembly (JLCPCB PCBA) | Minor spin of V2 with J8 pinout reassigned to match the stock Sangyn handset cable directly. Schematic, PCB, and docs in `v2.1/`. |
 
@@ -28,5 +28,5 @@ Pick **V2** (really V2.1 once it ships) if you want a production board with inte
 - `v<N>/README.md` -- per-revision introduction and file map
 - `v<N>/ERRATA.md` -- defects and workarounds for each revision; present where the revision has known issues
 - `v<N>/kicad/` -- KiCad project, schematic, layout, and project-local symbol library
-- `v<N>/gerber*/` -- Gerber output; occasionally holds successor-version gerbers before a full directory split
+- `v<N>/gerber/` -- Gerber output corresponding to the as-fabricated boards for that revision
 - `docs/build/wiring.md` (repo-wide, not per-revision) -- off-board wiring reference that applies across V1: handset RJ9 to JST adapter, L298N ringer wiring with transformer pairs, keypad ribbon, hook switch, mic kill switch

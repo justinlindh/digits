@@ -6,7 +6,7 @@ V1 is a **hand-assembled board**. It is fabricated bare from any low-cost PCB ho
 
 ## Status
 
-Partially functional. Keypad, hook switch, handset audio, status LED, UART-to-Pi comms, power regulation, and the external ringer subsystem all work on boards built with the documented rework. The board has several defects that require per-unit bodges or careful wiring; read `ERRATA.md` before building one. A **V1.1** revision is planned to correct the defects; in-progress Gerbers live in `gerber-v1.1/`.
+Partially functional. Keypad, hook switch, handset audio, status LED, UART-to-Pi comms, power regulation, and the external ringer subsystem all work on boards built with the documented rework. The board has several defects that require per-unit bodges or careful wiring; read `ERRATA.md` before building one. A **V1.1** revision is planned to correct the defects; fix targets are tracked per-entry in `ERRATA.md`.
 
 ## File map
 
@@ -19,7 +19,6 @@ hardware/pcb/v1/
 ├── mems-validation-plan.md  # MEMS mic disable procedure for Codec Zero HAT
 ├── kicad/                   # KiCad schematic, PCB layout, project files
 ├── gerber/                  # V1 Gerbers (as fabricated)
-├── gerber-v1.1/             # V1.1 Gerbers (in progress)
 └── renders/                 # PCB 3D renders
 ```
 
