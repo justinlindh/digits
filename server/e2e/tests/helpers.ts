@@ -44,11 +44,11 @@ export async function navigateTo(page: Page, path: string): Promise<boolean> {
 /**
  * Theme identifiers. Match auth.ThemeIntercom / auth.ThemeDialup in the server.
  */
-export type Theme = 'c' | 'dialup';
+export type Theme = 'intercom' | 'dialup';
 
 /**
  * Layout identifiers, one per layout template.
- *   'v2'     -> layout-v2.html (top rail, brass accent) used by theme 'c'
+ *   'v2'     -> layout-v2.html (top rail, brass accent) used by theme 'intercom'
  *   'dialup' -> layout-dialup.html (channels sidebar) used by theme 'dialup'
  */
 export type Layout = 'v2' | 'dialup';

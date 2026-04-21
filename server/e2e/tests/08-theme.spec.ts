@@ -2,8 +2,8 @@
  * 08-theme.spec.ts — Theme switcher and per-theme rendering.
  *
  * The redesign ships two visual themes:
- *   - "c"      Home-intercom (default): layout-v2.html, warm paper + brass
- *   - "dialup" Online-service 1997:     layout-dialup.html, blue title bar
+ *   - "intercom" Home-intercom (default): layout-v2.html, warm paper + brass
+ *   - "dialup"   Online-service 1997:     layout-dialup.html, blue title bar
  *
  * These tests exercise the theme switcher on /settings and verify each
  * layout renders the core pages without error. Each test restores the
@@ -29,11 +29,11 @@ test.describe('Theme switcher', () => {
   test.afterEach(async ({ page }) => {
     // Always restore the default theme so later test files start from a
     // known state. If the request 401s (no session) just ignore.
-    await setTheme(page.request, 'c').catch(() => undefined);
+    await setTheme(page.request, 'intercom').catch(() => undefined);
   });
 
   test('default theme "intercom" renders layout-v2 (rail)', async ({ page }) => {
-    await setTheme(page.request, 'c').catch(() => undefined);
+    await setTheme(page.request, 'intercom').catch(() => undefined);
     await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session or needs onboarding');
@@ -82,7 +82,7 @@ test.describe('Theme switcher', () => {
     await expect(page.locator('input[type="radio"][name="theme"][value="dialup"]')).toBeChecked();
 
     // Flip back to c and confirm.
-    await setTheme(page.request, 'c');
+    await setTheme(page.request, 'intercom');
     await page.goto('/settings');
     await expect(page.locator('input[type="radio"][name="theme"][value="intercom"]')).toBeChecked();
   });
@@ -102,7 +102,7 @@ const CORE_PAGES = [
   { path: '/settings', h1: /^Settings$/ },
 ];
 
-for (const theme of ['c', 'dialup'] as Theme[]) {
+for (const theme of ['intercom', 'dialup'] as Theme[]) {
   test.describe(`core pages render under theme "${theme}"`, () => {
     test.beforeEach(async ({ page }) => {
       // Skip the whole group if we can't establish a session.
@@ -117,7 +117,7 @@ for (const theme of ['c', 'dialup'] as Theme[]) {
 
     test.afterEach(async ({ page }) => {
       // Always leave the DB pointing at the default theme.
-      await setTheme(page.request, 'c').catch(() => undefined);
+      await setTheme(page.request, 'intercom').catch(() => undefined);
     });
 
     for (const { path, h1 } of CORE_PAGES) {
