@@ -433,14 +433,27 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	linkedFamilies := h.buildLinkedFamilies(householdID)
 	linkedLineIndex := buildLinkedLineIndex(linkedFamilies)
 
-	// Annotate lines with active-call state.
+	// Annotate lines with active-call state. When both sides of the call are
+	// own lines (intra-household), each card uses the other local line's name
+	// as its peer instead of a phone-number fallback.
 	for _, pair := range active {
-		if lr := ownLineByNumber[pair.Caller]; lr != nil {
-			lr.OnCall = true
-			lr.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
-		} else if lr := ownLineByNumber[pair.Callee]; lr != nil {
-			lr.OnCall = true
-			lr.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
+		callerRow := ownLineByNumber[pair.Caller]
+		calleeRow := ownLineByNumber[pair.Callee]
+		if callerRow != nil {
+			callerRow.OnCall = true
+			if calleeRow != nil {
+				callerRow.OnCallPeerName = calleeRow.Line.Name
+			} else {
+				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
+			}
+		}
+		if calleeRow != nil {
+			calleeRow.OnCall = true
+			if callerRow != nil {
+				calleeRow.OnCallPeerName = callerRow.Line.Name
+			} else {
+				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
+			}
 		}
 	}
 

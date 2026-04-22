@@ -1378,6 +1378,7 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 }
 .rooms__card:hover { border-color: var(--brass); box-shadow: var(--shadow-2); text-decoration: none; }
 .rooms__card--live { border-color: rgba(196,139,58,0.4); }
+.rooms__card--live:hover { border-color: var(--brass); box-shadow: var(--shadow-2); }
 .rooms__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rooms__name { font-family: var(--font-display); font-style: italic; font-size: 17px; font-weight: 500; }
 .rooms__num { font-size: 13px; color: var(--ink-muted); }
