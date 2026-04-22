@@ -80,16 +80,30 @@ func NewHealthStore(d *db.Database) *HealthStore {
 	}
 }
 
+// Init creates an empty rings entry for a call. Called by Tracker on
+// OnCallInitiated so that subsequent Record calls have a place to land
+// without needing auto-creation (which would resurrect evicted calls).
+// Safe to call multiple times; idempotent.
+func (s *HealthStore) Init(callID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.calls[callID]; ok {
+		return
+	}
+	s.calls[callID] = &callRings{byEndpoint: make(map[string]*ring)}
+}
+
 // Record appends a sample for the given call and endpoint. Safe for
-// concurrent use.
+// concurrent use. No-op if Init was not called for this callID first
+// or if the call has been Evicted — this matches the tracker-authoritative
+// lifecycle and prevents post-Evict resurrection of map entries.
 func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 	s.mu.Lock()
 	cr, ok := s.calls[callID]
-	if !ok {
-		cr = &callRings{byEndpoint: make(map[string]*ring)}
-		s.calls[callID] = cr
-	}
 	s.mu.Unlock()
+	if !ok {
+		return // not initialized or already evicted
+	}
 
 	cr.mu.Lock()
 	defer cr.mu.Unlock()

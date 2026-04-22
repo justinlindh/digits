@@ -60,8 +60,15 @@ func main() {
 	tracker.SetHealthStore(healthStore)
 
 	healthCtx, cancelHealth := context.WithCancel(context.Background())
-	go healthStore.Run(healthCtx)
-	defer cancelHealth()
+	healthDone := make(chan struct{})
+	go func() {
+		defer close(healthDone)
+		healthStore.Run(healthCtx)
+	}()
+	defer func() {
+		cancelHealth()
+		<-healthDone // wait for final flush before DB close unwinds
+	}()
 
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore

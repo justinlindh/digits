@@ -28,10 +28,10 @@ type activeCall struct {
 	StartedAt time.Time
 }
 
-// healthEvictor is the subset of *HealthStore needed by Tracker to drop
-// per-call in-memory state on call end. Declared as an interface so Tracker
-// and HealthStore can live in the same package without a circular init.
-type healthEvictor interface {
+// healthLifecycle is the subset of *HealthStore that Tracker drives for
+// per-call lifecycle. Init is called at call start; Evict at call end.
+type healthLifecycle interface {
+	Init(callID int64)
 	Evict(callID int64)
 }
 
@@ -39,7 +39,7 @@ type Tracker struct {
 	db     *db.Database
 	mu     sync.Mutex
 	active map[string]*activeCall // "caller→callee" → call
-	health healthEvictor
+	health healthLifecycle
 }
 
 func New(d *db.Database) *Tracker {
@@ -49,9 +49,9 @@ func New(d *db.Database) *Tracker {
 	}
 }
 
-// SetHealthStore registers an optional health store for per-call eviction
-// on call end. Safe to call once at startup; subsequent calls overwrite.
-func (t *Tracker) SetHealthStore(h healthEvictor) {
+// SetHealthStore registers an optional health store for per-call lifecycle
+// management. Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetHealthStore(h healthLifecycle) {
 	t.mu.Lock()
 	t.health = h
 	t.mu.Unlock()
@@ -70,6 +70,7 @@ func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("track call: %w", err)
 	}
+
 	t.mu.Lock()
 	t.active[callKey(from, to)] = &activeCall{
 		ID:        id,
@@ -77,7 +78,12 @@ func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
 		Callee:    to,
 		StartedAt: time.Now(),
 	}
+	h := t.health
 	t.mu.Unlock()
+
+	if h != nil {
+		h.Init(id)
+	}
 	return id, nil
 }
 

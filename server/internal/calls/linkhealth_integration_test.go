@@ -26,6 +26,7 @@ func TestFlusherWritesLatestPerEndpoint(t *testing.T) {
 	d := setupTestDB(t)
 	s := NewHealthStore(d)
 	callID := insertCall(t, d, "555-1111", "555-2222")
+	s.Init(callID)
 	loss1 := float32(0.1)
 	loss2 := float32(0.2)
 	loss3 := float32(0.3)
@@ -65,6 +66,7 @@ func TestReadbackFromDB(t *testing.T) {
 	d := setupTestDB(t)
 	s := NewHealthStore(d)
 	callID := insertCall(t, d, "555-3333", "555-4444")
+	s.Init(callID)
 	loss := float32(0.5)
 	s.Record(callID, "555-3333", Sample{TS: time.Now(), LossPct: &loss})
 	if err := s.FlushOnce(context.Background()); err != nil {

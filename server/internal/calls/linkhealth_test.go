@@ -13,6 +13,7 @@ func sample(ts int64, loss float32) Sample {
 
 func TestHealthStoreRecordAndLatest(t *testing.T) {
 	s := NewHealthStore(nil) // nil DB => flusher disabled (flusher not implemented in T3 but constructor must accept nil cleanly)
+	s.Init(1)
 	s.Record(1, "A", sample(100, 0.5))
 	s.Record(1, "A", sample(200, 0.7))
 	s.Record(1, "B", sample(150, 0.2))
@@ -28,6 +29,7 @@ func TestHealthStoreRecordAndLatest(t *testing.T) {
 
 func TestHealthStoreRingWraparound(t *testing.T) {
 	s := NewHealthStore(nil)
+	s.Init(1)
 	for i := 0; i < 80; i++ {
 		s.Record(1, "A", sample(int64(i), float32(i)))
 	}
@@ -46,6 +48,7 @@ func TestHealthStoreRingWraparound(t *testing.T) {
 
 func TestHealthStoreEvict(t *testing.T) {
 	s := NewHealthStore(nil)
+	s.Init(1)
 	s.Record(1, "A", sample(100, 0.5))
 	s.Evict(1)
 	if win := s.Window(1, "A"); len(win) != 0 {
@@ -62,6 +65,7 @@ func TestHealthStoreConcurrentWritersSameRing(t *testing.T) {
 	// exercise in-ring contention under the per-call mutex. This is the
 	// contract Record documents: safe for concurrent use.
 	s := NewHealthStore(nil)
+	s.Init(1)
 	var wg sync.WaitGroup
 	const writers = 4
 	const samplesPerWriter = 500
@@ -92,6 +96,9 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 	// [1,4] ends up with samples on BOTH "A" and "B". Exercises top-level
 	// map races + per-call-map-creation races.
 	s := NewHealthStore(nil)
+	for id := int64(1); id <= 4; id++ {
+		s.Init(id)
+	}
 	var wg sync.WaitGroup
 	for w := 0; w < 8; w++ {
 		wg.Add(1)
@@ -112,5 +119,20 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 		if a, b := s.Latest(id, "A", "B"); a == nil || b == nil {
 			t.Fatalf("call %d missing samples: %v %v", id, a, b)
 		}
+	}
+}
+
+func TestHealthStoreRecordIsNoOpAfterEvict(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	s.Record(1, "A", sample(100, 0.5))
+	s.Evict(1)
+	s.Record(1, "A", sample(200, 0.9)) // should NOT resurrect map entry
+	if win := s.Window(1, "A"); len(win) != 0 {
+		t.Fatalf("post-evict Record must not create entry; got window len %d", len(win))
+	}
+	a, b := s.Latest(1, "A", "B")
+	if a != nil || b != nil {
+		t.Fatalf("post-evict Record must not resurrect rings; got (%v,%v)", a, b)
 	}
 }
