@@ -365,14 +365,15 @@ func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message)
 		return
 	}
 
-	conf := r.Tracker.Conferences().ConferenceByPhone(from)
+	ct := r.Tracker.Conferences()
+	conf := ct.ConferenceByPhone(from)
 	if conf == nil {
 		slog.Debug("link_health peer set but endpoint not in an active conference",
 			"endpoint", from, "peer", p.Peer)
 		return
 	}
-	if !r.Tracker.Conferences().ConferenceContains(conf.ID, from, p.Peer) {
-		slog.Debug("link_health peer not a co-member - phantom edge, dropping",
+	if !ct.ConferenceContains(conf.ID, from, p.Peer) {
+		slog.Debug("link_health peer not a co-member (phantom edge, dropping)",
 			"endpoint", from, "peer", p.Peer, "conf_id", conf.ID)
 		return
 	}
