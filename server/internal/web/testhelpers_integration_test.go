@@ -69,6 +69,13 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 // Returns the server plus the collaborators individual tests need to seed
 // or assert against. The trailing *signaling.Hub return is used by WS tests
 // that need to poll hub state via waitForRegister.
+//
+// PairingStore is intentionally nil here: the WS handler's register path
+// emits a TypePairingCode message for any unpaired hardware_id when
+// pairingStore is non-nil, which would sit in the test's ws read buffer
+// ahead of the Ring/Answer/Error messages the e2e tests actually assert
+// against. Tests that exercise the pairing flow should use a dedicated
+// setup that seeds paired device rows.
 func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store, *signaling.Hub) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -82,6 +89,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store,
 	t.Cleanup(func() { _ = database.Close() })
 
 	deps, authStore := testDeps(t, database)
+	deps.PairingStore = nil
 	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
