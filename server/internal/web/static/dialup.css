@@ -1389,3 +1389,10 @@ body.crt-all .crt__brand::after {
   body.crt-page .crt__brand,
   body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }
+
+/* Confirm dialog placeholder - see issue #214 for full dialup treatment */
+.confirm-dialog { border: 2px outset var(--dialup-chrome); padding: 12px 14px; background: var(--dialup-chrome-l); max-width: 380px; width: 90vw; font-family: var(--dialup-font, Tahoma, sans-serif); }
+.confirm-dialog::backdrop { background: rgba(0,0,0,0.4); }
+.confirm-dialog__title { font-weight: bold; font-size: 14px; margin: 0 0 8px; color: var(--dialup-ink); }
+.confirm-dialog__body { font-size: 12px; color: var(--dialup-ink); margin: 0 0 14px; line-height: 1.5; }
+.confirm-dialog__actions { display: flex; gap: 6px; justify-content: flex-end; }

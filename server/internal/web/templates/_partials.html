@@ -13,3 +13,57 @@
      The caller wraps with its own <svg class="..."> so size + color propagate
      via CSS. Use viewBox="0 0 80 80", fill="none", stroke="currentColor". */}}
 {{define "house-icon"}}<path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/><rect x="33" y="50" width="14" height="18" rx="1"/><rect x="18" y="44" width="10" height="10"/><rect x="52" y="44" width="10" height="10"/><path d="M58 12 L58 30" stroke-linecap="round"/><circle cx="58" cy="10" r="2" fill="currentColor"/>{{end}}
+
+{{/* confirm-dialog is a page-level modal triggered by elements that carry
+     data-confirm attributes. Replaces the browser confirm() prompt with
+     themed UI. Used for Cancel-pending-invite, Disconnect-family, and any
+     future POST-on-confirm action.
+
+     Trigger markup:
+       <button type="button"
+               data-confirm
+               data-confirm-action="/links/{id}/revoke"
+               data-confirm-title="Cancel invite XYZ?"
+               data-confirm-body="The code will stop working immediately."
+               data-confirm-submit="Cancel invite">Cancel</button>
+
+     Clicks bubble to a document-level handler that populates and opens
+     the dialog. Submit sends a POST (plain form submission, no fetch).
+     Supports htmx for hx-post triggers via data-confirm-hx="post". */}}
+{{define "confirm-dialog"}}
+<dialog id="confirm-dialog" class="confirm-dialog">
+  <form method="POST" id="confirm-dialog__form">
+    <h3 id="confirm-dialog__title" class="confirm-dialog__title"></h3>
+    <p id="confirm-dialog__body" class="confirm-dialog__body"></p>
+    <div class="confirm-dialog__actions">
+      <button type="button" id="confirm-dialog__cancel" class="btn btn--quiet">Never mind</button>
+      <button type="submit" id="confirm-dialog__submit" class="btn btn--danger"></button>
+    </div>
+  </form>
+</dialog>
+<script>
+(function () {
+  var dialog = document.getElementById('confirm-dialog');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+  var form = document.getElementById('confirm-dialog__form');
+  var title = document.getElementById('confirm-dialog__title');
+  var body = document.getElementById('confirm-dialog__body');
+  var submit = document.getElementById('confirm-dialog__submit');
+  var cancel = document.getElementById('confirm-dialog__cancel');
+  cancel.addEventListener('click', function () { dialog.close(); });
+  dialog.addEventListener('click', function (e) {
+    if (e.target === dialog) dialog.close();
+  });
+  document.addEventListener('click', function (e) {
+    var trigger = e.target.closest('[data-confirm]');
+    if (!trigger) return;
+    e.preventDefault();
+    form.action = trigger.dataset.confirmAction || '';
+    title.textContent = trigger.dataset.confirmTitle || 'Are you sure?';
+    body.textContent = trigger.dataset.confirmBody || '';
+    submit.textContent = trigger.dataset.confirmSubmit || 'Confirm';
+    dialog.showModal();
+  });
+})();
+</script>
+{{end}}

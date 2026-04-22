@@ -100,10 +100,13 @@
             {{if .AcceptedAt}}<div>Connected {{.AcceptedAt.Format "Jan 2"}}</div>{{end}}
             <div>{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</div>
           </div>
-          <form method="POST" action="/links/{{.ID}}/revoke"
-            onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
-            <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Disconnect</button>
-          </form>
+          <button type="button"
+            data-confirm
+            data-confirm-action="/links/{{.ID}}/revoke"
+            data-confirm-title="Disconnect from {{.Name}}?"
+            data-confirm-body="Calls between families will no longer be possible. You can reconnect later with a new invite."
+            data-confirm-submit="Disconnect"
+            class="btn btn--quiet btn--sm" style="color: var(--rust);">Disconnect</button>
         </div>
         <div class="neighborhood__lines">
           {{if .Lines}}
@@ -148,10 +151,13 @@
               <td class="num brass" style="letter-spacing: 0.2em;">{{.InviteCode}}</td>
               <td class="num muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
               <td class="r">
-                <form method="POST" action="/links/{{.ID}}/revoke"
-                  onsubmit="return confirm('Cancel invite {{.InviteCode}}?')">
-                  <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
-                </form>
+                <button type="button"
+                  data-confirm
+                  data-confirm-action="/links/{{.ID}}/revoke"
+                  data-confirm-title="Cancel invite {{.InviteCode}}?"
+                  data-confirm-body="The code will stop working immediately. You can generate a new invite anytime."
+                  data-confirm-submit="Cancel invite"
+                  class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
               </td>
             </tr>
             {{end}}
@@ -165,10 +171,13 @@
             <div class="num brass" style="font-size: 14px; letter-spacing: 0.2em;">{{.InviteCode}}</div>
             <div class="muted" style="font-size: 11.5px; margin-top: 2px;">Created {{.CreatedAt.Format "Jan 2, 2006"}}</div>
           </div>
-          <form method="POST" action="/links/{{.ID}}/revoke"
-            onsubmit="return confirm('Cancel invite {{.InviteCode}}?')">
-            <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
-          </form>
+          <button type="button"
+            data-confirm
+            data-confirm-action="/links/{{.ID}}/revoke"
+            data-confirm-title="Cancel invite {{.InviteCode}}?"
+            data-confirm-body="The code will stop working immediately. You can generate a new invite anytime."
+            data-confirm-submit="Cancel invite"
+            class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
         </li>
         {{end}}
       </ul>

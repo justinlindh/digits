@@ -48,7 +48,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/login.html")
+	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
@@ -1159,8 +1159,8 @@ func TestLinksPage_MultiplePendingInvites(t *testing.T) {
 	if !strings.Contains(body, "Pending invites sent") {
 		t.Errorf("links page missing Pending invites heading")
 	}
-	if strings.Count(body, `action="/links/`) < 3 {
-		t.Errorf("expected at least 3 revoke forms for pending invites, got fewer in body")
+	if strings.Count(body, `data-confirm-action="/links/`) < 3 {
+		t.Errorf("expected at least 3 revoke triggers for pending invites, got fewer in body")
 	}
 }
 
