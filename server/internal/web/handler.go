@@ -691,7 +691,6 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
 				row.UpdateAvailable = true
 			}
-			}
 		}
 		rows[i] = row
 	}
