@@ -2,6 +2,7 @@ package email
 
 import (
 	"errors"
+	"mime"
 	"net/mail"
 	"net/smtp"
 	"strings"
@@ -46,7 +47,7 @@ func (s *SMTPSender) Send(to, subject, htmlBody string) error {
 	headers := []string{
 		"From: " + fromAddr.String(),
 		"To: " + toAddr.String(),
-		"Subject: " + subject,
+		"Subject: " + mime.QEncoding.Encode("utf-8", subject),
 		"MIME-Version: 1.0",
 		"Content-Type: text/html; charset=UTF-8",
 		`X-SMTPAPI: {"filters":{"clicktrack":{"settings":{"enable":0}},"opentrack":{"settings":{"enable":0}}}}`,
