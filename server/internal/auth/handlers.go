@@ -171,8 +171,7 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set Secure when request is HTTPS (directly or via common proxy header),
-	// while keeping local HTTP dev/CI behavior working.
+	// Dev-only: derive Secure from request scheme so plain HTTP localhost still works.
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    sessionToken,
