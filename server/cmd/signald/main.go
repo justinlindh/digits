@@ -56,7 +56,11 @@ func main() {
 	// Link store
 	linkStore := household.NewLinkStore(database.DB)
 
-	healthStore := calls.NewHealthStore(database)
+	flushDisabled := os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1"
+	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(flushDisabled))
+	if flushDisabled {
+		slog.Warn("link-health flusher disabled via SIGNALD_LINK_HEALTH_FLUSH_DISABLED")
+	}
 	tracker.SetHealthStore(healthStore)
 
 	healthCtx, cancelHealth := context.WithCancel(context.Background())

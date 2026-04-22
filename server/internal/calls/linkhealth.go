@@ -68,16 +68,32 @@ func (r *ring) latest() *Sample {
 // nil the store operates in memory-only mode. Zero-value is NOT valid; use
 // NewHealthStore.
 type HealthStore struct {
-	db    *db.Database
-	mu    sync.Mutex
-	calls map[int64]*callRings
+	db            *db.Database
+	mu            sync.Mutex
+	calls         map[int64]*callRings
+	flushDisabled bool
 }
 
-func NewHealthStore(d *db.Database) *HealthStore {
-	return &HealthStore{
+// HealthStoreOption configures a HealthStore at construction time.
+type HealthStoreOption func(*HealthStore)
+
+// WithFlushDisabled causes HealthStore.Run to skip periodic DB flushes
+// and final shutdown flush. Ingest (Record/Init/Evict) and in-memory
+// reads (Latest/Window) remain fully operational. Intended for DB
+// maintenance windows; the in-memory rings still bound memory usage.
+func WithFlushDisabled(disabled bool) HealthStoreOption {
+	return func(s *HealthStore) { s.flushDisabled = disabled }
+}
+
+func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
+	s := &HealthStore{
 		db:    d,
 		calls: make(map[int64]*callRings),
 	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // Init creates an empty rings entry for a call. Called by Tracker on
@@ -285,9 +301,10 @@ func nullableString(s string) any {
 
 // Run blocks until ctx is canceled, flushing every flushInterval. On ctx
 // cancellation it runs one final flush before returning (bounded at 2s so
-// a graceful shutdown doesn't hang).
+// a graceful shutdown doesn't hang). If flushDisabled is true, Run still
+// blocks until ctx is canceled but skips all DB writes (periodic and final).
 func (s *HealthStore) Run(ctx context.Context) {
-	if s.db == nil {
+	if s.db == nil || s.flushDisabled {
 		<-ctx.Done()
 		return
 	}

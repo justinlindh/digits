@@ -1,6 +1,7 @@
 package calls
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -134,5 +135,36 @@ func TestHealthStoreRecordIsNoOpAfterEvict(t *testing.T) {
 	a, b := s.Latest(1, "A", "B")
 	if a != nil || b != nil {
 		t.Fatalf("post-evict Record must not resurrect rings; got (%v,%v)", a, b)
+	}
+}
+
+func TestHealthStoreFlushDisabledOption(t *testing.T) {
+	// With FlushDisabled, Run returns when ctx is canceled without
+	// attempting any DB writes. Since NewHealthStore(nil, ...) is also
+	// a valid construction (nil DB), use that to avoid needing a DB
+	// in this unit test.
+	s := NewHealthStore(nil, WithFlushDisabled(true))
+	if !s.flushDisabled {
+		t.Fatal("expected flushDisabled == true")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.Run(ctx)
+	}()
+	cancel()
+	select {
+	case <-done:
+		// good
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+}
+
+func TestHealthStoreFlushDisabledDefaultsFalse(t *testing.T) {
+	s := NewHealthStore(nil)
+	if s.flushDisabled {
+		t.Fatal("expected flushDisabled default false")
 	}
 }
