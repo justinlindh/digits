@@ -64,6 +64,7 @@ func clearSessionCookie(w http.ResponseWriter, domain string) {
 		MaxAge:   -1,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 	})
 	if domain != "" {
 		http.SetCookie(w, &http.Cookie{
@@ -71,6 +72,7 @@ func clearSessionCookie(w http.ResponseWriter, domain string) {
 			MaxAge:   -1,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   true,
 		})
 	}
 }
