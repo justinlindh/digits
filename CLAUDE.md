@@ -49,6 +49,25 @@ make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
 
 `make firmware-local` runs `./scripts/build.sh`, which auto-detects `PICO_SDK_PATH` from common locations (`/usr/share/pico-sdk`, `~/pico-sdk`, etc.). Only set `PICO_SDK_PATH` explicitly if the SDK is installed somewhere non-standard.
 
+## Local dev server
+
+For running the webapp against a disposable local Postgres with a pre-seeded dialup-themed user (so UI work does not need a hand-wired DB):
+
+```
+make dev-up      # brings up user-db in Docker, seeds dev@digits.local + household, runs host-native signald (foreground)
+make dev-down    # stops and wipes the DB container + volume
+make dev-seed    # re-runs the idempotent seeder only
+make dev-logs    # tails the DB container
+```
+
+All from `server/`. Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored) -- e.g. change `SIGNALD_ADDR` if `:8080` is taken on your machine.
+
+Sign in by visiting `http://localhost:<SIGNALD_ADDR port>/auth/dev-session?email=dev@digits.local` -- the primary seeded user has `theme='dialup'` and is preloaded with three lines (Kitchen / Living room / Garage), two linked families (Grandma Lindh, The Coopers) each with their own lines, and one outstanding pending invite so every surface on `/`, `/links`, `/phones`, `/calls`, `/settings` renders with real data.
+
+`make dev-seed` is idempotent -- re-running never duplicates. `make dev-down && make dev-up` does a full reset. Pass `-minimal` to `go run ./cmd/devseed/` directly if you only want the primary user with no lines or links (e.g. for testing onboarding flows).
+
+Prefer this over hand-running `go run ./cmd/signald/` with a local DB; `dev-up` handles the Postgres container, migrations, and seeding as one command.
+
 ## Linting
 
 golangci-lint v2 with `standard` defaults. Config is in `.golangci.yml` at repo root.
