@@ -1094,3 +1094,123 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   .dialup-channels { width: auto; flex-direction: row; flex-wrap: wrap; }
   .dialup-channel { flex: 1 1 120px; }
 }
+
+/* =========================================================================
+   CRT monitor bezel (used on /connecting and, when CRTMode=all, wrapping
+   the whole dialup window). Activated only when the body carries either
+   .crt-page or .crt-all. Without those classes, the .crt / .crt__screen
+   containers render as transparent passthroughs.
+   ========================================================================= */
+
+/* Passthrough: when no CRT class is active, .crt and .crt__screen add no
+   decoration. Connecting.html always emits the markup but relies on these
+   classes to opt in. */
+.crt { display: contents; }
+.crt__screen { background: transparent; }
+.crt__brand { display: none; }
+
+/* Active: .crt-page (just this page) or .crt-all (every dialup page). */
+body.crt-page .crt,
+body.crt-all .crt {
+  display: grid;
+  position: fixed;
+  inset: 0;
+  place-items: center;
+  background: radial-gradient(ellipse at center, #0a1a2a 0%, #000 78%);
+  perspective: 1400px;
+  z-index: 0;
+}
+
+body.crt-page .crt__screen,
+body.crt-all .crt__screen {
+  position: relative;
+  width: min(860px, 92vw);
+  max-height: 88vh;
+  background: var(--dialup-desktop);
+  border-radius: 24px / 32px;
+  padding: 28px 30px;
+  box-shadow:
+    inset 0 0 80px rgba(0,0,0,0.55),
+    inset 0 0 16px rgba(255,255,255,0.08),
+    0 0 0 14px #d9d0bc,
+    0 0 0 16px #8a8070,
+    0 0 0 20px #3b3328,
+    0 40px 80px rgba(0,0,0,0.8);
+  overflow: hidden;
+  transform: rotateX(0.8deg);
+}
+
+/* Connecting-page screen is 4:3; when wrapping the dashboard we let it
+   match the window's natural aspect instead. */
+body.crt-page .crt__screen { aspect-ratio: 4 / 3; }
+
+body.crt-page .crt__screen::before,
+body.crt-all .crt__screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.04) 0 1px,
+    transparent 1px 3px
+  );
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  z-index: 5;
+}
+
+body.crt-page .crt__screen::after,
+body.crt-all .crt__screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.6) 100%);
+  pointer-events: none;
+  z-index: 6;
+  animation: crt-flicker 7s infinite steps(1, end);
+}
+
+@keyframes crt-flicker {
+  0%, 92%, 96%, 100% { opacity: 1; }
+  93% { opacity: 0.85; }
+  97% { opacity: 0.92; }
+}
+
+body.crt-page .crt__brand,
+body.crt-all .crt__brand {
+  display: block;
+  position: absolute;
+  bottom: -48px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #cfc6b3;
+  font-family: "Tahoma", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.4em;
+  font-weight: bold;
+  text-shadow: 0 1px 0 #000;
+  z-index: 7;
+}
+
+/* Reduced motion: cut the flicker. Scanlines stay because they don't move. */
+@media (prefers-reduced-motion: reduce) {
+  body.crt-page .crt__screen::after,
+  body.crt-all .crt__screen::after { animation: none; }
+}
+
+/* Narrow viewports: shrink the bezel rings so the inner content has room. */
+@media (max-width: 640px) {
+  body.crt-page .crt__screen,
+  body.crt-all .crt__screen {
+    padding: 14px 12px;
+    border-radius: 14px / 18px;
+    box-shadow:
+      inset 0 0 40px rgba(0,0,0,0.55),
+      0 0 0 6px #d9d0bc,
+      0 0 0 7px #8a8070,
+      0 0 0 10px #3b3328,
+      0 20px 40px rgba(0,0,0,0.8);
+  }
+  body.crt-page .crt__brand,
+  body.crt-all .crt__brand { bottom: -32px; font-size: 9px; letter-spacing: 0.3em; }
+}
