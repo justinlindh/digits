@@ -54,8 +54,8 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	h, err := NewHandler(nil, nil, hub, tracker, relay, HandlerConfig{
-		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, nil, nil, nil, nil, "", "")
+		Addr: ":0",
+	}, authStore, authHandlers, googleAuth, nil, nil, nil, nil, "", "", nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

@@ -3,6 +3,7 @@ package signaling
 import (
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -21,7 +22,8 @@ type CallTracker interface {
 	AllPeersOf(number string) []string
 	Conferences() *calls.ConferenceTracker
 	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
-	CallIDFor(a, b string) int64
+	CallIDForPair(a, b string) int64
+	CallIDFor(number string) (int64, bool)
 	EndConferencePersistent(confID uuid.UUID, reason string) error
 	DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
 }
@@ -31,6 +33,11 @@ type CallAuthorizer interface {
 	CanCall(fromNumber, toNumber string) (bool, error)
 }
 
+// HealthRecorder is the subset of *calls.HealthStore used by Relay.
+type HealthRecorder interface {
+	Record(callID int64, endpoint string, sample calls.Sample)
+}
+
 type Relay struct {
 	Hub            *Hub
 	Tracker        CallTracker
@@ -38,6 +45,7 @@ type Relay struct {
 	TURNDomain     string
 	CallAuthorizer CallAuthorizer
 	LineStore      LineStore
+	HealthStore    HealthRecorder
 }
 
 func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
@@ -92,6 +100,9 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 		return // No relay — server consumes this
 	case TypeRestart:
 		return // Server → device only; ignore if echoed back
+	case TypeLinkHealth:
+		r.handleLinkHealth(from, msg)
+		return
 	default:
 		slog.Warn("unknown message type", "type", msg.Type, "from", from)
 	}
@@ -307,4 +318,29 @@ func (r *Relay) forward(msg *Message) {
 	if err := r.Hub.SendTo(msg.To, msg); err != nil {
 		slog.Error("forward failed", "to", msg.To, "err", err)
 	}
+}
+
+// handleLinkHealth records a telemetry sample for the active call the
+// session endpoint (from, derived from the authenticated websocket) is
+// currently on. msg.From is ignored by design (forgery defense). Unknown
+// calls and missing payloads are dropped silently.
+func (r *Relay) handleLinkHealth(from string, msg *Message) {
+	if r.HealthStore == nil || r.Tracker == nil || msg.LinkHealth == nil {
+		return
+	}
+	callID, ok := r.Tracker.CallIDFor(from)
+	if !ok {
+		slog.Debug("link_health for endpoint not in active call", "endpoint", from)
+		return
+	}
+	p := msg.LinkHealth
+	r.HealthStore.Record(callID, from, calls.Sample{
+		TS:       time.UnixMilli(p.TS),
+		LossPct:  p.LossPct,
+		JitterMs: p.JitterMs,
+		RttMs:    p.RttMs,
+		ConnType: p.ConnType,
+		BytesIn:  p.BytesIn,
+		BytesOut: p.BytesOut,
+	})
 }

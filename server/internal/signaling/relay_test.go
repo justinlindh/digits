@@ -14,7 +14,7 @@ type mockTracker struct {
 	answered    []string
 	ended       []string
 	calls       map[string]bool  // "a→b" keys for active calls
-	callIDs     map[string]int64 // "a→b" keys for call IDs
+	callIDs     map[string]int64 // "a→b" keys for active call IDs
 	conferences *calls.ConferenceTracker
 }
 
@@ -40,7 +40,8 @@ func (m *mockTracker) setCallID(from, to string, id int64) {
 func (m *mockTracker) OnCallInitiated(from, to string) (int64, error) {
 	m.initiated = append(m.initiated, from+"→"+to)
 	m.calls[from+"→"+to] = true
-	return 0, nil
+	m.callIDs[from+"→"+to] = 1
+	return 1, nil
 }
 func (m *mockTracker) OnCallAnswered(caller, callee string) error {
 	m.answered = append(m.answered, caller+"→"+callee)
@@ -50,6 +51,8 @@ func (m *mockTracker) OnCallEnded(caller, callee string) error {
 	m.ended = append(m.ended, caller+"→"+callee)
 	delete(m.calls, caller+"→"+callee)
 	delete(m.calls, callee+"→"+caller)
+	delete(m.callIDs, caller+"→"+callee)
+	delete(m.callIDs, callee+"→"+caller)
 	return nil
 }
 func (m *mockTracker) ClearByNumber(number string) {
@@ -57,6 +60,7 @@ func (m *mockTracker) ClearByNumber(number string) {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
 			delete(m.calls, k)
+			delete(m.callIDs, k)
 		}
 	}
 }
@@ -122,7 +126,7 @@ func (m *mockTracker) CreateConferencePersistent(host string, originatingCallID 
 	return m.conferences.CreateConference(host, originatingCallID, addedMembers)
 }
 
-func (m *mockTracker) CallIDFor(a, b string) int64 {
+func (m *mockTracker) CallIDForPair(a, b string) int64 {
 	if id, ok := m.callIDs[a+"→"+b]; ok {
 		return id
 	}
@@ -132,6 +136,16 @@ func (m *mockTracker) CallIDFor(a, b string) int64 {
 	return 0
 }
 
+func (m *mockTracker) CallIDFor(number string) (int64, bool) {
+	for k, id := range m.callIDs {
+		a, b, _ := strings.Cut(k, "→")
+		if a == number || b == number {
+			return id, true
+		}
+	}
+	return 0, false
+}
+
 func (m *mockTracker) EndConferencePersistent(id uuid.UUID, reason string) error {
 	_, err := m.conferences.EndConference(id, reason)
 	return err
@@ -139,6 +153,23 @@ func (m *mockTracker) EndConferencePersistent(id uuid.UUID, reason string) error
 
 func (m *mockTracker) DropMemberPersistent(id uuid.UUID, phone, reason string) ([]string, bool, error) {
 	return m.conferences.DropMember(id, phone, reason)
+}
+
+// fakeHealthRecorder records calls for assertion in tests.
+type fakeHealthRecorder struct {
+	records []struct {
+		callID   int64
+		endpoint string
+		sample   calls.Sample
+	}
+}
+
+func (f *fakeHealthRecorder) Record(id int64, ep string, s calls.Sample) {
+	f.records = append(f.records, struct {
+		callID   int64
+		endpoint string
+		sample   calls.Sample
+	}{id, ep, s})
 }
 
 type mockCallAuthorizer struct {
@@ -779,4 +810,69 @@ func TestRelayRestartMessageNotPanics(t *testing.T) {
 	// Restart messages are server->device, not relayed through HandleMessage.
 	// But verify it doesn't crash if one passes through.
 	relay.HandleMessage("3140001", &Message{Type: TypeRestart, RestartMode: "service"})
+}
+
+func TestLinkHealthDispatchRecordsSample(t *testing.T) {
+	tr := newMockTracker()
+	// Seed an active call so CallIDFor("555-1111") returns (42, true).
+	tr.calls["555-1111→555-2222"] = true
+	tr.callIDs["555-1111→555-2222"] = 42
+
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tr, HealthStore: store}
+
+	loss := float32(0.5)
+	msg := &Message{
+		Type: TypeLinkHealth,
+		From: "555-OTHER", // forged -- MUST be ignored
+		LinkHealth: &LinkHealthPayload{
+			TS:      1714000000000,
+			LossPct: &loss,
+		},
+	}
+	r.handleLinkHealth("555-1111", msg)
+
+	if len(store.records) != 1 {
+		t.Fatalf("record count: got %d want 1", len(store.records))
+	}
+	got := store.records[0]
+	if got.callID != 42 {
+		t.Fatalf("callID: got %d want 42", got.callID)
+	}
+	if got.endpoint != "555-1111" {
+		t.Fatalf("endpoint: got %q want %q (forged From must be ignored)", got.endpoint, "555-1111")
+	}
+	if got.sample.LossPct == nil || *got.sample.LossPct != 0.5 {
+		t.Fatalf("loss: %+v", got.sample)
+	}
+}
+
+func TestLinkHealthDispatchDropsForUnknownCall(t *testing.T) {
+	tr := newMockTracker()
+	// No active calls -- CallIDFor returns (0, false).
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tr, HealthStore: store}
+
+	loss := float32(0.5)
+	r.handleLinkHealth("555-1111", &Message{
+		Type:       TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{TS: 1, LossPct: &loss},
+	})
+	if len(store.records) != 0 {
+		t.Fatalf("expected drop; got %d records", len(store.records))
+	}
+}
+
+func TestLinkHealthDispatchIgnoresNilPayload(t *testing.T) {
+	tr := newMockTracker()
+	tr.calls["555-1111→555-2222"] = true
+	tr.callIDs["555-1111→555-2222"] = 42
+
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tr, HealthStore: store}
+
+	r.handleLinkHealth("555-1111", &Message{Type: TypeLinkHealth, LinkHealth: nil})
+	if len(store.records) != 0 {
+		t.Fatalf("expected drop on nil LinkHealth; got %d", len(store.records))
+	}
 }

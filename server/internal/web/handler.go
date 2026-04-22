@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -75,9 +78,10 @@ type Handler struct {
 	upgrader websocket.Upgrader
 	lineStore   *line.Store
 	deviceStore *device.Store
-	hub      *signaling.Hub
-	tracker  *calls.Tracker
-	relay    *signaling.Relay
+	hub         *signaling.Hub
+	tracker     *calls.Tracker
+	relay       *signaling.Relay
+	healthStore *calls.HealthStore
 	// Per-page template sets to avoid {{define}} name conflicts
 	tmplDashboard   *template.Template
 	tmplPhones      *template.Template
@@ -115,7 +119,8 @@ type HandlerConfig struct {
 	// DevMode enables development-only conveniences. Today that means
 	// serving /static/ from disk instead of the embedded FS, so CSS and
 	// JS edits don't require a signald rebuild. When false, the embedded
-	// FS is used.
+	// FS is used. DevMode also registers the /dev/seed-firmware test
+	// helper used by e2e.
 	DevMode bool
 	// DevStaticDir is the disk path served for /static/ when DevMode is
 	// true. Empty falls back to devStaticDirDefault ("internal/web/static"),
@@ -124,7 +129,7 @@ type HandlerConfig struct {
 	DevStaticDir string
 }
 
-func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string, healthStore *calls.HealthStore) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 		"fmtDuration": func(seconds int) string {
@@ -133,6 +138,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 			}
 			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
 		},
+		"renderNotes": renderNotes,
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
@@ -196,6 +202,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		hub:             hub,
 		tracker:         tracker,
 		relay:           relay,
+		healthStore:     healthStore,
 		tmplDashboard:   tmplDashboard,
 		tmplPhones:      tmplPhones,
 		tmplCalls:       tmplCalls,
@@ -256,6 +263,13 @@ func (h *Handler) Router() http.Handler {
 		http.ServeFile(w, r, "static/test-client.html")
 	})
 
+	// Dev-only: seed a fake hub entry so e2e tests can exercise the firmware
+	// update chip without a real device connection. Only registered when
+	// DevMode is true.
+	if h.cfg.DevMode {
+		mux.HandleFunc("POST /dev/seed-firmware", h.handleDevSeedFirmware)
+	}
+
 	// Protected routes — require valid session
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
@@ -289,6 +303,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
@@ -668,6 +683,11 @@ func fmtElapsed(d time.Duration) string {
 
 // ---- Lines (Phones) ----
 
+type pairSuccess struct {
+	Name            string
+	FirmwareVersion string
+}
+
 type linesData struct {
 	Page                  string
 	Version               string
@@ -676,19 +696,21 @@ type linesData struct {
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
+	PairSuccess           *pairSuccess
 	User                  *auth.User
 	LatestPiVersion       string
 	LatestFirmwareVersion string
 }
 
 type lineRow struct {
-	Line            line.Line
-	Online          bool
-	OnCall          bool
-	OnCallPeerName  string
-	OnCallElapsed   string // "mm:ss" for the Dashboard room-card callout
-	DeviceInfo      *signaling.DeviceInfoSnapshot
-	UpdateAvailable bool // either Pi or firmware is behind the latest release
+	Line                line.Line
+	Online              bool
+	OnCall              bool
+	OnCallPeerName      string
+	OnCallElapsed       string // "mm:ss" for the Dashboard room-card callout
+	DeviceInfo          *signaling.DeviceInfoSnapshot
+	FirmwareUpdateNotes []updates.Release
+	PiUpdateNotes       []updates.Release
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
@@ -718,24 +740,28 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		onlineSet[n] = true
 	}
 
-	var latestPi, latestFw string
+	var (
+		idx                *updates.ReleaseIndex
+		latestPi, latestFw string
+	)
 	if h.Releases != nil {
-		if idx := h.Releases.ReleaseIndex(); idx != nil {
-			latestPi = idx.Pi.Latest
-			latestFw = idx.Firmware.Latest
-		}
+		idx = h.Releases.ReleaseIndex()
+	}
+	if idx != nil {
+		latestPi = idx.Pi.Latest
+		latestFw = idx.Firmware.Latest
 	}
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		if info != nil {
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.UpdateAvailable = true
-			}
+		if idx != nil && info != nil {
 			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.UpdateAvailable = true
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+			}
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
 			}
 		}
 		rows[i] = row
@@ -754,7 +780,14 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	renderWith(w, h.tmplPhones, layoutFor(r), h.buildLinesData(r, ""))
+	data := h.buildLinesData(r, "")
+	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
+		data.PairSuccess = &pairSuccess{
+			Name:            pairedName,
+			FirmwareVersion: r.URL.Query().Get("fw"),
+		}
+	}
+	renderWith(w, h.tmplPhones, layoutFor(r), data)
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
@@ -859,7 +892,9 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+	v := url.Values{}
+	v.Set("paired", name)
+	http.Redirect(w, r, "/phones?"+v.Encode(), http.StatusSeeOther)
 }
 
 type lineDetailData struct {
@@ -915,8 +950,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		if idx := h.Releases.ReleaseIndex(); idx != nil {
 			latestPi = idx.Pi.Latest
 			latestFw = idx.Firmware.Latest
-			piReleases = idx.SortedReleases("pi")
-			fwReleases = idx.SortedReleases("firmware")
+			piReleases = idx.SortedReleases(updates.ComponentPi)
+			fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 		}
 	}
 
@@ -2056,6 +2091,202 @@ func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request,
 	return h.requireLineOwnership(w, r, number) != nil
 }
 
+// ownedLinesForUser returns the lines owned by any household the user belongs
+// to, keyed by number, plus the primary household ID. Returns (nil, "", false)
+// if the user has no households or any lookup fails — caller writes 404, same
+// response shape as nonexistent.
+func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, string, bool) {
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil {
+		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		return nil, "", false
+	}
+	if len(households) == 0 {
+		return nil, "", false
+	}
+	lines := make(map[string]*line.Line)
+	for _, hh := range households {
+		hhLines, err := h.lineStore.ListByHousehold(hh.ID)
+		if err != nil {
+			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			return nil, "", false
+		}
+		for i := range hhLines {
+			ln := hhLines[i]
+			lines[ln.Number] = &ln
+		}
+	}
+	return lines, households[0].ID, true
+}
+
+// requireCallEndpointOwnership verifies the authenticated user owns either
+// endpoint of the call (across ANY household the user belongs to). Returns
+// the call, the owned-lines map (keyed by number), the primary household ID,
+// and true on success. On any failure, writes 404 (unauthorized and
+// nonexistent are indistinguishable).
+//
+// Implementation detail: always performs the same sequence of DB queries
+// regardless of auth outcome, to avoid a timing side channel on call-id
+// enumeration. Linked households do NOT grant access to telemetry; only
+// direct household ownership of a call endpoint does.
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	// Always do both queries in the same order, regardless of miss reason.
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(user)
+	call, callErr := h.tracker.GetCall(callID)
+
+	if callErr != nil {
+		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	if !ok || call.ID == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	_, ownsCaller := ownedLines[call.Caller]
+	_, ownsCallee := ownedLines[call.Callee]
+	if !ownsCaller && !ownsCallee {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	return call, ownedLines, primaryHH, true
+}
+
+// ---- Link Health API ----
+
+// LinkHealthSample is the JSON representation of a single link-health
+// measurement returned by GET /api/call/{id}/link-health.
+type LinkHealthSample struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
+}
+
+// LinkHealthEndpointResp is the per-endpoint section of a LinkHealthResp.
+type LinkHealthEndpointResp struct {
+	Number      string            `json:"number"`
+	DisplayName string            `json:"display_name"`
+	Latest      *LinkHealthSample `json:"latest,omitempty"`
+	Window      []LinkHealthSample `json:"window"`
+}
+
+// LinkHealthResp is the top-level response body for GET /api/call/{id}/link-health.
+type LinkHealthResp struct {
+	CallID    int64                  `json:"call_id"`
+	StartedAt time.Time              `json:"started_at"`
+	Caller    LinkHealthEndpointResp `json:"caller"`
+	Callee    LinkHealthEndpointResp `json:"callee"`
+}
+
+func toAPISample(s calls.Sample) LinkHealthSample {
+	return LinkHealthSample{
+		TS:       s.TS.UnixMilli(),
+		LossPct:  s.LossPct,
+		JitterMs: s.JitterMs,
+		RttMs:    s.RttMs,
+		ConnType: s.ConnType,
+		BytesIn:  s.BytesIn,
+		BytesOut: s.BytesOut,
+	}
+}
+
+func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, primaryHH, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	// Display-name resolution — same helpers as /calls page. No new data exposure.
+	// Linked-household names are shown for peers that the user already sees in
+	// their call log; the underlying auth check does not grant read access to
+	// calls the user was not part of.
+	var linkedIndex map[string]string
+	if primaryHH != "" {
+		linkedFamilies := h.buildLinkedFamilies(primaryHH)
+		linkedIndex = buildLinkedLineIndex(linkedFamilies)
+	}
+
+	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
+	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	resp.Caller = callerEndpoint
+	resp.Callee = calleeEndpoint
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("link_health encode failed", "call_id", callID, "err", err)
+	}
+}
+
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
+	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
+
+	// Display name resolution: owned line first (no extra DB query), then
+	// linked-index for peer names, then bare number as fallback.
+	if ln, ok := ownedLines[number]; ok && ln != nil {
+		out.DisplayName = ln.Name
+	} else {
+		out.DisplayName = resolvePeerName(number, linkedIndex)
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = number
+	}
+
+	// Memory first.
+	windowMem := h.healthStore.Window(callID, number)
+	if len(windowMem) > 0 {
+		out.Window = make([]LinkHealthSample, len(windowMem))
+		for i, s := range windowMem {
+			out.Window[i] = toAPISample(s)
+		}
+		la := toAPISample(windowMem[len(windowMem)-1])
+		out.Latest = &la
+		return out, nil
+	}
+
+	// DB fallback.
+	dbSamples, err := h.healthStore.Readback(ctx, callID, number, 60)
+	if err != nil {
+		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
+	}
+	out.Window = make([]LinkHealthSample, len(dbSamples))
+	for i, s := range dbSamples {
+		out.Window[i] = toAPISample(s)
+	}
+	if len(dbSamples) > 0 {
+		la := toAPISample(dbSamples[len(dbSamples)-1])
+		out.Latest = &la
+	}
+	return out, nil
+}
+
 // householdNumbers returns the set of phone numbers belonging to the
 // authenticated user's household. Returns nil if the user has no household.
 func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
@@ -2144,5 +2375,31 @@ func isHTMX(r *http.Request) bool {
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
 	return data
+}
+
+// handleDevSeedFirmware registers a fake hub entry for a line number with the
+// given firmware version. It is only reachable when DevMode is true and lets
+// the Playwright e2e suite exercise the firmware update chip without a real
+// device connection.
+//
+// POST /dev/seed-firmware?number=<line-number>&fw=<semver>
+func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) {
+	number := r.URL.Query().Get("number")
+	fw := r.URL.Query().Get("fw")
+	if number == "" || fw == "" {
+		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
+		return
+	}
+	conn := &signaling.Conn{Send: make(chan []byte, 8)}
+	// Drain Send so any hub fan-out to this fake device is silently discarded
+	// instead of blocking at the channel cap during interactive dev testing.
+	go func() {
+		for range conn.Send {
+		}
+	}()
+	h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
 }
 

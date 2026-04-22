@@ -51,6 +51,10 @@ const (
 	// TypeLineSettings is sent by the server to push an updated Settings blob
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
+
+	// TypeLinkHealth is sent by the phone to the server with a per-call
+	// quality telemetry snapshot. Phone → Server only.
+	TypeLinkHealth = "link_health"
 )
 
 // Conference message types (three-way calling)
@@ -69,6 +73,20 @@ const (
 	RoleHost  = "host"
 	RoleAdded = "added"
 )
+
+// LinkHealthPayload carries per-sample call-quality telemetry from phone to
+// signald. Mirrors server/internal/signaling.LinkHealthPayload; the two must
+// stay in sync. All numeric fields are pointers so "not available" is omitted
+// from JSON.
+type LinkHealthPayload struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
+}
 
 // ContactEntry represents a single contact in a sync payload.
 type ContactEntry struct {
@@ -148,6 +166,9 @@ type Message struct {
 	Initiator  bool                   `json:"initiator,omitempty"`
 	Members    []ConferenceMemberInfo `json:"members,omitempty"`
 	Reason     string                 `json:"reason,omitempty"`
+
+	// Link-health telemetry (link_health messages)
+	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.

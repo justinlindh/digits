@@ -59,16 +59,20 @@ func UserFromContext(ctx context.Context) *User {
 // Writing both variants mops up either form.
 func clearSessionCookie(w http.ResponseWriter, domain string) {
 	http.SetCookie(w, &http.Cookie{
-		Name:   CookieName,
-		Domain: domain,
-		MaxAge: -1,
-		Path:   "/",
+		Name:     CookieName,
+		Domain:   domain,
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
 	})
 	if domain != "" {
 		http.SetCookie(w, &http.Cookie{
-			Name:   CookieName,
-			MaxAge: -1,
-			Path:   "/",
+			Name:     CookieName,
+			MaxAge:   -1,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
 		})
 	}
 }

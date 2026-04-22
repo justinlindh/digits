@@ -229,6 +229,21 @@ END $$;`,
 		// v15: per-user CRT bezel preference for the dialup theme.
 		// 'off' / 'connecting' (default) / 'all'.
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS crt_mode TEXT NOT NULL DEFAULT 'connecting'`,
+		// v16: per-call link-health telemetry samples
+		`CREATE TABLE IF NOT EXISTS call_link_health (
+			call_id     INTEGER     NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
+			endpoint    TEXT        NOT NULL,
+			ts          TIMESTAMPTZ NOT NULL,
+			loss_pct    REAL,
+			jitter_ms   REAL,
+			rtt_ms      REAL,
+			conn_type   TEXT,
+			bytes_in    BIGINT,
+			bytes_out   BIGINT,
+			PRIMARY KEY (call_id, endpoint, ts)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_call_link_health_call_ts
+			ON call_link_health (call_id, ts DESC)`,
 		// v17: party line (three-way calling) support.
 		// Inner statements are idempotent (IF NOT EXISTS) so the block is safe on
 		// environments where the tables were created under an earlier version=15

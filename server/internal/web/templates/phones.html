@@ -11,6 +11,16 @@
   <div class="banner banner--err">{{.PairError}}</div>
   {{end}}
 
+  {{if .PairSuccess}}
+  <div class="pair-banner" role="status">
+    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
+    <span class="pair-banner__text">
+      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
+    </span>
+    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
+  </div>
+  {{end}}
+
   <section class="panel" style="margin-bottom: 20px;">
     <header class="panel__head">
       <h2 class="panel__title">Pair a new handset</h2>
@@ -259,8 +269,22 @@
           <td style="font-size: 12px;">
             {{if and .DeviceInfo .DeviceInfo.PiVersion}}
               <span class="num">{{.DeviceInfo.PiVersion}}</span>
-              {{if and $.LatestPiVersion (ne .DeviceInfo.PiVersion $.LatestPiVersion)}}
-                <span class="chip chip--warn" style="margin-left: 6px;"><span class="chip__dot"></span>{{$.LatestPiVersion}}</span>
+              {{if .PiUpdateNotes}}
+                <details class="update-details" style="margin-left: 6px; display: inline-block;">
+                  <summary class="chip chip--warn"><span class="chip__dot"></span>pi {{$.LatestPiVersion}} available</summary>
+                  <div class="update-notes">
+                    {{range .PiUpdateNotes}}
+                      <article class="update-note">
+                        <span class="update-note__version">pi {{.Version}}</span>
+                        {{if .Notes}}
+                          {{renderNotes .Notes}}
+                        {{else}}
+                          <p class="update-note__empty">Notes not available yet.</p>
+                        {{end}}
+                      </article>
+                    {{end}}
+                  </div>
+                </details>
               {{end}}
             {{else}}
               <span class="muted">unknown</span>
@@ -269,8 +293,22 @@
           <td style="font-size: 12px;">
             {{if and .DeviceInfo .DeviceInfo.FirmwareVersion}}
               <span class="num">{{.DeviceInfo.FirmwareVersion}}</span>
-              {{if and $.LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion $.LatestFirmwareVersion)}}
-                <span class="chip chip--warn" style="margin-left: 6px;"><span class="chip__dot"></span>{{$.LatestFirmwareVersion}}</span>
+              {{if .FirmwareUpdateNotes}}
+                <details class="update-details" style="margin-left: 6px; display: inline-block;">
+                  <summary class="chip chip--warn"><span class="chip__dot"></span>fw {{$.LatestFirmwareVersion}} available</summary>
+                  <div class="update-notes">
+                    {{range .FirmwareUpdateNotes}}
+                      <article class="update-note">
+                        <span class="update-note__version">fw {{.Version}}</span>
+                        {{if .Notes}}
+                          {{renderNotes .Notes}}
+                        {{else}}
+                          <p class="update-note__empty">Notes not available yet.</p>
+                        {{end}}
+                      </article>
+                    {{end}}
+                  </div>
+                </details>
               {{end}}
             {{else}}
               <span class="muted">unknown</span>
@@ -298,12 +336,27 @@
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
         <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
         <span class="lines__num">{{fmtPhone .Line.Number}}</span>
-        {{if .UpdateAvailable}}
-          <span class="chip chip--warn"><span class="chip__dot"></span>update</span>
-        {{else}}
-          <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
-        {{end}}
+        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
       </a>
+      {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
+        <details class="update-details update-details--mobile">
+          <summary class="chip chip--warn"><span class="chip__dot"></span>update available</summary>
+          <div class="update-notes">
+            {{range .FirmwareUpdateNotes}}
+              <article class="update-note">
+                <span class="update-note__version">fw {{.Version}}</span>
+                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+              </article>
+            {{end}}
+            {{range .PiUpdateNotes}}
+              <article class="update-note">
+                <span class="update-note__version">pi {{.Version}}</span>
+                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+              </article>
+            {{end}}
+          </div>
+        </details>
+      {{end}}
     </li>
     {{end}}
   </ul>

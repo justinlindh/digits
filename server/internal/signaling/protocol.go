@@ -25,6 +25,7 @@ const (
 	TypeFactoryReset    = "factory_reset"    // Server → Phone: trigger factory reset
 	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
 	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
+	TypeLinkHealth      = "link_health"        // Phone → Server: per-call stats snapshot
 )
 
 // Conference message types (three-way calling)
@@ -61,6 +62,36 @@ type LineSettings struct {
 type ConferenceMemberInfo struct {
 	Phone string `json:"phone"`
 	Role  string `json:"role"` // "host" or "added"
+}
+
+// NOTE: this struct is mirrored in pi/digitsd/internal/signal/protocol.go.
+// Any field change must be applied in both places; drift-detection tests
+// on each side assert the round-trip shape.
+//
+// LinkHealthPayload carries per-sample call-quality telemetry from phone to
+// signald. All numeric fields are pointers so "not available this sample" is
+// expressed as nil (omitted from JSON). Units:
+//
+//	LossPct:  packet loss as percent (0-100)
+//	JitterMs: RTCP jitter, milliseconds
+//	RttMs:    ICE nominated-pair round-trip time, milliseconds
+//	BytesIn:  bytes received on the nominated pair since call start
+//	BytesOut: bytes sent on the nominated pair since call start
+//
+// ConnType is one of "host", "srflx", "prflx", "relay" (ICE candidate type
+// of the local end of the nominated pair per RFC 8445). Empty if no pair
+// is nominated. "prflx" (peer-reflexive) is less common than srflx but
+// legitimate when the remote observes an address the local side didn't
+// anticipate; downstream consumers should treat it as a valid state.
+// TS is phone-local unix milliseconds at the moment of sampling.
+type LinkHealthPayload struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -115,6 +146,9 @@ type Message struct {
 	Initiator  bool                   `json:"initiator,omitempty"`
 	Members    []ConferenceMemberInfo `json:"members,omitempty"`
 	Reason     string                 `json:"reason,omitempty"`
+
+	// Link-health telemetry (link_health messages)
+	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
 }
 
 func ParseMessage(data []byte) (*Message, error) {

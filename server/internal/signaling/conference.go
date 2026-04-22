@@ -27,7 +27,7 @@ func (r *Relay) handleConferenceMerge(host string, msg *Message) {
 	}
 
 	// 3. Look up the originating call id (A-held).
-	callID := r.Tracker.CallIDFor(host, held)
+	callID := r.Tracker.CallIDForPair(host, held)
 	if callID == 0 {
 		r.sendRejection(host, msg.ConfID, "call_id_unknown")
 		return

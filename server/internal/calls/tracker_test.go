@@ -66,14 +66,20 @@ func TestCallLifecycle(t *testing.T) {
 }
 
 func TestOnCallInitiatedReturnsCallID(t *testing.T) {
-	db := setupTestDB(t)
-	tr := New(db)
-	id, err := tr.OnCallInitiated("5550001", "5550002")
+	d := setupTestDB(t)
+	tr := New(d)
+	id, err := tr.OnCallInitiated("555-1111", "555-2222")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 	if id <= 0 {
-		t.Fatalf("expected positive call id, got %d", id)
+		t.Fatalf("want positive id, got %d", id)
+	}
+	if got, ok := tr.CallIDFor("555-1111"); !ok || got != id {
+		t.Fatalf("CallIDFor caller: got (%d,%v), want (%d,true)", got, ok, id)
+	}
+	if got, ok := tr.CallIDFor("555-2222"); !ok || got != id {
+		t.Fatalf("CallIDFor callee: got (%d,%v), want (%d,true)", got, ok, id)
 	}
 }
 

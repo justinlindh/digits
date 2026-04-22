@@ -22,9 +22,23 @@ import (
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
-// setupCallsTestServer creates a full server with householdStore wired in,
-// which is required by handleCalls.
-func setupCallsTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store, *household.Store) {
+// callsTestEnv bundles the pieces that integration tests for the calls-related
+// endpoints need. Callers that only need a subset can ignore fields.
+type callsTestEnv struct {
+	srv            *httptest.Server
+	database       *db.Database
+	lineStore      *line.Store
+	tracker        *calls.Tracker
+	authStore      *auth.Store
+	householdStore *household.Store
+	linkStore      *household.LinkStore
+	pairingStore   *pairing.Store
+	healthStore    *calls.HealthStore
+}
+
+// setupCallsTestServer creates a full server with householdStore, linkStore,
+// and healthStore wired in. Returns the bundled callsTestEnv.
+func setupCallsTestServer(t *testing.T) callsTestEnv {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -44,7 +58,10 @@ func setupCallsTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.S
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)
+	linkStore := household.NewLinkStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
+	healthStore := calls.NewHealthStore(database)
+	tracker.SetHealthStore(healthStore)
 
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
@@ -56,21 +73,36 @@ func setupCallsTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.S
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "", healthStore)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
 
 	srv := httptest.NewServer(h.Router())
 	t.Cleanup(srv.Close)
-	return srv, database, lineStore, tracker, authStore, householdStore
+	return callsTestEnv{
+		srv:            srv,
+		database:       database,
+		lineStore:      lineStore,
+		tracker:        tracker,
+		authStore:      authStore,
+		householdStore: householdStore,
+		linkStore:      linkStore,
+		pairingStore:   pairingStore,
+		healthStore:    healthStore,
+	}
 }
 
 // TestCallsPageScopedToHousehold verifies that the /calls page only shows
 // calls involving phones belonging to the authenticated user's household.
 func TestCallsPageScopedToHousehold(t *testing.T) {
 	// === Step 1: Set up test server with householdStore wired in ===
-	srv, database, _, tracker, authStore, householdStore := setupCallsTestServer(t)
+	env := setupCallsTestServer(t)
+	srv := env.srv
+	database := env.database
+	tracker := env.tracker
+	authStore := env.authStore
+	householdStore := env.householdStore
 
 	// === Step 2: Create two users in two separate households ===
 	userA, err := authStore.CreateUser("e2e-calls-a@example.com", "Calls User A", nil)
@@ -103,7 +135,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	}
 
 	// === Step 3: Pair phones into each household ===
-	pairingStore := pairing.NewStore(database.DB)
+	pairingStore := env.pairingStore
 	hwA := "e2e-calls-hw-a"
 	hwB := "e2e-calls-hw-b"
 	phoneNumA := "5550001"
@@ -206,7 +238,12 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 // renders as a single unified entry with the chip--conf status chip and
 // all participant numbers visible.
 func TestCallsPageRenders3WayConference(t *testing.T) {
-	srv, database, _, tracker, authStore, householdStore := setupCallsTestServer(t)
+	env := setupCallsTestServer(t)
+	srv := env.srv
+	database := env.database
+	tracker := env.tracker
+	authStore := env.authStore
+	householdStore := env.householdStore
 
 	user, err := authStore.CreateUser("e2e-calls-conf@example.com", "Conf User", nil)
 	if err != nil {

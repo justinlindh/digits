@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -85,6 +86,12 @@ type daemonCallbacks struct {
 	isCaller         bool     // true if we initiated the current call
 	isRestartingICE  bool     // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
+
+	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
+	// Protected by mu.
+	reporterCancel      context.CancelFunc
+	linkHealthDisabled  bool
+	linkHealthInterval  time.Duration
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -796,6 +803,13 @@ func (d *daemonCallbacks) HangupCall() {
 		d.pipeline.Stop()
 		d.pipeline = nil
 	}
+	// Cancel link-health reporter before closing the PeerConnection so
+	// GetStats() is never called on a closed peer.
+	if d.reporterCancel != nil {
+		d.reporterCancel()
+		d.reporterCancel = nil
+	}
+
 	if d.peerMgr != nil {
 		if err := d.peerMgr.Close(); err != nil {
 			slog.Warn("peerMgr close failed", "error", err)
@@ -900,7 +914,31 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 			d.restartTimer.Stop()
 			d.restartTimer = nil
 		}
-		d.mu.Unlock()
+		// Spawn the link-health reporter once per call (not on ICE restart recovery).
+		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
+			rctx, cancel := context.WithCancel(context.Background())
+			d.reporterCancel = cancel
+			pm := d.peerMgr
+			sig := d.sig
+			interval := d.linkHealthInterval
+			d.mu.Unlock()
+			send := func(s owebrtc.Sample) error {
+				payload := &sigclient.LinkHealthPayload{
+					TS:       s.TS.UnixMilli(),
+					LossPct:  s.LossPct,
+					JitterMs: s.JitterMs,
+					RttMs:    s.RttMs,
+					ConnType: s.ConnType,
+					BytesIn:  s.BytesIn,
+					BytesOut: s.BytesOut,
+				}
+				return sig.Send(&sigclient.Message{Type: sigclient.TypeLinkHealth, LinkHealth: payload})
+			}
+			reporter := owebrtc.NewReporter(pm, send, interval)
+			go reporter.Run(rctx)
+		} else {
+			d.mu.Unlock()
+		}
 		if wasRestarting {
 			slog.Info("webrtc: ICE restart succeeded -- connection recovered")
 		}
@@ -1592,14 +1630,29 @@ func main() {
 	})
 
 	// 7. Create callbacks
+
+	// Link-health env vars: kill switch and cadence.
+	linkHealthDisabled := os.Getenv("DIGITSD_LINK_HEALTH_DISABLED") == "1"
+	linkHealthIntervalMs := 2000
+	if v := os.Getenv("DIGITSD_LINK_HEALTH_INTERVAL_MS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			linkHealthIntervalMs = n
+		} else {
+			slog.Warn("invalid DIGITSD_LINK_HEALTH_INTERVAL_MS; using default", "raw", v)
+		}
+	}
+	linkHealthInterval := time.Duration(linkHealthIntervalMs) * time.Millisecond
+
 	cb := &daemonCallbacks{
-		serial:       sp,
-		sig:          sig,
-		mixer:        mixer,
-		serviceCodes: svcCodes,
-		number:       effectiveNumber,
-		cfg:          cfg,
-		debugMode:    os.Getenv("DIGITS_DEBUG") == "1",
+		serial:             sp,
+		sig:                sig,
+		mixer:              mixer,
+		serviceCodes:       svcCodes,
+		number:             effectiveNumber,
+		cfg:                cfg,
+		debugMode:          os.Getenv("DIGITS_DEBUG") == "1",
+		linkHealthDisabled: linkHealthDisabled,
+		linkHealthInterval: linkHealthInterval,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
