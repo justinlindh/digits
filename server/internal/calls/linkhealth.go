@@ -3,6 +3,7 @@ package calls
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -167,6 +168,7 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
+	var errs []error
 	for _, id := range ids {
 		s.mu.Lock()
 		cr := s.calls[id]
@@ -176,12 +178,10 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 		}
 		if err := s.flushCall(ctx, id, cr); err != nil {
 			slog.Error("link-health flush failed", "call_id", id, "err", err)
-			// Do NOT advance lastFlushed on error; next cycle retries.
-			// Continue to next call; one call's DB error shouldn't stop others.
-			continue
+			errs = append(errs, fmt.Errorf("call %d: %w", id, err))
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (s *HealthStore) flushCall(ctx context.Context, callID int64, cr *callRings) error {
@@ -309,7 +309,7 @@ func (s *HealthStore) Readback(ctx context.Context, callID int64, endpoint strin
 	if err != nil {
 		return nil, fmt.Errorf("readback query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Sample
 	for rows.Next() {

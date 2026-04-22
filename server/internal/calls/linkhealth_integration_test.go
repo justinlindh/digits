@@ -4,25 +4,11 @@ package calls
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
 )
-
-func openTestDB(t *testing.T) *db.Database {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	d, err := db.Open(dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	t.Cleanup(func() { d.DB.Close() })
-	return d
-}
 
 func insertCall(t *testing.T, d *db.Database, caller, callee string) int64 {
 	var id int64
@@ -37,7 +23,7 @@ func insertCall(t *testing.T, d *db.Database, caller, callee string) int64 {
 }
 
 func TestFlusherWritesLatestPerEndpoint(t *testing.T) {
-	d := openTestDB(t)
+	d := setupTestDB(t)
 	s := NewHealthStore(d)
 	callID := insertCall(t, d, "555-1111", "555-2222")
 	loss1 := float32(0.1)
@@ -76,7 +62,7 @@ func TestFlusherWritesLatestPerEndpoint(t *testing.T) {
 }
 
 func TestReadbackFromDB(t *testing.T) {
-	d := openTestDB(t)
+	d := setupTestDB(t)
 	s := NewHealthStore(d)
 	callID := insertCall(t, d, "555-3333", "555-4444")
 	loss := float32(0.5)
