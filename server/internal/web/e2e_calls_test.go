@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"io"
 	"net/http"
@@ -117,32 +118,32 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	householdStore := env.householdStore
 
 	// === Step 2: Create two users in two separate households ===
-	userA, err := authStore.CreateUser("e2e-calls-a@example.com", "Calls User A", nil)
+	userA, err := authStore.CreateUser(context.Background(), "e2e-calls-a@example.com", "Calls User A", nil)
 	if err != nil {
-		userA, err = authStore.GetUserByEmail("e2e-calls-a@example.com")
+		userA, err = authStore.GetUserByEmail(context.Background(), "e2e-calls-a@example.com")
 		if err != nil {
 			t.Fatalf("create/get user A: %v", err)
 		}
 	}
-	userB, err := authStore.CreateUser("e2e-calls-b@example.com", "Calls User B", nil)
+	userB, err := authStore.CreateUser(context.Background(), "e2e-calls-b@example.com", "Calls User B", nil)
 	if err != nil {
-		userB, err = authStore.GetUserByEmail("e2e-calls-b@example.com")
+		userB, err = authStore.GetUserByEmail(context.Background(), "e2e-calls-b@example.com")
 		if err != nil {
 			t.Fatalf("create/get user B: %v", err)
 		}
 	}
 
-	hhA, err := householdStore.Create("Calls Family A", userA.ID)
+	hhA, err := householdStore.Create(context.Background(), "Calls Family A", userA.ID)
 	if err != nil {
 		t.Fatalf("create household A: %v", err)
 	}
-	hhB, err := householdStore.Create("Calls Family B", userB.ID)
+	hhB, err := householdStore.Create(context.Background(), "Calls Family B", userB.ID)
 	if err != nil {
 		t.Fatalf("create household B: %v", err)
 	}
 	// handleCalls redirects to /settings when call history is disabled (the
 	// default). We care about scoping the rendered list, not the feature gate.
-	if err := householdStore.SetCallHistoryEnabled(hhA.ID, true); err != nil {
+	if err := householdStore.SetCallHistoryEnabled(context.Background(), hhA.ID, true); err != nil {
 		t.Fatalf("enable call history A: %v", err)
 	}
 
@@ -153,19 +154,19 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	phoneNumA := "5550001"
 	phoneNumB := "5550002"
 
-	codeA, err := pairingStore.GenerateCode(hwA)
+	codeA, err := pairingStore.GenerateCode(context.Background(), hwA)
 	if err != nil {
 		t.Fatalf("generate code A: %v", err)
 	}
-	if _, _, err := pairingStore.ClaimDevice(codeA, phoneNumA, "Phone A", hhA.ID); err != nil {
+	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeA, phoneNumA, "Phone A", hhA.ID); err != nil {
 		t.Fatalf("claim phone A: %v", err)
 	}
 
-	codeB, err := pairingStore.GenerateCode(hwB)
+	codeB, err := pairingStore.GenerateCode(context.Background(), hwB)
 	if err != nil {
 		t.Fatalf("generate code B: %v", err)
 	}
-	if _, _, err := pairingStore.ClaimDevice(codeB, phoneNumB, "Phone B", hhB.ID); err != nil {
+	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeB, phoneNumB, "Phone B", hhB.ID); err != nil {
 		t.Fatalf("claim phone B: %v", err)
 	}
 
@@ -182,23 +183,23 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 
 	// === Step 4: Insert call records via tracker ===
 	// Call A: household-A phone calls an external number
-	if _, err := tracker.OnCallInitiated(phoneNumA, "5559999"); err != nil {
+	if _, err := tracker.OnCallInitiated(context.Background(), phoneNumA, "5559999"); err != nil {
 		t.Fatalf("initiate call A: %v", err)
 	}
-	if err := tracker.OnCallEnded(phoneNumA, "5559999"); err != nil {
+	if err := tracker.OnCallEnded(context.Background(), phoneNumA, "5559999"); err != nil {
 		t.Fatalf("end call A: %v", err)
 	}
 
 	// Call B: household-B phone calls a different external number
-	if _, err := tracker.OnCallInitiated(phoneNumB, "5558888"); err != nil {
+	if _, err := tracker.OnCallInitiated(context.Background(), phoneNumB, "5558888"); err != nil {
 		t.Fatalf("initiate call B: %v", err)
 	}
-	if err := tracker.OnCallEnded(phoneNumB, "5558888"); err != nil {
+	if err := tracker.OnCallEnded(context.Background(), phoneNumB, "5558888"); err != nil {
 		t.Fatalf("end call B: %v", err)
 	}
 
 	// === Step 5: Create a session for userA ===
-	tokenA, _, err := authStore.CreateSession(userA.ID, auth.SessionTTL)
+	tokenA, _, err := authStore.CreateSession(context.Background(), userA.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session for user A: %v", err)
 	}
@@ -257,19 +258,19 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	authStore := env.authStore
 	householdStore := env.householdStore
 
-	user, err := authStore.CreateUser("e2e-calls-conf@example.com", "Conf User", nil)
+	user, err := authStore.CreateUser(context.Background(), "e2e-calls-conf@example.com", "Conf User", nil)
 	if err != nil {
-		user, err = authStore.GetUserByEmail("e2e-calls-conf@example.com")
+		user, err = authStore.GetUserByEmail(context.Background(), "e2e-calls-conf@example.com")
 		if err != nil {
 			t.Fatalf("create/get user: %v", err)
 		}
 	}
 
-	hh, err := householdStore.Create("Conf Family", user.ID)
+	hh, err := householdStore.Create(context.Background(), "Conf Family", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
-	if err := householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 
@@ -278,11 +279,11 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	hwIDs := []string{"e2e-conf-hw-1", "e2e-conf-hw-2", "e2e-conf-hw-3"}
 
 	for i, num := range phones {
-		code, err := pairingStore.GenerateCode(hwIDs[i])
+		code, err := pairingStore.GenerateCode(context.Background(), hwIDs[i])
 		if err != nil {
 			t.Fatalf("generate code %d: %v", i, err)
 		}
-		if _, _, err := pairingStore.ClaimDevice(code, num, "Phone "+num, hh.ID); err != nil {
+		if _, _, err := pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+num, hh.ID); err != nil {
 			t.Fatalf("claim phone %d: %v", i, err)
 		}
 	}
@@ -300,22 +301,22 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	})
 
 	// Create a 3-way call: initiate A->B, add-leg A->C, merge, then end.
-	callID, err := tracker.OnCallInitiated(phones[0], phones[1])
+	callID, err := tracker.OnCallInitiated(context.Background(), phones[0], phones[1])
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if _, err := tracker.OnCallInitiated(phones[0], phones[2]); err != nil {
+	if _, err := tracker.OnCallInitiated(context.Background(), phones[0], phones[2]); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
-	conf, err := tracker.CreateConferencePersistent(phones[0], callID, []string{phones[1], phones[2]})
+	conf, err := tracker.CreateConferencePersistent(context.Background(), phones[0], callID, []string{phones[1], phones[2]})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
-	if err := tracker.EndConferencePersistent(conf.ID, "host_hangup"); err != nil {
+	if err := tracker.EndConferencePersistent(context.Background(), conf.ID, "host_hangup"); err != nil {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	token, _, err := authStore.CreateSession(user.ID, auth.SessionTTL)
+	token, _, err := authStore.CreateSession(context.Background(), user.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}

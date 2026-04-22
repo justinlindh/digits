@@ -24,7 +24,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	var hh *household.Household
 	if user != nil && h.householdStore != nil {
-		households, _ := h.householdStore.GetForUser(user.ID)
+		households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
 		if len(households) > 0 {
 			hh = households[0]
 		}
@@ -50,7 +50,7 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, _ := h.householdStore.GetForUser(user.ID)
+	households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
 	if len(households) == 0 {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
@@ -61,7 +61,7 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
-		if err := h.householdStore.UpdateName(households[0].ID, name); err != nil {
+		if err := h.householdStore.UpdateName(r.Context(), households[0].ID, name); err != nil {
 			slog.Error("update household name failed", "household_id", households[0].ID, "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
@@ -82,13 +82,13 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	if err := h.householdStore.SetCallHistoryEnabled(households[0].ID, enabled); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), households[0].ID, enabled); err != nil {
 		slog.Error("set call history failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -106,7 +106,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
@@ -117,7 +117,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	}
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
-		if err := h.householdStore.SetTimezone(households[0].ID, tz); err != nil {
+		if err := h.householdStore.SetTimezone(r.Context(), households[0].ID, tz); err != nil {
 			slog.Warn("set timezone failed", "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
@@ -137,7 +137,7 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	theme := auth.Theme(r.FormValue("theme"))
-	if err := h.authStore.SetTheme(user.ID, theme); err != nil {
+	if err := h.authStore.SetTheme(r.Context(), user.ID, theme); err != nil {
 		slog.Error("set theme failed", "err", err, "theme", theme)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -156,7 +156,7 @@ func (h *Handler) handleSettingsCRTMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	mode := auth.CRTMode(r.FormValue("crt_mode"))
-	if err := h.authStore.SetCRTMode(user.ID, mode); err != nil {
+	if err := h.authStore.SetCRTMode(r.Context(), user.ID, mode); err != nil {
 		slog.Error("set crt_mode failed", "err", err, "crt_mode", mode)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return

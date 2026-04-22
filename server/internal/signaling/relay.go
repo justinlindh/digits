@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,26 +12,26 @@ import (
 )
 
 type CallTracker interface {
-	OnCallInitiated(from, to string) (int64, error)
-	OnCallAnswered(caller, callee string) error
-	OnCallEnded(caller, callee string) error
-	ClearByNumber(number string)
-	InCall(a, b string) bool
-	Busy(number string) bool
-	CanAddAsHost(number string) bool
-	PeerOf(number string) string
-	AllPeersOf(number string) []string
+	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
+	OnCallAnswered(ctx context.Context, caller, callee string) error
+	OnCallEnded(ctx context.Context, caller, callee string) error
+	ClearByNumber(ctx context.Context, number string)
+	InCall(ctx context.Context, a, b string) bool
+	Busy(ctx context.Context, number string) bool
+	CanAddAsHost(ctx context.Context, number string) bool
+	PeerOf(ctx context.Context, number string) string
+	AllPeersOf(ctx context.Context, number string) []string
 	Conferences() *calls.ConferenceTracker
-	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
-	CallIDForPair(a, b string) int64
-	CallIDFor(number string) (int64, bool)
-	EndConferencePersistent(confID uuid.UUID, reason string) error
-	DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
+	CreateConferencePersistent(ctx context.Context, host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
+	CallIDForPair(ctx context.Context, a, b string) int64
+	CallIDFor(ctx context.Context, number string) (int64, bool)
+	EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error
+	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
 type CallAuthorizer interface {
-	CanCall(fromNumber, toNumber string) (bool, error)
+	CanCall(ctx context.Context, fromNumber, toNumber string) (bool, error)
 }
 
 // HealthRecorder is the subset of *calls.HealthStore used by Relay.
@@ -57,29 +58,29 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 	}
 }
 
-func (r *Relay) HandleMessage(from string, msg *Message) {
+func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	msg.From = from
 	slog.Debug("relay message", "from", from, "to", msg.To, "type", msg.Type)
 
 	switch msg.Type {
 	case TypeCall:
-		r.handleCall(from, msg)
+		r.handleCall(ctx, from, msg)
 	case TypeSDP:
-		r.handleSDP(from, msg)
+		r.handleSDP(ctx, from, msg)
 	case TypeICE:
-		r.handleICE(from, msg)
+		r.handleICE(ctx, from, msg)
 	case TypeICERestart:
-		r.handleICERestart(from, msg)
+		r.handleICERestart(ctx, from, msg)
 	case TypeAnswer:
-		r.handleAnswer(from, msg)
+		r.handleAnswer(ctx, from, msg)
 	case TypeHangup:
-		r.handleHangup(from, msg)
+		r.handleHangup(ctx, from, msg)
 	case TypeConferenceMerge:
-		r.handleConferenceMerge(from, msg)
+		r.handleConferenceMerge(ctx, from, msg)
 	case TypeDTMF:
-		r.forward(msg)
+		r.forward(ctx, msg)
 	case TypeRequestICE:
-		r.handleRequestICE(from, msg)
+		r.handleRequestICE(ctx, from, msg)
 	case TypeDeviceInfo:
 		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.FlashCapable) {
 			slog.Info("device_info", "number", from,
@@ -101,14 +102,14 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 	case TypeRestart:
 		return // Server → device only; ignore if echoed back
 	case TypeLinkHealth:
-		r.handleLinkHealth(from, msg)
+		r.handleLinkHealth(ctx, from, msg)
 		return
 	default:
 		slog.Warn("unknown message type", "type", msg.Type, "from", from)
 	}
 }
 
-func (r *Relay) handleCall(from string, msg *Message) {
+func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 	target := r.Hub.Get(msg.To)
 	if target == nil {
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
@@ -117,7 +118,7 @@ func (r *Relay) handleCall(from string, msg *Message) {
 
 	// Enforce call authorization
 	if r.CallAuthorizer != nil {
-		allowed, err := r.CallAuthorizer.CanCall(from, msg.To)
+		allowed, err := r.CallAuthorizer.CanCall(ctx, from, msg.To)
 		if err != nil || !allowed {
 			if err != nil {
 				slog.Error("call authorization failed", "from", from, "to", msg.To, "err", err)
@@ -132,15 +133,15 @@ func (r *Relay) handleCall(from string, msg *Message) {
 		// except for the party-line add-dial case: a host already in one
 		// 2-party call (as caller) may initiate a second call to a third
 		// party, which a subsequent conference_merge will bond into a 3-way.
-		if r.Tracker.Busy(msg.To) {
+		if r.Tracker.Busy(ctx, msg.To) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		if r.Tracker.Busy(from) && !r.Tracker.CanAddAsHost(from) {
+		if r.Tracker.Busy(ctx, from) && !r.Tracker.CanAddAsHost(ctx, from) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		if _, err := r.Tracker.OnCallInitiated(from, msg.To); err != nil {
+		if _, err := r.Tracker.OnCallInitiated(ctx, from, msg.To); err != nil {
 			slog.Error("failed to track call initiation", "err", err)
 		}
 	}
@@ -151,32 +152,32 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	})
 }
 
-func (r *Relay) handleICERestart(from string, msg *Message) {
-	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
+func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
+	if r.Tracker != nil && !r.Tracker.InCall(ctx, from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleAnswer(from string, msg *Message) {
+func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil {
-		if err := r.Tracker.OnCallAnswered(msg.To, from); err != nil {
+		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
 			slog.Error("failed to track call answer", "err", err)
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleHangup(from string, msg *Message) {
+func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil {
 		if conf := r.Tracker.Conferences().ConferenceByPhone(from); conf != nil {
 			if conf.Host == from {
-				r.endConference(conf.ID, "host_hangup")
+				r.endConference(ctx, conf.ID, "host_hangup")
 				return
 			}
-			r.dropMemberFromConference(conf.ID, from, "hangup")
+			r.dropMemberFromConference(ctx, conf.ID, from, "hangup")
 			return
 		}
 		// NOTE: If a member previously left and a 2-party continuation call was
@@ -192,14 +193,14 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 	// single hook-on ends both. For the normal 2-party case this is one peer.
 	var peers []string
 	if r.Tracker != nil {
-		peers = r.Tracker.AllPeersOf(from)
+		peers = r.Tracker.AllPeersOf(ctx, from)
 	}
 	if len(peers) == 0 && msg.To != "" {
 		peers = []string{msg.To}
 	}
 	for _, peer := range peers {
 		if r.Tracker != nil {
-			if err := r.Tracker.OnCallEnded(from, peer); err != nil {
+			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
 				slog.Error("failed to track call end", "err", err)
 			}
 		}
@@ -207,7 +208,7 @@ func (r *Relay) handleHangup(from string, msg *Message) {
 	}
 }
 
-func (r *Relay) handleSDP(from string, msg *Message) {
+func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
@@ -221,10 +222,10 @@ func (r *Relay) handleSDP(from string, msg *Message) {
 			return
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleICE(from string, msg *Message) {
+func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
@@ -238,10 +239,10 @@ func (r *Relay) handleICE(from string, msg *Message) {
 			return
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleRequestICE(from string, _ *Message) {
+func (r *Relay) handleRequestICE(ctx context.Context, from string, _ *Message) {
 	resp := &Message{Type: TypeICEServers}
 
 	// Always include a STUN server
@@ -274,11 +275,11 @@ func (r *Relay) handleRequestICE(from string, _ *Message) {
 // It pushes the current line settings to the device so it boots with the
 // right voice style. Best-effort: unknown lines (unpaired) or send failures
 // are logged and skipped -- the device keeps its locally-cached last setting.
-func (r *Relay) OnRegistered(number string) {
+func (r *Relay) OnRegistered(ctx context.Context, number string) {
 	if r.LineStore == nil {
 		return
 	}
-	settings, err := r.LineStore.LineSettingsByNumber(number)
+	settings, err := r.LineStore.LineSettingsByNumber(ctx, number)
 	if err != nil {
 		slog.Debug("line settings lookup on register skipped", "number", number, "err", err)
 		return
@@ -297,7 +298,7 @@ func (r *Relay) OnRegistered(number string) {
 
 // OnDisconnect cleans up any active calls or conference membership for a
 // phone that disconnected.
-func (r *Relay) OnDisconnect(number string) {
+func (r *Relay) OnDisconnect(ctx context.Context, number string) {
 	if r.Tracker == nil {
 		return
 	}
@@ -305,12 +306,12 @@ func (r *Relay) OnDisconnect(number string) {
 	// the end, notify remaining members. This runs BEFORE ClearByNumber so
 	// the conference cleanup happens through the structured path.
 	if conf := r.Tracker.Conferences().ConferenceByPhone(number); conf != nil {
-		r.endConference(conf.ID, "disconnect")
+		r.endConference(ctx, conf.ID, "disconnect")
 	}
-	r.Tracker.ClearByNumber(number)
+	r.Tracker.ClearByNumber(ctx, number)
 }
 
-func (r *Relay) forward(msg *Message) {
+func (r *Relay) forward(ctx context.Context, msg *Message) {
 	if msg.To == "" {
 		slog.Warn("no destination for message", "type", msg.Type, "from", msg.From)
 		return
@@ -323,7 +324,7 @@ func (r *Relay) forward(msg *Message) {
 // ForceHangup sends a TypeHangup message to both peers of a call. Intended
 // for server-initiated teardown (e.g. the observation deck "End call" action).
 // Errors are logged per-peer and do not stop delivery to the other peer.
-func (r *Relay) ForceHangup(caller, callee string) {
+func (r *Relay) ForceHangup(ctx context.Context, caller, callee string) {
 	msg := &Message{Type: TypeHangup}
 	if err := r.Hub.SendTo(caller, msg); err != nil {
 		slog.Debug("ForceHangup: send to caller failed", "number", caller, "err", err)
@@ -337,11 +338,11 @@ func (r *Relay) ForceHangup(caller, callee string) {
 // session endpoint (from, derived from the authenticated websocket) is
 // currently on. msg.From is ignored by design (forgery defense). Unknown
 // calls and missing payloads are dropped silently.
-func (r *Relay) handleLinkHealth(from string, msg *Message) {
+func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message) {
 	if r.HealthStore == nil || r.Tracker == nil || msg.LinkHealth == nil {
 		return
 	}
-	callID, ok := r.Tracker.CallIDFor(from)
+	callID, ok := r.Tracker.CallIDFor(ctx, from)
 	if !ok {
 		slog.Debug("link_health for endpoint not in active call", "endpoint", from)
 		return

@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -101,6 +102,7 @@ func main() {
 		log.Fatal("DATABASE_URL (or -database-url) must be set")
 	}
 
+	ctx := context.Background()
 	database, err := db.Open(*databaseURL)
 	if err != nil {
 		log.Fatalf("open database: %v", err)
@@ -114,7 +116,7 @@ func main() {
 		line:  line.NewStore(database),
 	}
 
-	primaryUser, primaryHH, err := ensureUser(s, primary, *minimal)
+	primaryUser, primaryHH, err := ensureUser(ctx, s, primary, *minimal)
 	if err != nil {
 		log.Fatalf("seed primary: %v", err)
 	}
@@ -124,25 +126,25 @@ func main() {
 		return
 	}
 
-	if err := s.house.SetCallHistoryEnabled(primaryHH.ID, true); err != nil {
+	if err := s.house.SetCallHistoryEnabled(ctx, primaryHH.ID, true); err != nil {
 		log.Fatalf("enable call history on primary: %v", err)
 	}
 
 	seededEmails := []string{primary.Email}
 	for _, o := range others {
-		otherUser, otherHH, err := ensureUser(s, o, false)
+		otherUser, otherHH, err := ensureUser(ctx, s, o, false)
 		if err != nil {
 			log.Fatalf("seed %s: %v", o.Email, err)
 		}
 		seededEmails = append(seededEmails, o.Email)
 		if o.LinkToPrimary {
-			if err := ensureAcceptedLink(s.link, primaryHH.ID, primaryUser.ID, otherHH.ID, otherUser.ID); err != nil {
+			if err := ensureAcceptedLink(ctx, s.link, primaryHH.ID, primaryUser.ID, otherHH.ID, otherUser.ID); err != nil {
 				log.Fatalf("link %s to primary: %v", o.Email, err)
 			}
 		}
 	}
 
-	if err := ensurePendingInvite(s.link, primaryHH.ID, primaryUser.ID); err != nil {
+	if err := ensurePendingInvite(ctx, s.link, primaryHH.ID, primaryUser.ID); err != nil {
 		log.Fatalf("ensure pending invite on primary: %v", err)
 	}
 
@@ -152,27 +154,27 @@ func main() {
 // ensureUser guarantees the user, their household, their theme, and their
 // lines are in the configured state. If minimal is true, only the user + an
 // empty household are ensured (no lines).
-func ensureUser(s *stores, spec seededUser, minimal bool) (*auth.User, *household.Household, error) {
-	u, err := upsertUser(s.auth, spec.Email, spec.DisplayName)
+func ensureUser(ctx context.Context, s *stores, spec seededUser, minimal bool) (*auth.User, *household.Household, error) {
+	u, err := upsertUser(ctx, s.auth, spec.Email, spec.DisplayName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("upsert user: %w", err)
 	}
-	if err := s.auth.SetTheme(u.ID, spec.Theme); err != nil {
+	if err := s.auth.SetTheme(ctx, u.ID, spec.Theme); err != nil {
 		return nil, nil, fmt.Errorf("set theme: %w", err)
 	}
-	hh, err := ensureHousehold(s.house, u.ID, spec.HouseholdName)
+	hh, err := ensureHousehold(ctx, s.house, u.ID, spec.HouseholdName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ensure household: %w", err)
 	}
 	if hh.Name != spec.HouseholdName {
-		if err := s.house.UpdateName(hh.ID, spec.HouseholdName); err != nil {
+		if err := s.house.UpdateName(ctx, hh.ID, spec.HouseholdName); err != nil {
 			return nil, nil, fmt.Errorf("rename household: %w", err)
 		}
 		hh.Name = spec.HouseholdName
 	}
 	if !minimal {
 		for _, l := range spec.Lines {
-			if err := ensureLine(s.line, l.Number, l.Name, hh.ID); err != nil {
+			if err := ensureLine(ctx, s.line, l.Number, l.Name, hh.ID); err != nil {
 				return nil, nil, fmt.Errorf("ensure line %s: %w", l.Number, err)
 			}
 		}
@@ -182,13 +184,13 @@ func ensureUser(s *stores, spec seededUser, minimal bool) (*auth.User, *househol
 
 // upsertUser returns the existing user for email, or creates one with the
 // given display name. The display name is only used on first insert.
-func upsertUser(s *auth.Store, email, displayName string) (*auth.User, error) {
-	u, err := s.GetUserByEmail(email)
+func upsertUser(ctx context.Context, s *auth.Store, email, displayName string) (*auth.User, error) {
+	u, err := s.GetUserByEmail(ctx, email)
 	switch {
 	case err == nil:
 		return u, nil
 	case errors.Is(err, auth.ErrUserNotFound):
-		return s.CreateUser(email, displayName, nil)
+		return s.CreateUser(ctx, email, displayName, nil)
 	default:
 		return nil, fmt.Errorf("lookup user: %w", err)
 	}
@@ -196,9 +198,9 @@ func upsertUser(s *auth.Store, email, displayName string) (*auth.User, error) {
 
 // ensureHousehold returns the user's first household, creating one with the
 // desired name if the user has none.
-func ensureHousehold(s *household.Store, userID, name string) (*household.Household, error) {
-	if !s.NeedsOnboarding(userID) {
-		hs, err := s.GetForUser(userID)
+func ensureHousehold(ctx context.Context, s *household.Store, userID, name string) (*household.Household, error) {
+	if !s.NeedsOnboarding(ctx, userID) {
+		hs, err := s.GetForUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -207,20 +209,20 @@ func ensureHousehold(s *household.Store, userID, name string) (*household.Househ
 		}
 		return hs[0], nil
 	}
-	return s.Create(name, userID)
+	return s.Create(ctx, name, userID)
 }
 
 // ensureLine creates a phone line only if none exists with that number.
 // Phone numbers are globally unique, so GetByNumber is the natural key.
-func ensureLine(s *line.Store, number, name, householdID string) error {
-	existing, err := s.GetByNumber(number)
+func ensureLine(ctx context.Context, s *line.Store, number, name, householdID string) error {
+	existing, err := s.GetByNumber(ctx, number)
 	if err == nil && existing != nil {
 		return nil
 	}
 	if err != nil && !errors.Is(err, line.ErrNotFound) {
 		return err
 	}
-	if _, err := s.Add(number, name, householdID); err != nil {
+	if _, err := s.Add(ctx, number, name, householdID); err != nil {
 		return err
 	}
 	return nil
@@ -229,19 +231,19 @@ func ensureLine(s *line.Store, number, name, householdID string) error {
 // ensureAcceptedLink wires an accepted link between two households if one
 // does not already exist. Uses the production invite/accept flow so the
 // seeded link is indistinguishable from a user-created one.
-func ensureAcceptedLink(s *household.LinkStore, primaryHHID, primaryUserID, otherHHID, otherUserID string) error {
-	linked, err := s.AreLinked(primaryHHID, otherHHID)
+func ensureAcceptedLink(ctx context.Context, s *household.LinkStore, primaryHHID, primaryUserID, otherHHID, otherUserID string) error {
+	linked, err := s.AreLinked(ctx, primaryHHID, otherHHID)
 	if err != nil {
 		return fmt.Errorf("check link: %w", err)
 	}
 	if linked {
 		return nil
 	}
-	invite, err := s.CreateInvite(primaryHHID, primaryUserID)
+	invite, err := s.CreateInvite(ctx, primaryHHID, primaryUserID)
 	if err != nil {
 		return fmt.Errorf("create invite: %w", err)
 	}
-	if _, err := s.AcceptInvite(invite.InviteCode, otherUserID, otherHHID); err != nil {
+	if _, err := s.AcceptInvite(ctx, invite.InviteCode, otherUserID, otherHHID); err != nil {
 		return fmt.Errorf("accept invite: %w", err)
 	}
 	return nil
@@ -250,15 +252,15 @@ func ensureAcceptedLink(s *household.LinkStore, primaryHHID, primaryUserID, othe
 // ensurePendingInvite makes sure the primary household has exactly one
 // pending-invite code outstanding so the Families page renders its
 // "Pending invites sent" row. Does nothing if one already exists.
-func ensurePendingInvite(s *household.LinkStore, householdID, userID string) error {
-	pending, err := s.GetPendingForHousehold(householdID)
+func ensurePendingInvite(ctx context.Context, s *household.LinkStore, householdID, userID string) error {
+	pending, err := s.GetPendingForHousehold(ctx, householdID)
 	if err != nil {
 		return fmt.Errorf("get pending: %w", err)
 	}
 	if len(pending) > 0 {
 		return nil
 	}
-	if _, err := s.CreateInvite(householdID, userID); err != nil {
+	if _, err := s.CreateInvite(ctx, householdID, userID); err != nil {
 		return fmt.Errorf("create pending invite: %w", err)
 	}
 	return nil

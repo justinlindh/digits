@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -28,7 +29,7 @@ func TestCreateAdminAndLogin(t *testing.T) {
 	if dsn == "" {
 		t.Skip("TEST_ADMIN_DATABASE_URL not set")
 	}
-	db, err := OpenAdmin(dsn)
+	db, err := OpenAdmin(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -42,13 +43,13 @@ func TestCreateAdminAndLogin(t *testing.T) {
 	})
 
 	hash, _ := HashSecret("password123")
-	adminID, err := store.CreateAdmin("testadmin", hash)
+	adminID, err := store.CreateAdmin(context.Background(), "testadmin", hash)
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
 
 	// Verify correct login
-	id, err := store.VerifyLogin("testadmin", "password123")
+	id, err := store.VerifyLogin(context.Background(), "testadmin", "password123")
 	if err != nil {
 		t.Fatalf("verify login: %v", err)
 	}
@@ -57,17 +58,17 @@ func TestCreateAdminAndLogin(t *testing.T) {
 	}
 
 	// Wrong password
-	_, err = store.VerifyLogin("testadmin", "wrong")
+	_, err = store.VerifyLogin(context.Background(), "testadmin", "wrong")
 	if err == nil {
 		t.Fatal("expected error for wrong password")
 	}
 
 	// Create and validate session
-	token, err := store.CreateSession(adminID)
+	token, err := store.CreateSession(context.Background(), adminID)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	gotID, err := store.ValidateSession(token)
+	gotID, err := store.ValidateSession(context.Background(), token)
 	if err != nil {
 		t.Fatalf("validate: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestCreateAdminAndLogin(t *testing.T) {
 	}
 
 	// Invalid token
-	_, err = store.ValidateSession("bogus")
+	_, err = store.ValidateSession(context.Background(), "bogus")
 	if err == nil {
 		t.Fatal("expected error for invalid token")
 	}

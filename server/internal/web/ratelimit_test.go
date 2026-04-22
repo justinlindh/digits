@@ -7,6 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"html/template"
+	"net/http/httptest"
+	"os"
+
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
@@ -14,9 +18,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
-	"html/template"
-	"net/http/httptest"
-	"os"
 )
 
 func setupRateLimitTestServer(t *testing.T) *httptest.Server {

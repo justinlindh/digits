@@ -51,7 +51,7 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "My Family"
 	}
-	_, err := h.householdStore.Create(name, user.ID)
+	_, err := h.householdStore.Create(r.Context(), name, user.ID)
 	if err != nil {
 		slog.Error("create household failed", "err", err)
 		http.Error(w, "failed to create household", http.StatusInternalServerError)

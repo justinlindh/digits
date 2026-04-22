@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"log/slog"
@@ -15,7 +16,7 @@ import (
 
 // an HTTP error response (404 to avoid leaking line existence).
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
-	ln, err := h.lineStore.GetByNumber(number)
+	ln, err := h.lineStore.GetByNumber(r.Context(), number)
 	if err != nil {
 		http.NotFound(w, r)
 		return nil
@@ -29,7 +30,7 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 		http.NotFound(w, r)
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		http.NotFound(w, r)
 		return nil
@@ -47,8 +48,8 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 // to, keyed by number, plus the primary household ID. Returns (nil, "", false)
 // if the user has no households or any lookup fails — caller writes 404, same
 // response shape as nonexistent.
-func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, string, bool) {
-	households, err := h.householdStore.GetForUser(user.ID)
+func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, string, bool) {
+	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
 		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
 		return nil, "", false
@@ -58,7 +59,7 @@ func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, str
 	}
 	lines := make(map[string]*line.Line)
 	for _, hh := range households {
-		hhLines, err := h.lineStore.ListByHousehold(hh.ID)
+		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
 			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
 			return nil, "", false
@@ -89,8 +90,8 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	}
 
 	// Always do both queries in the same order, regardless of miss reason.
-	ownedLines, primaryHH, ok := h.ownedLinesForUser(user)
-	call, callErr := h.tracker.GetCall(callID)
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
+	call, callErr := h.tracker.GetCall(r.Context(), callID)
 
 	if callErr != nil {
 		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
@@ -136,11 +137,11 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	if user == nil || h.householdStore == nil {
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		return nil
 	}
-	lines, err := h.lineStore.ListByHousehold(households[0].ID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
 	if err != nil {
 		return nil
 	}
@@ -160,7 +161,7 @@ func (h *Handler) householdContext(r *http.Request) (name string, callHistory bo
 	if user == nil {
 		return "", false, time.UTC
 	}
-	households, err := h.householdStore.GetForUser(user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		return "", false, time.UTC
 	}

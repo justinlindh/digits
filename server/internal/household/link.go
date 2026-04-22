@@ -1,6 +1,7 @@
 package household
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"errors"
@@ -13,17 +14,17 @@ const inviteCodeLength = 8
 
 // HouseholdLink represents a link (invitation or active connection) between two households.
 type HouseholdLink struct {
-	ID            string
-	HouseholdAID  string
-	HouseholdBID  *string // NULL while invite is pending
-	Status        string  // pending, active, revoked
-	InviteCode    string
-	InvitedBy     string
-	AcceptedBy    *string
-	CreatedAt     time.Time
-	AcceptedAt    *time.Time
-	RevokedAt     *time.Time
-	RevokedBy     *string
+	ID           string
+	HouseholdAID string
+	HouseholdBID *string // NULL while invite is pending
+	Status       string  // pending, active, revoked
+	InviteCode   string
+	InvitedBy    string
+	AcceptedBy   *string
+	CreatedAt    time.Time
+	AcceptedAt   *time.Time
+	RevokedAt    *time.Time
+	RevokedBy    *string
 }
 
 // LinkStore provides household link persistence backed by Postgres.
@@ -52,14 +53,14 @@ func generateInviteCode() (string, error) {
 // household_b_id is NULL until the invite is accepted.
 // Multiple pending invites per household are allowed; duplicate-link
 // prevention happens in AcceptInvite via AreLinked.
-func (s *LinkStore) CreateInvite(fromHouseholdID, invitedByUserID string) (*HouseholdLink, error) {
+func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedByUserID string) (*HouseholdLink, error) {
 	code, err := generateInviteCode()
 	if err != nil {
 		return nil, err
 	}
 
 	link := &HouseholdLink{}
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		INSERT INTO household_links (household_a_id, invited_by, invite_code, status)
 		VALUES ($1, $2, $3, 'pending')
 		RETURNING id, household_a_id, household_b_id, status, invite_code, invited_by,
@@ -77,10 +78,10 @@ func (s *LinkStore) CreateInvite(fromHouseholdID, invitedByUserID string) (*Hous
 
 // AcceptInvite finds a pending invite by code, associates the accepting household,
 // normalizes ordering (a_id < b_id), and marks it active.
-func (s *LinkStore) AcceptInvite(code, acceptingUserID, acceptingHouseholdID string) (*HouseholdLink, error) {
+func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acceptingHouseholdID string) (*HouseholdLink, error) {
 	// Fetch the pending invite
 	link := &HouseholdLink{}
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
 		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
 		FROM household_links
@@ -103,7 +104,7 @@ func (s *LinkStore) AcceptInvite(code, acceptingUserID, acceptingHouseholdID str
 	}
 
 	// Check not already linked
-	already, err := s.AreLinked(link.HouseholdAID, acceptingHouseholdID)
+	already, err := s.AreLinked(ctx, link.HouseholdAID, acceptingHouseholdID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +120,7 @@ func (s *LinkStore) AcceptInvite(code, acceptingUserID, acceptingHouseholdID str
 	}
 
 	now := time.Now()
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		UPDATE household_links
 		SET household_a_id = $1,
 		    household_b_id = $2,
@@ -141,8 +142,8 @@ func (s *LinkStore) AcceptInvite(code, acceptingUserID, acceptingHouseholdID str
 }
 
 // GetLinkedHouseholds returns all active links where householdID is either a or b.
-func (s *LinkStore) GetLinkedHouseholds(householdID string) ([]HouseholdLink, error) {
-	rows, err := s.db.Query(`
+func (s *LinkStore) GetLinkedHouseholds(ctx context.Context, householdID string) ([]HouseholdLink, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
 		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
 		FROM household_links
@@ -157,14 +158,14 @@ func (s *LinkStore) GetLinkedHouseholds(householdID string) ([]HouseholdLink, er
 }
 
 // AreLinked returns true if the two households have an active link.
-func (s *LinkStore) AreLinked(householdAID, householdBID string) (bool, error) {
+func (s *LinkStore) AreLinked(ctx context.Context, householdAID, householdBID string) (bool, error) {
 	// Normalize
 	a, b := householdAID, householdBID
 	if a > b {
 		a, b = b, a
 	}
 	var count int
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM household_links
 		WHERE household_a_id = $1 AND household_b_id = $2 AND status = 'active'
 	`, a, b).Scan(&count)
@@ -176,8 +177,8 @@ func (s *LinkStore) AreLinked(householdAID, householdBID string) (bool, error) {
 
 // RevokeLink sets a link's status to 'revoked' and cascade-deletes all contacts
 // between phones in the two linked households.
-func (s *LinkStore) RevokeLink(linkID, revokedByUserID string) error {
-	tx, err := s.db.Begin()
+func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("revoke link begin tx: %w", err)
 	}
@@ -185,7 +186,7 @@ func (s *LinkStore) RevokeLink(linkID, revokedByUserID string) error {
 
 	// Fetch the link's household IDs before revoking
 	var householdAID, householdBID sql.NullString
-	err = tx.QueryRow(`
+	err = tx.QueryRowContext(ctx, `
 		SELECT household_a_id, household_b_id FROM household_links
 		WHERE id = $1 AND status != 'revoked'
 	`, linkID).Scan(&householdAID, &householdBID)
@@ -198,7 +199,7 @@ func (s *LinkStore) RevokeLink(linkID, revokedByUserID string) error {
 
 	// Revoke the link
 	now := time.Now()
-	_, err = tx.Exec(`
+	_, err = tx.ExecContext(ctx, `
 		UPDATE household_links
 		SET status = 'revoked', revoked_at = $1, revoked_by = $2
 		WHERE id = $3
@@ -211,9 +212,9 @@ func (s *LinkStore) RevokeLink(linkID, revokedByUserID string) error {
 }
 
 // GetByID returns a link by its ID.
-func (s *LinkStore) GetByID(id string) (*HouseholdLink, error) {
+func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, error) {
 	link := &HouseholdLink{}
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
 		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
 		FROM household_links WHERE id = $1
@@ -232,8 +233,8 @@ func (s *LinkStore) GetByID(id string) (*HouseholdLink, error) {
 }
 
 // GetPendingForHousehold returns all pending invites where householdID is the inviting household.
-func (s *LinkStore) GetPendingForHousehold(householdID string) ([]HouseholdLink, error) {
-	rows, err := s.db.Query(`
+func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]HouseholdLink, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
 		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
 		FROM household_links
@@ -263,9 +264,9 @@ func scanLinks(rows *sql.Rows) ([]HouseholdLink, error) {
 }
 
 // CountActiveLinks returns the total number of active household links.
-func (s *LinkStore) CountActiveLinks() (int, error) {
+func (s *LinkStore) CountActiveLinks(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM household_links WHERE status = 'active'`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_links WHERE status = 'active'`).Scan(&count)
 	return count, err
 }
 
@@ -279,8 +280,8 @@ type NumberConflict struct {
 }
 
 // FindNumberConflicts checks for phone numbers that appear in both households' networks.
-func (s *LinkStore) FindNumberConflicts(householdAID, householdBID string) ([]NumberConflict, error) {
-	rows, err := s.db.Query(`
+func (s *LinkStore) FindNumberConflicts(ctx context.Context, householdAID, householdBID string) ([]NumberConflict, error) {
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.number, a.name, b.name
 		FROM lines a
 		JOIN lines b ON a.number = b.number AND a.id != b.id

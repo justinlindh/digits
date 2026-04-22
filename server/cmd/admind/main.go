@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"log/slog"
 
@@ -20,7 +21,7 @@ func main() {
 		log.Fatal("ADMIN_STATS_SECRET must be set")
 	}
 
-	db, err := admin.OpenAdmin(cfg.AdminDBURL)
+	db, err := admin.OpenAdmin(context.Background(), cfg.AdminDBURL)
 	if err != nil {
 		log.Fatalf("open admin db: %v", err)
 	}
@@ -34,7 +35,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("hash initial secret: %v", err)
 		}
-		id, err := authStore.CreateAdmin(cfg.InitialAdmin, hash)
+		id, err := authStore.CreateAdmin(context.Background(), cfg.InitialAdmin, hash)
 		if err != nil {
 			slog.Warn("initial admin creation skipped", "username", cfg.InitialAdmin, "err", err)
 		} else {

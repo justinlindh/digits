@@ -3,6 +3,7 @@
 package calls_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -15,15 +16,15 @@ func TestRecentHistoryForPhones_PureCall(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)
 
-	_, err := tr.OnCallInitiated("7770001", "7770002")
+	_, err := tr.OnCallInitiated(context.Background(), "7770001", "7770002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if err := tr.OnCallEnded("7770001", "7770002"); err != nil {
+	if err := tr.OnCallEnded(context.Background(), "7770001", "7770002"); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones([]string{"7770001", "7770002"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7770001", "7770002"}, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -48,25 +49,25 @@ func TestRecentHistoryForPhones_ThreeWayHappy(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)
 
-	callID, err := tr.OnCallInitiated("7771001", "7771002")
+	callID, err := tr.OnCallInitiated(context.Background(), "7771001", "7771002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 	// Add-leg: host dials the third party.
-	if _, err := tr.OnCallInitiated("7771001", "7771003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "7771001", "7771003"); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
-	conf, err := tr.CreateConferencePersistent("7771001", callID, []string{"7771002", "7771003"})
+	conf, err := tr.CreateConferencePersistent(context.Background(), "7771001", callID, []string{"7771002", "7771003"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
-	if err := tr.EndConferencePersistent(conf.ID, "host_hangup"); err != nil {
+	if err := tr.EndConferencePersistent(context.Background(), conf.ID, "host_hangup"); err != nil {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones([]string{"7771001", "7771002", "7771003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7771001", "7771002", "7771003"}, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -109,20 +110,20 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)
 
-	callID, err := tr.OnCallInitiated("7772001", "7772002")
+	callID, err := tr.OnCallInitiated(context.Background(), "7772001", "7772002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if _, err := tr.OnCallInitiated("7772001", "7772003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "7772001", "7772003"); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
-	conf, err := tr.CreateConferencePersistent("7772001", callID, []string{"7772002", "7772003"})
+	conf, err := tr.CreateConferencePersistent(context.Background(), "7772001", callID, []string{"7772002", "7772003"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
-	remaining, ended, err := tr.DropMemberPersistent(conf.ID, "7772003", "hangup")
+	remaining, ended, err := tr.DropMemberPersistent(context.Background(), conf.ID, "7772003", "hangup")
 	if err != nil {
 		t.Fatalf("DropMemberPersistent: %v", err)
 	}
@@ -134,11 +135,11 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 	}
 
 	// End the continuation call for cleanup
-	if err := tr.OnCallEnded(remaining[0], remaining[1]); err != nil {
+	if err := tr.OnCallEnded(context.Background(), remaining[0], remaining[1]); err != nil {
 		t.Fatalf("OnCallEnded continuation: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones([]string{"7772001", "7772002", "7772003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7772001", "7772002", "7772003"}, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -170,11 +171,11 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	tr := calls.New(d)
 
 	// T1: 2-party call
-	id1, err := tr.OnCallInitiated("7773001", "7773002")
+	id1, err := tr.OnCallInitiated(context.Background(), "7773001", "7773002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated T1: %v", err)
 	}
-	if err := tr.OnCallEnded("7773001", "7773002"); err != nil {
+	if err := tr.OnCallEnded(context.Background(), "7773001", "7773002"); err != nil {
 		t.Fatalf("OnCallEnded T1: %v", err)
 	}
 
@@ -182,36 +183,36 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// T2: 3-way conference
-	id2, err := tr.OnCallInitiated("7773001", "7773002")
+	id2, err := tr.OnCallInitiated(context.Background(), "7773001", "7773002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated T2: %v", err)
 	}
-	if _, err := tr.OnCallInitiated("7773001", "7773003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "7773001", "7773003"); err != nil {
 		t.Fatalf("OnCallInitiated T2 add-leg: %v", err)
 	}
-	conf, err := tr.CreateConferencePersistent("7773001", id2, []string{"7773002", "7773003"})
+	conf, err := tr.CreateConferencePersistent(context.Background(), "7773001", id2, []string{"7773002", "7773003"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent T2: %v", err)
 	}
-	if err := tr.EndConferencePersistent(conf.ID, "host_hangup"); err != nil {
+	if err := tr.EndConferencePersistent(context.Background(), conf.ID, "host_hangup"); err != nil {
 		t.Fatalf("EndConferencePersistent T2: %v", err)
 	}
 
 	time.Sleep(10 * time.Millisecond)
 
 	// T3: another 2-party call (reuse same numbers — OK since earlier calls are ended)
-	_, err = tr.OnCallInitiated("7773001", "7773002")
+	_, err = tr.OnCallInitiated(context.Background(), "7773001", "7773002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated T3: %v", err)
 	}
-	if err := tr.OnCallEnded("7773001", "7773002"); err != nil {
+	if err := tr.OnCallEnded(context.Background(), "7773001", "7773002"); err != nil {
 		t.Fatalf("OnCallEnded T3: %v", err)
 	}
 
 	// Suppress "declared and not used" — id1 is referenced only for clarity.
 	_ = id1
 
-	entries, err := tr.RecentHistoryForPhones([]string{"7773001", "7773002", "7773003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -242,23 +243,23 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)
 
-	callID, err := tr.OnCallInitiated("7774001", "7774002")
+	callID, err := tr.OnCallInitiated(context.Background(), "7774001", "7774002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if _, err := tr.OnCallInitiated("7774001", "7774003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "7774001", "7774003"); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
-	conf, err := tr.CreateConferencePersistent("7774001", callID, []string{"7774002", "7774003"})
+	conf, err := tr.CreateConferencePersistent(context.Background(), "7774001", callID, []string{"7774002", "7774003"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
-	if err := tr.EndConferencePersistent(conf.ID, "host_hangup"); err != nil {
+	if err := tr.EndConferencePersistent(context.Background(), conf.ID, "host_hangup"); err != nil {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones([]string{"7774001", "7774002", "7774003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7774001", "7774002", "7774003"}, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}

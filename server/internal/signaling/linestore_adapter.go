@@ -1,6 +1,10 @@
 package signaling
 
-import "github.com/justinlindh/digits/server/internal/line"
+import (
+	"context"
+
+	"github.com/justinlindh/digits/server/internal/line"
+)
 
 // lineStoreAdapter wraps a real *line.Store so the signaling package can
 // consume it through the LineStore interface without importing internal/line
@@ -14,8 +18,8 @@ func NewLineStoreAdapter(s *line.Store) LineStore {
 	return &lineStoreAdapter{inner: s}
 }
 
-func (a *lineStoreAdapter) LineSettingsByNumber(number string) (*LineSettings, error) {
-	ln, err := a.inner.GetByNumber(number)
+func (a *lineStoreAdapter) LineSettingsByNumber(ctx context.Context, number string) (*LineSettings, error) {
+	ln, err := a.inner.GetByNumber(ctx, number)
 	if err != nil {
 		return nil, err
 	}

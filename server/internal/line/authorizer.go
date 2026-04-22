@@ -1,6 +1,8 @@
 package line
 
 import (
+	"context"
+
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -12,9 +14,9 @@ func NewAuthorizer(database *db.Database) *Authorizer {
 	return &Authorizer{db: database}
 }
 
-func (a *Authorizer) CanCall(fromNumber, toNumber string) (bool, error) {
+func (a *Authorizer) CanCall(ctx context.Context, fromNumber, toNumber string) (bool, error) {
 	var allowed bool
-	err := a.db.DB.QueryRow(`
+	err := a.db.DB.QueryRowContext(ctx, `
         WITH caller AS (SELECT household_id FROM lines WHERE number = $1),
              callee AS (SELECT household_id FROM lines WHERE number = $2)
         SELECT EXISTS (

@@ -3,6 +3,7 @@
 package calls
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -35,25 +36,25 @@ func TestCallLifecycle(t *testing.T) {
 	tr := New(d)
 
 	// Initiate
-	_, err := tr.OnCallInitiated("3140001", "3140002")
+	_, err := tr.OnCallInitiated(context.Background(), "3140001", "3140002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 
 	// Answer
-	err = tr.OnCallAnswered("3140001", "3140002")
+	err = tr.OnCallAnswered(context.Background(), "3140001", "3140002")
 	if err != nil {
 		t.Fatalf("OnCallAnswered: %v", err)
 	}
 
 	// End
-	err = tr.OnCallEnded("3140001", "3140002")
+	err = tr.OnCallEnded(context.Background(), "3140001", "3140002")
 	if err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 
 	// Check history
-	calls, err := tr.Recent(10)
+	calls, err := tr.Recent(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("Recent: %v", err)
 	}
@@ -68,17 +69,17 @@ func TestCallLifecycle(t *testing.T) {
 func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 	d := setupTestDB(t)
 	tr := New(d)
-	id, err := tr.OnCallInitiated("555-1111", "555-2222")
+	id, err := tr.OnCallInitiated(context.Background(), "555-1111", "555-2222")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 	if id <= 0 {
 		t.Fatalf("want positive id, got %d", id)
 	}
-	if got, ok := tr.CallIDFor("555-1111"); !ok || got != id {
+	if got, ok := tr.CallIDFor(context.Background(), "555-1111"); !ok || got != id {
 		t.Fatalf("CallIDFor caller: got (%d,%v), want (%d,true)", got, ok, id)
 	}
-	if got, ok := tr.CallIDFor("555-2222"); !ok || got != id {
+	if got, ok := tr.CallIDFor(context.Background(), "555-2222"); !ok || got != id {
 		t.Fatalf("CallIDFor callee: got (%d,%v), want (%d,true)", got, ok, id)
 	}
 }
@@ -87,15 +88,15 @@ func TestActiveCalls(t *testing.T) {
 	d := setupTestDB(t)
 	tr := New(d)
 
-	_, _ = tr.OnCallInitiated("3140001", "3140002")
-	_ = tr.OnCallAnswered("3140001", "3140002")
+	_, _ = tr.OnCallInitiated(context.Background(), "3140001", "3140002")
+	_ = tr.OnCallAnswered(context.Background(), "3140001", "3140002")
 
 	active := tr.Active()
 	if len(active) != 1 {
 		t.Fatalf("expected 1 active call, got %d", len(active))
 	}
 
-	_ = tr.OnCallEnded("3140001", "3140002")
+	_ = tr.OnCallEnded(context.Background(), "3140001", "3140002")
 	active = tr.Active()
 	if len(active) != 0 {
 		t.Fatalf("expected 0 active calls, got %d", len(active))

@@ -3,6 +3,7 @@
 package line
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -71,14 +72,14 @@ func TestCanCall_SameHousehold(t *testing.T) {
 	householdID := createTestHousehold(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("1000001", "Alice", householdID); err != nil {
+	if _, err := store.Add(context.Background(), "1000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
-	if _, err := store.Add("1000002", "Bob", householdID); err != nil {
+	if _, err := store.Add(context.Background(), "1000002", "Bob", householdID); err != nil {
 		t.Fatalf("Add Bob: %v", err)
 	}
 
-	allowed, err := auth.CanCall("1000001", "1000002")
+	allowed, err := auth.CanCall(context.Background(), "1000001", "1000002")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestCanCall_SameHousehold(t *testing.T) {
 	}
 
 	// Verify the reverse direction works too
-	allowed, err = auth.CanCall("1000002", "1000001")
+	allowed, err = auth.CanCall(context.Background(), "1000002", "1000001")
 	if err != nil {
 		t.Fatalf("CanCall (reverse): %v", err)
 	}
@@ -103,16 +104,16 @@ func TestCanCall_LinkedHouseholds(t *testing.T) {
 	userID := createAuthTestUser(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("2000001", "Alice", houseA); err != nil {
+	if _, err := store.Add(context.Background(), "2000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
-	if _, err := store.Add("2000002", "Bob", houseB); err != nil {
+	if _, err := store.Add(context.Background(), "2000002", "Bob", houseB); err != nil {
 		t.Fatalf("Add Bob: %v", err)
 	}
 
 	linkHouseholds(t, database, houseA, houseB, userID)
 
-	allowed, err := auth.CanCall("2000001", "2000002")
+	allowed, err := auth.CanCall(context.Background(), "2000001", "2000002")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestCanCall_LinkedHouseholds(t *testing.T) {
 	}
 
 	// Verify the reverse direction works too
-	allowed, err = auth.CanCall("2000002", "2000001")
+	allowed, err = auth.CanCall(context.Background(), "2000002", "2000001")
 	if err != nil {
 		t.Fatalf("CanCall (reverse): %v", err)
 	}
@@ -136,14 +137,14 @@ func TestCanCall_UnlinkedHouseholds(t *testing.T) {
 	houseB := createTestHousehold(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("3000001", "Alice", houseA); err != nil {
+	if _, err := store.Add(context.Background(), "3000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
-	if _, err := store.Add("3000002", "Bob", houseB); err != nil {
+	if _, err := store.Add(context.Background(), "3000002", "Bob", houseB); err != nil {
 		t.Fatalf("Add Bob: %v", err)
 	}
 
-	allowed, err := auth.CanCall("3000001", "3000002")
+	allowed, err := auth.CanCall(context.Background(), "3000001", "3000002")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -157,11 +158,11 @@ func TestCanCall_UnknownCaller(t *testing.T) {
 	householdID := createTestHousehold(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("4000001", "Alice", householdID); err != nil {
+	if _, err := store.Add(context.Background(), "4000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
 
-	allowed, err := auth.CanCall("9999999", "4000001")
+	allowed, err := auth.CanCall(context.Background(), "9999999", "4000001")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -175,11 +176,11 @@ func TestCanCall_UnknownCallee(t *testing.T) {
 	householdID := createTestHousehold(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("4100001", "Alice", householdID); err != nil {
+	if _, err := store.Add(context.Background(), "4100001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
 
-	allowed, err := auth.CanCall("4100001", "9999999")
+	allowed, err := auth.CanCall(context.Background(), "4100001", "9999999")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestCanCall_UnknownCallee(t *testing.T) {
 func TestCanCall_BothUnknown(t *testing.T) {
 	auth, _ := testAuthorizer(t)
 
-	allowed, err := auth.CanCall("9999998", "9999999")
+	allowed, err := auth.CanCall(context.Background(), "9999998", "9999999")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -207,10 +208,10 @@ func TestCanCall_RevokedLink(t *testing.T) {
 	userID := createAuthTestUser(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("5000001", "Alice", houseA); err != nil {
+	if _, err := store.Add(context.Background(), "5000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
-	if _, err := store.Add("5000002", "Bob", houseB); err != nil {
+	if _, err := store.Add(context.Background(), "5000002", "Bob", houseB); err != nil {
 		t.Fatalf("Add Bob: %v", err)
 	}
 
@@ -228,7 +229,7 @@ func TestCanCall_RevokedLink(t *testing.T) {
 		t.Fatalf("insert revoked link: %v", err)
 	}
 
-	allowed, err := auth.CanCall("5000001", "5000002")
+	allowed, err := auth.CanCall(context.Background(), "5000001", "5000002")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -244,10 +245,10 @@ func TestCanCall_PendingLink(t *testing.T) {
 	userID := createAuthTestUser(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("6000001", "Alice", houseA); err != nil {
+	if _, err := store.Add(context.Background(), "6000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
-	if _, err := store.Add("6000002", "Bob", houseB); err != nil {
+	if _, err := store.Add(context.Background(), "6000002", "Bob", houseB); err != nil {
 		t.Fatalf("Add Bob: %v", err)
 	}
 
@@ -261,7 +262,7 @@ func TestCanCall_PendingLink(t *testing.T) {
 		t.Fatalf("insert pending link: %v", err)
 	}
 
-	allowed, err := auth.CanCall("6000001", "6000002")
+	allowed, err := auth.CanCall(context.Background(), "6000001", "6000002")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}
@@ -275,12 +276,12 @@ func TestCanCall_SameNumber(t *testing.T) {
 	householdID := createTestHousehold(t, database)
 
 	store := NewStore(database)
-	if _, err := store.Add("7000001", "Alice", householdID); err != nil {
+	if _, err := store.Add(context.Background(), "7000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
 
 	// Calling yourself: same household so it passes the same-household check
-	allowed, err := auth.CanCall("7000001", "7000001")
+	allowed, err := auth.CanCall(context.Background(), "7000001", "7000001")
 	if err != nil {
 		t.Fatalf("CanCall: %v", err)
 	}

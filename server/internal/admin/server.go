@@ -107,7 +107,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 			return
 		}
-		_, err = s.auth.ValidateSession(cookie.Value)
+		_, err = s.auth.ValidateSession(r.Context(), cookie.Value)
 		if err != nil {
 			http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 			return
@@ -144,7 +144,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adminID, err := s.auth.VerifyLogin(username, password)
+	adminID, err := s.auth.VerifyLogin(r.Context(), username, password)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Invalid credentials"}); err != nil {
@@ -153,7 +153,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := s.auth.CreateSession(adminID)
+	token, err := s.auth.CreateSession(r.Context(), adminID)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Session error"}); err != nil {
@@ -193,9 +193,9 @@ type dashData struct {
 	DBHealthy  bool
 }
 
-func (s *Server) fetchDashData(page string) dashData {
+func (s *Server) fetchDashData(ctx context.Context, page string) dashData {
 	d := dashData{Page: page, DBHealthy: true}
-	stats, err := s.stats.Fetch()
+	stats, err := s.stats.Fetch(ctx)
 	if err != nil {
 		d.StatsError = err.Error()
 	} else {
@@ -211,28 +211,28 @@ func (s *Server) fetchDashData(page string) dashData {
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmplDash.ExecuteTemplate(w, "layout.html", s.fetchDashData("dashboard")); err != nil {
+	if err := s.tmplDash.ExecuteTemplate(w, "layout.html", s.fetchDashData(r.Context(), "dashboard")); err != nil {
 		slog.Error("admin: render template", "err", err)
 	}
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmplUsers.ExecuteTemplate(w, "layout.html", s.fetchDashData("users")); err != nil {
+	if err := s.tmplUsers.ExecuteTemplate(w, "layout.html", s.fetchDashData(r.Context(), "users")); err != nil {
 		slog.Error("admin: render template", "err", err)
 	}
 }
 
 func (s *Server) handleHouseholds(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmplHH.ExecuteTemplate(w, "layout.html", s.fetchDashData("households")); err != nil {
+	if err := s.tmplHH.ExecuteTemplate(w, "layout.html", s.fetchDashData(r.Context(), "households")); err != nil {
 		slog.Error("admin: render template", "err", err)
 	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := s.fetchDashData("health")
+	data := s.fetchDashData(r.Context(), "health")
 	if s.db != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()

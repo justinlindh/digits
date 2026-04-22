@@ -58,9 +58,9 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 
 	// Scope to household if user has one and householdStore is available
 	if user != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(user.ID)
+		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 		if err == nil && len(households) > 0 {
-			lines, _ = h.lineStore.ListByHousehold(households[0].ID)
+			lines, _ = h.lineStore.ListByHousehold(r.Context(), households[0].ID)
 		}
 	}
 
@@ -138,7 +138,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	if h.householdStore != nil {
 		user := auth.UserFromContext(r.Context())
 		if user != nil {
-			households, err := h.householdStore.GetForUser(user.ID)
+			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 			if err == nil && len(households) > 0 {
 				householdID = households[0].ID
 			}
@@ -151,7 +151,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.lineStore.Add(number, name, householdID)
+	_, err := h.lineStore.Add(r.Context(), number, name, householdID)
 	data := h.buildLinesData(r, "")
 	if err != nil {
 		data = h.buildLinesData(r, err.Error())
@@ -196,7 +196,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if h.householdStore != nil {
 		user := auth.UserFromContext(r.Context())
 		if user != nil {
-			households, err := h.householdStore.GetForUser(user.ID)
+			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 			if err == nil && len(households) > 0 {
 				householdID = households[0].ID
 			}
@@ -209,7 +209,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, hwID, err := h.pairingStore.ClaimDevice(code, number, name, householdID)
+	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
 	if err != nil {
 		data := h.buildLinesData(r, "")
 		data.PairError = err.Error()
@@ -260,7 +260,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	var devices []device.Device
 	if h.deviceStore != nil {
 		var err error
-		devices, err = h.deviceStore.ListByLine(ln.ID)
+		devices, err = h.deviceStore.ListByLine(r.Context(), ln.ID)
 		if err != nil {
 			slog.Error("failed to list devices by line", "err", err, "line_id", ln.ID)
 		}
@@ -358,7 +358,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
+	if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
 		slog.Error("line update failed", "err", err, "line_id", ln.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -413,7 +413,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 	mutate(&next)
 	next = next.Normalize()
 	if next != ln.Settings {
-		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
 			slog.Error("update line settings failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
@@ -598,7 +598,7 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	if err := h.lineStore.Delete(ln.ID); err != nil {
+	if err := h.lineStore.Delete(r.Context(), ln.ID); err != nil {
 		slog.Error("delete line failed", "line_id", ln.ID, "err", err)
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return

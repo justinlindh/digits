@@ -51,7 +51,7 @@ type GitHubReleases struct {
 
 // NewGitHubReleases creates a GitHubReleases that polls the given repo.
 // It fetches immediately in the background and refreshes every ttlSeconds.
-func NewGitHubReleases(owner, repo, token string, ttlSeconds int) *GitHubReleases {
+func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int) *GitHubReleases {
 	g := &GitHubReleases{
 		owner:   owner,
 		repo:    repo,
@@ -60,7 +60,7 @@ func NewGitHubReleases(owner, repo, token string, ttlSeconds int) *GitHubRelease
 		client:  &http.Client{Timeout: 15 * time.Second},
 		ttl:     time.Duration(ttlSeconds) * time.Second,
 	}
-	go g.poll()
+	go g.poll(ctx)
 	return g
 }
 
@@ -72,16 +72,16 @@ func (g *GitHubReleases) ReleaseIndex() *ReleaseIndex {
 }
 
 // poll fetches immediately, then refreshes on the TTL interval.
-func (g *GitHubReleases) poll() {
-	g.refresh()
+func (g *GitHubReleases) poll(ctx context.Context) {
+	g.refresh(ctx)
 	ticker := time.NewTicker(g.ttl)
 	defer ticker.Stop()
 	for range ticker.C {
-		g.refresh()
+		g.refresh(ctx)
 	}
 }
 
-func (g *GitHubReleases) refresh() {
+func (g *GitHubReleases) refresh(ctx context.Context) {
 	idx, err := g.fetch(context.Background())
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
@@ -156,7 +156,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 
 		var sha256 string
 		if sha256URL != "" {
-			sha256 = g.fetchSHA256(sha256URL)
+			sha256 = g.fetchSHA256(ctx, sha256URL)
 		}
 
 		date := ""
@@ -193,7 +193,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 
 // fetchSHA256 downloads a .sha256 asset and returns the trimmed content.
 // Returns "" on any error.
-func (g *GitHubReleases) fetchSHA256(url string) string {
+func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return ""

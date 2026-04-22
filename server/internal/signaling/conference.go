@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -8,35 +9,35 @@ import (
 
 // handleConferenceMerge is invoked when a host (A) flashes to merge its two
 // active 2-party calls (A-B, A-C) into a 3-party conference.
-func (r *Relay) handleConferenceMerge(host string, msg *Message) {
+func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Message) {
 	held := msg.HeldPeer
 	active := msg.ActivePeer
 
 	// 1. Validate: host is in both calls.
-	if !r.Tracker.InCall(host, held) || !r.Tracker.InCall(host, active) {
-		r.sendRejection(host, msg.ConfID, "host_not_in_both_calls")
+	if !r.Tracker.InCall(ctx, host, held) || !r.Tracker.InCall(ctx, host, active) {
+		r.sendRejection(ctx, host, msg.ConfID, "host_not_in_both_calls")
 		return
 	}
 
 	// 2. Validate: neither added member is already in a conference.
 	for _, p := range []string{held, active} {
 		if r.Tracker.Conferences().IsBusy(p) {
-			r.sendRejection(host, msg.ConfID, "member_already_in_conference")
+			r.sendRejection(ctx, host, msg.ConfID, "member_already_in_conference")
 			return
 		}
 	}
 
 	// 3. Look up the originating call id (A-held).
-	callID := r.Tracker.CallIDForPair(host, held)
+	callID := r.Tracker.CallIDForPair(ctx, host, held)
 	if callID == 0 {
-		r.sendRejection(host, msg.ConfID, "call_id_unknown")
+		r.sendRejection(ctx, host, msg.ConfID, "call_id_unknown")
 		return
 	}
 
-	conf, err := r.Tracker.CreateConferencePersistent(host, callID, []string{held, active})
+	conf, err := r.Tracker.CreateConferencePersistent(ctx, host, callID, []string{held, active})
 	if err != nil {
 		slog.Error("create conference", "err", err)
-		r.sendRejection(host, msg.ConfID, "create_failed")
+		r.sendRejection(ctx, host, msg.ConfID, "create_failed")
 		return
 	}
 
@@ -68,7 +69,7 @@ func (r *Relay) handleConferenceMerge(host string, msg *Message) {
 	})
 }
 
-func (r *Relay) sendRejection(host, confID, reason string) {
+func (r *Relay) sendRejection(ctx context.Context, host, confID, reason string) {
 	_ = r.Hub.SendTo(host, &Message{
 		Type:   TypeConferenceRejected,
 		ConfID: confID,
@@ -76,14 +77,14 @@ func (r *Relay) sendRejection(host, confID, reason string) {
 	})
 }
 
-func (r *Relay) endConference(confID uuid.UUID, reason string) {
+func (r *Relay) endConference(ctx context.Context, confID uuid.UUID, reason string) {
 	conf := r.Tracker.Conferences().Snapshot(confID)
 	if conf == nil {
 		// Already ended (e.g. a second caller triggers endConference after a
 		// member drop already ended it). No members to notify.
 		return
 	}
-	if err := r.Tracker.EndConferencePersistent(confID, reason); err != nil {
+	if err := r.Tracker.EndConferencePersistent(ctx, confID, reason); err != nil {
 		slog.Error("end conference persist", "err", err)
 	}
 	for p := range conf.Members {
@@ -95,7 +96,7 @@ func (r *Relay) endConference(confID uuid.UUID, reason string) {
 	}
 }
 
-func (r *Relay) dropMemberFromConference(confID uuid.UUID, phone, reason string) {
+func (r *Relay) dropMemberFromConference(ctx context.Context, confID uuid.UUID, phone, reason string) {
 	conf := r.Tracker.Conferences().Snapshot(confID)
 	if conf == nil {
 		// Already ended; nothing to drop or notify.
@@ -107,7 +108,7 @@ func (r *Relay) dropMemberFromConference(confID uuid.UUID, phone, reason string)
 			others = append(others, p)
 		}
 	}
-	remaining, _, err := r.Tracker.DropMemberPersistent(confID, phone, reason)
+	remaining, _, err := r.Tracker.DropMemberPersistent(ctx, confID, phone, reason)
 	if err != nil {
 		slog.Error("drop member", "err", err)
 		return

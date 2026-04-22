@@ -75,7 +75,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// calls the user was not part of.
 	var linkedIndex map[string]string
 	if primaryHH != "" {
-		linkedFamilies := h.buildLinkedFamilies(primaryHH)
+		linkedFamilies := h.buildLinkedFamilies(r.Context(), primaryHH)
 		linkedIndex = buildLinkedLineIndex(linkedFamilies)
 	}
 
@@ -301,7 +301,7 @@ func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call,
 func (h *Handler) linkedIndexForCall(ctx context.Context, ownedLines map[string]*line.Line) map[string]string {
 	for _, ln := range ownedLines {
 		if ln != nil {
-			return buildLinkedLineIndex(h.buildLinkedFamilies(ln.HouseholdID))
+			return buildLinkedLineIndex(h.buildLinkedFamilies(ctx, ln.HouseholdID))
 		}
 	}
 	return nil
@@ -362,7 +362,7 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 
 	// Record who force-ended the call BEFORE the teardown fires, so the
 	// audit row is in place even if we crash mid-teardown.
-	if err := h.tracker.MarkForceEnded(callID, user.ID); err != nil {
+	if err := h.tracker.MarkForceEnded(r.Context(), callID, user.ID); err != nil {
 		slog.Error("force-disconnect audit write failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -374,11 +374,11 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 	h.healthStore.NotifyDisconnected(callID, label)
 
 	// Send hangup to both peers. Errors per-peer are logged in ForceHangup.
-	h.relay.ForceHangup(call.Caller, call.Callee)
+	h.relay.ForceHangup(r.Context(), call.Caller, call.Callee)
 
 	// Close the DB row deterministically. OnCallEnded is idempotent; a
 	// peer-initiated hangup arriving later is a safe no-op.
-	if err := h.tracker.OnCallEnded(call.Caller, call.Callee); err != nil {
+	if err := h.tracker.OnCallEnded(r.Context(), call.Caller, call.Callee); err != nil {
 		slog.Error("force-disconnect OnCallEnded failed", "call_id", callID, "err", err)
 		// Phones are hung up regardless; the status transition will happen
 		// when the next peer hangup arrives or during the daily cleanup.

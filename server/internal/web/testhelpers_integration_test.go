@@ -16,6 +16,7 @@ package web
 //  recvMsg / testCookieJar - HTTP/WS helpers for the e2e tests
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -133,14 +134,14 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 // returns a cookie suitable for attaching to authenticated requests.
 func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
 	t.Helper()
-	user, err := store.GetUserByEmail("test@example.com")
+	user, err := store.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
-		user, err = store.CreateUser("test@example.com", "Test User", nil)
+		user, err = store.CreateUser(context.Background(), "test@example.com", "Test User", nil)
 		if err != nil {
 			t.Fatalf("create test user: %v", err)
 		}
 	}
-	token, _, err := store.CreateSession(user.ID, auth.SessionTTL)
+	token, _, err := store.CreateSession(context.Background(), user.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -154,11 +155,11 @@ func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
 func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store) (*http.Cookie, *household.Household) {
 	t.Helper()
 	cookie := addSessionCookie(t, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
-	hh, err := h.householdStore.Create("Handler Test Household", user.ID)
+	hh, err := h.householdStore.Create(context.Background(), "Handler Test Household", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
@@ -173,15 +174,15 @@ func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authS
 // kept around for tests that already depend on it.
 func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store) string {
 	t.Helper()
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
-		user, err = authStore.CreateUser("test@example.com", "Test User", nil)
+		user, err = authStore.CreateUser(context.Background(), "test@example.com", "Test User", nil)
 		if err != nil {
 			t.Fatalf("create test user: %v", err)
 		}
 	}
 	store := household.NewStore(database.DB)
-	hh, err := store.Create("E2E Test Household", user.ID)
+	hh, err := store.Create(context.Background(), "E2E Test Household", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}

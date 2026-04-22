@@ -434,7 +434,7 @@ func (h *Handler) Router() http.Handler {
 			}
 			user := auth.UserFromContext(r.Context())
 			if user != nil {
-				if h.householdStore.NeedsOnboarding(user.ID) {
+				if h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
 					http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 					return
 				}

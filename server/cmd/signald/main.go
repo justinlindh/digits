@@ -154,7 +154,7 @@ func run(ctx context.Context) error {
 	case cfg.GitHubRepo != "":
 		parts := strings.SplitN(cfg.GitHubRepo, "/", 2)
 		if len(parts) == 2 {
-			handler.Releases = updates.NewGitHubReleases(parts[0], parts[1], cfg.GitHubToken, 300) // 5 min cache
+			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, 300) // 5 min cache
 			slog.Info("updates: release index from GitHub", "repo", cfg.GitHubRepo)
 		} else {
 			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", cfg.GitHubRepo)
@@ -201,10 +201,10 @@ func cleanupLoop(ctx context.Context, authStore *auth.Store, pairingStore *pairi
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := authStore.CleanupExpired(); err != nil {
+			if err := authStore.CleanupExpired(ctx); err != nil {
 				slog.Error("session cleanup failed", "err", err)
 			}
-			if n, err := pairingStore.CleanupExpired(); err != nil {
+			if n, err := pairingStore.CleanupExpired(ctx); err != nil {
 				slog.Error("pairing cleanup failed", "err", err)
 			} else if n > 0 {
 				slog.Info("pairing cleanup complete", "expired_codes", n)

@@ -64,7 +64,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	token, err := h.store.CreateMagicLink(emailAddr, 15*time.Minute)
+	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, 15*time.Minute)
 	if err != nil {
 		slog.Error("magic link creation failed", "err", err)
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
@@ -88,16 +88,16 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 // HandleMagicLinkVerify validates a magic link token and creates a session.
 func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	emailAddr, err := h.store.ValidateMagicLink(token)
+	emailAddr, err := h.store.ValidateMagicLink(r.Context(), token)
 	if err != nil {
 		http.Redirect(w, r, "/auth/login?error=invalid+or+expired+link", http.StatusSeeOther)
 		return
 	}
 
 	// Find or create user
-	user, err := h.store.GetUserByEmail(emailAddr)
+	user, err := h.store.GetUserByEmail(r.Context(), emailAddr)
 	if errors.Is(err, ErrUserNotFound) {
-		user, err = h.store.CreateUser(emailAddr, "", nil)
+		user, err = h.store.CreateUser(r.Context(), emailAddr, "", nil)
 		if err != nil {
 			http.Error(w, "failed to create user", http.StatusInternalServerError)
 			return
@@ -108,11 +108,11 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.store.UpdateLastLogin(user.ID); err != nil {
+	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
 		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
 	}
 
-	sessionToken, _, err := h.store.CreateSession(user.ID, SessionTTL)
+	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -148,9 +148,9 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 	slog.Info("dev-session requested", "email", emailAddr)
 
 	// Find or create user (same pattern as HandleMagicLinkVerify)
-	user, err := h.store.GetUserByEmail(emailAddr)
+	user, err := h.store.GetUserByEmail(r.Context(), emailAddr)
 	if errors.Is(err, ErrUserNotFound) {
-		user, err = h.store.CreateUser(emailAddr, "", nil)
+		user, err = h.store.CreateUser(r.Context(), emailAddr, "", nil)
 		if err != nil {
 			http.Error(w, "failed to create user", http.StatusInternalServerError)
 			return
@@ -161,11 +161,11 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.UpdateLastLogin(user.ID); err != nil {
+	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
 		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
 	}
 
-	sessionToken, _, err := h.store.CreateSession(user.ID, SessionTTL)
+	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
@@ -201,7 +201,7 @@ func loginRedirectFor(u *User) string {
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil {
-		if err := h.store.DeleteSession(cookie.Value); err != nil {
+		if err := h.store.DeleteSession(r.Context(), cookie.Value); err != nil {
 			slog.Error("failed to delete session", "err", err)
 		}
 	}

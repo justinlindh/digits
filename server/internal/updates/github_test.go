@@ -83,7 +83,7 @@ func TestGitHubReleases_BuildsIndex(t *testing.T) {
 	gh := newTestGitHubReleases("test-owner", "test-repo")
 	gh.apiBase = srv.URL
 	gh.client = srv.Client()
-	gh.refresh()
+	gh.refresh(context.Background())
 
 	idx := gh.ReleaseIndex()
 	if idx == nil {
@@ -146,7 +146,7 @@ func TestGitHubReleases_CachesTTL(t *testing.T) {
 	gh.client = srv.Client()
 
 	// Fetch once, then read from cache
-	gh.refresh()
+	gh.refresh(context.Background())
 	gh.ReleaseIndex()
 	gh.ReleaseIndex()
 	gh.ReleaseIndex()
@@ -167,7 +167,7 @@ func TestGitHubReleases_APIError(t *testing.T) {
 	gh.apiBase = srv.URL
 	gh.client = srv.Client()
 
-	gh.refresh()
+	gh.refresh(context.Background())
 	idx := gh.ReleaseIndex()
 	if idx != nil {
 		t.Errorf("expected nil ReleaseIndex on API error, got %+v", idx)

@@ -53,14 +53,14 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Check pairing and token status
 	if h.pairingStore != nil {
-		paired, tokenValid, err := h.deviceStore.AuthStatus(msg.HardwareID, msg.DeviceToken)
+		paired, tokenValid, err := h.deviceStore.AuthStatus(r.Context(), msg.HardwareID, msg.DeviceToken)
 		if err != nil {
 			slog.Error("device auth check failed", "hardware_id", msg.HardwareID, "err", err)
 			wsReject(ws, "internal error")
 			return
 		}
 		if !paired {
-			code, err := h.pairingStore.GenerateCode(msg.HardwareID)
+			code, err := h.pairingStore.GenerateCode(r.Context(), msg.HardwareID)
 			if err != nil {
 				slog.Error("generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
 			} else {
@@ -94,7 +94,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		LastSeen:   time.Now(),
 	}
 	h.hub.Register(msg.Number, conn)
-	h.relay.OnRegistered(msg.Number)
+	h.relay.OnRegistered(r.Context(), msg.Number)
 	number := msg.Number
 
 	// Configure pong handler to extend read deadline on each pong
@@ -136,10 +136,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocks until disconnect)
 	defer h.hub.Unregister(number, conn)
-	defer h.relay.OnDisconnect(number)
+	defer h.relay.OnDisconnect(r.Context(), number)
 	defer func() {
 		if msg.HardwareID != "" && h.deviceStore != nil {
-			if err := h.deviceStore.TouchLastSeen(msg.HardwareID); err != nil {
+			if err := h.deviceStore.TouchLastSeen(r.Context(), msg.HardwareID); err != nil {
 				slog.Warn("touch last seen on disconnect failed", "hardware_id", msg.HardwareID, "err", err)
 			}
 		}
@@ -157,7 +157,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("bad websocket message", "number", number, "err", err)
 			continue
 		}
-		h.relay.HandleMessage(number, msg)
+		h.relay.HandleMessage(r.Context(), number, msg)
 	}
 }
 
@@ -184,7 +184,7 @@ func (h *Handler) handleTestStartCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "caller and callee required", http.StatusBadRequest)
 		return
 	}
-	id, err := h.tracker.OnCallInitiated(body.Caller, body.Callee)
+	id, err := h.tracker.OnCallInitiated(r.Context(), body.Caller, body.Callee)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

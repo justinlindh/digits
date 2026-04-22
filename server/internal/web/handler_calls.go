@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -30,14 +31,14 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	// Scope call log to the user's household lines
 	user := auth.UserFromContext(r.Context())
 	if user != nil && h.lineStore != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(user.ID)
+		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 		if err != nil {
 			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		if len(households) > 0 {
-			lines, err := h.lineStore.ListByHousehold(households[0].ID)
+			lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
 			if err != nil {
 				slog.Error("list lines for household failed", "household_id", households[0].ID, "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -48,7 +49,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 				for i, l := range lines {
 					numbers[i] = l.Number
 				}
-				hist, err := h.tracker.RecentHistoryForPhones(numbers, 100)
+				hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
 				if err != nil {
 					slog.Error("query recent history failed", "err", err)
 					http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -132,7 +133,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		Caller:             callerEp,
 		Callee:             calleeEp,
 		Ended:              call.Status == "ended",
-		ForceEndedBy:       h.forceEndedLabel(call),
+		ForceEndedBy:       h.forceEndedLabel(r.Context(), call),
 	}
 
 	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)
@@ -140,11 +141,11 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 
 // forceEndedLabel returns the display label for who force-ended a call.
 // Returns "" if peer-initiated or user lookup fails.
-func (h *Handler) forceEndedLabel(call calls.Call) string {
+func (h *Handler) forceEndedLabel(ctx context.Context, call calls.Call) string {
 	if call.ForceEndedBy == nil {
 		return ""
 	}
-	u, err := h.authStore.GetUserByID(*call.ForceEndedBy)
+	u, err := h.authStore.GetUserByID(ctx, *call.ForceEndedBy)
 	if err != nil || u == nil {
 		return ""
 	}

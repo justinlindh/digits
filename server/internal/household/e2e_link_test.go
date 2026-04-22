@@ -3,6 +3,7 @@
 package household
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -28,11 +29,11 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	linkStore := NewLinkStore(database.DB)
 
 	// Create two users + households
-	userA, err := authStore.CreateUser("e2e-link-a@example.com", "Parent A", nil)
+	userA, err := authStore.CreateUser(context.Background(), "e2e-link-a@example.com", "Parent A", nil)
 	if err != nil {
 		t.Fatalf("create user A: %v", err)
 	}
-	userB, err := authStore.CreateUser("e2e-link-b@example.com", "Parent B", nil)
+	userB, err := authStore.CreateUser(context.Background(), "e2e-link-b@example.com", "Parent B", nil)
 	if err != nil {
 		t.Fatalf("create user B: %v", err)
 	}
@@ -44,11 +45,11 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 		_, _ = database.DB.Exec("DELETE FROM users WHERE id IN ($1, $2)", userA.ID, userB.ID)
 	})
 
-	hhA, err := householdStore.Create("Family A", userA.ID)
+	hhA, err := householdStore.Create(context.Background(), "Family A", userA.ID)
 	if err != nil {
 		t.Fatalf("create household A: %v", err)
 	}
-	hhB, err := householdStore.Create("Family B", userB.ID)
+	hhB, err := householdStore.Create(context.Background(), "Family B", userB.ID)
 	if err != nil {
 		t.Fatalf("create household B: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	})
 
 	// Step 1: Create invite from household A
-	link, err := linkStore.CreateInvite(hhA.ID, userA.ID)
+	link, err := linkStore.CreateInvite(context.Background(), hhA.ID, userA.ID)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -70,7 +71,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	t.Logf("Invite code: %s", link.InviteCode)
 
 	// Step 2: Not linked yet
-	linked, err := linkStore.AreLinked(hhA.ID, hhB.ID)
+	linked, err := linkStore.AreLinked(context.Background(), hhA.ID, hhB.ID)
 	if err != nil {
 		t.Fatalf("AreLinked before accept: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	}
 
 	// Step 3: Accept invite
-	accepted, err := linkStore.AcceptInvite(link.InviteCode, userB.ID, hhB.ID)
+	accepted, err := linkStore.AcceptInvite(context.Background(), link.InviteCode, userB.ID, hhB.ID)
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	}
 
 	// Step 4: Now linked
-	linked, err = linkStore.AreLinked(hhA.ID, hhB.ID)
+	linked, err = linkStore.AreLinked(context.Background(), hhA.ID, hhB.ID)
 	if err != nil {
 		t.Fatalf("AreLinked after accept: %v", err)
 	}
@@ -97,13 +98,13 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	}
 
 	// Step 5: Revoke
-	err = linkStore.RevokeLink(accepted.ID, userA.ID)
+	err = linkStore.RevokeLink(context.Background(), accepted.ID, userA.ID)
 	if err != nil {
 		t.Fatalf("RevokeLink: %v", err)
 	}
 
 	// Step 6: No longer linked
-	linked, err = linkStore.AreLinked(hhA.ID, hhB.ID)
+	linked, err = linkStore.AreLinked(context.Background(), hhA.ID, hhB.ID)
 	if err != nil {
 		t.Fatalf("AreLinked after revoke: %v", err)
 	}

@@ -3,6 +3,7 @@
 package calls_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -12,20 +13,20 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	d := openTestDB(t)
 
 	tr := calls.New(d)
-	id, err := tr.OnCallInitiated("5550001", "5550002")
+	id, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if !tr.Busy("5550001") {
+	if !tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 busy from 2-party call")
 	}
 
 	// End the 2-party call so 5550001 is no longer in tr.active, then
 	// put 5550001 in a conference. tr.Busy should still return true.
-	if err := tr.OnCallEnded("5550001", "5550002"); err != nil {
+	if err := tr.OnCallEnded(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
-	if tr.Busy("5550001") {
+	if tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 NOT busy after call ended")
 	}
 
@@ -33,13 +34,13 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}
-	if !tr.Busy("5550001") {
+	if !tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 busy via conference")
 	}
-	if !tr.Busy("5550010") {
+	if !tr.Busy(context.Background(), "5550010") {
 		t.Fatalf("expected 5550010 busy via conference")
 	}
-	if tr.Busy("5550099") {
+	if tr.Busy(context.Background(), "5550099") {
 		t.Fatalf("unexpected busy for 5550099")
 	}
 }
@@ -48,16 +49,16 @@ func TestConferencePersistence_Integration(t *testing.T) {
 	d := openTestDB(t)
 
 	tr := calls.New(d)
-	callID, err := tr.OnCallInitiated("5550010", "5550011")
+	callID, err := tr.OnCallInitiated(context.Background(), "5550010", "5550011")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 	// Simulate the add-leg: host dials the third party while B is on hold.
-	if _, err := tr.OnCallInitiated("5550010", "5550012"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550010", "5550012"); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
-	conf, err := tr.CreateConferencePersistent("5550010", callID, []string{"5550011", "5550012"})
+	conf, err := tr.CreateConferencePersistent(context.Background(), "5550010", callID, []string{"5550011", "5550012"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestConferencePersistence_Integration(t *testing.T) {
 	}
 
 	// End it
-	if err := tr.EndConferencePersistent(conf.ID, "test_end"); err != nil {
+	if err := tr.EndConferencePersistent(context.Background(), conf.ID, "test_end"); err != nil {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 	var state, endReason string
@@ -98,12 +99,12 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 	d := openTestDB(t)
 
 	tr := calls.New(d)
-	callID, _ := tr.OnCallInitiated("5550100", "5550101")
+	callID, _ := tr.OnCallInitiated(context.Background(), "5550100", "5550101")
 	// Simulate add-leg before merge.
-	_, _ = tr.OnCallInitiated("5550100", "5550102")
-	conf, _ := tr.CreateConferencePersistent("5550100", callID, []string{"5550101", "5550102"})
+	_, _ = tr.OnCallInitiated(context.Background(), "5550100", "5550102")
+	conf, _ := tr.CreateConferencePersistent(context.Background(), "5550100", callID, []string{"5550101", "5550102"})
 
-	remaining, ended, err := tr.DropMemberPersistent(conf.ID, "5550101", "hangup")
+	remaining, ended, err := tr.DropMemberPersistent(context.Background(), conf.ID, "5550101", "hangup")
 	if err != nil {
 		t.Fatalf("DropMemberPersistent: %v", err)
 	}
@@ -129,12 +130,12 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 
 	// Verify surviving members are busy via tr.active and Tracker.Busy reports them so.
 	for _, p := range remaining {
-		if !tr.Busy(p) {
+		if !tr.Busy(context.Background(), p) {
 			t.Fatalf("expected surviving member %s to be busy after continuation", p)
 		}
 	}
 	// The dropped member is not busy.
-	if tr.Busy("5550101") {
+	if tr.Busy(context.Background(), "5550101") {
 		t.Fatalf("dropped member should not be busy")
 	}
 }
@@ -143,47 +144,47 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	d := openTestDB(t)
 
 	tr := calls.New(d)
-	callID, err := tr.OnCallInitiated("5550200", "5550201")
+	callID, err := tr.OnCallInitiated(context.Background(), "5550200", "5550201")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 
 	// Pre-condition: 2-party call is active, both phones busy, InCall true.
-	if !tr.InCall("5550200", "5550201") {
+	if !tr.InCall(context.Background(), "5550200", "5550201") {
 		t.Fatalf("expected InCall true before conference")
 	}
 	for _, p := range []string{"5550200", "5550201"} {
-		if !tr.Busy(p) {
+		if !tr.Busy(context.Background(), p) {
 			t.Fatalf("expected %s busy before conference", p)
 		}
 	}
 
 	// Add a second active call so we can verify only conference-related entries get evicted.
-	if _, err := tr.OnCallInitiated("5550300", "5550301"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550300", "5550301"); err != nil {
 		t.Fatalf("second OnCallInitiated: %v", err)
 	}
 
 	// Simulate add-leg: host dials 5550202 while 5550201 is on hold.
-	if _, err := tr.OnCallInitiated("5550200", "5550202"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550200", "5550202"); err != nil {
 		t.Fatalf("OnCallInitiated add-leg: %v", err)
 	}
 
-	_, err = tr.CreateConferencePersistent("5550200", callID, []string{"5550201", "5550202"})
+	_, err = tr.CreateConferencePersistent(context.Background(), "5550200", callID, []string{"5550201", "5550202"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
 	// After merge: the 2-party A<->B entry must be gone from the active map.
-	if tr.InCall("5550200", "5550201") {
+	if tr.InCall(context.Background(), "5550200", "5550201") {
 		t.Fatalf("expected 2-party A<->B entry evicted from active map")
 	}
 	// Unrelated 2-party call must still be present.
-	if !tr.InCall("5550300", "5550301") {
+	if !tr.InCall(context.Background(), "5550300", "5550301") {
 		t.Fatalf("expected unrelated 2-party call to survive")
 	}
 	// All three conference members should be Busy (via conference).
 	for _, p := range []string{"5550200", "5550201", "5550202"} {
-		if !tr.Busy(p) {
+		if !tr.Busy(context.Background(), p) {
 			t.Fatalf("expected conference member %s busy", p)
 		}
 	}

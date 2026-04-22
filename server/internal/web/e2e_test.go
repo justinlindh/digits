@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -24,10 +25,10 @@ func TestE2EFullCallFlow(t *testing.T) {
 	// rejects bogus UUIDs and the /api/status call goes through the
 	// onboarding middleware, which needs a household_members row.
 	hhID := seedE2EHousehold(t, database, authStore)
-	if _, err := lineStore.Add("3140001", "Phone A", hhID); err != nil {
+	if _, err := lineStore.Add(context.Background(), "3140001", "Phone A", hhID); err != nil {
 		t.Fatalf("add line A: %v", err)
 	}
-	if _, err := lineStore.Add("3140002", "Phone B", hhID); err != nil {
+	if _, err := lineStore.Add(context.Background(), "3140002", "Phone B", hhID); err != nil {
 		t.Fatalf("add line B: %v", err)
 	}
 	t.Cleanup(func() {
@@ -103,7 +104,7 @@ func TestE2EFullCallFlow(t *testing.T) {
 	}
 
 	// Verify call in tracker history
-	recentCalls, err := tracker.Recent(10)
+	recentCalls, err := tracker.Recent(context.Background(), 10)
 	if err != nil {
 		t.Fatalf("Recent: %v", err)
 	}
@@ -168,10 +169,10 @@ func TestE2EWebUIWithData(t *testing.T) {
 	srv, database, lineStore, _, authStore := setupTestServer(t)
 
 	hhID := seedE2EHousehold(t, database, authStore)
-	if _, err := lineStore.Add("3140001", "Kitchen", hhID); err != nil {
+	if _, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hhID); err != nil {
 		t.Fatalf("add kitchen line: %v", err)
 	}
-	if _, err := lineStore.Add("3140002", "Bedroom", hhID); err != nil {
+	if _, err := lineStore.Add(context.Background(), "3140002", "Bedroom", hhID); err != nil {
 		t.Fatalf("add bedroom line: %v", err)
 	}
 	t.Cleanup(func() {

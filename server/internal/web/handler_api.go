@@ -19,7 +19,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 	lineCount := 0
 	if h.lineStore != nil {
-		lines, err := h.lineStore.List()
+		lines, err := h.lineStore.List(r.Context())
 		if err != nil {
 			slog.Error("stats: list lines failed", "err", err)
 			jsonError(w, "internal server error", http.StatusInternalServerError)
@@ -41,7 +41,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	totalUsers := 0
 	if h.authStore != nil {
 		var err error
-		totalUsers, err = h.authStore.CountUsers()
+		totalUsers, err = h.authStore.CountUsers(r.Context())
 		if err != nil {
 			slog.Error("stats: count users failed", "err", err)
 			jsonError(w, "internal server error", http.StatusInternalServerError)
@@ -52,7 +52,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	totalHouseholds := 0
 	if h.householdStore != nil {
 		var err error
-		totalHouseholds, err = h.householdStore.CountHouseholds()
+		totalHouseholds, err = h.householdStore.CountHouseholds(r.Context())
 		if err != nil {
 			slog.Error("stats: count households failed", "err", err)
 			jsonError(w, "internal server error", http.StatusInternalServerError)
@@ -63,7 +63,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	totalLinks := 0
 	if h.linkStore != nil {
 		var err error
-		totalLinks, err = h.linkStore.CountActiveLinks()
+		totalLinks, err = h.linkStore.CountActiveLinks(r.Context())
 		if err != nil {
 			slog.Error("stats: count active links failed", "err", err)
 			jsonError(w, "internal server error", http.StatusInternalServerError)
@@ -153,7 +153,7 @@ func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Reques
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	exists, err := h.lineStore.NumberExists(number)
+	exists, err := h.lineStore.NumberExists(r.Context(), number)
 	if err != nil {
 		slog.Error("number available check failed", "err", err)
 		jsonError(w, "internal server error", http.StatusInternalServerError)
