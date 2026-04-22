@@ -687,3 +687,60 @@ func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
 		t.Errorf("expected SendLED(BLINK), got %v", cb.LEDs())
 	}
 }
+
+// Flipping silent ON mid-ring stops the bell immediately. LED stays on.
+// State stays RINGING so offhook still answers normally.
+func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleSignal("ring") // state RINGING, SendRing(true), SendLED("BLINK")
+	if c.State() != StateRINGING {
+		t.Fatalf("precondition: state %s != RINGING", c.State())
+	}
+
+	c.SetSilentMode(true)
+
+	last := cb.Rings()[len(cb.Rings())-1]
+	if last != false {
+		t.Errorf("expected SendRing(false) after silent=true mid-ring, got %v", cb.Rings())
+	}
+	if c.State() != StateRINGING {
+		t.Errorf("state changed unexpectedly: %s (should stay RINGING)", c.State())
+	}
+	lastLED := cb.LEDs()[len(cb.LEDs())-1]
+	if lastLED == "OFF" {
+		t.Errorf("LED turned OFF on silent=true mid-ring; should stay BLINK")
+	}
+}
+
+// Flipping silent OFF mid-ring does NOT start the bell. The asymmetry is
+// intentional: a mid-ring bell start is jarring.
+func TestController_SetSilentModeOffDuringRingDoesNotStartBell(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+	c.SetSilentMode(true)
+
+	c.HandleSignal("ring") // silent: no SendRing(true), only LED:BLINK
+	ringsBefore := len(cb.Rings())
+
+	c.SetSilentMode(false)
+
+	if len(cb.Rings()) != ringsBefore {
+		t.Errorf("unexpected SendRing call on silent=false mid-ring: %v", cb.Rings())
+	}
+}
+
+// Flipping silent while idle changes state with no hardware side-effect.
+func TestController_SetSilentModeIdleIsSideEffectFree(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.SetSilentMode(true)
+	c.SetSilentMode(false)
+	c.SetSilentMode(true)
+
+	if len(cb.Rings()) != 0 || len(cb.LEDs()) != 0 {
+		t.Errorf("expected no callbacks while idle, got rings=%v leds=%v", cb.Rings(), cb.LEDs())
+	}
+}
