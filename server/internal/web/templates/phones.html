@@ -336,28 +336,27 @@
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
         <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
         <span class="lines__num">{{fmtPhone .Line.Number}}</span>
-        {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
-          <details class="update-details">
-            <summary class="chip chip--warn"><span class="chip__dot"></span>update</summary>
-            <div class="update-notes">
-              {{range .FirmwareUpdateNotes}}
-                <article class="update-note">
-                  <span class="update-note__version">fw {{.Version}}</span>
-                  {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-                </article>
-              {{end}}
-              {{range .PiUpdateNotes}}
-                <article class="update-note">
-                  <span class="update-note__version">pi {{.Version}}</span>
-                  {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-                </article>
-              {{end}}
-            </div>
-          </details>
-        {{else}}
-          <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
-        {{end}}
+        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
       </a>
+      {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
+        <details class="update-details update-details--mobile">
+          <summary class="chip chip--warn"><span class="chip__dot"></span>update available</summary>
+          <div class="update-notes">
+            {{range .FirmwareUpdateNotes}}
+              <article class="update-note">
+                <span class="update-note__version">fw {{.Version}}</span>
+                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+              </article>
+            {{end}}
+            {{range .PiUpdateNotes}}
+              <article class="update-note">
+                <span class="update-note__version">pi {{.Version}}</span>
+                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+              </article>
+            {{end}}
+          </div>
+        </details>
+      {{end}}
     </li>
     {{end}}
   </ul>

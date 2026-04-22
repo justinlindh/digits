@@ -1638,3 +1638,8 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   padding: 0 4px;
 }
 .pair-banner__close:hover { color: #2e231b; }
+
+/* Mobile variant: full-width details sibling below the .lines__row anchor. */
+.update-details--mobile { display: block; margin: 0 12px 8px; }
+.update-details--mobile > summary { display: inline-flex; align-items: center; gap: 4px; }
+.update-details--mobile .update-notes { max-width: none; margin-top: 6px; }

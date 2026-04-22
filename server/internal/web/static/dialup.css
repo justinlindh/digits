@@ -2365,3 +2365,8 @@ body.dialup .phone-silent__text {
   padding: 0 4px;
 }
 .pair-banner__close:hover { color: #ffffff; }
+
+/* Mobile variant: full-width details sibling below the .lines__row anchor. */
+.update-details--mobile { display: block; margin: 0 10px 8px; }
+.update-details--mobile > summary { display: inline-flex; align-items: center; gap: 4px; }
+.update-details--mobile .update-notes { max-width: none; margin-top: 6px; }
