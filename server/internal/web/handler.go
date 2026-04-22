@@ -465,16 +465,18 @@ type lineRow struct {
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
+	var user *auth.User
+	if r != nil {
+		user = auth.UserFromContext(r.Context())
+	}
+
 	var lines []line.Line
 
 	// Scope to household if user has one and householdStore is available
-	if r != nil && h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(user.ID)
-			if err == nil && len(households) > 0 {
-				lines, _ = h.lineStore.ListByHousehold(households[0].ID)
-			}
+	if user != nil && h.householdStore != nil {
+		households, err := h.householdStore.GetForUser(user.ID)
+		if err == nil && len(households) > 0 {
+			lines, _ = h.lineStore.ListByHousehold(households[0].ID)
 		}
 	}
 
@@ -492,11 +494,7 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for i, l := range lines {
 		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
 	}
-	var reqUser *auth.User
-	if r != nil {
-		reqUser = auth.UserFromContext(r.Context())
-	}
-	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: reqUser}
+	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: user}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
@@ -1687,17 +1685,12 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	data := connectingData{
+	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
 		Page:          "connecting",
 		Version:       version.Version,
 		HouseholdName: h.householdNameFromContext(r),
 		User:          user,
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmplConnecting.ExecuteTemplate(w, "connecting.html", data); err != nil {
-		slog.Error("template render failed", "template", "connecting.html", "err", err)
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
+	})
 }
 
 // householdContext returns the household name, call-history flag, and timezone location for the current user.

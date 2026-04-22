@@ -22,7 +22,6 @@
     leds[n] = document.querySelector('[data-led="' + n + '"]');
   });
 
-  // Build progress cells.
   const PROG_CELLS = 24;
   for (let i = 0; i < PROG_CELLS; i++) {
     const c = document.createElement('div');
@@ -34,8 +33,9 @@
   // --- Config --------------------------------------------------------------
   const HOUSEHOLD = body.dataset.household || '';
   const PHONE = '555-6390';
-  const TOTAL_MS = 15500;   // matches dialup.m4a (~15.5s)
-  const BACKSTOP_MS = 18000; // redirect if audio "ended" never fires
+  // Redirect backstop: the dialup.m4a is ~15.5s; 18s ensures redirect even
+  // if the audio 'ended' event never fires (muted autoplay, decode error).
+  const BACKSTOP_MS = 18000;
   const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // --- Helpers -------------------------------------------------------------
@@ -125,12 +125,12 @@
     at(0, function () {
       setLed('pwr', true, 'grn');
       setStatus('Initializing modem&hellip;');
-      appendLog('<span class="tag">[modem]</span> ATZ &mdash; OK');
+      appendLog('<span class="tag">[modem]</span> ATZ - OK');
       setProgressPct(3);
     });
     at(400, function () {
       setLed('rdy', true, 'grn');
-      appendLog('<span class="tag">[modem]</span> AT&amp;F1 &mdash; OK');
+      appendLog('<span class="tag">[modem]</span> AT&amp;F1 - OK');
       setProgressPct(8);
     });
 
@@ -155,7 +155,7 @@
       setProgressPct(36);
     });
     at(4500, function () {
-      appendLog('<span class="tag">[v.25]</span> Answer tone (CED) &mdash; 2100 Hz');
+      appendLog('<span class="tag">[v.25]</span> Answer tone (CED) - 2100 Hz');
       setLed('cd', true, 'grn');
       setProgressPct(48);
     });
@@ -167,16 +167,16 @@
       setProgressPct(58);
     });
     at(7500, function () {
-      appendLog('<span class="tag">[probe]</span> Line probing &mdash; L1/L2 tones');
+      appendLog('<span class="tag">[probe]</span> Line probing - L1/L2 tones');
       setProgressPct(66);
     });
     at(9000, function () {
-      appendLog('<span class="tag">[train]</span> Equalizer training &mdash; <b>28.8 kbps</b>');
+      appendLog('<span class="tag">[train]</span> Equalizer training - <b>28.8 kbps</b>');
       flashLed('rxd');
       setProgressPct(74);
     });
     at(10500, function () {
-      appendLog('<span class="tag">[train]</span> V.34 probe &mdash; <b>33.6 kbps</b>');
+      appendLog('<span class="tag">[train]</span> V.34 probe - <b>33.6 kbps</b>');
       flashLed('txd');
       setProgressPct(80);
     });
@@ -187,7 +187,7 @@
 
     // Phase 5: carrier lock + PPP (12 - 15s)
     at(13000, function () {
-      appendLog('<span class="tag">[v.90]</span> Carrier locked &mdash; <b>56.0 kbps</b>');
+      appendLog('<span class="tag">[v.90]</span> Carrier locked - <b>56.0 kbps</b>');
       setProgressPct(93);
     });
     at(14000, function () {
@@ -221,12 +221,11 @@
     }
   });
 
-  // Skip is a plain anchor with href="/"; we just ensure audio stops on click.
+  // Skip is a plain anchor with href="/"; pausing here keeps the audio from
+  // playing one buffered chunk past the navigation on slow browsers.
   skipBtn.addEventListener('click', function () {
     try { audioEl.pause(); } catch (e) { /* ignore */ }
-    // Let the default navigation happen.
   });
 
-  // Initial state.
   setProgressPct(0);
 })();
