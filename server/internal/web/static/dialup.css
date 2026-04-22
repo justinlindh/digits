@@ -2285,3 +2285,181 @@ body.dialup .phone-silent__text {
 .confirm-dialog__actions .btn {
   min-width: 88px;
 }
+
+/* =========================================================================
+   Call-live observation deck — dialup theme (MODEM CONNECTED)
+   ========================================================================= */
+
+.deck {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border: 2px outset var(--dialup-chrome);
+  font-family: 'MS Sans Serif', Tahoma, Geneva, sans-serif;
+}
+
+.deck-header {
+  display: flex; justify-content: space-between; align-items: stretch;
+  background: linear-gradient(90deg, var(--dialup-blue) 0%, #1a8fe0 100%);
+  color: #fff;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+}
+.deck-header__labels { display: flex; align-items: center; gap: 10px; }
+.deck-kicker { display: none; }
+.deck-title { font: bold 13px/1 'MS Sans Serif', Tahoma, sans-serif; margin: 0; color: #fff; }
+.deck-arrow { color: var(--dialup-gold); margin: 0 4px; }
+.deck-meta { font-size: 11px; color: #d0e0f5; gap: 8px; display: flex; }
+.deck-conn { color: var(--dialup-gold); font-weight: bold; }
+.deck-duration { font-family: 'Courier New', monospace; }
+
+.deck-kill {
+  background: var(--dialup-chrome);
+  border: 2px outset var(--dialup-chrome);
+  color: var(--dialup-accent-red);
+  font: bold 12px/1 'MS Sans Serif', Tahoma, sans-serif;
+  padding: 4px 14px;
+  cursor: pointer;
+  min-width: 110px;
+}
+.deck-kill:active { border-style: inset; }
+.deck-ended-chip {
+  background: var(--dialup-chrome);
+  border: 1px inset var(--dialup-chrome);
+  color: var(--dialup-accent-red);
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.deck-cards {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 10px;
+  background: var(--dialup-chrome);
+}
+.deck-card {
+  background: var(--dialup-chrome-l);
+  border: 2px inset var(--dialup-chrome);
+  padding: 8px 10px;
+  position: relative;
+}
+.deck-card::before { content: none; }
+.deck-card__name { font-weight: bold; font-size: 13px; margin-top: 2px; }
+.deck-card__num { font-family: 'Courier New', monospace; font-size: 11px; color: var(--dialup-bevel-lo); }
+
+.deck-panel {
+  border: 2px inset var(--dialup-chrome);
+  background: var(--dialup-chrome-l);
+  padding: 10px 12px;
+  margin: 0 10px;
+}
+.deck-panel__inner { display: flex; flex-direction: column; gap: 10px; }
+.deck-panel__streams { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.deck-stream__head {
+  font-size: 10px; font-weight: bold; color: var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+  padding-bottom: 2px; margin-bottom: 6px;
+}
+.deck-row { display: grid; grid-template-columns: 50px 1fr 50px; gap: 6px; align-items: center; font-size: 11px; margin-bottom: 4px; }
+.deck-row__lbl { color: var(--dialup-bevel-ll); text-transform: uppercase; letter-spacing: 0.04em; }
+.deck-row__val { font-family: 'Courier New', monospace; text-align: right; }
+
+/* Dialup renders bars as 10 segmented LEDs. Each cell has its own border
+   and only lights up when .deck-seg--on is present. */
+.deck-bar { display: flex; gap: 2px; height: 10px; background: transparent; }
+.deck-seg {
+  flex: 1;
+  background: var(--dialup-chrome);
+  border: 1px solid var(--dialup-bevel-lo);
+}
+.deck-seg--on { background: var(--dialup-accent-grn); border-color: var(--dialup-bevel-ll); }
+.deck-seg--on.deck-seg--warn { background: var(--dialup-gold); }
+.deck-seg--on.deck-seg--bad { background: var(--dialup-accent-red); }
+
+.deck-shared {
+  border-top: 1px solid var(--dialup-bevel-lo);
+  padding-top: 8px; margin-top: 6px;
+}
+.deck-shared__row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 11px; }
+.deck-shared__item .label {
+  font-size: 9px; font-weight: bold; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--dialup-bevel-ll);
+  margin-bottom: 2px; display: block;
+}
+.deck-shared__item .num { font-family: 'Courier New', monospace; font-weight: bold; font-size: 12px; }
+
+.deck-disclaimer {
+  padding: 10px; font-size: 10px; font-style: italic;
+  color: var(--dialup-bevel-ll); border: none; margin: 0;
+}
+
+.deck-confirm {
+  border: 2px outset var(--dialup-chrome);
+  background: var(--dialup-chrome);
+  padding: 0;
+  max-width: 420px;
+}
+.deck-confirm::backdrop { background: rgba(0, 0, 0, 0.5); }
+.deck-confirm__title {
+  background: linear-gradient(90deg, var(--dialup-blue) 0%, #1a8fe0 100%);
+  color: #fff;
+  font: bold 13px/1 'MS Sans Serif', Tahoma, sans-serif;
+  padding: 4px 8px;
+  margin: 0;
+}
+.deck-confirm__body { padding: 14px; font-size: 12px; line-height: 1.4; margin: 0; }
+.deck-confirm__actions { padding: 0 14px 14px; display: flex; justify-content: flex-end; gap: 8px; }
+.deck-confirm__cancel,
+.deck-confirm__go {
+  background: var(--dialup-chrome);
+  border: 2px outset var(--dialup-chrome);
+  color: var(--dialup-ink);
+  font: 12px 'MS Sans Serif', Tahoma, sans-serif;
+  padding: 4px 18px;
+  cursor: pointer;
+  min-width: 80px;
+}
+.deck-confirm__go { color: var(--dialup-accent-red); font-weight: bold; }
+.deck-confirm__cancel:active,
+.deck-confirm__go:active { border-style: inset; }
+
+.deck-stale {
+  background: var(--dialup-accent-red);
+  color: #fff;
+  padding: 6px 10px;
+  font-size: 11px;
+  display: flex; justify-content: space-between; align-items: center;
+  border: 2px inset var(--dialup-chrome);
+  margin: 8px;
+}
+.deck-stale button {
+  background: var(--dialup-chrome); color: var(--dialup-ink); border: 2px outset var(--dialup-chrome);
+  padding: 2px 8px; font-size: 11px; cursor: pointer;
+}
+
+.deck-ended {
+  padding: 16px;
+  text-align: center;
+  color: var(--dialup-bevel-ll);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+/* MODEM CONNECTED status lamp — dialup-only ornament, black terminal panel
+   at the top of the deck. The CONNECTED text is static via ::before so no
+   template change is needed. */
+.deck::before {
+  content: 'CONNECTED';
+  display: block;
+  background: #000;
+  color: var(--dialup-accent-grn);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  padding: 8px 12px;
+  border: 2px inset var(--dialup-chrome);
+  margin: 10px 10px 0;
+}
+
+@media (max-width: 720px) {
+  .deck-cards,
+  .deck-panel__streams,
+  .deck-shared__row { grid-template-columns: 1fr; }
+}
