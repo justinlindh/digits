@@ -37,6 +37,7 @@ type CallAuthorizer interface {
 // HealthRecorder is the subset of *calls.HealthStore used by Relay.
 type HealthRecorder interface {
 	Record(callID int64, endpoint string, sample calls.Sample)
+	RecordEdge(confID uuid.UUID, from, peer string, sample calls.Sample)
 }
 
 type Relay struct {
@@ -334,21 +335,17 @@ func (r *Relay) ForceHangup(ctx context.Context, caller, callee string) {
 	}
 }
 
-// handleLinkHealth records a telemetry sample for the active call the
-// session endpoint (from, derived from the authenticated websocket) is
-// currently on. msg.From is ignored by design (forgery defense). Unknown
-// calls and missing payloads are dropped silently.
+// handleLinkHealth records a telemetry sample. 2-party calls route through
+// CallIDFor; 3-way conferences route through ConferenceByPhone with a
+// co-membership guard to reject phantom edges from a rogue Pi. msg.From
+// is ignored by design (forgery defense) - the authenticated from wins.
 func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message) {
 	if r.HealthStore == nil || r.Tracker == nil || msg.LinkHealth == nil {
 		return
 	}
-	callID, ok := r.Tracker.CallIDFor(ctx, from)
-	if !ok {
-		slog.Debug("link_health for endpoint not in active call", "endpoint", from)
-		return
-	}
 	p := msg.LinkHealth
-	r.HealthStore.Record(callID, from, calls.Sample{
+
+	sample := calls.Sample{
 		TS:       time.UnixMilli(p.TS),
 		LossPct:  p.LossPct,
 		JitterMs: p.JitterMs,
@@ -356,5 +353,29 @@ func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message)
 		ConnType: p.ConnType,
 		BytesIn:  p.BytesIn,
 		BytesOut: p.BytesOut,
-	})
+	}
+
+	if p.Peer == "" {
+		callID, ok := r.Tracker.CallIDFor(ctx, from)
+		if !ok {
+			slog.Debug("link_health for endpoint not in active call", "endpoint", from)
+			return
+		}
+		r.HealthStore.Record(callID, from, sample)
+		return
+	}
+
+	ct := r.Tracker.Conferences()
+	conf := ct.ConferenceByPhone(from)
+	if conf == nil {
+		slog.Debug("link_health peer set but endpoint not in an active conference",
+			"endpoint", from, "peer", p.Peer)
+		return
+	}
+	if !ct.ConferenceContains(conf.ID, from, p.Peer) {
+		slog.Debug("link_health peer not a co-member (phantom edge, dropping)",
+			"endpoint", from, "peer", p.Peer, "conf_id", conf.ID)
+		return
+	}
+	r.HealthStore.RecordEdge(conf.ID, from, p.Peer, sample)
 }

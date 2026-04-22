@@ -92,6 +92,10 @@ type daemonCallbacks struct {
 	reporterCancel      context.CancelFunc
 	linkHealthDisabled  bool
 	linkHealthInterval  time.Duration
+
+	// meshReporterCancels holds one CancelFunc per mesh peer's link-health
+	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
+	meshReporterCancels map[string]context.CancelFunc
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -554,6 +558,10 @@ func (d *daemonCallbacks) currentPeer() string {
 func (d *daemonCallbacks) TearDownPeer(phone string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if cancel, ok := d.meshReporterCancels[phone]; ok {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
 	if d.mesh != nil {
 		d.mesh.RemovePeer(phone)
 	}
@@ -658,6 +666,8 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 		})
 	}
 
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, phone)
+
 	if initiator {
 		// Initiator creates and sends the SDP offer to the peer.
 		offer, err := pm.CreateOffer()
@@ -684,6 +694,10 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
 	d.mu.Lock()
 	mesh := d.mesh
+	if cancel, ok := d.meshReporterCancels[phone]; ok {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
 	d.mu.Unlock()
 	if mesh != nil {
 		mesh.RemovePeer(phone)
@@ -694,6 +708,10 @@ func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
 func (d *daemonCallbacks) TearDownAllMeshPeers() {
 	d.mu.Lock()
 	mesh := d.mesh
+	for phone, cancel := range d.meshReporterCancels {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
 	d.mu.Unlock()
 	if mesh == nil {
 		return
@@ -766,6 +784,8 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 		})
 	}
 
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, peer)
+
 	// Use confID from the offer rather than ctrl.ConferenceID() so the answer
 	// is correctly routed even if ConferenceMember has not yet arrived.
 	answerSDP, err := pm.AcceptOffer(offerSDP)
@@ -815,6 +835,12 @@ func (d *daemonCallbacks) HangupCall() {
 			slog.Warn("peerMgr close failed", "error", err)
 		}
 		d.peerMgr = nil
+	}
+	// Drain any active mesh reporter goroutines before closing their
+	// PeerConnections so GetStats() is never called on a closed peer.
+	for phone, cancel := range d.meshReporterCancels {
+		cancel()
+		delete(d.meshReporterCancels, phone)
 	}
 	// Tear down any mesh peers as well. The mesh may still hold a peer adopted
 	// from an earlier flash (ADD_DIALTONE MigrateToMesh) that was aborted
@@ -1644,15 +1670,16 @@ func main() {
 	linkHealthInterval := time.Duration(linkHealthIntervalMs) * time.Millisecond
 
 	cb := &daemonCallbacks{
-		serial:             sp,
-		sig:                sig,
-		mixer:              mixer,
-		serviceCodes:       svcCodes,
-		number:             effectiveNumber,
-		cfg:                cfg,
-		debugMode:          os.Getenv("DIGITS_DEBUG") == "1",
-		linkHealthDisabled: linkHealthDisabled,
-		linkHealthInterval: linkHealthInterval,
+		serial:              sp,
+		sig:                 sig,
+		mixer:               mixer,
+		serviceCodes:        svcCodes,
+		number:              effectiveNumber,
+		cfg:                 cfg,
+		debugMode:           os.Getenv("DIGITS_DEBUG") == "1",
+		linkHealthDisabled:  linkHealthDisabled,
+		linkHealthInterval:  linkHealthInterval,
+		meshReporterCancels: make(map[string]context.CancelFunc),
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)

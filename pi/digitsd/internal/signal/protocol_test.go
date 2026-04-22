@@ -3,6 +3,7 @@ package signal
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -270,5 +271,52 @@ func TestLinkHealthParseOmittedFieldsAreNil(t *testing.T) {
 	}
 	if m.LinkHealth.ConnType != "host" {
 		t.Fatalf("ConnType: got %q", m.LinkHealth.ConnType)
+	}
+}
+
+func TestLinkHealthPeerRoundTrip(t *testing.T) {
+	loss := float32(1.5)
+	m := &Message{
+		Type: TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{
+			TS:       1714000000000,
+			LossPct:  &loss,
+			ConnType: "relay",
+			Peer:     "+15555550123",
+		},
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"peer":"+15555550123"`) {
+		t.Fatalf("expected peer field in JSON: %s", b)
+	}
+	var got Message
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.LinkHealth == nil {
+		t.Fatal("LinkHealth nil after round trip")
+	}
+	if got.LinkHealth.Peer != "+15555550123" {
+		t.Fatalf("Peer: got %q want %q", got.LinkHealth.Peer, "+15555550123")
+	}
+}
+
+func TestLinkHealthPeerOmitEmpty(t *testing.T) {
+	m := &Message{Type: TypeLinkHealth, LinkHealth: &LinkHealthPayload{TS: 1, ConnType: "host"}}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var env struct {
+		LinkHealth map[string]json.RawMessage `json:"link_health"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if _, ok := env.LinkHealth["peer"]; ok {
+		t.Fatalf("empty Peer should be omitted from link_health object: %s", b)
 	}
 }

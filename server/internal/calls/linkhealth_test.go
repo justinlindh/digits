@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func sample(ts int64, loss float32) Sample {
@@ -330,5 +332,114 @@ func TestHealthStoreNotifyDisconnectedDoesNotCrossCalls(t *testing.T) {
 		t.Fatalf("sub2 should not have received an event, got %+v", ev)
 	case <-time.After(50 * time.Millisecond):
 		// good
+	}
+}
+
+func TestSessionKeyEquality(t *testing.T) {
+	a := SessionKey{CallID: 42}
+	b := SessionKey{CallID: 42}
+	if a != b {
+		t.Fatal("equal SessionKeys must be ==")
+	}
+	u := uuid.New()
+	c := SessionKey{ConfID: u}
+	d := SessionKey{ConfID: u}
+	if c != d {
+		t.Fatal("equal conference SessionKeys must be ==")
+	}
+	if a == c {
+		t.Fatal("call and conf keys must not be equal")
+	}
+
+	m := map[SessionKey]int{a: 1, c: 2}
+	if m[b] != 1 || m[d] != 2 {
+		t.Fatalf("SessionKey not usable as map key: %v", m)
+	}
+}
+
+func TestSessionKeyIsConf(t *testing.T) {
+	if (SessionKey{CallID: 1}).IsConf() {
+		t.Fatal("2-party SessionKey should not be conf")
+	}
+	if !(SessionKey{ConfID: uuid.New()}).IsConf() {
+		t.Fatal("conference SessionKey should be conf")
+	}
+}
+
+func TestSessionKeyIsConfConfIDWins(t *testing.T) {
+	// Guard against malformed double-populated keys. ConfID != uuid.Nil
+	// is the authoritative signal, even if CallID is also set. No code
+	// path produces such a key today; this test documents the tiebreak
+	// semantics so a future change to IsConf doesn't silently drift.
+	k := SessionKey{CallID: 1, ConfID: uuid.New()}
+	if !k.IsConf() {
+		t.Fatal("double-populated SessionKey should report IsConf() == true (ConfID wins)")
+	}
+}
+
+func TestHealthStoreConferenceRoundTrip(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New()
+	s.InitConference(confID)
+
+	loss := float32(2.5)
+	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss, ConnType: "host"}
+	s.RecordEdge(confID, "A", "B", sample)
+
+	w := s.WindowEdge(confID, "A", "B")
+	if len(w) != 1 {
+		t.Fatalf("WindowEdge len: got %d want 1", len(w))
+	}
+	if w[0].LossPct == nil || *w[0].LossPct != 2.5 {
+		t.Fatalf("sample LossPct not preserved")
+	}
+
+	latest := s.LatestEdge(confID, "A", "B")
+	if latest == nil {
+		t.Fatal("LatestEdge nil")
+	}
+	if latest.LossPct == nil || *latest.LossPct != 2.5 {
+		t.Fatalf("LatestEdge LossPct not preserved")
+	}
+
+	s.EvictConference(confID)
+	if w2 := s.WindowEdge(confID, "A", "B"); len(w2) != 0 {
+		t.Fatalf("after EvictConference WindowEdge should be empty, got %d", len(w2))
+	}
+}
+
+func TestHealthStoreConferenceSubscribeReceivesPeer(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New()
+	s.InitConference(confID)
+
+	sub := s.SubscribeConference(confID)
+	defer sub.Close()
+
+	loss := float32(3.0)
+	s.RecordEdge(confID, "A", "B", Sample{TS: time.Unix(0, 1), LossPct: &loss})
+
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != SampleKind {
+			t.Fatalf("event kind: got %v", ev.Kind)
+		}
+		if ev.Endpoint != "A" {
+			t.Fatalf("event Endpoint: got %q want A", ev.Endpoint)
+		}
+		if ev.Peer != "B" {
+			t.Fatalf("event Peer: got %q want B", ev.Peer)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for SampleKind event")
+	}
+}
+
+func TestHealthStoreRecordEdgeDropsIfNotInit(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New() // never InitConference'd
+	s.RecordEdge(confID, "A", "B", Sample{TS: time.Unix(0, 1)})
+	if w := s.WindowEdge(confID, "A", "B"); len(w) != 0 {
+		t.Fatalf("RecordEdge without InitConference should be a no-op: got %d", len(w))
 	}
 }
