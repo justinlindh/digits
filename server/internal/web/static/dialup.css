@@ -1339,17 +1339,165 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .postcard__stamp { border: 1px dotted var(--dialup-blue); padding: 4px; text-align: center; font-size: 9px; color: var(--dialup-blue); }
 .postcard__stamp svg { width: 22px; height: 22px; }
 
-/* Dashboard rooms placeholder - see issue #214 for full dialup treatment */
-.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin-bottom: 12px; }
-.rooms__card { padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--dialup-ink); }
-.rooms__card:hover { background: var(--dialup-chrome-l); }
-.rooms__card--live { border-color: var(--dialup-blue); }
-.rooms__head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-.rooms__num { font-family: var(--font-mono); font-size: 11px; color: var(--dialup-ink-muted); }
-.rooms__callout { margin-top: auto; padding: 4px; border: 1px dotted var(--dialup-blue); background: #e8f0fa; }
-.rooms__callout-kicker { font-size: 9px; color: var(--dialup-ink-muted); }
-.rooms__callout-name { font-weight: bold; font-size: 13px; }
-.rooms__empty { grid-column: 1 / -1; padding: 20px; text-align: center; font-size: 12px; }
+/* --------- Dashboard rooms grid ---------
+   Each room card is a pressed-in beveled panel -- reads as a status
+   readout, not a pushable button. Chips inside .rooms__card get a
+   scoped LED restyle (pixel dot + uppercase caption) that leaves
+   chips in other contexts (phone-detail, call log) unchanged. The
+   ON LINE chip on an active call fades via @keyframes dialup-blink. */
+
+.rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.rooms__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  min-height: 96px;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+  color: var(--dialup-ink);
+  text-decoration: none;
+}
+
+.rooms__card:hover { background: var(--dialup-chrome-l); text-decoration: none; }
+
+.rooms__card--live {
+  background: #fffdf0;
+  border-top-color: var(--dialup-gold-dark);
+  border-left-color: var(--dialup-gold-dark);
+}
+
+.rooms__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.rooms__name {
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-ink);
+}
+
+.rooms__num {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+}
+
+.rooms__callout {
+  margin-top: auto;
+  padding: 6px 8px;
+  background: var(--dialup-chrome-l);
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rooms__callout-kicker {
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dialup-ink-muted);
+}
+
+.rooms__callout-name {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+
+.rooms__callout-elapsed {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  margin-left: auto;
+}
+
+.rooms__empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dialup-ink-muted);
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+/* Scoped chip restyle: inside a room card, chips render as a small
+   square LED + uppercase caption. Chips outside .rooms__card keep
+   their existing dialup treatment. */
+.rooms__card .chip {
+  display: inline-flex;
+  gap: 5px;
+  padding: 1px 6px;
+  background: var(--dialup-chrome-l);
+  border: 1px solid var(--dialup-bevel-lo);
+  border-radius: 0;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dialup-ink-muted);
+  align-items: center;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.rooms__card .chip .chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  background: var(--dialup-chrome-d);
+  border: 1px solid var(--dialup-ink);
+  box-shadow: none;
+}
+
+.rooms__card .chip--on {
+  background: var(--dialup-chrome-l);
+  color: var(--dialup-accent-grn);
+}
+.rooms__card .chip--on .chip__dot {
+  background: var(--dialup-accent-grn);
+  box-shadow: 0 0 2px var(--dialup-accent-grn);
+}
+
+.rooms__card .chip--live {
+  background: var(--dialup-chrome-l);
+  color: var(--dialup-accent-red);
+  animation: dialup-blink 2s ease-in-out infinite;
+}
+.rooms__card .chip--live .chip__dot {
+  background: var(--dialup-accent-red);
+  /* Override the generic .chip--live pulsing-dot animation -- here we
+     blink the whole chip (text + border) as one unit, so the dot
+     doesn't double-pulse. */
+  animation: none;
+}
+
+@keyframes dialup-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
 
 .today-list { list-style: none; margin: 0; padding: 0; }
 .today-list__row { display: grid; grid-template-columns: 60px 14px 1fr auto; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--dialup-bevel-lo); font-size: 12px; }
