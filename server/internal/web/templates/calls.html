@@ -31,6 +31,7 @@
             <th>Status</th>
             <th>Started</th>
             <th>Duration</th>
+            <th class="r"></th>
           </tr>
         </thead>
         <tbody>
@@ -45,6 +46,7 @@
             </td>
             <td class="num">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</td>
             <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&mdash;{{end}}</td>
+            <td></td>
           </tr>
           {{else}}
           <tr>
@@ -70,6 +72,7 @@
             </td>
             <td class="num">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</td>
             <td class="num">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&mdash;{{end}}</td>
+            <td class="r"><a href="/call/live/{{.Call.ID}}" aria-label="View call details">Details &rarr;</a></td>
           </tr>
           {{end}}
           {{end}}
@@ -107,6 +110,7 @@
           {{else}}<span class="chip"><span class="chip__dot"></span>{{.Call.Status}}</span>{{end}}
           <span class="num muted">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</span>
           {{if gt .Call.DurationS 0}}<span class="num muted">· {{.Call.DurationS}}s</span>{{end}}
+          <a href="/call/live/{{.Call.ID}}" style="margin-left: auto;" aria-label="View call details">Details &rarr;</a>
         </div>
         {{end}}
       </li>
