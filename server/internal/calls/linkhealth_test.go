@@ -215,11 +215,8 @@ func TestHealthStoreSubscribeDropsOnFullBuffer(t *testing.T) {
 		}
 	}
 done:
-	if received > 16 {
-		t.Fatalf("received more than buffer size: %d > 16", received)
-	}
-	if received == 0 {
-		t.Fatal("received zero events; broadcast never fired")
+	if received != subscriberBufferSize {
+		t.Fatalf("received count: got %d want %d (full buffer)", received, subscriberBufferSize)
 	}
 }
 

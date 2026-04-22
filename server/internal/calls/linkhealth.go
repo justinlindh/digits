@@ -65,7 +65,8 @@ type callRings struct {
 }
 
 type subscriber struct {
-	ch chan Event
+	ch      chan Event
+	dropped uint64 // events dropped due to full buffer; logged every 32
 }
 
 type ring struct {
@@ -225,11 +226,16 @@ func (s *HealthStore) Evict(callID int64) {
 
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
+	// Every channel op under cr.mu must be non-blocking (select/default or
+	// close) — we hold the lock that Record also takes on the hot path.
 	for sub := range cr.subscribers {
 		select {
 		case sub.ch <- Event{Kind: EndedKind}:
 		default:
-			slog.Debug("link_health: dropped EndedKind event on full subscriber buffer")
+			sub.dropped++
+			if sub.dropped%32 == 0 {
+				slog.Debug("link_health: dropping EndedKind on full subscriber buffer", "dropped", sub.dropped)
+			}
 		}
 		close(sub.ch)
 	}
@@ -240,6 +246,9 @@ func (s *HealthStore) Evict(callID int64) {
 // Zero value is not valid; construct via HealthStore.Subscribe.
 // The consumer MUST call Close when finished to release the slot.
 // Close is idempotent and safe to defer.
+//
+// A single goroutine should receive from C; multiple concurrent receivers
+// would interleave events in undefined order.
 type Subscription struct {
 	C     <-chan Event
 	close func()
@@ -254,7 +263,10 @@ func (s *Subscription) Close() {
 	s.close()
 }
 
-// subscriberBufferSize is the per-subscription channel depth.
+// subscriberBufferSize is the per-subscription channel depth. At the 2s
+// sample cadence with two endpoints per call, 16 slots tolerates ~16s of
+// consumer stall before events drop — generous for a well-behaved SSE
+// consumer on a LAN.
 const subscriberBufferSize = 16
 
 // Subscribe opens a stream of telemetry events for a call. If the call is
@@ -295,14 +307,18 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 }
 
 // broadcastLocked sends an event to every subscriber under cr.mu. Non-blocking
-// per subscriber: if a channel is full, the event drops and a debug log fires.
+// per subscriber: if a channel is full, the event drops and a debug log fires
+// once per 32 drops to avoid log spam under sustained slow-client pressure.
 // Caller MUST hold cr.mu.
 func (cr *callRings) broadcastLocked(ev Event) {
 	for sub := range cr.subscribers {
 		select {
 		case sub.ch <- ev:
 		default:
-			slog.Debug("link_health: dropped event on full subscriber buffer")
+			sub.dropped++
+			if sub.dropped%32 == 0 {
+				slog.Debug("link_health: dropping events on full subscriber buffer", "dropped", sub.dropped)
+			}
 		}
 	}
 }
