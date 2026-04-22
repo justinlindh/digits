@@ -427,6 +427,46 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 	}
 }
 
+// TestRegression_HangupBeforeAnswer_StopsRing reproduces the reported regression:
+// D1 calls D3; D1 hangs up before D3 answers; D3 must receive the hangup so it
+// stops ringing. Covers the pre-answer path specifically.
+func TestRegression_HangupBeforeAnswer_StopsRing(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	d1 := &Conn{Send: make(chan []byte, 20)}
+	d3 := &Conn{Send: make(chan []byte, 20)}
+	hub.Register("5550001", d1)
+	hub.Register("5550003", d3)
+
+	// D1 calls D3
+	relay.HandleMessage("5550001", &Message{Type: TypeCall, To: "5550003"})
+	got := <-d3.Send
+	msg, _ := ParseMessage(got)
+	if msg.Type != TypeRing || msg.From != "5550001" {
+		t.Fatalf("expected ring to D3 from D1, got %+v", msg)
+	}
+
+	// D1 hangs up before D3 answers (no OnCallAnswered fired)
+	relay.HandleMessage("5550001", &Message{Type: TypeHangup, To: "5550003"})
+
+	// D3 must receive the hangup or it will keep ringing
+	select {
+	case data := <-d3.Send:
+		m, _ := ParseMessage(data)
+		if m.Type != TypeHangup {
+			t.Fatalf("expected hangup to D3, got %s", m.Type)
+		}
+	default:
+		t.Fatal("REGRESSION: D3 did not receive hangup, will keep ringing")
+	}
+
+	if tracker.Busy("5550001") {
+		t.Fatal("D1 still busy after hangup")
+	}
+}
+
 func TestRelayICERestartForwarded(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
