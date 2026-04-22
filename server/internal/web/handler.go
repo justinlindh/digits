@@ -691,34 +691,28 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		onlineSet[n] = true
 	}
 
-	var latestPi, latestFw string
+	var (
+		idx                *updates.ReleaseIndex
+		latestPi, latestFw string
+	)
 	if h.Releases != nil {
-		if idx := h.Releases.ReleaseIndex(); idx != nil {
-			latestPi = idx.Pi.Latest
-			latestFw = idx.Firmware.Latest
-		}
+		idx = h.Releases.ReleaseIndex()
+	}
+	if idx != nil {
+		latestPi = idx.Pi.Latest
+		latestFw = idx.Firmware.Latest
 	}
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		if h.Releases != nil {
-			if idx := h.Releases.ReleaseIndex(); idx != nil {
-				fwCurrent := ""
-				if info != nil {
-					fwCurrent = info.FirmwareVersion
-				}
-				if latestFw != "" && fwCurrent != "" && updates.CompareSemver(fwCurrent, latestFw) < 0 {
-					row.FirmwareUpdateNotes = idx.RangeReleases("firmware", fwCurrent, latestFw)
-				}
-				piCurrent := ""
-				if info != nil {
-					piCurrent = info.PiVersion
-				}
-				if latestPi != "" && piCurrent != "" && updates.CompareSemver(piCurrent, latestPi) < 0 {
-					row.PiUpdateNotes = idx.RangeReleases("pi", piCurrent, latestPi)
-				}
+		if idx != nil && info != nil {
+			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+			}
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
 			}
 		}
 		rows[i] = row
@@ -907,8 +901,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		if idx := h.Releases.ReleaseIndex(); idx != nil {
 			latestPi = idx.Pi.Latest
 			latestFw = idx.Firmware.Latest
-			piReleases = idx.SortedReleases("pi")
-			fwReleases = idx.SortedReleases("firmware")
+			piReleases = idx.SortedReleases(updates.ComponentPi)
+			fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 		}
 	}
 

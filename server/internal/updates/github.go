@@ -169,14 +169,14 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			SHA256:  sha256,
 			URL:     binaryURL,
 			Date:    date,
-			Notes:   stripGroomedSentinel(rel.Body),
+			Notes:   StripGroomedSentinel(rel.Body),
 		}
 
 		var ci *ComponentIndex
 		switch component {
-		case "pi":
+		case ComponentPi:
 			ci = &idx.Pi
-		case "firmware":
+		case ComponentFirmware:
 			ci = &idx.Firmware
 		default:
 			continue
@@ -230,9 +230,9 @@ func parseTag(tag string) (component, version string, ok bool) {
 
 	switch parts[0] {
 	case "fw":
-		return "firmware", parts[1], true
+		return ComponentFirmware, parts[1], true
 	case "pi":
-		return "pi", parts[1], true
+		return ComponentPi, parts[1], true
 	default:
 		return "", "", false
 	}
@@ -277,14 +277,17 @@ func NewGitHubReleasesWithIndex(idx *ReleaseIndex) *GitHubReleases {
 	return g
 }
 
-// stripGroomedSentinel removes the idempotency marker the release-groom
-// workflow prepends to groomed release bodies. Leaves non-groomed bodies
-// untouched.
-func stripGroomedSentinel(s string) string {
+// GroomedSentinel is the idempotency marker the release-groom workflow
+// prepends to groomed release bodies. Exported so tests and external
+// callers can reference the same literal as the production code.
+const GroomedSentinel = "<!-- groomed:v1 -->"
+
+// StripGroomedSentinel removes the GroomedSentinel prefix from a release
+// body if present. Leaves non-groomed bodies untouched.
+func StripGroomedSentinel(s string) string {
 	trimmed := strings.TrimLeft(s, " \t\r\n")
-	const sentinel = "<!-- groomed:v1 -->"
-	if !strings.HasPrefix(trimmed, sentinel) {
+	if !strings.HasPrefix(trimmed, GroomedSentinel) {
 		return s
 	}
-	return strings.TrimLeft(trimmed[len(sentinel):], " \t\r\n")
+	return strings.TrimLeft(trimmed[len(GroomedSentinel):], " \t\r\n")
 }

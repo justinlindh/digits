@@ -282,9 +282,9 @@ func TestStripGroomedSentinel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := stripGroomedSentinel(tt.in)
+			got := StripGroomedSentinel(tt.in)
 			if got != tt.want {
-				t.Errorf("stripGroomedSentinel(%q) = %q, want %q", tt.in, got, tt.want)
+				t.Errorf("StripGroomedSentinel(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

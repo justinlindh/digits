@@ -1482,7 +1482,7 @@ func fakeReleasesForTest(t *testing.T, versionNotes map[string]string) *updates.
 	releases := make(map[string]*updates.Release, len(versionNotes))
 	var latest string
 	for v, notes := range versionNotes {
-		releases[v] = &updates.Release{Version: v, Notes: stripGroomedSentinelForTest(notes)}
+		releases[v] = &updates.Release{Version: v, Notes: updates.StripGroomedSentinel(notes)}
 		if latest == "" || updates.CompareSemver(v, latest) > 0 {
 			latest = v
 		}
@@ -1492,17 +1492,6 @@ func fakeReleasesForTest(t *testing.T, versionNotes map[string]string) *updates.
 		Pi:       updates.ComponentIndex{Latest: "", Releases: make(map[string]*updates.Release)},
 	}
 	return updates.NewGitHubReleasesWithIndex(idx)
-}
-
-// stripGroomedSentinelForTest mirrors the production helper for test fixtures.
-// Duplicated here because the production helper is unexported in the updates package.
-func stripGroomedSentinelForTest(s string) string {
-	const sentinel = "<!-- groomed:v1 -->"
-	trimmed := strings.TrimLeft(s, " \t\r\n")
-	if !strings.HasPrefix(trimmed, sentinel) {
-		return s
-	}
-	return strings.TrimLeft(trimmed[len(sentinel):], " \t\r\n")
 }
 
 // seedLineWithoutDeviceInfoForTest inserts a line row but does NOT register a
