@@ -519,8 +519,8 @@ func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sess
 		return nil
 	}
 	for _, p := range todo {
-		if err := s.writeSample(ctx, key.CallID, p.epKey.From, p.sample); err != nil {
-			return fmt.Errorf("write sample (%v,%s): %w", key, p.epKey.From, err)
+		if err := s.writeSample(ctx, key, p.epKey, p.sample); err != nil {
+			return fmt.Errorf("write sample (%v,%v): %w", key, p.epKey, err)
 		}
 	}
 	// On success, advance lastFlushed.
@@ -534,13 +534,29 @@ func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sess
 	return nil
 }
 
-func (s *HealthStore) writeSample(ctx context.Context, callID int64, endpoint string, sample Sample) error {
+// writeSample inserts a single link-health sample for either a 2-party call
+// or a 3-way conference, depending on key.IsConf(). ON CONFLICT DO NOTHING
+// (no conflict target) handles either of the two partial unique indexes
+// introduced by the v20 migration, so idempotency works for both kinds.
+func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpointKey, sample Sample) error {
+	var (
+		callID sql.NullInt64
+		confID sql.NullString
+		peer   sql.NullString
+	)
+	if key.IsConf() {
+		confID = sql.NullString{String: key.ConfID.String(), Valid: true}
+		peer = sql.NullString{String: ep.Peer, Valid: ep.Peer != ""}
+	} else {
+		callID = sql.NullInt64{Int64: key.CallID, Valid: key.CallID != 0}
+	}
 	_, err := s.db.DB.ExecContext(ctx,
 		`INSERT INTO call_link_health
-		   (call_id, endpoint, ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		 ON CONFLICT (call_id, endpoint, ts) DO NOTHING`,
-		callID, endpoint, sample.TS,
+		   (call_id, conference_id, endpoint, peer, ts,
+		    loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 ON CONFLICT DO NOTHING`,
+		callID, confID, ep.From, peer, sample.TS,
 		nullableFloat(sample.LossPct),
 		nullableFloat(sample.JitterMs),
 		nullableFloat(sample.RttMs),

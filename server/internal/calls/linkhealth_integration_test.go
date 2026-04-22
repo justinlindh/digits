@@ -4,9 +4,11 @@ package calls
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -134,5 +136,143 @@ func TestCallLinkHealthSchemaV20(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected CHECK violation inserting with neither call_id nor conference_id set")
+	}
+}
+
+func TestWriteSample2PartyPostV20(t *testing.T) {
+	d := setupTestDB(t)
+
+	// Seed a call row so the FK is satisfied.
+	var callID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&callID); err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	loss := float32(1.5)
+	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss, ConnType: "host"}
+
+	if err := s.writeSample(context.Background(),
+		SessionKey{CallID: callID},
+		endpointKey{From: "+15555550001"},
+		sample,
+	); err != nil {
+		t.Fatalf("writeSample: %v", err)
+	}
+
+	var (
+		dbCallID sql.NullInt64
+		dbConfID sql.NullString
+		dbEp     string
+		dbPeer   sql.NullString
+	)
+	if err := d.DB.QueryRow(
+		`SELECT call_id, conference_id, endpoint, peer FROM call_link_health
+		 WHERE call_id = $1`, callID,
+	).Scan(&dbCallID, &dbConfID, &dbEp, &dbPeer); err != nil {
+		t.Fatalf("readback row: %v", err)
+	}
+	if !dbCallID.Valid || dbCallID.Int64 != callID {
+		t.Fatalf("call_id not persisted correctly: %v", dbCallID)
+	}
+	if dbConfID.Valid {
+		t.Fatalf("conference_id should be NULL for 2-party rows; got %v", dbConfID)
+	}
+	if dbPeer.Valid {
+		t.Fatalf("peer should be NULL for 2-party rows; got %v", dbPeer)
+	}
+	if dbEp != "+15555550001" {
+		t.Fatalf("endpoint: got %q want +15555550001", dbEp)
+	}
+
+	// Idempotent: second write of the same (call, endpoint, ts) is silently skipped.
+	if err := s.writeSample(context.Background(),
+		SessionKey{CallID: callID},
+		endpointKey{From: "+15555550001"},
+		sample,
+	); err != nil {
+		t.Fatalf("second writeSample: %v", err)
+	}
+	var rowCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM call_link_health WHERE call_id = $1`, callID,
+	).Scan(&rowCount); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if rowCount != 1 {
+		t.Fatalf("ON CONFLICT DO NOTHING broken; got %d rows want 1", rowCount)
+	}
+}
+
+func TestWriteSampleConferencePostV20(t *testing.T) {
+	d := setupTestDB(t)
+
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed originating call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	jitter := float32(4.2)
+	sample := Sample{TS: time.Unix(0, 1), JitterMs: &jitter}
+
+	if err := s.writeSample(context.Background(),
+		SessionKey{ConfID: confID},
+		endpointKey{From: "+15555550001", Peer: "+15555550002"},
+		sample,
+	); err != nil {
+		t.Fatalf("writeSample conference: %v", err)
+	}
+
+	var (
+		dbCallID sql.NullInt64
+		dbConfID sql.NullString
+		dbEp     string
+		dbPeer   sql.NullString
+	)
+	if err := d.DB.QueryRow(
+		`SELECT call_id, conference_id, endpoint, peer FROM call_link_health
+		 WHERE conference_id = $1`, confID,
+	).Scan(&dbCallID, &dbConfID, &dbEp, &dbPeer); err != nil {
+		t.Fatalf("readback row: %v", err)
+	}
+	if dbCallID.Valid {
+		t.Fatalf("call_id should be NULL for conference rows; got %v", dbCallID)
+	}
+	if !dbConfID.Valid || dbConfID.String != confID.String() {
+		t.Fatalf("conference_id: got %v want %s", dbConfID, confID)
+	}
+	if !dbPeer.Valid || dbPeer.String != "+15555550002" {
+		t.Fatalf("peer: got %v want +15555550002", dbPeer)
+	}
+	if dbEp != "+15555550001" {
+		t.Fatalf("endpoint: got %q want +15555550001", dbEp)
+	}
+
+	// Cascade delete: dropping the conference wipes the sample row.
+	if _, err := d.DB.Exec(`DELETE FROM conferences WHERE id = $1`, confID); err != nil {
+		t.Fatalf("delete conference: %v", err)
+	}
+	var rowCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM call_link_health WHERE conference_id = $1`, confID,
+	).Scan(&rowCount); err != nil {
+		t.Fatalf("count rows after cascade: %v", err)
+	}
+	if rowCount != 0 {
+		t.Fatalf("cascade delete broken; got %d rows want 0", rowCount)
 	}
 }
