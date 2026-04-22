@@ -2403,7 +2403,13 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines); err != nil {
+	// Compute the linked-families index once at subscribe time. It can't
+	// change mid-call (household membership changes don't retroactively
+	// apply to a live call), and buildLinkedFamilies + buildLinkedLineIndex
+	// together issue DB queries we don't want on the per-sample hot path.
+	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
+
+	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
 		slog.Debug("SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
 		return
 	}
@@ -2425,7 +2431,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 				flusher.Flush()
 				return
 			}
-			if err := h.writeEvent(w, flusher, call, ownedLines, ev); err != nil {
+			if err := h.writeEvent(w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
 				slog.Debug("SSE stream: write failed; client gone", "call_id", callID, "err", err)
 				return
 			}
@@ -2453,8 +2459,7 @@ func writeSSE(w io.Writer, event, data string) error {
 	return err
 }
 
-func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line) error {
-	linkedIndex := h.linkedIndexForCall(ctx, ownedLines)
+func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
 	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
 		return err
@@ -2474,10 +2479,9 @@ func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher
 	return nil
 }
 
-func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, ev calls.Event) error {
+func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
 	switch ev.Kind {
 	case calls.SampleKind:
-		linkedIndex := h.linkedIndexForCall(context.Background(), ownedLines)
 		callerEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Caller, linkedIndex, ownedLines)
 		if err != nil {
 			return err
