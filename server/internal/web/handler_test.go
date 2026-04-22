@@ -931,8 +931,10 @@ func TestSettingsPage_ThemeSwatches(t *testing.T) {
 		`class="theme-card`,
 		`theme-card__swatch`,
 		`#f5f1ea`,
+		`#2e231b`,
 		`#c48b3a`,
 		`#0a3a8a`,
+		`#7ab4ff`,
 		`#f0c020`,
 	} {
 		if !strings.Contains(body, want) {
