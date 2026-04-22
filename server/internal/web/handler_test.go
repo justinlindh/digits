@@ -625,6 +625,116 @@ func TestPhoneVoiceStyleUnknownValueNormalizesToCopper(t *testing.T) {
 	}
 }
 
+func readSilentMode(t *testing.T, database *db.Database) bool {
+	t.Helper()
+	var raw bool
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE((settings->>'silent_mode')::bool, false) FROM lines WHERE number = '3140001'`,
+	).Scan(&raw); err != nil {
+		t.Fatalf("read silent_mode: %v", err)
+	}
+	return raw
+}
+
+func postSilentMode(t *testing.T, h *Handler, cookie *http.Cookie, value string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"silent_mode": {value}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/silent-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestPhoneSilentModeOnPersistsAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postSilentMode(t, h, cookie, "on", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	if !readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=true in db")
+	}
+}
+
+func TestPhoneSilentModeOffPersists(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup on: got %d", w.Code)
+	}
+	if !readSilentMode(t, database) {
+		t.Fatal("setup failed: expected silent_mode=true before turning off")
+	}
+	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("off: got %d", w.Code)
+	}
+	if readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=false in db after turning off")
+	}
+}
+
+func TestPhoneSilentModeMissingFieldTreatedAsOff(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup on: got %d", w.Code)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/silent-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=false when form omits the key")
+	}
+}
+
+func TestPhoneSilentModeHTMXReturnsPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postSilentMode(t, h, cookie, "on", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="silent-mode-section"`) {
+		t.Fatalf("htmx response missing silent-mode-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, `name="silent_mode"`) {
+		t.Fatalf("htmx response missing silent_mode input:\n%s", body)
+	}
+	checkboxIdx := strings.Index(body, `name="silent_mode"`)
+	if checkboxIdx < 0 {
+		t.Fatalf("missing checkbox:\n%s", body)
+	}
+	tag := body[checkboxIdx:strings.Index(body[checkboxIdx:], ">")+checkboxIdx]
+	if !strings.Contains(tag, "checked") {
+		t.Errorf("expected checkbox checked after turning on: %q", tag)
+	}
+}
+
 func TestPhoneVoiceStyleMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
