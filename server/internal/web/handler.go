@@ -3,7 +3,6 @@ package web
 import (
 	"embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -444,10 +443,15 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	linkedFamilies := h.buildLinkedFamilies(householdID)
 	linkedLineIndex := buildLinkedLineIndex(linkedFamilies)
 
-	// Annotate lines with active-call state. When both sides of the call are
-	// own lines (intra-household), each card uses the other local line's name
-	// as its peer instead of a phone-number fallback.
+	// Annotate lines with active-call state and count household-scoped active
+	// calls. When both sides of the call are own lines (intra-household),
+	// each card uses the other local line's name as its peer instead of a
+	// phone-number fallback.
+	var activeCount int
 	for _, pair := range active {
+		if ownLineByNumber[pair.Caller] != nil || ownLineByNumber[pair.Callee] != nil {
+			activeCount++
+		}
 		callerRow := ownLineByNumber[pair.Caller]
 		calleeRow := ownLineByNumber[pair.Callee]
 		elapsed := fmtElapsed(time.Since(pair.StartedAt))
@@ -516,7 +520,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Stats: dashStats{
 			TotalLines:  len(ld.Lines),
 			OnlineLines: countOnline(ld.Lines),
-			ActiveCalls: len(active),
+			ActiveCalls: activeCount,
 		},
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
@@ -657,9 +661,9 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		}
 	}
 
-	// Fall back to global list if household lookup failed or feature disabled
+	// If household lookup failed, show empty list rather than leaking all lines
 	if lines == nil {
-		lines, _ = h.lineStore.List()
+		lines = []line.Line{}
 	}
 
 	online := h.hub.OnlineNumbers()
@@ -831,9 +835,8 @@ type lineDetailData struct {
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	online := h.hub.Get(number) != nil
@@ -902,6 +905,9 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	online := h.hub.Get(number) != nil
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
@@ -915,9 +921,8 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	online := h.hub.Get(number) != nil
@@ -932,9 +937,8 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.Error(w, "line not found", http.StatusNotFound)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 
@@ -962,9 +966,8 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	next := ln.Settings
@@ -1008,6 +1011,9 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -1051,6 +1057,9 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	status := h.hub.GetUpdateStatus(number)
 	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
@@ -1066,6 +1075,9 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 
 	h.hub.ClearUpdateStatus(number)
 
@@ -1096,6 +1108,9 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -1137,14 +1152,8 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if errors.Is(err, line.ErrNotFound) {
-		http.Error(w, "line not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		slog.Error("delete line: lookup failed", "number", number, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	if err := h.lineStore.Delete(ln.ID); err != nil {
@@ -1455,14 +1464,35 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 
 	id := r.PathValue("id")
 
-	// Look up the link's status before revoking so we can pick accurate
-	// post-action copy (pending invite -> "canceled", active link ->
-	// "disconnected"). If the lookup fails, fall through with disconnected
-	// copy as the safer default.
-	wasPending := false
-	if link, err := h.linkStore.GetByID(id); err == nil && link != nil {
-		wasPending = link.Status == "pending"
+	// Look up the link and verify the user belongs to one of the linked
+	// households before allowing revocation.
+	link, err := h.linkStore.GetByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
 	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	owned := false
+	for _, hh := range households {
+		if hh.ID == link.HouseholdAID || (link.HouseholdBID != nil && hh.ID == *link.HouseholdBID) {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		http.NotFound(w, r)
+		return
+	}
+
+	wasPending := link.Status == "pending"
 
 	if err := h.linkStore.RevokeLink(id, user.ID); err != nil {
 		slog.Error("revoke link failed", "link_id", id, "err", err)
@@ -1555,29 +1585,45 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 // ---- API ----
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
-	lines, err := h.lineStore.List()
-	if err != nil {
-		slog.Error("api status: list lines failed", "err", err)
-		jsonError(w, "internal server error", http.StatusInternalServerError)
-		return
+	ld := h.buildLinesData(r, "")
+	nums := h.householdNumbers(r)
+
+	var onlineCount int
+	for _, row := range ld.Lines {
+		if row.Online {
+			onlineCount++
+		}
 	}
-	online := h.hub.OnlineNumbers()
-	active := h.tracker.Active()
+
+	allActive := h.tracker.Active()
+	var activeCount int
+	for _, a := range allActive {
+		if nums[a.Caller] || nums[a.Callee] {
+			activeCount++
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
-		"total_lines":  len(lines),
-		"online_lines": len(online),
-		"active_calls": len(active),
+		"total_lines":  len(ld.Lines),
+		"online_lines": onlineCount,
+		"active_calls": activeCount,
 	}); err != nil {
 		slog.Error("api status: json encode failed", "err", err)
 	}
 }
 
 func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
-	active := h.tracker.Active()
-	pairs := make([]activePair, len(active))
-	for i, a := range active {
-		pairs[i] = activePair{Caller: a.Caller, Callee: a.Callee}
+	nums := h.householdNumbers(r)
+	allActive := h.tracker.Active()
+	var pairs []activePair
+	for _, a := range allActive {
+		if nums[a.Caller] || nums[a.Callee] {
+			pairs = append(pairs, activePair{Caller: a.Caller, Callee: a.Callee})
+		}
+	}
+	if pairs == nil {
+		pairs = []activePair{}
 	}
 
 	// Return HTML for htmx, JSON for API clients
@@ -1880,6 +1926,67 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		HouseholdName: h.householdNameFromContext(r),
 		User:          user,
 	})
+}
+
+// requireLineOwnership looks up a line by number and verifies the authenticated
+// user's household owns it. Returns the line on success, or nil after writing
+// an HTTP error response (404 to avoid leaking line existence).
+func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return nil
+	}
+	for _, hh := range households {
+		if hh.ID == ln.HouseholdID {
+			return ln
+		}
+	}
+	http.NotFound(w, r)
+	return nil
+}
+
+// requireNumberOwnership verifies the authenticated user's household owns the
+// given phone number without needing the full line record. Returns true if
+// ownership is confirmed, or false after writing an HTTP 404 response.
+func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request, number string) bool {
+	return h.requireLineOwnership(w, r, number) != nil
+}
+
+// householdNumbers returns the set of phone numbers belonging to the
+// authenticated user's household. Returns nil if the user has no household.
+func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.householdStore == nil {
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		return nil
+	}
+	lines, err := h.lineStore.ListByHousehold(households[0].ID)
+	if err != nil {
+		return nil
+	}
+	nums := make(map[string]bool, len(lines))
+	for _, l := range lines {
+		nums[l.Number] = true
+	}
+	return nums
 }
 
 // householdContext returns the household name, call-history flag, and timezone location for the current user.
