@@ -3,6 +3,7 @@
 package signaling_test
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -44,7 +45,7 @@ func openSignalingTestDB(t *testing.T) *db.Database {
 // alwaysAllow implements signaling.CallAuthorizer by permitting every call.
 type alwaysAllow struct{}
 
-func (alwaysAllow) CanCall(_, _ string) (bool, error) { return true, nil }
+func (alwaysAllow) CanCall(ctx context.Context, _, _ string) (bool, error) { return true, nil }
 
 // drainConn reads all buffered messages from a single Conn, returning them decoded.
 func drainConn(t *testing.T, conn *signaling.Conn) []*signaling.Message {
@@ -92,23 +93,23 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 	// in a call with B). This mirrors what the unit tests do with mockTracker.
 	//
 	// A-B call: initiated + answered (stored in DB, added to active map).
-	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallInitiated A->B: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
 
 	// A-C call: initiated + answered.
-	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
 
 	// Step 3: A sends ConferenceMerge.
-	r.HandleMessage("5550001", &signaling.Message{
+	r.HandleMessage(context.Background(), "5550001", &signaling.Message{
 		Type:       signaling.TypeConferenceMerge,
 		HeldPeer:   "5550002",
 		ActivePeer: "5550003",
@@ -176,7 +177,7 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 	}
 
 	// Step 4: B hangs up.
-	r.HandleMessage("5550002", &signaling.Message{Type: signaling.TypeHangup, To: "5550001"})
+	r.HandleMessage(context.Background(), "5550002", &signaling.Message{Type: signaling.TypeHangup, To: "5550001"})
 
 	// --- DB assertions after hangup ---
 
@@ -239,39 +240,39 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	hub.Register("5550003", cConn)
 
 	// Prime both active 2-party calls: A-B (held) and A-C (active, adding).
-	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallInitiated A->B: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
 
 	// Verify both calls are tracked before hangup.
-	if !tr.InCall("5550001", "5550002") {
+	if !tr.InCall(context.Background(), "5550001", "5550002") {
 		t.Fatal("expected A-B to be an active call before hangup")
 	}
-	if !tr.InCall("5550001", "5550003") {
+	if !tr.InCall(context.Background(), "5550001", "5550003") {
 		t.Fatal("expected A-C to be an active call before hangup")
 	}
 
 	// A sends Hangup (hook-on gesture). The To field names C (the active add
 	// peer) as the client would set it; the server must also end A-B.
-	r.HandleMessage("5550001", &signaling.Message{
+	r.HandleMessage(context.Background(), "5550001", &signaling.Message{
 		Type: signaling.TypeHangup,
 		To:   "5550003",
 	})
 
 	// Both calls must be gone from the in-memory tracker.
-	if tr.InCall("5550001", "5550002") {
+	if tr.InCall(context.Background(), "5550001", "5550002") {
 		t.Error("A-B call still active in tracker after hangup")
 	}
-	if tr.InCall("5550001", "5550003") {
+	if tr.InCall(context.Background(), "5550001", "5550003") {
 		t.Error("A-C call still active in tracker after hangup")
 	}
 
@@ -316,25 +317,25 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
-	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallInitiated A->B: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair("5550001", "5550002")
-	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
-	if _, err := tr.CreateConferencePersistent("5550001", callID, []string{"5550002", "5550003"}); err != nil {
+	if _, err := tr.CreateConferencePersistent(context.Background(), "5550001", callID, []string{"5550002", "5550003"}); err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
 	// Simulate B (non-host) disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect("5550002")
+	r.OnDisconnect(context.Background(), "5550002")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
@@ -378,13 +379,13 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for all three after cleanup.
-	if tr.Busy("5550001") {
+	if tr.Busy(context.Background(), "5550001") {
 		t.Error("A should not be busy after non-host conference disconnect")
 	}
-	if tr.Busy("5550002") {
+	if tr.Busy(context.Background(), "5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy("5550003") {
+	if tr.Busy(context.Background(), "5550003") {
 		t.Error("C should not be busy after non-host conference disconnect")
 	}
 }
@@ -406,25 +407,25 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
-	if _, err := tr.OnCallInitiated("5550001", "5550002"); err != nil {
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallInitiated A->B: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550002"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair("5550001", "5550002")
-	if _, err := tr.OnCallInitiated("5550001", "5550003"); err != nil {
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
-	if err := tr.OnCallAnswered("5550001", "5550003"); err != nil {
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
-	if _, err := tr.CreateConferencePersistent("5550001", callID, []string{"5550002", "5550003"}); err != nil {
+	if _, err := tr.CreateConferencePersistent(context.Background(), "5550001", callID, []string{"5550002", "5550003"}); err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
 	// Simulate A disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect("5550001")
+	r.OnDisconnect(context.Background(), "5550001")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
@@ -451,10 +452,10 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for B and C after cleanup.
-	if tr.Busy("5550002") {
+	if tr.Busy(context.Background(), "5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy("5550003") {
+	if tr.Busy(context.Background(), "5550003") {
 		t.Error("C should not be busy after conference disconnect")
 	}
 }

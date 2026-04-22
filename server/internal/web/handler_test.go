@@ -3,110 +3,23 @@
 package web
 
 import (
+	"context"
 	"fmt"
-	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
-	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
 )
-
-func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	database, err := db.Open(dsn)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
-	hub := signaling.NewHub()
-	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil, nil)
-
-	authStore := auth.NewStoreFromDB(database.DB)
-	householdStore := household.NewStore(database.DB)
-	pairingStore := pairing.NewStore(database.DB)
-	linkStore := household.NewLinkStore(database.DB)
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
-	if err != nil {
-		t.Fatalf("parse login template: %v", err)
-	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
-
-	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
-		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "", nil)
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
-	return h, database, authStore
-}
-
-// addSessionCookie creates a test user and session, returning a cookie for authenticated requests.
-func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
-	t.Helper()
-	user, err := store.GetUserByEmail("test@example.com")
-	if err != nil {
-		user, err = store.CreateUser("test@example.com", "Test User", nil)
-		if err != nil {
-			t.Fatalf("create test user: %v", err)
-		}
-	}
-	token, _, err := store.CreateSession(user.ID, auth.SessionTTL)
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-	return &http.Cookie{
-		Name:  auth.CookieName,
-		Value: token,
-	}
-}
-
-// setupAuthedHousehold combines addSessionCookie with household creation so
-// a test user has a household_members row. Onboarding middleware redirects
-// any request without a household to /onboard, so every test that hits a
-// protected route must seed one. Returns the session cookie and the created
-// household. Cleanup for the household row and its member row is registered
-// via t.Cleanup.
-func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store) (*http.Cookie, *household.Household) {
-	t.Helper()
-	cookie := addSessionCookie(t, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
-	if err != nil {
-		t.Fatalf("get test user: %v", err)
-	}
-	hh, err := h.householdStore.Create("Handler Test Household", user.ID)
-	if err != nil {
-		t.Fatalf("create household: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
-	})
-	return cookie, hh
-}
 
 func TestDashboardReturns200(t *testing.T) {
 	h, database, authStore := setupHandler(t)
@@ -228,7 +141,7 @@ func TestDeletePhone(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	lineStore := line.NewStore(database)
-	_, err := lineStore.Add("3140001", "Test Phone", hh.ID)
+	_, err := lineStore.Add(context.Background(), "3140001", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("add test line: %v", err)
 	}
@@ -245,7 +158,7 @@ func TestDeletePhone(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 	// Line should be gone
-	if _, err := lineStore.GetByNumber("3140001"); err == nil {
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
 		t.Error("line should have been deleted")
 	}
 }
@@ -253,7 +166,7 @@ func TestDeletePhone(t *testing.T) {
 func TestCallsPageReturns200(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
@@ -299,9 +212,9 @@ func TestSettingsTimezonePost(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 
-	user, _ := authStore.GetUserByEmail("test@example.com")
+	user, _ := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	householdStore := h.householdStore
-	hh, err := householdStore.Create("TZ Test Family", user.ID)
+	hh, err := householdStore.Create(context.Background(), "TZ Test Family", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
@@ -324,7 +237,7 @@ func TestSettingsTimezonePost(t *testing.T) {
 		t.Errorf("redirect location = %q, want /settings?saved=1", loc)
 	}
 
-	got, err := householdStore.GetByID(hh.ID)
+	got, err := householdStore.GetByID(context.Background(), hh.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -337,9 +250,9 @@ func TestSettingsTimezonePost_Invalid(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 
-	user, _ := authStore.GetUserByEmail("test@example.com")
+	user, _ := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	householdStore := h.householdStore
-	hh, err := householdStore.Create("TZ Invalid Family", user.ID)
+	hh, err := householdStore.Create(context.Background(), "TZ Invalid Family", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
@@ -359,7 +272,7 @@ func TestSettingsTimezonePost_Invalid(t *testing.T) {
 		t.Errorf("expected 303 redirect, got %d", w.Code)
 	}
 
-	got, err := householdStore.GetByID(hh.ID)
+	got, err := householdStore.GetByID(context.Background(), hh.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -381,7 +294,6 @@ func TestNotFound(t *testing.T) {
 	}
 }
 
-
 // setupPairedDevice creates a paired device via the pairing flow and returns
 // the hardware ID and plaintext device token.
 func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, token string) {
@@ -391,26 +303,26 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	number := fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
 
 	// Create a household for the line
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
-		user, err = authStore.CreateUser("test@example.com", "Test User", nil)
+		user, err = authStore.CreateUser(context.Background(), "test@example.com", "Test User", nil)
 		if err != nil {
 			t.Fatalf("create user: %v", err)
 		}
 	}
-	hh, err := householdStore.Create("Test Household", user.ID)
+	hh, err := householdStore.Create(context.Background(), "Test Household", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
 
 	// Generate pairing code (creates the device row)
-	code, err := pairingStore.GenerateCode(hardwareID)
+	code, err := pairingStore.GenerateCode(context.Background(), hardwareID)
 	if err != nil {
 		t.Fatalf("generate code: %v", err)
 	}
 
 	// Claim the device (pairs it, sets hashed token)
-	token, _, err = pairingStore.ClaimDevice(code, number, "Test Phone", hh.ID)
+	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("claim device: %v", err)
 	}
@@ -468,7 +380,7 @@ func TestPhonesPage_FirmwareColumn(t *testing.T) {
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	// Seed one line so the lines table renders (the Firmware column header
 	// only appears when .Lines is non-empty).
-	_, err := h.lineStore.Add("2456390", "Test Line", hh.ID)
+	_, err := h.lineStore.Add(context.Background(), "2456390", "Test Line", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
 	}
@@ -574,16 +486,16 @@ func TestPhoneOnlineStatus(t *testing.T) {
 // final state without reaching into the line store abstraction.
 func setupVoiceStyleLine(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store) (readVoiceStyle func() string) {
 	t.Helper()
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
-	hh, err := h.householdStore.Create("Voice Style Test", user.ID)
+	hh, err := h.householdStore.Create(context.Background(), "Voice Style Test", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
 	lineStore := line.NewStore(database)
-	if _, err := lineStore.Add("3140001", "Test Phone", hh.ID); err != nil {
+	if _, err := lineStore.Add(context.Background(), "3140001", "Test Phone", hh.ID); err != nil {
 		t.Fatalf("add line: %v", err)
 	}
 	t.Cleanup(func() {
@@ -668,8 +580,8 @@ func TestPhoneVoiceStyleHTMXReturnsPartialWithSelection(t *testing.T) {
 		t.Fatalf("htmx response missing radios:\n%s", body)
 	}
 	// Walk forward from each input to the end of its tag to check for `checked`.
-	modernTag := body[modernIdx:strings.Index(body[modernIdx:], ">")+modernIdx]
-	copperTag := body[copperIdx:strings.Index(body[copperIdx:], ">")+copperIdx]
+	modernTag := body[modernIdx : strings.Index(body[modernIdx:], ">")+modernIdx]
+	copperTag := body[copperIdx : strings.Index(body[copperIdx:], ">")+copperIdx]
 	if !strings.Contains(modernTag, "checked") {
 		t.Errorf("modern radio not marked checked after save: %q", modernTag)
 	}
@@ -804,7 +716,7 @@ func TestPhoneSilentModeHTMXReturnsPartial(t *testing.T) {
 	if checkboxIdx < 0 {
 		t.Fatalf("missing checkbox:\n%s", body)
 	}
-	tag := body[checkboxIdx:strings.Index(body[checkboxIdx:], ">")+checkboxIdx]
+	tag := body[checkboxIdx : strings.Index(body[checkboxIdx:], ">")+checkboxIdx]
 	if !strings.Contains(tag, "checked") {
 		t.Errorf("expected checkbox checked after turning on: %q", tag)
 	}
@@ -813,11 +725,11 @@ func TestPhoneSilentModeHTMXReturnsPartial(t *testing.T) {
 func TestPhoneSilentModeMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
-	hh, err := h.householdStore.Create("Silent Mode Missing", user.ID)
+	hh, err := h.householdStore.Create(context.Background(), "Silent Mode Missing", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
@@ -884,11 +796,11 @@ func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
 func TestPhoneVoiceStyleMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
-	hh, err := h.householdStore.Create("Voice Style Missing", user.ID)
+	hh, err := h.householdStore.Create(context.Background(), "Voice Style Missing", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
@@ -1051,7 +963,7 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 func TestCallsPage_CallLogTitle(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
@@ -1151,11 +1063,11 @@ func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore
 	// Ensure the other user does not exist from a prior run before creating.
 	_, _ = database.DB.Exec("DELETE FROM users WHERE email = 'test-other@example.com'")
 	// Create a second user + household.
-	otherUser, err := authStore.CreateUser("test-other@example.com", "Other Test User", nil)
+	otherUser, err := authStore.CreateUser(context.Background(), "test-other@example.com", "Other Test User", nil)
 	if err != nil {
 		t.Fatalf("create other user: %v", err)
 	}
-	otherHH, err := h.householdStore.Create(otherName, otherUser.ID)
+	otherHH, err := h.householdStore.Create(context.Background(), otherName, otherUser.ID)
 	if err != nil {
 		t.Fatalf("create other household: %v", err)
 	}
@@ -1166,15 +1078,15 @@ func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore
 		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", otherUser.ID)
 	})
 	// Seed a line for the other household.
-	if _, err := h.lineStore.Add(lineNumber, lineName, otherHH.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), lineNumber, lineName, otherHH.ID); err != nil {
 		t.Fatalf("seed line on other hh: %v", err)
 	}
 	// Link: primary invites, other accepts.
-	invite, err := h.linkStore.CreateInvite(primaryHouseholdID, primaryUserID)
+	invite, err := h.linkStore.CreateInvite(context.Background(), primaryHouseholdID, primaryUserID)
 	if err != nil {
 		t.Fatalf("create invite: %v", err)
 	}
-	if _, err := h.linkStore.AcceptInvite(invite.InviteCode, otherUser.ID, otherHH.ID); err != nil {
+	if _, err := h.linkStore.AcceptInvite(context.Background(), invite.InviteCode, otherUser.ID, otherHH.ID); err != nil {
 		t.Fatalf("accept invite: %v", err)
 	}
 	return otherHH
@@ -1183,7 +1095,7 @@ func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore
 func TestLinksPage_Neighborhood(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
@@ -1210,10 +1122,10 @@ func TestLinksPage_Neighborhood(t *testing.T) {
 func TestDashboard_HasRoomCards(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	if _, err := h.lineStore.Add("2456390", "Kitchen", hh.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), "2456390", "Kitchen", hh.ID); err != nil {
 		t.Fatalf("seed line: %v", err)
 	}
-	if _, err := h.lineStore.Add("2486881", "Living room", hh.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), "2486881", "Living room", hh.ID); err != nil {
 		t.Fatalf("seed line: %v", err)
 	}
 
@@ -1252,7 +1164,7 @@ func TestDashboard_TodayPanelGatedByHistoryFlag(t *testing.T) {
 	}
 
 	// Enable history.
-	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -1267,7 +1179,7 @@ func TestDashboard_TodayPanelGatedByHistoryFlag(t *testing.T) {
 func TestDashboard_ConnectedFamiliesChipRow(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
@@ -1318,16 +1230,16 @@ func TestLinksPage_InvitePostcard(t *testing.T) {
 func TestLinksPage_MultiplePendingInvites(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
 	for i := 0; i < 3; i++ {
-		if _, err := h.linkStore.CreateInvite(hh.ID, user.ID); err != nil {
+		if _, err := h.linkStore.CreateInvite(context.Background(), hh.ID, user.ID); err != nil {
 			t.Fatalf("CreateInvite #%d: %v", i+1, err)
 		}
 	}
-	pending, err := h.linkStore.GetPendingForHousehold(hh.ID)
+	pending, err := h.linkStore.GetPendingForHousehold(context.Background(), hh.ID)
 	if err != nil {
 		t.Fatalf("GetPendingForHousehold: %v", err)
 	}
@@ -1352,13 +1264,13 @@ func TestSettingsCRTModePost(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
 	// Reset CRTMode to the default so the assertion is meaningful even when
 	// the shared test user was mutated by a prior test in the same run.
-	if err := authStore.SetCRTMode(user.ID, auth.CRTModeConnecting); err != nil {
+	if err := authStore.SetCRTMode(context.Background(), user.ID, auth.CRTModeConnecting); err != nil {
 		t.Fatalf("reset CRTMode: %v", err)
 	}
 
@@ -1376,7 +1288,7 @@ func TestSettingsCRTModePost(t *testing.T) {
 		t.Errorf("redirect = %q, want /settings?saved=1", loc)
 	}
 
-	got, err := authStore.GetUserByID(user.ID)
+	got, err := authStore.GetUserByID(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -1389,13 +1301,13 @@ func TestSettingsCRTModePost_Invalid(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
 	// Reset CRTMode to the default so we can assert the invalid POST does
 	// not change it, regardless of state left by earlier tests.
-	if err := authStore.SetCRTMode(user.ID, auth.CRTModeConnecting); err != nil {
+	if err := authStore.SetCRTMode(context.Background(), user.ID, auth.CRTModeConnecting); err != nil {
 		t.Fatalf("reset CRTMode: %v", err)
 	}
 
@@ -1410,7 +1322,7 @@ func TestSettingsCRTModePost_Invalid(t *testing.T) {
 		t.Errorf("expected 303 redirect, got %d", w.Code)
 	}
 
-	got, err := authStore.GetUserByID(user.ID)
+	got, err := authStore.GetUserByID(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -1581,7 +1493,7 @@ func TestPairRedirectIncludesQueryParams(t *testing.T) {
 
 	// Generate a real pairing code so ClaimDevice accepts it.
 	hwID := fmt.Sprintf("test-redirect-hw-%d", time.Now().UnixNano())
-	code, err := h.pairingStore.GenerateCode(hwID)
+	code, err := h.pairingStore.GenerateCode(context.Background(), hwID)
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}

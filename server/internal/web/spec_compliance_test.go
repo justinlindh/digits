@@ -16,10 +16,11 @@
 //
 // Runs under the `integration` build tag alongside handler_test.go:
 //
-//   go test -tags=integration -run 'TestSpec' ./internal/web/...
+//	go test -tags=integration -run 'TestSpec' ./internal/web/...
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,20 +33,20 @@ import (
 func TestSpecDashboard(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
 	// Seed minimum data for the spec checks: own lines, a linked family,
 	// history enabled so the Today panel renders.
-	if _, err := h.lineStore.Add("2456390", "Kitchen", hh.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), "2456390", "Kitchen", hh.ID); err != nil {
 		t.Fatalf("seed own line: %v", err)
 	}
-	if _, err := h.lineStore.Add("2486881", "Living room", hh.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), "2486881", "Living room", hh.ID); err != nil {
 		t.Fatalf("seed own line: %v", err)
 	}
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
-	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 
@@ -106,7 +107,7 @@ func TestSpecDashboard(t *testing.T) {
 func TestSpecLines(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	if _, err := h.lineStore.Add("2456390", "Kitchen", hh.ID); err != nil {
+	if _, err := h.lineStore.Add(context.Background(), "2456390", "Kitchen", hh.ID); err != nil {
 		t.Fatalf("seed line: %v", err)
 	}
 
@@ -148,13 +149,13 @@ func TestSpecLines(t *testing.T) {
 func TestSpecFamilies(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
 	// The test user is shared across spec tests; ensure intercom theme
 	// so the postcard branch rendering FAMILY MAIL is exercised here.
-	if err := authStore.SetTheme(user.ID, auth.ThemeIntercom); err != nil {
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom); err != nil {
 		t.Fatalf("reset theme to intercom: %v", err)
 	}
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
@@ -287,7 +288,7 @@ func TestSpecCallLog(t *testing.T) {
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	// /calls redirects to /settings when history is disabled; enable so the
 	// page renders and we can assert its heading.
-	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
 		t.Fatalf("enable call history: %v", err)
 	}
 
@@ -324,16 +325,16 @@ func TestSpecCallLog(t *testing.T) {
 func TestSpecDialupHubGlyph(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	user, err := authStore.GetUserByEmail("test@example.com")
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
-	if err := authStore.SetTheme(user.ID, auth.ThemeDialup); err != nil {
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeDialup); err != nil {
 		t.Fatalf("set dialup theme: %v", err)
 	}
 	// Reset the test user's theme on exit so subsequent tests (which
 	// share this user via setupAuthedHousehold) see the default value.
-	t.Cleanup(func() { _ = authStore.SetTheme(user.ID, auth.ThemeIntercom) })
+	t.Cleanup(func() { _ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom) })
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
 
 	req := httptest.NewRequest(http.MethodGet, "/links", nil)

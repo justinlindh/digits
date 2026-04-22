@@ -3,6 +3,7 @@
 package household
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func TestCreate(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "owner@example.com")
 
-	h, err := s.Create("Smith Family", userID)
+	h, err := s.Create(context.Background(), "Smith Family", userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestCreate(t *testing.T) {
 	}
 
 	// GetByID should return the same household
-	got, err := s.GetByID(h.ID)
+	got, err := s.GetByID(context.Background(), h.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -83,12 +84,12 @@ func TestGetForUser(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "member@example.com")
 
-	h, err := s.Create("Jones Family", userID)
+	h, err := s.Create(context.Background(), "Jones Family", userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	households, err := s.GetForUser(userID)
+	households, err := s.GetForUser(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("GetForUser: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestGetForUser_Empty(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "loner@example.com")
 
-	households, err := s.GetForUser(userID)
+	households, err := s.GetForUser(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("GetForUser: %v", err)
 	}
@@ -120,12 +121,12 @@ func TestGetRole(t *testing.T) {
 	s, database := testStore(t)
 	ownerID := createTestUser(t, database, "admin@example.com")
 
-	h, err := s.Create("Admin Family", ownerID)
+	h, err := s.Create(context.Background(), "Admin Family", ownerID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	role, err := s.GetRole(ownerID, h.ID)
+	role, err := s.GetRole(context.Background(), ownerID, h.ID)
 	if err != nil {
 		t.Fatalf("GetRole: %v", err)
 	}
@@ -139,12 +140,12 @@ func TestGetRole_NotMember(t *testing.T) {
 	ownerID := createTestUser(t, database, "owner2@example.com")
 	otherID := createTestUser(t, database, "stranger@example.com")
 
-	h, err := s.Create("Private Family", ownerID)
+	h, err := s.Create(context.Background(), "Private Family", ownerID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	_, err = s.GetRole(otherID, h.ID)
+	_, err = s.GetRole(context.Background(), otherID, h.ID)
 	if err == nil {
 		t.Error("expected error for non-member, got nil")
 	}
@@ -155,16 +156,16 @@ func TestAddMember(t *testing.T) {
 	ownerID := createTestUser(t, database, "addowner@example.com")
 	memberID := createTestUser(t, database, "newmember@example.com")
 
-	h, err := s.Create("Growing Family", ownerID)
+	h, err := s.Create(context.Background(), "Growing Family", ownerID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := s.AddMember(memberID, h.ID, "member"); err != nil {
+	if err := s.AddMember(context.Background(), memberID, h.ID, "member"); err != nil {
 		t.Fatalf("AddMember: %v", err)
 	}
 
-	role, err := s.GetRole(memberID, h.ID)
+	role, err := s.GetRole(context.Background(), memberID, h.ID)
 	if err != nil {
 		t.Fatalf("GetRole after AddMember: %v", err)
 	}
@@ -173,10 +174,10 @@ func TestAddMember(t *testing.T) {
 	}
 
 	// Update role via AddMember (ON CONFLICT DO UPDATE)
-	if err := s.AddMember(memberID, h.ID, "admin"); err != nil {
+	if err := s.AddMember(context.Background(), memberID, h.ID, "admin"); err != nil {
 		t.Fatalf("AddMember update role: %v", err)
 	}
-	role, err = s.GetRole(memberID, h.ID)
+	role, err = s.GetRole(context.Background(), memberID, h.ID)
 	if err != nil {
 		t.Fatalf("GetRole after role update: %v", err)
 	}
@@ -189,13 +190,13 @@ func TestSetTimezone(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "tz@example.com")
 
-	h, err := s.Create("TZ Family", userID)
+	h, err := s.Create(context.Background(), "TZ Family", userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	// Default should be UTC
-	got, err := s.GetByID(h.ID)
+	got, err := s.GetByID(context.Background(), h.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -204,10 +205,10 @@ func TestSetTimezone(t *testing.T) {
 	}
 
 	// Set valid timezone
-	if err := s.SetTimezone(h.ID, "America/Denver"); err != nil {
+	if err := s.SetTimezone(context.Background(), h.ID, "America/Denver"); err != nil {
 		t.Fatalf("SetTimezone: %v", err)
 	}
-	got, err = s.GetByID(h.ID)
+	got, err = s.GetByID(context.Background(), h.ID)
 	if err != nil {
 		t.Fatalf("GetByID after set: %v", err)
 	}
@@ -220,12 +221,12 @@ func TestSetTimezone_Invalid(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "badtz@example.com")
 
-	h, err := s.Create("Bad TZ Family", userID)
+	h, err := s.Create(context.Background(), "Bad TZ Family", userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	err = s.SetTimezone(h.ID, "Not/A/Timezone")
+	err = s.SetTimezone(context.Background(), h.ID, "Not/A/Timezone")
 	if err == nil {
 		t.Error("expected error for invalid timezone, got nil")
 	}
@@ -255,16 +256,16 @@ func TestUpdateName(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "rename@example.com")
 
-	h, err := s.Create("Old Name", userID)
+	h, err := s.Create(context.Background(), "Old Name", userID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := s.UpdateName(h.ID, "New Name"); err != nil {
+	if err := s.UpdateName(context.Background(), h.ID, "New Name"); err != nil {
 		t.Fatalf("UpdateName: %v", err)
 	}
 
-	got, err := s.GetByID(h.ID)
+	got, err := s.GetByID(context.Background(), h.ID)
 	if err != nil {
 		t.Fatalf("GetByID after rename: %v", err)
 	}

@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -14,7 +15,7 @@ func TestAdminDBMigrate(t *testing.T) {
 	if dsn == "" {
 		t.Skip("TEST_ADMIN_DATABASE_URL not set")
 	}
-	db, err := OpenAdmin(dsn)
+	db, err := OpenAdmin(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

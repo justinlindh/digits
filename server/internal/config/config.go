@@ -26,6 +26,15 @@ type Config struct {
 	AdminSecret string
 	// Dev
 	DevMode bool
+	// Link health flusher: when true, calls.NewHealthStore starts with the
+	// background DB flush disabled. Used by integration tests that drive time.
+	LinkHealthFlushDisabled bool
+	// Release index source. Exactly one of FakeUpdates or GitHubRepo (owner/repo)
+	// should be set. FakeUpdates wins if both are set and is intended for e2e
+	// tests. An unset GitHubRepo disables the release endpoint entirely.
+	FakeUpdates bool
+	GitHubRepo  string // e.g. "justinlindh/digits"
+	GitHubToken string
 }
 
 func Load() *Config {
@@ -35,66 +44,38 @@ func Load() *Config {
 		SMTPFrom: "noreply@digits.family",
 		BaseURL:  "https://app.digits.family",
 	}
-	if a := os.Getenv("SIGNALD_ADDR"); a != "" {
-		c.Addr = a
-	}
-	if d := os.Getenv("DATABASE_URL"); d != "" {
-		c.DatabaseURL = d
-	}
-	if cert := os.Getenv("SIGNALD_TLS_CERT"); cert != "" {
-		c.TLSCert = cert
-	}
-	if key := os.Getenv("SIGNALD_TLS_KEY"); key != "" {
-		c.TLSKey = key
-	}
-	if os.Getenv("SIGNALD_TURN_ENABLED") == "true" {
-		c.TURNEnabled = true
-	}
-	if s := os.Getenv("SIGNALD_TURN_SECRET"); s != "" {
-		c.TURNSecret = s
-	}
-	if d := os.Getenv("SIGNALD_TURN_DOMAIN"); d != "" {
-		c.TURNDomain = d
-	}
+	StringEnv("SIGNALD_ADDR", &c.Addr)
+	StringEnv("DATABASE_URL", &c.DatabaseURL)
+	StringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
+	StringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
+	BoolEnv("SIGNALD_TURN_ENABLED", &c.TURNEnabled)
+	StringEnv("SIGNALD_TURN_SECRET", &c.TURNSecret)
+	StringEnv("SIGNALD_TURN_DOMAIN", &c.TURNDomain)
 	// Auth
-	if v := os.Getenv("GOOGLE_CLIENT_ID"); v != "" {
-		c.GoogleClientID = v
-	}
-	if v := os.Getenv("GOOGLE_CLIENT_SECRET"); v != "" {
-		c.GoogleClientSecret = v
-	}
-	if v := os.Getenv("GOOGLE_REDIRECT_URL"); v != "" {
-		c.GoogleRedirectURL = v
-	}
-	if v := os.Getenv("BASE_URL"); v != "" {
-		c.BaseURL = v
-	}
-	if v := os.Getenv("COOKIE_DOMAIN"); v != "" {
-		c.CookieDomain = v
-	}
+	StringEnv("GOOGLE_CLIENT_ID", &c.GoogleClientID)
+	StringEnv("GOOGLE_CLIENT_SECRET", &c.GoogleClientSecret)
+	StringEnv("GOOGLE_REDIRECT_URL", &c.GoogleRedirectURL)
+	StringEnv("BASE_URL", &c.BaseURL)
+	StringEnv("COOKIE_DOMAIN", &c.CookieDomain)
 	// Email
-	if v := os.Getenv("SMTP_HOST"); v != "" {
-		c.SMTPHost = v
-	}
-	if v := os.Getenv("SMTP_PORT"); v != "" {
-		c.SMTPPort = v
-	}
-	if v := os.Getenv("SMTP_USER"); v != "" {
-		c.SMTPUser = v
-	}
-	if v := os.Getenv("SMTP_PASS"); v != "" {
-		c.SMTPPass = v
-	}
-	if v := os.Getenv("SMTP_FROM"); v != "" {
-		c.SMTPFrom = v
-	}
+	StringEnv("SMTP_HOST", &c.SMTPHost)
+	StringEnv("SMTP_PORT", &c.SMTPPort)
+	StringEnv("SMTP_USER", &c.SMTPUser)
+	StringEnv("SMTP_PASS", &c.SMTPPass)
+	StringEnv("SMTP_FROM", &c.SMTPFrom)
 	// Admin
-	if v := os.Getenv("ADMIN_SECRET"); v != "" {
-		c.AdminSecret = v
-	}
+	StringEnv("ADMIN_SECRET", &c.AdminSecret)
 	// Dev
-	if os.Getenv("DEV_MODE") == "true" {
-		c.DevMode = true
+	BoolEnv("DEV_MODE", &c.DevMode)
+	// Link health: env is "1" (not "true") to match the daemon's convention.
+	if os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1" {
+		c.LinkHealthFlushDisabled = true
 	}
+	// Release index
+	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
+		c.FakeUpdates = true
+	}
+	StringEnv("GITHUB_REPO", &c.GitHubRepo)
+	StringEnv("GITHUB_TOKEN", &c.GitHubToken)
 	return c
 }

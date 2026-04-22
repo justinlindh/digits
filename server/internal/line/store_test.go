@@ -3,6 +3,7 @@
 package line
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"testing"
@@ -53,7 +54,7 @@ func TestAddAndGetByID(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	l, err := s.Add("5551234", "Alice", householdID)
+	l, err := s.Add(context.Background(), "5551234", "Alice", householdID)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -70,7 +71,7 @@ func TestAddAndGetByID(t *testing.T) {
 		t.Errorf("HouseholdID = %q, want %q", l.HouseholdID, householdID)
 	}
 
-	got, err := s.GetByID(l.ID)
+	got, err := s.GetByID(context.Background(), l.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -86,12 +87,12 @@ func TestGetByNumber(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	_, err := s.Add("5559876", "Bob", householdID)
+	_, err := s.Add(context.Background(), "5559876", "Bob", householdID)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	got, err := s.GetByNumber("5559876")
+	got, err := s.GetByNumber(context.Background(), "5559876")
 	if err != nil {
 		t.Fatalf("GetByNumber: %v", err)
 	}
@@ -108,17 +109,17 @@ func TestListByHousehold(t *testing.T) {
 	householdID := createTestHousehold(t, database)
 	otherHouseholdID := createTestHousehold(t, database)
 
-	if _, err := s.Add("1110001", "Line A", householdID); err != nil {
+	if _, err := s.Add(context.Background(), "1110001", "Line A", householdID); err != nil {
 		t.Fatalf("Add A: %v", err)
 	}
-	if _, err := s.Add("1110002", "Line B", householdID); err != nil {
+	if _, err := s.Add(context.Background(), "1110002", "Line B", householdID); err != nil {
 		t.Fatalf("Add B: %v", err)
 	}
-	if _, err := s.Add("1110003", "Line Other", otherHouseholdID); err != nil {
+	if _, err := s.Add(context.Background(), "1110003", "Line Other", otherHouseholdID); err != nil {
 		t.Fatalf("Add Other: %v", err)
 	}
 
-	lines, err := s.ListByHousehold(householdID)
+	lines, err := s.ListByHousehold(context.Background(), householdID)
 	if err != nil {
 		t.Fatalf("ListByHousehold: %v", err)
 	}
@@ -138,12 +139,12 @@ func TestDuplicateNumberRejection(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	if _, err := s.Add("9990001", "First", householdID); err != nil {
+	if _, err := s.Add(context.Background(), "9990001", "First", householdID); err != nil {
 		t.Fatalf("Add first: %v", err)
 	}
 
 	// Adding the same number should fail due to UNIQUE constraint
-	_, err := s.Add("9990001", "Duplicate", householdID)
+	_, err := s.Add(context.Background(), "9990001", "Duplicate", householdID)
 	if err == nil {
 		t.Error("expected error for duplicate number, got nil")
 	}
@@ -153,7 +154,7 @@ func TestNumberExists(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	exists, err := s.NumberExists("8880001")
+	exists, err := s.NumberExists(context.Background(), "8880001")
 	if err != nil {
 		t.Fatalf("NumberExists before add: %v", err)
 	}
@@ -161,12 +162,12 @@ func TestNumberExists(t *testing.T) {
 		t.Error("number should not exist before being added")
 	}
 
-	l, err := s.Add("8880001", "Test", householdID)
+	l, err := s.Add(context.Background(), "8880001", "Test", householdID)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	exists, err = s.NumberExists("8880001")
+	exists, err = s.NumberExists(context.Background(), "8880001")
 	if err != nil {
 		t.Fatalf("NumberExists after add: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestNumberExists(t *testing.T) {
 	}
 
 	// NumberExistsExcluding should return false for the same ID
-	exists, err = s.NumberExistsExcluding("8880001", l.ID)
+	exists, err = s.NumberExistsExcluding(context.Background(), "8880001", l.ID)
 	if err != nil {
 		t.Fatalf("NumberExistsExcluding: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestNumberExists(t *testing.T) {
 	}
 
 	// NumberExistsExcluding should return true for a different ID
-	exists, err = s.NumberExistsExcluding("8880001", l.ID+999)
+	exists, err = s.NumberExistsExcluding(context.Background(), "8880001", l.ID+999)
 	if err != nil {
 		t.Fatalf("NumberExistsExcluding with different ID: %v", err)
 	}
@@ -197,22 +198,22 @@ func TestDelete(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	l, err := s.Add("7770001", "ToDelete", householdID)
+	l, err := s.Add(context.Background(), "7770001", "ToDelete", householdID)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	if err := s.Delete(l.ID); err != nil {
+	if err := s.Delete(context.Background(), l.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	_, err = s.GetByID(l.ID)
+	_, err = s.GetByID(context.Background(), l.ID)
 	if err == nil {
 		t.Error("expected error after deletion, got nil")
 	}
 
 	// Deleting again should fail
-	if err := s.Delete(l.ID); err == nil {
+	if err := s.Delete(context.Background(), l.ID); err == nil {
 		t.Error("expected error deleting non-existent line, got nil")
 	}
 }
@@ -221,16 +222,16 @@ func TestUpdate(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	l, err := s.Add("6660001", "Original", householdID)
+	l, err := s.Add(context.Background(), "6660001", "Original", householdID)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	if err := s.Update(l.ID, "6660002", "Updated"); err != nil {
+	if err := s.Update(context.Background(), l.ID, "6660002", "Updated"); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 
-	got, err := s.GetByID(l.ID)
+	got, err := s.GetByID(context.Background(), l.ID)
 	if err != nil {
 		t.Fatalf("GetByID after update: %v", err)
 	}
@@ -270,12 +271,12 @@ func TestValidateNumber(t *testing.T) {
 		wantErr bool
 	}{
 		{"3140001", false},
-		{"314-0001", false},   // hyphenated form accepted
-		{"12345", true},       // too short
-		{"12345678", true},    // too long
-		{"314-00001", true},   // too many digits
-		{"3-140001", true},    // hyphen in wrong position
-		{"abcdefg", true},     // non-digits
+		{"314-0001", false}, // hyphenated form accepted
+		{"12345", true},     // too short
+		{"12345678", true},  // too long
+		{"314-00001", true}, // too many digits
+		{"3-140001", true},  // hyphen in wrong position
+		{"abcdefg", true},   // non-digits
 	}
 	for _, tt := range tests {
 		err := ValidateNumber(tt.input)
@@ -310,13 +311,13 @@ func TestStoreSettingsDefaultAndUpdate(t *testing.T) {
 	store, cleanup := newTestStoreWithHousehold(t)
 	defer cleanup()
 
-	ln, err := store.store.Add("555-0101", "Test", store.householdID)
+	ln, err := store.store.Add(context.Background(), "555-0101", "Test", store.householdID)
 	if err != nil {
 		t.Fatalf("add: %v", err)
 	}
 
 	// Newly created line should come back with default-filled settings.
-	got, err := store.store.GetByID(ln.ID)
+	got, err := store.store.GetByID(context.Background(), ln.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -325,10 +326,10 @@ func TestStoreSettingsDefaultAndUpdate(t *testing.T) {
 	}
 
 	// Update the setting.
-	if err := store.store.UpdateSettings(ln.ID, Settings{VoiceStyle: VoiceStyleModern}); err != nil {
+	if err := store.store.UpdateSettings(context.Background(), ln.ID, Settings{VoiceStyle: VoiceStyleModern}); err != nil {
 		t.Fatalf("update settings: %v", err)
 	}
-	got, err = store.store.GetByID(ln.ID)
+	got, err = store.store.GetByID(context.Background(), ln.ID)
 	if err != nil {
 		t.Fatalf("reget: %v", err)
 	}
@@ -340,7 +341,7 @@ func TestStoreSettingsDefaultAndUpdate(t *testing.T) {
 	if _, err := store.rawDB.Exec(`UPDATE lines SET settings = '{}' WHERE id = $1`, ln.ID); err != nil {
 		t.Fatalf("reset settings: %v", err)
 	}
-	got, err = store.store.GetByID(ln.ID)
+	got, err = store.store.GetByID(context.Background(), ln.ID)
 	if err != nil {
 		t.Fatalf("reget after reset: %v", err)
 	}
@@ -353,11 +354,11 @@ func TestGetHouseholdIDByNumber(t *testing.T) {
 	s, database := testStore(t)
 	householdID := createTestHousehold(t, database)
 
-	if _, err := s.Add("5550001", "HHTest", householdID); err != nil {
+	if _, err := s.Add(context.Background(), "5550001", "HHTest", householdID); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	got, err := s.GetHouseholdIDByNumber("5550001")
+	got, err := s.GetHouseholdIDByNumber(context.Background(), "5550001")
 	if err != nil {
 		t.Fatalf("GetHouseholdIDByNumber: %v", err)
 	}
@@ -366,7 +367,7 @@ func TestGetHouseholdIDByNumber(t *testing.T) {
 	}
 
 	// Non-existent number should return error
-	_, err = s.GetHouseholdIDByNumber("0000000")
+	_, err = s.GetHouseholdIDByNumber(context.Background(), "0000000")
 	if err == nil {
 		t.Error("expected error for non-existent number, got nil")
 	}

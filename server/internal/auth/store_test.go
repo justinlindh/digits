@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -38,7 +39,7 @@ func testDB(t *testing.T) *Store {
 func TestCreateAndGetUser(t *testing.T) {
 	s := testDB(t)
 
-	u, err := s.CreateUser("test@example.com", "Test User", nil)
+	u, err := s.CreateUser(context.Background(), "test@example.com", "Test User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestCreateAndGetUser(t *testing.T) {
 	}
 
 	// GetUserByEmail
-	got, err := s.GetUserByEmail("test@example.com")
+	got, err := s.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestCreateAndGetUser(t *testing.T) {
 	}
 
 	// GetUserByID
-	got2, err := s.GetUserByID(u.ID)
+	got2, err := s.GetUserByID(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -76,7 +77,7 @@ func TestCreateAndGetUser(t *testing.T) {
 
 func TestGetUserByEmail_NotFound(t *testing.T) {
 	s := testDB(t)
-	_, err := s.GetUserByEmail("nobody@example.com")
+	_, err := s.GetUserByEmail(context.Background(), "nobody@example.com")
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Errorf("expected ErrUserNotFound, got %v", err)
 	}
@@ -84,7 +85,7 @@ func TestGetUserByEmail_NotFound(t *testing.T) {
 
 func TestGetUserByGoogleID_NotFound(t *testing.T) {
 	s := testDB(t)
-	_, err := s.GetUserByGoogleID("no-such-google-id")
+	_, err := s.GetUserByGoogleID(context.Background(), "no-such-google-id")
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Errorf("expected ErrUserNotFound, got %v", err)
 	}
@@ -92,7 +93,7 @@ func TestGetUserByGoogleID_NotFound(t *testing.T) {
 
 func TestGetUserByID_NotFound(t *testing.T) {
 	s := testDB(t)
-	_, err := s.GetUserByID("00000000-0000-0000-0000-000000000000")
+	_, err := s.GetUserByID(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrUserNotFound) {
 		t.Errorf("expected ErrUserNotFound, got %v", err)
 	}
@@ -101,7 +102,7 @@ func TestGetUserByID_NotFound(t *testing.T) {
 func TestCreateUserWithGoogleID(t *testing.T) {
 	s := testDB(t)
 	gid := "google-sub-123"
-	u, err := s.CreateUser("google@example.com", "Google User", &gid)
+	u, err := s.CreateUser(context.Background(), "google@example.com", "Google User", &gid)
 	if err != nil {
 		t.Fatalf("CreateUser with GoogleID: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestCreateUserWithGoogleID(t *testing.T) {
 	}
 
 	// GetUserByGoogleID
-	got, err := s.GetUserByGoogleID(gid)
+	got, err := s.GetUserByGoogleID(context.Background(), gid)
 	if err != nil {
 		t.Fatalf("GetUserByGoogleID: %v", err)
 	}
@@ -121,16 +122,16 @@ func TestCreateUserWithGoogleID(t *testing.T) {
 
 func TestLinkGoogleID(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("link@example.com", "Link User", nil)
+	u, err := s.CreateUser(context.Background(), "link@example.com", "Link User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	if err := s.LinkGoogleID(u.ID, "new-google-id"); err != nil {
+	if err := s.LinkGoogleID(context.Background(), u.ID, "new-google-id"); err != nil {
 		t.Fatalf("LinkGoogleID: %v", err)
 	}
 
-	got, err := s.GetUserByGoogleID("new-google-id")
+	got, err := s.GetUserByGoogleID(context.Background(), "new-google-id")
 	if err != nil {
 		t.Fatalf("GetUserByGoogleID after link: %v", err)
 	}
@@ -141,16 +142,16 @@ func TestLinkGoogleID(t *testing.T) {
 
 func TestUpdateLastLogin(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("login@example.com", "Login User", nil)
+	u, err := s.CreateUser(context.Background(), "login@example.com", "Login User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	if err := s.UpdateLastLogin(u.ID); err != nil {
+	if err := s.UpdateLastLogin(context.Background(), u.ID); err != nil {
 		t.Fatalf("UpdateLastLogin: %v", err)
 	}
 
-	got, err := s.GetUserByID(u.ID)
+	got, err := s.GetUserByID(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -161,12 +162,12 @@ func TestUpdateLastLogin(t *testing.T) {
 
 func TestCreateAndValidateSession(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("session@test.com", "Session User", nil)
+	u, err := s.CreateUser(context.Background(), "session@test.com", "Session User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	token, sess, err := s.CreateSession(u.ID, 24*time.Hour)
+	token, sess, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestCreateAndValidateSession(t *testing.T) {
 	}
 
 	// Validate the session
-	got, err := s.ValidateSession(token)
+	got, err := s.ValidateSession(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateSession: %v", err)
 	}
@@ -195,7 +196,7 @@ func TestCreateAndValidateSession(t *testing.T) {
 
 func TestValidateSession_Invalid(t *testing.T) {
 	s := testDB(t)
-	_, err := s.ValidateSession("totally-fake-token")
+	_, err := s.ValidateSession(context.Background(), "totally-fake-token")
 	if err == nil {
 		t.Error("expected error for invalid token, got nil")
 	}
@@ -203,20 +204,20 @@ func TestValidateSession_Invalid(t *testing.T) {
 
 func TestDeleteSession(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("delete@test.com", "Delete User", nil)
+	u, err := s.CreateUser(context.Background(), "delete@test.com", "Delete User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	token, _, err := s.CreateSession(u.ID, 24*time.Hour)
+	token, _, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	if err := s.DeleteSession(token); err != nil {
+	if err := s.DeleteSession(context.Background(), token); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 
-	_, err = s.ValidateSession(token)
+	_, err = s.ValidateSession(context.Background(), token)
 	if err == nil {
 		t.Error("session should be invalid after deletion")
 	}
@@ -224,21 +225,21 @@ func TestDeleteSession(t *testing.T) {
 
 func TestRefreshSession(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("refresh@test.com", "Refresh User", nil)
+	u, err := s.CreateUser(context.Background(), "refresh@test.com", "Refresh User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	token, sess, err := s.CreateSession(u.ID, 24*time.Hour)
+	token, sess, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
 	originalExpiry := sess.ExpiresAt
 
-	if err := s.RefreshSession(token, 48*time.Hour); err != nil {
+	if err := s.RefreshSession(context.Background(), token, 48*time.Hour); err != nil {
 		t.Fatalf("RefreshSession: %v", err)
 	}
 
-	got, err := s.ValidateSession(token)
+	got, err := s.ValidateSession(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateSession after refresh: %v", err)
 	}
@@ -250,7 +251,7 @@ func TestRefreshSession(t *testing.T) {
 func TestCreateAndValidateMagicLink(t *testing.T) {
 	s := testDB(t)
 
-	token, err := s.CreateMagicLink("magic@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -259,7 +260,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// First use should succeed
-	email, err := s.ValidateMagicLink(token)
+	email, err := s.ValidateMagicLink(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateMagicLink: %v", err)
 	}
@@ -268,7 +269,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// Second use should fail (single-use enforcement)
-	_, err = s.ValidateMagicLink(token)
+	_, err = s.ValidateMagicLink(context.Background(), token)
 	if err == nil {
 		t.Error("expected error on reuse of magic link, got nil")
 	}
@@ -276,7 +277,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 
 func TestValidateMagicLink_InvalidToken(t *testing.T) {
 	s := testDB(t)
-	_, err := s.ValidateMagicLink("fake-magic-token")
+	_, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
 	if err == nil {
 		t.Error("expected error for invalid magic link token, got nil")
 	}
@@ -284,13 +285,13 @@ func TestValidateMagicLink_InvalidToken(t *testing.T) {
 
 func TestCleanupExpired(t *testing.T) {
 	s := testDB(t)
-	u, err := s.CreateUser("cleanup@test.com", "Cleanup User", nil)
+	u, err := s.CreateUser(context.Background(), "cleanup@test.com", "Cleanup User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
 	// Create a session and then force-expire it
-	token, _, err := s.CreateSession(u.ID, 24*time.Hour)
+	token, _, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -298,19 +299,19 @@ func TestCleanupExpired(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
-	mlToken, err := s.CreateMagicLink("cleanup@test.com", 15*time.Minute)
+	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
 	mlHash := device.HashToken(mlToken)
 	_, _ = s.db.Exec(`UPDATE magic_links SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, mlHash)
 
-	if err := s.CleanupExpired(); err != nil {
+	if err := s.CleanupExpired(context.Background()); err != nil {
 		t.Fatalf("CleanupExpired: %v", err)
 	}
 
 	// Session should be gone (validate returns error)
-	_, err = s.ValidateSession(token)
+	_, err = s.ValidateSession(context.Background(), token)
 	if err == nil {
 		t.Error("expired session should be invalid after cleanup")
 	}
@@ -319,7 +320,7 @@ func TestCleanupExpired(t *testing.T) {
 func TestSetAndLoadCRTMode(t *testing.T) {
 	s := testDB(t)
 
-	u, err := s.CreateUser("crt@test.com", "CRT User", nil)
+	u, err := s.CreateUser(context.Background(), "crt@test.com", "CRT User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -328,11 +329,11 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 		t.Errorf("default CRTMode = %q, want %q", u.CRTMode, CRTModeConnecting)
 	}
 
-	if err := s.SetCRTMode(u.ID, CRTModeAll); err != nil {
+	if err := s.SetCRTMode(context.Background(), u.ID, CRTModeAll); err != nil {
 		t.Fatalf("SetCRTMode: %v", err)
 	}
 
-	got, err := s.GetUserByID(u.ID)
+	got, err := s.GetUserByID(context.Background(), u.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 	}
 
 	// Invalid values are rejected.
-	if err := s.SetCRTMode(u.ID, CRTMode("bogus")); err == nil {
+	if err := s.SetCRTMode(context.Background(), u.ID, CRTMode("bogus")); err == nil {
 		t.Error("expected error for invalid CRTMode, got nil")
 	}
 }

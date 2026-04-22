@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -138,7 +139,7 @@ func TestHandleMagicLinkVerify_InvalidToken(t *testing.T) {
 func TestHandleMagicLinkVerify_ValidToken_NewUser(t *testing.T) {
 	h, s, _ := newTestHandlers(t)
 
-	token, err := s.CreateMagicLink("newuser@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "newuser@test.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -171,7 +172,7 @@ func TestHandleMagicLinkVerify_ValidToken_NewUser(t *testing.T) {
 	}
 
 	// User should exist now
-	user, err := s.GetUserByEmail("newuser@test.com")
+	user, err := s.GetUserByEmail(context.Background(), "newuser@test.com")
 	if err != nil {
 		t.Fatalf("expected user to be created, got: %v", err)
 	}
@@ -183,12 +184,12 @@ func TestHandleMagicLinkVerify_ValidToken_NewUser(t *testing.T) {
 func TestHandleMagicLinkVerify_ValidToken_ExistingUser(t *testing.T) {
 	h, s, _ := newTestHandlers(t)
 
-	_, err := s.CreateUser("existing@test.com", "Existing", nil)
+	_, err := s.CreateUser(context.Background(), "existing@test.com", "Existing", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	token, err := s.CreateMagicLink("existing@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "existing@test.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -209,11 +210,11 @@ func TestHandleMagicLinkVerify_ValidToken_ExistingUser(t *testing.T) {
 func TestHandleLogout_WithSession(t *testing.T) {
 	h, s, _ := newTestHandlers(t)
 
-	user, err := s.CreateUser("logout@test.com", "Logout User", nil)
+	user, err := s.CreateUser(context.Background(), "logout@test.com", "Logout User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	token, _, err := s.CreateSession(user.ID, 24*time.Hour)
+	token, _, err := s.CreateSession(context.Background(), user.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -243,7 +244,7 @@ func TestHandleLogout_WithSession(t *testing.T) {
 	}
 
 	// Session should be deleted from DB
-	_, err = s.ValidateSession(token)
+	_, err = s.ValidateSession(context.Background(), token)
 	if err == nil {
 		t.Error("session should be invalid after logout")
 	}
@@ -289,7 +290,7 @@ func TestHandleDevSession_DevModeEnabled(t *testing.T) {
 	}
 
 	// User should exist
-	user, err := s.GetUserByEmail("test@example.com")
+	user, err := s.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		t.Fatalf("expected user to be created, got: %v", err)
 	}
@@ -322,7 +323,7 @@ func TestHandleDevSession_DefaultEmail(t *testing.T) {
 	}
 
 	// Should have created user with default email
-	_, err := s.GetUserByEmail("e2e@example.com")
+	_, err := s.GetUserByEmail(context.Background(), "e2e@example.com")
 	if err != nil {
 		t.Fatalf("expected user with default email to be created, got: %v", err)
 	}
@@ -347,15 +348,15 @@ func TestHandleMagicLinkVerify_DialupThemeRedirectsToConnecting(t *testing.T) {
 	h, s, _ := newTestHandlers(t)
 
 	// Create a user with the dialup theme set.
-	u, err := s.CreateUser("dialup@test.com", "Dialup User", nil)
+	u, err := s.CreateUser(context.Background(), "dialup@test.com", "Dialup User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if err := s.SetTheme(u.ID, ThemeDialup); err != nil {
+	if err := s.SetTheme(context.Background(), u.ID, ThemeDialup); err != nil {
 		t.Fatalf("SetTheme: %v", err)
 	}
 
-	token, err := s.CreateMagicLink("dialup@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "dialup@test.com", 15*time.Minute)
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}

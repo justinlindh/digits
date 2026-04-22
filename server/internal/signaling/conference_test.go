@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"testing"
 )
 
@@ -54,7 +55,7 @@ func TestHandleConferenceMerge_Success(t *testing.T) {
 		HeldPeer:   "5550002",
 		ActivePeer: "5550003",
 	}
-	r.HandleMessage("5550001", msg)
+	r.HandleMessage(context.Background(), "5550001", msg)
 
 	phones := map[string]*Conn{
 		"5550001": connA,
@@ -115,7 +116,7 @@ func TestHandleConferenceMerge_RejectsMissingCalls(t *testing.T) {
 		HeldPeer:   "5550002",
 		ActivePeer: "5550003",
 	}
-	r.HandleMessage("5550001", msg)
+	r.HandleMessage(context.Background(), "5550001", msg)
 
 	phones := map[string]*Conn{"5550001": connA}
 	got := drainAll(phones)
@@ -152,7 +153,7 @@ func TestHandleSDP_AllowsConferencePeer(t *testing.T) {
 	}
 
 	msg := &Message{Type: TypeSDP, To: "5550003", ConfID: conf.ID.String(), SDP: "v=0..."}
-	r.HandleMessage("5550002", msg)
+	r.HandleMessage(context.Background(), "5550002", msg)
 
 	// C should receive the SDP despite denyAll authorizer.
 	received := drainAll(map[string]*Conn{"5550003": cConn})
@@ -183,12 +184,12 @@ func TestHandleHangup_InConferenceEndsViaLeave(t *testing.T) {
 	tr.onCallInitiated("5550001", "5550002")
 	tr.onCallInitiated("5550001", "5550003")
 	tr.setCallID("5550001", "5550002", 42)
-	if _, err := tr.CreateConferencePersistent("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+	if _, err := tr.CreateConferencePersistent(context.Background(), "5550001", 42, []string{"5550002", "5550003"}); err != nil {
 		t.Fatalf("preload conference: %v", err)
 	}
 
 	// B hangs up.
-	r.HandleMessage("5550002", &Message{Type: TypeHangup, To: "5550001"})
+	r.HandleMessage(context.Background(), "5550002", &Message{Type: TypeHangup, To: "5550001"})
 
 	received := drainAll(map[string]*Conn{"5550001": aConn, "5550003": cConn})
 	leaves := 0
@@ -225,12 +226,12 @@ func TestHandleHangup_HostEndsConference(t *testing.T) {
 	tr.onCallInitiated("5550001", "5550002")
 	tr.onCallInitiated("5550001", "5550003")
 	tr.setCallID("5550001", "5550002", 42)
-	if _, err := tr.CreateConferencePersistent("5550001", 42, []string{"5550002", "5550003"}); err != nil {
+	if _, err := tr.CreateConferencePersistent(context.Background(), "5550001", 42, []string{"5550002", "5550003"}); err != nil {
 		t.Fatalf("preload conference: %v", err)
 	}
 
 	// Host hangs up.
-	r.HandleMessage("5550001", &Message{Type: TypeHangup, To: "5550002"})
+	r.HandleMessage(context.Background(), "5550001", &Message{Type: TypeHangup, To: "5550002"})
 
 	received := drainAll(map[string]*Conn{"5550002": bConn, "5550003": cConn})
 	ends := 0
@@ -264,7 +265,7 @@ func TestHandleConferenceMerge_RejectsIfMemberAlreadyInConference(t *testing.T) 
 	tr.onCallInitiated("5550010", "5550002")
 	tr.onCallInitiated("5550010", "5550003")
 	tr.setCallID("5550010", "5550002", 100)
-	_, err := tr.CreateConferencePersistent("5550010", 100, []string{"5550002", "5550003"})
+	_, err := tr.CreateConferencePersistent(context.Background(), "5550010", 100, []string{"5550002", "5550003"})
 	if err != nil {
 		t.Fatalf("preload conference: %v", err)
 	}
@@ -279,7 +280,7 @@ func TestHandleConferenceMerge_RejectsIfMemberAlreadyInConference(t *testing.T) 
 		HeldPeer:   "5550002", // already in another conference
 		ActivePeer: "5550004",
 	}
-	r.HandleMessage("5550001", msg)
+	r.HandleMessage(context.Background(), "5550001", msg)
 
 	phones := map[string]*Conn{"5550001": connA2}
 	got := drainAll(phones)

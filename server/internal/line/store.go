@@ -1,6 +1,7 @@
 package line
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -76,10 +77,10 @@ func NewStore(database *db.Database) *Store {
 }
 
 // Add inserts a new line for the given household and returns it.
-func (s *Store) Add(number, name, householdID string) (*Line, error) {
+func (s *Store) Add(ctx context.Context, number, name, householdID string) (*Line, error) {
 	l := &Line{}
 	var settingsRaw []byte
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
 		 RETURNING id, number, name, household_id, settings, created_at, updated_at`,
@@ -95,10 +96,10 @@ func (s *Store) Add(number, name, householdID string) (*Line, error) {
 }
 
 // GetByID retrieves a line by its integer ID.
-func (s *Store) GetByID(id int64) (*Line, error) {
+func (s *Store) GetByID(ctx context.Context, id int64) (*Line, error) {
 	l := &Line{}
 	var settingsRaw []byte
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE id = $1`,
 		id,
@@ -116,10 +117,10 @@ func (s *Store) GetByID(id int64) (*Line, error) {
 }
 
 // GetByNumber retrieves a line by its phone number.
-func (s *Store) GetByNumber(number string) (*Line, error) {
+func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
 	l := &Line{}
 	var settingsRaw []byte
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE number = $1`,
 		number,
@@ -137,8 +138,8 @@ func (s *Store) GetByNumber(number string) (*Line, error) {
 }
 
 // List returns all lines ordered by number.
-func (s *Store) List() ([]Line, error) {
-	rows, err := s.db.Query(
+func (s *Store) List(ctx context.Context) ([]Line, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines ORDER BY number`,
 	)
@@ -163,8 +164,8 @@ func (s *Store) List() ([]Line, error) {
 }
 
 // ListByHousehold returns all lines belonging to the given household, ordered by number.
-func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
-	rows, err := s.db.Query(
+func (s *Store) ListByHousehold(ctx context.Context, householdID string) ([]Line, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE household_id = $1 ORDER BY number`,
 		householdID,
@@ -191,11 +192,11 @@ func (s *Store) ListByHousehold(householdID string) ([]Line, error) {
 
 // ListByHouseholds returns all lines for the given household IDs, grouped by
 // household ID and ordered by number within each group.
-func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, error) {
+func (s *Store) ListByHouseholds(ctx context.Context, householdIDs []string) (map[string][]Line, error) {
 	if len(householdIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := s.db.Query(
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, number, name, household_id, settings, created_at, updated_at
 		 FROM lines WHERE household_id = ANY($1) ORDER BY number`,
 		pq.Array(householdIDs),
@@ -221,8 +222,8 @@ func (s *Store) ListByHouseholds(householdIDs []string) (map[string][]Line, erro
 }
 
 // Update modifies the number and name of the line with the given ID.
-func (s *Store) Update(id int64, number, name string) error {
-	res, err := s.db.Exec(
+func (s *Store) Update(ctx context.Context, id int64, number, name string) error {
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE lines SET number = $1, name = $2, updated_at = NOW() WHERE id = $3`,
 		number, name, id,
 	)
@@ -237,8 +238,8 @@ func (s *Store) Update(id int64, number, name string) error {
 }
 
 // Delete removes the line with the given ID.
-func (s *Store) Delete(id int64) error {
-	res, err := s.db.Exec(`DELETE FROM lines WHERE id = $1`, id)
+func (s *Store) Delete(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM lines WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete line: %w", err)
 	}
@@ -250,9 +251,9 @@ func (s *Store) Delete(id int64) error {
 }
 
 // NumberExists reports whether the given number is already in use.
-func (s *Store) NumberExists(number string) (bool, error) {
+func (s *Store) NumberExists(ctx context.Context, number string) (bool, error) {
 	var count int
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM lines WHERE number = $1`, number,
 	).Scan(&count)
 	if err != nil {
@@ -263,9 +264,9 @@ func (s *Store) NumberExists(number string) (bool, error) {
 
 // NumberExistsExcluding reports whether the given number is in use by any line
 // other than the one with excludeID. Used when validating edits.
-func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, error) {
+func (s *Store) NumberExistsExcluding(ctx context.Context, number string, excludeID int64) (bool, error) {
 	var count int
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM lines WHERE number = $1 AND id != $2`,
 		number, excludeID,
 	).Scan(&count)
@@ -276,12 +277,12 @@ func (s *Store) NumberExistsExcluding(number string, excludeID int64) (bool, err
 }
 
 // UpdateSettings replaces the settings JSONB for the line with the given ID.
-func (s *Store) UpdateSettings(id int64, settings Settings) error {
+func (s *Store) UpdateSettings(ctx context.Context, id int64, settings Settings) error {
 	raw, err := json.Marshal(settings.Normalize())
 	if err != nil {
 		return fmt.Errorf("marshal settings: %w", err)
 	}
-	res, err := s.db.Exec(
+	res, err := s.db.ExecContext(ctx,
 		`UPDATE lines SET settings = $1, updated_at = NOW() WHERE id = $2`,
 		raw, id,
 	)
@@ -296,9 +297,9 @@ func (s *Store) UpdateSettings(id int64, settings Settings) error {
 }
 
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.
-func (s *Store) GetHouseholdIDByNumber(number string) (string, error) {
+func (s *Store) GetHouseholdIDByNumber(ctx context.Context, number string) (string, error) {
 	var householdID string
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT household_id FROM lines WHERE number = $1`, number,
 	).Scan(&householdID)
 	if err == sql.ErrNoRows {

@@ -44,8 +44,8 @@ func TestCompareSemver(t *testing.T) {
 		{"1.1.0", "1.2.0", -1},
 		{"1.2.0", "1.2.0", 0},
 		{"2.0.0", "1.9.9", 1},
-		{"10.0.0", "9.0.0", 1},  // multi-digit
-		{"1.10.0", "1.9.0", 1},  // multi-digit minor
+		{"10.0.0", "9.0.0", 1}, // multi-digit
+		{"1.10.0", "1.9.0", 1}, // multi-digit minor
 		{"0.5.0", "0.4.9", 1},
 	}
 	for _, c := range cases {

@@ -1,6 +1,7 @@
 package pairing
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -20,9 +21,9 @@ const (
 )
 
 var (
-	ErrInvalidCode = errors.New("invalid or expired pairing code")
+	ErrInvalidCode   = errors.New("invalid or expired pairing code")
 	ErrAlreadyPaired = errors.New("device is already paired")
-	ErrNumberTaken = errors.New("line number is already in use")
+	ErrNumberTaken   = errors.New("line number is already in use")
 )
 
 // Store handles device pairing operations.
@@ -37,10 +38,10 @@ func NewStore(db *sql.DB) *Store {
 
 // GenerateCode returns a 6-digit pairing code for the given hardware ID.
 // If a valid (non-expired, unpaired) code already exists, it is reused.
-func (s *Store) GenerateCode(hardwareID string) (string, error) {
+func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, error) {
 	// Check for existing valid code
 	var code sql.NullString
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT pairing_code FROM devices
 		WHERE hardware_id = $1
 		  AND pairing_code IS NOT NULL
@@ -62,7 +63,7 @@ func (s *Store) GenerateCode(hardwareID string) (string, error) {
 
 	// Upsert: insert device row if it doesn't exist, or update the pairing code.
 	// New devices get line_id=NULL until pairing completes and a line is created.
-	_, err = s.db.Exec(`
+	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO devices (line_id, hardware_id, pairing_code, pairing_code_expires_at)
 		VALUES (NULL, $1, $2, $3)
 		ON CONFLICT (hardware_id) DO UPDATE
@@ -78,10 +79,10 @@ func (s *Store) GenerateCode(hardwareID string) (string, error) {
 // ClaimDevice pairs a device using a pairing code, creating or looking up the
 // line and assigning the device to it.
 // Returns (deviceToken, hardwareID, error).
-func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (string, string, error) {
+func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, householdID string) (string, string, error) {
 	// Check line number uniqueness
 	var count int
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM lines WHERE number = $1`,
 		lineNumber,
 	).Scan(&count)
@@ -95,7 +96,7 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 	// Find the device with this pairing code
 	var deviceID int64
 	var hardwareID sql.NullString
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		SELECT id, hardware_id FROM devices
 		WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
 	`, code).Scan(&deviceID, &hardwareID)
@@ -108,7 +109,7 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 
 	// Create the line
 	var lineID int64
-	err = s.db.QueryRow(`
+	err = s.db.QueryRowContext(ctx, `
 		INSERT INTO lines (number, name, household_id)
 		VALUES ($1, $2, $3)
 		RETURNING id
@@ -121,7 +122,7 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 	tokenHash := device.HashToken(token)
 
 	// Update device: set line_id, device_token (hashed), mark as paired, clear pairing code
-	res, err := s.db.Exec(`
+	res, err := s.db.ExecContext(ctx, `
 		UPDATE devices
 		SET line_id = $2, device_token = $3,
 		    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
@@ -141,9 +142,9 @@ func (s *Store) ClaimDevice(code, lineNumber, lineName, householdID string) (str
 }
 
 // IsPaired returns whether the device with the given hardware ID has been paired.
-func (s *Store) IsPaired(hardwareID string) (bool, error) {
+func (s *Store) IsPaired(ctx context.Context, hardwareID string) (bool, error) {
 	var pairedAt sql.NullTime
-	err := s.db.QueryRow(`
+	err := s.db.QueryRowContext(ctx, `
 		SELECT paired_at FROM devices WHERE hardware_id = $1
 	`, hardwareID).Scan(&pairedAt)
 	if err == sql.ErrNoRows {
@@ -157,8 +158,8 @@ func (s *Store) IsPaired(hardwareID string) (bool, error) {
 
 // CleanupExpired nulls out pairing codes that have passed their expiry time
 // on unpaired devices. Returns the number of codes cleaned.
-func (s *Store) CleanupExpired() (int64, error) {
-	res, err := s.db.Exec(`
+func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
 		UPDATE devices
 		SET pairing_code = NULL, pairing_code_expires_at = NULL
 		WHERE pairing_code IS NOT NULL
@@ -173,14 +174,14 @@ func (s *Store) CleanupExpired() (int64, error) {
 
 // RegenerateCode forces a new pairing code for the given hardware ID,
 // replacing any existing (valid or expired) code.
-func (s *Store) RegenerateCode(hardwareID string) (string, error) {
+func (s *Store) RegenerateCode(ctx context.Context, hardwareID string) (string, error) {
 	code, err := randomCode(CodeLength)
 	if err != nil {
 		return "", fmt.Errorf("generate code: %w", err)
 	}
 	expiresAt := time.Now().Add(CodeTTL)
 
-	res, err := s.db.Exec(`
+	res, err := s.db.ExecContext(ctx, `
 		UPDATE devices
 		SET pairing_code = $2, pairing_code_expires_at = $3
 		WHERE hardware_id = $1 AND paired_at IS NULL
@@ -190,7 +191,7 @@ func (s *Store) RegenerateCode(hardwareID string) (string, error) {
 	}
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
-		return s.GenerateCode(hardwareID)
+		return s.GenerateCode(ctx, hardwareID)
 	}
 	return code, nil
 }

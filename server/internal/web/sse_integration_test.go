@@ -269,7 +269,7 @@ func TestSSEStream_EndedCallGets404(t *testing.T) {
 	callID := startCall(t, s, s.numA, s.numB)
 
 	// End the call so DB status = 'ended'.
-	if err := s.env.tracker.OnCallEnded(s.numA, s.numB); err != nil {
+	if err := s.env.tracker.OnCallEnded(context.Background(), s.numA, s.numB); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 
