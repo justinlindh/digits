@@ -17,9 +17,6 @@ import (
 // ErrNotFound is returned when a line cannot be found.
 var ErrNotFound = errors.New("line not found")
 
-// ErrNumberTaken is returned when a line number is already in use.
-var ErrNumberTaken = errors.New("line number is already in use")
-
 var numberRegex = regexp.MustCompile(`^\d{3}-?\d{4}$`)
 
 // scanSettings parses the settings JSONB value returned by Postgres into a
