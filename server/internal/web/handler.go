@@ -327,6 +327,7 @@ type onboardData struct {
 	HouseholdName      string
 	SuggestedName      string
 	Version            string
+	User               *auth.User
 }
 
 func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +341,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
 		SuggestedName:      suggested,
+		User:               user,
 	})
 }
 
@@ -379,6 +381,7 @@ type dashboardData struct {
 	HouseholdName      string
 	Stats              dashStats
 	Lines              []lineRow
+	User               *auth.User
 }
 
 type dashStats struct {
@@ -403,6 +406,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	recent, _ := h.tracker.Recent(10)
 
 	ld := h.buildLinesData(r, "")
+	user := auth.UserFromContext(r.Context())
 
 	data := dashboardData{
 		Page:               "dashboard",
@@ -416,6 +420,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			CallsToday:   countCallsToday(recent),
 		},
 		Lines: ld.Lines,
+		User:  user,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }
@@ -451,6 +456,7 @@ type linesData struct {
 	Lines              []lineRow
 	Error              string
 	PairError          string
+	User               *auth.User
 }
 
 type lineRow struct {
@@ -486,7 +492,11 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for i, l := range lines {
 		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
 	}
-	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg}
+	var reqUser *auth.User
+	if r != nil {
+		reqUser = auth.UserFromContext(r.Context())
+	}
+	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: reqUser}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
@@ -612,6 +622,7 @@ type lineDetailData struct {
 	LatestFirmwareVersion string
 	PiReleases            []updates.Release
 	FWReleases            []updates.Release
+	User                  *auth.User
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -665,6 +676,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	devInfo := h.hub.DeviceInfo(number)
 
+	user := auth.UserFromContext(r.Context())
+
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
@@ -679,6 +692,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
 		FWReleases:            fwReleases,
+		User:                  user,
 	})
 }
 
@@ -950,6 +964,7 @@ type callsData struct {
 	CallHistoryEnabled bool
 	HouseholdName      string
 	Calls              []calls.Call
+	User               *auth.User
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
@@ -999,7 +1014,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		recent[i].StartedAt = recent[i].StartedAt.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Calls: recent, User: user})
 }
 
 // ---- Settings ----
@@ -1078,6 +1093,7 @@ type linksData struct {
 	Revoked         bool
 	Conflicts       string
 	Error           string
+	User            *auth.User
 }
 
 type linkedFamilyRow struct {
@@ -1121,6 +1137,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		Revoked:            r.URL.Query().Get("revoked") == "1",
 		Conflicts:          r.URL.Query().Get("conflicts"),
 		Error:              r.URL.Query().Get("error"),
+		User:               user,
 	}
 
 	// Active links — build connected family directory

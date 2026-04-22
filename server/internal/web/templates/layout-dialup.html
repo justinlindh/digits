@@ -8,9 +8,11 @@
 <link rel="stylesheet" href="/static/dialup.css">
 <script src="/static/htmx.min.js"></script>
 </head>
-<body class="dialup">
+<body class="dialup{{if and .User (eq .User.CRTMode "all")}} crt-all{{end}}">
 
 {{if ne .Page "login"}}
+{{$crtAll := and .User (eq .User.CRTMode "all")}}
+{{if $crtAll}}<div class="crt" role="presentation"><div class="crt__screen">{{end}}
 <div class="dialup-window">
 
   <!-- Title bar -->
@@ -134,6 +136,7 @@
 
 
 </div>
+{{if $crtAll}}<div class="crt__brand" aria-hidden="true">D I G I T S  &middot;  O N L I N E</div></div></div>{{end}}
 {{else}}
 <!-- Login / unauthenticated: show bare content with no client chrome -->
 {{block "content" .}}{{end}}
