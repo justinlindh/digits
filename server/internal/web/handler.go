@@ -1024,7 +1024,8 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.lineStore.Update(ln.ID, number, name); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		slog.Error("line update failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
