@@ -1496,3 +1496,30 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   gap: 8px;
 }
 
+/* Intercom treats the new Win98 titlebar as hidden chrome and laddered
+   the form contents back into the same visual result as before: the
+   warning glyph sits inline to the left of the title + body, then the
+   actions hang at the bottom-right. Keeps the soft-modal appearance
+   the intercom theme shipped in #218. */
+.confirm-dialog__titlebar { display: none; }
+.confirm-dialog__body-wrap {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-rows: auto auto;
+  gap: 6px 14px;
+  margin: 0;
+}
+.confirm-dialog__glyph {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--brass);
+}
+.confirm-dialog__body-col { grid-column: 2; grid-row: 1; }
+.confirm-dialog__actions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 4px;
+}
+

@@ -121,9 +121,16 @@
      Supports htmx for hx-post triggers via data-confirm-hx="post". */}}
 {{define "confirm-dialog"}}
 <dialog id="confirm-dialog" class="confirm-dialog">
-  <form method="POST" id="confirm-dialog__form">
-    <h3 id="confirm-dialog__title" class="confirm-dialog__title"></h3>
-    <p id="confirm-dialog__body" class="confirm-dialog__body"></p>
+  <div class="confirm-dialog__titlebar" aria-hidden="true">
+    <span class="confirm-dialog__titlebar-title">Confirm action</span>
+    <span class="confirm-dialog__titlebar-x">&#x2715;</span>
+  </div>
+  <form method="POST" id="confirm-dialog__form" class="confirm-dialog__body-wrap">
+    <span class="confirm-dialog__glyph" aria-hidden="true">&#x26A0;</span>
+    <div class="confirm-dialog__body-col">
+      <h3 id="confirm-dialog__title" class="confirm-dialog__title"></h3>
+      <p id="confirm-dialog__body" class="confirm-dialog__body"></p>
+    </div>
     <div class="confirm-dialog__actions">
       <button type="button" id="confirm-dialog__cancel" class="btn btn--quiet">Never mind</button>
       <button type="submit" id="confirm-dialog__submit" class="btn btn--danger"></button>
