@@ -1216,3 +1216,35 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; }
 }
 
+/* Theme picker cards */
+.theme-card {
+  display: grid;
+  grid-template-columns: 18px 72px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  cursor: pointer;
+}
+.theme-card + .theme-card { margin-top: 8px; }
+.theme-card:hover { background: var(--paper-2); }
+.theme-card input { margin: 0; accent-color: var(--brass); }
+.theme-card--selected {
+  border-color: var(--brass);
+  background: rgba(196,139,58,0.05);
+  box-shadow: 0 0 0 2px rgba(196,139,58,0.15);
+}
+.theme-card__swatch {
+  display: flex;
+  height: 32px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.theme-card__swatch-strip { flex: 1; }
+.theme-card__body { display: flex; flex-direction: column; gap: 2px; }
+.theme-card__name { font-size: 14px; font-weight: 500; color: var(--ink); }
+.theme-card__desc { font-size: 12px; color: var(--ink-muted); }
+

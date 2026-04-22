@@ -918,3 +918,25 @@ func TestSettingsPage_StickyNav(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsPage_ThemeSwatches(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="theme-card`,
+		`theme-card__swatch`,
+		`#f5f1ea`,
+		`#c48b3a`,
+		`#0a3a8a`,
+		`#f0c020`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings theme section missing %q", want)
+		}
+	}
+}

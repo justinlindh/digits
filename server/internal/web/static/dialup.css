@@ -1157,3 +1157,13 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .settings-nav__item { padding: 4px 8px; color: var(--dialup-ink); text-decoration: none; }
 .settings-nav__item.is-active { background: var(--dialup-blue); color: #fff; }
 .settings-sections { display: flex; flex-direction: column; gap: 8px; }
+
+/* Theme picker cards placeholder - see issue #214 for full dialup treatment */
+.theme-card { display: grid; grid-template-columns: 18px 60px 1fr auto; gap: 8px; padding: 6px; border: 2px inset var(--dialup-chrome); background: var(--dialup-chrome-l); align-items: center; }
+.theme-card + .theme-card { margin-top: 4px; }
+.theme-card--selected { background: var(--dialup-blue-light); }
+.theme-card__swatch { display: flex; height: 24px; border: 1px solid var(--dialup-bevel-lo); }
+.theme-card__swatch-strip { flex: 1; }
+.theme-card__body { display: flex; flex-direction: column; }
+.theme-card__name { font-weight: bold; font-size: 12px; }
+.theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
