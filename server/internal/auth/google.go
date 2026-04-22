@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -94,12 +95,23 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find or create user
+	// Find or create user. Lookups distinguish ErrUserNotFound (fall through to
+	// the next strategy) from real DB errors (abort with 500) so a transient
+	// failure does not silently create a duplicate account.
 	user, err := g.store.GetUserByGoogleID(info.ID)
-	if err != nil {
+	switch {
+	case err == nil:
+		// Found by Google ID; use as-is.
+	case errors.Is(err, ErrUserNotFound):
 		// Try by email (user may have used magic link before)
 		user, err = g.store.GetUserByEmail(info.Email)
-		if err != nil {
+		switch {
+		case err == nil:
+			// Link Google ID to existing account
+			if err := g.store.LinkGoogleID(user.ID, info.ID); err != nil {
+				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
+			}
+		case errors.Is(err, ErrUserNotFound):
 			// New user
 			googleID := info.ID
 			user, err = g.store.CreateUser(info.Email, info.Name, &googleID)
@@ -107,12 +119,15 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "failed to create user", http.StatusInternalServerError)
 				return
 			}
-		} else {
-			// Link Google ID to existing account
-			if err := g.store.LinkGoogleID(user.ID, info.ID); err != nil {
-				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
-			}
+		default:
+			slog.Error("auth: google callback lookup by email", "err", err)
+			http.Error(w, "failed to look up user", http.StatusInternalServerError)
+			return
 		}
+	default:
+		slog.Error("auth: google callback lookup by google id", "err", err)
+		http.Error(w, "failed to look up user", http.StatusInternalServerError)
+		return
 	}
 
 	if err := g.store.UpdateLastLogin(user.ID); err != nil {

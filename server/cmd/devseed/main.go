@@ -11,6 +11,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -73,14 +74,19 @@ func main() {
 // upsertUser returns the existing user for email, or creates a new one. The
 // second return value reports whether a new row was inserted.
 func upsertUser(s *auth.Store, email string) (*auth.User, bool, error) {
-	if u, err := s.GetUserByEmail(email); err == nil {
+	u, err := s.GetUserByEmail(email)
+	switch {
+	case err == nil:
 		return u, false, nil
+	case errors.Is(err, auth.ErrUserNotFound):
+		created, err := s.CreateUser(email, "Dev", nil)
+		if err != nil {
+			return nil, false, err
+		}
+		return created, true, nil
+	default:
+		return nil, false, fmt.Errorf("lookup user: %w", err)
 	}
-	u, err := s.CreateUser(email, "Dev", nil)
-	if err != nil {
-		return nil, false, err
-	}
-	return u, true, nil
 }
 
 // ensureHousehold returns the user's first household, creating one if they
