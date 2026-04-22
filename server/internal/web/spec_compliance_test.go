@@ -152,6 +152,11 @@ func TestSpecFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
+	// The test user is shared across spec tests; ensure intercom theme
+	// so the postcard branch rendering FAMILY MAIL is exercised here.
+	if err := authStore.SetTheme(user.ID, auth.ThemeIntercom); err != nil {
+		t.Fatalf("reset theme to intercom: %v", err)
+	}
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
 
 	// Default view — no postcard yet.
@@ -322,6 +327,9 @@ func TestSpecDialupHubGlyph(t *testing.T) {
 	if err := authStore.SetTheme(user.ID, auth.ThemeDialup); err != nil {
 		t.Fatalf("set dialup theme: %v", err)
 	}
+	// Reset the test user's theme on exit so subsequent tests (which
+	// share this user via setupAuthedHousehold) see the default value.
+	t.Cleanup(func() { _ = authStore.SetTheme(user.ID, auth.ThemeIntercom) })
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
 
 	req := httptest.NewRequest(http.MethodGet, "/links", nil)

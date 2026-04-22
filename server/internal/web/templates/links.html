@@ -32,8 +32,12 @@
             </p>
           </div>
           <div class="postcard__stamp" aria-hidden="true">
-            <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
-            <div>FAMILY MAIL</div>
+            {{if eq .User.Theme "dialup"}}
+              {{template "postcard-stamp-dialup"}}
+            {{else}}
+              <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
+              <div>FAMILY MAIL</div>
+            {{end}}
           </div>
         </div>
         {{end}}

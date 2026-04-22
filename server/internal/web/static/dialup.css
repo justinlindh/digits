@@ -1330,14 +1330,128 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   }
 }
 
-/* Postcard placeholder - see issue #214 for full dialup treatment */
-.postcard { display: grid; grid-template-columns: 1fr 72px; gap: 10px; padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); margin-bottom: 8px; }
-.postcard__kicker { font-size: 10px; color: var(--dialup-ink-muted); font-family: "Courier New", Courier, monospace; }
-.postcard__code { font-family: var(--font-mono); font-size: 20px; font-weight: bold; letter-spacing: 0.1em; color: var(--dialup-blue); margin: 4px 0; }
-.postcard__message { font-size: 12px; margin: 4px 0 0; }
-.postcard__message code { font-family: var(--font-mono); background: var(--dialup-chrome-l); padding: 0 3px; }
-.postcard__stamp { border: 1px dotted var(--dialup-blue); padding: 4px; text-align: center; font-size: 9px; color: var(--dialup-blue); }
-.postcard__stamp svg { width: 22px; height: 22px; }
+/* --------- Families invite postcard ---------
+   Raised beveled card on dialup cream, reading as a physical
+   postcard that landed on the Families page. Large blue-dark
+   invite code in monospace. Right column holds the postmark
+   stamp (postcard-stamp-dialup template). */
+
+.postcard {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--dialup-cream);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  margin-bottom: 10px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.postcard__kicker {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.postcard__code {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: var(--dialup-blue-dark);
+  margin: 6px 0 10px;
+  line-height: 1;
+  user-select: all;
+}
+
+.postcard__greeting {
+  font-style: italic;
+  font-size: 12px;
+  color: var(--dialup-ink);
+  margin: 0 0 4px;
+}
+
+.postcard__message {
+  font-size: 12px;
+  color: var(--dialup-ink);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.postcard__message code {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  background: var(--dialup-chrome-l);
+  border: 1px solid var(--dialup-bevel-lo);
+  padding: 1px 4px;
+}
+
+.postcard__stamp {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* Pixel-art postmark stamp (dialup theme only). Gold dashed outer
+   frame around a thin blue-dark inner frame with diagonal paper
+   texture, ink-colored DIGITS/NEIGHBORHOOD text stacked around a
+   center asterisk. Matches the postcard-stamp-dialup template. */
+.postcard__stamp-mark {
+  width: 90px;
+  height: 90px;
+  padding: 4px;
+  border: 2px dashed var(--dialup-gold-dark);
+  background: var(--dialup-cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.postcard__stamp-mark-frame {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--dialup-blue-dark);
+  padding: 2px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 4px,
+      rgba(0, 61, 167, 0.06) 4px 5px
+    );
+}
+
+.postcard__stamp-mark-line {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 9px;
+  font-weight: bold;
+  color: var(--dialup-blue-dark);
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  text-align: center;
+}
+.postcard__stamp-mark-line--top {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+
+.postcard__stamp-mark-center {
+  font-size: 16px;
+  color: var(--dialup-gold-dark);
+  line-height: 1;
+  margin: 1px 0;
+}
 
 /* --------- Dashboard rooms grid ---------
    Each room card is a pressed-in beveled panel -- reads as a status

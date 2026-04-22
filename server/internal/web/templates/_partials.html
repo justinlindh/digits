@@ -89,6 +89,20 @@
 <line x1="52" y1="50" x2="62" y2="50" stroke="#804f00" stroke-width="0.5"/>
 {{end}}
 
+{{/* postcard-stamp-dialup renders the /links invite-postcard stamp in
+     pixel-art: a gold dashed-border frame holding a blue-inked
+     "DIGITS / NEIGHBORHOOD" postmark. Replaces the soft house-icon
+     stamp that ships with the intercom theme. */}}
+{{define "postcard-stamp-dialup"}}
+<div class="postcard__stamp-mark" aria-hidden="true">
+  <div class="postcard__stamp-mark-frame">
+    <div class="postcard__stamp-mark-line postcard__stamp-mark-line--top">DIGITS</div>
+    <div class="postcard__stamp-mark-center">&#x2605;</div>
+    <div class="postcard__stamp-mark-line">NEIGHBORHOOD</div>
+  </div>
+</div>
+{{end}}
+
 {{/* confirm-dialog is a page-level modal triggered by elements that carry
      data-confirm attributes. Replaces the browser confirm() prompt with
      themed UI. Used for Cancel-pending-invite, Disconnect-family, and any
