@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"html/template"
 	"log"
 	"log/slog"
@@ -55,7 +56,15 @@ func main() {
 	// Link store
 	linkStore := household.NewLinkStore(database.DB)
 
+	healthStore := calls.NewHealthStore(database)
+	tracker.SetHealthStore(healthStore)
+
+	healthCtx, cancelHealth := context.WithCancel(context.Background())
+	go healthStore.Run(healthCtx)
+	defer cancelHealth()
+
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
+	relay.HealthStore = healthStore
 
 	// Configure TURN credential generation if enabled
 	if cfg.TURNEnabled {

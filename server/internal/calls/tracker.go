@@ -28,10 +28,18 @@ type activeCall struct {
 	StartedAt time.Time
 }
 
+// healthEvictor is the subset of *HealthStore needed by Tracker to drop
+// per-call in-memory state on call end. Declared as an interface so Tracker
+// and HealthStore can live in the same package without a circular init.
+type healthEvictor interface {
+	Evict(callID int64)
+}
+
 type Tracker struct {
 	db     *db.Database
 	mu     sync.Mutex
 	active map[string]*activeCall // "caller→callee" → call
+	health healthEvictor
 }
 
 func New(d *db.Database) *Tracker {
@@ -39,6 +47,14 @@ func New(d *db.Database) *Tracker {
 		db:     d,
 		active: make(map[string]*activeCall),
 	}
+}
+
+// SetHealthStore registers an optional health store for per-call eviction
+// on call end. Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetHealthStore(h healthEvictor) {
+	t.mu.Lock()
+	t.health = h
+	t.mu.Unlock()
 }
 
 func callKey(a, b string) string {
@@ -84,9 +100,20 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 	key2 := callKey(callee, caller)
 
 	t.mu.Lock()
+	var id int64
+	if c, ok := t.active[key1]; ok {
+		id = c.ID
+	} else if c, ok := t.active[key2]; ok {
+		id = c.ID
+	}
 	delete(t.active, key1)
 	delete(t.active, key2)
+	h := t.health
 	t.mu.Unlock()
+
+	if h != nil && id != 0 {
+		h.Evict(id)
+	}
 
 	_, err := t.db.DB.Exec(
 		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
@@ -107,15 +134,26 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 func (t *Tracker) ClearByNumber(number string) {
 	t.mu.Lock()
 	var toDelete []string
+	var evictIDs []int64
 	for key, c := range t.active {
 		if c.Caller == number || c.Callee == number {
 			toDelete = append(toDelete, key)
+			evictIDs = append(evictIDs, c.ID)
 		}
 	}
 	for _, key := range toDelete {
 		delete(t.active, key)
 	}
+	h := t.health
 	t.mu.Unlock()
+
+	if h != nil {
+		for _, id := range evictIDs {
+			if id != 0 {
+				h.Evict(id)
+			}
+		}
+	}
 
 	// End any open calls in the database
 	if _, err := t.db.DB.Exec(
