@@ -765,7 +765,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 // the Pi rebooted mid-call. Safe no-op on clean boots where none of these
 // hardware states were active.
 func resetPicoHardware(sp *phone.SerialPort) {
-	slog.Info("phone: resetting Pico hardware state on startup")
+	slog.Info("pico: clearing residual hardware state on startup")
 	sp.Ring(false)
 	sp.LED("OFF")
 }
