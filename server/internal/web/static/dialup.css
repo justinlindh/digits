@@ -1130,7 +1130,6 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
     overflow-y: hidden;
     gap: 4px;
     padding: 4px;
-    -webkit-overflow-scrolling: touch;
   }
   .dialup-channels__header { display: none; }
   .dialup-channel {
@@ -1150,5 +1149,4 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   .dialup-status span:not(.num):not(.dialup-status__dot):not(.dialup-status__spacer) {
     display: none;
   }
-  .dialup-status > .num:first-of-type { display: inline; }
 }
