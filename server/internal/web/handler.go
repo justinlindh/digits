@@ -402,10 +402,9 @@ type callRow struct {
 }
 
 type dashStats struct {
-	TotalLines   int
-	OnlineLines  int
-	ActiveCalls  int
-	CallsToday   int
+	TotalLines  int
+	OnlineLines int
+	ActiveCalls int
 }
 
 type activePair struct {
@@ -420,19 +419,14 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	active := h.tracker.Active()
-	recent, _ := h.tracker.Recent(20)
-
 	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
-	if h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			if households, err := h.householdStore.GetForUser(user.ID); err == nil && len(households) > 0 {
-				householdID = households[0].ID
-			}
+	if h.householdStore != nil && user != nil {
+		if households, err := h.householdStore.GetForUser(user.ID); err == nil && len(households) > 0 {
+			householdID = households[0].ID
 		}
 	}
 
@@ -475,10 +469,13 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	callHistoryEnabled := h.callHistoryEnabled(r)
 
-	// Build today's call rows when history is enabled.
+	// Build today's call rows when history is enabled. The DB fetch is also
+	// gated here: with history off, the Today panel never renders, so there
+	// is no reason to pay the query.
 	var callsTodayRecent []callRow
 	var callsTodayTotalSec int
 	if callHistoryEnabled {
+		recent, _ := h.tracker.Recent(20)
 		today := time.Now().Truncate(24 * time.Hour)
 		for _, c := range recent {
 			if !c.StartedAt.After(today) {
@@ -513,14 +510,13 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		CallHistoryEnabled: callHistoryEnabled,
 		HouseholdName:      h.householdNameFromContext(r),
 		Stats: dashStats{
-			TotalLines:   len(ld.Lines),
-			OnlineLines:  countOnline(ld.Lines),
-			ActiveCalls:  len(active),
-			CallsToday:   countCallsToday(recent),
+			TotalLines:  len(ld.Lines),
+			OnlineLines: countOnline(ld.Lines),
+			ActiveCalls: len(active),
 		},
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
-		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // round to nearest minute
+		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
 		User:               user,
 	}
@@ -598,17 +594,6 @@ func countOnline(lines []lineRow) int {
 		}
 	}
 	return n
-}
-
-func countCallsToday(allCalls []calls.Call) int {
-	today := time.Now().Truncate(24 * time.Hour)
-	count := 0
-	for _, c := range allCalls {
-		if c.StartedAt.After(today) {
-			count++
-		}
-	}
-	return count
 }
 
 // fmtElapsed renders a duration as "m:ss" for short calls and "h:mm:ss"
