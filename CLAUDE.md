@@ -108,13 +108,16 @@ From `server/`:
 
 ```
 go test ./...                                   # unit only (fast, default)
-go test -tags=integration ./...                 # unit + integration (needs Postgres)
+make test-integration                           # unit + integration (starts test-db, resets, runs)
 make e2e                                        # playwright e2e (needs running stack)
 ```
 
-Integration tests require two environment variables pointing at live databases:
+`make test-integration` is the preferred local workflow: it spins up an ephemeral Postgres (the `test-db` service in `docker-compose.yml`, profile `test`), drops any leftover schemas, and runs the full integration suite with the `TEST_DATABASE_URL` / `TEST_ADMIN_DATABASE_URL` env vars already set. Individual targets (`test-db-up`, `test-db-down`, `test-db-reset`) are available if you want to manage the container separately.
+
+Manual invocation still works if you prefer:
 
 ```
+go test -tags=integration ./...                 # assumes DSNs already exported
 export TEST_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_test?sslmode=disable"
 export TEST_ADMIN_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable"
 ```

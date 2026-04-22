@@ -22,6 +22,8 @@ func setupTestDB(t *testing.T) *db.Database {
 		t.Fatalf("setup db: %v", err)
 	}
 	t.Cleanup(func() {
+		_, _ = d.DB.Exec("DELETE FROM conference_members")
+		_, _ = d.DB.Exec("DELETE FROM conferences")
 		_, _ = d.DB.Exec("DELETE FROM calls")
 		_ = d.Close()
 	})

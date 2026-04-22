@@ -244,7 +244,48 @@ END $$;`,
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_call_link_health_call_ts
 			ON call_link_health (call_id, ts DESC)`,
-		// v17: capture which user initiated a force-disconnect on a call.
+		// v17: party line (three-way calling) support.
+		// Inner statements are idempotent (IF NOT EXISTS) so the block is safe on
+		// environments where the tables were created under an earlier version=15
+		// label (prod before this PR's rebase; main rebase-concurrently claimed 15
+		// for the CRT bezel column above).
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 17) THEN
+
+        CREATE TABLE IF NOT EXISTS conferences (
+            id UUID PRIMARY KEY,
+            host_phone TEXT NOT NULL,
+            originating_call_id INTEGER NOT NULL REFERENCES calls(id),
+            state TEXT NOT NULL CHECK (state IN ('active', 'ended')),
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ended_at TIMESTAMPTZ,
+            end_reason TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS conferences_host_phone_idx ON conferences(host_phone);
+        CREATE INDEX IF NOT EXISTS conferences_state_idx ON conferences(state);
+
+        CREATE TABLE IF NOT EXISTS conference_members (
+            conference_id UUID NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
+            phone TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('host', 'added')),
+            joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            left_at TIMESTAMPTZ,
+            left_reason TEXT,
+            PRIMARY KEY (conference_id, phone)
+        );
+
+        CREATE INDEX IF NOT EXISTS conference_members_phone_idx ON conference_members(phone);
+
+        ALTER TABLE calls ADD COLUMN IF NOT EXISTS originating_conference_id UUID REFERENCES conferences(id);
+
+        INSERT INTO schema_version (version) VALUES (17);
+    END IF;
+END $$;`,
+		// v18: track why a call ended (e.g. 'merged_to_conference' vs a normal hangup)
+		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS end_reason TEXT`,
+		// v19: capture which user initiated a force-disconnect on a call.
 		// NULL for peer-initiated hangups.
 		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS force_ended_by UUID REFERENCES users(id)`,
 	}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/turn"
 )
@@ -16,8 +17,15 @@ type CallTracker interface {
 	ClearByNumber(number string)
 	InCall(a, b string) bool
 	Busy(number string) bool
+	CanAddAsHost(number string) bool
 	PeerOf(number string) string
+	AllPeersOf(number string) []string
+	Conferences() *calls.ConferenceTracker
+	CreateConferencePersistent(host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
+	CallIDForPair(a, b string) int64
 	CallIDFor(number string) (int64, bool)
+	EndConferencePersistent(confID uuid.UUID, reason string) error
+	DropMemberPersistent(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -57,15 +65,17 @@ func (r *Relay) HandleMessage(from string, msg *Message) {
 	case TypeCall:
 		r.handleCall(from, msg)
 	case TypeSDP:
-		r.forward(msg)
+		r.handleSDP(from, msg)
 	case TypeICE:
-		r.forward(msg)
+		r.handleICE(from, msg)
 	case TypeICERestart:
 		r.handleICERestart(from, msg)
 	case TypeAnswer:
 		r.handleAnswer(from, msg)
 	case TypeHangup:
 		r.handleHangup(from, msg)
+	case TypeConferenceMerge:
+		r.handleConferenceMerge(from, msg)
 	case TypeDTMF:
 		r.forward(msg)
 	case TypeRequestICE:
@@ -118,7 +128,15 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	}
 
 	if r.Tracker != nil {
-		if r.Tracker.Busy(from) || r.Tracker.Busy(msg.To) {
+		// Callee must be idle. The caller is usually required to be idle too,
+		// except for the party-line add-dial case: a host already in one
+		// 2-party call (as caller) may initiate a second call to a third
+		// party, which a subsequent conference_merge will bond into a 3-way.
+		if r.Tracker.Busy(msg.To) {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			return
+		}
+		if r.Tracker.Busy(from) && !r.Tracker.CanAddAsHost(from) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
@@ -152,15 +170,72 @@ func (r *Relay) handleAnswer(from string, msg *Message) {
 }
 
 func (r *Relay) handleHangup(from string, msg *Message) {
-	// Resolve peer if client didn't specify a To field
-	if msg.To == "" && r.Tracker != nil {
-		if peer := r.Tracker.PeerOf(from); peer != "" {
-			msg.To = peer
+	if r.Tracker != nil {
+		if conf := r.Tracker.Conferences().ConferenceByPhone(from); conf != nil {
+			if conf.Host == from {
+				r.endConference(conf.ID, "host_hangup")
+				return
+			}
+			r.dropMemberFromConference(conf.ID, from, "hangup")
+			return
+		}
+		// NOTE: If a member previously left and a 2-party continuation call was
+		// created (dropMemberFromConference ended the conference and left the
+		// remaining two in the active-call map), the conference is already gone
+		// by the time the host hangs up. ConferenceByPhone(from) returns nil here,
+		// so we fall through to the normal 2-party hangup path below, which
+		// correctly calls OnCallEnded and forwards Hangup to the peer. No special
+		// handling needed.
+	}
+	// Resolve the set of peers to notify. In pre-merge ADD_* flows the host
+	// may have multiple active 2-party calls (A-B held and A-C active); a
+	// single hook-on ends both. For the normal 2-party case this is one peer.
+	var peers []string
+	if r.Tracker != nil {
+		peers = r.Tracker.AllPeersOf(from)
+	}
+	if len(peers) == 0 && msg.To != "" {
+		peers = []string{msg.To}
+	}
+	for _, peer := range peers {
+		if r.Tracker != nil {
+			if err := r.Tracker.OnCallEnded(from, peer); err != nil {
+				slog.Error("failed to track call end", "err", err)
+			}
+		}
+		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
+	}
+}
+
+func (r *Relay) handleSDP(from string, msg *Message) {
+	if msg.ConfID != "" {
+		id, err := uuid.Parse(msg.ConfID)
+		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
+			_ = r.Hub.SendTo(msg.To, &Message{
+				Type:   msg.Type,
+				From:   from,
+				To:     msg.To,
+				ConfID: msg.ConfID,
+				SDP:    msg.SDP,
+			})
+			return
 		}
 	}
-	if r.Tracker != nil {
-		if err := r.Tracker.OnCallEnded(from, msg.To); err != nil {
-			slog.Error("failed to track call end", "err", err)
+	r.forward(msg)
+}
+
+func (r *Relay) handleICE(from string, msg *Message) {
+	if msg.ConfID != "" {
+		id, err := uuid.Parse(msg.ConfID)
+		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
+			_ = r.Hub.SendTo(msg.To, &Message{
+				Type:      msg.Type,
+				From:      from,
+				To:        msg.To,
+				ConfID:    msg.ConfID,
+				Candidate: msg.Candidate,
+			})
+			return
 		}
 	}
 	r.forward(msg)
@@ -220,11 +295,19 @@ func (r *Relay) OnRegistered(number string) {
 	}
 }
 
-// OnDisconnect cleans up any active calls for a phone that disconnected.
+// OnDisconnect cleans up any active calls or conference membership for a
+// phone that disconnected.
 func (r *Relay) OnDisconnect(number string) {
-	if r.Tracker != nil {
-		r.Tracker.ClearByNumber(number)
+	if r.Tracker == nil {
+		return
 	}
+	// If the phone was in a conference, end the conference cleanly: persist
+	// the end, notify remaining members. This runs BEFORE ClearByNumber so
+	// the conference cleanup happens through the structured path.
+	if conf := r.Tracker.Conferences().ConferenceByPhone(number); conf != nil {
+		r.endConference(conf.ID, "disconnect")
+	}
+	r.Tracker.ClearByNumber(number)
 }
 
 func (r *Relay) forward(msg *Message) {

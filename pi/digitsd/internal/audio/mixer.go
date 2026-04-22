@@ -19,7 +19,7 @@ type FrameWriter interface {
 }
 
 // Mixer is a single-threaded audio render loop. All playback goes through it.
-// External callers set state (PlayLoop, PlayOnce, FeedWebRTC, StopTone).
+// External callers set state (PlayLoop, PlayOnce, AddWebRTCSource / RemoveWebRTCSource, StopTone).
 // The render goroutine reads state and writes one mixed period per tick.
 //
 // The render thread is the sole writer to the FrameWriter — no other goroutine
@@ -51,9 +51,10 @@ type Mixer struct {
 	onceQueue [][]int16
 	oncePos   int
 
-	// WebRTC source: decoded PCM frames from remote peer.
-	// Non-blocking read in render loop — frames are dropped if behind.
-	webrtcCh chan []int16
+	// WebRTC sources: decoded PCM frames from remote peers, keyed by peer identifier.
+	// Non-blocking reads in render loop — frames are dropped if behind.
+	webrtcMu      sync.Mutex
+	webrtcSources map[string]chan []int16
 
 	// Loaded tones (name → PCM samples, S16_LE mono 48kHz)
 	tones map[string][]int16
@@ -62,10 +63,10 @@ type Mixer struct {
 // NewMixer creates a Mixer that writes to the given FrameWriter.
 func NewMixer(w FrameWriter) *Mixer {
 	return &Mixer{
-		w:        w,
-		period:   w.PeriodSize(),
-		tones:    make(map[string][]int16),
-		webrtcCh: make(chan []int16, 8),
+		w:             w,
+		period:        w.PeriodSize(),
+		tones:         make(map[string][]int16),
+		webrtcSources: make(map[string]chan []int16),
 	}
 }
 
@@ -159,14 +160,8 @@ func (m *Mixer) renderLoop(stop, done chan struct{}) {
 
 		m.mu.Unlock()
 
-		// 3. Mix WebRTC audio (non-blocking — drop if channel is empty)
-		select {
-		case webrtcPCM := <-m.webrtcCh:
-			for i := 0; i < len(buf) && i < len(webrtcPCM); i++ {
-				buf[i] = clampAdd(buf[i], webrtcPCM[i])
-			}
-		default:
-		}
+		// 3. Mix WebRTC audio from all sources (non-blocking — drop if channel is empty)
+		m.readWebRTCSources(buf)
 
 		// 4. Write the mixed period to hardware (only this goroutine does this)
 		m.w.WriteFrame(buf) //nolint:errcheck
@@ -262,20 +257,24 @@ func (m *Mixer) PlayLoop(name string) {
 	m.loopPos = 0
 }
 
-// StopTone stops the looping tone and clears any queued one-shots.
-// Takes effect within one period (~20ms).
+// StopTone silences any looping tone AND any in-flight one-shot announcement
+// (intercept, disconnected, etc). WebRTC sources are untouched.
+//
+// PlayOnce callers that follow StopTone in the same sequence are safe: the
+// queue clear and the append both acquire m.mu, so PlayOnce only sees the
+// queue after StopTone has finished clearing it. Takes effect within one
+// period (~20ms).
 func (m *Mixer) StopTone() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.loopSamples = nil
 	m.loopName = ""
 	m.loopPos = 0
-	// Do NOT clear onceQueue — one-shot tones (DTMF) should survive
-	// a loop stop. The main loop calls StopTone then PlayOnce in sequence;
-	// clearing onceQueue here would eat the just-queued tone.
+	m.onceQueue = nil
+	m.oncePos = 0
 }
 
-// StopAll stops all audio: loops, one-shots, and drains the WebRTC channel.
+// StopAll stops all audio: loops, one-shots, and clears all WebRTC sources.
 // Use on hang-up to guarantee silence.
 func (m *Mixer) StopAll() {
 	m.mu.Lock()
@@ -285,14 +284,10 @@ func (m *Mixer) StopAll() {
 	m.onceQueue = nil
 	m.oncePos = 0
 	m.mu.Unlock()
-	// Drain any queued WebRTC frames
-	for {
-		select {
-		case <-m.webrtcCh:
-		default:
-			return
-		}
-	}
+	// Clear all WebRTC sources. Channels are GC'd when senders release them.
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	m.webrtcSources = make(map[string]chan []int16)
 }
 
 // OncePlaying returns true if any one-shot tones are still in the queue.
@@ -332,20 +327,49 @@ func (m *Mixer) PlayOnceSamples(samples []int16) {
 	m.onceQueue = append(m.onceQueue, samples)
 }
 
-// FeedWebRTC sends decoded PCM from a WebRTC remote track into the mixer.
-// Non-blocking: drops the frame if the render loop isn't keeping up.
-// Call from the WebRTC track reader goroutine.
-func (m *Mixer) FeedWebRTC(samples []int16) {
-	select {
-	case m.webrtcCh <- samples:
-	default:
-		// Drop frame — mixer is behind
+// AddWebRTCSource registers a named WebRTC audio source and returns the channel
+// to send decoded PCM frames into. If the key already exists, the existing
+// channel is returned. Callers write into this channel; the render loop reads
+// non-blocking and mixes all sources together.
+func (m *Mixer) AddWebRTCSource(key string) chan []int16 {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	if existing, ok := m.webrtcSources[key]; ok {
+		return existing
 	}
+	ch := make(chan []int16, 8)
+	m.webrtcSources[key] = ch
+	return ch
 }
 
-// WebRTCChan returns the WebRTC feed channel for callers that want direct access.
-func (m *Mixer) WebRTCChan() chan<- []int16 {
-	return m.webrtcCh
+// RemoveWebRTCSource removes a named WebRTC audio source. The channel is not
+// closed — senders may continue writing until they exit; frames accumulate in
+// the buffer and are GC'd when the sender releases its reference. Safe to call
+// from any goroutine.
+func (m *Mixer) RemoveWebRTCSource(key string) {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	delete(m.webrtcSources, key)
+}
+
+// readWebRTCSources reads one frame (non-blocking) from each registered source
+// and accumulates it into buf via clampAdd. Called only from the render loop.
+func (m *Mixer) readWebRTCSources(buf []int16) {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	for _, ch := range m.webrtcSources {
+		select {
+		case frame, ok := <-ch:
+			if !ok {
+				continue
+			}
+			for i := 0; i < len(buf) && i < len(frame); i++ {
+				buf[i] = clampAdd(buf[i], frame[i])
+			}
+		default:
+			// no frame available from this source right now
+		}
+	}
 }
 
 // loadWAV reads a WAV file and returns the PCM samples as []int16.

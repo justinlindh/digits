@@ -1,4 +1,4 @@
-.PHONY: build build-dev run test e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
+.PHONY: build build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -22,6 +22,33 @@ run: css build
 
 test:
 	go test ./...
+
+# Integration tests against a local ephemeral Postgres (the `test-db` compose profile).
+# `test-db-reset` drops any leftover test state before running, matching the fresh-container
+# isolation that CI gets from ephemeral service containers.
+TEST_DATABASE_URL ?= postgres://digits:digits@localhost:5432/digits_test?sslmode=disable
+TEST_ADMIN_DATABASE_URL ?= postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable
+
+test-db-up:
+	docker compose --profile test up -d test-db
+	@echo "Waiting for test-db to accept connections..."
+	@for i in $$(seq 1 30); do \
+		docker exec server-test-db-1 pg_isready -U digits > /dev/null 2>&1 && break; \
+		sleep 1; \
+	done
+	@docker exec server-test-db-1 pg_isready -U digits > /dev/null 2>&1 || { echo "test-db failed to start"; exit 1; }
+
+test-db-down:
+	docker compose --profile test down
+
+test-db-reset:
+	@docker exec server-test-db-1 psql -U digits -d digits_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO digits;" > /dev/null
+	@docker exec server-test-db-1 psql -U digits -d digits_admin_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO digits;" > /dev/null
+
+test-integration: test-db-up test-db-reset
+	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
+	TEST_ADMIN_DATABASE_URL=$(TEST_ADMIN_DATABASE_URL) \
+	go test -tags=integration -race -count=1 -p 1 ./...
 
 # E2E tests (Playwright) — requires a running dev server at BASE_URL (default: http://localhost:8080)
 # Auth options:
