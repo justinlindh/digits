@@ -452,3 +452,48 @@ func TestLoadWithoutWiFiFallbackSectionUsesDefaults(t *testing.T) {
 		t.Errorf("APNoClientTimeout = %v, want 10m", c.WiFiFallback.APNoClientTimeout)
 	}
 }
+
+func TestConfigSilentModeDefaultFalse(t *testing.T) {
+	c := Default()
+	if c.SilentModeOrDefault() {
+		t.Errorf("SilentMode default: got true, want false")
+	}
+}
+
+func TestConfigSilentModeExplicitTrue(t *testing.T) {
+	c := &Config{SilentMode: true}
+	if !c.SilentModeOrDefault() {
+		t.Errorf("SilentMode explicit true: got false, want true")
+	}
+}
+
+func TestConfigLoadPreservesSilentMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"silent_mode":true}`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !c.SilentMode {
+		t.Errorf("load did not preserve silent_mode=true")
+	}
+}
+
+func TestConfigSaveRoundTripSilentMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	c := &Config{path: path, SilentMode: true, VoiceStyle: VoiceStyleCopper}
+	if err := c.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !loaded.SilentMode {
+		t.Errorf("round trip did not preserve silent_mode")
+	}
+}

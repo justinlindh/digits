@@ -59,6 +59,11 @@ type Config struct {
 	// locally so the device can start up with the correct style offline.
 	VoiceStyle string `json:"voice_style,omitempty"`
 
+	// SilentMode is the per-line ringer-silence flag. When true, the digitsd
+	// phone controller suppresses the bell on incoming rings but still blinks
+	// the LED. Cached locally so the setting survives reboots while offline.
+	SilentMode bool `json:"silent_mode,omitempty"`
+
 	// WiFiFallback configures the WiFi auto-fallback supervisor.
 	WiFiFallback WiFiFallback `json:"wifi_fallback"`
 
@@ -178,6 +183,16 @@ func (c *Config) VoiceStyleOrDefault() string {
 		return VoiceStyleCopper
 	}
 	return c.VoiceStyle
+}
+
+// SilentModeOrDefault returns the configured silent-mode flag, or false if
+// unset. Kept as a method for symmetry with VoiceStyleOrDefault even though
+// the bool zero value already is the default.
+func (c *Config) SilentModeOrDefault() bool {
+	if c == nil {
+		return false
+	}
+	return c.SilentMode
 }
 
 // Save writes the config back to the file it was loaded from.
