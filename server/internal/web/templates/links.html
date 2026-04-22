@@ -78,35 +78,36 @@
       </div>
     </div>
 
-    <!-- Compact per-family detail list -->
-    <div class="stack-md">
+    <!-- Neighborhood: two-pane address-book rows -->
+    <div class="neighborhood panel">
       {{range .LinkedFamilies}}
-      <div class="panel">
-        <header class="panel__head">
-          <div class="hstack" style="gap: 10px;">
-            <h3 class="panel__title serif italic" style="font-size: 15px; font-weight: 500;">{{.Name}}</h3>
-            <span class="chip chip--on" style="font-size: 10.5px;"><span class="chip__dot"></span>{{.Status}}</span>
+      <div class="neighborhood__row">
+        <div class="neighborhood__identity">
+          <div class="neighborhood__name">
+            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
+            <span>{{.Name}}</span>
           </div>
-          {{if .AcceptedAt}}<span class="panel__title-sub">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>{{end}}
-        </header>
-        {{if .Lines}}
-        <ul style="list-style: none; margin: 0; padding: 0;">
-          {{range .Lines}}
-          <li class="hstack" style="padding: 8px 16px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;">
-            <span class="lines__dot lines__dot--on" style="width: 6px; height: 6px;"></span>
-            <span style="flex: 1;">{{.Name}}</span>
-            <span class="num muted">{{fmtPhone .Number}}</span>
-          </li>
-          {{end}}
-        </ul>
-        {{else}}
-        <div class="empty" style="padding: 18px 16px;">No lines registered yet.</div>
-        {{end}}
-        <div style="padding: 10px 14px; display: flex; justify-content: flex-end;">
+          <div class="neighborhood__meta muted">
+            {{if .AcceptedAt}}<div>Connected {{.AcceptedAt.Format "Jan 2"}}</div>{{end}}
+            <div>{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</div>
+          </div>
           <form method="POST" action="/links/{{.ID}}/revoke"
             onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
-            <button type="submit" class="btn btn--danger btn--sm">Disconnect</button>
+            <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Disconnect</button>
           </form>
+        </div>
+        <div class="neighborhood__lines">
+          {{if .Lines}}
+          {{range .Lines}}
+          <div class="neighborhood__line">
+            <span class="lines__dot lines__dot--on"></span>
+            <span class="neighborhood__line-name">{{.Name}}</span>
+            <span class="neighborhood__line-num num muted">{{fmtPhone .Number}}</span>
+          </div>
+          {{end}}
+          {{else}}
+          <div class="empty" style="padding: 6px 0;">No lines registered yet.</div>
+          {{end}}
         </div>
       </div>
       {{end}}

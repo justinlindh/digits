@@ -1248,3 +1248,46 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .theme-card__name { font-size: 14px; font-weight: 500; color: var(--ink); }
 .theme-card__desc { font-size: 12px; color: var(--ink-muted); }
 
+/* Neighborhood: two-pane address-book rows for connected families */
+.neighborhood { display: flex; flex-direction: column; padding: 0; }
+.neighborhood__row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  border-top: 1px solid var(--rule-soft);
+}
+.neighborhood__row:first-child { border-top: 0; }
+.neighborhood__identity {
+  padding: 18px 20px;
+  border-right: 1px solid var(--rule-soft);
+  background: var(--paper-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.neighborhood__name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 16px;
+  font-weight: 500;
+}
+.neighborhood__name svg { width: 28px; height: 28px; color: var(--ink); }
+.neighborhood__meta { font-size: 12px; line-height: 1.6; }
+.neighborhood__lines {
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 16px;
+}
+.neighborhood__line { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.neighborhood__line-name { font-family: var(--font-display); font-style: italic; font-size: 14px; }
+.neighborhood__line-num { margin-left: auto; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .neighborhood__row { grid-template-columns: 1fr; }
+  .neighborhood__identity { border-right: 0; border-bottom: 1px solid var(--rule-soft); }
+  .neighborhood__lines { grid-template-columns: 1fr; }
+}
+

@@ -1167,3 +1167,14 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .theme-card__body { display: flex; flex-direction: column; }
 .theme-card__name { font-weight: bold; font-size: 12px; }
 .theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
+
+/* Neighborhood rows placeholder - see issue #214 for full dialup treatment */
+.neighborhood { display: flex; flex-direction: column; }
+.neighborhood__row { display: grid; grid-template-columns: 200px 1fr; border: 1px solid var(--dialup-bevel-lo); background: #fff; margin-bottom: 4px; }
+.neighborhood__identity { padding: 8px; background: var(--dialup-chrome-l); border-right: 1px solid var(--dialup-bevel-lo); }
+.neighborhood__name { font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.neighborhood__name svg { width: 20px; height: 20px; }
+.neighborhood__meta { font-size: 11px; color: var(--dialup-ink-muted); }
+.neighborhood__lines { padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.neighborhood__line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.neighborhood__line-num { margin-left: auto; font-family: var(--font-mono); }

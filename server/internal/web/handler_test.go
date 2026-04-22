@@ -958,3 +958,67 @@ func TestSettingsPage_PrivacyCopy(t *testing.T) {
 		t.Errorf("settings page still shows old privacy copy")
 	}
 }
+
+// seedLinkedFamily creates a second household with one line and links it to the
+// primary household via an invite/accept handshake. Returns the second household
+// so tests can assert its name appears in /links renderings.
+func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store, primaryHouseholdID, primaryUserID, otherName, lineNumber, lineName string) *household.Household {
+	t.Helper()
+	// Ensure the other user does not exist from a prior run before creating.
+	_, _ = database.DB.Exec("DELETE FROM users WHERE email = 'test-other@example.com'")
+	// Create a second user + household.
+	otherUser, err := authStore.CreateUser("test-other@example.com", "Other Test User", nil)
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	otherHH, err := h.householdStore.Create(otherName, otherUser.ID)
+	if err != nil {
+		t.Fatalf("create other household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_links WHERE household_a_id = $1 OR household_b_id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", otherUser.ID)
+	})
+	// Seed a line for the other household.
+	if _, err := h.lineStore.Add(lineNumber, lineName, otherHH.ID); err != nil {
+		t.Fatalf("seed line on other hh: %v", err)
+	}
+	// Link: primary invites, other accepts.
+	invite, err := h.linkStore.CreateInvite(primaryHouseholdID, primaryUserID)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if _, err := h.linkStore.AcceptInvite(invite.InviteCode, otherUser.ID, otherHH.ID); err != nil {
+		t.Fatalf("accept invite: %v", err)
+	}
+	return otherHH
+}
+
+func TestLinksPage_Neighborhood(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="neighborhood`,
+		`class="neighborhood__row"`,
+		`class="neighborhood__identity"`,
+		`class="neighborhood__lines"`,
+		"Grandma Lindh",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("links page missing %q", want)
+		}
+	}
+}
