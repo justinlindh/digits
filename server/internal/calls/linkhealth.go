@@ -301,12 +301,27 @@ func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample)
 }
 
-// Latest returns the most recent sample for the caller and callee endpoints
-// of the given call. Either may be nil if no samples have been recorded yet.
+// Latest returns the most recent samples for caller and callee on a 2-party
+// call, captured under a single lock so the two values are consistent. nil
+// pointers if no sample has been recorded for that endpoint yet. nil/nil if
+// the call is unknown.
 func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sample) {
 	key := SessionKey{CallID: callID}
-	a := s.latestSession(key, caller, "")
-	b := s.latestSession(key, callee, "")
+	s.mu.Lock()
+	sr, ok := s.sessions[key]
+	s.mu.Unlock()
+	if !ok {
+		return nil, nil
+	}
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	var a, b *Sample
+	if r := sr.byEndpoint[endpointKey{From: caller}]; r != nil {
+		a = r.latest()
+	}
+	if r := sr.byEndpoint[endpointKey{From: callee}]; r != nil {
+		b = r.latest()
+	}
 	return a, b
 }
 

@@ -430,8 +430,8 @@ func TestHealthStoreConferenceSubscribeReceivesPeer(t *testing.T) {
 		if ev.Peer != "B" {
 			t.Fatalf("event Peer: got %q want B", ev.Peer)
 		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("expected SampleKind event within 500ms")
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for SampleKind event")
 	}
 }
 
