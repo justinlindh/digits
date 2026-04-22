@@ -623,3 +623,60 @@ func TestLinkHealthDispatchIgnoresNilPayload(t *testing.T) {
 		t.Fatalf("expected drop on nil LinkHealth; got %d", len(store.records))
 	}
 }
+
+func TestRelayForceHangupSendsToBothPeers(t *testing.T) {
+	hub := NewHub()
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("555-1111", conn1)
+	hub.Register("555-2222", conn2)
+
+	r := &Relay{Hub: hub}
+	r.ForceHangup("555-1111", "555-2222")
+
+	for _, tc := range []struct {
+		name string
+		ch   chan []byte
+	}{
+		{"555-1111", conn1.Send},
+		{"555-2222", conn2.Send},
+	} {
+		select {
+		case data := <-tc.ch:
+			msg, err := ParseMessage(data)
+			if err != nil {
+				t.Fatalf("%s: parse error: %v", tc.name, err)
+			}
+			if msg.Type != TypeHangup {
+				t.Fatalf("%s: expected TypeHangup, got %s", tc.name, msg.Type)
+			}
+		default:
+			t.Fatalf("%s: did not receive hangup", tc.name)
+		}
+	}
+}
+
+func TestRelayForceHangupTolerantOfOnePeerOffline(t *testing.T) {
+	hub := NewHub()
+	// 555-1111 is NOT registered (offline); only 555-2222 is online.
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("555-2222", conn2)
+
+	r := &Relay{Hub: hub}
+
+	// Must not panic, must not block, must still deliver to the online peer.
+	r.ForceHangup("555-1111", "555-2222")
+
+	select {
+	case data := <-conn2.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeHangup {
+			t.Fatalf("expected TypeHangup, got %s", msg.Type)
+		}
+	default:
+		t.Fatal("555-2222 did not receive hangup despite being online")
+	}
+}

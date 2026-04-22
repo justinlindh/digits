@@ -237,6 +237,19 @@ func (r *Relay) forward(msg *Message) {
 	}
 }
 
+// ForceHangup sends a TypeHangup message to both peers of a call. Intended
+// for server-initiated teardown (e.g. the observation deck "End call" action).
+// Errors are logged per-peer and do not stop delivery to the other peer.
+func (r *Relay) ForceHangup(caller, callee string) {
+	msg := &Message{Type: TypeHangup}
+	if err := r.Hub.SendTo(caller, msg); err != nil {
+		slog.Debug("ForceHangup: send to caller failed", "number", caller, "err", err)
+	}
+	if err := r.Hub.SendTo(callee, msg); err != nil {
+		slog.Debug("ForceHangup: send to callee failed", "number", callee, "err", err)
+	}
+}
+
 // handleLinkHealth records a telemetry sample for the active call the
 // session endpoint (from, derived from the authenticated websocket) is
 // currently on. msg.From is ignored by design (forgery defense). Unknown
