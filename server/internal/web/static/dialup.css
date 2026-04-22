@@ -1332,3 +1332,55 @@ body.crt-all .crt__brand::after {
   body.crt-page .crt__brand,
   body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }
+
+/* Dialup: the Ringer panel is a Win95 groupbox-style frame. The checkbox
+   uses native rendering with a small inset well for authenticity. */
+body.dialup .toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "MS Sans Serif", "Chicago", Tahoma, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+body.dialup .toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #000080;
+  cursor: pointer;
+}
+body.dialup .toggle__label {
+  color: #000;
+  font-weight: normal;
+}
+
+/* Silent badge in dialup theme: answering-machine amber status lamp with
+   a pixelated feel. The dot glows; the SILENT label sits beside it in
+   tiny system type. Pure CSS, no image assets. */
+body.dialup .phone-silent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+  vertical-align: middle;
+  font-family: "MS Sans Serif", "Chicago", Tahoma, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #cc8800;
+  text-shadow: 0 0 1px rgba(255, 170, 0, 0.3);
+}
+body.dialup .phone-silent__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffcc33 0%, #ff9900 55%, #cc6600 100%);
+  box-shadow:
+    0 0 4px 1px rgba(255, 170, 0, 0.75),
+    inset 0 0 1px rgba(0, 0, 0, 0.4);
+  border: 1px solid #663300;
+}
+body.dialup .phone-silent__text {
+  display: inline;
+  font-weight: bold;
+}
