@@ -66,7 +66,7 @@ func (k SessionKey) IsConf() bool { return k.ConfID != uuid.Nil }
 
 // endpointKey is the composite map key for per-endpoint sample rings.
 // Peer is zero for 2-party samples; set to the remote endpoint phone
-// for 3-way per-edge samples (populated in a later phase).
+// for 3-way per-edge samples.
 type endpointKey struct {
 	From string // phone that emitted the sample
 	Peer string // remote endpoint the sample describes; "" for 2-party

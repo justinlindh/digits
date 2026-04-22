@@ -411,7 +411,7 @@ func TestFlushOnceWritesConferenceRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("select conference rows: %v", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var got []string
 	for rows.Next() {
@@ -420,6 +420,9 @@ func TestFlushOnceWritesConferenceRows(t *testing.T) {
 			t.Fatalf("scan: %v", err)
 		}
 		got = append(got, ep+"|"+peer)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows iteration: %v", err)
 	}
 	want := []string{"+15555550001|+15555550002", "+15555550002|+15555550001"}
 	if !reflect.DeepEqual(got, want) {
