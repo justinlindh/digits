@@ -140,13 +140,19 @@
       <div class="hide-sm">
         <table class="t">
           <thead>
-            <tr><th>Invite code</th><th>Created</th></tr>
+            <tr><th>Invite code</th><th>Created</th><th class="r"></th></tr>
           </thead>
           <tbody>
             {{range .PendingInvites}}
             <tr>
               <td class="num brass" style="letter-spacing: 0.2em;">{{.InviteCode}}</td>
               <td class="num muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+              <td class="r">
+                <form method="POST" action="/links/{{.ID}}/revoke"
+                  onsubmit="return confirm('Cancel invite {{.InviteCode}}?')">
+                  <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
+                </form>
+              </td>
             </tr>
             {{end}}
           </tbody>
@@ -154,9 +160,15 @@
       </div>
       <ul class="show-sm" style="list-style: none; margin: 0; padding: 0;">
         {{range .PendingInvites}}
-        <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);">
-          <div class="num brass" style="font-size: 14px; letter-spacing: 0.2em;">{{.InviteCode}}</div>
-          <div class="muted" style="font-size: 11.5px; margin-top: 2px;">Created {{.CreatedAt.Format "Jan 2, 2006"}}</div>
+        <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft); display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1;">
+            <div class="num brass" style="font-size: 14px; letter-spacing: 0.2em;">{{.InviteCode}}</div>
+            <div class="muted" style="font-size: 11.5px; margin-top: 2px;">Created {{.CreatedAt.Format "Jan 2, 2006"}}</div>
+          </div>
+          <form method="POST" action="/links/{{.ID}}/revoke"
+            onsubmit="return confirm('Cancel invite {{.InviteCode}}?')">
+            <button type="submit" class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
+          </form>
         </li>
         {{end}}
       </ul>

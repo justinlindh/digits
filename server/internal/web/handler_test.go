@@ -1127,6 +1127,43 @@ func TestLinksPage_InvitePostcard(t *testing.T) {
 	}
 }
 
+// TestLinksPage_MultiplePendingInvites verifies that a household can create
+// multiple concurrent pending invites (no artificial cap). Regression guard
+// for a cap that used to reject the second invite with "household already
+// has a pending invite".
+func TestLinksPage_MultiplePendingInvites(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := h.linkStore.CreateInvite(hh.ID, user.ID); err != nil {
+			t.Fatalf("CreateInvite #%d: %v", i+1, err)
+		}
+	}
+	pending, err := h.linkStore.GetPendingForHousehold(hh.ID)
+	if err != nil {
+		t.Fatalf("GetPendingForHousehold: %v", err)
+	}
+	if len(pending) != 3 {
+		t.Errorf("expected 3 pending invites, got %d", len(pending))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Pending invites sent") {
+		t.Errorf("links page missing Pending invites heading")
+	}
+	if strings.Count(body, `action="/links/`) < 3 {
+		t.Errorf("expected at least 3 revoke forms for pending invites, got fewer in body")
+	}
+}
+
 func TestSettingsCRTModePost(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
