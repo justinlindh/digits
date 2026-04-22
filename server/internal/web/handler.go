@@ -54,6 +54,7 @@ type Handler struct {
 	tmplOnboard     *template.Template
 	tmplPhoneDetail *template.Template
 	tmplLinks       *template.Template
+	tmplConnecting  *template.Template
 	cfg             HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -124,6 +125,10 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	if err != nil {
 		return nil, err
 	}
+	tmplConnecting, err := parsePage("connecting.html")
+	if err != nil {
+		return nil, err
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -150,6 +155,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		tmplOnboard:     tmplOnboard,
 		tmplPhoneDetail: tmplPhoneDetail,
 		tmplLinks:       tmplLinks,
+		tmplConnecting:  tmplConnecting,
 		cfg:             cfg,
 		authStore:       authStore,
 		authHandlers:    authHandlers,
@@ -203,6 +209,7 @@ func (h *Handler) Router() http.Handler {
 	// Protected routes — require valid session
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
+	protected.HandleFunc("GET /connecting", h.handleConnecting)
 	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
 	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
@@ -1628,6 +1635,32 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+type connectingData struct {
+	Page          string
+	Version       string
+	HouseholdName string
+	User          *auth.User
+}
+
+func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || user.Theme != auth.ThemeDialup {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	data := connectingData{
+		Page:          "connecting",
+		Version:       version.Version,
+		HouseholdName: h.householdNameFromContext(r),
+		User:          user,
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := h.tmplConnecting.ExecuteTemplate(w, "connecting.html", data); err != nil {
+		slog.Error("template render failed", "template", "connecting.html", "err", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
 }
 
 // householdContext returns the household name, call-history flag, and timezone location for the current user.
