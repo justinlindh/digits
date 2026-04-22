@@ -294,6 +294,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
+	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
@@ -2248,6 +2249,83 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 		out.Latest = &la
 	}
 	return out, nil
+}
+
+// handleCallDisconnect force-ends an active call. Any user whose household
+// owns either endpoint (direct ownership only; linked households do NOT
+// qualify) can trigger this. The server records the actor in calls.force_ended_by,
+// notifies any open SSE subscribers, sends hangup to both peers via the
+// relay, and calls Tracker.OnCallEnded for deterministic DB close.
+//
+// Idempotent: calling against an already-ended call returns 200 without
+// overwriting the audit column.
+func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, _, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	// Idempotency: if the call already ended, just return 200 without
+	// touching the audit column.
+	if call.Status == "ended" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Record who force-ended the call BEFORE the teardown fires, so the
+	// audit row is in place even if we crash mid-teardown.
+	if err := h.tracker.MarkForceEnded(callID, user.ID); err != nil {
+		slog.Error("force-disconnect audit write failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Notify SSE subscribers before teardown so open pages flip to terminal
+	// state immediately rather than flickering through a dropped stream.
+	label := userDisplayLabel(user)
+	h.healthStore.NotifyDisconnected(callID, label)
+
+	// Send hangup to both peers. Errors per-peer are logged in ForceHangup.
+	h.relay.ForceHangup(call.Caller, call.Callee)
+
+	// Close the DB row deterministically. OnCallEnded is idempotent; a
+	// peer-initiated hangup arriving later is a safe no-op.
+	if err := h.tracker.OnCallEnded(call.Caller, call.Callee); err != nil {
+		slog.Error("force-disconnect OnCallEnded failed", "call_id", callID, "err", err)
+		// Phones are hung up regardless; the status transition will happen
+		// when the next peer hangup arrives or during the daily cleanup.
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}"))
+}
+
+// userDisplayLabel returns the preferred name for an audit/display context:
+// User.Name if set, else the email local-part, else the bare email.
+func userDisplayLabel(u *auth.User) string {
+	if u == nil {
+		return ""
+	}
+	if u.Name != "" {
+		return u.Name
+	}
+	if at := strings.IndexByte(u.Email, '@'); at > 0 {
+		return u.Email[:at]
+	}
+	return u.Email
 }
 
 // householdNumbers returns the set of phone numbers belonging to the

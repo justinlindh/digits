@@ -255,6 +255,19 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	return calls, rows.Err()
 }
 
+// MarkForceEnded records which user force-ended a call. Returns nil error
+// even if no rows matched (idempotent against racing peer hangups).
+func (t *Tracker) MarkForceEnded(callID int64, userID string) error {
+	_, err := t.db.DB.Exec(
+		`UPDATE calls SET force_ended_by = $1 WHERE id = $2`,
+		userID, callID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark force ended: %w", err)
+	}
+	return nil
+}
+
 // GetCall returns the call row by id. Returns zero-value Call and nil error
 // if not found (callers should test Call.ID == 0).
 func (t *Tracker) GetCall(id int64) (Call, error) {
