@@ -51,7 +51,11 @@ type LineSettings struct {
 //	BytesIn:  bytes received on the nominated pair since call start
 //	BytesOut: bytes sent on the nominated pair since call start
 //
-// ConnType is "host", "srflx", or "relay" (empty if nominated pair unknown).
+// ConnType is one of "host", "srflx", "prflx", "relay" (ICE candidate type
+// of the local end of the nominated pair per RFC 8445). Empty if no pair
+// is nominated. "prflx" (peer-reflexive) is less common than srflx but
+// legitimate when the remote observes an address the local side didn't
+// anticipate; downstream consumers should treat it as a valid state.
 // TS is phone-local unix milliseconds at the moment of sampling.
 type LinkHealthPayload struct {
 	TS       int64    `json:"ts"`

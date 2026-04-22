@@ -3,6 +3,7 @@ package owebrtc
 import (
 	"context"
 	"log/slog"
+	"runtime/debug"
 	"time"
 
 	pionwebrtc "github.com/pion/webrtc/v4"
@@ -12,6 +13,10 @@ import (
 // server-side calls.Sample mirrors these fields; conversion to the
 // signaling wire format happens in the send callback provided by the
 // caller.
+//
+// ConnType reflects the ICE candidate type of the local end of the
+// nominated pair: one of "host", "srflx", "prflx", "relay", or empty if
+// no pair is nominated.
 type Sample struct {
 	TS       time.Time
 	LossPct  *float32
@@ -54,7 +59,7 @@ func NewReporter(getter StatsGetter, send func(Sample) error, interval time.Dura
 func (r *Reporter) Run(ctx context.Context) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			slog.Warn("link-health reporter panic; exiting", "panic", rec)
+			slog.Warn("link-health reporter panic; exiting", "panic", rec, "stack", string(debug.Stack()))
 		}
 	}()
 	t := time.NewTicker(r.interval)
