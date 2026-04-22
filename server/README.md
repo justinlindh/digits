@@ -30,6 +30,50 @@ make clean          # remove build artifacts
 
 Requires Go 1.26+.
 
+## Local development
+
+For iterating on the web UI you can spin up a disposable Postgres in Docker, seed a signed-in dialup-themed user, and run host-native `signald` against it with one command.
+
+```bash
+cd server/
+make dev-up         # start local Postgres, seed dev user, run signald
+make dev-seed       # re-seed the dev user (no-op if already present)
+make dev-down       # stop signald, remove DB container + volume
+make dev-logs       # tail the user-db container logs
+```
+
+`make dev-up` runs `signald` in the foreground. Stop it with Ctrl+C, then run `make dev-down` to remove the Docker volume and wipe state. Running `make dev-up` again gives a clean slate.
+
+When the server prints `server started addr=:8080`, open the URL that `dev-seed` printed in your browser:
+
+```
+http://localhost:8080/auth/dev-session?email=dev@digits.local
+```
+
+That endpoint is only mounted when `DEV_MODE=true`. It sets a session cookie and redirects to the dialup-themed dashboard.
+
+### Config
+
+Defaults live in `.env.dev.example` (committed). To override, copy it to `.env.dev` (gitignored):
+
+```bash
+cp .env.dev.example .env.dev
+```
+
+Common overrides:
+
+| Variable         | Default                                                        | Notes                                          |
+|------------------|----------------------------------------------------------------|------------------------------------------------|
+| `SIGNALD_ADDR`   | `:8080`                                                        | Change if port 8080 is taken on your machine.  |
+| `BASE_URL`       | `http://localhost:8080`                                        | Must match `SIGNALD_ADDR`.                     |
+| `DEV_DB_PORT`    | `5433`                                                         | Host port for the dev Postgres container.      |
+| `DATABASE_URL`   | `postgres://digits:digits@127.0.0.1:5433/digits?sslmode=disable` | Update the port if you changed `DEV_DB_PORT`. |
+| `DEV_SEED_EMAIL` | `dev@digits.local`                                             | Email for the seeded user.                     |
+
+The user-db container exposes `5433` on `127.0.0.1` only, so host-native `signald` can reach it without opening the port to the network.
+
+Prod uses a separate compose file (`docker-compose.prod.yml`) and is unaffected by these dev targets.
+
 ## Run
 
 ```bash
