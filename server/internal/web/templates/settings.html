@@ -344,29 +344,37 @@
     var viewTop = m.scrollTop;
     var viewBottom = viewTop + m.viewHeight;
 
-    // Pick the section whose visible area inside the scroller's
-    // viewport is the largest. This naturally handles the edges:
-    //   - At the very top, Account fills the viewport and wins.
-    //   - Mid-scroll, whichever section occupies the most of what
-    //     the user is looking at is the active one.
-    //   - At the bottom, the final short section has the most
-    //     visible area and latches cleanly -- no special-case clamp.
-    // Ties go to the later section (>=), so on exact boundaries the
-    // highlight advances with scroll direction rather than getting
-    // stuck on the earlier section.
-    var bestSec = sections[0];
-    var bestVisible = -1;
+    // Primary rule: the last section whose top sits above a focus
+    // line ~25% down the viewport is "what you're reading." This
+    // advances the highlight cleanly as you scroll, without a short
+    // early section losing to a tall later one.
+    var focusLine = viewTop + m.viewHeight * 0.25;
+    var chosen = sections[0];
     for (var i = 0; i < sections.length; i++) {
-      var sec = sections[i];
-      var top = sectionTopRelative(sec);
-      var bottom = top + sec.offsetHeight;
-      var visible = Math.max(0, Math.min(bottom, viewBottom) - Math.max(top, viewTop));
-      if (visible >= bestVisible) {
-        bestVisible = visible;
-        bestSec = sec;
-      }
+      if (sectionTopRelative(sections[i]) <= focusLine) chosen = sections[i];
+      else break;
     }
-    setActive(bestSec.id);
+
+    // Bottom-of-page fallback: if that chosen section is entirely
+    // outside the viewport (typical at max scroll, where the focus
+    // line can't reach the last one or two sections), pick whichever
+    // section has the most visible pixels instead. Guarantees the
+    // highlight stays on something the user can actually see.
+    var chosenTop = sectionTopRelative(chosen);
+    var chosenBottom = chosenTop + chosen.offsetHeight;
+    if (chosenBottom <= viewTop || chosenTop >= viewBottom) {
+      var bestSec = chosen;
+      var bestVisible = -1;
+      for (var j = 0; j < sections.length; j++) {
+        var top = sectionTopRelative(sections[j]);
+        var bottom = top + sections[j].offsetHeight;
+        var visible = Math.max(0, Math.min(bottom, viewBottom) - Math.max(top, viewTop));
+        if (visible > bestVisible) { bestVisible = visible; bestSec = sections[j]; }
+      }
+      chosen = bestSec;
+    }
+
+    setActive(chosen.id);
   }
 
   // rAF-throttle so rapid scroll events don't thrash the DOM.
