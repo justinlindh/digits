@@ -365,3 +365,14 @@ func TestSessionKeyIsConf(t *testing.T) {
 		t.Fatal("conference SessionKey should be conf")
 	}
 }
+
+func TestSessionKeyIsConfConfIDWins(t *testing.T) {
+	// Guard against malformed double-populated keys. ConfID != uuid.Nil
+	// is the authoritative signal, even if CallID is also set. No code
+	// path produces such a key today; this test documents the tiebreak
+	// semantics so a future change to IsConf doesn't silently drift.
+	k := SessionKey{CallID: 1, ConfID: uuid.New()}
+	if !k.IsConf() {
+		t.Fatal("double-populated SessionKey should report IsConf() == true (ConfID wins)")
+	}
+}

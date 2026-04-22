@@ -63,12 +63,12 @@ type SessionKey struct {
 // IsConf reports whether this key identifies a conference.
 func (k SessionKey) IsConf() bool { return k.ConfID != uuid.Nil }
 
-// endpointKey is the composite map key for a per-session sample ring.
-// From is the phone that emitted the sample. Peer is the remote endpoint
-// the sample describes; it is empty for 2-party calls.
+// endpointKey is the composite map key for per-endpoint sample rings.
+// Peer is zero for 2-party samples; set to the remote endpoint phone
+// for 3-way per-edge samples (populated in a later phase).
 type endpointKey struct {
-	From string
-	Peer string
+	From string // phone that emitted the sample
+	Peer string // remote endpoint the sample describes; "" for 2-party
 }
 
 // ringCapacity is the per-endpoint in-memory sample retention.
@@ -404,6 +404,12 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 }
 
 func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sessionRings) error {
+	if key.IsConf() {
+		// Conference flush lands in a later phase with schema support for
+		// conference_id + peer columns. Until then, conference-keyed sessions
+		// live in memory only; the ticker loop must not try to persist them.
+		return nil
+	}
 	sr.mu.Lock()
 	// Collect work under lock, then release before DB I/O.
 	type pending struct {
