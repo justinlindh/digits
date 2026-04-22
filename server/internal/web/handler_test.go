@@ -1505,6 +1505,48 @@ func stripGroomedSentinelForTest(s string) string {
 	return strings.TrimLeft(trimmed[len(sentinel):], " \t\r\n")
 }
 
+// seedLineWithoutDeviceInfoForTest inserts a line row but does NOT register a
+// hub connection or call UpdateDeviceInfo, so the handler sees the device as
+// offline with no version information.
+func seedLineWithoutDeviceInfoForTest(t *testing.T, database *db.Database, householdID, number string) {
+	t.Helper()
+	_, err := database.DB.Exec(
+		`INSERT INTO lines (number, name, household_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		number, "Offline Handset", householdID,
+	)
+	if err != nil {
+		t.Fatalf("seed line %s: %v", number, err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+	})
+}
+
+func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Seed a line without any hub registration (never-connected device).
+	seedLineWithoutDeviceInfoForTest(t, database, hh.ID, "+15551230001")
+
+	h.Releases = fakeReleasesForTest(t, map[string]string{
+		"1.4.0": "<!-- groomed:v1 -->\nshould not appear for offline device",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "should not appear for offline device") {
+		t.Errorf("offline device should not show release notes, but body contained them")
+	}
+}
+
 func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)

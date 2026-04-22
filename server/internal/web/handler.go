@@ -645,7 +645,6 @@ type lineRow struct {
 	OnCallPeerName      string
 	OnCallElapsed       string // "mm:ss" for the Dashboard room-card callout
 	DeviceInfo          *signaling.DeviceInfoSnapshot
-	UpdateAvailable     bool // either Pi or firmware is behind the latest release
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
 }
@@ -689,28 +688,20 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for i, l := range lines {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		if info != nil {
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.UpdateAvailable = true
-			}
-			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.UpdateAvailable = true
-			}
-		}
 		if h.Releases != nil {
 			if idx := h.Releases.ReleaseIndex(); idx != nil {
 				fwCurrent := ""
 				if info != nil {
 					fwCurrent = info.FirmwareVersion
 				}
-				if latestFw != "" && updates.CompareSemver(fwCurrent, latestFw) < 0 {
+				if latestFw != "" && fwCurrent != "" && updates.CompareSemver(fwCurrent, latestFw) < 0 {
 					row.FirmwareUpdateNotes = idx.RangeReleases("firmware", fwCurrent, latestFw)
 				}
 				piCurrent := ""
 				if info != nil {
 					piCurrent = info.PiVersion
 				}
-				if latestPi != "" && updates.CompareSemver(piCurrent, latestPi) < 0 {
+				if latestPi != "" && piCurrent != "" && updates.CompareSemver(piCurrent, latestPi) < 0 {
 					row.PiUpdateNotes = idx.RangeReleases("pi", piCurrent, latestPi)
 				}
 			}
