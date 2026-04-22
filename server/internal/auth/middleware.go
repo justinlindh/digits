@@ -63,12 +63,14 @@ func clearSessionCookie(w http.ResponseWriter, domain string) {
 		Domain: domain,
 		MaxAge: -1,
 		Path:   "/",
+		Secure: true,
 	})
 	if domain != "" {
 		http.SetCookie(w, &http.Cookie{
 			Name:   CookieName,
 			MaxAge: -1,
 			Path:   "/",
+			Secure: true,
 		})
 	}
 }
