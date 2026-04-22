@@ -91,6 +91,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 			}
 			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
 		},
+		"renderNotes": renderNotes,
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
