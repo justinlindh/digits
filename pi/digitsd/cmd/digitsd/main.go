@@ -558,6 +558,10 @@ func (d *daemonCallbacks) currentPeer() string {
 func (d *daemonCallbacks) TearDownPeer(phone string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if cancel, ok := d.meshReporterCancels[phone]; ok {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
 	if d.mesh != nil {
 		d.mesh.RemovePeer(phone)
 	}
