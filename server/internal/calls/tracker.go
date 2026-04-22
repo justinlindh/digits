@@ -1,6 +1,8 @@
 package calls
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -251,6 +253,30 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+// GetCall returns the call row by id. Returns zero-value Call and nil error
+// if not found (callers should test Call.ID == 0).
+func (t *Tracker) GetCall(id int64) (Call, error) {
+	var c Call
+	var answered, ended sql.NullTime
+	err := t.db.DB.QueryRow(
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		 FROM calls WHERE id = $1`, id,
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Call{}, nil
+	}
+	if err != nil {
+		return Call{}, fmt.Errorf("get call: %w", err)
+	}
+	if answered.Valid {
+		c.AnsweredAt = &answered.Time
+	}
+	if ended.Valid {
+		c.EndedAt = &ended.Time
+	}
+	return c, nil
 }
 
 // RecentForPhones returns the most recent calls where either caller or callee

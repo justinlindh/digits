@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,9 +45,10 @@ type Handler struct {
 	upgrader websocket.Upgrader
 	lineStore   *line.Store
 	deviceStore *device.Store
-	hub      *signaling.Hub
-	tracker  *calls.Tracker
-	relay    *signaling.Relay
+	hub         *signaling.Hub
+	tracker     *calls.Tracker
+	relay       *signaling.Relay
+	healthStore *calls.HealthStore
 	// Per-page template sets to avoid {{define}} name conflicts
 	tmplDashboard   *template.Template
 	tmplPhones      *template.Template
@@ -82,7 +85,7 @@ type HandlerConfig struct {
 	Addr string
 }
 
-func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string, healthStore *calls.HealthStore) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 		"fmtDuration": func(seconds int) string {
@@ -154,6 +157,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		hub:             hub,
 		tracker:         tracker,
 		relay:           relay,
+		healthStore:     healthStore,
 		tmplDashboard:   tmplDashboard,
 		tmplPhones:      tmplPhones,
 		tmplCalls:       tmplCalls,
@@ -245,6 +249,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
@@ -2003,6 +2008,153 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 // ownership is confirmed, or false after writing an HTTP 404 response.
 func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request, number string) bool {
 	return h.requireLineOwnership(w, r, number) != nil
+}
+
+// requireCallEndpointOwnership verifies the authenticated user's household
+// owns at least one endpoint of the given call. Returns the call row and
+// true on success. On any failure (unauthenticated, call not found, not
+// owned) it writes 404 and returns false — unauthorized and nonexistent
+// are indistinguishable to the client.
+//
+// Linked-household status does NOT grant access to telemetry; the user's
+// household must own caller OR callee directly.
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.lineStore == nil || h.householdStore == nil || h.tracker == nil {
+		http.NotFound(w, r)
+		return calls.Call{}, false
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, false
+	}
+	householdID := households[0].ID
+
+	call, err := h.tracker.GetCall(callID)
+	if err != nil || call.ID == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, false
+	}
+
+	callerLine, _ := h.lineStore.GetByNumber(call.Caller)
+	calleeLine, _ := h.lineStore.GetByNumber(call.Callee)
+	if (callerLine != nil && callerLine.HouseholdID == householdID) ||
+		(calleeLine != nil && calleeLine.HouseholdID == householdID) {
+		return call, true
+	}
+	http.NotFound(w, r)
+	return calls.Call{}, false
+}
+
+// ---- Link Health API ----
+
+type linkHealthSample struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
+}
+
+type linkHealthEndpointResp struct {
+	Number      string             `json:"number"`
+	DisplayName string             `json:"display_name"`
+	Latest      *linkHealthSample  `json:"latest,omitempty"`
+	Window      []linkHealthSample `json:"window"`
+}
+
+type linkHealthResp struct {
+	CallID    int64                  `json:"call_id"`
+	StartedAt time.Time              `json:"started_at"`
+	Caller    linkHealthEndpointResp `json:"caller"`
+	Callee    linkHealthEndpointResp `json:"callee"`
+}
+
+func toAPISample(s calls.Sample) linkHealthSample {
+	return linkHealthSample{
+		TS:       s.TS.UnixMilli(),
+		LossPct:  s.LossPct,
+		JitterMs: s.JitterMs,
+		RttMs:    s.RttMs,
+		ConnType: s.ConnType,
+		BytesIn:  s.BytesIn,
+		BytesOut: s.BytesOut,
+	}
+}
+
+func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	user := auth.UserFromContext(r.Context())
+	var linkedIndex map[string]string
+	if user != nil && h.householdStore != nil {
+		households, _ := h.householdStore.GetForUser(user.ID)
+		if len(households) > 0 {
+			linkedFamilies := h.buildLinkedFamilies(households[0].ID)
+			linkedIndex = buildLinkedLineIndex(linkedFamilies)
+		}
+	}
+
+	resp := linkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
+	resp.Caller = h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex)
+	resp.Callee = h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex)
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("link_health encode failed", "call_id", callID, "err", err)
+	}
+}
+
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) linkHealthEndpointResp {
+	out := linkHealthEndpointResp{Number: number, Window: []linkHealthSample{}}
+	if line, _ := h.lineStore.GetByNumber(number); line != nil {
+		out.DisplayName = line.Name
+	} else {
+		out.DisplayName = resolvePeerName(number, linkedIndex)
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = number
+	}
+
+	// Try memory first.
+	windowMem := h.healthStore.Window(callID, number)
+	if len(windowMem) > 0 {
+		out.Window = make([]linkHealthSample, len(windowMem))
+		for i, s := range windowMem {
+			out.Window[i] = toAPISample(s)
+		}
+		last := windowMem[len(windowMem)-1]
+		la := toAPISample(last)
+		out.Latest = &la
+		return out
+	}
+	// Fallback to DB.
+	db, err := h.healthStore.Readback(ctx, callID, number, 60)
+	if err != nil {
+		slog.Error("link_health readback failed", "call_id", callID, "err", err)
+		return out
+	}
+	out.Window = make([]linkHealthSample, len(db))
+	for i, s := range db {
+		out.Window[i] = toAPISample(s)
+	}
+	if len(db) > 0 {
+		la := toAPISample(db[len(db)-1])
+		out.Latest = &la
+	}
+	return out
 }
 
 // householdNumbers returns the set of phone numbers belonging to the
