@@ -1151,6 +1151,63 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   }
 }
 
+/* Settings sticky side-nav placeholder - see issue #214 for full dialup treatment */
+.settings-layout { display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
+.settings-nav__item { padding: 4px 8px; color: var(--dialup-ink); text-decoration: none; }
+.settings-nav__item.is-active { background: var(--dialup-blue); color: #fff; }
+.settings-sections { display: flex; flex-direction: column; gap: 8px; }
+
+/* Theme picker cards placeholder - see issue #214 for full dialup treatment */
+.theme-card { display: grid; grid-template-columns: 18px 60px 1fr auto; gap: 8px; padding: 6px; border: 2px inset var(--dialup-chrome); background: var(--dialup-chrome-l); align-items: center; }
+.theme-card + .theme-card { margin-top: 4px; }
+.theme-card--selected { background: var(--dialup-blue-light); }
+.theme-card__swatch { display: flex; height: 24px; border: 1px solid var(--dialup-bevel-lo); }
+.theme-card__swatch-strip { flex: 1; }
+.theme-card__body { display: flex; flex-direction: column; }
+.theme-card__name { font-weight: bold; font-size: 12px; }
+.theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
+
+/* Neighborhood rows placeholder - see issue #214 for full dialup treatment */
+.neighborhood { display: flex; flex-direction: column; }
+.neighborhood__row { display: grid; grid-template-columns: 200px 1fr; border: 1px solid var(--dialup-bevel-lo); background: #fff; margin-bottom: 4px; }
+.neighborhood__identity { padding: 8px; background: var(--dialup-chrome-l); border-right: 1px solid var(--dialup-bevel-lo); }
+.neighborhood__name { font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.neighborhood__name svg { width: 20px; height: 20px; }
+.neighborhood__meta { font-size: 11px; color: var(--dialup-ink-muted); }
+.neighborhood__lines { padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.neighborhood__line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.neighborhood__line-num { margin-left: auto; font-family: var(--font-mono); }
+
+/* Postcard placeholder - see issue #214 for full dialup treatment */
+.postcard { display: grid; grid-template-columns: 1fr 72px; gap: 10px; padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); margin-bottom: 8px; }
+.postcard__kicker { font-size: 10px; color: var(--dialup-ink-muted); font-family: "Courier New", Courier, monospace; }
+.postcard__code { font-family: var(--font-mono); font-size: 20px; font-weight: bold; letter-spacing: 0.1em; color: var(--dialup-blue); margin: 4px 0; }
+.postcard__message { font-size: 12px; margin: 4px 0 0; }
+.postcard__message code { font-family: var(--font-mono); background: var(--dialup-chrome-l); padding: 0 3px; }
+.postcard__stamp { border: 1px dotted var(--dialup-blue); padding: 4px; text-align: center; font-size: 9px; color: var(--dialup-blue); }
+.postcard__stamp svg { width: 22px; height: 22px; }
+
+/* Dashboard rooms placeholder - see issue #214 for full dialup treatment */
+.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.rooms__card { padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--dialup-ink); }
+.rooms__card:hover { background: var(--dialup-chrome-l); }
+.rooms__card--live { border-color: var(--dialup-blue); }
+.rooms__head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+.rooms__num { font-family: var(--font-mono); font-size: 11px; color: var(--dialup-ink-muted); }
+.rooms__callout { margin-top: auto; padding: 4px; border: 1px dotted var(--dialup-blue); background: #e8f0fa; }
+.rooms__callout-kicker { font-size: 9px; color: var(--dialup-ink-muted); }
+.rooms__callout-name { font-weight: bold; font-size: 13px; }
+.rooms__empty { grid-column: 1 / -1; padding: 20px; text-align: center; font-size: 12px; }
+
+.today-list { list-style: none; margin: 0; padding: 0; }
+.today-list__row { display: grid; grid-template-columns: 60px 14px 1fr auto; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--dialup-bevel-lo); font-size: 12px; }
+.today-list__empty { padding: 16px; text-align: center; }
+
+.connected-row { display: flex; gap: 6px; padding: 8px; align-items: center; flex-wrap: wrap; }
+.connected-row__chip { display: inline-flex; gap: 4px; padding: 2px 8px; background: var(--dialup-chrome-l); border: 1px solid var(--dialup-bevel-lo); font-size: 12px; align-items: center; }
+.connected-row__chip svg { width: 16px; height: 16px; }
+
 /* =========================================================================
    CRT monitor bezel (used on /connecting and, when CRTMode=all, wrapping
    the whole dialup window). Activated only when the body carries either
@@ -1332,3 +1389,10 @@ body.crt-all .crt__brand::after {
   body.crt-page .crt__brand,
   body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }
+
+/* Confirm dialog placeholder - see issue #214 for full dialup treatment */
+.confirm-dialog { border: 2px outset var(--dialup-chrome); padding: 12px 14px; background: var(--dialup-chrome-l); max-width: 380px; width: 90vw; font-family: var(--dialup-font, Tahoma, sans-serif); }
+.confirm-dialog::backdrop { background: rgba(0,0,0,0.4); }
+.confirm-dialog__title { font-weight: bold; font-size: 14px; margin: 0 0 8px; color: var(--dialup-ink); }
+.confirm-dialog__body { font-size: 12px; color: var(--dialup-ink); margin: 0 0 14px; line-height: 1.5; }
+.confirm-dialog__actions { display: flex; gap: 6px; justify-content: flex-end; }

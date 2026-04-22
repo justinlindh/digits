@@ -44,7 +44,12 @@ test.describe('Links page', () => {
 
     await expect(page.locator('h2', { hasText: /create invite/i })).toBeVisible();
 
-    const generateBtn = page.locator('button[type="submit"]', { hasText: /generate invite code/i });
+    // Button text is "Invite a friend" before a code exists, and
+    // "Generate another" after one does. Either reading counts as "the
+    // create-invite CTA is visible".
+    const generateBtn = page.locator('button[type="submit"]', {
+      hasText: /invite a friend|generate another/i,
+    });
     await expect(generateBtn).toBeVisible();
   });
 

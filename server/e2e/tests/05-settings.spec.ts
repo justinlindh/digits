@@ -88,9 +88,8 @@ test.describe('Settings', () => {
     }
 
     await expect(privacySection).toBeVisible();
-    // Redesigned copy is "Call history" (lowercase h) rendered in a
-    // <div> next to the toggle. Case-insensitive match is robust to tweaks.
-    await expect(page.locator('text=/call history/i').first()).toBeVisible();
+    // Copy is "Call log" rendered in a <div> next to the toggle.
+    await expect(page.locator('text=/call log/i').first()).toBeVisible();
 
     // Toggle checkbox — wrapped in <label class="toggle">, so the input is
     // present in the DOM but typically visually hidden via CSS (the <span
