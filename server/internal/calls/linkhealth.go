@@ -30,7 +30,8 @@ const (
 // Event is one delivery to a HealthStore subscriber.
 type Event struct {
 	Kind     EventKind
-	Endpoint string // SampleKind only
+	Endpoint string // phone that emitted the sample (SampleKind only)
+	Peer     string // remote endpoint the sample describes; "" for 2-party (SampleKind only)
 	Sample   Sample // SampleKind only
 	EndedBy  string // DisconnectKind only (user display label)
 }
@@ -143,12 +144,9 @@ func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	return s
 }
 
-// Init creates an empty rings entry for a call. Called by Tracker on
-// OnCallInitiated so that subsequent Record calls have a place to land
-// without needing auto-creation (which would resurrect evicted calls).
-// Safe to call multiple times; idempotent.
-func (s *HealthStore) Init(callID int64) {
-	key := SessionKey{CallID: callID}
+// initSession creates an empty rings entry for the given session key.
+// Idempotent: no-op if the key already exists.
+func (s *HealthStore) initSession(key SessionKey) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.sessions[key]; ok {
@@ -157,29 +155,24 @@ func (s *HealthStore) Init(callID int64) {
 	s.sessions[key] = &sessionRings{byEndpoint: make(map[endpointKey]*ring)}
 }
 
-// Record appends a sample for the given call and endpoint. Safe for
-// concurrent use. No-op if Init was not called for this callID first
-// or if the call has been Evicted -- this matches the tracker-authoritative
-// lifecycle and prevents post-Evict resurrection of map entries.
+// recordSession appends a sample for the given session key and endpoint pair.
+// No-op if the session was not initialized or has been evicted.
 //
 // Race note: between releasing the top-level map lock and acquiring the
-// per-call lock, a concurrent Evict can remove the sessionRings entry from
-// the map. The captured *sessionRings reference remains valid (the struct is
-// not freed) but is no longer reachable from the map; the sample appended
-// to it will be silently dropped -- never flushed, eventually GC'd. This
-// is intentional telemetry loss on a racing call-end. The alternative --
-// auto-recreating the map entry -- would resurrect evicted calls, which
-// was the exact bug fixed during the T6 review cycle.
-func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
-	key := SessionKey{CallID: callID}
+// per-session lock, a concurrent evictSession can remove the sessionRings
+// entry from the map. The captured *sessionRings reference remains valid
+// (the struct is not freed) but is no longer reachable from the map; the
+// sample appended to it will be silently dropped -- never flushed, eventually
+// GC'd. This is intentional telemetry loss on a racing session-end.
+func (s *HealthStore) recordSession(key SessionKey, from, peer string, sample Sample) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
-		return // not initialized or already evicted
+		return
 	}
 
-	epKey := endpointKey{From: endpoint}
+	epKey := endpointKey{From: from, Peer: peer}
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	r, ok := sr.byEndpoint[epKey]
@@ -188,35 +181,12 @@ func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 		sr.byEndpoint[epKey] = r
 	}
 	r.append(sample)
-	sr.broadcastLocked(Event{Kind: SampleKind, Endpoint: endpoint, Sample: sample})
+	sr.broadcastLocked(Event{Kind: SampleKind, Endpoint: from, Peer: peer, Sample: sample})
 }
 
-// Latest returns the most recent sample for the caller and callee endpoints
-// of the given call. Either may be nil if no samples have been recorded yet.
-func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sample) {
-	key := SessionKey{CallID: callID}
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		return nil, nil
-	}
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	var a, b *Sample
-	if r := sr.byEndpoint[endpointKey{From: caller}]; r != nil {
-		a = r.latest()
-	}
-	if r := sr.byEndpoint[endpointKey{From: callee}]; r != nil {
-		b = r.latest()
-	}
-	return a, b
-}
-
-// Window returns a copy of the retained sample ring for an endpoint, oldest
-// first. Returns an empty slice if the call or endpoint is unknown.
-func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
-	key := SessionKey{CallID: callID}
+// windowSession returns a copy of the retained sample ring for the given
+// session key and endpoint pair, oldest first. Empty if unknown.
+func (s *HealthStore) windowSession(key SessionKey, from, peer string) []Sample {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	s.mu.Unlock()
@@ -225,7 +195,7 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 	}
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
-	r, ok := sr.byEndpoint[endpointKey{From: endpoint}]
+	r, ok := sr.byEndpoint[endpointKey{From: from, Peer: peer}]
 	if !ok {
 		return nil
 	}
@@ -234,13 +204,25 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 	return out
 }
 
-// Evict drops all in-memory state for a call. Broadcasts an EndedKind event
-// to every live subscriber and closes their channels, then clears the ring
-// map entry. Safe to call multiple times; subsequent calls are no-ops.
-//
-// Called by Tracker on call end via the SetHealthStore-registered interface.
-func (s *HealthStore) Evict(callID int64) {
-	key := SessionKey{CallID: callID}
+// latestSession returns the most recent sample for a single session edge or nil.
+func (s *HealthStore) latestSession(key SessionKey, from, peer string) *Sample {
+	s.mu.Lock()
+	sr, ok := s.sessions[key]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	if r := sr.byEndpoint[endpointKey{From: from, Peer: peer}]; r != nil {
+		return r.latest()
+	}
+	return nil
+}
+
+// evictSession drops all in-memory state for a session. Broadcasts EndedKind
+// to every live subscriber and closes their channels. Idempotent.
+func (s *HealthStore) evictSession(key SessionKey) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	delete(s.sessions, key)
@@ -252,7 +234,7 @@ func (s *HealthStore) Evict(callID int64) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 	// Every channel op under sr.mu must be non-blocking (select/default or
-	// close) -- we hold the lock that Record also takes on the hot path.
+	// close) -- we hold the lock that recordSession also takes on the hot path.
 	for sub := range sr.subscribers {
 		select {
 		case sub.ch <- Event{Kind: EndedKind}:
@@ -265,6 +247,119 @@ func (s *HealthStore) Evict(callID int64) {
 		close(sub.ch)
 	}
 	sr.subscribers = nil
+}
+
+// subscribeSession opens an event stream for a session. If the session is not
+// currently initialized (or has been evicted), returns a Subscription whose
+// channel is already closed.
+func (s *HealthStore) subscribeSession(key SessionKey) *Subscription {
+	s.mu.Lock()
+	sr, ok := s.sessions[key]
+	s.mu.Unlock()
+	if !ok {
+		ch := make(chan Event)
+		close(ch)
+		return &Subscription{C: ch, close: func() {}}
+	}
+
+	sub := &subscriber{ch: make(chan Event, subscriberBufferSize)}
+
+	sr.mu.Lock()
+	if sr.subscribers == nil {
+		sr.subscribers = make(map[*subscriber]struct{})
+	}
+	sr.subscribers[sub] = struct{}{}
+	sr.mu.Unlock()
+
+	return &Subscription{
+		C: sub.ch,
+		close: func() {
+			sr.mu.Lock()
+			_, stillRegistered := sr.subscribers[sub]
+			delete(sr.subscribers, sub)
+			sr.mu.Unlock()
+			if stillRegistered {
+				close(sub.ch)
+			}
+		},
+	}
+}
+
+// Init creates an empty rings entry for a call. Called by Tracker on
+// OnCallInitiated so that subsequent Record calls have a place to land
+// without needing auto-creation (which would resurrect evicted calls).
+// Safe to call multiple times; idempotent.
+func (s *HealthStore) Init(callID int64) {
+	s.initSession(SessionKey{CallID: callID})
+}
+
+// Record appends a sample for the given call and endpoint. Safe for
+// concurrent use. No-op if Init was not called for this callID first
+// or if the call has been Evicted -- this matches the tracker-authoritative
+// lifecycle and prevents post-Evict resurrection of map entries.
+func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
+	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample)
+}
+
+// Latest returns the most recent sample for the caller and callee endpoints
+// of the given call. Either may be nil if no samples have been recorded yet.
+func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sample) {
+	key := SessionKey{CallID: callID}
+	a := s.latestSession(key, caller, "")
+	b := s.latestSession(key, callee, "")
+	return a, b
+}
+
+// Window returns a copy of the retained sample ring for an endpoint, oldest
+// first. Returns an empty slice if the call or endpoint is unknown.
+func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
+	return s.windowSession(SessionKey{CallID: callID}, endpoint, "")
+}
+
+// Evict drops all in-memory state for a call. Broadcasts an EndedKind event
+// to every live subscriber and closes their channels, then clears the ring
+// map entry. Safe to call multiple times; subsequent calls are no-ops.
+//
+// Called by Tracker on call end via the SetHealthStore-registered interface.
+func (s *HealthStore) Evict(callID int64) {
+	s.evictSession(SessionKey{CallID: callID})
+}
+
+// InitConference registers a conference for in-memory sample retention.
+// Mirrors Init for 2-party calls. Safe to call multiple times.
+func (s *HealthStore) InitConference(confID uuid.UUID) {
+	s.initSession(SessionKey{ConfID: confID})
+}
+
+// RecordEdge appends a per-edge sample for a conference. from is the
+// phone that emitted the sample; peer is the remote endpoint the
+// sample describes. No-op if InitConference was not called for this
+// conference (mirrors Record's behavior for unknown callID).
+func (s *HealthStore) RecordEdge(confID uuid.UUID, from, peer string, sample Sample) {
+	s.recordSession(SessionKey{ConfID: confID}, from, peer, sample)
+}
+
+// WindowEdge returns a copy of the retained sample ring for a conference
+// edge, oldest first. Empty if unknown.
+func (s *HealthStore) WindowEdge(confID uuid.UUID, from, peer string) []Sample {
+	return s.windowSession(SessionKey{ConfID: confID}, from, peer)
+}
+
+// LatestEdge returns the most recent sample for a conference edge or nil.
+func (s *HealthStore) LatestEdge(confID uuid.UUID, from, peer string) *Sample {
+	return s.latestSession(SessionKey{ConfID: confID}, from, peer)
+}
+
+// EvictConference drops in-memory state for a conference and broadcasts
+// EndedKind to subscribers.
+func (s *HealthStore) EvictConference(confID uuid.UUID) {
+	s.evictSession(SessionKey{ConfID: confID})
+}
+
+// SubscribeConference returns an event stream for a conference's samples,
+// disconnect broadcasts, and ended events. Mirrors Subscribe for 2-party.
+func (s *HealthStore) SubscribeConference(confID uuid.UUID) *Subscription {
+	return s.subscribeSession(SessionKey{ConfID: confID})
 }
 
 // Subscription delivers per-call telemetry events to one consumer.
@@ -299,37 +394,7 @@ const subscriberBufferSize = 16
 // whose channel is already closed -- callers see this the same way as a
 // mid-stream Evict and can treat it uniformly.
 func (s *HealthStore) Subscribe(callID int64) *Subscription {
-	key := SessionKey{CallID: callID}
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		ch := make(chan Event)
-		close(ch)
-		return &Subscription{C: ch, close: func() {}}
-	}
-
-	sub := &subscriber{ch: make(chan Event, subscriberBufferSize)}
-
-	sr.mu.Lock()
-	if sr.subscribers == nil {
-		sr.subscribers = make(map[*subscriber]struct{})
-	}
-	sr.subscribers[sub] = struct{}{}
-	sr.mu.Unlock()
-
-	return &Subscription{
-		C: sub.ch,
-		close: func() {
-			sr.mu.Lock()
-			_, stillRegistered := sr.subscribers[sub]
-			delete(sr.subscribers, sub)
-			sr.mu.Unlock()
-			if stillRegistered {
-				close(sub.ch)
-			}
-		},
-	}
+	return s.subscribeSession(SessionKey{CallID: callID})
 }
 
 // NotifyDisconnected broadcasts a DisconnectKind event naming the user who

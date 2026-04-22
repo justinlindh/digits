@@ -376,3 +376,70 @@ func TestSessionKeyIsConfConfIDWins(t *testing.T) {
 		t.Fatal("double-populated SessionKey should report IsConf() == true (ConfID wins)")
 	}
 }
+
+func TestHealthStoreConferenceRoundTrip(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New()
+	s.InitConference(confID)
+
+	loss := float32(2.5)
+	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss, ConnType: "host"}
+	s.RecordEdge(confID, "A", "B", sample)
+
+	w := s.WindowEdge(confID, "A", "B")
+	if len(w) != 1 {
+		t.Fatalf("WindowEdge len: got %d want 1", len(w))
+	}
+	if w[0].LossPct == nil || *w[0].LossPct != 2.5 {
+		t.Fatalf("sample LossPct not preserved")
+	}
+
+	latest := s.LatestEdge(confID, "A", "B")
+	if latest == nil {
+		t.Fatal("LatestEdge nil")
+	}
+	if latest.LossPct == nil || *latest.LossPct != 2.5 {
+		t.Fatalf("LatestEdge LossPct not preserved")
+	}
+
+	s.EvictConference(confID)
+	if w2 := s.WindowEdge(confID, "A", "B"); len(w2) != 0 {
+		t.Fatalf("after EvictConference WindowEdge should be empty, got %d", len(w2))
+	}
+}
+
+func TestHealthStoreConferenceSubscribeReceivesPeer(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New()
+	s.InitConference(confID)
+
+	sub := s.SubscribeConference(confID)
+	defer sub.Close()
+
+	loss := float32(3.0)
+	s.RecordEdge(confID, "A", "B", Sample{TS: time.Unix(0, 1), LossPct: &loss})
+
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != SampleKind {
+			t.Fatalf("event kind: got %v", ev.Kind)
+		}
+		if ev.Endpoint != "A" {
+			t.Fatalf("event Endpoint: got %q want A", ev.Endpoint)
+		}
+		if ev.Peer != "B" {
+			t.Fatalf("event Peer: got %q want B", ev.Peer)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected SampleKind event within 500ms")
+	}
+}
+
+func TestHealthStoreRecordEdgeDropsIfNotInit(t *testing.T) {
+	s := NewHealthStore(nil)
+	confID := uuid.New() // never InitConference'd
+	s.RecordEdge(confID, "A", "B", Sample{TS: time.Unix(0, 1)})
+	if w := s.WindowEdge(confID, "A", "B"); len(w) != 0 {
+		t.Fatalf("RecordEdge without InitConference should be a no-op: got %d", len(w))
+	}
+}
