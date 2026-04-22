@@ -86,6 +86,9 @@ type LinkHealthPayload struct {
 	ConnType string   `json:"conn_type,omitempty"`
 	BytesIn  *int64   `json:"bytes_in,omitempty"`
 	BytesOut *int64   `json:"bytes_out,omitempty"`
+	// Peer identifies the remote endpoint this sample is about. Empty for
+	// 2-party samples; set to the peer's phone number for 3-way mesh samples.
+	Peer string `json:"peer,omitempty"`
 }
 
 // ContactEntry represents a single contact in a sync payload.
