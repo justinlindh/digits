@@ -345,14 +345,14 @@
     var viewBottom = viewTop + m.viewHeight;
 
     // Focus line slides with scroll progress so every section can
-    // reach it. At the top it sits at 25% down the viewport (so the
-    // first section wins while the page is at rest); at the bottom
-    // it sits near 85% (so the last section activates before we run
-    // out of scroll room on a short final section). Linear blend
-    // between the two based on progress through the scrollable range.
+    // reach it AND each section gets a wide-enough active window.
+    // Starting lower (0.10) at the top keeps the first section
+    // highlighted until the user has scrolled well past it; ending
+    // higher (0.90) at the bottom lets the last section activate
+    // before we run out of scroll room on a short final section.
     var maxScroll = Math.max(0, m.pageHeight - m.viewHeight);
     var progress = maxScroll > 0 ? Math.min(1, viewTop / maxScroll) : 0;
-    var factor = 0.25 + 0.60 * progress;
+    var factor = 0.10 + 0.80 * progress;
     var focusLine = viewTop + m.viewHeight * factor;
 
     var chosen = sections[0];
@@ -397,7 +397,17 @@
   var scrollTarget = scroller || window;
   scrollTarget.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onScroll);
+
+  // Run once now and again after the page has settled. Section top
+  // positions depend on final layout (font loading, any late-loaded
+  // chrome in the window frame), so the very first call can run
+  // against preliminary geometry -- belt-and-suspenders so the
+  // highlight lands on the right item on first paint.
   update();
+  window.addEventListener('load', update);
+  if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+    document.fonts.ready.then(update);
+  }
 
   links.forEach(function (link) {
     link.addEventListener('click', function () {
