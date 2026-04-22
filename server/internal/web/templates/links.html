@@ -11,6 +11,7 @@
   {{if .Accepted}}<div class="banner banner--ok">Family connected successfully.</div>{{end}}
   {{if .Conflicts}}<div class="banner banner--warn">Number conflict: line numbers <strong>{{.Conflicts}}</strong> exist in both households. One family will need to change these numbers under Lines before calls can be placed.</div>{{end}}
   {{if .Revoked}}<div class="banner banner--warn">Family disconnected.</div>{{end}}
+  {{if .Canceled}}<div class="banner banner--warn">Invite canceled.</div>{{end}}
 
   <!-- Create / Accept -->
   <div class="cols cols--2" style="margin-bottom: 22px;">
@@ -21,13 +22,23 @@
       </header>
       <div class="panel__body">
         {{if .CreatedCode}}
-        <div style="text-align: center; margin-bottom: 14px; padding: 16px; border: 1px dashed var(--brass); border-radius: var(--radius-1); background: rgba(196,139,58,0.04);">
-          <div class="muted" style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">Invite code</div>
-          <div class="num brass" style="font-size: 26px; letter-spacing: 0.2em; font-weight: 500; user-select: all;">{{.CreatedCode}}</div>
+        <div class="postcard">
+          <div class="postcard__body">
+            <div class="postcard__kicker">Your invite code</div>
+            <div class="postcard__code num" style="user-select: all;">{{.CreatedCode}}</div>
+            <p class="postcard__greeting">To our friends,</p>
+            <p class="postcard__message">
+              Here's our code. Paste it into <code>app.digits.family/links</code> to connect our families. After that, your handsets and ours can dial each other by line number.
+            </p>
+          </div>
+          <div class="postcard__stamp" aria-hidden="true">
+            <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
+            <div>FAMILY MAIL</div>
+          </div>
         </div>
         {{end}}
         <form method="POST" action="/links/invite">
-          <button type="submit" class="btn btn--primary" style="width: 100%;">Generate invite code</button>
+          <button type="submit" class="btn btn--primary" style="width: 100%;">{{if .CreatedCode}}Generate another{{else}}Invite a friend{{end}}</button>
         </form>
       </div>
     </section>
@@ -78,35 +89,39 @@
       </div>
     </div>
 
-    <!-- Compact per-family detail list -->
-    <div class="stack-md">
+    <!-- Neighborhood: two-pane address-book rows -->
+    <div class="neighborhood panel">
       {{range .LinkedFamilies}}
-      <div class="panel">
-        <header class="panel__head">
-          <div class="hstack" style="gap: 10px;">
-            <h3 class="panel__title serif italic" style="font-size: 15px; font-weight: 500;">{{.Name}}</h3>
-            <span class="chip chip--on" style="font-size: 10.5px;"><span class="chip__dot"></span>{{.Status}}</span>
+      <div class="neighborhood__row">
+        <div class="neighborhood__identity">
+          <div class="neighborhood__name">
+            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
+            <span>{{.Name}}</span>
           </div>
-          {{if .AcceptedAt}}<span class="panel__title-sub">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</span>{{end}}
-        </header>
-        {{if .Lines}}
-        <ul style="list-style: none; margin: 0; padding: 0;">
+          <div class="neighborhood__meta muted">
+            {{if .AcceptedAt}}<div>Connected {{.AcceptedAt.Format "Jan 2"}}</div>{{end}}
+            <div>{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</div>
+          </div>
+          <button type="button"
+            data-confirm
+            data-confirm-action="/links/{{.ID}}/revoke"
+            data-confirm-title="Disconnect from {{.Name}}?"
+            data-confirm-body="Calls between families will no longer be possible. You can reconnect later with a new invite."
+            data-confirm-submit="Disconnect"
+            class="btn btn--quiet btn--sm" style="color: var(--rust);">Disconnect</button>
+        </div>
+        <div class="neighborhood__lines">
+          {{if .Lines}}
           {{range .Lines}}
-          <li class="hstack" style="padding: 8px 16px; border-bottom: 1px solid var(--rule-soft); font-size: 13.5px;">
-            <span class="lines__dot lines__dot--on" style="width: 6px; height: 6px;"></span>
-            <span style="flex: 1;">{{.Name}}</span>
-            <span class="num muted">{{fmtPhone .Number}}</span>
-          </li>
+          <div class="neighborhood__line">
+            <span class="lines__dot lines__dot--on"></span>
+            <span class="neighborhood__line-name">{{.Name}}</span>
+            <span class="neighborhood__line-num num muted">{{fmtPhone .Number}}</span>
+          </div>
           {{end}}
-        </ul>
-        {{else}}
-        <div class="empty" style="padding: 18px 16px;">No lines registered yet.</div>
-        {{end}}
-        <div style="padding: 10px 14px; display: flex; justify-content: flex-end;">
-          <form method="POST" action="/links/{{.ID}}/revoke"
-            onsubmit="return confirm('Disconnect from {{.Name}}? Calls between families will no longer be possible.')">
-            <button type="submit" class="btn btn--danger btn--sm">Disconnect</button>
-          </form>
+          {{else}}
+          <div class="empty" style="padding: 6px 0;">No lines registered yet.</div>
+          {{end}}
         </div>
       </div>
       {{end}}
@@ -130,13 +145,22 @@
       <div class="hide-sm">
         <table class="t">
           <thead>
-            <tr><th>Invite code</th><th>Created</th></tr>
+            <tr><th>Invite code</th><th>Created</th><th class="r"></th></tr>
           </thead>
           <tbody>
             {{range .PendingInvites}}
             <tr>
               <td class="num brass" style="letter-spacing: 0.2em;">{{.InviteCode}}</td>
               <td class="num muted">{{.CreatedAt.Format "Jan 2, 2006"}}</td>
+              <td class="r">
+                <button type="button"
+                  data-confirm
+                  data-confirm-action="/links/{{.ID}}/revoke"
+                  data-confirm-title="Cancel invite {{.InviteCode}}?"
+                  data-confirm-body="The code will stop working immediately. You can generate a new invite anytime."
+                  data-confirm-submit="Cancel invite"
+                  class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
+              </td>
             </tr>
             {{end}}
           </tbody>
@@ -144,9 +168,18 @@
       </div>
       <ul class="show-sm" style="list-style: none; margin: 0; padding: 0;">
         {{range .PendingInvites}}
-        <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);">
-          <div class="num brass" style="font-size: 14px; letter-spacing: 0.2em;">{{.InviteCode}}</div>
-          <div class="muted" style="font-size: 11.5px; margin-top: 2px;">Created {{.CreatedAt.Format "Jan 2, 2006"}}</div>
+        <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft); display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1;">
+            <div class="num brass" style="font-size: 14px; letter-spacing: 0.2em;">{{.InviteCode}}</div>
+            <div class="muted" style="font-size: 11.5px; margin-top: 2px;">Created {{.CreatedAt.Format "Jan 2, 2006"}}</div>
+          </div>
+          <button type="button"
+            data-confirm
+            data-confirm-action="/links/{{.ID}}/revoke"
+            data-confirm-title="Cancel invite {{.InviteCode}}?"
+            data-confirm-body="The code will stop working immediately. You can generate a new invite anytime."
+            data-confirm-submit="Cancel invite"
+            class="btn btn--quiet btn--sm" style="color: var(--rust);">Cancel</button>
         </li>
         {{end}}
       </ul>

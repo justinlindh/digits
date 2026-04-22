@@ -48,7 +48,7 @@ func setupCallsTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.S
 
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/login.html")
+	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}

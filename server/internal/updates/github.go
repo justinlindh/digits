@@ -180,7 +180,7 @@ func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 		}
 
 		ci.Releases[version] = r
-		if ci.Latest == "" || compareSemver(version, ci.Latest) > 0 {
+		if ci.Latest == "" || CompareSemver(version, ci.Latest) > 0 {
 			ci.Latest = version
 		}
 	}

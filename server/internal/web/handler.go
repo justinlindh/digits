@@ -85,6 +85,12 @@ type HandlerConfig struct {
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
+		"fmtDuration": func(seconds int) string {
+			if seconds < 60 {
+				return fmt.Sprintf("%ds", seconds)
+			}
+			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
@@ -376,20 +382,30 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 // ---- Dashboard ----
 
 type dashboardData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	Stats              dashStats
-	Lines              []lineRow
-	User               *auth.User
+	Page                 string
+	Version              string
+	CallHistoryEnabled   bool
+	HouseholdName        string
+	Stats                dashStats
+	Lines                []lineRow
+	CallsTodayRecent     []callRow
+	CallsTodayTotalMin   int
+	LinkedFamilies       []linkedFamilyRow
+	User                 *auth.User
+}
+
+type callRow struct {
+	StartedAt time.Time
+	LineName  string
+	PeerName  string
+	Direction string // "in" or "out"
+	DurationS int
 }
 
 type dashStats struct {
-	TotalLines   int
-	OnlineLines  int
-	ActiveCalls  int
-	CallsToday   int
+	TotalLines  int
+	OnlineLines int
+	ActiveCalls int
 }
 
 type activePair struct {
@@ -404,26 +420,180 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	active := h.tracker.Active()
-	recent, _ := h.tracker.Recent(10)
-
 	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
+	hhName, callHistoryEnabled, loc := h.householdContext(r)
+
+	// Determine current household ID for linked-family lookup.
+	var householdID string
+	if h.householdStore != nil && user != nil {
+		if households, err := h.householdStore.GetForUser(user.ID); err == nil && len(households) > 0 {
+			householdID = households[0].ID
+		}
+	}
+
+	// Build set of own line numbers for active-call resolution and for
+	// scoping call-history queries to this household.
+	ownLineByNumber := make(map[string]*lineRow, len(ld.Lines))
+	ownNumbers := make([]string, 0, len(ld.Lines))
+	for i := range ld.Lines {
+		ownLineByNumber[ld.Lines[i].Line.Number] = &ld.Lines[i]
+		ownNumbers = append(ownNumbers, ld.Lines[i].Line.Number)
+	}
+
+	// Build linked-family index for peer-name resolution.
+	linkedFamilies := h.buildLinkedFamilies(householdID)
+	linkedLineIndex := buildLinkedLineIndex(linkedFamilies)
+
+	// Annotate lines with active-call state and count household-scoped active
+	// calls. When both sides of the call are own lines (intra-household),
+	// each card uses the other local line's name as its peer instead of a
+	// phone-number fallback.
+	var activeCount int
+	for _, pair := range active {
+		if ownLineByNumber[pair.Caller] != nil || ownLineByNumber[pair.Callee] != nil {
+			activeCount++
+		}
+		callerRow := ownLineByNumber[pair.Caller]
+		calleeRow := ownLineByNumber[pair.Callee]
+		elapsed := fmtElapsed(time.Since(pair.StartedAt))
+		if callerRow != nil {
+			callerRow.OnCall = true
+			callerRow.OnCallElapsed = elapsed
+			if calleeRow != nil {
+				callerRow.OnCallPeerName = calleeRow.Line.Name
+			} else {
+				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
+			}
+		}
+		if calleeRow != nil {
+			calleeRow.OnCall = true
+			calleeRow.OnCallElapsed = elapsed
+			if callerRow != nil {
+				calleeRow.OnCallPeerName = callerRow.Line.Name
+			} else {
+				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
+			}
+		}
+	}
+
+	// Build today's call rows when history is enabled. Scoped to this
+	// household's own line numbers so one family never sees another's
+	// activity. "Today" is relative to the household's configured timezone,
+	// not server-UTC.
+	var callsTodayRecent []callRow
+	var callsTodayTotalSec int
+	if callHistoryEnabled && len(ownNumbers) > 0 {
+		recent, _ := h.tracker.RecentForPhones(ownNumbers, 20)
+		now := time.Now().In(loc)
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+		for _, c := range recent {
+			if !c.StartedAt.After(today) {
+				continue
+			}
+			var direction, lineName, peerNumber string
+			if lr := ownLineByNumber[c.Caller]; lr != nil {
+				direction = "out"
+				lineName = lr.Line.Name
+				peerNumber = c.Callee
+			} else if lr := ownLineByNumber[c.Callee]; lr != nil {
+				direction = "in"
+				lineName = lr.Line.Name
+				peerNumber = c.Caller
+			} else {
+				continue
+			}
+			callsTodayRecent = append(callsTodayRecent, callRow{
+				StartedAt: c.StartedAt.In(loc),
+				LineName:  lineName,
+				PeerName:  resolvePeerName(peerNumber, linkedLineIndex),
+				Direction: direction,
+				DurationS: c.DurationS,
+			})
+			callsTodayTotalSec += c.DurationS
+		}
+	}
 
 	data := dashboardData{
 		Page:               "dashboard",
 		Version:            version.Version,
-		CallHistoryEnabled: h.callHistoryEnabled(r),
-		HouseholdName:      h.householdNameFromContext(r),
+		CallHistoryEnabled: callHistoryEnabled,
+		HouseholdName:      hhName,
 		Stats: dashStats{
-			TotalLines:   len(ld.Lines),
-			OnlineLines:  countOnline(ld.Lines),
-			ActiveCalls:  len(active),
-			CallsToday:   countCallsToday(recent),
+			TotalLines:  len(ld.Lines),
+			OnlineLines: countOnline(ld.Lines),
+			ActiveCalls: activeCount,
 		},
-		Lines: ld.Lines,
-		User:  user,
+		Lines:              ld.Lines,
+		CallsTodayRecent:   callsTodayRecent,
+		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
+		LinkedFamilies:     linkedFamilies,
+		User:               user,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
+}
+
+// buildLinkedFamilies fetches the list of linked households and their lines
+// for the given householdID. Returns an empty slice if householdID is empty or
+// the lookup fails.
+func (h *Handler) buildLinkedFamilies(householdID string) []linkedFamilyRow {
+	if householdID == "" || h.linkStore == nil {
+		return nil
+	}
+	activeLinks, err := h.linkStore.GetLinkedHouseholds(householdID)
+	if err != nil {
+		slog.Error("buildLinkedFamilies: get linked households failed", "err", err)
+		return nil
+	}
+	otherIDs := make([]string, 0, len(activeLinks))
+	for _, l := range activeLinks {
+		otherID := l.HouseholdAID
+		if otherID == householdID && l.HouseholdBID != nil {
+			otherID = *l.HouseholdBID
+		}
+		otherIDs = append(otherIDs, otherID)
+	}
+	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
+	if err != nil {
+		slog.Error("buildLinkedFamilies: batch list lines failed", "err", err)
+	}
+	var families []linkedFamilyRow
+	for i, l := range activeLinks {
+		otherID := otherIDs[i]
+		otherName := otherID
+		if other, err := h.householdStore.GetByID(otherID); err == nil {
+			otherName = other.Name
+		}
+		families = append(families, linkedFamilyRow{
+			ID:         l.ID,
+			Name:       otherName,
+			Lines:      linesByHousehold[otherID],
+			Status:     l.Status,
+			AcceptedAt: l.AcceptedAt,
+		})
+	}
+	return families
+}
+
+// buildLinkedLineIndex flattens a slice of linkedFamilyRow into a map from
+// line number to "FamilyName · LineName" for fast peer-name resolution.
+func buildLinkedLineIndex(families []linkedFamilyRow) map[string]string {
+	index := make(map[string]string)
+	for _, f := range families {
+		for _, l := range f.Lines {
+			index[l.Number] = f.Name + " · " + l.Name
+		}
+	}
+	return index
+}
+
+// resolvePeerName returns the friendly name for a peer number using the linked
+// line index, falling back to fmtPhone formatting.
+func resolvePeerName(number string, linkedLines map[string]string) string {
+	if name, ok := linkedLines[number]; ok {
+		return name
+	}
+	return line.FormatNumber(number)
 }
 
 func countOnline(lines []lineRow) int {
@@ -436,33 +606,45 @@ func countOnline(lines []lineRow) int {
 	return n
 }
 
-func countCallsToday(allCalls []calls.Call) int {
-	today := time.Now().Truncate(24 * time.Hour)
-	count := 0
-	for _, c := range allCalls {
-		if c.StartedAt.After(today) {
-			count++
-		}
+// fmtElapsed renders a duration as "m:ss" for short calls and "h:mm:ss"
+// for calls that run past an hour. Used by the Dashboard active-call callout.
+func fmtElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
 	}
-	return count
+	total := int(d.Seconds())
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
 }
 
 // ---- Lines (Phones) ----
 
 type linesData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	Lines              []lineRow
-	Error              string
-	PairError          string
-	User               *auth.User
+	Page                  string
+	Version               string
+	CallHistoryEnabled    bool
+	HouseholdName         string
+	Lines                 []lineRow
+	Error                 string
+	PairError             string
+	User                  *auth.User
+	LatestPiVersion       string
+	LatestFirmwareVersion string
 }
 
 type lineRow struct {
-	Line   line.Line
-	Online bool
+	Line            line.Line
+	Online          bool
+	OnCall          bool
+	OnCallPeerName  string
+	OnCallElapsed   string // "mm:ss" for the Dashboard room-card callout
+	DeviceInfo      *signaling.DeviceInfoSnapshot
+	UpdateAvailable bool // either Pi or firmware is behind the latest release
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
@@ -481,9 +663,9 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		}
 	}
 
-	// Fall back to global list if household lookup failed or feature disabled
+	// If household lookup failed, show empty list rather than leaking all lines
 	if lines == nil {
-		lines, _ = h.lineStore.List()
+		lines = []line.Line{}
 	}
 
 	online := h.hub.OnlineNumbers()
@@ -491,11 +673,40 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for _, n := range online {
 		onlineSet[n] = true
 	}
+
+	var latestPi, latestFw string
+	if h.Releases != nil {
+		if idx := h.Releases.ReleaseIndex(); idx != nil {
+			latestPi = idx.Pi.Latest
+			latestFw = idx.Firmware.Latest
+		}
+	}
+
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
-		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
+		info := h.hub.DeviceInfo(l.Number)
+		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
+		if info != nil {
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				row.UpdateAvailable = true
+			}
+			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
+				row.UpdateAvailable = true
+			}
+		}
+		rows[i] = row
 	}
-	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: user}
+	return linesData{
+		Page:                  "phones",
+		Version:               version.Version,
+		CallHistoryEnabled:    h.callHistoryEnabled(r),
+		HouseholdName:         h.householdNameFromContext(r),
+		Lines:                 rows,
+		Error:                 errMsg,
+		User:                  user,
+		LatestPiVersion:       latestPi,
+		LatestFirmwareVersion: latestFw,
+	}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
@@ -626,9 +837,8 @@ type lineDetailData struct {
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	online := h.hub.Get(number) != nil
@@ -697,6 +907,9 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	online := h.hub.Get(number) != nil
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
@@ -710,9 +923,8 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	online := h.hub.Get(number) != nil
@@ -727,9 +939,8 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.Error(w, "line not found", http.StatusNotFound)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 
@@ -757,9 +968,8 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	next := ln.Settings
@@ -792,9 +1002,8 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
 
-	ln, err := h.lineStore.GetByNumber(number)
-	if err != nil {
-		http.NotFound(w, r)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	next := ln.Settings
@@ -840,6 +1049,9 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -883,6 +1095,9 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	status := h.hub.GetUpdateStatus(number)
 	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
@@ -898,6 +1113,9 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 
 	h.hub.ClearUpdateStatus(number)
 
@@ -928,6 +1146,9 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	if !h.requireNumberOwnership(w, r, number) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -969,14 +1190,8 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, err := h.lineStore.GetByNumber(number)
-	if errors.Is(err, line.ErrNotFound) {
-		http.Error(w, "line not found", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		slog.Error("delete line: lookup failed", "number", number, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	if err := h.lineStore.Delete(ln.ID); err != nil {
@@ -1127,6 +1342,7 @@ type linksData struct {
 	CreatedCode     string
 	Accepted        bool
 	Revoked         bool
+	Canceled        bool
 	Conflicts       string
 	Error           string
 	User            *auth.User
@@ -1171,46 +1387,14 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		CreatedCode:        r.URL.Query().Get("created"),
 		Accepted:           r.URL.Query().Get("accepted") == "1",
 		Revoked:            r.URL.Query().Get("revoked") == "1",
+		Canceled:           r.URL.Query().Get("canceled") == "1",
 		Conflicts:          r.URL.Query().Get("conflicts"),
 		Error:              r.URL.Query().Get("error"),
 		User:               user,
 	}
 
 	// Active links — build connected family directory
-	activeLinks, err := h.linkStore.GetLinkedHouseholds(myHousehold.ID)
-	if err != nil {
-		slog.Error("get linked households failed", "err", err)
-	}
-
-	// Collect linked household IDs for a single batched line query
-	otherIDs := make([]string, 0, len(activeLinks))
-	for _, l := range activeLinks {
-		otherID := l.HouseholdAID
-		if otherID == myHousehold.ID && l.HouseholdBID != nil {
-			otherID = *l.HouseholdBID
-		}
-		otherIDs = append(otherIDs, otherID)
-	}
-	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
-	if err != nil {
-		slog.Error("batch list lines for linked households failed", "err", err)
-	}
-
-	for i, l := range activeLinks {
-		otherID := otherIDs[i]
-		otherName := otherID
-		if other, err := h.householdStore.GetByID(otherID); err == nil {
-			otherName = other.Name
-		}
-
-		data.LinkedFamilies = append(data.LinkedFamilies, linkedFamilyRow{
-			ID:         l.ID,
-			Name:       otherName,
-			Lines:      linesByHousehold[otherID],
-			Status:     l.Status,
-			AcceptedAt: l.AcceptedAt,
-		})
-	}
+	data.LinkedFamilies = h.buildLinkedFamilies(myHousehold.ID)
 
 	// Pending invites sent by this household
 	pending, err := h.linkStore.GetPendingForHousehold(myHousehold.ID)
@@ -1317,13 +1501,48 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	id := r.PathValue("id")
+
+	// Look up the link and verify the user belongs to one of the linked
+	// households before allowing revocation.
+	link, err := h.linkStore.GetByID(id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	owned := false
+	for _, hh := range households {
+		if hh.ID == link.HouseholdAID || (link.HouseholdBID != nil && hh.ID == *link.HouseholdBID) {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		http.NotFound(w, r)
+		return
+	}
+
+	wasPending := link.Status == "pending"
+
 	if err := h.linkStore.RevokeLink(id, user.ID); err != nil {
 		slog.Error("revoke link failed", "link_id", id, "err", err)
 		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/links?revoked=1", http.StatusSeeOther)
+	target := "/links?revoked=1"
+	if wasPending {
+		target = "/links?canceled=1"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // ---- Internal Stats ----
@@ -1404,29 +1623,45 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 // ---- API ----
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
-	lines, err := h.lineStore.List()
-	if err != nil {
-		slog.Error("api status: list lines failed", "err", err)
-		jsonError(w, "internal server error", http.StatusInternalServerError)
-		return
+	ld := h.buildLinesData(r, "")
+	nums := h.householdNumbers(r)
+
+	var onlineCount int
+	for _, row := range ld.Lines {
+		if row.Online {
+			onlineCount++
+		}
 	}
-	online := h.hub.OnlineNumbers()
-	active := h.tracker.Active()
+
+	allActive := h.tracker.Active()
+	var activeCount int
+	for _, a := range allActive {
+		if nums[a.Caller] || nums[a.Callee] {
+			activeCount++
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
-		"total_lines":  len(lines),
-		"online_lines": len(online),
-		"active_calls": len(active),
+		"total_lines":  len(ld.Lines),
+		"online_lines": onlineCount,
+		"active_calls": activeCount,
 	}); err != nil {
 		slog.Error("api status: json encode failed", "err", err)
 	}
 }
 
 func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
-	active := h.tracker.Active()
-	pairs := make([]activePair, len(active))
-	for i, a := range active {
-		pairs[i] = activePair{Caller: a.Caller, Callee: a.Callee}
+	nums := h.householdNumbers(r)
+	allActive := h.tracker.Active()
+	var pairs []activePair
+	for _, a := range allActive {
+		if nums[a.Caller] || nums[a.Callee] {
+			pairs = append(pairs, activePair{Caller: a.Caller, Callee: a.Callee})
+		}
+	}
+	if pairs == nil {
+		pairs = []activePair{}
 	}
 
 	// Return HTML for htmx, JSON for API clients
@@ -1729,6 +1964,67 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		HouseholdName: h.householdNameFromContext(r),
 		User:          user,
 	})
+}
+
+// requireLineOwnership looks up a line by number and verifies the authenticated
+// user's household owns it. Returns the line on success, or nil after writing
+// an HTTP error response (404 to avoid leaking line existence).
+func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return nil
+	}
+	for _, hh := range households {
+		if hh.ID == ln.HouseholdID {
+			return ln
+		}
+	}
+	http.NotFound(w, r)
+	return nil
+}
+
+// requireNumberOwnership verifies the authenticated user's household owns the
+// given phone number without needing the full line record. Returns true if
+// ownership is confirmed, or false after writing an HTTP 404 response.
+func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request, number string) bool {
+	return h.requireLineOwnership(w, r, number) != nil
+}
+
+// householdNumbers returns the set of phone numbers belonging to the
+// authenticated user's household. Returns nil if the user has no household.
+func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.householdStore == nil {
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		return nil
+	}
+	lines, err := h.lineStore.ListByHousehold(households[0].ID)
+	if err != nil {
+		return nil
+	}
+	nums := make(map[string]bool, len(lines))
+	for _, l := range lines {
+		nums[l.Number] = true
+	}
+	return nums
 }
 
 // householdContext returns the household name, call-history flag, and timezone location for the current user.

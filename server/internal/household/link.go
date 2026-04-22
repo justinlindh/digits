@@ -50,21 +50,9 @@ func generateInviteCode() (string, error) {
 
 // CreateInvite creates a pending invite from fromHouseholdID.
 // household_b_id is NULL until the invite is accepted.
+// Multiple pending invites per household are allowed; duplicate-link
+// prevention happens in AcceptInvite via AreLinked.
 func (s *LinkStore) CreateInvite(fromHouseholdID, invitedByUserID string) (*HouseholdLink, error) {
-	// Check if the households are already linked or have a pending invite
-	var count int
-	err := s.db.QueryRow(`
-		SELECT COUNT(*) FROM household_links
-		WHERE household_a_id = $1 AND status IN ('pending', 'active')
-		  AND household_b_id IS NULL
-	`, fromHouseholdID).Scan(&count)
-	if err != nil {
-		return nil, fmt.Errorf("check existing pending: %w", err)
-	}
-	if count > 0 {
-		return nil, errors.New("household already has a pending invite")
-	}
-
 	code, err := generateInviteCode()
 	if err != nil {
 		return nil, err

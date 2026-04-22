@@ -47,14 +47,14 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 		releases = append(releases, *r)
 	}
 	sort.Slice(releases, func(i, j int) bool {
-		return compareSemver(releases[i].Version, releases[j].Version) > 0
+		return CompareSemver(releases[i].Version, releases[j].Version) > 0
 	})
 	return releases
 }
 
-// compareSemver compares two semver strings "X.Y.Z".
+// CompareSemver compares two semver strings "X.Y.Z".
 // Returns 1 if a > b, -1 if a < b, 0 if equal.
-func compareSemver(a, b string) int {
+func CompareSemver(a, b string) int {
 	partsA := strings.SplitN(a, ".", 3)
 	partsB := strings.SplitN(b, ".", 3)
 	for i := 0; i < 3; i++ {
