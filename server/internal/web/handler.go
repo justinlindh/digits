@@ -1,15 +1,18 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,13 +43,45 @@ func TemplateFS() embed.FS {
 	return templateFS
 }
 
+// devStaticDirDefault is the disk path (relative to the process CWD) used
+// for /static/ when DevMode is on and no explicit override is supplied.
+// It matches the Makefile's dev-up target, which runs signald with CWD
+// set to the server/ module root.
+const devStaticDirDefault = "internal/web/static"
+
+// staticFileServer returns the handler that serves /static/. In devMode it
+// serves from disk so CSS and JS edits are visible on reload without a
+// rebuild; diskDir falls back to devStaticDirDefault when empty. In
+// production mode it serves the embedded FS, keeping the binary
+// self-contained. Both code paths route /static/dialup.css to the same
+// file content for a given checkout.
+func staticFileServer(devMode bool, diskDir string) http.Handler {
+	if devMode {
+		if diskDir == "" {
+			diskDir = devStaticDirDefault
+		}
+		return http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+	}
+	// fs.Sub strips the "static" prefix from the embedded FS so request
+	// paths align with the disk-mode handler's StripPrefix treatment.
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		// embed declares the "static" directory above; sub-rooting to it
+		// cannot fail at runtime. A panic here would indicate a programmer
+		// error in the embed declaration.
+		panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+}
+
 type Handler struct {
 	upgrader websocket.Upgrader
 	lineStore   *line.Store
 	deviceStore *device.Store
-	hub      *signaling.Hub
-	tracker  *calls.Tracker
-	relay    *signaling.Relay
+	hub         *signaling.Hub
+	tracker     *calls.Tracker
+	relay       *signaling.Relay
+	healthStore *calls.HealthStore
 	// Per-page template sets to avoid {{define}} name conflicts
 	tmplDashboard   *template.Template
 	tmplPhones      *template.Template
@@ -80,11 +115,21 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Addr    string
+	Addr string
+	// DevMode enables development-only conveniences. Today that means
+	// serving /static/ from disk instead of the embedded FS, so CSS and
+	// JS edits don't require a signald rebuild. When false, the embedded
+	// FS is used. DevMode also registers the /dev/seed-firmware test
+	// helper used by e2e.
 	DevMode bool
+	// DevStaticDir is the disk path served for /static/ when DevMode is
+	// true. Empty falls back to devStaticDirDefault ("internal/web/static"),
+	// which matches the layout the Makefile's dev-up target runs from.
+	// The field exists mainly so tests can point at a temp directory.
+	DevStaticDir string
 }
 
-func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
+func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string, healthStore *calls.HealthStore) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 		"fmtDuration": func(seconds int) string {
@@ -157,6 +202,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		hub:             hub,
 		tracker:         tracker,
 		relay:           relay,
+		healthStore:     healthStore,
 		tmplDashboard:   tmplDashboard,
 		tmplPhones:      tmplPhones,
 		tmplCalls:       tmplCalls,
@@ -188,8 +234,10 @@ func (h *Handler) Hub() *signaling.Hub {
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
-	// Static assets — no auth required
-	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
+	// Static assets — no auth required. In DevMode, serve from disk so
+	// CSS/JS edits don't require a rebuild; otherwise serve the embedded
+	// FS so the production binary is self-contained.
+	mux.Handle("GET /static/", staticFileServer(h.cfg.DevMode, h.cfg.DevStaticDir))
 
 	// Health check — no auth required
 	mux.HandleFunc("GET /healthz", httputil.Healthz())
@@ -255,6 +303,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
 	// Onboarding gate: redirect users without a household to /onboard
@@ -2033,6 +2082,202 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 // ownership is confirmed, or false after writing an HTTP 404 response.
 func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request, number string) bool {
 	return h.requireLineOwnership(w, r, number) != nil
+}
+
+// ownedLinesForUser returns the lines owned by any household the user belongs
+// to, keyed by number, plus the primary household ID. Returns (nil, "", false)
+// if the user has no households or any lookup fails — caller writes 404, same
+// response shape as nonexistent.
+func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, string, bool) {
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil {
+		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		return nil, "", false
+	}
+	if len(households) == 0 {
+		return nil, "", false
+	}
+	lines := make(map[string]*line.Line)
+	for _, hh := range households {
+		hhLines, err := h.lineStore.ListByHousehold(hh.ID)
+		if err != nil {
+			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			return nil, "", false
+		}
+		for i := range hhLines {
+			ln := hhLines[i]
+			lines[ln.Number] = &ln
+		}
+	}
+	return lines, households[0].ID, true
+}
+
+// requireCallEndpointOwnership verifies the authenticated user owns either
+// endpoint of the call (across ANY household the user belongs to). Returns
+// the call, the owned-lines map (keyed by number), the primary household ID,
+// and true on success. On any failure, writes 404 (unauthorized and
+// nonexistent are indistinguishable).
+//
+// Implementation detail: always performs the same sequence of DB queries
+// regardless of auth outcome, to avoid a timing side channel on call-id
+// enumeration. Linked households do NOT grant access to telemetry; only
+// direct household ownership of a call endpoint does.
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	// Always do both queries in the same order, regardless of miss reason.
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(user)
+	call, callErr := h.tracker.GetCall(callID)
+
+	if callErr != nil {
+		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	if !ok || call.ID == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	_, ownsCaller := ownedLines[call.Caller]
+	_, ownsCallee := ownedLines[call.Callee]
+	if !ownsCaller && !ownsCallee {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	return call, ownedLines, primaryHH, true
+}
+
+// ---- Link Health API ----
+
+// LinkHealthSample is the JSON representation of a single link-health
+// measurement returned by GET /api/call/{id}/link-health.
+type LinkHealthSample struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
+}
+
+// LinkHealthEndpointResp is the per-endpoint section of a LinkHealthResp.
+type LinkHealthEndpointResp struct {
+	Number      string            `json:"number"`
+	DisplayName string            `json:"display_name"`
+	Latest      *LinkHealthSample `json:"latest,omitempty"`
+	Window      []LinkHealthSample `json:"window"`
+}
+
+// LinkHealthResp is the top-level response body for GET /api/call/{id}/link-health.
+type LinkHealthResp struct {
+	CallID    int64                  `json:"call_id"`
+	StartedAt time.Time              `json:"started_at"`
+	Caller    LinkHealthEndpointResp `json:"caller"`
+	Callee    LinkHealthEndpointResp `json:"callee"`
+}
+
+func toAPISample(s calls.Sample) LinkHealthSample {
+	return LinkHealthSample{
+		TS:       s.TS.UnixMilli(),
+		LossPct:  s.LossPct,
+		JitterMs: s.JitterMs,
+		RttMs:    s.RttMs,
+		ConnType: s.ConnType,
+		BytesIn:  s.BytesIn,
+		BytesOut: s.BytesOut,
+	}
+}
+
+func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, primaryHH, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	// Display-name resolution — same helpers as /calls page. No new data exposure.
+	// Linked-household names are shown for peers that the user already sees in
+	// their call log; the underlying auth check does not grant read access to
+	// calls the user was not part of.
+	var linkedIndex map[string]string
+	if primaryHH != "" {
+		linkedFamilies := h.buildLinkedFamilies(primaryHH)
+		linkedIndex = buildLinkedLineIndex(linkedFamilies)
+	}
+
+	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
+	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	resp.Caller = callerEndpoint
+	resp.Callee = calleeEndpoint
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("link_health encode failed", "call_id", callID, "err", err)
+	}
+}
+
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
+	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
+
+	// Display name resolution: owned line first (no extra DB query), then
+	// linked-index for peer names, then bare number as fallback.
+	if ln, ok := ownedLines[number]; ok && ln != nil {
+		out.DisplayName = ln.Name
+	} else {
+		out.DisplayName = resolvePeerName(number, linkedIndex)
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = number
+	}
+
+	// Memory first.
+	windowMem := h.healthStore.Window(callID, number)
+	if len(windowMem) > 0 {
+		out.Window = make([]LinkHealthSample, len(windowMem))
+		for i, s := range windowMem {
+			out.Window[i] = toAPISample(s)
+		}
+		la := toAPISample(windowMem[len(windowMem)-1])
+		out.Latest = &la
+		return out, nil
+	}
+
+	// DB fallback.
+	dbSamples, err := h.healthStore.Readback(ctx, callID, number, 60)
+	if err != nil {
+		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
+	}
+	out.Window = make([]LinkHealthSample, len(dbSamples))
+	for i, s := range dbSamples {
+		out.Window[i] = toAPISample(s)
+	}
+	if len(dbSamples) > 0 {
+		la := toAPISample(dbSamples[len(dbSamples)-1])
+		out.Latest = &la
+	}
+	return out, nil
 }
 
 // householdNumbers returns the set of phone numbers belonging to the

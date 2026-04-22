@@ -1,6 +1,8 @@
 package calls
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -22,15 +24,24 @@ type Call struct {
 }
 
 type activeCall struct {
+	ID        int64
 	Caller    string
 	Callee    string
 	StartedAt time.Time
+}
+
+// healthLifecycle is the subset of *HealthStore that Tracker drives for
+// per-call lifecycle. Init is called at call start; Evict at call end.
+type healthLifecycle interface {
+	Init(callID int64)
+	Evict(callID int64)
 }
 
 type Tracker struct {
 	db     *db.Database
 	mu     sync.Mutex
 	active map[string]*activeCall // "caller→callee" → call
+	health healthLifecycle
 }
 
 func New(d *db.Database) *Tracker {
@@ -40,22 +51,42 @@ func New(d *db.Database) *Tracker {
 	}
 }
 
+// SetHealthStore registers an optional health store for per-call lifecycle
+// management. Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetHealthStore(h healthLifecycle) {
+	t.mu.Lock()
+	t.health = h
+	t.mu.Unlock()
+}
+
 func callKey(a, b string) string {
 	return a + "→" + b
 }
 
-func (t *Tracker) OnCallInitiated(from, to string) error {
-	_, err := t.db.DB.Exec(
-		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated')",
+func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
+	var id int64
+	err := t.db.DB.QueryRow(
+		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
 		from, to,
-	)
+	).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("track call: %w", err)
+		return 0, fmt.Errorf("track call: %w", err)
 	}
+
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, StartedAt: time.Now()}
+	t.active[callKey(from, to)] = &activeCall{
+		ID:        id,
+		Caller:    from,
+		Callee:    to,
+		StartedAt: time.Now(),
+	}
+	h := t.health
 	t.mu.Unlock()
-	return nil
+
+	if h != nil {
+		h.Init(id)
+	}
+	return id, nil
 }
 
 func (t *Tracker) OnCallAnswered(caller, callee string) error {
@@ -77,9 +108,20 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 	key2 := callKey(callee, caller)
 
 	t.mu.Lock()
+	var id int64
+	if c, ok := t.active[key1]; ok {
+		id = c.ID
+	} else if c, ok := t.active[key2]; ok {
+		id = c.ID
+	}
 	delete(t.active, key1)
 	delete(t.active, key2)
+	h := t.health
 	t.mu.Unlock()
+
+	if h != nil && id != 0 {
+		h.Evict(id)
+	}
 
 	_, err := t.db.DB.Exec(
 		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
@@ -100,15 +142,26 @@ func (t *Tracker) OnCallEnded(caller, callee string) error {
 func (t *Tracker) ClearByNumber(number string) {
 	t.mu.Lock()
 	var toDelete []string
+	var evictIDs []int64
 	for key, c := range t.active {
 		if c.Caller == number || c.Callee == number {
 			toDelete = append(toDelete, key)
+			evictIDs = append(evictIDs, c.ID)
 		}
 	}
 	for _, key := range toDelete {
 		delete(t.active, key)
 	}
+	h := t.health
 	t.mu.Unlock()
+
+	if h != nil {
+		for _, id := range evictIDs {
+			if id != 0 {
+				h.Evict(id)
+			}
+		}
+	}
 
 	// End any open calls in the database
 	if _, err := t.db.DB.Exec(
@@ -149,6 +202,19 @@ func (t *Tracker) PeerOf(number string) string {
 	return ""
 }
 
+// CallIDFor returns the active call id for an endpoint phone number.
+// Returns (0, false) if the number is not currently in a call.
+func (t *Tracker) CallIDFor(number string) (int64, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, c := range t.active {
+		if c.Caller == number || c.Callee == number {
+			return c.ID, true
+		}
+	}
+	return 0, false
+}
+
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -187,6 +253,30 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+// GetCall returns the call row by id. Returns zero-value Call and nil error
+// if not found (callers should test Call.ID == 0).
+func (t *Tracker) GetCall(id int64) (Call, error) {
+	var c Call
+	var answered, ended sql.NullTime
+	err := t.db.DB.QueryRow(
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		 FROM calls WHERE id = $1`, id,
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Call{}, nil
+	}
+	if err != nil {
+		return Call{}, fmt.Errorf("get call: %w", err)
+	}
+	if answered.Valid {
+		c.AnsweredAt = &answered.Time
+	}
+	if ended.Valid {
+		c.EndedAt = &ended.Time
+	}
+	return c, nil
 }
 
 // RecentForPhones returns the most recent calls where either caller or callee

@@ -24,6 +24,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/justinlindh/digits/server/internal/auth"
 )
 
 // TestSpecDashboard covers the Dashboard section of the spec.
@@ -150,6 +152,11 @@ func TestSpecFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get test user: %v", err)
 	}
+	// The test user is shared across spec tests; ensure intercom theme
+	// so the postcard branch rendering FAMILY MAIL is exercised here.
+	if err := authStore.SetTheme(user.ID, auth.ThemeIntercom); err != nil {
+		t.Fatalf("reset theme to intercom: %v", err)
+	}
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
 
 	// Default view — no postcard yet.
@@ -247,14 +254,18 @@ func TestSpecSettings(t *testing.T) {
 		}
 	}
 
-	// Theme cards + every swatch hex value (Spec: explicit palettes).
-	// (Spec: "Intercom palette: #f5f1ea, #2e231b, #c48b3a. Dialup palette:
-	//  #0a3a8a, #7ab4ff, #f0c020.")
+	// Theme cards + every swatch hex value.
+	// Intercom stays on the shipped palette values, which match its
+	// canonical tokens. Dialup's swatches were reconciled to actual
+	// --dialup-chrome-l / --dialup-blue-dark / --dialup-gold so the
+	// preview matches what the theme actually renders (see the
+	// 2026-04-21 dialup-theme-port design: "palette tokens are
+	// canonical").
 	for _, want := range []string{
 		`class="theme-card`,
 		"theme-card__swatch",
 		"#f5f1ea", "#2e231b", "#c48b3a",
-		"#0a3a8a", "#7ab4ff", "#f0c020",
+		"#ece9d8", "#003da7", "#ffcc00",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("Settings theme section missing %q", want)
@@ -302,5 +313,43 @@ func TestSpecCallLog(t *testing.T) {
 	h.Router().ServeHTTP(w2, req2)
 	if !strings.Contains(w2.Body.String(), "Call log") {
 		t.Errorf("Settings page missing 'Call log' toggle label")
+	}
+}
+
+// TestSpecDialupHubGlyph asserts the dialup theme renders the new
+// pixel-art house SVG on /links, not the intercom line-drawing.
+// Spec: Option D of the 2026-04-21 dialup-theme-port design.
+// Each family spoke (and the center household) shows a chunky Win98
+// pixel-art house with a roof-mounted antenna and signal arcs.
+func TestSpecDialupHubGlyph(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(user.ID, auth.ThemeDialup); err != nil {
+		t.Fatalf("set dialup theme: %v", err)
+	}
+	// Reset the test user's theme on exit so subsequent tests (which
+	// share this user via setupAuthedHousehold) see the default value.
+	t.Cleanup(func() { _ = authStore.SetTheme(user.ID, auth.ThemeIntercom) })
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /links: got %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+
+	// The dialup-specific SVG uses <g class="dialup-house__antenna">
+	// which the intercom template never emits. Presence proves the
+	// hub spoke + center switched to the pixel-art glyph for dialup.
+	if !strings.Contains(body, `dialup-house__antenna`) {
+		t.Error("dialup /links should render the dialup house SVG (class=dialup-house__antenna)")
 	}
 }

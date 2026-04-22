@@ -57,7 +57,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "", nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -1115,9 +1115,11 @@ func TestSettingsPage_ThemeSwatches(t *testing.T) {
 		`#f5f1ea`,
 		`#2e231b`,
 		`#c48b3a`,
-		`#0a3a8a`,
-		`#7ab4ff`,
-		`#f0c020`,
+		// Dialup swatches render actual --dialup-chrome-l / --dialup-blue-dark
+		// / --dialup-gold tokens so the preview matches the live theme.
+		`#ece9d8`,
+		`#003da7`,
+		`#ffcc00`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings theme section missing %q", want)
