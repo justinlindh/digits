@@ -1226,16 +1226,109 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .theme-card__name { font-weight: bold; font-size: 12px; }
 .theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
 
-/* Neighborhood rows placeholder - see issue #214 for full dialup treatment */
-.neighborhood { display: flex; flex-direction: column; }
-.neighborhood__row { display: grid; grid-template-columns: 200px 1fr; border: 1px solid var(--dialup-bevel-lo); background: #fff; margin-bottom: 4px; }
-.neighborhood__identity { padding: 8px; background: var(--dialup-chrome-l); border-right: 1px solid var(--dialup-bevel-lo); }
-.neighborhood__name { font-weight: bold; display: flex; align-items: center; gap: 6px; }
-.neighborhood__name svg { width: 20px; height: 20px; }
-.neighborhood__meta { font-size: 11px; color: var(--dialup-ink-muted); }
-.neighborhood__lines { padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.neighborhood__line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.neighborhood__line-num { margin-left: auto; font-family: var(--font-mono); }
+/* --------- Families neighborhood rows (two-pane address book) ---------
+   Left identity pane on chrome background with a mini-glyph of the
+   family's household. Right pane is a single-column list of that
+   family's lines, one per row, with the existing green status dot
+   (.lines__dot) on the left and the formatted number right-aligned in
+   monospace. Horizontal rule separates adjacent lines so the layout
+   reads like a period Address Book panel. */
+
+.neighborhood {
+  display: flex;
+  flex-direction: column;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+  background: #ffffff;
+}
+
+.neighborhood__row {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+}
+.neighborhood__row:last-child { border-bottom: 0; }
+
+.neighborhood__identity {
+  padding: 10px 12px;
+  background: var(--dialup-chrome-l);
+  border-right: 1px solid var(--dialup-bevel-lo);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neighborhood__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-ink);
+  font-style: normal;
+}
+.neighborhood__name svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--dialup-blue-dark);
+}
+
+.neighborhood__meta {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  line-height: 1.5;
+}
+
+/* Single-column list: one phone line per row, dotted-leader style
+   connecting the label and the number so the two read as a pair even
+   when the row is wide. */
+.neighborhood__lines {
+  padding: 6px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.neighborhood__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--dialup-ink);
+  border-bottom: 1px dotted var(--dialup-chrome-d);
+}
+.neighborhood__line:last-child { border-bottom: 0; }
+
+/* The template emits .lines__dot before the line name — already styled
+   elsewhere. Just ensure it reads as a clear lead-in here. */
+.neighborhood__line .lines__dot { flex-shrink: 0; }
+
+.neighborhood__line-name {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 400;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.neighborhood__line-num {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .neighborhood__row { grid-template-columns: 1fr; }
+  .neighborhood__identity {
+    border-right: 0;
+    border-bottom: 1px solid var(--dialup-bevel-lo);
+  }
+}
 
 /* Postcard placeholder - see issue #214 for full dialup treatment */
 .postcard { display: grid; grid-template-columns: 1fr 72px; gap: 10px; padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); margin-bottom: 8px; }
