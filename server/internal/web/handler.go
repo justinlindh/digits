@@ -685,11 +685,12 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		if info != nil {
-			if latestPi != "" && info.PiVersion != "" && info.PiVersion != latestPi {
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
 				row.UpdateAvailable = true
 			}
-			if latestFw != "" && info.FirmwareVersion != "" && info.FirmwareVersion != latestFw {
+			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
 				row.UpdateAvailable = true
+			}
 			}
 		}
 		rows[i] = row
