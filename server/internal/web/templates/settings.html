@@ -275,4 +275,57 @@
   {{template "page-footer" .}}
 
 </div>
+<script>
+(function () {
+  // Settings section scrollspy: highlights the .settings-nav item
+  // whose target section is currently in the middle of the viewport.
+  // Also updates on click so the active state switches instantly,
+  // before the scroll animation has caught up.
+  var nav = document.querySelector('.settings-nav');
+  if (!nav || typeof IntersectionObserver === 'undefined') return;
+  var links = nav.querySelectorAll('.settings-nav__item');
+  if (!links.length) return;
+
+  var byId = {};
+  var sections = [];
+  links.forEach(function (link) {
+    var hash = link.getAttribute('href') || '';
+    if (hash.charAt(0) !== '#') return;
+    var id = hash.slice(1);
+    var sec = document.getElementById(id);
+    if (!sec) return;
+    byId[id] = link;
+    sections.push(sec);
+  });
+  if (!sections.length) return;
+
+  function setActive(id) {
+    links.forEach(function (l) { l.classList.remove('is-active'); });
+    if (byId[id]) byId[id].classList.add('is-active');
+  }
+
+  // rootMargin carves a horizontal band roughly 20-30% from the top of
+  // the viewport; the section crossing that band is the active one.
+  var observer = new IntersectionObserver(function (entries) {
+    var best = null;
+    var bestTop = Infinity;
+    entries.forEach(function (e) {
+      if (e.isIntersecting && e.boundingClientRect.top < bestTop) {
+        best = e.target;
+        bestTop = e.boundingClientRect.top;
+      }
+    });
+    if (best) setActive(best.id);
+  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+
+  sections.forEach(function (s) { observer.observe(s); });
+
+  links.forEach(function (link) {
+    link.addEventListener('click', function () {
+      var hash = link.getAttribute('href') || '';
+      if (hash.charAt(0) === '#') setActive(hash.slice(1));
+    });
+  });
+})();
+</script>
 {{end}}
