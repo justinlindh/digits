@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -609,20 +610,42 @@ func (s *HealthStore) Run(ctx context.Context) {
 	}
 }
 
-// Readback returns the last `limit` samples for a call+endpoint from the DB,
-// oldest first. Used when in-memory state is empty (ended call, post-restart).
+// Readback returns the last `limit` samples for a 2-party call+endpoint from
+// the DB, oldest first. Used when in-memory state is empty (ended call,
+// post-restart).
 func (s *HealthStore) Readback(ctx context.Context, callID int64, endpoint string, limit int) ([]Sample, error) {
 	if s.db == nil {
 		return nil, nil
 	}
-	rows, err := s.db.DB.QueryContext(ctx,
-		`SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
-		 FROM call_link_health
-		 WHERE call_id = $1 AND endpoint = $2
-		 ORDER BY ts DESC
-		 LIMIT $3`,
-		callID, endpoint, limit,
+	return s.readbackSession(ctx,
+		`WHERE call_id = $1 AND endpoint = $2`,
+		[]any{callID, endpoint},
+		limit,
 	)
+}
+
+// ReadbackEdge returns the last `limit` samples for a conference edge
+// (from -> peer) from the DB, oldest first. Mirrors Readback for the
+// conference path.
+func (s *HealthStore) ReadbackEdge(ctx context.Context, confID uuid.UUID, from, peer string, limit int) ([]Sample, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	return s.readbackSession(ctx,
+		`WHERE conference_id = $1 AND endpoint = $2 AND peer = $3`,
+		[]any{confID, from, peer},
+		limit,
+	)
+}
+
+func (s *HealthStore) readbackSession(ctx context.Context, where string, args []any, limit int) ([]Sample, error) {
+	sqlStr := `SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
+		 FROM call_link_health ` + where + `
+		 ORDER BY ts DESC
+		 LIMIT $` + strconv.Itoa(len(args)+1)
+	args = append(args, limit)
+
+	rows, err := s.db.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("readback query: %w", err)
 	}

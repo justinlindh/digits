@@ -361,6 +361,63 @@ func TestWriteSampleConferenceRejectsEmptyPeer(t *testing.T) {
 	}
 }
 
+func TestReadbackEdgeFromDB(t *testing.T) {
+	d := setupTestDB(t)
+
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	s.InitConference(confID)
+
+	base := time.Unix(0, 0)
+	for i := 0; i < 3; i++ {
+		loss := float32(i)
+		s.RecordEdge(confID, "+15555550001", "+15555550002",
+			Sample{TS: base.Add(time.Duration(i+1) * time.Second), LossPct: &loss})
+		if err := s.FlushOnce(context.Background()); err != nil {
+			t.Fatalf("FlushOnce iter %d: %v", i, err)
+		}
+	}
+	// Unrelated edge at a later timestamp; must not leak into the single-edge readback.
+	s.RecordEdge(confID, "+15555550002", "+15555550001",
+		Sample{TS: base.Add(10 * time.Second)})
+	if err := s.FlushOnce(context.Background()); err != nil {
+		t.Fatalf("FlushOnce unrelated: %v", err)
+	}
+
+	got, err := s.ReadbackEdge(context.Background(), confID,
+		"+15555550001", "+15555550002", 10)
+	if err != nil {
+		t.Fatalf("ReadbackEdge: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("expected 3 rows for edge A->B; got %d", len(got))
+	}
+
+	// Oldest first, matching Window ordering.
+	for i, s := range got {
+		if s.LossPct == nil {
+			t.Fatalf("row %d missing LossPct", i)
+		}
+		if *s.LossPct != float32(i) {
+			t.Fatalf("row %d LossPct: got %v want %d", i, *s.LossPct, i)
+		}
+	}
+}
+
 func TestFlushOnceWritesConferenceRows(t *testing.T) {
 	d := setupTestDB(t)
 
