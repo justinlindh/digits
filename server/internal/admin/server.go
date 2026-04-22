@@ -4,8 +4,9 @@ import (
 	"context"
 	"embed"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
@@ -34,7 +35,8 @@ func NewServer(cfg *Config, db *AdminDB, auth *AuthStore) *Server {
 	parse := func(pages ...string) *template.Template {
 		t, err := template.ParseFS(adminTemplateFS, pages...)
 		if err != nil {
-			log.Fatalf("parse admin templates: %v", err)
+			slog.Error("parse admin templates", "err", err)
+			os.Exit(1)
 		}
 		return t
 	}
@@ -122,7 +124,7 @@ type loginData struct {
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login"}); err != nil {
-		log.Printf("admin: render template: %v", err)
+		slog.Error("admin: render template", "err", err)
 	}
 }
 
@@ -137,7 +139,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if s.auth == nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "auth not configured"}); err != nil {
-			log.Printf("admin: render template: %v", err)
+			slog.Error("admin: render template", "err", err)
 		}
 		return
 	}
@@ -146,7 +148,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Invalid credentials"}); err != nil {
-			log.Printf("admin: render template: %v", err)
+			slog.Error("admin: render template", "err", err)
 		}
 		return
 	}
@@ -155,7 +157,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err := s.tmplLogin.ExecuteTemplate(w, "layout.html", loginData{Page: "login", Error: "Session error"}); err != nil {
-			log.Printf("admin: render template: %v", err)
+			slog.Error("admin: render template", "err", err)
 		}
 		return
 	}
@@ -210,21 +212,21 @@ func (s *Server) fetchDashData(page string) dashData {
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmplDash.ExecuteTemplate(w, "layout.html", s.fetchDashData("dashboard")); err != nil {
-		log.Printf("admin: render template: %v", err)
+		slog.Error("admin: render template", "err", err)
 	}
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmplUsers.ExecuteTemplate(w, "layout.html", s.fetchDashData("users")); err != nil {
-		log.Printf("admin: render template: %v", err)
+		slog.Error("admin: render template", "err", err)
 	}
 }
 
 func (s *Server) handleHouseholds(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmplHH.ExecuteTemplate(w, "layout.html", s.fetchDashData("households")); err != nil {
-		log.Printf("admin: render template: %v", err)
+		slog.Error("admin: render template", "err", err)
 	}
 }
 
@@ -239,6 +241,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.tmplHP.ExecuteTemplate(w, "layout.html", data); err != nil {
-		log.Printf("admin: render template: %v", err)
+		slog.Error("admin: render template", "err", err)
 	}
 }
