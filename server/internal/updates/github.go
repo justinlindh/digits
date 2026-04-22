@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 type ghRelease struct {
 	TagName     string    `json:"tag_name"`
 	PublishedAt string    `json:"published_at"`
+	Body        string    `json:"body"`
 	Assets      []ghAsset `json:"assets"`
 }
 
@@ -80,7 +82,7 @@ func (g *GitHubReleases) poll() {
 }
 
 func (g *GitHubReleases) refresh() {
-	idx, err := g.fetch()
+	idx, err := g.fetch(context.Background())
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
 		return
@@ -108,10 +110,10 @@ func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
 // fetch retrieves releases from the GitHub API and builds a ReleaseIndex.
 // Note: fetches up to 100 releases (no pagination). If the repo exceeds 100
 // total releases across all tag types, older ones will be silently omitted.
-func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
+func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", g.apiBase, g.owner, g.repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -167,6 +169,7 @@ func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 			SHA256:  sha256,
 			URL:     binaryURL,
 			Date:    date,
+			Notes:   stripGroomedSentinel(rel.Body),
 		}
 
 		var ci *ComponentIndex

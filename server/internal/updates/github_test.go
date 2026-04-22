@@ -1,9 +1,11 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -220,6 +222,47 @@ func TestParseTag(t *testing.T) {
 			t.Errorf("parseTag(%q) = (%q, %q, %v), want (%q, %q, %v)",
 				c.tag, component, version, ok, c.wantComponent, c.wantVersion, c.wantOK)
 		}
+	}
+}
+
+func TestFetchPopulatesNotes(t *testing.T) {
+	respBody := `[
+		{
+			"tag_name": "fw/v1.4.0",
+			"published_at": "2026-04-20T12:00:00Z",
+			"body": "<!-- groomed:v1 -->\nThe 4-key, vanquished.",
+			"assets": [
+				{"name": "firmware-1.4.0.elf", "browser_download_url": "https://example.invalid/fw-1.4.0.elf"}
+			]
+		}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(respBody))
+	}))
+	defer srv.Close()
+
+	g := &GitHubReleases{
+		owner:   "test",
+		repo:    "test",
+		apiBase: srv.URL,
+		client:  srv.Client(),
+		ttl:     60,
+	}
+	idx, err := g.fetch(context.Background())
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	rel, ok := idx.Firmware.Releases["1.4.0"]
+	if !ok {
+		t.Fatalf("firmware 1.4.0 not found in index")
+	}
+	if rel.Notes != "The 4-key, vanquished." {
+		t.Errorf("Notes = %q, want %q", rel.Notes, "The 4-key, vanquished.")
 	}
 }
 
