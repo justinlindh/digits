@@ -647,3 +647,43 @@ func TestIsCallActive(t *testing.T) {
 		})
 	}
 }
+
+// Silent mode suppresses the bell but keeps LED + state transition.
+func TestController_IncomingRingSilentModeSuppressesBell(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+	c.SetSilentMode(true) // seeded from config at startup
+
+	c.HandleSignal("ring")
+
+	if c.State() != StateRINGING {
+		t.Fatalf("state: got %s, want RINGING", c.State())
+	}
+	for _, r := range cb.Rings() {
+		if r == true {
+			t.Error("expected no SendRing(true) while silent")
+		}
+	}
+	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
+		t.Errorf("expected SendLED(BLINK), got %v", cb.LEDs())
+	}
+}
+
+// Silent off behaves exactly like today.
+func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+	c.SetSilentMode(false)
+
+	c.HandleSignal("ring")
+
+	if c.State() != StateRINGING {
+		t.Fatalf("state: got %s", c.State())
+	}
+	if len(cb.Rings()) == 0 || cb.Rings()[0] != true {
+		t.Errorf("expected SendRing(true), got %v", cb.Rings())
+	}
+	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
+		t.Errorf("expected SendLED(BLINK), got %v", cb.LEDs())
+	}
+}
