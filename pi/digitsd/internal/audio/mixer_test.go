@@ -212,6 +212,54 @@ func TestMixerPlayOnce(t *testing.T) {
 	}
 }
 
+// TestMixerStopTonePreservesOnceQueue locks in the fix for the first-keypress
+// bug: the daemon layer queues a DTMF beep just before the FSM calls StopTone
+// to kill the dial tone loop. StopTone must stop only the loop, never wipe
+// the one-shot queue, or the beep is silently dropped before the render tick.
+func TestMixerStopTonePreservesOnceQueue(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+
+	loop := make([]int16, 960)
+	for i := range loop {
+		loop[i] = 100
+	}
+	beep := make([]int16, 480)
+	for i := range beep {
+		beep[i] = 500
+	}
+	mx.LoadTone("loop", loop)
+	mx.LoadTone("beep", beep)
+
+	// Replay the real sequence that hits on a first keypress in StateDIALTONE:
+	// dial tone is looping, daemon queues a DTMF one-shot, then the FSM fires
+	// StopTone. Do all three before Start so the first rendered period is
+	// deterministic.
+	mx.PlayLoop("loop")
+	mx.PlayOnce("beep")
+	mx.StopTone()
+
+	mx.Start()
+	time.Sleep(50 * time.Millisecond)
+	mx.Stop()
+
+	if len(w.periods) < 1 {
+		t.Fatal("no periods written")
+	}
+	p := w.periods[0]
+	// First 480 samples should be the beep (500), not silence or the loop.
+	if p[0] != 500 {
+		t.Errorf("sample 0: expected 500 (DTMF beep survived StopTone), got %d", p[0])
+	}
+	if p[479] != 500 {
+		t.Errorf("sample 479: expected 500, got %d", p[479])
+	}
+	// After the beep ends, we should be silent — the loop must have stopped.
+	if p[480] != 0 {
+		t.Errorf("sample 480: expected 0 (loop stopped, beep done), got %d", p[480])
+	}
+}
+
 func TestMixerPlayOnceOverLoop(t *testing.T) {
 	w := &mockWriter{}
 	mx := NewMixer(w)
