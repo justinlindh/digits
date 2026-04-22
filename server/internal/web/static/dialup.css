@@ -1108,10 +1108,66 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 /* --------- Responsive helpers --------- */
 
 .show-sm { display: none; }
+
 @media (max-width: 720px) {
   .hide-sm { display: none !important; }
   .show-sm { display: block; }
-  .dialup-body { flex-direction: column; }
-  .dialup-channels { width: auto; flex-direction: row; flex-wrap: wrap; }
-  .dialup-channel { flex: 1 1 120px; }
+
+  /* Reduce the teal desktop padding so every pixel counts. */
+  body.dialup { padding: 4px; }
+
+  /* Hide decorative chrome: title bar, menu bar, keyword bar. */
+  .dialup-title,
+  .dialup-menu,
+  .dialup-keyword { display: none; }
+
+  /* Toolbar collapses to a thin strip: hide the 32px icon buttons and
+     the separator; keep the welcome text + Sign Off button aligned right. */
+  .dialup-toolbar { padding: 3px 6px; gap: 6px; }
+  .dialup-toolbar__btn:not(.dialup-toolbar__btn--link) { display: none; }
+  .dialup-toolbar__sep { display: none; }
+  .dialup-toolbar__btn--link {
+    min-width: 0;
+    flex-direction: row;
+    gap: 4px;
+    padding: 3px 8px;
+  }
+  .dialup-toolbar__btn--link .dialup-toolbar__icon {
+    width: 16px;
+    height: 16px;
+  }
+  .dialup-toolbar__welcome {
+    margin-left: auto;
+    font-size: 11px;
+  }
+
+  /* Channels move from left sidebar to a horizontal scrolling strip. */
+  .dialup-body { flex-direction: column; min-height: 0; }
+  .dialup-channels {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 4px;
+    padding: 4px;
+  }
+  .dialup-channels__header { display: none; }
+  .dialup-channel {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .dialup-channel__icon { width: 16px; height: 16px; }
+
+  /* Main content no longer fights the sidebar for width. */
+  .dialup-main { padding: 8px; }
+
+  /* Status bar drops everything except the dot, bps, and version. */
+  .dialup-status { font-size: 10px; gap: 4px; padding: 2px 4px; }
+  .dialup-status__sep,
+  .dialup-status span:not(.num):not(.dialup-status__dot):not(.dialup-status__spacer) {
+    display: none;
+  }
 }

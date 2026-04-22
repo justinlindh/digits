@@ -1,4 +1,4 @@
-.PHONY: build build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css
+.PHONY: build build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -74,6 +74,53 @@ e2e-ci:
 	cd e2e && npm install --silent && \
 	npx playwright install --with-deps chromium && \
 	npx playwright test
+
+# ── Local dev environment ────────────────────────────────────────────────
+# Brings up a disposable Postgres in Docker, seeds a dialup-themed user,
+# and runs host-native signald against it. See server/README.md for details.
+#
+# Config lives in server/.env.dev (copy .env.dev.example to .env.dev to
+# customize). Each dev target sources .env.dev if it exists, otherwise
+# falls back to .env.dev.example defaults.
+
+DEV_ENV_FILE   ?= .env.dev
+DEV_DB_SERVICE ?= user-db
+DEV_COMPOSE     = docker compose -p digits-dev -f docker-compose.yml
+
+# Shell snippet (no trailing semicolon) that sources .env.dev or .env.dev.example
+# into the current shell and exports all assigned vars.
+DEV_ENV_SRC = set -a; if [ -f $(DEV_ENV_FILE) ]; then . ./$(DEV_ENV_FILE); else . ./.env.dev.example; fi; set +a
+
+dev-up:
+	@if [ ! -f $(DEV_ENV_FILE) ]; then \
+		echo "note: $(DEV_ENV_FILE) not found, using defaults from .env.dev.example"; \
+	fi
+	$(DEV_ENV_SRC); \
+	$(DEV_COMPOSE) up -d $(DEV_DB_SERVICE); \
+	echo "waiting for $(DEV_DB_SERVICE) to be healthy..."; \
+	for i in $$(seq 1 30); do \
+		status=$$($(DEV_COMPOSE) ps --format '{{.Health}}' $(DEV_DB_SERVICE) 2>/dev/null | head -n1); \
+		[ "$$status" = "healthy" ] && break; \
+		sleep 1; \
+	done; \
+	[ "$$status" = "healthy" ] || { echo "$(DEV_DB_SERVICE) failed to become healthy"; exit 1; }; \
+	echo "seeding dev user..."; \
+	go run ./cmd/devseed/; \
+	echo ""; \
+	echo "starting signald on $$SIGNALD_ADDR (Ctrl+C to stop; run 'make dev-down' to clean up)"; \
+	go build -o bin/signald ./cmd/signald/; \
+	./bin/signald
+
+dev-seed:
+	$(DEV_ENV_SRC); \
+	go run ./cmd/devseed/
+
+dev-down:
+	$(DEV_ENV_SRC); \
+	$(DEV_COMPOSE) down -v
+
+dev-logs:
+	$(DEV_COMPOSE) logs -f $(DEV_DB_SERVICE)
 
 clean:
 	rm -rf bin/

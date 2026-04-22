@@ -61,6 +61,10 @@ services:
       POSTGRES_DB: digits
       POSTGRES_USER: digits
       POSTGRES_PASSWORD: digits
+    # Expose on loopback only so host-native signald (make dev) can reach it.
+    # Production uses docker-compose.prod.yml and does not publish this port.
+    ports:
+      - "127.0.0.1:${DEV_DB_PORT:-5433}:5432"
     volumes:
       - user_pgdata:/var/lib/postgresql/data
     healthcheck:

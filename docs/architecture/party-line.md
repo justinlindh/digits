@@ -145,13 +145,3 @@ All handled and tested:
 | Server: data | `server/internal/calls/conference.go` (`ConferenceTracker`), `server/internal/calls/tracker.go` (persistence, history) |
 | Server: signalling | `server/internal/signaling/conference.go` (handlers), `server/internal/signaling/relay.go` (`handleHangup`, `OnDisconnect`) |
 | Webapp | `server/internal/web/templates/calls.html`, `server/internal/web/static/digits.css`, `dialup.css` |
-
-## Out of scope
-
-Deferred to future work, not shipped with this feature:
-
-- Four+ party conferences (mesh scales, but the plan caps at 3 for parity with residential POTS).
-- Three-way calling transfer (host drops out, other two keep talking).
-- Dial-in "shared room" party lines (a different user model: a household virtual number that anyone can pick up and join).
-- Admin dashboard UI for active-conferences monitoring or per-conference detail view.
-- Pre-established B↔C peer connection to eliminate the ~500 ms merge gap (the POTS bridge had a similar gap; not worth optimising).
