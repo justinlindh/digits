@@ -86,7 +86,7 @@ jobs:
             $(cat /tmp/commits.txt)
 
       - name: Update release body
-        if: steps.body.outputs.already_groomed != 'true' && steps.claude.outcome == 'success' && hashFiles('/tmp/groomed.md') != ''
+        if: steps.body.outputs.already_groomed != 'true' && steps.claude.outcome == 'success'
         run: |
           if [ ! -s /tmp/groomed.md ]; then
             echo "Groomed output is empty; leaving raw body in place."

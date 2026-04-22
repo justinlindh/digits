@@ -2384,9 +2384,15 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	conn := &signaling.Conn{Send: make(chan []byte, 8)}
+	// Drain Send so any hub fan-out to this fake device is silently discarded
+	// instead of blocking at the channel cap during interactive dev testing.
+	go func() {
+		for range conn.Send {
+		}
+	}()
 	h.hub.Register(number, conn)
 	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
+	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
 }
 
