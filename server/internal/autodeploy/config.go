@@ -2,6 +2,7 @@ package autodeploy
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -75,6 +76,9 @@ func LoadConfig(path string) (Config, error) {
 		AlertTo:        raw["ALERT_TO"],
 	}
 
+	// Optional secret files. A missing file is treated as "no value" so a
+	// box with public GHCR images (no token needed) doesn't have to invent
+	// an empty placeholder file just to satisfy config loading.
 	for _, r := range []struct {
 		name, pathKey string
 		dst           *string
@@ -83,13 +87,18 @@ func LoadConfig(path string) (Config, error) {
 		{"SMTP_PASS", "SMTP_PASS_FILE", &c.SMTPPass},
 		{"GITHUB_TOKEN", "GITHUB_TOKEN_FILE", &c.GitHubToken},
 	} {
-		if p := raw[r.pathKey]; p != "" {
-			b, err := os.ReadFile(p)
-			if err != nil {
-				return Config{}, fmt.Errorf("read %s=%s: %w", r.pathKey, p, err)
-			}
-			*r.dst = strings.TrimRight(string(b), "\r\n")
+		p := raw[r.pathKey]
+		if p == "" {
+			continue
 		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return Config{}, fmt.Errorf("read %s=%s: %w", r.pathKey, p, err)
+		}
+		*r.dst = strings.TrimRight(string(b), "\r\n")
 	}
 
 	durations := []struct {

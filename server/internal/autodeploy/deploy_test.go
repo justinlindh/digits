@@ -114,6 +114,40 @@ func TestDeployNoop_NotModified(t *testing.T) {
 	}
 }
 
+func TestDeployHappyPath_NoGHCRToken_SkipsLogin(t *testing.T) {
+	// With an empty GHCRToken (public images), docker login is unnecessary
+	// and would fail with empty stdin. autodeploy must skip it and proceed
+	// straight to pull + up.
+	runner := &mockRunner{}
+	cfg := baseCfg()
+	cfg.GHCRToken = ""
+	d := &Deployer{
+		Cfg:    cfg,
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Runner: runner, Health: &mockHealth{}, Mailer: &mockMailer{},
+		Store: &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
+		Now:   func() time.Time { return time.Unix(1000, 0).UTC() },
+	}
+	res, err := d.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Action != ActionDeployed {
+		t.Errorf("action=%q", res.Action)
+	}
+	for _, c := range runner.calls {
+		if c.Name == "docker" && len(c.Args) > 0 && c.Args[0] == "login" {
+			t.Errorf("docker login was invoked despite empty GHCRToken: %v", c.Args)
+		}
+	}
+	if len(runner.calls) == 0 {
+		t.Fatal("no runner calls")
+	}
+	if !strings.Contains(strings.Join(runner.calls[0].Args, " "), "pull") {
+		t.Errorf("first call should be pull when login is skipped, got: %v", runner.calls[0].Args)
+	}
+}
+
 func TestDeployHappyPath(t *testing.T) {
 	runner := &mockRunner{}
 	mailer := &mockMailer{}
