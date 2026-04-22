@@ -81,6 +81,16 @@
         </div>
       </section>
 
+      <!-- Ringer -->
+      <section class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">Ringer</h2>
+        </header>
+        <div class="panel__body">
+          {{template "silent-mode-section" .}}
+        </div>
+      </section>
+
     </div>
 
     <!-- Right: operator service panel (collapsed by default) -->
@@ -485,6 +495,25 @@
       <p class="radio-card__desc">Full-range clean audio. No coloration, maximum clarity.</p>
     </label>
     <button type="submit" class="btn btn--primary" style="margin-top: 6px;">Save</button>
+  </form>
+</div>
+{{end}}
+
+{{define "silent-mode-section"}}
+<div id="silent-mode-section">
+  <form hx-post="/phones/{{.Line.Number}}/silent-mode"
+        hx-target="#silent-mode-section"
+        hx-swap="outerHTML"
+        class="stack-sm">
+    <label class="toggle">
+      <input type="checkbox" name="silent_mode" value="on"
+             {{if .Line.Settings.SilentMode}}checked{{end}}
+             onchange="this.form.requestSubmit()">
+      <span class="toggle__label">Silent mode</span>
+    </label>
+    <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
+      Incoming calls won't ring. The light still flashes and you can still answer.
+    </p>
   </form>
 </div>
 {{end}}
