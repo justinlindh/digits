@@ -231,6 +231,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
+	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -1631,6 +1632,25 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 	theme := auth.Theme(r.FormValue("theme"))
 	if err := h.authStore.SetTheme(user.ID, theme); err != nil {
 		slog.Error("set theme failed", "err", err, "theme", theme)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsCRTMode(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	mode := auth.CRTMode(r.FormValue("crt_mode"))
+	if err := h.authStore.SetCRTMode(user.ID, mode); err != nil {
+		slog.Error("set crt_mode failed", "err", err, "crt_mode", mode)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
