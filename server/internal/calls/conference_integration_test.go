@@ -6,8 +6,21 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
+
+type fakeHealthLifecycle struct {
+	inits      []int64
+	evicts     []int64
+	confInits  []uuid.UUID
+	confEvicts []uuid.UUID
+}
+
+func (f *fakeHealthLifecycle) Init(id int64)                { f.inits = append(f.inits, id) }
+func (f *fakeHealthLifecycle) Evict(id int64)               { f.evicts = append(f.evicts, id) }
+func (f *fakeHealthLifecycle) InitConference(id uuid.UUID)  { f.confInits = append(f.confInits, id) }
+func (f *fakeHealthLifecycle) EvictConference(id uuid.UUID) { f.confEvicts = append(f.confEvicts, id) }
 
 func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	d := openTestDB(t)
@@ -137,6 +150,88 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 	// The dropped member is not busy.
 	if tr.Busy(context.Background(), "5550101") {
 		t.Fatalf("dropped member should not be busy")
+	}
+}
+
+func TestConferenceLifecycleHooks(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+	h := &fakeHealthLifecycle{}
+	tr.SetHealthStore(h)
+
+	ctx := context.Background()
+	hostNum := "+15555550001"
+	m2 := "+15555550002"
+	m3 := "+15555550003"
+
+	// Seed two 2-party calls between the host and the two added members.
+	for _, callee := range []string{m2, m3} {
+		if _, err := tr.OnCallInitiated(ctx, hostNum, callee); err != nil {
+			t.Fatalf("OnCallInitiated %s->%s: %v", hostNum, callee, err)
+		}
+		if err := tr.OnCallAnswered(ctx, hostNum, callee); err != nil {
+			t.Fatalf("OnCallAnswered %s->%s: %v", hostNum, callee, err)
+		}
+	}
+
+	originatingCallID := tr.CallIDForPair(ctx, hostNum, m2)
+	if originatingCallID == 0 {
+		t.Fatal("CallIDForPair returned 0 for originating pair")
+	}
+
+	conf, err := tr.CreateConferencePersistent(ctx, hostNum, originatingCallID, []string{m2, m3})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	if len(h.confInits) != 1 || h.confInits[0] != conf.ID {
+		t.Fatalf("InitConference calls: got %v want [%s]", h.confInits, conf.ID)
+	}
+
+	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	if len(h.confEvicts) != 1 || h.confEvicts[0] != conf.ID {
+		t.Fatalf("EvictConference calls: got %v want [%s]", h.confEvicts, conf.ID)
+	}
+}
+
+func TestDropMemberFiresEvictConference(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+	h := &fakeHealthLifecycle{}
+	tr.SetHealthStore(h)
+
+	ctx := context.Background()
+	hostNum := "+15555550001"
+	m2 := "+15555550002"
+	m3 := "+15555550003"
+
+	for _, callee := range []string{m2, m3} {
+		if _, err := tr.OnCallInitiated(ctx, hostNum, callee); err != nil {
+			t.Fatalf("OnCallInitiated: %v", err)
+		}
+		if err := tr.OnCallAnswered(ctx, hostNum, callee); err != nil {
+			t.Fatalf("OnCallAnswered: %v", err)
+		}
+	}
+	originatingCallID := tr.CallIDForPair(ctx, hostNum, m2)
+	conf, err := tr.CreateConferencePersistent(ctx, hostNum, originatingCallID, []string{m2, m3})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	_, ended, err := tr.DropMemberPersistent(ctx, conf.ID, m3, "kick")
+	if err != nil {
+		t.Fatalf("DropMemberPersistent: %v", err)
+	}
+	if !ended {
+		t.Fatal("v1 DropMember should end the conference (3 -> 2 terminates)")
+	}
+
+	if len(h.confEvicts) != 1 || h.confEvicts[0] != conf.ID {
+		t.Fatalf("EvictConference from DropMember: got %v want [%s]", h.confEvicts, conf.ID)
 	}
 }
 
