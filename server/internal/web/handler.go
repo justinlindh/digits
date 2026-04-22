@@ -80,7 +80,8 @@ type Handler struct {
 }
 
 type HandlerConfig struct {
-	Addr string
+	Addr    string
+	DevMode bool
 }
 
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
@@ -213,6 +214,13 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "static/test-client.html")
 	})
+
+	// Dev-only: seed a fake hub entry so e2e tests can exercise the firmware
+	// update chip without a real device connection. Only registered when
+	// DevMode is true.
+	if h.cfg.DevMode {
+		mux.HandleFunc("POST /dev/seed-firmware", h.handleDevSeedFirmware)
+	}
 
 	// Protected routes — require valid session
 	protected := http.NewServeMux()
@@ -2121,5 +2129,25 @@ func isHTMX(r *http.Request) bool {
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
 	return data
+}
+
+// handleDevSeedFirmware registers a fake hub entry for a line number with the
+// given firmware version. It is only reachable when DevMode is true and lets
+// the Playwright e2e suite exercise the firmware update chip without a real
+// device connection.
+//
+// POST /dev/seed-firmware?number=<line-number>&fw=<semver>
+func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) {
+	number := r.URL.Query().Get("number")
+	fw := r.URL.Query().Get("fw")
+	if number == "" || fw == "" {
+		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
+		return
+	}
+	conn := &signaling.Conn{Send: make(chan []byte, 8)}
+	h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
 }
 

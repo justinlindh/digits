@@ -113,14 +113,18 @@ func main() {
 
 	// Create web handler
 	handler, err := web.NewHandler(lineStore, deviceStore, hub, tracker, relay, web.HandlerConfig{
-		Addr: cfg.Addr,
+		Addr:    cfg.Addr,
+		DevMode: cfg.DevMode,
 	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, cfg.BaseURL, cfg.AdminSecret)
 	if err != nil {
 		log.Fatalf("create handler: %v", err)
 	}
 
-	// GitHub-backed release index
-	if ghRepo := os.Getenv("GITHUB_REPO"); ghRepo != "" {
+	// Release index: prefer a static fixture (e2e/CI) over live GitHub data.
+	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
+		handler.Releases = updates.FakeReleaseIndex()
+		slog.Info("updates: using fake release index (TEST_FAKE_UPDATES=1)")
+	} else if ghRepo := os.Getenv("GITHUB_REPO"); ghRepo != "" {
 		parts := strings.SplitN(ghRepo, "/", 2)
 		if len(parts) == 2 {
 			gh := updates.NewGitHubReleases(parts[0], parts[1], os.Getenv("GITHUB_TOKEN"), 300) // 5 min cache
