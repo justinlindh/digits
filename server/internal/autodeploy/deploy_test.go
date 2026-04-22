@@ -143,8 +143,11 @@ func TestDeployHappyPath_NoGHCRToken_SkipsLogin(t *testing.T) {
 	if len(runner.calls) == 0 {
 		t.Fatal("no runner calls")
 	}
-	if !strings.Contains(strings.Join(runner.calls[0].Args, " "), "pull") {
-		t.Errorf("first call should be pull when login is skipped, got: %v", runner.calls[0].Args)
+	// Strip the manifest-inspect pre-flight calls (one per service) before
+	// asserting on the post-preflight sequence.
+	post := runner.calls[len(baseCfg().Services):]
+	if len(post) == 0 || !strings.Contains(strings.Join(post[0].Args, " "), "pull") {
+		t.Errorf("first post-preflight call should be pull when login is skipped, got: %v", post)
 	}
 }
 
@@ -179,20 +182,71 @@ func TestDeployHappyPath(t *testing.T) {
 	for _, c := range runner.calls {
 		names = append(names, c.Name+" "+strings.Join(c.Args, " "))
 	}
-	if len(names) < 3 {
-		t.Fatalf("not enough runner calls: %v", names)
+	// First N calls are manifest-inspect pre-flight (one per service); the
+	// deploy sequence (login/pull/up) follows.
+	post := names[len(baseCfg().Services):]
+	if len(post) < 3 {
+		t.Fatalf("not enough post-preflight runner calls: %v", names)
 	}
-	if !strings.Contains(names[0], "login") {
-		t.Errorf("first call not login: %s", names[0])
+	if !strings.Contains(post[0], "login") {
+		t.Errorf("first post-preflight call not login: %s", post[0])
 	}
-	if !strings.Contains(names[1], "pull") {
-		t.Errorf("second call not pull: %s", names[1])
+	if !strings.Contains(post[1], "pull") {
+		t.Errorf("second post-preflight call not pull: %s", post[1])
 	}
-	if !strings.Contains(names[2], "up") || !strings.Contains(names[2], "--wait") {
-		t.Errorf("third call not up --wait: %s", names[2])
+	if !strings.Contains(post[2], "up") || !strings.Contains(post[2], "--wait") {
+		t.Errorf("third post-preflight call not up --wait: %s", post[2])
 	}
 	if len(mailer.sent) != 0 {
 		t.Errorf("email sent on success: %+v", mailer.sent)
+	}
+}
+
+func TestDeploy_ImagesNotReady_SkipsAndExitsClean(t *testing.T) {
+	// CI race: semantic-release publishes the GitHub Release before
+	// publish-images finishes pushing to GHCR. Autodeploy must wait quietly:
+	// no in-progress state write (would trip spin-protection), no email, no
+	// pull/up. Next tick retries once the manifests land.
+	runner := &mockRunner{errs: map[string]error{
+		"docker manifest": errors.New("manifest unknown"),
+	}}
+	mailer := &mockMailer{}
+	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
+	d := &Deployer{
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
+	}
+	res, err := d.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Action != ActionImagesNotReady {
+		t.Errorf("action=%q, want %q", res.Action, ActionImagesNotReady)
+	}
+	if res.Tag != "server/v1.9.1" {
+		t.Errorf("tag=%q", res.Tag)
+	}
+	if store.s.LastAttemptTag != "" {
+		t.Errorf("LastAttemptTag=%q, want empty (must not activate spin-protection)", store.s.LastAttemptTag)
+	}
+	if store.s.LastAttemptStatus != "" {
+		t.Errorf("LastAttemptStatus=%q, want empty", store.s.LastAttemptStatus)
+	}
+	if store.s.LastDeployedTag != "server/v1.9.0" {
+		t.Errorf("LastDeployedTag changed to %q", store.s.LastDeployedTag)
+	}
+	if len(mailer.sent) != 0 {
+		t.Errorf("email sent on images-not-ready: %+v", mailer.sent)
+	}
+	if len(runner.calls) == 0 {
+		t.Fatal("no manifest inspect call was made")
+	}
+	for _, c := range runner.calls {
+		if len(c.Args) < 1 || c.Args[0] != "manifest" {
+			t.Errorf("unexpected runner call (should only be manifest inspect): %v", c.Args)
+		}
 	}
 }
 
@@ -220,9 +274,10 @@ func TestDeploy_LoginFails(t *testing.T) {
 		t.Errorf("LastAttemptStatus=%q", store.s.LastAttemptStatus)
 	}
 	// Login failure must NOT trigger a revert: nothing was pulled or restarted,
-	// so the only docker call should be the failed login itself.
-	if len(runner.calls) != 1 {
-		t.Errorf("expected exactly 1 runner call (the failed login), got %d", len(runner.calls))
+	// so the only non-preflight docker call should be the failed login itself.
+	want := len(baseCfg().Services) + 1 // N manifest-inspect + 1 login
+	if len(runner.calls) != want {
+		t.Errorf("expected %d runner calls (preflight + failed login), got %d", want, len(runner.calls))
 	}
 	if len(mailer.sent) != 1 {
 		t.Fatalf("expected 1 email, got %d", len(mailer.sent))

@@ -15,12 +15,13 @@ import (
 type Action string
 
 const (
-	ActionNoop       Action = "noop"
-	ActionSkipFailed Action = "skip_failed_tag"
-	ActionDeployed   Action = "deployed"
-	ActionReverted   Action = "reverted"
-	ActionFailed     Action = "failed"
-	ActionCritical   Action = "critical"
+	ActionNoop           Action = "noop"
+	ActionSkipFailed     Action = "skip_failed_tag"
+	ActionImagesNotReady Action = "images_not_ready"
+	ActionDeployed       Action = "deployed"
+	ActionReverted       Action = "reverted"
+	ActionFailed         Action = "failed"
+	ActionCritical       Action = "critical"
 )
 
 // Step identifies which phase of a deploy attempt produced an error.
@@ -140,6 +141,23 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 
 	version := strings.TrimPrefix(rel.TagName, d.Cfg.TagPrefix)
 	prevVersion := strings.TrimPrefix(state.LastDeployedTag, d.Cfg.TagPrefix)
+
+	// Pre-flight: verify all images exist in GHCR before committing to a
+	// deploy. CI publishes the GitHub Release before publish-images finishes
+	// pushing, leaving a window where the release is visible but `docker pull`
+	// returns "manifest unknown". Proceeding would trip spin-protection and
+	// require a manual --retry. Instead, exit cleanly and retry next tick.
+	for _, svc := range d.Cfg.Services {
+		img := fmt.Sprintf("ghcr.io/%s/%s:v%s", d.Cfg.Repo, svc, version)
+		if _, err := d.Runner.Run(ctx, RunSpec{
+			Name: "docker", Args: []string{"manifest", "inspect", img},
+		}); err != nil {
+			d.log().Info("images not yet pushed for tag, will retry",
+				"tag", rel.TagName, "service", svc, "image", img, "err", err)
+			return Result{Action: ActionImagesNotReady, Tag: rel.TagName}, nil
+		}
+	}
+
 	d.log().Info("new release, deploying", "tag", rel.TagName, "commit", rel.CommitSHA, "version", version)
 
 	state.LastAttemptTag = rel.TagName
