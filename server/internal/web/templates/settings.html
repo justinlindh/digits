@@ -278,11 +278,13 @@
 <script>
 (function () {
   // Settings section scrollspy: highlights the .settings-nav item
-  // whose target section is currently in the middle of the viewport.
-  // Also updates on click so the active state switches instantly,
-  // before the scroll animation has caught up.
+  // whose target section is currently under a focus line about 25%
+  // down the viewport. When the viewport is at the bottom of the page
+  // (typical for short final sections that can't scroll up to the
+  // focus line), force the last section's link active so the user
+  // can still "reach" it.
   var nav = document.querySelector('.settings-nav');
-  if (!nav || typeof IntersectionObserver === 'undefined') return;
+  if (!nav) return;
   var links = nav.querySelectorAll('.settings-nav__item');
   if (!links.length) return;
 
@@ -304,21 +306,73 @@
     if (byId[id]) byId[id].classList.add('is-active');
   }
 
-  // rootMargin carves a horizontal band roughly 20-30% from the top of
-  // the viewport; the section crossing that band is the active one.
-  var observer = new IntersectionObserver(function (entries) {
-    var best = null;
-    var bestTop = Infinity;
-    entries.forEach(function (e) {
-      if (e.isIntersecting && e.boundingClientRect.top < bestTop) {
-        best = e.target;
-        bestTop = e.boundingClientRect.top;
-      }
-    });
-    if (best) setActive(best.id);
-  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+  // Resolve the real scroll container. In CRT-all mode the
+  // .dialup-window is the scroller (overflow-y: auto inside the
+  // bezel). Otherwise the page itself scrolls via window.
+  var scroller = document.querySelector('body.crt-all .dialup-window');
+  function scrollMetrics() {
+    if (scroller) {
+      return {
+        scrollTop: scroller.scrollTop,
+        viewHeight: scroller.clientHeight,
+        pageHeight: scroller.scrollHeight,
+      };
+    }
+    var doc = document.documentElement;
+    return {
+      scrollTop: window.scrollY || doc.scrollTop,
+      viewHeight: window.innerHeight || doc.clientHeight,
+      pageHeight: Math.max(doc.scrollHeight, document.body.scrollHeight),
+    };
+  }
 
-  sections.forEach(function (s) { observer.observe(s); });
+  function sectionTopRelative(sec) {
+    // Position of section top within the scroller's coordinate system.
+    if (scroller) {
+      return sec.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    }
+    return sec.getBoundingClientRect().top + (window.scrollY || document.documentElement.scrollTop);
+  }
+
+  function update() {
+    var m = scrollMetrics();
+
+    // Bottom-of-page clamp: if there's no more scroll room, the last
+    // section is "what you're looking at" regardless of its top.
+    if (m.scrollTop + m.viewHeight >= m.pageHeight - 4) {
+      setActive(sections[sections.length - 1].id);
+      return;
+    }
+
+    // Walk sections top-down and keep the last one whose top sits
+    // above the focus line (25% from the top of the viewport).
+    var focusLine = m.scrollTop + m.viewHeight * 0.25;
+    var active = sections[0];
+    for (var i = 0; i < sections.length; i++) {
+      if (sectionTopRelative(sections[i]) <= focusLine) {
+        active = sections[i];
+      } else {
+        break;
+      }
+    }
+    setActive(active.id);
+  }
+
+  // rAF-throttle so rapid scroll events don't thrash the DOM.
+  var scheduled = false;
+  function onScroll() {
+    if (scheduled) return;
+    scheduled = true;
+    window.requestAnimationFrame(function () {
+      scheduled = false;
+      update();
+    });
+  }
+
+  var scrollTarget = scroller || window;
+  scrollTarget.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll);
+  update();
 
   links.forEach(function (link) {
     link.addEventListener('click', function () {
