@@ -1185,22 +1185,22 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .show-sm { display: block; }
 }
 
-/* Ringer panel: checkbox toggle paired with a label. Mirrors .radio-card
-   spacing so the Ringer section visually sits next to Voice style. */
-.toggle {
+/* Ringer panel: checkbox-with-label row. Distinct from the .toggle pill-switch
+   used elsewhere; this is a plain native checkbox paired with text. */
+.checkbox-row {
   display: flex;
   align-items: center;
   gap: 10px;
   cursor: pointer;
   user-select: none;
 }
-.toggle input[type="checkbox"] {
+.checkbox-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
   cursor: pointer;
   accent-color: var(--ink);
 }
-.toggle__label {
+.checkbox-row__label {
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);

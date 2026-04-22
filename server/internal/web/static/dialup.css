@@ -1334,8 +1334,8 @@ body.crt-all .crt__brand::after {
 }
 
 /* Dialup: the Ringer panel is a Win95 groupbox-style frame. The checkbox
-   uses native rendering with a small inset well for authenticity. */
-body.dialup .toggle {
+   uses native rendering with the Win95 highlight blue. */
+body.dialup .checkbox-row {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1343,14 +1343,14 @@ body.dialup .toggle {
   font-size: 13px;
   cursor: pointer;
 }
-body.dialup .toggle input[type="checkbox"] {
+body.dialup .checkbox-row input[type="checkbox"] {
   width: 15px;
   height: 15px;
   margin: 0;
   accent-color: #000080;
   cursor: pointer;
 }
-body.dialup .toggle__label {
+body.dialup .checkbox-row__label {
   color: #000;
   font-weight: normal;
 }
