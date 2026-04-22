@@ -330,7 +330,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("GET /static/", staticFileServer(h.cfg.DevMode, h.cfg.DevStaticDir))
 
 	// Health check — no auth required
-	mux.HandleFunc("GET /healthz", httputil.Healthz())
+	mux.HandleFunc("GET /healthz", httputil.Healthz(version.Version))
 
 	// Public routes — no auth required
 	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
