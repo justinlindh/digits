@@ -44,6 +44,11 @@ jobs:
           else
             echo "already_groomed=false" >> "$GITHUB_OUTPUT"
           fi
+          {
+            echo 'RAW_BODY<<GROOM_EOF_RAW'
+            cat /tmp/raw.md
+            echo 'GROOM_EOF_RAW'
+          } >> "$GITHUB_ENV"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -63,6 +68,11 @@ jobs:
             git log --format='%s' "${TAG}" -n 50 > /tmp/commits.txt
           fi
           wc -l /tmp/commits.txt
+          {
+            echo 'COMMITS<<GROOM_EOF_COMMITS'
+            cat /tmp/commits.txt
+            echo 'GROOM_EOF_COMMITS'
+          } >> "$GITHUB_ENV"
 
       - name: Groom notes with Claude
         if: steps.body.outputs.already_groomed != 'true'
@@ -74,16 +84,19 @@ jobs:
           claude_args: >-
             --model claude-sonnet-4-6
             --append-system-prompt-file .github/release-voice.md
+            --allowedTools Write Bash
           prompt: |
-            Groom the following release notes for the Digits release ${{ env.TAG }}.
-            Output only the groomed markdown body per the system prompt's
-            output-format section. Write the output to /tmp/groomed.md.
+            Groom these release notes for the Digits release ${{ env.TAG }}.
+            Use the Write tool (or a Bash heredoc) to save your output to
+            exactly /tmp/groomed.md. The first line of the file must be the
+            sentinel `<!-- groomed:v1 -->`. Nothing else. No preamble in chat,
+            no explanation, just write the file.
 
             Raw release body:
-            $(cat /tmp/raw.md)
+            ${{ env.RAW_BODY }}
 
             Commits in this release:
-            $(cat /tmp/commits.txt)
+            ${{ env.COMMITS }}
 
       - name: Update release body
         if: steps.body.outputs.already_groomed != 'true' && steps.claude.outcome == 'success'
