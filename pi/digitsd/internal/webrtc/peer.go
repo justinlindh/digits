@@ -167,6 +167,12 @@ func (m *PeerManager) LocalTrack() *webrtc.TrackLocalStaticSample {
 	return m.track
 }
 
+// GetStats returns a snapshot of WebRTC statistics for this peer. Safe to
+// call concurrently with audio; Pion's stats collector is thread-safe.
+func (m *PeerManager) GetStats() webrtc.StatsReport {
+	return m.pc.GetStats()
+}
+
 // Close closes the underlying PeerConnection.
 func (m *PeerManager) Close() error {
 	return m.pc.Close()

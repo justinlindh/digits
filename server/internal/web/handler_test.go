@@ -56,7 +56,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "", nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
