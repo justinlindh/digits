@@ -276,3 +276,86 @@ func TestWriteSampleConferencePostV20(t *testing.T) {
 		t.Fatalf("cascade delete broken; got %d rows want 0", rowCount)
 	}
 }
+
+func TestWriteSampleConferenceIdempotent(t *testing.T) {
+	d := setupTestDB(t)
+
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed originating call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	loss := float32(2.0)
+	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss}
+
+	for i := 0; i < 2; i++ {
+		if err := s.writeSample(context.Background(),
+			SessionKey{ConfID: confID},
+			endpointKey{From: "+15555550001", Peer: "+15555550002"},
+			sample,
+		); err != nil {
+			t.Fatalf("writeSample iteration %d: %v", i, err)
+		}
+	}
+
+	var rowCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM call_link_health WHERE conference_id = $1`, confID,
+	).Scan(&rowCount); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if rowCount != 1 {
+		t.Fatalf("conference ON CONFLICT DO NOTHING broken; got %d rows want 1", rowCount)
+	}
+}
+
+func TestWriteSampleConferenceRejectsEmptyPeer(t *testing.T) {
+	d := setupTestDB(t)
+
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed originating call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	err := s.writeSample(context.Background(),
+		SessionKey{ConfID: confID},
+		endpointKey{From: "+15555550001", Peer: ""},
+		Sample{TS: time.Unix(0, 1)},
+	)
+	if err == nil {
+		t.Fatal("writeSample with empty Peer on conference key must return an error")
+	}
+
+	// No row should have been inserted.
+	var rowCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM call_link_health WHERE conference_id = $1`, confID,
+	).Scan(&rowCount); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if rowCount != 0 {
+		t.Fatalf("no row should be inserted when empty-peer rejected; got %d", rowCount)
+	}
+}

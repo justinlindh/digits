@@ -539,6 +539,9 @@ func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sess
 // (no conflict target) handles either of the two partial unique indexes
 // introduced by the v20 migration, so idempotency works for both kinds.
 func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpointKey, sample Sample) error {
+	if key.IsConf() && ep.Peer == "" {
+		return fmt.Errorf("writeSample: conference session requires non-empty peer (from=%q)", ep.From)
+	}
 	var (
 		callID sql.NullInt64
 		confID sql.NullString
@@ -546,7 +549,7 @@ func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpoi
 	)
 	if key.IsConf() {
 		confID = sql.NullString{String: key.ConfID.String(), Valid: true}
-		peer = sql.NullString{String: ep.Peer, Valid: ep.Peer != ""}
+		peer = sql.NullString{String: ep.Peer, Valid: true}
 	} else {
 		callID = sql.NullInt64{Int64: key.CallID, Valid: key.CallID != 0}
 	}
