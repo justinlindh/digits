@@ -14,6 +14,95 @@
      via CSS. Use viewBox="0 0 80 80", fill="none", stroke="currentColor". */}}
 {{define "house-icon"}}<path d="M10 40 L40 16 L70 40 L70 66 Q70 68 68 68 L12 68 Q10 68 10 66 Z"/><rect x="33" y="50" width="14" height="18" rx="1"/><rect x="18" y="44" width="10" height="10"/><rect x="52" y="44" width="10" height="10"/><path d="M58 12 L58 30" stroke-linecap="round"/><circle cx="58" cy="10" r="2" fill="currentColor"/>{{end}}
 
+{{/* house-icon-dialup-spoke emits a chunky Win98 pixel-art house with
+     a roof-mounted antenna and two gold signal arcs overhead. Each
+     family spoke on /links uses this in the dialup theme. Dark-blue
+     windows. viewBox 0 0 80 80, matches house-icon for CSS parity. */}}
+{{define "house-icon-dialup-spoke"}}
+<g class="dialup-house__antenna">
+<path d="M 12 4 A 10 10 0 0 1 28 4" fill="none" stroke="#d69e00" stroke-width="1.5"/>
+<path d="M 8 1 A 14 14 0 0 1 32 1" fill="none" stroke="#d69e00" stroke-width="1" opacity="0.7"/>
+<line x1="20" y1="6" x2="20" y2="18" stroke="#000" stroke-width="1.5"/>
+<circle cx="20" cy="5" r="2" fill="#000"/>
+</g>
+<rect x="17" y="14" width="6" height="12" fill="#804f00"/>
+<rect x="17" y="14" width="6" height="1" fill="#a67000"/>
+<rect x="22" y="14" width="1" height="12" fill="#402500"/>
+<polygon points="10,36 40,18 70,36" fill="#c41e16"/>
+<polygon points="14,36 40,20 66,36" fill="#e87a0f" opacity="0.35"/>
+<rect x="10" y="36" width="60" height="42" fill="#ece9d8"/>
+<rect x="10" y="36" width="60" height="2" fill="#ffffff"/>
+<rect x="10" y="36" width="2" height="42" fill="#ffffff"/>
+<rect x="68" y="36" width="2" height="42" fill="#808080"/>
+<rect x="10" y="76" width="60" height="2" fill="#808080"/>
+<rect x="35" y="56" width="10" height="22" fill="#804f00"/>
+<rect x="35" y="56" width="10" height="1" fill="#402500"/>
+<rect x="35" y="56" width="1" height="22" fill="#402500"/>
+<rect x="44" y="56" width="1" height="22" fill="#1a0e00"/>
+<circle cx="42" cy="68" r="1.4" fill="#ffcc00"/>
+<rect x="18" y="46" width="10" height="8" fill="#003da7"/>
+<rect x="18" y="46" width="10" height="1" fill="#000000"/>
+<rect x="18" y="46" width="1" height="8" fill="#000000"/>
+<line x1="23" y1="46" x2="23" y2="54" stroke="#7ab4ff" stroke-width="0.5"/>
+<line x1="18" y1="50" x2="28" y2="50" stroke="#7ab4ff" stroke-width="0.5"/>
+<rect x="52" y="46" width="10" height="8" fill="#003da7"/>
+<rect x="52" y="46" width="10" height="1" fill="#000000"/>
+<rect x="52" y="46" width="1" height="8" fill="#000000"/>
+<line x1="57" y1="46" x2="57" y2="54" stroke="#7ab4ff" stroke-width="0.5"/>
+<line x1="52" y1="50" x2="62" y2="50" stroke="#7ab4ff" stroke-width="0.5"/>
+{{end}}
+
+{{/* house-icon-dialup-center is the same silhouette as the spoke but
+     with warm-lit gold windows - "the lights are on" marker for the
+     user's own household at the hub center. */}}
+{{define "house-icon-dialup-center"}}
+<g class="dialup-house__antenna">
+<path d="M 12 4 A 10 10 0 0 1 28 4" fill="none" stroke="#d69e00" stroke-width="1.5"/>
+<path d="M 8 1 A 14 14 0 0 1 32 1" fill="none" stroke="#d69e00" stroke-width="1" opacity="0.7"/>
+<line x1="20" y1="6" x2="20" y2="18" stroke="#000" stroke-width="1.5"/>
+<circle cx="20" cy="5" r="2" fill="#000"/>
+</g>
+<rect x="17" y="14" width="6" height="12" fill="#804f00"/>
+<rect x="17" y="14" width="6" height="1" fill="#a67000"/>
+<rect x="22" y="14" width="1" height="12" fill="#402500"/>
+<polygon points="10,36 40,18 70,36" fill="#c41e16"/>
+<polygon points="14,36 40,20 66,36" fill="#e87a0f" opacity="0.35"/>
+<rect x="10" y="36" width="60" height="42" fill="#fffbf0"/>
+<rect x="10" y="36" width="60" height="2" fill="#ffffff"/>
+<rect x="10" y="36" width="2" height="42" fill="#ffffff"/>
+<rect x="68" y="36" width="2" height="42" fill="#808080"/>
+<rect x="10" y="76" width="60" height="2" fill="#808080"/>
+<rect x="35" y="56" width="10" height="22" fill="#804f00"/>
+<rect x="35" y="56" width="10" height="1" fill="#402500"/>
+<rect x="35" y="56" width="1" height="22" fill="#402500"/>
+<rect x="44" y="56" width="1" height="22" fill="#1a0e00"/>
+<circle cx="42" cy="68" r="1.4" fill="#ffcc00"/>
+<rect x="18" y="46" width="10" height="8" fill="#ffcc00"/>
+<rect x="18" y="46" width="10" height="1" fill="#d69e00"/>
+<rect x="18" y="46" width="1" height="8" fill="#d69e00"/>
+<line x1="23" y1="46" x2="23" y2="54" stroke="#804f00" stroke-width="0.5"/>
+<line x1="18" y1="50" x2="28" y2="50" stroke="#804f00" stroke-width="0.5"/>
+<rect x="52" y="46" width="10" height="8" fill="#ffcc00"/>
+<rect x="52" y="46" width="10" height="1" fill="#d69e00"/>
+<rect x="52" y="46" width="1" height="8" fill="#d69e00"/>
+<line x1="57" y1="46" x2="57" y2="54" stroke="#804f00" stroke-width="0.5"/>
+<line x1="52" y1="50" x2="62" y2="50" stroke="#804f00" stroke-width="0.5"/>
+{{end}}
+
+{{/* postcard-stamp-dialup renders the /links invite-postcard stamp in
+     pixel-art: a gold dashed-border frame holding a blue-inked
+     "DIGITS / NEIGHBORHOOD" postmark. Replaces the soft house-icon
+     stamp that ships with the intercom theme. */}}
+{{define "postcard-stamp-dialup"}}
+<div class="postcard__stamp-mark" aria-hidden="true">
+  <div class="postcard__stamp-mark-frame">
+    <div class="postcard__stamp-mark-line postcard__stamp-mark-line--top">DIGITS</div>
+    <div class="postcard__stamp-mark-center">&#x2605;</div>
+    <div class="postcard__stamp-mark-line">NEIGHBORHOOD</div>
+  </div>
+</div>
+{{end}}
+
 {{/* confirm-dialog is a page-level modal triggered by elements that carry
      data-confirm attributes. Replaces the browser confirm() prompt with
      themed UI. Used for Cancel-pending-invite, Disconnect-family, and any
@@ -32,9 +121,16 @@
      Supports htmx for hx-post triggers via data-confirm-hx="post". */}}
 {{define "confirm-dialog"}}
 <dialog id="confirm-dialog" class="confirm-dialog">
-  <form method="POST" id="confirm-dialog__form">
-    <h3 id="confirm-dialog__title" class="confirm-dialog__title"></h3>
-    <p id="confirm-dialog__body" class="confirm-dialog__body"></p>
+  <div class="confirm-dialog__titlebar" aria-hidden="true">
+    <span class="confirm-dialog__titlebar-title">Confirm action</span>
+    <span class="confirm-dialog__titlebar-x">&#x2715;</span>
+  </div>
+  <form method="POST" id="confirm-dialog__form" class="confirm-dialog__body-wrap">
+    <span class="confirm-dialog__glyph" aria-hidden="true">&#x26A0;</span>
+    <div class="confirm-dialog__body-col">
+      <h3 id="confirm-dialog__title" class="confirm-dialog__title"></h3>
+      <p id="confirm-dialog__body" class="confirm-dialog__body"></p>
+    </div>
     <div class="confirm-dialog__actions">
       <button type="button" id="confirm-dialog__cancel" class="btn btn--quiet">Never mind</button>
       <button type="submit" id="confirm-dialog__submit" class="btn btn--danger"></button>
@@ -50,7 +146,11 @@
   var body = document.getElementById('confirm-dialog__body');
   var submit = document.getElementById('confirm-dialog__submit');
   var cancel = document.getElementById('confirm-dialog__cancel');
+  var titlebarX = dialog.querySelector('.confirm-dialog__titlebar-x');
   cancel.addEventListener('click', function () { dialog.close(); });
+  if (titlebarX) {
+    titlebarX.addEventListener('click', function () { dialog.close(); });
+  }
   dialog.addEventListener('click', function (e) {
     if (e.target === dialog) dialog.close();
   });

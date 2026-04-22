@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -39,6 +40,37 @@ var staticFS embed.FS
 // TemplateFS returns the embedded template filesystem for external template parsing.
 func TemplateFS() embed.FS {
 	return templateFS
+}
+
+// devStaticDirDefault is the disk path (relative to the process CWD) used
+// for /static/ when DevMode is on and no explicit override is supplied.
+// It matches the Makefile's dev-up target, which runs signald with CWD
+// set to the server/ module root.
+const devStaticDirDefault = "internal/web/static"
+
+// staticFileServer returns the handler that serves /static/. In devMode it
+// serves from disk so CSS and JS edits are visible on reload without a
+// rebuild; diskDir falls back to devStaticDirDefault when empty. In
+// production mode it serves the embedded FS, keeping the binary
+// self-contained. Both code paths route /static/dialup.css to the same
+// file content for a given checkout.
+func staticFileServer(devMode bool, diskDir string) http.Handler {
+	if devMode {
+		if diskDir == "" {
+			diskDir = devStaticDirDefault
+		}
+		return http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+	}
+	// fs.Sub strips the "static" prefix from the embedded FS so request
+	// paths align with the disk-mode handler's StripPrefix treatment.
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		// embed declares the "static" directory above; sub-rooting to it
+		// cannot fail at runtime. A panic here would indicate a programmer
+		// error in the embed declaration.
+		panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 }
 
 type Handler struct {
@@ -83,6 +115,16 @@ type Handler struct {
 
 type HandlerConfig struct {
 	Addr string
+	// DevMode enables development-only conveniences. Today that means
+	// serving /static/ from disk instead of the embedded FS, so CSS and
+	// JS edits don't require a signald rebuild. When false, the embedded
+	// FS is used.
+	DevMode bool
+	// DevStaticDir is the disk path served for /static/ when DevMode is
+	// true. Empty falls back to devStaticDirDefault ("internal/web/static"),
+	// which matches the layout the Makefile's dev-up target runs from.
+	// The field exists mainly so tests can point at a temp directory.
+	DevStaticDir string
 }
 
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string, healthStore *calls.HealthStore) (*Handler, error) {
@@ -189,8 +231,10 @@ func (h *Handler) Hub() *signaling.Hub {
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
-	// Static assets — no auth required
-	mux.Handle("GET /static/", http.FileServer(http.FS(staticFS)))
+	// Static assets — no auth required. In DevMode, serve from disk so
+	// CSS/JS edits don't require a rebuild; otherwise serve the embedded
+	// FS so the production binary is self-contained.
+	mux.Handle("GET /static/", staticFileServer(h.cfg.DevMode, h.cfg.DevStaticDir))
 
 	// Health check — no auth required
 	mux.HandleFunc("GET /healthz", httputil.Healthz())
