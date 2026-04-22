@@ -88,13 +88,28 @@ if [[ ! -f "$STATE" ]]; then
   TAG=""
   if [[ -n "${AUTODEPLOY_INITIAL_TAG:-}" ]]; then
     TAG="$AUTODEPLOY_INITIAL_TAG"
-  elif VER="$(curl -fsS --max-time 3 http://localhost:8090/healthz 2>/dev/null | python3 -c 'import sys,json;print(json.load(sys.stdin).get("version",""))' 2>/dev/null)" && [[ -n "$VER" ]]; then
+  else
+    HEALTHZ_URL=http://localhost:8090/healthz
+    # Split the fetch and the JSON parse so a failure points at the culprit
+    # instead of a single opaque "could not determine version" error.
+    if ! HEALTHZ_JSON="$(curl -fsS --max-time 3 "$HEALTHZ_URL" 2>&1)"; then
+      echo "ERROR: curl $HEALTHZ_URL failed: $HEALTHZ_JSON" >&2
+      echo "       Is signald running? Is port 8090 reachable?" >&2
+      echo "       Re-run with AUTODEPLOY_INITIAL_TAG=server/vX.Y.Z to skip this probe." >&2
+      exit 3
+    fi
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "ERROR: python3 not found (needed to parse /healthz JSON)." >&2
+      echo "       Install python3 or re-run with AUTODEPLOY_INITIAL_TAG=server/vX.Y.Z." >&2
+      exit 3
+    fi
+    if ! VER="$(printf '%s' "$HEALTHZ_JSON" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("version",""))' 2>/dev/null)" || [[ -z "$VER" ]]; then
+      echo "ERROR: /healthz response did not contain a version field:" >&2
+      echo "       $HEALTHZ_JSON" >&2
+      echo "       Re-run with AUTODEPLOY_INITIAL_TAG=server/vX.Y.Z." >&2
+      exit 3
+    fi
     TAG="server/v$VER"
-  fi
-  if [[ -z "$TAG" ]]; then
-    echo "ERROR: could not determine running version from /healthz." >&2
-    echo "       Re-run with AUTODEPLOY_INITIAL_TAG=server/vX.Y.Z" >&2
-    exit 3
   fi
   NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cat > "$STATE" <<EOF

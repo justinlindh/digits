@@ -19,6 +19,7 @@ const (
 	ActionSkipFailed Action = "skip_failed_tag"
 	ActionDeployed   Action = "deployed"
 	ActionReverted   Action = "reverted"
+	ActionFailed     Action = "failed"
 	ActionCritical   Action = "critical"
 )
 
@@ -124,7 +125,11 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 	if rel.TagName == "" || rel.TagName == state.LastDeployedTag {
 		if rel.ETag != "" && rel.ETag != state.GitHubETag {
 			state.GitHubETag = rel.ETag
-			_ = d.Store.Write(state)
+			// Don't fail the run for an ETag-only write, but log so a
+			// persistent disk issue is visible before the next real deploy.
+			if err := d.Store.Write(state); err != nil {
+				d.log().Warn("persist etag", "err", err)
+			}
 		}
 		return Result{Action: ActionNoop}, nil
 	}
@@ -173,7 +178,7 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 		state.LastAttemptError = err.Error()
 		d.finalize(&state, rel, string(step))
 		_ = d.Store.Write(state)
-		return Result{Tag: rel.TagName}, err
+		return Result{Action: ActionFailed, Tag: rel.TagName}, err
 	}
 
 	state.LastDeployedTag = rel.TagName

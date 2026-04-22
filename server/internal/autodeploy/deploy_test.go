@@ -172,9 +172,12 @@ func TestDeploy_LoginFails(t *testing.T) {
 		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
-	_, err := d.Run(context.Background())
+	res, err := d.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	if res.Action != ActionFailed {
+		t.Errorf("action=%q, want ActionFailed", res.Action)
 	}
 	if store.s.LastDeployedTag != "server/v1.9.0" {
 		t.Errorf("LastDeployedTag changed to %q", store.s.LastDeployedTag)

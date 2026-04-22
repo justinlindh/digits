@@ -86,7 +86,9 @@ func (c *GitHubClient) LatestReleaseWithETag(ctx context.Context, repo, tagPrefi
 		return Release{}, fmt.Errorf("github unexpected: %d %s", resp.StatusCode, resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// GitHub's releases endpoint returns up to 100 items; 2 MiB is well above
+	// a reasonable response size and caps a misbehaving or malicious upstream.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
 		return Release{}, fmt.Errorf("github read body: %w", err)
 	}
