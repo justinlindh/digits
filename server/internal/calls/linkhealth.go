@@ -12,6 +12,28 @@ import (
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
+// EventKind tags the type of telemetry event delivered to subscribers.
+type EventKind uint8
+
+const (
+	// SampleKind carries a new per-endpoint telemetry sample.
+	SampleKind EventKind = iota
+	// DisconnectKind signals a user-initiated force-disconnect.
+	// EndedBy names the user who triggered it.
+	DisconnectKind
+	// EndedKind signals the call ended (from any cause) and the
+	// subscriber channel will close immediately after.
+	EndedKind
+)
+
+// Event is one delivery to a HealthStore subscriber.
+type Event struct {
+	Kind     EventKind
+	Endpoint string // SampleKind only
+	Sample   Sample // SampleKind only
+	EndedBy  string // DisconnectKind only (user display label)
+}
+
 // Sample is one point of per-endpoint call telemetry. Pointer fields are
 // nullable: nil means "not available this sample."
 //
@@ -37,8 +59,14 @@ const ringCapacity = 60
 // callRings holds per-endpoint bounded sample rings and last-flushed
 // timestamps used by the DB flusher. All state is guarded by mu.
 type callRings struct {
-	mu         sync.Mutex
-	byEndpoint map[string]*ring
+	mu          sync.Mutex
+	byEndpoint  map[string]*ring
+	subscribers map[*subscriber]struct{} // nil until first Subscribe
+}
+
+type subscriber struct {
+	ch      chan Event
+	dropped uint64 // events dropped due to full buffer; logged every 32
 }
 
 type ring struct {
@@ -138,6 +166,7 @@ func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 		cr.byEndpoint[endpoint] = r
 	}
 	r.append(sample)
+	cr.broadcastLocked(Event{Kind: SampleKind, Endpoint: endpoint, Sample: sample})
 }
 
 // Latest returns the most recent sample for the caller and callee endpoints
@@ -181,11 +210,135 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 	return out
 }
 
-// Evict drops all in-memory state for a call. Called by Tracker on call end.
+// Evict drops all in-memory state for a call. Broadcasts an EndedKind event
+// to every live subscriber and closes their channels, then clears the ring
+// map entry. Safe to call multiple times; subsequent calls are no-ops.
+//
+// Called by Tracker on call end via the SetHealthStore-registered interface.
 func (s *HealthStore) Evict(callID int64) {
 	s.mu.Lock()
+	cr, ok := s.calls[callID]
 	delete(s.calls, callID)
 	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+	// Every channel op under cr.mu must be non-blocking (select/default or
+	// close) — we hold the lock that Record also takes on the hot path.
+	for sub := range cr.subscribers {
+		select {
+		case sub.ch <- Event{Kind: EndedKind}:
+		default:
+			sub.dropped++
+			if sub.dropped%32 == 0 {
+				slog.Debug("link_health: dropping EndedKind on full subscriber buffer", "dropped", sub.dropped)
+			}
+		}
+		close(sub.ch)
+	}
+	cr.subscribers = nil
+}
+
+// Subscription delivers per-call telemetry events to one consumer.
+// Zero value is not valid; construct via HealthStore.Subscribe.
+// The consumer MUST call Close when finished to release the slot.
+// Close is idempotent and safe to defer.
+//
+// A single goroutine should receive from C; multiple concurrent receivers
+// would interleave events in undefined order.
+type Subscription struct {
+	C     <-chan Event
+	close func()
+}
+
+// Close removes the subscription from its call's subscriber set. Idempotent.
+// Safe to call after the channel has already been closed by Evict.
+func (s *Subscription) Close() {
+	if s == nil || s.close == nil {
+		return
+	}
+	s.close()
+}
+
+// subscriberBufferSize is the per-subscription channel depth. At the 2s
+// sample cadence with two endpoints per call, 16 slots tolerates ~16s of
+// consumer stall before events drop — generous for a well-behaved SSE
+// consumer on a LAN.
+const subscriberBufferSize = 16
+
+// Subscribe opens a stream of telemetry events for a call. If the call is
+// not currently Init'd (or has already been Evicted), returns a Subscription
+// whose channel is already closed -- callers see this the same way as a
+// mid-stream Evict and can treat it uniformly.
+func (s *HealthStore) Subscribe(callID int64) *Subscription {
+	s.mu.Lock()
+	cr, ok := s.calls[callID]
+	s.mu.Unlock()
+	if !ok {
+		ch := make(chan Event)
+		close(ch)
+		return &Subscription{C: ch, close: func() {}}
+	}
+
+	sub := &subscriber{ch: make(chan Event, subscriberBufferSize)}
+
+	cr.mu.Lock()
+	if cr.subscribers == nil {
+		cr.subscribers = make(map[*subscriber]struct{})
+	}
+	cr.subscribers[sub] = struct{}{}
+	cr.mu.Unlock()
+
+	return &Subscription{
+		C: sub.ch,
+		close: func() {
+			cr.mu.Lock()
+			_, stillRegistered := cr.subscribers[sub]
+			delete(cr.subscribers, sub)
+			cr.mu.Unlock()
+			if stillRegistered {
+				close(sub.ch)
+			}
+		},
+	}
+}
+
+// NotifyDisconnected broadcasts a DisconnectKind event naming the user who
+// initiated a force-disconnect. Subscribers can render a terminal "ended by
+// X" state BEFORE the subsequent Evict (which arrives when the teardown
+// propagates through Tracker.OnCallEnded) closes the stream.
+//
+// No-op for unknown callIDs.
+func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
+	s.mu.Lock()
+	cr, ok := s.calls[callID]
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+	cr.broadcastLocked(Event{Kind: DisconnectKind, EndedBy: endedBy})
+}
+
+// broadcastLocked sends an event to every subscriber under cr.mu. Non-blocking
+// per subscriber: if a channel is full, the event drops and a debug log fires
+// once per 32 drops to avoid log spam under sustained slow-client pressure.
+// Caller MUST hold cr.mu.
+func (cr *callRings) broadcastLocked(ev Event) {
+	for sub := range cr.subscribers {
+		select {
+		case sub.ch <- ev:
+		default:
+			sub.dropped++
+			if sub.dropped%32 == 0 {
+				slog.Debug("link_health: dropping events on full subscriber buffer", "dropped", sub.dropped)
+			}
+		}
+	}
 }
 
 // flushInterval is how often the background flusher runs. See spec §2.
