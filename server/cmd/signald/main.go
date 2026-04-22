@@ -132,10 +132,26 @@ func main() {
 	}()
 
 	// Create web handler
-	handler, err := web.NewHandler(lineStore, deviceStore, hub, tracker, relay, web.HandlerConfig{
-		Addr:    cfg.Addr,
-		DevMode: cfg.DevMode,
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, cfg.BaseURL, cfg.AdminSecret, healthStore)
+	handler, err := web.NewHandler(web.Deps{
+		LineStore:      lineStore,
+		DeviceStore:    deviceStore,
+		Hub:            hub,
+		Tracker:        tracker,
+		Relay:          relay,
+		HealthStore:    healthStore,
+		AuthStore:      authStore,
+		AuthHandlers:   authHandlers,
+		GoogleAuth:     googleAuth,
+		HouseholdStore: householdStore,
+		PairingStore:   pairingStore,
+		LinkStore:      linkStore,
+		EmailSender:    emailSender,
+	}, web.HandlerConfig{
+		Addr:        cfg.Addr,
+		BaseURL:     cfg.BaseURL,
+		AdminSecret: cfg.AdminSecret,
+		DevMode:     cfg.DevMode,
+	})
 	if err != nil {
 		log.Fatalf("create handler: %v", err)
 	}

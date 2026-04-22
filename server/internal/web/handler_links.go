@@ -115,7 +115,7 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 
 	// Send email notification to the creating user with the invite code
 	if h.emailSender != nil && user.Email != "" {
-		subj, body := email.HouseholdInviteEmail(myHousehold.Name, link.InviteCode, h.baseURL)
+		subj, body := email.HouseholdInviteEmail(myHousehold.Name, link.InviteCode, h.cfg.BaseURL)
 		if err := h.emailSender.Send(user.Email, subj, body); err != nil {
 			slog.Error("send invite email failed", "err", err)
 		}

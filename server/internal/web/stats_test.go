@@ -8,7 +8,7 @@ import (
 )
 
 func TestInternalStatsRequiresSecret(t *testing.T) {
-	h := &Handler{adminSecret: "test-secret-123"}
+	h := &Handler{cfg: HandlerConfig{AdminSecret: "test-secret-123"}}
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/stats", nil)
 	w := httptest.NewRecorder()
@@ -32,7 +32,7 @@ func TestInternalStatsRequiresSecret(t *testing.T) {
 }
 
 func TestInternalStatsWithSecret(t *testing.T) {
-	h := &Handler{adminSecret: "test-secret-123"}
+	h := &Handler{cfg: HandlerConfig{AdminSecret: "test-secret-123"}}
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/stats", nil)
 	req.Header.Set("X-Admin-Secret", "test-secret-123")
@@ -65,7 +65,7 @@ func TestInternalStatsWithSecret(t *testing.T) {
 }
 
 func TestInternalStatsEmptySecretRejects(t *testing.T) {
-	h := &Handler{adminSecret: ""}
+	h := &Handler{cfg: HandlerConfig{AdminSecret: ""}}
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/stats", nil)
 	w := httptest.NewRecorder()
@@ -73,6 +73,6 @@ func TestInternalStatsEmptySecretRejects(t *testing.T) {
 	h.handleInternalStats(w, req)
 
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401 when adminSecret is empty, got %d", w.Code)
+		t.Fatalf("expected 401 when AdminSecret is empty, got %d", w.Code)
 	}
 }

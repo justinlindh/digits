@@ -12,7 +12,7 @@ import (
 )
 
 func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
-	if h.adminSecret == "" || r.Header.Get("X-Admin-Secret") != h.adminSecret {
+	if h.cfg.AdminSecret == "" || r.Header.Get("X-Admin-Secret") != h.cfg.AdminSecret {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

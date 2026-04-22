@@ -100,9 +100,6 @@ type Handler struct {
 	linkStore *household.LinkStore
 	// Email
 	emailSender email.Sender
-	baseURL     string // app URL, e.g. https://app.digits.family
-	// Admin
-	adminSecret string
 	// Rate limiters
 	authLimiter    *ratelimit.Limiter
 	pairingLimiter *ratelimit.Limiter
@@ -120,6 +117,11 @@ type segDesc struct {
 
 type HandlerConfig struct {
 	Addr string
+	// BaseURL is the public origin for the app (e.g. https://app.digits.family).
+	// Used for WebSocket origin checks and outgoing magic-link URLs.
+	BaseURL string
+	// AdminSecret gates /internal/stats. Empty disables the endpoint.
+	AdminSecret string
 	// DevMode enables development-only conveniences. Today that means
 	// serving /static/ from disk instead of the embedded FS, so CSS and
 	// JS edits don't require a signald rebuild. When false, the embedded
@@ -133,7 +135,26 @@ type HandlerConfig struct {
 	DevStaticDir string
 }
 
-func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string, healthStore *calls.HealthStore) (*Handler, error) {
+// Deps bundles the stores, hub, and other collaborators the web Handler
+// depends on. Named fields prevent a silent swap between same-typed
+// parameters (the previous 16-arg positional NewHandler made that easy).
+type Deps struct {
+	LineStore      *line.Store
+	DeviceStore    *device.Store
+	Hub            *signaling.Hub
+	Tracker        *calls.Tracker
+	Relay          *signaling.Relay
+	HealthStore    *calls.HealthStore
+	AuthStore      *auth.Store
+	AuthHandlers   *auth.Handlers
+	GoogleAuth     *auth.GoogleAuth
+	HouseholdStore *household.Store
+	PairingStore   *pairing.Store
+	LinkStore      *household.LinkStore
+	EmailSender    email.Sender
+}
+
+func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 		"fmtDuration": func(seconds int) string {
@@ -270,18 +291,18 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 				// Non-browser clients (e.g. Pi daemon) send no Origin; allow them.
 				return true
 			}
-			return origin == baseURL
+			return origin == cfg.BaseURL
 		},
 	}
 
 	return &Handler{
 		upgrader:           u,
-		lineStore:          lineStore,
-		deviceStore:        deviceStore,
-		hub:                hub,
-		tracker:            tracker,
-		relay:              relay,
-		healthStore:        healthStore,
+		lineStore:          deps.LineStore,
+		deviceStore:        deps.DeviceStore,
+		hub:                deps.Hub,
+		tracker:            deps.Tracker,
+		relay:              deps.Relay,
+		healthStore:        deps.HealthStore,
 		tmplDashboard:      tmplDashboard,
 		tmplPhones:         tmplPhones,
 		tmplCalls:          tmplCalls,
@@ -293,15 +314,13 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		tmplCallLivePanel:  tmplCallLivePanel,
 		tmplCallLiveDetail: tmplCallLiveDetail,
 		cfg:                cfg,
-		authStore:          authStore,
-		authHandlers:       authHandlers,
-		googleAuth:         googleAuth,
-		householdStore:     householdStore,
-		pairingStore:       pairingStore,
-		linkStore:          linkStore,
-		emailSender:        emailSender,
-		baseURL:            baseURL,
-		adminSecret:        adminSecret,
+		authStore:          deps.AuthStore,
+		authHandlers:       deps.AuthHandlers,
+		googleAuth:         deps.GoogleAuth,
+		householdStore:     deps.HouseholdStore,
+		pairingStore:       deps.PairingStore,
+		linkStore:          deps.LinkStore,
+		emailSender:        deps.EmailSender,
 		authLimiter:        ratelimit.New(5, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
 	}, nil
@@ -416,7 +435,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
-	return rootDomainRedirect(h.baseURL, securityHeadersMiddleware(mux))
+	return rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
 }
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {

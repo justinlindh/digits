@@ -46,9 +46,16 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	}
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
 
-	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
-		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, nil, nil, nil, nil, "", "", nil)
+	h, err := NewHandler(Deps{
+		LineStore:    lineStore,
+		DeviceStore:  deviceStore,
+		Hub:          hub,
+		Tracker:      tracker,
+		Relay:        relay,
+		AuthStore:    authStore,
+		AuthHandlers: authHandlers,
+		GoogleAuth:   googleAuth,
+	}, HandlerConfig{Addr: ":0"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

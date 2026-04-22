@@ -71,9 +71,21 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 	}
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
 
-	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
-		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "", healthStore)
+	h, err := NewHandler(Deps{
+		LineStore:      lineStore,
+		DeviceStore:    deviceStore,
+		Hub:            hub,
+		Tracker:        tracker,
+		Relay:          relay,
+		HealthStore:    healthStore,
+		AuthStore:      authStore,
+		AuthHandlers:   authHandlers,
+		GoogleAuth:     googleAuth,
+		HouseholdStore: householdStore,
+		PairingStore:   pairingStore,
+		LinkStore:      linkStore,
+		EmailSender:    emailSender,
+	}, HandlerConfig{Addr: ":0"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
