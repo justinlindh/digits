@@ -1499,13 +1499,125 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   50% { opacity: 0.35; }
 }
 
-.today-list { list-style: none; margin: 0; padding: 0; }
-.today-list__row { display: grid; grid-template-columns: 60px 14px 1fr auto; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--dialup-bevel-lo); font-size: 12px; }
-.today-list__empty { padding: 16px; text-align: center; }
+/* --------- Dashboard today-list (call log preview) ---------
+   Tabular rows with alternating zebra, monospace time and duration
+   columns, and the direction glyph (in-arrow vs out-arrow) in a
+   dedicated narrow column. Matches the control-panel readout feel
+   of the rooms cards above. */
 
-.connected-row { display: flex; gap: 6px; padding: 8px; align-items: center; flex-wrap: wrap; }
-.connected-row__chip { display: inline-flex; gap: 4px; padding: 2px 8px; background: var(--dialup-chrome-l); border: 1px solid var(--dialup-bevel-lo); font-size: 12px; align-items: center; }
-.connected-row__chip svg { width: 16px; height: 16px; }
+.today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+.today-list__row {
+  display: grid;
+  grid-template-columns: 70px 16px 1fr auto;
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+  font-size: 12px;
+  align-items: center;
+}
+.today-list__row:last-child { border-bottom: 0; }
+.today-list__row:nth-child(even) { background: var(--dialup-chrome-l); }
+
+.today-list__time {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+}
+
+.today-list__dir {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  color: var(--dialup-accent-grn);
+  font-weight: bold;
+  text-align: center;
+}
+.today-list__dir--in { color: var(--dialup-blue); }
+
+.today-list__peer { color: var(--dialup-ink); }
+.today-list__peer .muted { color: var(--dialup-ink-muted); }
+
+.today-list__dur {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  white-space: nowrap;
+}
+
+.today-list__empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--dialup-ink-muted);
+  font-size: 12px;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+/* --------- Dashboard connected-families chip row ---------
+   A strip of raised beveled chips, one per linked family, each with
+   the small dialup-blue house glyph and the family name. Hover
+   lightens; :active presses in. The "Manage ->" link on the right
+   of the panel header uses the existing .panel__action styling. */
+
+.connected-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--dialup-chrome-l);
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.connected-row__chip {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-lo);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  text-decoration: none;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.connected-row__chip:hover {
+  background: var(--dialup-chrome-l);
+  text-decoration: none;
+}
+
+.connected-row__chip:active {
+  border-top-color: var(--dialup-bevel-lo);
+  border-left-color: var(--dialup-bevel-lo);
+  border-right-color: var(--dialup-bevel-hi);
+  border-bottom-color: var(--dialup-bevel-hi);
+}
+
+.connected-row__chip svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dialup-blue-dark);
+  flex-shrink: 0;
+}
 
 /* =========================================================================
    CRT monitor bezel (used on /connecting and, when CRTMode=all, wrapping
