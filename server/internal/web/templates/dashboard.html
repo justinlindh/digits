@@ -14,11 +14,11 @@
         <div class="rooms__head">
           <span class="rooms__name">{{.Line.Name}}</span>
           {{if .OnCall}}
-            <span class="chip chip--live"><span class="chip__dot"></span>on a call</span>
+            <span class="chip chip--live"><span class="chip__dot"></span>{{if eq $.User.Theme "dialup"}}on line{{else}}on a call{{end}}</span>
           {{else if .Online}}
-            <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+            <span class="chip chip--on"><span class="chip__dot"></span>{{if eq $.User.Theme "dialup"}}ready{{else}}online{{end}}</span>
           {{else}}
-            <span class="chip"><span class="chip__dot"></span>offline</span>
+            <span class="chip"><span class="chip__dot"></span>{{if eq $.User.Theme "dialup"}}asleep{{else}}offline{{end}}</span>
           {{end}}
         </div>
         <div class="rooms__num num">{{fmtPhone .Line.Number}}</div>
@@ -69,10 +69,10 @@
     </header>
     <div class="connected-row">
       {{range .LinkedFamilies}}
-      <span class="connected-row__chip">
+      <a class="connected-row__chip" href="/links#family-{{.ID}}">
         <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
         <span>{{.Name}}</span>
-      </span>
+      </a>
       {{end}}
     </div>
   </section>
