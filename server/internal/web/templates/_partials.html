@@ -146,7 +146,11 @@
   var body = document.getElementById('confirm-dialog__body');
   var submit = document.getElementById('confirm-dialog__submit');
   var cancel = document.getElementById('confirm-dialog__cancel');
+  var titlebarX = dialog.querySelector('.confirm-dialog__titlebar-x');
   cancel.addEventListener('click', function () { dialog.close(); });
+  if (titlebarX) {
+    titlebarX.addEventListener('click', function () { dialog.close(); });
+  }
   dialog.addEventListener('click', function (e) {
     if (e.target === dialog) dialog.close();
   });

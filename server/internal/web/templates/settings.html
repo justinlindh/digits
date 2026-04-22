@@ -432,8 +432,13 @@
       setActive(id);
       // Lock spy across the smooth-scroll so the click-chosen item
       // doesn't get overridden by the scroll events the animation
-      // generates.
+      // generates. Primary unlock signal is the scrollend event
+      // (Chrome/Firefox/Edge); the 800ms timeout is a fallback for
+      // older browsers and a ceiling if the animation stalls.
       spyLockedUntil = Date.now() + 800;
+      scrollTarget.addEventListener('scrollend', function () {
+        spyLockedUntil = 0;
+      }, { once: true });
 
       var top = sectionTopRelative(target);
       if (scroller) {
