@@ -179,6 +179,32 @@ func (t *Tracker) Busy(number string) bool {
 	return false
 }
 
+// CanAddAsHost reports whether number may initiate a second 2-party call while
+// already busy, as part of the party-line add-third-party flow. True only when:
+//   - number is the caller (host) of exactly one active 2-party call
+//   - number is not the callee of any active 2-party call
+//   - number is not already a member of an active conference (3-party cap)
+//
+// Together with the normal Busy(to) check, this lets the 5ESS-style three-way
+// flow work without allowing arbitrary multi-call spam.
+func (t *Tracker) CanAddAsHost(number string) bool {
+	if t.conferences.IsBusy(number) {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	callerCount := 0
+	for _, c := range t.active {
+		if c.Callee == number {
+			return false
+		}
+		if c.Caller == number {
+			callerCount++
+		}
+	}
+	return callerCount == 1
+}
+
 // AllPeersOf returns all remote parties that number has active 2-party calls
 // with. Empty if number has no active calls.
 func (t *Tracker) AllPeersOf(number string) []string {

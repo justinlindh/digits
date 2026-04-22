@@ -24,21 +24,30 @@ const (
 	StateADD_DIALING     State = "ADD_DIALING"     // Collecting digits for C
 	StateADD_CALLING     State = "ADD_CALLING"     // Ringing C; B still on hold
 	StateADD_PRIVATE     State = "ADD_PRIVATE"     // A↔C connected; B on hold
-	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // C unreachable; B on hold
+	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
 const (
-	ToneDial      = "DIAL"
-	ToneRingback  = "RINGBACK"
-	ToneBusy      = "BUSY"
-	ToneReorder   = "REORDER"
-	ToneHowler    = "HOWLER"
-	ToneIntercept = "INTERCEPT"
-	ToneStop      = "STOP"
-	ToneStopAll   = "STOPALL"
+	ToneDial         = "DIAL"
+	ToneRingback     = "RINGBACK"
+	ToneBusy         = "BUSY"
+	ToneReorder      = "REORDER"
+	ToneHowler       = "HOWLER"
+	ToneIntercept    = "INTERCEPT"    // generic SIT + "please try again" (service unavailable)
+	ToneDisconnected = "DISCONNECTED" // SIT + "number you have dialed is not in service" (misdial)
+	ToneStop         = "STOP"
+	ToneStopAll      = "STOPALL"
 )
+
+// addDialDigitsRequired is the number of digits the add-party dial accumulates
+// before firing dialThirdParty. Must match the Pico firmware's
+// DIAL_DIGITS_REQUIRED, since the 2-party flow still relies on the Pico to
+// emit DIAL:<number> at that length. In the add flow the Pico stays in its
+// CONNECTED state (to keep KEY events flowing for DTMF) and never emits DIAL,
+// so the controller self-fires here once it has the full number.
+const addDialDigitsRequired = 7
 
 // Callbacks is the interface the controller uses to drive hardware and network.
 type Callbacks interface {
@@ -46,6 +55,7 @@ type Callbacks interface {
 	OncePlaying() bool          // Reports whether a one-shot tone (e.g. intercept) is still playing
 	SendRing(start bool)        // Send RING:START or RING:STOP
 	SendLED(mode string)        // Send LED:<mode>
+	SetFlashEnabled(enabled bool) // Enable/disable Pico hook-flash detection (off = instant hangup)
 	InitiateCall(number string) // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
@@ -200,6 +210,8 @@ func (c *Controller) HandleSignal(msgType, sender string) {
 		c.onSignalHangup(sender)
 	case "busy":
 		c.onSignalBusy(sender)
+	case "error":
+		c.onSignalError(sender)
 	default:
 		slog.Warn("phone: unhandled signal", "type", msgType)
 	}
@@ -221,6 +233,7 @@ func (c *Controller) onHookOff() {
 		c.cb.SendRing(false)
 		c.cb.SendTone(ToneStop)
 		c.cb.SendLED("ON")
+		c.cb.SetFlashEnabled(true)
 		c.cb.AnswerCall()
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
@@ -289,8 +302,18 @@ func (c *Controller) onKey(digit string) {
 		c.state = StateADD_DIALING
 		c.digits = digit
 		c.cb.SendTone(ToneStop)
+		if len(c.digits) >= addDialDigitsRequired {
+			number := c.digits
+			c.digits = ""
+			c.dialThirdParty(number)
+		}
 	case StateADD_DIALING:
 		c.digits += digit
+		if len(c.digits) >= addDialDigitsRequired {
+			number := c.digits
+			c.digits = ""
+			c.dialThirdParty(number)
+		}
 	default:
 		slog.Debug("phone: key ignored", "digit", digit, "state", c.state)
 	}
@@ -424,6 +447,7 @@ func (c *Controller) onSignalAnswer(sender string) {
 	case StateCALLING:
 		c.state = StateCONNECTED
 		c.cb.SendTone(ToneStop)
+		c.cb.SetFlashEnabled(true)
 		c.cb.NotifyCallConnected()
 	case StateADD_CALLING:
 		if sender != "" && sender != c.addingPeer {
@@ -456,6 +480,9 @@ func (c *Controller) onSignalHangup(sender string) {
 			return
 		}
 		c.state = StateADD_INTERCEPT
+		// Stop any looping tone (ringback in ADD_CALLING) before layering the
+		// one-shot intercept; otherwise both play simultaneously.
+		c.cb.SendTone(ToneStop)
 		c.cb.SendTone(ToneIntercept)
 		c.cb.TearDownPeer(c.addingPeer)
 	default:
@@ -518,6 +545,33 @@ func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason st
 	}()
 }
 
+// onSignalError handles server error replies to a call attempt. The server
+// emits TypeError when the target isn't connected, isn't in the caller's
+// contacts, or similar "cannot be completed" conditions. Plays the
+// number-not-in-service announcement (SIT + recorded voice), matching the
+// 2-party misdial treatment in main.go's TypeError handler.
+func (c *Controller) onSignalError(sender string) {
+	switch c.state {
+	case StateCALLING:
+		slog.Info("phone: error signal received -- call cannot be completed")
+		// Stop ringback before layering the one-shot disconnected announcement.
+		c.cb.SendTone(ToneStop)
+		c.cb.SendTone(ToneDisconnected)
+		// Stay in CALLING -- caller should hang up.
+	case StateADD_CALLING:
+		if sender != "" && sender != c.addingPeer {
+			slog.Info("phone: error from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
+			return
+		}
+		c.state = StateADD_INTERCEPT
+		c.cb.SendTone(ToneStop)
+		c.cb.SendTone(ToneDisconnected)
+		c.cb.TearDownPeer(c.addingPeer)
+	default:
+		slog.Info("phone: error signal ignored", "state", c.state)
+	}
+}
+
 func (c *Controller) onSignalBusy(sender string) {
 	switch c.state {
 	case StateCALLING:
@@ -530,7 +584,9 @@ func (c *Controller) onSignalBusy(sender string) {
 			return
 		}
 		c.state = StateADD_INTERCEPT
-		c.cb.SendTone(ToneIntercept)
+		// Subscriber busy -- play standard busy tone, matching 2-party CALLING+busy.
+		// PlayLoop replaces the ringback loop atomically, so no explicit stop needed.
+		c.cb.SendTone(ToneBusy)
 		c.cb.TearDownPeer(c.addingPeer)
 	default:
 		slog.Info("phone: busy signal ignored", "state", c.state)
@@ -584,6 +640,15 @@ func (c *Controller) enterAddDialtone(activePeer string) {
 
 func (c *Controller) abortAdd() {
 	c.cb.SendTone(ToneStop)
+	// Tear down the added peer if one exists. Most paths into ADD_INTERCEPT
+	// already did this (busy/error/hangup handlers all call TearDownPeer
+	// before transitioning), but the self-dial and blocked-contact paths in
+	// dialThirdParty skip InitiateCall and so have no peer to tear down --
+	// TearDownPeer is idempotent on unknown phones, so calling it
+	// unconditionally here keeps abortAdd state-independent.
+	if c.addingPeer != "" {
+		c.cb.TearDownPeer(c.addingPeer)
+	}
 	if c.heldPeer != "" {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
@@ -630,16 +695,23 @@ func (c *Controller) HandleConferenceMember(confID string, members []signal.Conf
 			break
 		}
 	}
+	slog.Info("conference: member snapshot applied", "conf_id", confID, "is_host", c.isConfHost, "members", len(members))
 }
 
 // HandleConferenceConnect is invoked when the server instructs us to open a
 // PC to another conference member. Delegates to the AddMeshPeer callback.
 func (c *Controller) HandleConferenceConnect(confID, peer string, initiator bool) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.confID != confID {
+		slog.Warn("conference: connect ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "peer", peer)
+		c.mu.Unlock()
 		return
 	}
+	slog.Info("conference: connect instruction", "conf_id", confID, "peer", peer, "initiator", initiator)
+	c.mu.Unlock()
+	// Invoke the callback without holding c.mu: AddMeshPeer reaches back into
+	// ConferenceID() for the signalling conf_id tag, which also takes c.mu --
+	// holding the lock across the callback would deadlock the message goroutine.
 	c.cb.AddMeshPeer(peer, initiator)
 }
 
@@ -697,9 +769,12 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Only skip if both sides have a conf ID and they don't match.
-	// If we have no conf ID yet (rejection arrived before Member message),
-	// fall through so the user hears the intercept tone.
+	// requestMerge() sets c.state = StateCONFERENCE_MERGED synchronously before
+	// emitting ConferenceMerge to the server, so any rejection reply arrives
+	// while we're in CONFERENCE_MERGED. c.confID may still be empty if the
+	// server's ConferenceMember message is in flight behind the rejection; in
+	// that case we can't cross-check IDs, which is why the mismatch guard
+	// only fires when both IDs are known and differ.
 	if c.confID != "" && confID != "" && c.confID != confID {
 		return
 	}
@@ -761,4 +836,20 @@ func (c *Controller) setAddingPeerForTest(peer string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.addingPeer = peer
+}
+
+// heldPeerForTest returns the current held-peer phone number for unit test
+// assertions.
+func (c *Controller) heldPeerForTest() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.heldPeer
+}
+
+// addingPeerForTest returns the current adding-peer phone number for unit
+// test assertions.
+func (c *Controller) addingPeerForTest() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.addingPeer
 }

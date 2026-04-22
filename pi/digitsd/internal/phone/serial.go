@@ -141,6 +141,17 @@ func (sp *SerialPort) CallConnected() {
 	sp.SendFire("CALL:CONNECTED")
 }
 
+// FlashEnabled toggles flash-window detection on the Pico. When disabled,
+// hangup is instantaneous; when enabled the Pico waits up to 600ms after on-hook
+// to distinguish a flash from a hangup. Pi enables it only while in a call.
+func (sp *SerialPort) FlashEnabled(enabled bool) {
+	if enabled {
+		sp.SendFire("HOOK:FLASH:ON")
+	} else {
+		sp.SendFire("HOOK:FLASH:OFF")
+	}
+}
+
 // Close stops the reader and closes the port.
 func (sp *SerialPort) Close() error {
 	close(sp.stop)

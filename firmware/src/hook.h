@@ -33,4 +33,19 @@ void hook_force_off_hook(bool off_hook);
 void hook_clear_force(void);
 bool hook_is_forced(void);
 
+// Flash-detection gate. When disabled (default), any debounced transition to
+// on-hook immediately emits HOOK_EVENT_ON -- there is no flash window and no
+// hangup latency. When enabled, the firmware waits up to FLASH_MAX_MS after
+// the on-hook commit to see if the hook returns to off-hook (emits
+// HOOK_EVENT_FLASH). The Pi daemon only enables this while in an active call
+// state, so hangup/pickup outside calls stay instantaneous.
+void hook_set_flash_enabled(bool enabled);
+bool hook_is_flash_enabled(void);
+
+// Returns true while a flash window is open (user has depressed the hookswitch
+// but we haven't decided yet whether it's a flash or a hangup). During this
+// window the raw off-hook state is transiently false; callers that make
+// decisions based on raw hook state should skip them while this is true.
+bool hook_is_flash_pending(void);
+
 #endif  // DIGITS_HOOK_H

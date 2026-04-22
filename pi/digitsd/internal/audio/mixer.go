@@ -257,17 +257,21 @@ func (m *Mixer) PlayLoop(name string) {
 	m.loopPos = 0
 }
 
-// StopTone stops the looping tone and clears any queued one-shots.
-// Takes effect within one period (~20ms).
+// StopTone silences any looping tone AND any in-flight one-shot announcement
+// (intercept, disconnected, etc). WebRTC sources are untouched.
+//
+// PlayOnce callers that follow StopTone in the same sequence are safe: the
+// queue clear and the append both acquire m.mu, so PlayOnce only sees the
+// queue after StopTone has finished clearing it. Takes effect within one
+// period (~20ms).
 func (m *Mixer) StopTone() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.loopSamples = nil
 	m.loopName = ""
 	m.loopPos = 0
-	// Do NOT clear onceQueue — one-shot tones (DTMF) should survive
-	// a loop stop. The main loop calls StopTone then PlayOnce in sequence;
-	// clearing onceQueue here would eat the just-queued tone.
+	m.onceQueue = nil
+	m.oncePos = 0
 }
 
 // StopAll stops all audio: loops, one-shots, and clears all WebRTC sources.

@@ -21,6 +21,7 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
 	removedMeshPeers   []string          // peers that had RemoveMeshPeer called
@@ -45,6 +46,11 @@ func (m *mockCallbacks) SendLED(mode string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.leds = append(m.leds, mode)
+}
+func (m *mockCallbacks) SetFlashEnabled(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.flashEnabledLog = append(m.flashEnabledLog, enabled)
 }
 func (m *mockCallbacks) InitiateCall(number string) {
 	m.mu.Lock()
@@ -967,7 +973,7 @@ func TestController_ThirdAnswersEntersAddPrivate(t *testing.T) {
 	}
 }
 
-func TestController_ThirdBusyGoesToAddIntercept(t *testing.T) {
+func TestController_ThirdBusyPlaysBusyTone(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
 	c.setStateForTest(StateADD_CALLING)
@@ -978,8 +984,11 @@ func TestController_ThirdBusyGoesToAddIntercept(t *testing.T) {
 	if c.State() != StateADD_INTERCEPT {
 		t.Fatalf("expected StateADD_INTERCEPT, got %v", c.State())
 	}
-	if !mock.tonePlayed(ToneIntercept) {
-		t.Fatalf("expected INTERCEPT tone on busy")
+	if !mock.tonePlayed(ToneBusy) {
+		t.Fatalf("expected BUSY tone on subscriber-busy (matches 2-party), got tones: %v", mock.Tones())
+	}
+	if mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("SIT INTERCEPT is reserved for 'cannot be completed as dialed'; subscriber-busy should play BUSY, got tones: %v", mock.Tones())
 	}
 	if !mock.peerTorndown("5550003") {
 		t.Fatalf("expected C torn down on busy")
@@ -1400,5 +1409,123 @@ func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 	}
 	if mock.tonePlayed(ToneIntercept) {
 		t.Fatalf("intercept tone should not play for mismatched rejection")
+	}
+}
+
+// TestController_DoubleFlashFromConnectedIsStable exercises the enter-ADD /
+// abort-ADD cycle twice in succession to confirm the FSM returns to a clean
+// CONNECTED state each time. Regression guard for the abort-then-retry flow
+// that surfaced mesh-leak and stale-callPeer bugs during manual testing.
+func TestController_DoubleFlashFromConnectedIsStable(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+
+	// Flash 1: CONNECTED -> ADD_DIALTONE.
+	c.HandleHookFlash("5550002")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("flash 1: expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("flash 1: expected B muted")
+	}
+
+	// Flash 2: ADD_DIALTONE -> CONNECTED (abort).
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("flash 2: expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("flash 2: expected B unmuted on abort")
+	}
+	// heldPeer/addingPeer should be cleared after abort.
+	held, adding := c.heldPeerForTest(), c.addingPeerForTest()
+	if held != "" || adding != "" {
+		t.Fatalf("flash 2: expected heldPeer and addingPeer cleared, got held=%q adding=%q", held, adding)
+	}
+
+	// Flash 3: CONNECTED -> ADD_DIALTONE again.
+	c.HandleHookFlash("5550002")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("flash 3: expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("flash 3: expected B muted again")
+	}
+
+	// Flash 4: ADD_DIALTONE -> CONNECTED (abort again).
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("flash 4: expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("flash 4: expected B unmuted on second abort")
+	}
+	held, adding = c.heldPeerForTest(), c.addingPeerForTest()
+	if held != "" || adding != "" {
+		t.Fatalf("flash 4: expected heldPeer and addingPeer cleared, got held=%q adding=%q", held, adding)
+	}
+}
+
+// TestController_FlashRaceWithAnswerFlashFirst simulates the user flashing
+// out of ADD_CALLING at the exact moment the added party's answer arrives.
+// The flash wins: state -> CONNECTED (via abortAddCalling) and C is torn
+// down. A subsequent answer signal from the now-defunct C must be ignored;
+// the controller must not fall into ADD_PRIVATE or CONFERENCE_MERGED on
+// stale input.
+func TestController_FlashRaceWithAnswerFlashFirst(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	// Flash first -- aborts the add attempt.
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED after flash-abort, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on flash-abort")
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted on flash-abort")
+	}
+
+	// Now a stale answer from the torn-down C arrives. Must not transition.
+	c.HandleSignal("answer", "5550003")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED to persist on stale answer, got %v", c.State())
+	}
+}
+
+// TestController_AbortFromInterceptAfterSelfDial covers the path where
+// dialThirdParty rejected the input locally (self-dial or blocked contact)
+// and landed in ADD_INTERCEPT without ever calling InitiateCall, so no add
+// peer was created. Flashing out of ADD_INTERCEPT must recover cleanly
+// without crashing on a TearDownPeer for an empty addingPeer.
+func TestController_AbortFromInterceptAfterSelfDial(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	// Simulate the post-self-dial state: dialThirdParty set intercept but
+	// did not run InitiateCall, so addingPeer stays empty.
+	c.setStateForTest(StateADD_INTERCEPT)
+	c.setHeldPeerForTest("5550002")
+	// c.addingPeer is intentionally empty here.
+
+	// Flash to return. Must not crash, must restore CONNECTED, must unmute B.
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted")
+	}
+	// No TearDownPeer should have been called for an empty phone -- the
+	// guard in abortAdd skips the call when addingPeer is "".
+	for _, p := range mock.torndownPeers {
+		if p == "" {
+			t.Fatalf("TearDownPeer called with empty phone; guard missing")
+		}
 	}
 }

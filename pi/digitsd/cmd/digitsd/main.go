@@ -119,6 +119,8 @@ func (d *daemonCallbacks) SendTone(name string) {
 		d.mixer.PlayLoop("tone_howler")
 	case phone.ToneIntercept:
 		d.mixer.PlayOnce("intercept")
+	case phone.ToneDisconnected:
+		d.mixer.PlayOnce("disconnected")
 	case phone.ToneStop:
 		d.mixer.StopTone()
 	case phone.ToneStopAll:
@@ -143,6 +145,10 @@ func (d *daemonCallbacks) SendLED(mode string) {
 
 func (d *daemonCallbacks) NotifyCallConnected() {
 	d.serial.CallConnected()
+}
+
+func (d *daemonCallbacks) SetFlashEnabled(enabled bool) {
+	d.serial.FlashEnabled(enabled)
 }
 
 func (d *daemonCallbacks) InitiateCall(targetNumber string) {
@@ -183,6 +189,10 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 				if err != nil {
 					continue
 				}
+				if localPM.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
 				// Copy — Decode returns a slice of a reused internal buffer
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
@@ -220,30 +230,35 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer})
 	close(sdpSent)
 
-	// Start audio pipeline
-	d.pipeline = d.newPipeline()
-	if err := d.pipeline.Start(); err != nil {
-		slog.Error("audio pipeline start failed", "error", err)
-		return
-	}
-
-	// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-	// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-	go func() {
-		defer recoverGoroutine("caller-encode-loop")
-		for frame := range d.pipeline.OutFrames() {
-			d.mu.Lock()
-			pm := d.peerMgr
-			mesh := d.mesh
-			d.mu.Unlock()
-			if pm != nil {
-				pm.SendPCMFrame(frame)
-			}
-			if mesh != nil {
-				mesh.SendPCMFrameToAll(frame)
-			}
+	// Start audio pipeline. Skip if one is already running (ADD flow: the held
+	// peer's pipeline stays alive across the flash-to-add transition, and the
+	// existing encode loop picks up the new peerMgr via the per-iteration read
+	// under d.mu).
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline start failed", "error", err)
+			return
 		}
-	}()
+
+		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
+		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
+		go func() {
+			defer recoverGoroutine("caller-encode-loop")
+			for frame := range d.pipeline.OutFrames() {
+				d.mu.Lock()
+				pm := d.peerMgr
+				mesh := d.mesh
+				d.mu.Unlock()
+				if pm != nil {
+					pm.SendPCMFrame(frame)
+				}
+				if mesh != nil {
+					mesh.SendPCMFrameToAll(frame)
+				}
+			}
+		}()
+	}
 
 	slog.Info("call initiated", "target", targetNumber)
 }
@@ -348,6 +363,10 @@ func (d *daemonCallbacks) AnswerCall() {
 					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
 					continue
 				}
+				if answerPM.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
 				// Copy — Decode returns a slice of a reused internal buffer
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
@@ -401,30 +420,33 @@ func (d *daemonCallbacks) AnswerCall() {
 	})
 	close(sdpSent)
 
-	// Start audio pipeline (capture only — playback goes through mixer)
-	d.pipeline = d.newPipeline()
-	if err := d.pipeline.Start(); err != nil {
-		slog.Error("audio pipeline (answer) start failed", "error", err)
-		return
-	}
-
-	// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-	// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-	go func() {
-		defer recoverGoroutine("answer-encode-loop")
-		for frame := range d.pipeline.OutFrames() {
-			d.mu.Lock()
-			pm := d.peerMgr
-			mesh := d.mesh
-			d.mu.Unlock()
-			if pm != nil {
-				pm.SendPCMFrame(frame)
-			}
-			if mesh != nil {
-				mesh.SendPCMFrameToAll(frame)
-			}
+	// Start audio pipeline (capture only — playback goes through mixer).
+	// Skip if one is already running; see matching comment in InitiateCall.
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline (answer) start failed", "error", err)
+			return
 		}
-	}()
+
+		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
+		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
+		go func() {
+			defer recoverGoroutine("answer-encode-loop")
+			for frame := range d.pipeline.OutFrames() {
+				d.mu.Lock()
+				pm := d.peerMgr
+				mesh := d.mesh
+				d.mu.Unlock()
+				if pm != nil {
+					pm.SendPCMFrame(frame)
+				}
+				if mesh != nil {
+					mesh.SendPCMFrameToAll(frame)
+				}
+			}
+		}()
+	}
 
 	slog.Info("answered call", "caller", caller)
 }
@@ -440,6 +462,7 @@ func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
 	if mesh != nil {
 		if meshPM := mesh.GetPeer(phone); meshPM != nil {
 			meshPM.SetOutboundMuted(muted)
+			meshPM.SetInboundMuted(muted)
 			slog.Info("mute peer (mesh)", "phone", phone, "muted", muted)
 			return
 		}
@@ -447,6 +470,7 @@ func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
 	// Fall back to the 2-party peerMgr if phone matches the current 2-party peer.
 	if pm != nil && callPeer == phone {
 		pm.SetOutboundMuted(muted)
+		pm.SetInboundMuted(muted)
 		slog.Info("mute peer (2-party)", "phone", phone, "muted", muted)
 		return
 	}
@@ -476,22 +500,48 @@ func (d *daemonCallbacks) MigrateToMesh(phone string) {
 	d.peerMgr = nil
 }
 
-// currentPeer returns the phone number of the currently relevant 2-party remote
-// peer for HOOK:FLASH dispatch and similar operations. After MigrateToMesh, the
-// original B party lives in the mesh but callPeer still holds its number. If the
-// daemon is mid-ADD_CALLING and d.callPeer now refers to C (because InitiateCall
-// overwrote it), we fall back to the single mesh peer when exactly one mesh peer
-// is active. Must NOT be called with d.mu held.
+// currentPeer returns the phone number of the 2-party remote peer that
+// HOOK:FLASH dispatch should treat as the "active" party to hold. The answer
+// depends on the controller's state rather than on daemon internals -- this
+// dispatches explicitly so future state additions have to declare their own
+// peer policy instead of silently inheriting the "len(mesh)==1" heuristic.
+//
+// - CONNECTED: prefer d.callPeer. It's set by InitiateCall/AnswerCall; if a
+//   previous ADD was aborted and its TearDownPeer cleared d.callPeer while
+//   leaving the original held party B in the mesh, fall back to the single
+//   mesh peer.
+// - ADD_*: the controller has already captured the held party in c.heldPeer,
+//   so the value returned here is not consulted by onHookFlash. Return
+//   d.callPeer as a best-effort identity.
+// - All other states: no meaningful "current peer" -- return empty.
+//
+// Must NOT be called with d.mu held. ctrl.State() acquires c.mu, so the
+// lock-order invariant is preserved by snapshotting the state first.
 func (d *daemonCallbacks) currentPeer() string {
+	s := d.ctrl.State()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.mesh != nil {
-		peers := d.mesh.ActivePeers()
-		if len(peers) == 1 {
-			return peers[0] // post-migration 2-party: B is in the mesh
+
+	switch s {
+	case phone.StateCONNECTED:
+		if d.callPeer != "" {
+			return d.callPeer
 		}
+		if d.mesh != nil {
+			peers := d.mesh.ActivePeers()
+			if len(peers) == 1 {
+				return peers[0]
+			}
+		}
+		return ""
+	case phone.StateADD_DIALTONE, phone.StateADD_DIALING,
+		phone.StateADD_CALLING, phone.StateADD_PRIVATE,
+		phone.StateADD_INTERCEPT, phone.StateCONFERENCE_MERGED:
+		return d.callPeer
+	default:
+		return ""
 	}
-	return d.callPeer
 }
 
 func (d *daemonCallbacks) TearDownPeer(phone string) {
@@ -499,6 +549,17 @@ func (d *daemonCallbacks) TearDownPeer(phone string) {
 	defer d.mu.Unlock()
 	if d.mesh != nil {
 		d.mesh.RemovePeer(phone)
+	}
+	// If the phone being torn down is the current 2-party peer (e.g. an
+	// ADD_CALLING target that the server rejected before it could migrate
+	// into the mesh), close its PeerManager too so we don't leak a dead PC
+	// across retries.
+	if d.peerMgr != nil && d.callPeer == phone {
+		if err := d.peerMgr.Close(); err != nil {
+			slog.Warn("TearDownPeer: peerMgr close failed", "phone", phone, "error", err)
+		}
+		d.peerMgr = nil
+		d.callPeer = ""
 	}
 	d.mixer.RemoveWebRTCSource(phone)
 }
@@ -515,6 +576,17 @@ func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
 }
 
 func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
+	if !initiator {
+		// Responder path: don't pre-create the mesh peer. setupMeshResponder
+		// will create it when the initiator's SDP offer arrives. Pre-creating
+		// here would leave a PC in signaling state 'stable', which causes the
+		// TypeSDP dispatch at line ~1855 to mistakenly route the incoming
+		// offer as an answer (SetRemote(answer) from stable is an invalid
+		// pion transition).
+		slog.Info("conference: responder waiting for initiator SDP", "phone", phone)
+		return
+	}
+
 	d.mu.Lock()
 	if d.mesh == nil {
 		iceCfg := owebrtc.NewICEConfig(d.iceServers)
@@ -524,6 +596,8 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	confID := d.ctrl.ConferenceID()
 	sig := d.sig
 	d.mu.Unlock()
+
+	slog.Info("conference: adding mesh peer", "phone", phone, "initiator", initiator, "conf_id", confID)
 
 	pm, err := mesh.AddPeer(phone)
 	if err != nil {
@@ -547,6 +621,10 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 				// pm owns its own decoder — safe to call concurrently with other peers.
 				pcm, err := pm.Decode(pkt.Payload)
 				if err != nil {
+					continue
+				}
+				if pm.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
 					continue
 				}
 				frame := make([]int16, len(pcm))
@@ -652,6 +730,10 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 				if err != nil {
 					continue
 				}
+				if pm.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
 				select {
@@ -692,6 +774,10 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Call is tearing down. Drop the Pico into instant-hangup mode so any
+	// subsequent idle hook press doesn't sit behind the flash window.
+	d.serial.FlashEnabled(false)
+
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 	d.pendingICE = nil
@@ -715,6 +801,14 @@ func (d *daemonCallbacks) HangupCall() {
 			slog.Warn("peerMgr close failed", "error", err)
 		}
 		d.peerMgr = nil
+	}
+	// Tear down any mesh peers as well. The mesh may still hold a peer adopted
+	// from an earlier flash (ADD_DIALTONE MigrateToMesh) that was aborted
+	// before a conference merge; leaving it behind causes the next Adopt to
+	// close the live peer instead of the stale one.
+	if d.mesh != nil {
+		d.mesh.CloseAll()
+		d.mesh = nil
 	}
 	if peer != "" {
 		d.mixer.RemoveWebRTCSource(peer)
@@ -1776,7 +1870,14 @@ func main() {
 				mixer.PlayOnce(dtmfName)
 			case sigclient.TypeError:
 				slog.Warn("signal error", "error", msg.Error)
-				// Number not reachable -- emulate real phone: ringback -> SIT -> busy
+				// ADD_CALLING: route through the controller so state transitions
+				// to ADD_INTERCEPT and the added peer is torn down. The user
+				// flashes to return to the held party.
+				if ctrl.State() == phone.StateADD_CALLING {
+					ctrl.HandleSignal("error", msg.From)
+					break
+				}
+				// 2-party CALLING: emulate real phone -- ringback -> SIT -> busy
 				go func() {
 					// 1. Brief silence (call setup delay, ~1s)
 					time.Sleep(1 * time.Second)

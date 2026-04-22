@@ -16,6 +16,7 @@ type CallTracker interface {
 	ClearByNumber(number string)
 	InCall(a, b string) bool
 	Busy(number string) bool
+	CanAddAsHost(number string) bool
 	PeerOf(number string) string
 	AllPeersOf(number string) []string
 	Conferences() *calls.ConferenceTracker
@@ -116,7 +117,15 @@ func (r *Relay) handleCall(from string, msg *Message) {
 	}
 
 	if r.Tracker != nil {
-		if r.Tracker.Busy(from) || r.Tracker.Busy(msg.To) {
+		// Callee must be idle. The caller is usually required to be idle too,
+		// except for the party-line add-dial case: a host already in one
+		// 2-party call (as caller) may initiate a second call to a third
+		// party, which a subsequent conference_merge will bond into a 3-way.
+		if r.Tracker.Busy(msg.To) {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			return
+		}
+		if r.Tracker.Busy(from) && !r.Tracker.CanAddAsHost(from) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}

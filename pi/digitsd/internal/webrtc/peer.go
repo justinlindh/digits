@@ -21,6 +21,7 @@ type PeerManager struct {
 	encoder       *codec.Encoder
 	decoder       *codec.Decoder
 	outboundMuted atomic.Bool
+	inboundMuted  atomic.Bool
 	zeroBuf       []int16 // reusable zero slice for muted encodes; allocated once at construction
 
 	// Callbacks (set by caller before use):
@@ -201,6 +202,20 @@ func (m *PeerManager) SetOutboundMuted(v bool) {
 // OutboundMuted reports the current per-peer outbound mute state.
 func (m *PeerManager) OutboundMuted() bool {
 	return m.outboundMuted.Load()
+}
+
+// SetInboundMuted toggles per-peer inbound mute. When true, the remote-track
+// decode goroutine drops decoded frames instead of feeding them to the mixer,
+// so the user does not hear the held party. Used together with SetOutboundMuted
+// to implement 90s POTS silent hold (neither party hears the other).
+// Safe to call concurrently.
+func (m *PeerManager) SetInboundMuted(v bool) {
+	m.inboundMuted.Store(v)
+}
+
+// InboundMuted reports the current per-peer inbound mute state.
+func (m *PeerManager) InboundMuted() bool {
+	return m.inboundMuted.Load()
 }
 
 // SendPCMFrame encodes a PCM frame with this peer's encoder and writes it to

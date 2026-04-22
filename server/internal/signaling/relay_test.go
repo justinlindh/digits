@@ -70,6 +70,20 @@ func (m *mockTracker) Busy(number string) bool {
 	return false
 }
 
+func (m *mockTracker) CanAddAsHost(number string) bool {
+	callerCount := 0
+	for k := range m.calls {
+		a, b, _ := strings.Cut(k, "→")
+		if b == number {
+			return false
+		}
+		if a == number {
+			callerCount++
+		}
+	}
+	return callerCount == 1
+}
+
 func (m *mockTracker) InCall(a, b string) bool {
 	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
@@ -357,27 +371,77 @@ func TestRelayBusySignal(t *testing.T) {
 		t.Fatal("phone 3 did not receive busy signal")
 	}
 
-	// Phone 1 tries to call Phone 3 while already on a call -- should also get busy
+	// Phone 1 (host of the active call with Phone 2) tries to call Phone 3.
+	// This is the party-line add-third-party flow: the host may initiate a
+	// second call while busy as caller, so Phone 3 should ring rather than
+	// Phone 1 receiving busy.
 	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140003"})
 
 	select {
+	case data := <-conn3.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if msg.Type != TypeRing {
+			t.Fatalf("expected ring for add-dial target, got: %+v", msg)
+		}
+	default:
+		t.Fatal("phone 3 did not receive ring from add-dial")
+	}
+
+	// Phone 1 should NOT have received busy for the add-dial.
+	select {
 	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type == TypeBusy {
+			t.Fatalf("phone 1 got busy during legitimate add-dial")
+		}
+	default:
+		// correct -- no spurious busy
+	}
+}
+
+// TestRelayAddDialRejectedForNonHost covers the contrapositive: a party that
+// is busy as CALLEE (not the original caller) may not initiate an add-dial.
+// This enforces the "host-initiated only" rule from 90s residential TWC.
+func TestRelayAddDialRejectedForNonHost(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	conn3 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+	hub.Register("3140003", conn3)
+
+	// Phone 1 calls Phone 2 -- Phone 2 is now the CALLEE.
+	relay.HandleMessage("3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	// Phone 2 (callee, not host) tries to add Phone 3 -- must be rejected.
+	relay.HandleMessage("3140002", &Message{Type: TypeCall, To: "3140003"})
+
+	select {
+	case data := <-conn2.Send:
 		msg, err := ParseMessage(data)
 		if err != nil {
 			t.Fatalf("parse error: %v", err)
 		}
 		if msg.Type != TypeBusy {
-			t.Fatalf("expected busy for caller already in call, got: %+v", msg)
+			t.Fatalf("expected busy for non-host add attempt, got: %+v", msg)
 		}
 	default:
-		t.Fatal("phone 1 did not receive busy signal when already in a call")
+		t.Fatal("phone 2 did not receive busy when attempting add as non-host")
 	}
 
-	// Phone 3 should not have received anything from the second call attempt
+	// Phone 3 must not have rung.
 	select {
 	case data := <-conn3.Send:
 		msg, _ := ParseMessage(data)
-		t.Fatalf("phone 3 should not have received anything, got: %+v", msg)
+		t.Fatalf("phone 3 should not have rung from non-host add, got: %+v", msg)
 	default:
 		// correct
 	}
