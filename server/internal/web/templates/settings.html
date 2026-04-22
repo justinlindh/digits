@@ -383,6 +383,14 @@
     setActive(chosen.id);
   }
 
+  // When the user clicks a nav item we want the clicked section to
+  // stay highlighted across the smooth-scroll. Without this, the
+  // scroll animation triggers scroll events -> spy re-runs -> the
+  // section currently under the focus line (typically the NEXT one)
+  // wins, so the highlight jumps away from what the user clicked.
+  // spyLockedUntil suspends the spy until the smooth-scroll settles.
+  var spyLockedUntil = 0;
+
   // rAF-throttle so rapid scroll events don't thrash the DOM.
   var scheduled = false;
   function onScroll() {
@@ -390,6 +398,7 @@
     scheduled = true;
     window.requestAnimationFrame(function () {
       scheduled = false;
+      if (Date.now() < spyLockedUntil) return;
       update();
     });
   }
@@ -410,9 +419,31 @@
   }
 
   links.forEach(function (link) {
-    link.addEventListener('click', function () {
+    link.addEventListener('click', function (e) {
+      // Let modifier-clicks (new tab, new window) keep native behavior.
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
       var hash = link.getAttribute('href') || '';
-      if (hash.charAt(0) === '#') setActive(hash.slice(1));
+      if (hash.charAt(0) !== '#') return;
+      var id = hash.slice(1);
+      var target = document.getElementById(id);
+      if (!target) return;
+
+      e.preventDefault();
+      setActive(id);
+      // Lock spy across the smooth-scroll so the click-chosen item
+      // doesn't get overridden by the scroll events the animation
+      // generates.
+      spyLockedUntil = Date.now() + 800;
+
+      var top = sectionTopRelative(target);
+      if (scroller) {
+        scroller.scrollTo({ top: top, behavior: 'smooth' });
+      } else {
+        window.scrollTo({ top: top, behavior: 'smooth' });
+      }
+
+      // Update the URL hash without triggering a second browser jump.
+      if (history.replaceState) history.replaceState(null, '', hash);
     });
   });
 })();
