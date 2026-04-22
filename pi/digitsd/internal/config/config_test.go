@@ -453,17 +453,9 @@ func TestLoadWithoutWiFiFallbackSectionUsesDefaults(t *testing.T) {
 	}
 }
 
-func TestConfigSilentModeDefaultFalse(t *testing.T) {
-	c := Default()
-	if c.SilentModeOrDefault() {
-		t.Errorf("SilentMode default: got true, want false")
-	}
-}
-
-func TestConfigSilentModeExplicitTrue(t *testing.T) {
-	c := &Config{SilentMode: true}
-	if !c.SilentModeOrDefault() {
-		t.Errorf("SilentMode explicit true: got false, want true")
+func TestConfigDefaultSilentModeFalse(t *testing.T) {
+	if Default().SilentMode {
+		t.Errorf("Default().SilentMode: got true, want false")
 	}
 }
 

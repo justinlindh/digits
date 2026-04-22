@@ -1253,7 +1253,7 @@ func main() {
 	// 8. Create phone Controller
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
-	ctrl.SetSilentMode(cfg.SilentModeOrDefault())
+	ctrl.SetSilentMode(cfg.SilentMode)
 
 	// 8b. Contacts cache — optional dial safelist, persisted to disk.
 	// An empty cache leaves the checker nil so no-contacts phones allow
@@ -1744,7 +1744,6 @@ func main() {
 					break
 				}
 
-				// Voice style (existing behavior).
 				style := msg.LineSettings.VoiceStyle
 				if style == "" {
 					style = config.VoiceStyleCopper
@@ -1762,7 +1761,6 @@ func main() {
 					}
 				}
 
-				// Silent mode (new).
 				silent := msg.LineSettings.SilentMode
 				if silent != currentSilent {
 					slog.Info("line_settings applied", "silent_mode", silent)

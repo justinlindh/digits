@@ -185,16 +185,6 @@ func (c *Config) VoiceStyleOrDefault() string {
 	return c.VoiceStyle
 }
 
-// SilentModeOrDefault returns the configured silent-mode flag, or false if
-// unset. Kept as a method for symmetry with VoiceStyleOrDefault even though
-// the bool zero value already is the default.
-func (c *Config) SilentModeOrDefault() bool {
-	if c == nil {
-		return false
-	}
-	return c.SilentMode
-}
-
 // Save writes the config back to the file it was loaded from.
 // Uses atomic write (tmp + fsync + rename) and keeps a .bak copy.
 func (c *Config) Save() error {
