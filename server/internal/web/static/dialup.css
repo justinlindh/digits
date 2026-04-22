@@ -84,6 +84,21 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
+/* Non-CRT dialup: lock the body + window to the viewport so title
+   bar, menu, toolbar, and Keyword bar stay fixed while content
+   scrolls inside .dialup-main. Mirrors the contained-browser-window
+   feel the CRT bezel provides when CRTMode=all. */
+body.dialup:not(.crt-all) {
+  height: 100vh;
+  overflow: hidden;
+}
+body.dialup:not(.crt-all) .dialup-window {
+  max-height: calc(100vh - 16px);
+}
+/* Flex-item overflow fix: without min-height: 0 a flex child will
+   grow to its content and defeat .dialup-main's overflow: auto. */
+.dialup-main { min-height: 0; }
+
 .dialup-title {
   background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 50%, var(--dialup-blue-light) 100%);
   color: #fff;

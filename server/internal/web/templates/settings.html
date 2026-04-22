@@ -306,10 +306,17 @@
     if (byId[id]) byId[id].classList.add('is-active');
   }
 
-  // Resolve the real scroll container. In CRT-all mode the
-  // .dialup-window is the scroller (overflow-y: auto inside the
-  // bezel). Otherwise the page itself scrolls via window.
-  var scroller = document.querySelector('body.crt-all .dialup-window');
+  // Resolve the real scroll container, in priority order:
+  //   1. body.crt-all  -> .dialup-window (scroll lives inside the CRT bezel)
+  //   2. body.dialup   -> .dialup-main   (non-CRT dialup locks the window to viewport)
+  //   3. otherwise     -> window (intercom theme, plain page scroll)
+  var body = document.body;
+  var scroller = null;
+  if (body.classList.contains('crt-all')) {
+    scroller = document.querySelector('.crt__screen > .dialup-window');
+  } else if (body.classList.contains('dialup')) {
+    scroller = document.querySelector('.dialup-main');
+  }
   function scrollMetrics() {
     if (scroller) {
       return {
@@ -337,9 +344,13 @@
   function update() {
     var m = scrollMetrics();
 
-    // Bottom-of-page clamp: if there's no more scroll room, the last
-    // section is "what you're looking at" regardless of its top.
-    if (m.scrollTop + m.viewHeight >= m.pageHeight - 4) {
+    // Bottom-of-page clamp: if the content overflows AND we've
+    // scrolled to the end, the last section is "what you're looking
+    // at" regardless of its top. Guard on pageHeight > viewHeight so
+    // this doesn't latch on a short page where scrollTop is simply
+    // pinned at 0 (false-positive that would always select the last
+    // nav item at rest).
+    if (m.pageHeight > m.viewHeight + 4 && m.scrollTop + m.viewHeight >= m.pageHeight - 4) {
       setActive(sections[sections.length - 1].id);
       return;
     }
