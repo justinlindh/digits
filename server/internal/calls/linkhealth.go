@@ -638,12 +638,19 @@ func (s *HealthStore) ReadbackEdge(ctx context.Context, confID uuid.UUID, from, 
 	)
 }
 
+// readbackSession runs a parameterized readback query against call_link_health
+// with a caller-supplied WHERE fragment. `where` must begin with "WHERE " and
+// its placeholders must be numbered $1..$N in order of `args`. Returns samples
+// oldest-first.
 func (s *HealthStore) readbackSession(ctx context.Context, where string, args []any, limit int) ([]Sample, error) {
+	// Compute $N before appending limit so the index is correct; swapping
+	// these two lines would misalign the placeholder.
+	limitPlaceholder := "$" + strconv.Itoa(len(args)+1)
+	args = append(args, limit)
 	sqlStr := `SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
 		 FROM call_link_health ` + where + `
 		 ORDER BY ts DESC
-		 LIMIT $` + strconv.Itoa(len(args)+1)
-	args = append(args, limit)
+		 LIMIT ` + limitPlaceholder
 
 	rows, err := s.db.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
