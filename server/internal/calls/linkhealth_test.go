@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func sample(ts int64, loss float32) Sample {
@@ -330,5 +332,36 @@ func TestHealthStoreNotifyDisconnectedDoesNotCrossCalls(t *testing.T) {
 		t.Fatalf("sub2 should not have received an event, got %+v", ev)
 	case <-time.After(50 * time.Millisecond):
 		// good
+	}
+}
+
+func TestSessionKeyEquality(t *testing.T) {
+	a := SessionKey{CallID: 42}
+	b := SessionKey{CallID: 42}
+	if a != b {
+		t.Fatal("equal SessionKeys must be ==")
+	}
+	u := uuid.New()
+	c := SessionKey{ConfID: u}
+	d := SessionKey{ConfID: u}
+	if c != d {
+		t.Fatal("equal conference SessionKeys must be ==")
+	}
+	if a == c {
+		t.Fatal("call and conf keys must not be equal")
+	}
+
+	m := map[SessionKey]int{a: 1, c: 2}
+	if m[b] != 1 || m[d] != 2 {
+		t.Fatalf("SessionKey not usable as map key: %v", m)
+	}
+}
+
+func TestSessionKeyIsConf(t *testing.T) {
+	if (SessionKey{CallID: 1}).IsConf() {
+		t.Fatal("2-party SessionKey should not be conf")
+	}
+	if !(SessionKey{ConfID: uuid.New()}).IsConf() {
+		t.Fatal("conference SessionKey should be conf")
 	}
 }

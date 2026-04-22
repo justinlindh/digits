@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -52,15 +53,33 @@ type Sample struct {
 	BytesOut *int64
 }
 
+// SessionKey identifies either a 2-party call or a 3-way conference. Exactly
+// one of CallID / ConfID is non-zero.
+type SessionKey struct {
+	CallID int64     // non-zero for 2-party calls
+	ConfID uuid.UUID // non-zero for 3-way conferences
+}
+
+// IsConf reports whether this key identifies a conference.
+func (k SessionKey) IsConf() bool { return k.ConfID != uuid.Nil }
+
+// endpointKey is the composite map key for a per-session sample ring.
+// From is the phone that emitted the sample. Peer is the remote endpoint
+// the sample describes; it is empty for 2-party calls.
+type endpointKey struct {
+	From string
+	Peer string
+}
+
 // ringCapacity is the per-endpoint in-memory sample retention.
 // At the default 2s reporting cadence this holds 2 minutes of history.
 const ringCapacity = 60
 
-// callRings holds per-endpoint bounded sample rings and last-flushed
+// sessionRings holds per-endpoint bounded sample rings and last-flushed
 // timestamps used by the DB flusher. All state is guarded by mu.
-type callRings struct {
+type sessionRings struct {
 	mu          sync.Mutex
-	byEndpoint  map[string]*ring
+	byEndpoint  map[endpointKey]*ring
 	subscribers map[*subscriber]struct{} // nil until first Subscribe
 }
 
@@ -98,7 +117,7 @@ func (r *ring) latest() *Sample {
 type HealthStore struct {
 	db            *db.Database
 	mu            sync.Mutex
-	calls         map[int64]*callRings
+	sessions      map[SessionKey]*sessionRings
 	flushDisabled bool
 }
 
@@ -115,8 +134,8 @@ func WithFlushDisabled(disabled bool) HealthStoreOption {
 
 func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	s := &HealthStore{
-		db:    d,
-		calls: make(map[int64]*callRings),
+		db:       d,
+		sessions: make(map[SessionKey]*sessionRings),
 	}
 	for _, o := range opts {
 		o(s)
@@ -129,12 +148,13 @@ func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 // without needing auto-creation (which would resurrect evicted calls).
 // Safe to call multiple times; idempotent.
 func (s *HealthStore) Init(callID int64) {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.calls[callID]; ok {
+	if _, ok := s.sessions[key]; ok {
 		return
 	}
-	s.calls[callID] = &callRings{byEndpoint: make(map[string]*ring)}
+	s.sessions[key] = &sessionRings{byEndpoint: make(map[endpointKey]*ring)}
 }
 
 // Record appends a sample for the given call and endpoint. Safe for
@@ -143,48 +163,51 @@ func (s *HealthStore) Init(callID int64) {
 // lifecycle and prevents post-Evict resurrection of map entries.
 //
 // Race note: between releasing the top-level map lock and acquiring the
-// per-call lock, a concurrent Evict can remove the callRings entry from
-// the map. The captured *callRings reference remains valid (the struct is
+// per-call lock, a concurrent Evict can remove the sessionRings entry from
+// the map. The captured *sessionRings reference remains valid (the struct is
 // not freed) but is no longer reachable from the map; the sample appended
 // to it will be silently dropped -- never flushed, eventually GC'd. This
 // is intentional telemetry loss on a racing call-end. The alternative --
 // auto-recreating the map entry -- would resurrect evicted calls, which
 // was the exact bug fixed during the T6 review cycle.
 func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
+	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
 		return // not initialized or already evicted
 	}
 
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
-	r, ok := cr.byEndpoint[endpoint]
+	epKey := endpointKey{From: endpoint}
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	r, ok := sr.byEndpoint[epKey]
 	if !ok {
 		r = &ring{}
-		cr.byEndpoint[endpoint] = r
+		sr.byEndpoint[epKey] = r
 	}
 	r.append(sample)
-	cr.broadcastLocked(Event{Kind: SampleKind, Endpoint: endpoint, Sample: sample})
+	sr.broadcastLocked(Event{Kind: SampleKind, Endpoint: endpoint, Sample: sample})
 }
 
 // Latest returns the most recent sample for the caller and callee endpoints
 // of the given call. Either may be nil if no samples have been recorded yet.
 func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sample) {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
+	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
 		return nil, nil
 	}
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
 	var a, b *Sample
-	if r := cr.byEndpoint[caller]; r != nil {
+	if r := sr.byEndpoint[endpointKey{From: caller}]; r != nil {
 		a = r.latest()
 	}
-	if r := cr.byEndpoint[callee]; r != nil {
+	if r := sr.byEndpoint[endpointKey{From: callee}]; r != nil {
 		b = r.latest()
 	}
 	return a, b
@@ -193,15 +216,16 @@ func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sam
 // Window returns a copy of the retained sample ring for an endpoint, oldest
 // first. Returns an empty slice if the call or endpoint is unknown.
 func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
+	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
-	r, ok := cr.byEndpoint[endpoint]
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	r, ok := sr.byEndpoint[endpointKey{From: endpoint}]
 	if !ok {
 		return nil
 	}
@@ -216,19 +240,20 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 //
 // Called by Tracker on call end via the SetHealthStore-registered interface.
 func (s *HealthStore) Evict(callID int64) {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
-	delete(s.calls, callID)
+	sr, ok := s.sessions[key]
+	delete(s.sessions, key)
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
-	// Every channel op under cr.mu must be non-blocking (select/default or
-	// close) — we hold the lock that Record also takes on the hot path.
-	for sub := range cr.subscribers {
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	// Every channel op under sr.mu must be non-blocking (select/default or
+	// close) -- we hold the lock that Record also takes on the hot path.
+	for sub := range sr.subscribers {
 		select {
 		case sub.ch <- Event{Kind: EndedKind}:
 		default:
@@ -239,7 +264,7 @@ func (s *HealthStore) Evict(callID int64) {
 		}
 		close(sub.ch)
 	}
-	cr.subscribers = nil
+	sr.subscribers = nil
 }
 
 // Subscription delivers per-call telemetry events to one consumer.
@@ -265,7 +290,7 @@ func (s *Subscription) Close() {
 
 // subscriberBufferSize is the per-subscription channel depth. At the 2s
 // sample cadence with two endpoints per call, 16 slots tolerates ~16s of
-// consumer stall before events drop — generous for a well-behaved SSE
+// consumer stall before events drop -- generous for a well-behaved SSE
 // consumer on a LAN.
 const subscriberBufferSize = 16
 
@@ -274,8 +299,9 @@ const subscriberBufferSize = 16
 // whose channel is already closed -- callers see this the same way as a
 // mid-stream Evict and can treat it uniformly.
 func (s *HealthStore) Subscribe(callID int64) *Subscription {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
+	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
 		ch := make(chan Event)
@@ -285,20 +311,20 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 
 	sub := &subscriber{ch: make(chan Event, subscriberBufferSize)}
 
-	cr.mu.Lock()
-	if cr.subscribers == nil {
-		cr.subscribers = make(map[*subscriber]struct{})
+	sr.mu.Lock()
+	if sr.subscribers == nil {
+		sr.subscribers = make(map[*subscriber]struct{})
 	}
-	cr.subscribers[sub] = struct{}{}
-	cr.mu.Unlock()
+	sr.subscribers[sub] = struct{}{}
+	sr.mu.Unlock()
 
 	return &Subscription{
 		C: sub.ch,
 		close: func() {
-			cr.mu.Lock()
-			_, stillRegistered := cr.subscribers[sub]
-			delete(cr.subscribers, sub)
-			cr.mu.Unlock()
+			sr.mu.Lock()
+			_, stillRegistered := sr.subscribers[sub]
+			delete(sr.subscribers, sub)
+			sr.mu.Unlock()
 			if stillRegistered {
 				close(sub.ch)
 			}
@@ -313,23 +339,24 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 //
 // No-op for unknown callIDs.
 func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
+	key := SessionKey{CallID: callID}
 	s.mu.Lock()
-	cr, ok := s.calls[callID]
+	sr, ok := s.sessions[key]
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
-	cr.mu.Lock()
-	defer cr.mu.Unlock()
-	cr.broadcastLocked(Event{Kind: DisconnectKind, EndedBy: endedBy})
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	sr.broadcastLocked(Event{Kind: DisconnectKind, EndedBy: endedBy})
 }
 
-// broadcastLocked sends an event to every subscriber under cr.mu. Non-blocking
+// broadcastLocked sends an event to every subscriber under sr.mu. Non-blocking
 // per subscriber: if a channel is full, the event drops and a debug log fires
 // once per 32 drops to avoid log spam under sustained slow-client pressure.
-// Caller MUST hold cr.mu.
-func (cr *callRings) broadcastLocked(ev Event) {
-	for sub := range cr.subscribers {
+// Caller MUST hold sr.mu.
+func (sr *sessionRings) broadcastLocked(ev Event) {
+	for sub := range sr.subscribers {
 		select {
 		case sub.ch <- ev:
 		default:
@@ -351,45 +378,45 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	// Snapshot call ids under the top-level lock to avoid holding it while
+	// Snapshot session keys under the top-level lock to avoid holding it while
 	// doing DB I/O.
 	s.mu.Lock()
-	ids := make([]int64, 0, len(s.calls))
-	for id := range s.calls {
-		ids = append(ids, id)
+	keys := make([]SessionKey, 0, len(s.sessions))
+	for k := range s.sessions {
+		keys = append(keys, k)
 	}
 	s.mu.Unlock()
 
 	var errs []error
-	for _, id := range ids {
+	for _, k := range keys {
 		s.mu.Lock()
-		cr := s.calls[id]
+		sr := s.sessions[k]
 		s.mu.Unlock()
-		if cr == nil {
+		if sr == nil {
 			continue
 		}
-		if err := s.flushCall(ctx, id, cr); err != nil {
-			slog.Error("link-health flush failed", "call_id", id, "err", err)
-			errs = append(errs, fmt.Errorf("call %d: %w", id, err))
+		if err := s.flushSession(ctx, k, sr); err != nil {
+			slog.Error("link-health flush failed", "session_key", k, "err", err)
+			errs = append(errs, fmt.Errorf("session %v: %w", k, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (s *HealthStore) flushCall(ctx context.Context, callID int64, cr *callRings) error {
-	cr.mu.Lock()
+func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sessionRings) error {
+	sr.mu.Lock()
 	// Collect work under lock, then release before DB I/O.
 	type pending struct {
-		endpoint string
-		sample   Sample
+		epKey  endpointKey
+		sample Sample
 	}
 	type flushAdvance struct {
-		endpoint string
-		ts       time.Time
+		epKey endpointKey
+		ts    time.Time
 	}
 	var todo []pending
 	var advance []flushAdvance
-	for ep, r := range cr.byEndpoint {
+	for epKey, r := range sr.byEndpoint {
 		latest := r.latest()
 		if latest == nil {
 			continue
@@ -397,27 +424,27 @@ func (s *HealthStore) flushCall(ctx context.Context, callID int64, cr *callRings
 		if !latest.TS.After(r.lastFlushed) {
 			continue // nothing new since last flush
 		}
-		todo = append(todo, pending{endpoint: ep, sample: *latest})
-		advance = append(advance, flushAdvance{ep, latest.TS})
+		todo = append(todo, pending{epKey: epKey, sample: *latest})
+		advance = append(advance, flushAdvance{epKey, latest.TS})
 	}
-	cr.mu.Unlock()
+	sr.mu.Unlock()
 
 	if len(todo) == 0 {
 		return nil
 	}
 	for _, p := range todo {
-		if err := s.writeSample(ctx, callID, p.endpoint, p.sample); err != nil {
-			return fmt.Errorf("write sample (%d,%s): %w", callID, p.endpoint, err)
+		if err := s.writeSample(ctx, key.CallID, p.epKey.From, p.sample); err != nil {
+			return fmt.Errorf("write sample (%v,%s): %w", key, p.epKey.From, err)
 		}
 	}
 	// On success, advance lastFlushed.
-	cr.mu.Lock()
+	sr.mu.Lock()
 	for _, a := range advance {
-		if r := cr.byEndpoint[a.endpoint]; r != nil {
+		if r := sr.byEndpoint[a.epKey]; r != nil {
 			r.lastFlushed = a.ts
 		}
 	}
-	cr.mu.Unlock()
+	sr.mu.Unlock()
 	return nil
 }
 
