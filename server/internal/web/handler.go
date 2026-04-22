@@ -824,10 +824,7 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 // the next time that device reconnects it will receive the latest settings
 // via the registration push in relay.OnRegistered.
 func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
-	if h.hub.Get(number) == nil {
-		return nil
-	}
-	return h.hub.SendTo(number, &signaling.Message{
+	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
@@ -835,6 +832,10 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 			SilentMode: settings.SilentMode,
 		},
 	})
+	if errors.Is(err, signaling.ErrNotConnected) {
+		return nil
+	}
+	return err
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
