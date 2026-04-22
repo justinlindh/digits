@@ -10,7 +10,9 @@ RUN set -e; \
     curl -fsSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.2.2/tailwindcss-linux-x64 -o $TWCSS && chmod +x $TWCSS; \
     $TWCSS --input internal/admin/static/input.css --output internal/admin/static/tailwind.css --content 'internal/admin/templates/*.html' --minify
 
-RUN CGO_ENABLED=0 go build -o admind ./cmd/admind/
+ARG VERSION=dev
+ARG COMMIT=unknown
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/justinlindh/digits/server/internal/version.Version=${VERSION} -X github.com/justinlindh/digits/server/internal/version.Commit=${COMMIT}" -o admind ./cmd/admind/
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*

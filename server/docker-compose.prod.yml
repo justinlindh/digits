@@ -41,6 +41,9 @@ services:
     build:
       context: .
       dockerfile: cmd/admind/Dockerfile
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
+        COMMIT: ${BUILD_COMMIT:-unknown}
     restart: unless-stopped
     environment:
       ADMIN_ADDR: ":9090"
