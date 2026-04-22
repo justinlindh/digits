@@ -49,9 +49,9 @@ func TestCompareSemver(t *testing.T) {
 		{"0.5.0", "0.4.9", 1},
 	}
 	for _, c := range cases {
-		got := compareSemver(c.a, c.b)
+		got := CompareSemver(c.a, c.b)
 		if got != c.want {
-			t.Errorf("compareSemver(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+			t.Errorf("CompareSemver(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }

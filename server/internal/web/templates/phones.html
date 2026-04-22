@@ -230,6 +230,7 @@
           <th>Number</th>
           <th>Label</th>
           <th>Status</th>
+          <th>Pi</th>
           <th>Firmware</th>
           <th>Added</th>
           <th class="r">Actions</th>
@@ -239,7 +240,15 @@
         {{range .Lines}}
         <tr>
           <td class="num"><a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a></td>
-          <td><a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a></td>
+          <td>
+            <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{if .Line.Settings.SilentMode}}
+            <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
+              <span class="phone-silent__dot" aria-hidden="true"></span>
+              <span class="phone-silent__text">SILENT</span>
+            </span>
+            {{end}}
+          </td>
           <td>
             {{if .Online}}
               <span class="chip chip--on"><span class="chip__dot"></span>online</span>
@@ -247,7 +256,26 @@
               <span class="chip"><span class="chip__dot"></span>offline</span>
             {{end}}
           </td>
-          <td class="muted" style="font-size: 12px;">unknown</td>
+          <td style="font-size: 12px;">
+            {{if and .DeviceInfo .DeviceInfo.PiVersion}}
+              <span class="num">{{.DeviceInfo.PiVersion}}</span>
+              {{if and $.LatestPiVersion (ne .DeviceInfo.PiVersion $.LatestPiVersion)}}
+                <span class="chip chip--warn" style="margin-left: 6px;"><span class="chip__dot"></span>{{$.LatestPiVersion}}</span>
+              {{end}}
+            {{else}}
+              <span class="muted">unknown</span>
+            {{end}}
+          </td>
+          <td style="font-size: 12px;">
+            {{if and .DeviceInfo .DeviceInfo.FirmwareVersion}}
+              <span class="num">{{.DeviceInfo.FirmwareVersion}}</span>
+              {{if and $.LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion $.LatestFirmwareVersion)}}
+                <span class="chip chip--warn" style="margin-left: 6px;"><span class="chip__dot"></span>{{$.LatestFirmwareVersion}}</span>
+              {{end}}
+            {{else}}
+              <span class="muted">unknown</span>
+            {{end}}
+          </td>
           <td class="num muted">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</td>
           <td class="r">
             <button class="btn btn--quiet btn--sm"
@@ -268,9 +296,13 @@
     <li>
       <a class="lines__row" href="/phones/{{.Line.Number}}">
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
-        <span class="lines__name">{{.Line.Name}}</span>
+        <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
         <span class="lines__num">{{fmtPhone .Line.Number}}</span>
-        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
+        {{if .UpdateAvailable}}
+          <span class="chip chip--warn"><span class="chip__dot"></span>update</span>
+        {{else}}
+          <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
+        {{end}}
       </a>
     </li>
     {{end}}
@@ -290,7 +322,7 @@
 {{define "phone-edit-row"}}
 <tr>
   <td class="num">{{fmtPhone .Line.Number}}</td>
-  <td colspan="4">
+  <td colspan="5">
     <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML"
           class="hstack hstack--wrap">
       <input type="text" name="name" value="{{.Line.Name}}" class="field__input" style="width: 240px;">

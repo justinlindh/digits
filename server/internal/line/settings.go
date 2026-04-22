@@ -11,6 +11,7 @@ const (
 // fields can be added without schema changes.
 type Settings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
+	SilentMode bool   `json:"silent_mode,omitempty"`
 }
 
 // DefaultSettings returns the settings a newly created line starts with.
@@ -27,6 +28,7 @@ func (s Settings) Merge(patch Settings) Settings {
 	if patch.VoiceStyle != "" {
 		s.VoiceStyle = patch.VoiceStyle
 	}
+	s.SilentMode = patch.SilentMode
 	return s
 }
 

@@ -85,6 +85,7 @@ type ContactEntry struct {
 // there, in server/internal/line, and in server/internal/signaling.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
+	SilentMode bool   `json:"silent_mode,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.

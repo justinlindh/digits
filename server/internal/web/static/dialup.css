@@ -84,6 +84,21 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   box-shadow: 2px 2px 0 rgba(0,0,0,0.4);
 }
 
+/* Non-CRT dialup: lock the body + window to the viewport so title
+   bar, menu, toolbar, and Keyword bar stay fixed while content
+   scrolls inside .dialup-main. Mirrors the contained-browser-window
+   feel the CRT bezel provides when CRTMode=all. */
+body.dialup:not(.crt-all) {
+  height: 100vh;
+  overflow: hidden;
+}
+body.dialup:not(.crt-all) .dialup-window {
+  max-height: calc(100vh - 16px);
+}
+/* Flex-item overflow fix: without min-height: 0 a flex child will
+   grow to its content and defeat .dialup-main's overflow: auto. */
+.dialup-main { min-height: 0; }
+
 .dialup-title {
   background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 50%, var(--dialup-blue-light) 100%);
   color: #fff;
@@ -933,33 +948,44 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
 .pin__slot.is-filled { background: var(--dialup-gold); }
 .pin__slot.is-active { border-bottom-color: var(--dialup-accent-red); box-shadow: inset 0 -2px 0 var(--dialup-accent-red); }
 
-/* --------- Hub-and-spoke (Connected Families) --------- */
+/* --------- Hub-and-spoke (Connected Families) - Option D ---------
+   Spoke and center share the same chunky pixel-art house silhouette
+   (see house-icon-dialup-spoke / -center templates). Only window fill
+   distinguishes the center (lit gold) from spokes (dark blue). The
+   dashed gold rail is the "cable" between homes. */
 
 .hub {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 10px;
-  gap: 10px;
-  background: #fff;
+  padding: 16px 10px 18px;
+  gap: 12px;
+  background: var(--dialup-chrome-l);
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
 }
+
 .hub__spokes {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: flex-end;
-  gap: 16px 24px;
+  gap: 18px 28px;
   max-width: 760px;
 }
+
 .hub__spoke {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding-bottom: 14px;
+  gap: 4px;
+  padding-bottom: 18px;
   position: relative;
-  max-width: 140px;
+  max-width: 120px;
 }
+
 .hub__spoke::after {
   content: '';
   position: absolute;
@@ -967,10 +993,16 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   left: 50%;
   transform: translateX(-50%);
   width: 0;
-  height: 12px;
+  height: 14px;
   border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__house { width: 40px; height: 40px; color: var(--dialup-blue-dark); }
+
+.hub__house {
+  width: 48px;
+  height: 48px;
+  overflow: visible; /* antenna + signal arcs extend above the SVG box */
+}
+
 .hub__label {
   font-family: inherit;
   font-style: normal;
@@ -979,7 +1011,15 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   color: var(--dialup-ink);
   text-align: center;
 }
-.hub__since { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
+
+.hub__since {
+  font-size: 10px;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
 .hub__rail {
   width: calc(100% - 16px);
   max-width: 560px;
@@ -987,7 +1027,16 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   border-top: 2px dashed var(--dialup-gold-dark);
   background: none;
 }
-.hub__center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 12px; }
+
+.hub__center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+}
+
 .hub__center::before {
   content: '';
   position: absolute;
@@ -995,12 +1044,36 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   left: 50%;
   transform: translateX(-50%);
   width: 0;
-  height: 12px;
+  height: 14px;
   border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__center-house { width: 60px; height: 60px; color: var(--dialup-blue-dark); }
-.hub__center-name { font-weight: bold; font-size: 13px; color: var(--dialup-ink); font-style: normal; }
-.hub__center-sub { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
+
+.hub__center-house {
+  width: 76px;
+  height: 76px;
+  overflow: visible;
+}
+
+.hub__center-name {
+  font-weight: bold;
+  font-size: 14px;
+  color: var(--dialup-ink);
+  font-style: normal;
+}
+
+.hub__center-sub {
+  font-size: 10px;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 600px) {
+  .hub__spokes { gap: 12px 18px; }
+  .hub__house { width: 40px; height: 40px; }
+  .hub__center-house { width: 64px; height: 64px; }
+}
 
 /* --------- Disclosure (details/summary) --------- */
 
@@ -1172,62 +1245,668 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   }
 }
 
-/* Settings sticky side-nav placeholder - see issue #214 for full dialup treatment */
-.settings-layout { display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
-.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
-.settings-nav__item { padding: 4px 8px; color: var(--dialup-ink); text-decoration: none; }
-.settings-nav__item.is-active { background: var(--dialup-blue); color: #fff; }
-.settings-sections { display: flex; flex-direction: column; gap: 8px; }
+/* --------- Settings side-nav layout ---------
+   Left column is an inset-beveled well (like a Win98 properties-dialog
+   list) holding vertical section links. Active item is painted with
+   the dialup menu-selection vocabulary: deep blue background, white
+   bold text. Sticky inside .dialup-main so it stays in view as the
+   right-hand section content scrolls. */
 
-/* Theme picker cards placeholder - see issue #214 for full dialup treatment */
-.theme-card { display: grid; grid-template-columns: 18px 60px 1fr auto; gap: 8px; padding: 6px; border: 2px inset var(--dialup-chrome); background: var(--dialup-chrome-l); align-items: center; }
-.theme-card + .theme-card { margin-top: 4px; }
-.theme-card--selected { background: var(--dialup-blue-light); }
-.theme-card__swatch { display: flex; height: 24px; border: 1px solid var(--dialup-bevel-lo); }
-.theme-card__swatch-strip { flex: 1; }
-.theme-card__body { display: flex; flex-direction: column; }
-.theme-card__name { font-weight: bold; font-size: 12px; }
-.theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
+.settings-layout {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 16px;
+  align-items: start;
+}
 
-/* Neighborhood rows placeholder - see issue #214 for full dialup treatment */
-.neighborhood { display: flex; flex-direction: column; }
-.neighborhood__row { display: grid; grid-template-columns: 200px 1fr; border: 1px solid var(--dialup-bevel-lo); background: #fff; margin-bottom: 4px; }
-.neighborhood__identity { padding: 8px; background: var(--dialup-chrome-l); border-right: 1px solid var(--dialup-bevel-lo); }
-.neighborhood__name { font-weight: bold; display: flex; align-items: center; gap: 6px; }
-.neighborhood__name svg { width: 20px; height: 20px; }
-.neighborhood__meta { font-size: 11px; color: var(--dialup-ink-muted); }
-.neighborhood__lines { padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.neighborhood__line { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.neighborhood__line-num { margin-left: auto; font-family: var(--font-mono); }
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+  position: sticky;
+  top: 8px;
+}
 
-/* Postcard placeholder - see issue #214 for full dialup treatment */
-.postcard { display: grid; grid-template-columns: 1fr 72px; gap: 10px; padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); margin-bottom: 8px; }
-.postcard__kicker { font-size: 10px; color: var(--dialup-ink-muted); font-family: "Courier New", Courier, monospace; }
-.postcard__code { font-family: var(--font-mono); font-size: 20px; font-weight: bold; letter-spacing: 0.1em; color: var(--dialup-blue); margin: 4px 0; }
-.postcard__message { font-size: 12px; margin: 4px 0 0; }
-.postcard__message code { font-family: var(--font-mono); background: var(--dialup-chrome-l); padding: 0 3px; }
-.postcard__stamp { border: 1px dotted var(--dialup-blue); padding: 4px; text-align: center; font-size: 9px; color: var(--dialup-blue); }
-.postcard__stamp svg { width: 22px; height: 22px; }
+.settings-nav__item {
+  padding: 5px 10px;
+  color: var(--dialup-ink);
+  text-decoration: none;
+  font-size: 12px;
+  border: 1px solid transparent;
+  line-height: 1.3;
+}
 
-/* Dashboard rooms placeholder - see issue #214 for full dialup treatment */
-.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin-bottom: 12px; }
-.rooms__card { padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--dialup-ink); }
-.rooms__card:hover { background: var(--dialup-chrome-l); }
-.rooms__card--live { border-color: var(--dialup-blue); }
-.rooms__head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-.rooms__num { font-family: var(--font-mono); font-size: 11px; color: var(--dialup-ink-muted); }
-.rooms__callout { margin-top: auto; padding: 4px; border: 1px dotted var(--dialup-blue); background: #e8f0fa; }
-.rooms__callout-kicker { font-size: 9px; color: var(--dialup-ink-muted); }
-.rooms__callout-name { font-weight: bold; font-size: 13px; }
-.rooms__empty { grid-column: 1 / -1; padding: 20px; text-align: center; font-size: 12px; }
+.settings-nav__item:hover {
+  border-top-color: var(--dialup-bevel-hi);
+  border-left-color: var(--dialup-bevel-hi);
+  border-right-color: var(--dialup-bevel-lo);
+  border-bottom-color: var(--dialup-bevel-lo);
+  background: var(--dialup-chrome-l);
+  text-decoration: none;
+}
 
-.today-list { list-style: none; margin: 0; padding: 0; }
-.today-list__row { display: grid; grid-template-columns: 60px 14px 1fr auto; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--dialup-bevel-lo); font-size: 12px; }
-.today-list__empty { padding: 16px; text-align: center; }
+.settings-nav__item.is-active {
+  background: var(--dialup-blue);
+  color: #ffffff;
+  font-weight: bold;
+  border-top-color: var(--dialup-bevel-lo);
+  border-left-color: var(--dialup-bevel-lo);
+  border-right-color: var(--dialup-bevel-hi);
+  border-bottom-color: var(--dialup-bevel-hi);
+}
+.settings-nav__item.is-active:hover {
+  background: var(--dialup-blue-mid);
+  color: #ffffff;
+}
 
-.connected-row { display: flex; gap: 6px; padding: 8px; align-items: center; flex-wrap: wrap; }
-.connected-row__chip { display: inline-flex; gap: 4px; padding: 2px 8px; background: var(--dialup-chrome-l); border: 1px solid var(--dialup-bevel-lo); font-size: 12px; align-items: center; }
-.connected-row__chip svg { width: 16px; height: 16px; }
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .settings-layout { grid-template-columns: 1fr; }
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px;
+    position: static;
+  }
+  .settings-nav__item {
+    flex: 1 1 auto;
+    text-align: center;
+    min-width: 80px;
+  }
+}
+
+/* --------- Settings theme picker cards ---------
+   Each theme card is a raised outset button (clickable) holding a
+   radio + three color swatches + theme name + description. The
+   currently selected theme card is pressed-in with a pale gold
+   fill, matching the dialup "this is the active selection"
+   vocabulary used elsewhere (e.g. .rooms__card--live). */
+
+.theme-card {
+  display: grid;
+  grid-template-columns: 20px 64px 1fr auto;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-lo);
+  border-bottom: 2px solid var(--dialup-bevel-lo);
+  align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+.theme-card + .theme-card { margin-top: 6px; }
+
+.theme-card:hover { background: var(--dialup-chrome-l); }
+
+.theme-card input[type="radio"] {
+  margin: 0;
+  accent-color: var(--dialup-blue);
+}
+
+.theme-card--selected {
+  background: #fff7d0;
+  border-top-color: var(--dialup-bevel-lo);
+  border-left-color: var(--dialup-bevel-lo);
+  border-right-color: var(--dialup-bevel-hi);
+  border-bottom-color: var(--dialup-bevel-hi);
+}
+
+.theme-card__swatch {
+  display: flex;
+  height: 28px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+}
+
+.theme-card__swatch-strip {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.theme-card__name {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+
+.theme-card__desc {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  line-height: 1.4;
+}
+
+/* --------- Families neighborhood rows (two-pane address book) ---------
+   Left identity pane on chrome background with a mini-glyph of the
+   family's household. Right pane is a single-column list of that
+   family's lines, one per row, with the existing green status dot
+   (.lines__dot) on the left and the formatted number right-aligned in
+   monospace. Horizontal rule separates adjacent lines so the layout
+   reads like a period Address Book panel. */
+
+.neighborhood {
+  display: flex;
+  flex-direction: column;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+  background: #ffffff;
+}
+
+.neighborhood__row {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+}
+.neighborhood__row:last-child { border-bottom: 0; }
+
+.neighborhood__identity {
+  padding: 10px 12px;
+  background: var(--dialup-chrome-l);
+  border-right: 1px solid var(--dialup-bevel-lo);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.neighborhood__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-ink);
+  font-style: normal;
+}
+.neighborhood__name svg {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--dialup-blue-dark);
+}
+
+.neighborhood__meta {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  line-height: 1.5;
+}
+
+/* Single-column list: one phone line per row, dotted-leader style
+   connecting the label and the number so the two read as a pair even
+   when the row is wide. */
+.neighborhood__lines {
+  padding: 6px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.neighborhood__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--dialup-ink);
+  border-bottom: 1px dotted var(--dialup-chrome-d);
+}
+.neighborhood__line:last-child { border-bottom: 0; }
+
+/* The template emits .lines__dot before the line name — already styled
+   elsewhere. Just ensure it reads as a clear lead-in here. */
+.neighborhood__line .lines__dot { flex-shrink: 0; }
+
+.neighborhood__line-name {
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 400;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.neighborhood__line-num {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .neighborhood__row { grid-template-columns: 1fr; }
+  .neighborhood__identity {
+    border-right: 0;
+    border-bottom: 1px solid var(--dialup-bevel-lo);
+  }
+}
+
+/* --------- Families invite postcard ---------
+   Raised beveled card on dialup cream, reading as a physical
+   postcard that landed on the Families page. Large blue-dark
+   invite code in monospace. Right column holds the postmark
+   stamp (postcard-stamp-dialup template). */
+
+.postcard {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--dialup-cream);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  margin-bottom: 10px;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.postcard__kicker {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.postcard__code {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  color: var(--dialup-blue-dark);
+  margin: 6px 0 10px;
+  line-height: 1;
+  user-select: all;
+}
+
+.postcard__greeting {
+  font-style: italic;
+  font-size: 12px;
+  color: var(--dialup-ink);
+  margin: 0 0 4px;
+}
+
+.postcard__message {
+  font-size: 12px;
+  color: var(--dialup-ink);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.postcard__message code {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  background: var(--dialup-chrome-l);
+  border: 1px solid var(--dialup-bevel-lo);
+  padding: 1px 4px;
+}
+
+.postcard__stamp {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* Pixel-art postmark stamp (dialup theme only). Gold dashed outer
+   frame around a thin blue-dark inner frame with diagonal paper
+   texture, ink-colored DIGITS/NEIGHBORHOOD text stacked around a
+   center asterisk. Matches the postcard-stamp-dialup template. */
+.postcard__stamp-mark {
+  width: 90px;
+  height: 90px;
+  padding: 4px;
+  border: 2px dashed var(--dialup-gold-dark);
+  background: var(--dialup-cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.postcard__stamp-mark-frame {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--dialup-blue-dark);
+  padding: 2px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0 4px,
+      rgba(0, 61, 167, 0.06) 4px 5px
+    );
+}
+
+.postcard__stamp-mark-line {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 9px;
+  font-weight: bold;
+  color: var(--dialup-blue-dark);
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  text-align: center;
+}
+.postcard__stamp-mark-line--top {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+
+.postcard__stamp-mark-center {
+  font-size: 16px;
+  color: var(--dialup-gold-dark);
+  line-height: 1;
+  margin: 1px 0;
+}
+
+/* --------- Dashboard rooms grid ---------
+   Each room card is a pressed-in beveled panel -- reads as a status
+   readout, not a pushable button. Chips inside .rooms__card get a
+   scoped LED restyle (pixel dot + uppercase caption) that leaves
+   chips in other contexts (phone-detail, call log) unchanged. The
+   ON LINE chip on an active call fades via @keyframes dialup-blink. */
+
+.rooms {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.rooms__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  min-height: 96px;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+  color: var(--dialup-ink);
+  text-decoration: none;
+}
+
+.rooms__card:hover { background: var(--dialup-chrome-l); text-decoration: none; }
+
+.rooms__card--live {
+  background: #fffdf0;
+  border-top-color: var(--dialup-gold-dark);
+  border-left-color: var(--dialup-gold-dark);
+}
+
+.rooms__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.rooms__name {
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-ink);
+}
+
+.rooms__num {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+}
+
+.rooms__callout {
+  margin-top: auto;
+  padding: 6px 8px;
+  background: var(--dialup-chrome-l);
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rooms__callout-kicker {
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dialup-ink-muted);
+}
+
+.rooms__callout-name {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+
+.rooms__callout-elapsed {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  margin-left: auto;
+}
+
+.rooms__empty {
+  grid-column: 1 / -1;
+  padding: 22px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dialup-ink-muted);
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+/* Scoped chip restyle: inside a room card, chips render as a small
+   square LED + uppercase caption. Chips outside .rooms__card keep
+   their existing dialup treatment. */
+.rooms__card .chip {
+  display: inline-flex;
+  gap: 5px;
+  padding: 1px 6px;
+  background: var(--dialup-chrome-l);
+  border: 1px solid var(--dialup-bevel-lo);
+  border-radius: 0;
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dialup-ink-muted);
+  align-items: center;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.rooms__card .chip .chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  background: var(--dialup-chrome-d);
+  border: 1px solid var(--dialup-ink);
+  box-shadow: none;
+}
+
+.rooms__card .chip--on {
+  background: var(--dialup-chrome-l);
+  color: var(--dialup-accent-grn);
+}
+.rooms__card .chip--on .chip__dot {
+  background: var(--dialup-accent-grn);
+  box-shadow: 0 0 2px var(--dialup-accent-grn);
+}
+
+.rooms__card .chip--live {
+  background: var(--dialup-chrome-l);
+  color: var(--dialup-accent-red);
+  animation: dialup-blink 2s ease-in-out infinite;
+}
+.rooms__card .chip--live .chip__dot {
+  background: var(--dialup-accent-red);
+  /* Override the generic .chip--live pulsing-dot animation -- here we
+     blink the whole chip (text + border) as one unit, so the dot
+     doesn't double-pulse. */
+  animation: none;
+}
+
+@keyframes dialup-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* --------- Dashboard today-list (call log preview) ---------
+   Tabular rows with alternating zebra, monospace time and duration
+   columns, and the direction glyph (in-arrow vs out-arrow) in a
+   dedicated narrow column. Matches the control-panel readout feel
+   of the rooms cards above. */
+
+.today-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+.today-list__row {
+  display: grid;
+  grid-template-columns: 70px 16px 1fr auto;
+  gap: 10px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+  font-size: 12px;
+  align-items: center;
+}
+.today-list__row:last-child { border-bottom: 0; }
+.today-list__row:nth-child(even) { background: var(--dialup-chrome-l); }
+
+.today-list__time {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+}
+
+.today-list__dir {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  color: var(--dialup-accent-grn);
+  font-weight: bold;
+  text-align: center;
+}
+.today-list__dir--in { color: var(--dialup-blue); }
+
+.today-list__peer { color: var(--dialup-ink); }
+.today-list__peer .muted { color: var(--dialup-ink-muted); }
+
+.today-list__dur {
+  font-family: var(--font-mono, "Courier New", Courier, monospace);
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  white-space: nowrap;
+}
+
+.today-list__empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--dialup-ink-muted);
+  font-size: 12px;
+  background: #ffffff;
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+
+/* --------- Dashboard connected-families chip row ---------
+   A strip of raised beveled chips, one per linked family, each with
+   the small dialup-blue house glyph and the family name. Hover
+   lightens; :active presses in. The "Manage ->" link on the right
+   of the panel header uses the existing .panel__action styling. */
+
+.connected-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: var(--dialup-chrome-l);
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Chips link to the matching family's neighborhood row on /links.
+   Raised by default; hover lightens; :active presses in. */
+.connected-row__chip {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-lo);
+  border-bottom: 1px solid var(--dialup-bevel-lo);
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  text-decoration: none;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.connected-row__chip:hover {
+  background: var(--dialup-chrome-l);
+  text-decoration: none;
+}
+
+.connected-row__chip:active {
+  border-top-color: var(--dialup-bevel-lo);
+  border-left-color: var(--dialup-bevel-lo);
+  border-right-color: var(--dialup-bevel-hi);
+  border-bottom-color: var(--dialup-bevel-hi);
+}
+
+.connected-row__chip svg {
+  width: 14px;
+  height: 14px;
+  color: var(--dialup-blue-dark);
+  flex-shrink: 0;
+}
 
 /* =========================================================================
    CRT monitor bezel (used on /connecting and, when CRTMode=all, wrapping
@@ -1301,6 +1980,23 @@ body.crt-page .crt__screen { aspect-ratio: 4 / 3; }
     align-items: center;
     justify-content: center;
   }
+}
+
+/* CRT-all (wrapped app) scroll fix: .dialup-window sets min-height
+   calc(100vh - 16px), which exceeds the bezel's inner screen height
+   (100vh - 120px at desktop) and previously clipped anything below
+   the fold since .crt__screen uses overflow: hidden. Treat the window
+   as a flex child of the screen and let it scroll in place. The
+   screen's ::before/::after overlays remain fixed to the bezel frame
+   (absolute on .crt__screen, unaffected by the child's scrolling). */
+body.crt-all .crt__screen {
+  display: flex;
+  flex-direction: column;
+}
+body.crt-all .crt__screen > .dialup-window {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
 }
 
 body.crt-page .crt__screen::before,
@@ -1411,9 +2107,202 @@ body.crt-all .crt__brand::after {
   body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }
 
-/* Confirm dialog placeholder - see issue #214 for full dialup treatment */
-.confirm-dialog { border: 2px outset var(--dialup-chrome); padding: 12px 14px; background: var(--dialup-chrome-l); max-width: 380px; width: 90vw; font-family: var(--dialup-font, Tahoma, sans-serif); }
-.confirm-dialog::backdrop { background: rgba(0,0,0,0.4); }
-.confirm-dialog__title { font-weight: bold; font-size: 14px; margin: 0 0 8px; color: var(--dialup-ink); }
-.confirm-dialog__body { font-size: 12px; color: var(--dialup-ink); margin: 0 0 14px; line-height: 1.5; }
-.confirm-dialog__actions { display: flex; gap: 6px; justify-content: flex-end; }
+/* Portrait mobile: drop the CRT bezel entirely (closes #225). The bezel
+   is a desktop-era frame; at phone-portrait aspect ratios the filled
+   rectangle leaves dead teal around the dialup window, doesn't track
+   the inner chrome's rounded corners, and pushes the DIGITS ONLINE
+   brand label well below the fold. Fall back to the same viewport
+   lock the non-CRT path uses so the dialup window still scales to
+   100vh with chrome pinned and .dialup-main scrolling inside. */
+@media (max-width: 640px) and (orientation: portrait) {
+  body.crt-all {
+    height: 100vh;
+    overflow: hidden;
+  }
+  body.crt-all .crt {
+    display: contents;
+    background: none;
+    position: static;
+    perspective: none;
+  }
+  body.crt-all .crt__screen {
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    overflow: visible;
+    aspect-ratio: auto;
+  }
+  body.crt-all .crt__screen::before,
+  body.crt-all .crt__screen::after { display: none; }
+  body.crt-all .crt__brand { display: none; }
+  body.crt-all .crt__screen > .dialup-window {
+    flex: initial;
+    overflow-y: visible;
+    min-height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+  }
+}
+
+/* Dialup: the Ringer panel is a Win95 groupbox-style frame. The checkbox
+   uses native rendering with the Win95 highlight blue. */
+body.dialup .checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "MS Sans Serif", "Chicago", Tahoma, sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+}
+body.dialup .checkbox-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #000080;
+  cursor: pointer;
+}
+body.dialup .checkbox-row__label {
+  color: #000;
+  font-weight: normal;
+}
+
+/* Silent badge in dialup theme: answering-machine amber status lamp with
+   a pixelated feel. The dot glows; the SILENT label sits beside it in
+   tiny system type. Pure CSS, no image assets. */
+body.dialup .phone-silent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+  vertical-align: middle;
+  font-family: "MS Sans Serif", "Chicago", Tahoma, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #cc8800;
+  text-shadow: 0 0 1px rgba(255, 170, 0, 0.3);
+}
+body.dialup .phone-silent__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #ffcc33 0%, #ff9900 55%, #cc6600 100%);
+  box-shadow:
+    0 0 4px 1px rgba(255, 170, 0, 0.75),
+    inset 0 0 1px rgba(0, 0, 0, 0.4);
+  border: 1px solid #663300;
+}
+body.dialup .phone-silent__text {
+  display: inline;
+  font-weight: bold;
+}
+
+/* --------- Confirm dialog (full Win98 modal chrome) ---------
+   Gradient titlebar, warning glyph, chunky bevels, hard shadow.
+   Buttons reuse .btn / .btn--quiet / .btn--danger so focus states
+   and hover already work through the existing dialup button kit. */
+
+.confirm-dialog {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  max-width: 420px;
+  width: 92vw;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+.confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+
+.confirm-dialog__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 55%, var(--dialup-blue-light) 100%);
+  color: #ffffff;
+  padding: 3px 5px;
+  font-weight: bold;
+  font-size: 12px;
+  min-height: 22px;
+}
+.confirm-dialog__titlebar-title { text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.confirm-dialog__titlebar-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.confirm-dialog__body-wrap {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  grid-template-rows: auto auto;
+  gap: 8px 14px;
+  padding: 14px 16px 12px;
+  margin: 0;
+}
+
+.confirm-dialog__glyph {
+  grid-column: 1;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--dialup-gold-dark);
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.25);
+}
+
+.confirm-dialog__body-col {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.confirm-dialog__title {
+  font-weight: bold;
+  font-size: 13px;
+  margin: 0 0 6px;
+  color: var(--dialup-ink);
+}
+.confirm-dialog__body {
+  font-size: 12px;
+  color: var(--dialup-ink);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+
+.confirm-dialog__actions .btn {
+  min-width: 88px;
+}

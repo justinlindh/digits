@@ -32,8 +32,12 @@
             </p>
           </div>
           <div class="postcard__stamp" aria-hidden="true">
-            <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
-            <div>FAMILY MAIL</div>
+            {{if eq .User.Theme "dialup"}}
+              {{template "postcard-stamp-dialup"}}
+            {{else}}
+              <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
+              <div>FAMILY MAIL</div>
+            {{end}}
           </div>
         </div>
         {{end}}
@@ -74,7 +78,7 @@
         <div class="hub__spokes">
           {{range .LinkedFamilies}}
           <div class="hub__spoke">
-            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
+            <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{if eq $.User.Theme "dialup"}}{{template "house-icon-dialup-spoke"}}{{else}}{{template "house-icon"}}{{end}}</svg>
             <div class="hub__label">{{.Name}}</div>
             {{if .AcceptedAt}}<div class="hub__since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</div>{{end}}
           </div>
@@ -82,7 +86,7 @@
         </div>
         <div class="hub__rail"></div>
         <div class="hub__center">
-          <svg class="hub__center-house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
+          <svg class="hub__center-house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{if eq $.User.Theme "dialup"}}{{template "house-icon-dialup-center"}}{{else}}{{template "house-icon"}}{{end}}</svg>
           <div class="hub__center-name">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
           <div class="hub__center-sub">You</div>
         </div>
@@ -92,7 +96,7 @@
     <!-- Neighborhood: two-pane address-book rows -->
     <div class="neighborhood panel">
       {{range .LinkedFamilies}}
-      <div class="neighborhood__row">
+      <div class="neighborhood__row" id="family-{{.ID}}">
         <div class="neighborhood__identity">
           <div class="neighborhood__name">
             <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>

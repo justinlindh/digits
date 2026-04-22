@@ -19,5 +19,8 @@ func (a *lineStoreAdapter) LineSettingsByNumber(number string) (*LineSettings, e
 	if err != nil {
 		return nil, err
 	}
-	return &LineSettings{VoiceStyle: ln.Settings.VoiceStyle}, nil
+	return &LineSettings{
+		VoiceStyle: ln.Settings.VoiceStyle,
+		SilentMode: ln.Settings.SilentMode,
+	}, nil
 }
