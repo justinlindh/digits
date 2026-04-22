@@ -912,33 +912,44 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
 .pin__slot.is-filled { background: var(--dialup-gold); }
 .pin__slot.is-active { border-bottom-color: var(--dialup-accent-red); box-shadow: inset 0 -2px 0 var(--dialup-accent-red); }
 
-/* --------- Hub-and-spoke (Connected Families) --------- */
+/* --------- Hub-and-spoke (Connected Families) - Option D ---------
+   Spoke and center share the same chunky pixel-art house silhouette
+   (see house-icon-dialup-spoke / -center templates). Only window fill
+   distinguishes the center (lit gold) from spokes (dark blue). The
+   dashed gold rail is the "cable" between homes. */
 
 .hub {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 14px 10px;
-  gap: 10px;
-  background: #fff;
+  padding: 16px 10px 18px;
+  gap: 12px;
+  background: var(--dialup-chrome-l);
+  border-top: 2px solid var(--dialup-bevel-lo);
+  border-left: 2px solid var(--dialup-bevel-lo);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
 }
+
 .hub__spokes {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   align-items: flex-end;
-  gap: 16px 24px;
+  gap: 18px 28px;
   max-width: 760px;
 }
+
 .hub__spoke {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding-bottom: 14px;
+  gap: 4px;
+  padding-bottom: 18px;
   position: relative;
-  max-width: 140px;
+  max-width: 120px;
 }
+
 .hub__spoke::after {
   content: '';
   position: absolute;
@@ -946,10 +957,16 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   left: 50%;
   transform: translateX(-50%);
   width: 0;
-  height: 12px;
+  height: 14px;
   border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__house { width: 40px; height: 40px; color: var(--dialup-blue-dark); }
+
+.hub__house {
+  width: 48px;
+  height: 48px;
+  overflow: visible; /* antenna + signal arcs extend above the SVG box */
+}
+
 .hub__label {
   font-family: inherit;
   font-style: normal;
@@ -958,7 +975,15 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   color: var(--dialup-ink);
   text-align: center;
 }
-.hub__since { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
+
+.hub__since {
+  font-size: 10px;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
 .hub__rail {
   width: calc(100% - 16px);
   max-width: 560px;
@@ -966,7 +991,16 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   border-top: 2px dashed var(--dialup-gold-dark);
   background: none;
 }
-.hub__center { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 12px; }
+
+.hub__center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
+}
+
 .hub__center::before {
   content: '';
   position: absolute;
@@ -974,12 +1008,36 @@ button { font: inherit; color: inherit; cursor: pointer; background: var(--dialu
   left: 50%;
   transform: translateX(-50%);
   width: 0;
-  height: 12px;
+  height: 14px;
   border-left: 2px dashed var(--dialup-gold-dark);
 }
-.hub__center-house { width: 60px; height: 60px; color: var(--dialup-blue-dark); }
-.hub__center-name { font-weight: bold; font-size: 13px; color: var(--dialup-ink); font-style: normal; }
-.hub__center-sub { font-size: 10px; color: var(--dialup-ink-muted); text-transform: uppercase; font-weight: bold; }
+
+.hub__center-house {
+  width: 76px;
+  height: 76px;
+  overflow: visible;
+}
+
+.hub__center-name {
+  font-weight: bold;
+  font-size: 14px;
+  color: var(--dialup-ink);
+  font-style: normal;
+}
+
+.hub__center-sub {
+  font-size: 10px;
+  color: var(--dialup-ink-muted);
+  text-transform: uppercase;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 600px) {
+  .hub__spokes { gap: 12px 18px; }
+  .hub__house { width: 40px; height: 40px; }
+  .hub__center-house { width: 64px; height: 64px; }
+}
 
 /* --------- Disclosure (details/summary) --------- */
 

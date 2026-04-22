@@ -24,6 +24,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/justinlindh/digits/server/internal/auth"
 )
 
 // TestSpecDashboard covers the Dashboard section of the spec.
@@ -302,5 +304,40 @@ func TestSpecCallLog(t *testing.T) {
 	h.Router().ServeHTTP(w2, req2)
 	if !strings.Contains(w2.Body.String(), "Call log") {
 		t.Errorf("Settings page missing 'Call log' toggle label")
+	}
+}
+
+// TestSpecDialupHubGlyph asserts the dialup theme renders the new
+// pixel-art house SVG on /links, not the intercom line-drawing.
+// Spec: Option D of the 2026-04-21 dialup-theme-port design.
+// Each family spoke (and the center household) shows a chunky Win98
+// pixel-art house with a roof-mounted antenna and signal arcs.
+func TestSpecDialupHubGlyph(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(user.ID, auth.ThemeDialup); err != nil {
+		t.Fatalf("set dialup theme: %v", err)
+	}
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /links: got %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+
+	// The dialup-specific SVG uses <g class="dialup-house__antenna">
+	// which the intercom template never emits. Presence proves the
+	// hub spoke + center switched to the pixel-art glyph for dialup.
+	if !strings.Contains(body, `dialup-house__antenna`) {
+		t.Error("dialup /links should render the dialup house SVG (class=dialup-house__antenna)")
 	}
 }
