@@ -37,6 +37,7 @@ const (
 // added there, in pi/digitsd/internal/config, and in pi/digitsd/internal/signal.
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
+	SilentMode bool   `json:"silent_mode,omitempty"`
 }
 
 // ICEServer represents a STUN or TURN server configuration.

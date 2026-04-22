@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -224,6 +225,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
 	protected.HandleFunc("POST /phones/{number}/voice-style", h.handlePhoneVoiceStylePost)
+	protected.HandleFunc("POST /phones/{number}/silent-mode", h.handlePhoneSilentModePost)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
@@ -992,21 +994,57 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
+func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
+
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	next := ln.Settings
+	next.SilentMode = silent
+	next = next.Normalize()
+	if next.SilentMode != ln.Settings.SilentMode {
+		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := h.pushLineSettings(number, next); err != nil {
+			slog.Warn("push line settings failed", "number", number, "err", err)
+		}
+		ln.Settings = next
+	}
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhoneDetail, "silent-mode-section", struct {
+			Line line.Line
+		}{Line: *ln})
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
 // pushLineSettings sends the updated settings to the device currently
 // registered as the given number, if any. A missing device is not an error;
 // the next time that device reconnects it will receive the latest settings
 // via the registration push in relay.OnRegistered.
 func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
-	if h.hub.Get(number) == nil {
-		return nil
-	}
-	return h.hub.SendTo(number, &signaling.Message{
+	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
+			SilentMode: settings.SilentMode,
 		},
 	})
+	if errors.Is(err, signaling.ErrNotConnected) {
+		return nil
+	}
+	return err
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {

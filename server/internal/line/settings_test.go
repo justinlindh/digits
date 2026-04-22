@@ -2,6 +2,7 @@ package line
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -68,5 +69,51 @@ func TestSettingsNormalizeCoercesUnknown(t *testing.T) {
 	s := Settings{VoiceStyle: "bogus"}
 	if got := s.Normalize().VoiceStyle; got != VoiceStyleCopper {
 		t.Errorf("unknown value should fall back to copper, got %q", got)
+	}
+}
+
+func TestSettingsSilentModeDefaultFalse(t *testing.T) {
+	s := DefaultSettings()
+	if s.SilentMode {
+		t.Errorf("SilentMode default: got true, want false")
+	}
+}
+
+func TestSettingsJSONRoundTripSilentMode(t *testing.T) {
+	in := Settings{VoiceStyle: VoiceStyleCopper, SilentMode: true}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out Settings
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out != in {
+		t.Errorf("round trip: got %+v, want %+v", out, in)
+	}
+}
+
+func TestSettingsJSONOmitsSilentModeWhenFalse(t *testing.T) {
+	// omitempty keeps the JSONB payload free of noise when silent is off.
+	s := Settings{VoiceStyle: VoiceStyleCopper, SilentMode: false}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), "silent_mode") {
+		t.Errorf("expected silent_mode omitted when false, got %s", b)
+	}
+}
+
+func TestSettingsMergeSilentModeFromPatch(t *testing.T) {
+	base := DefaultSettings()
+	patch := Settings{SilentMode: true}
+	merged := base.Merge(patch)
+	if !merged.SilentMode {
+		t.Errorf("Merge did not take SilentMode from patch")
+	}
+	if merged.VoiceStyle != VoiceStyleCopper {
+		t.Errorf("Merge clobbered VoiceStyle: got %q", merged.VoiceStyle)
 	}
 }

@@ -490,6 +490,29 @@ func (d *daemonCallbacks) setVoiceStyleConfig(style string) error {
 	return d.cfg.Save()
 }
 
+// applySilentModeLive forwards a silent-mode change to the phone controller.
+// Safe before the controller is constructed: becomes a no-op, and
+// setSilentModeConfig still persists the flag for the next startup.
+func (d *daemonCallbacks) applySilentModeLive(silent bool) {
+	d.mu.Lock()
+	ctrl := d.ctrl
+	d.mu.Unlock()
+	if ctrl == nil {
+		return
+	}
+	ctrl.SetSilentMode(silent)
+}
+
+// setSilentModeConfig writes the new flag to the local config cache under
+// d.mu (serializing with call-setup paths that read d.cfg) and then persists
+// it to disk outside the lock.
+func (d *daemonCallbacks) setSilentModeConfig(silent bool) error {
+	d.mu.Lock()
+	d.cfg.SilentMode = silent
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
 // triggerHangup dispatches a hangup to the controller from a fresh goroutine.
 // Callers holding d.mu must use this to avoid deadlock: HandleSignal calls
 // back into HangupCall, which also acquires d.mu.
@@ -1230,6 +1253,7 @@ func main() {
 	// 8. Create phone Controller
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
+	ctrl.SetSilentMode(cfg.SilentMode)
 
 	// 8b. Contacts cache — optional dial safelist, persisted to disk.
 	// An empty cache leaves the checker nil so no-contacts phones allow
@@ -1719,24 +1743,31 @@ func main() {
 					slog.Warn("line_settings message missing payload", "from", msg.From)
 					break
 				}
+
 				style := msg.LineSettings.VoiceStyle
 				if style == "" {
 					style = config.VoiceStyleCopper
 				}
-
 				cb.mu.Lock()
-				current := cb.cfg.VoiceStyle
+				currentStyle := cb.cfg.VoiceStyle
+				currentSilent := cb.cfg.SilentMode
 				cb.mu.Unlock()
-				if style == current {
-					// No change — skip the live apply and the config save so
-					// reconnect-triggered pushes don't fsync on every connect.
-					break
+
+				if style != currentStyle {
+					slog.Info("line_settings applied", "voice_style", style)
+					cb.applyVoiceStyleLive(style)
+					if err := cb.setVoiceStyleConfig(style); err != nil {
+						slog.Warn("line_settings: voice-style save failed", "err", err)
+					}
 				}
 
-				slog.Info("line_settings applied", "voice_style", style)
-				cb.applyVoiceStyleLive(style)
-				if err := cb.setVoiceStyleConfig(style); err != nil {
-					slog.Warn("line_settings: config save failed", "err", err)
+				silent := msg.LineSettings.SilentMode
+				if silent != currentSilent {
+					slog.Info("line_settings applied", "silent_mode", silent)
+					cb.applySilentModeLive(silent)
+					if err := cb.setSilentModeConfig(silent); err != nil {
+						slog.Warn("line_settings: silent-mode save failed", "err", err)
+					}
 				}
 
 			default:
