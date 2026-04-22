@@ -15,6 +15,7 @@ type Release struct {
 	SHA256     string    `json:"sha256,omitempty"`
 	URL        string    `json:"url"`
 	Date       string    `json:"date"`
+	Notes      string    `json:"notes,omitempty"`
 	ReleasedAt time.Time `json:"-"`
 }
 

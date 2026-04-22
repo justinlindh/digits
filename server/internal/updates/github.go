@@ -262,3 +262,15 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 	}
 	return
 }
+
+// stripGroomedSentinel removes the idempotency marker the release-groom
+// workflow prepends to groomed release bodies. Leaves non-groomed bodies
+// untouched.
+func stripGroomedSentinel(s string) string {
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	const sentinel = "<!-- groomed:v1 -->"
+	if !strings.HasPrefix(trimmed, sentinel) {
+		return s
+	}
+	return strings.TrimLeft(trimmed[len(sentinel):], " \t\r\n")
+}

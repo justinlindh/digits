@@ -222,3 +222,27 @@ func TestParseTag(t *testing.T) {
 		}
 	}
 }
+
+func TestStripGroomedSentinel(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"no sentinel", "hello world", "hello world"},
+		{"sentinel only", "<!-- groomed:v1 -->", ""},
+		{"sentinel with newline", "<!-- groomed:v1 -->\nhello", "hello"},
+		{"sentinel with crlf", "<!-- groomed:v1 -->\r\nhello", "hello"},
+		{"sentinel with surrounding whitespace", "  <!-- groomed:v1 -->  \n\nhello", "hello"},
+		{"sentinel not at start", "prefix\n<!-- groomed:v1 -->\nhello", "prefix\n<!-- groomed:v1 -->\nhello"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripGroomedSentinel(tt.in)
+			if got != tt.want {
+				t.Errorf("stripGroomedSentinel(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
