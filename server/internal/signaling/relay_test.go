@@ -163,6 +163,14 @@ type fakeHealthRecorder struct {
 		endpoint string
 		sample   calls.Sample
 	}
+	edges []recordedEdge
+}
+
+type recordedEdge struct {
+	ConfID uuid.UUID
+	From   string
+	Peer   string
+	Sample calls.Sample
 }
 
 func (f *fakeHealthRecorder) Record(id int64, ep string, s calls.Sample) {
@@ -171,6 +179,10 @@ func (f *fakeHealthRecorder) Record(id int64, ep string, s calls.Sample) {
 		endpoint string
 		sample   calls.Sample
 	}{id, ep, s})
+}
+
+func (f *fakeHealthRecorder) RecordEdge(confID uuid.UUID, from, peer string, s calls.Sample) {
+	f.edges = append(f.edges, recordedEdge{ConfID: confID, From: from, Peer: peer, Sample: s})
 }
 
 type mockCallAuthorizer struct {
@@ -932,5 +944,103 @@ func TestRelayForceHangupTolerantOfOnePeerOffline(t *testing.T) {
 		}
 	default:
 		t.Fatal("555-2222 did not receive hangup despite being online")
+	}
+}
+
+func TestHandleLinkHealth_3WayPath_RecordsEdge(t *testing.T) {
+	tracker := newMockTracker()
+	conf, err := tracker.conferences.CreateConference("A", 1, []string{"B", "C"})
+	if err != nil {
+		t.Fatalf("CreateConference: %v", err)
+	}
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tracker, HealthStore: store}
+
+	loss := float32(4.2)
+	m := &Message{
+		Type: TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{TS: 1, LossPct: &loss, Peer: "B"},
+	}
+	r.handleLinkHealth(context.Background(), "A", m)
+
+	if len(store.edges) != 1 {
+		t.Fatalf("expected 1 RecordEdge; got %d", len(store.edges))
+	}
+	e := store.edges[0]
+	if e.ConfID != conf.ID {
+		t.Fatalf("ConfID: got %s want %s", e.ConfID, conf.ID)
+	}
+	if e.From != "A" || e.Peer != "B" {
+		t.Fatalf("From/Peer: got %s/%s want A/B", e.From, e.Peer)
+	}
+	if e.Sample.LossPct == nil || *e.Sample.LossPct != 4.2 {
+		t.Fatalf("sample LossPct not preserved")
+	}
+}
+
+func TestHandleLinkHealth_3WayPath_BogusPeerDropped(t *testing.T) {
+	tracker := newMockTracker()
+	if _, err := tracker.conferences.CreateConference("A", 1, []string{"B", "C"}); err != nil {
+		t.Fatalf("CreateConference: %v", err)
+	}
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tracker, HealthStore: store}
+
+	m := &Message{
+		Type:       TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{TS: 1, Peer: "Z"}, // Z not in conference
+	}
+	r.handleLinkHealth(context.Background(), "A", m)
+
+	if len(store.edges) != 0 {
+		t.Fatalf("bogus peer must be dropped; got %d edges", len(store.edges))
+	}
+}
+
+func TestHandleLinkHealth_3WayPath_FromNotInConferenceDropped(t *testing.T) {
+	tracker := newMockTracker() // no conference created
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tracker, HealthStore: store}
+
+	m := &Message{
+		Type:       TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{TS: 1, Peer: "B"},
+	}
+	r.handleLinkHealth(context.Background(), "A", m)
+
+	if len(store.edges) != 0 {
+		t.Fatalf("from-not-in-conference must drop; got %d edges", len(store.edges))
+	}
+}
+
+func TestHandleLinkHealth_2WayPath_UnchangedBehavior(t *testing.T) {
+	tracker := newMockTracker()
+	tracker.onCallInitiated("A", "B")
+	tracker.setCallID("A", "B", 42)
+	store := &fakeHealthRecorder{}
+	r := &Relay{Tracker: tracker, HealthStore: store}
+
+	loss := float32(0.5)
+	m := &Message{
+		Type:       TypeLinkHealth,
+		LinkHealth: &LinkHealthPayload{TS: 1, LossPct: &loss},
+	}
+	r.handleLinkHealth(context.Background(), "A", m)
+
+	if len(store.edges) != 0 {
+		t.Fatalf("2-party path must not touch RecordEdge; got %d edges", len(store.edges))
+	}
+	if len(store.records) != 1 {
+		t.Fatalf("expected 1 Record for 2-party path; got %d", len(store.records))
+	}
+	rec := store.records[0]
+	if rec.callID != 42 {
+		t.Fatalf("callID: got %d want 42", rec.callID)
+	}
+	if rec.endpoint != "A" {
+		t.Fatalf("endpoint: got %q want A", rec.endpoint)
+	}
+	if rec.sample.LossPct == nil || *rec.sample.LossPct != 0.5 {
+		t.Fatalf("sample LossPct not preserved: %+v", rec.sample)
 	}
 }
