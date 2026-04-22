@@ -285,6 +285,9 @@ BEGIN
 END $$;`,
 		// v18: track why a call ended (e.g. 'merged_to_conference' vs a normal hangup)
 		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS end_reason TEXT`,
+		// v19: capture which user initiated a force-disconnect on a call.
+		// NULL for peer-initiated hangups.
+		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS force_ended_by UUID REFERENCES users(id)`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

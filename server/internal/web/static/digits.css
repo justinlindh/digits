@@ -1592,6 +1592,145 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   margin-top: 4px;
 }
 
+/* =========================================================================
+   Call-live observation deck — intercom theme
+   ========================================================================= */
+
+.deck { display: flex; flex-direction: column; gap: 18px; }
+
+.deck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 14px;
+}
+.deck-header__labels { display: flex; flex-direction: column; gap: 4px; }
+.deck-kicker { color: var(--ink-soft); }
+.deck-title { font: italic 600 24px/1.2 'Fraunces', Georgia, serif; margin: 0; color: var(--ink); }
+.deck-arrow { color: var(--brass); margin: 0 4px; }
+.deck-meta { display: flex; gap: 10px; color: var(--ink-soft); font-size: 13px; }
+.deck-duration { font-family: var(--font-mono); }
+.deck-conn { text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; color: var(--ink-muted); }
+
+.deck-kill {
+  background: transparent;
+  color: var(--rust);
+  border: 1px solid var(--rust);
+  padding: 7px 14px;
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.deck-kill:hover { background: var(--rust); color: var(--paper); }
+.deck-ended-chip {
+  border: 1px solid var(--rule);
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper-2);
+}
+
+.deck-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.deck-card {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 14px;
+  position: relative;
+}
+.deck-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 16px; right: 16px;
+  height: 3px;
+  background: var(--brass);
+  border-radius: 0 0 2px 2px;
+}
+.deck-card__name { font: italic 500 17px/1.2 'Fraunces', Georgia, serif; margin-top: 6px; }
+.deck-card__num { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+
+.deck-panel {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 14px;
+}
+.deck-panel__inner { display: flex; flex-direction: column; gap: 12px; }
+.deck-panel__streams { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.deck-stream__head { margin-bottom: 8px; color: var(--ink-muted); }
+.deck-bars { display: flex; flex-direction: column; gap: 6px; }
+.deck-row { display: grid; grid-template-columns: 60px 1fr 58px; gap: 8px; align-items: center; font-size: 12px; }
+.deck-row__lbl { color: var(--ink-muted); }
+.deck-row__val { text-align: right; color: var(--ink-soft); }
+
+/* Intercom renders bars as a continuous fill. Segments butt together with
+   no gap, so the 10-cell structure reads as a single smooth bar. */
+.deck-bar { display: flex; gap: 0; height: 6px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.deck-seg { flex: 1; background: transparent; }
+.deck-seg--on { background: var(--forest); }
+.deck-seg--on.deck-seg--warn { background: var(--brass); }
+.deck-seg--on.deck-seg--bad { background: var(--rust); }
+
+.deck-shared { border-top: 1px solid var(--rule); padding-top: 10px; }
+.deck-shared__row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; font-size: 12px; }
+.deck-shared__item .label { margin-bottom: 2px; }
+
+.deck-disclaimer {
+  font-style: italic;
+  font-size: 11px;
+  color: var(--ink-muted);
+  border-left: 2px solid var(--brass);
+  padding-left: 10px;
+  margin: 0;
+}
+
+.deck-confirm {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 20px;
+  max-width: 420px;
+  border-radius: 3px;
+}
+.deck-confirm::backdrop { background: rgba(28, 28, 26, 0.4); }
+.deck-confirm__title { font: italic 500 18px/1.2 'Fraunces', Georgia, serif; margin: 0 0 10px; }
+.deck-confirm__body { font-size: 13px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 16px; }
+.deck-confirm__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.deck-confirm__cancel {
+  background: transparent; border: 1px solid var(--rule); padding: 7px 14px; border-radius: 2px; cursor: pointer;
+}
+.deck-confirm__go {
+  background: var(--rust); color: var(--paper); border: 1px solid var(--rust); padding: 7px 14px; border-radius: 2px; cursor: pointer;
+}
+
+.deck-stale {
+  background: var(--rust);
+  color: var(--paper);
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.deck-stale button {
+  background: var(--paper); color: var(--rust); border: none; padding: 4px 10px; cursor: pointer;
+}
+
+.deck-ended {
+  padding: 16px;
+  text-align: center;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+@media (max-width: 720px) {
+  .deck-cards,
+  .deck-panel__streams,
+  .deck-shared__row { grid-template-columns: 1fr; }
+}
+
+
 /* Update chip expansion (intercom theme) */
 .update-details { display: inline-block; }
 .update-details > summary {
@@ -1663,3 +1802,4 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .update-details--mobile { display: block; margin: 0 12px 8px; }
 .update-details--mobile > summary { display: inline-flex; align-items: center; gap: 4px; }
 .update-details--mobile .update-notes { max-width: none; margin-top: 6px; }
+

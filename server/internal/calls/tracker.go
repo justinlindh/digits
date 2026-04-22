@@ -55,6 +55,7 @@ type Call struct {
 	DurationS               int
 	EndReason               *string
 	OriginatingConferenceID *uuid.UUID
+	ForceEndedBy            *string // UUID of user who force-ended, nil if peer-initiated
 }
 
 type activeCall struct {
@@ -336,7 +337,7 @@ func (t *Tracker) Active() []activeCall {
 func (t *Tracker) Recent(limit int) ([]Call, error) {
 	rows, err := t.db.DB.Query(
 		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id
+		        end_reason, originating_conference_id, force_ended_by
 		 FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
 	)
 	if err != nil {
@@ -347,14 +348,32 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	var calls []Call
 	for rows.Next() {
 		var c Call
+		var feb sql.NullString
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID); err != nil {
+			&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
 			return nil, err
+		}
+		if feb.Valid {
+			s := feb.String
+			c.ForceEndedBy = &s
 		}
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+// MarkForceEnded records which user force-ended a call. Returns nil error
+// even if no rows matched (idempotent against racing peer hangups).
+func (t *Tracker) MarkForceEnded(callID int64, userID string) error {
+	_, err := t.db.DB.Exec(
+		`UPDATE calls SET force_ended_by = $1 WHERE id = $2`,
+		userID, callID,
+	)
+	if err != nil {
+		return fmt.Errorf("mark force ended: %w", err)
+	}
+	return nil
 }
 
 // CreateConferencePersistent creates an in-memory conference and writes it to
@@ -538,10 +557,13 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 func (t *Tracker) GetCall(id int64) (Call, error) {
 	var c Call
 	var answered, ended sql.NullTime
+	var forceEndedBy sql.NullString
 	err := t.db.DB.QueryRow(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
+		        end_reason, originating_conference_id, force_ended_by
 		 FROM calls WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS)
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS,
+		&c.EndReason, &c.OriginatingConferenceID, &forceEndedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Call{}, nil
 	}
@@ -553,6 +575,10 @@ func (t *Tracker) GetCall(id int64) (Call, error) {
 	}
 	if ended.Valid {
 		c.EndedAt = &ended.Time
+	}
+	if forceEndedBy.Valid {
+		s := forceEndedBy.String
+		c.ForceEndedBy = &s
 	}
 	return c, nil
 }
@@ -569,7 +595,7 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	ph := dbutil.Placeholders(n, 0)
 	query := fmt.Sprintf(
 		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id
+		        end_reason, originating_conference_id, force_ended_by
 		 FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
 	args := make([]interface{}, 0, n+1)
@@ -587,10 +613,15 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	var calls []Call
 	for rows.Next() {
 		var c Call
+		var feb sql.NullString
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
 			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID); err != nil {
+			&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
 			return nil, err
+		}
+		if feb.Valid {
+			s := feb.String
+			c.ForceEndedBy = &s
 		}
 		calls = append(calls, c)
 	}

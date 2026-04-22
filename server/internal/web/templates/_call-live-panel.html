@@ -1,0 +1,61 @@
+{{define "call-live-panel"}}
+<div class="deck-panel__inner">
+  <div class="deck-panel__streams">
+    <div class="deck-stream">
+      <div class="deck-stream__head label">from {{.Caller.DisplayName}}</div>
+      {{template "deck-bars" .Caller.Latest}}
+    </div>
+    <div class="deck-stream">
+      <div class="deck-stream__head label">from {{.Callee.DisplayName}}</div>
+      {{template "deck-bars" .Callee.Latest}}
+    </div>
+  </div>
+  <div class="deck-shared">
+    {{template "deck-shared" .}}
+  </div>
+</div>
+{{end}}
+
+{{define "deck-bars"}}
+<div class="deck-bars">
+  <div class="deck-row">
+    <span class="deck-row__lbl label">loss</span>
+    <div class="deck-bar" data-metric="loss">
+      {{if .}}{{$seg := pctToSegments (derefFloat32 .LossPct)}}{{if $seg.Lit}}
+        {{range $i := iter 10}}
+          <span class="deck-seg{{if lt $i $seg.Lit}} deck-seg--on{{end}}{{if eq $seg.Severity "warn"}} deck-seg--warn{{else if eq $seg.Severity "bad"}} deck-seg--bad{{end}}"></span>
+        {{end}}
+      {{end}}{{end}}
+    </div>
+    <span class="deck-row__val num">{{if and . .LossPct}}{{printf "%.1f%%" (derefFloat32 .LossPct)}}{{else}}&mdash;{{end}}</span>
+  </div>
+  <div class="deck-row">
+    <span class="deck-row__lbl label">jitter</span>
+    <div class="deck-bar" data-metric="jitter">
+      {{if .}}{{$seg := msToSegments (derefFloat32 .JitterMs)}}{{if $seg.Lit}}
+        {{range $i := iter 10}}
+          <span class="deck-seg{{if lt $i $seg.Lit}} deck-seg--on{{end}}{{if eq $seg.Severity "warn"}} deck-seg--warn{{else if eq $seg.Severity "bad"}} deck-seg--bad{{end}}"></span>
+        {{end}}
+      {{end}}{{end}}
+    </div>
+    <span class="deck-row__val num">{{if and . .JitterMs}}{{printf "%.0f ms" (derefFloat32 .JitterMs)}}{{else}}&mdash;{{end}}</span>
+  </div>
+</div>
+{{end}}
+
+{{define "deck-shared"}}
+<div class="deck-shared__row">
+  <div class="deck-shared__item">
+    <div class="label">round trip</div>
+    <div class="num">{{if and .Caller.Latest .Caller.Latest.RttMs}}{{printf "%.0f ms" (derefFloat32 .Caller.Latest.RttMs)}}{{else}}&mdash;{{end}}</div>
+  </div>
+  <div class="deck-shared__item">
+    <div class="label">route</div>
+    <div class="num">{{with .Caller.Latest}}{{.ConnType}}{{else}}&mdash;{{end}}{{with .Callee.Latest}}{{with .ConnType}} · {{.}}{{end}}{{end}}</div>
+  </div>
+  <div class="deck-shared__item">
+    <div class="label">bytes in / out</div>
+    <div class="num">{{with .Caller.Latest}}{{if .BytesIn}}{{humanBytes (derefInt64 .BytesIn)}}{{else}}&mdash;{{end}}{{else}}&mdash;{{end}} / {{with .Caller.Latest}}{{if .BytesOut}}{{humanBytes (derefInt64 .BytesOut)}}{{else}}&mdash;{{end}}{{else}}&mdash;{{end}}</div>
+  </div>
+</div>
+{{end}}
