@@ -2694,15 +2694,16 @@ func isHTMX(r *http.Request) bool {
 // ---- Call live detail ----
 
 type callLiveDetailData struct {
-	Page          string
-	Version       string
-	User          *auth.User
-	HouseholdName string
-	Call          calls.Call
-	Caller        LinkHealthEndpointResp
-	Callee        LinkHealthEndpointResp
-	Ended         bool
-	ForceEndedBy  string
+	Page               string
+	Version            string
+	User               *auth.User
+	HouseholdName      string
+	CallHistoryEnabled bool
+	Call               calls.Call
+	Caller             LinkHealthEndpointResp
+	Callee             LinkHealthEndpointResp
+	Ended              bool
+	ForceEndedBy       string
 }
 
 // handleCallLiveDetail renders the observation-deck page for a specific call.
@@ -2737,15 +2738,16 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := callLiveDetailData{
-		Page:          "call-live",
-		Version:       version.Version,
-		User:          user,
-		HouseholdName: h.householdNameFromContext(r),
-		Call:          call,
-		Caller:        callerEp,
-		Callee:        calleeEp,
-		Ended:         call.Status == "ended",
-		ForceEndedBy:  h.forceEndedLabel(call),
+		Page:               "call-live",
+		Version:            version.Version,
+		User:               user,
+		HouseholdName:      h.householdNameFromContext(r),
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		Call:               call,
+		Caller:             callerEp,
+		Callee:             calleeEp,
+		Ended:              call.Status == "ended",
+		ForceEndedBy:       h.forceEndedLabel(call),
 	}
 
 	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)

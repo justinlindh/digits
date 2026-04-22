@@ -21,8 +21,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -534,5 +536,108 @@ func TestForceDisconnect_IdempotentOnAlreadyEnded(t *testing.T) {
 	if !forceEndedBy.Valid || forceEndedBy.String != s.userA.ID {
 		t.Fatalf("audit overwritten by second caller: got (%v,%q) want user A %s",
 			forceEndedBy.Valid, forceEndedBy.String, s.userA.ID)
+	}
+}
+
+// authedGet issues an authenticated GET request to path on s.env.srv and
+// returns the response. The caller is responsible for closing the body.
+// Redirects are not followed so auth-failure 303s are distinguishable from 200s.
+func authedGet(t *testing.T, s lhSetup, user *auth.User, path string) *http.Response {
+	t.Helper()
+	client := authedClient(t, s, user)
+	resp, err := client.Get(s.env.srv.URL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	return resp
+}
+
+func TestCallLiveDetail_OwnerRenders(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+	// Seed a sample so the initial snapshot renders with data.
+	loss := float32(0.5)
+	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
+
+	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Both endpoint numbers appear in the .deck-card__num rendering.
+	if !strings.Contains(bodyStr, s.numA) {
+		t.Fatalf("body missing caller number %q", s.numA)
+	}
+	if !strings.Contains(bodyStr, s.numB) {
+		t.Fatalf("body missing callee number %q", s.numB)
+	}
+	// SSE stream URL is wired.
+	expectedSSE := "/api/call/" + strconv.FormatInt(callID, 10) + "/link-health/stream"
+	if !strings.Contains(bodyStr, expectedSSE) {
+		t.Fatalf("body missing SSE stream URL %q", expectedSSE)
+	}
+	// End-call button rendered (call is live).
+	if !strings.Contains(bodyStr, "deck-kill") {
+		t.Fatal("body missing deck-kill (End-call) button")
+	}
+}
+
+func TestCallLiveDetail_UnrelatedHouseholdGets404(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	resp := authedGet(t, s, s.userC, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", resp.StatusCode)
+	}
+}
+
+func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+	// End the call.
+	if err := s.env.tracker.OnCallEnded(s.numA, s.numB); err != nil {
+		t.Fatalf("OnCallEnded: %v", err)
+	}
+
+	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (postmortem view)", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	// Terminal state should NOT auto-connect the SSE stream.
+	if strings.Contains(bodyStr, "sse-connect=") {
+		t.Fatal("ended-call page should not wire SSE auto-connect")
+	}
+	// End-call button should not render.
+	if strings.Contains(bodyStr, "deck-kill") {
+		t.Fatal("ended-call page should not render End-call button")
+	}
+	// Terminal state chip should be visible.
+	if !strings.Contains(bodyStr, "deck-ended-chip") && !strings.Contains(bodyStr, "deck-ended") {
+		t.Fatal("ended-call page missing terminal-state indicator")
+	}
+}
+
+func TestDashboardLineCardLinksToCallLive(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	resp := authedGet(t, s, s.userA, "/")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	expected := `href="/call/live/` + strconv.FormatInt(callID, 10) + `"`
+	if !strings.Contains(bodyStr, expected) {
+		t.Fatalf("dashboard missing link %q", expected)
 	}
 }
