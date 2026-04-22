@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -42,9 +41,7 @@ func main() {
 	q.Set("number", *number)
 	u.RawQuery = q.Encode()
 
-	dialer := websocket.Dialer{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
+	dialer := websocket.Dialer{}
 	ws, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Fatalf("dial signald: %v", err)
