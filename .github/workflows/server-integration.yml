@@ -7,8 +7,6 @@ on:
 
 jobs:
   integration:
-    permissions:
-      contents: read
     runs-on: ubuntu-latest
 
     services:
