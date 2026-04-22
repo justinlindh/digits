@@ -167,6 +167,12 @@ func (m *PeerManager) LocalTrack() *webrtc.TrackLocalStaticSample {
 	return m.track
 }
 
+// PeerConnection returns the underlying Pion PeerConnection. Intended for
+// read-only use such as polling GetStats(). Do not mutate.
+func (m *PeerManager) PeerConnection() *webrtc.PeerConnection {
+	return m.pc
+}
+
 // Close closes the underlying PeerConnection.
 func (m *PeerManager) Close() error {
 	return m.pc.Close()
