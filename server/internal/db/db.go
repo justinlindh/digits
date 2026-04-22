@@ -226,6 +226,9 @@ END $$;`,
 		//      (only affects pre-release branches where v12 shipped with DEFAULT 'c')
 		`UPDATE users SET theme = 'intercom' WHERE theme = 'c'`,
 		`ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'intercom'`,
+		// v15: per-user CRT bezel preference for the dialup theme.
+		// 'off' / 'connecting' (default) / 'all'.
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS crt_mode TEXT NOT NULL DEFAULT 'connecting'`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

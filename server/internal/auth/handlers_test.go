@@ -342,3 +342,33 @@ func TestHandleLogout_NoCookie(t *testing.T) {
 		t.Errorf("redirect location = %q, want /auth/login", loc)
 	}
 }
+
+func TestHandleMagicLinkVerify_DialupThemeRedirectsToConnecting(t *testing.T) {
+	h, s, _ := newTestHandlers(t)
+
+	// Create a user with the dialup theme set.
+	u, err := s.CreateUser("dialup@test.com", "Dialup User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := s.SetTheme(u.ID, ThemeDialup); err != nil {
+		t.Fatalf("SetTheme: %v", err)
+	}
+
+	token, err := s.CreateMagicLink("dialup@test.com", 15*time.Minute)
+	if err != nil {
+		t.Fatalf("CreateMagicLink: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/magic/"+token, nil)
+	req.SetPathValue("token", token)
+	w := httptest.NewRecorder()
+	h.HandleMagicLinkVerify(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/connecting" {
+		t.Errorf("redirect location = %q, want /connecting", loc)
+	}
+}
