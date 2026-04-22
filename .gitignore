@@ -18,6 +18,9 @@ pi/rnnoise/rnnoise_loop
 # Secrets / env
 server/.env
 server/.env.*
+# ...but keep committed example files; real .env and .env.dev stay ignored.
+!server/.env.example
+!server/.env.dev.example
 server/certs/
 
 # Media / images
