@@ -18,6 +18,7 @@ type User struct {
 	Name        string
 	GoogleID    *string
 	Theme       Theme
+	CRTMode     CRTMode
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
 }
@@ -59,9 +60,9 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 	u := &User{}
 	err := s.db.QueryRow(
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, theme, created_at, last_login_at`,
+		 RETURNING id, email, name, google_id, theme, crt_mode, created_at, last_login_at`,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -72,9 +73,9 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -88,9 +89,9 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE google_id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE google_id = $1`,
 		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -104,9 +105,9 @@ func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 func (s *Store) GetUserByID(id string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
 	}
@@ -134,6 +135,15 @@ func (s *Store) SetTheme(userID string, theme Theme) error {
 		return fmt.Errorf("invalid theme: %q", theme)
 	}
 	_, err := s.db.Exec(`UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
+	return err
+}
+
+// SetCRTMode updates the user's selected CRT bezel mode.
+func (s *Store) SetCRTMode(userID string, mode CRTMode) error {
+	if !mode.Valid() {
+		return fmt.Errorf("invalid crt mode: %q", mode)
+	}
+	_, err := s.db.Exec(`UPDATE users SET crt_mode = $1 WHERE id = $2`, mode, userID)
 	return err
 }
 
