@@ -1340,6 +1340,23 @@ body.crt-page .crt__screen { aspect-ratio: 4 / 3; }
   }
 }
 
+/* CRT-all (wrapped app) scroll fix: .dialup-window sets min-height
+   calc(100vh - 16px), which exceeds the bezel's inner screen height
+   (100vh - 120px at desktop) and previously clipped anything below
+   the fold since .crt__screen uses overflow: hidden. Treat the window
+   as a flex child of the screen and let it scroll in place. The
+   screen's ::before/::after overlays remain fixed to the bezel frame
+   (absolute on .crt__screen, unaffected by the child's scrolling). */
+body.crt-all .crt__screen {
+  display: flex;
+  flex-direction: column;
+}
+body.crt-all .crt__screen > .dialup-window {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
 body.crt-page .crt__screen::before,
 body.crt-all .crt__screen::before {
   content: "";
