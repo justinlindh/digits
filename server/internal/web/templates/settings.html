@@ -1,7 +1,7 @@
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
-<div class="page" style="max-width: 720px;">
+<div class="page" style="max-width: 900px;">
 
   <header class="page__head">
     <h1 class="page__title">Settings</h1>
@@ -11,8 +11,21 @@
   <div class="banner banner--ok">Settings saved.</div>
   {{end}}
 
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Settings sections">
+      <a href="#account" class="settings-nav__item is-active">Account</a>
+      {{if .Household}}
+      <a href="#household" class="settings-nav__item">Household</a>
+      <a href="#timezone" class="settings-nav__item">Timezone</a>
+      {{if .User}}<a href="#theme" class="settings-nav__item">Theme</a>{{end}}
+      <a href="#privacy" class="settings-nav__item">Privacy</a>
+      {{end}}
+      <a href="#session" class="settings-nav__item">Session</a>
+    </nav>
+    <div class="settings-sections">
+
   <!-- Account -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="account" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Account</h2>
     </header>
@@ -38,7 +51,7 @@
 
   {{if .Household}}
   <!-- Household -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="household" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Household</h2>
       <span class="panel__title-sub">Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}</span>
@@ -55,7 +68,7 @@
   </section>
 
   <!-- Timezone -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="timezone" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Timezone</h2>
       <span class="panel__title-sub">Used for displayed timestamps.</span>
@@ -142,7 +155,7 @@
 
   <!-- Theme -->
   {{if .User}}
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="theme" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Theme</h2>
       <span class="panel__title-sub">Pick the look you'd like for this app.</span>
@@ -173,7 +186,7 @@
   {{end}}
 
   <!-- Privacy -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="privacy" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Privacy</h2>
     </header>
@@ -197,7 +210,7 @@
   {{end}}
 
   <!-- Session -->
-  <section class="panel" style="border-color: rgba(160,90,58,0.25);">
+  <section id="session" class="panel" style="border-color: rgba(160,90,58,0.25);">
     <header class="panel__head">
       <h2 class="panel__title" style="color: var(--rust);">Session</h2>
     </header>
@@ -207,6 +220,9 @@
       </form>
     </div>
   </section>
+
+    </div>
+  </div>
 
   {{template "page-footer" .}}
 

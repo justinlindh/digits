@@ -1150,3 +1150,10 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
     display: none;
   }
 }
+
+/* Settings sticky side-nav placeholder - see issue #214 for full dialup treatment */
+.settings-layout { display: grid; grid-template-columns: 160px 1fr; gap: 12px; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
+.settings-nav__item { padding: 4px 8px; color: var(--dialup-ink); text-decoration: none; }
+.settings-nav__item.is-active { background: var(--dialup-blue); color: #fff; }
+.settings-sections { display: flex; flex-direction: column; gap: 8px; }

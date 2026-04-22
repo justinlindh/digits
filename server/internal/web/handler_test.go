@@ -897,3 +897,24 @@ func TestSettingsPage_CallLogLabel(t *testing.T) {
 		t.Errorf("settings page missing 'Call log'")
 	}
 }
+
+func TestSettingsPage_StickyNav(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="settings-layout"`,
+		`class="settings-nav"`,
+		`href="#account"`,
+		`href="#theme"`,
+		`href="#privacy"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings page missing %q", want)
+		}
+	}
+}
