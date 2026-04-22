@@ -53,6 +53,28 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 	return releases
 }
 
+// RangeReleases returns releases where fromVersion < v <= toVersion,
+// newest-first. An empty fromVersion means "everything up to and
+// including toVersion". component must be "pi" or "firmware". Returns
+// nil for unknown components or when the range is empty.
+func (idx *ReleaseIndex) RangeReleases(component, fromVersion, toVersion string) []Release {
+	all := idx.SortedReleases(component)
+	if all == nil {
+		return nil
+	}
+	var out []Release
+	for _, r := range all {
+		if CompareSemver(r.Version, toVersion) > 0 {
+			continue
+		}
+		if fromVersion != "" && CompareSemver(r.Version, fromVersion) <= 0 {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // CompareSemver compares two semver strings "X.Y.Z".
 // Returns 1 if a > b, -1 if a < b, 0 if equal.
 func CompareSemver(a, b string) int {
