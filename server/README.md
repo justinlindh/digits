@@ -290,6 +290,56 @@ Call authorization: phones can call each other if their lines belong to the same
 
 The server includes Docker support via `docker-compose.yml` and `Dockerfile`. See the `deploy` Makefile target for production deployment.
 
+## Autodeploy
+
+The prod GPU box runs a systemd timer (`digits-autodeploy.timer`) that fires every 60 seconds and invokes `/usr/local/bin/autodeploy`. Each run:
+
+1. Asks the GitHub Releases API for the newest `server/v*` tag.
+2. If it matches `last_deployed_tag` in `/var/lib/digits-autodeploy/state.json`, exits immediately.
+3. Otherwise logs in to GHCR, pulls `ghcr.io/justinlindh/digits/{signald,admind}:vX.Y.Z`, and runs `docker compose up -d --wait signald admind`.
+4. Polls `/healthz` on both services for a version match (timeout 90s).
+5. On success: updates state, exits 0.
+6. On failure: re-pins compose to the previous version, sends an SMTP alert, and exits 1.
+
+Spin-protection: a tag that already failed once is skipped until a newer tag appears or `autodeploy --retry` is run.
+
+### First-time install
+
+```
+sudo GHCR_TOKEN=<pat> SMTP_PASS=<pass> server/scripts/install-autodeploy.sh
+```
+
+Edit `/etc/digits-autodeploy/config.env` if any values are missing, then re-run the installer (idempotent).
+
+### Upgrade autodeploy itself
+
+From a fresh checkout on the prod box:
+
+```
+sudo server/scripts/install-autodeploy.sh
+```
+
+The installer rebuilds the binary, preserves config/state, and reloads systemd units.
+
+### Useful commands
+
+```
+systemctl status digits-autodeploy.service
+systemctl list-timers digits-autodeploy.timer
+journalctl -u digits-autodeploy.service -n 200
+sudo /usr/local/bin/autodeploy --dry-run
+sudo /usr/local/bin/autodeploy --retry    # clear spin-protection before the next tick
+sudo cat /var/lib/digits-autodeploy/state.json
+```
+
+### Manual deploy (escape hatch)
+
+`server/deploy.sh` still works. It now pulls from GHCR by default. To deploy a commit that has not been released yet, pass `--local-build`:
+
+```
+cd ~/src/digits/server && ./deploy.sh --local-build signald
+```
+
 ## Notes
 
 - Authentication is required -- magic link emails or Google OAuth.
