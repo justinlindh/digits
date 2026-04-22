@@ -303,8 +303,10 @@ BEGIN
         ALTER TABLE call_link_health ALTER COLUMN call_id DROP NOT NULL;
         ALTER TABLE call_link_health ADD COLUMN IF NOT EXISTS conference_id UUID NULL REFERENCES conferences(id) ON DELETE CASCADE;
         ALTER TABLE call_link_health ADD COLUMN IF NOT EXISTS peer TEXT NULL;
-        ALTER TABLE call_link_health ADD CONSTRAINT call_link_health_exactly_one_session
-            CHECK ((call_id IS NOT NULL) != (conference_id IS NOT NULL));
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'call_link_health_exactly_one_session') THEN
+            ALTER TABLE call_link_health ADD CONSTRAINT call_link_health_exactly_one_session
+                CHECK ((call_id IS NOT NULL) != (conference_id IS NOT NULL));
+        END IF;
 
         CREATE UNIQUE INDEX IF NOT EXISTS call_link_health_call_ep_ts
             ON call_link_health (call_id, endpoint, ts)
