@@ -350,6 +350,13 @@ func (h *Handler) Router() http.Handler {
 		http.ServeFile(w, r, "static/test-client.html")
 	})
 
+	// DEV-MODE ONLY: harness endpoint for e2e tests to seed an active call
+	// without going through the full signaling dance. Never registered in
+	// production builds.
+	if h.cfg.DevMode {
+		mux.HandleFunc("POST /test-harness/start-call", h.handleTestStartCall)
+	}
+
 	// Protected routes — require valid session
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
@@ -2769,5 +2776,30 @@ func (h *Handler) forceEndedLabel(call calls.Call) string {
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
 	return data
+}
+
+// handleTestStartCall is a DEV_MODE test-harness endpoint used by the
+// Playwright suite to seed an active call without driving the full
+// signaling flow. Never registered in production builds.
+func (h *Handler) handleTestStartCall(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Caller string `json:"caller"`
+		Callee string `json:"callee"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if body.Caller == "" || body.Callee == "" {
+		http.Error(w, "caller and callee required", http.StatusBadRequest)
+		return
+	}
+	id, err := h.tracker.OnCallInitiated(body.Caller, body.Callee)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
 }
 
