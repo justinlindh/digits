@@ -8,7 +8,7 @@ import (
 )
 
 type CallTracker interface {
-	OnCallInitiated(from, to string) error
+	OnCallInitiated(from, to string) (int64, error)
 	OnCallAnswered(caller, callee string) error
 	OnCallEnded(caller, callee string) error
 	ClearByNumber(number string)
@@ -110,7 +110,7 @@ func (r *Relay) handleCall(from string, msg *Message) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		if err := r.Tracker.OnCallInitiated(from, msg.To); err != nil {
+		if _, err := r.Tracker.OnCallInitiated(from, msg.To); err != nil {
 			slog.Error("failed to track call initiation", "err", err)
 		}
 	}

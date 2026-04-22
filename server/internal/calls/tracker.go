@@ -22,6 +22,7 @@ type Call struct {
 }
 
 type activeCall struct {
+	ID        int64
 	Caller    string
 	Callee    string
 	StartedAt time.Time
@@ -44,18 +45,24 @@ func callKey(a, b string) string {
 	return a + "→" + b
 }
 
-func (t *Tracker) OnCallInitiated(from, to string) error {
-	_, err := t.db.DB.Exec(
-		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated')",
+func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
+	var id int64
+	err := t.db.DB.QueryRow(
+		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
 		from, to,
-	)
+	).Scan(&id)
 	if err != nil {
-		return fmt.Errorf("track call: %w", err)
+		return 0, fmt.Errorf("track call: %w", err)
 	}
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, StartedAt: time.Now()}
+	t.active[callKey(from, to)] = &activeCall{
+		ID:        id,
+		Caller:    from,
+		Callee:    to,
+		StartedAt: time.Now(),
+	}
 	t.mu.Unlock()
-	return nil
+	return id, nil
 }
 
 func (t *Tracker) OnCallAnswered(caller, callee string) error {
@@ -147,6 +154,19 @@ func (t *Tracker) PeerOf(number string) string {
 		}
 	}
 	return ""
+}
+
+// CallIDFor returns the active call id for an endpoint phone number.
+// Returns (0, false) if the number is not currently in a call.
+func (t *Tracker) CallIDFor(number string) (int64, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, c := range t.active {
+		if c.Caller == number || c.Callee == number {
+			return c.ID, true
+		}
+	}
+	return 0, false
 }
 
 func (t *Tracker) InCall(a, b string) bool {
