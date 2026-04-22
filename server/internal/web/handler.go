@@ -2010,41 +2010,73 @@ func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request,
 	return h.requireLineOwnership(w, r, number) != nil
 }
 
-// requireCallEndpointOwnership verifies the authenticated user's household
-// owns at least one endpoint of the given call. Returns the call row and
-// true on success. On any failure (unauthenticated, call not found, not
-// owned) it writes 404 and returns false — unauthorized and nonexistent
-// are indistinguishable to the client.
-//
-// Linked-household status does NOT grant access to telemetry; the user's
-// household must own caller OR callee directly.
-func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, bool) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.lineStore == nil || h.householdStore == nil || h.tracker == nil {
-		http.NotFound(w, r)
-		return calls.Call{}, false
-	}
+// ownedNumbersForUser returns the set of phone numbers owned by any household
+// the user belongs to, plus the list of household IDs. Returns (nil, nil, false)
+// if the user has no households or any lookup fails — caller writes 404, same
+// response shape as nonexistent.
+func (h *Handler) ownedNumbersForUser(user *auth.User) (map[string]struct{}, []string, bool) {
 	households, err := h.householdStore.GetForUser(user.ID)
-	if err != nil || len(households) == 0 {
-		http.NotFound(w, r)
-		return calls.Call{}, false
+	if err != nil {
+		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		return nil, nil, false
 	}
-	householdID := households[0].ID
+	if len(households) == 0 {
+		return nil, nil, false
+	}
+	householdIDs := make([]string, 0, len(households))
+	numbers := make(map[string]struct{})
+	for _, hh := range households {
+		householdIDs = append(householdIDs, hh.ID)
+		lines, err := h.lineStore.ListByHousehold(hh.ID)
+		if err != nil {
+			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			return nil, nil, false
+		}
+		for _, ln := range lines {
+			numbers[ln.Number] = struct{}{}
+		}
+	}
+	return numbers, householdIDs, true
+}
 
-	call, err := h.tracker.GetCall(callID)
-	if err != nil || call.ID == 0 {
+// requireCallEndpointOwnership verifies the authenticated user owns either
+// endpoint of the call (across ANY household the user belongs to). Returns
+// the call, the user's household IDs (for later display-name resolution),
+// and true on success. On any failure, writes 404 (unauthorized and
+// nonexistent are indistinguishable).
+//
+// Implementation detail: always performs the same sequence of DB queries
+// regardless of auth outcome, to avoid a timing side channel on call-id
+// enumeration. Linked households do NOT grant access to telemetry; only
+// direct household ownership of a call endpoint does.
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, []string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.lineStore == nil || h.householdStore == nil || h.tracker == nil || h.healthStore == nil {
 		http.NotFound(w, r)
-		return calls.Call{}, false
+		return calls.Call{}, nil, false
 	}
 
-	callerLine, _ := h.lineStore.GetByNumber(call.Caller)
-	calleeLine, _ := h.lineStore.GetByNumber(call.Callee)
-	if (callerLine != nil && callerLine.HouseholdID == householdID) ||
-		(calleeLine != nil && calleeLine.HouseholdID == householdID) {
-		return call, true
+	// Always do both queries in the same order, regardless of miss reason.
+	numbers, householdIDs, ok := h.ownedNumbersForUser(user)
+	call, callErr := h.tracker.GetCall(callID)
+
+	if callErr != nil {
+		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		http.NotFound(w, r)
+		return calls.Call{}, nil, false
 	}
-	http.NotFound(w, r)
-	return calls.Call{}, false
+	if !ok || call.ID == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, false
+	}
+
+	_, ownsCaller := numbers[call.Caller]
+	_, ownsCallee := numbers[call.Callee]
+	if !ownsCaller && !ownsCallee {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, false
+	}
+	return call, householdIDs, true
 }
 
 // ---- Link Health API ----
@@ -2092,24 +2124,36 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	call, ok := h.requireCallEndpointOwnership(w, r, callID)
+	call, householdIDs, ok := h.requireCallEndpointOwnership(w, r, callID)
 	if !ok {
 		return
 	}
 
-	user := auth.UserFromContext(r.Context())
+	// Display-name resolution — same helpers as /calls page. No new data exposure.
+	// Linked-household names are shown for peers that the user already sees in
+	// their call log; the underlying auth check does not grant read access to
+	// calls the user was not part of.
 	var linkedIndex map[string]string
-	if user != nil && h.householdStore != nil {
-		households, _ := h.householdStore.GetForUser(user.ID)
-		if len(households) > 0 {
-			linkedFamilies := h.buildLinkedFamilies(households[0].ID)
-			linkedIndex = buildLinkedLineIndex(linkedFamilies)
-		}
+	if len(householdIDs) > 0 {
+		linkedFamilies := h.buildLinkedFamilies(householdIDs[0])
+		linkedIndex = buildLinkedLineIndex(linkedFamilies)
 	}
 
 	resp := linkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
-	resp.Caller = h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex)
-	resp.Callee = h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex)
+	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex)
+	if err != nil {
+		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex)
+	if err != nil {
+		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	resp.Caller = callerEndpoint
+	resp.Callee = calleeEndpoint
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -2117,10 +2161,13 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) linkHealthEndpointResp {
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) (linkHealthEndpointResp, error) {
 	out := linkHealthEndpointResp{Number: number, Window: []linkHealthSample{}}
-	if line, _ := h.lineStore.GetByNumber(number); line != nil {
-		out.DisplayName = line.Name
+
+	// Display name resolution — silent fallback on error is appropriate here;
+	// GetByNumber failure is non-security-critical for display purposes.
+	if ln, err := h.lineStore.GetByNumber(number); err == nil && ln != nil {
+		out.DisplayName = ln.Name
 	} else {
 		out.DisplayName = resolvePeerName(number, linkedIndex)
 	}
@@ -2128,33 +2175,32 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 		out.DisplayName = number
 	}
 
-	// Try memory first.
+	// Memory first.
 	windowMem := h.healthStore.Window(callID, number)
 	if len(windowMem) > 0 {
 		out.Window = make([]linkHealthSample, len(windowMem))
 		for i, s := range windowMem {
 			out.Window[i] = toAPISample(s)
 		}
-		last := windowMem[len(windowMem)-1]
-		la := toAPISample(last)
+		la := toAPISample(windowMem[len(windowMem)-1])
 		out.Latest = &la
-		return out
+		return out, nil
 	}
-	// Fallback to DB.
-	db, err := h.healthStore.Readback(ctx, callID, number, 60)
+
+	// DB fallback.
+	dbSamples, err := h.healthStore.Readback(ctx, callID, number, 60)
 	if err != nil {
-		slog.Error("link_health readback failed", "call_id", callID, "err", err)
-		return out
+		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
 	}
-	out.Window = make([]linkHealthSample, len(db))
-	for i, s := range db {
+	out.Window = make([]linkHealthSample, len(dbSamples))
+	for i, s := range dbSamples {
 		out.Window[i] = toAPISample(s)
 	}
-	if len(db) > 0 {
-		la := toAPISample(db[len(db)-1])
+	if len(dbSamples) > 0 {
+		la := toAPISample(dbSamples[len(dbSamples)-1])
 		out.Latest = &la
 	}
-	return out
+	return out, nil
 }
 
 // householdNumbers returns the set of phone numbers belonging to the
