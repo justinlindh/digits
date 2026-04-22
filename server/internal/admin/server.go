@@ -178,6 +178,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/admin",
 		HttpOnly: true,
+		Secure:   true,
 		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
