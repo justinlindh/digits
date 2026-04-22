@@ -34,5 +34,8 @@ module.exports = {
       },
     }],
     ['@semantic-release/github', { assets: [], successComment: false, failComment: false }],
+    ['@semantic-release/exec', {
+      publishCmd: 'echo "new_release_published=true" >> $GITHUB_OUTPUT && echo "new_release_version=${nextRelease.version}" >> $GITHUB_OUTPUT && echo "new_release_git_tag=${nextRelease.gitTag}" >> $GITHUB_OUTPUT',
+    }],
   ],
 };
