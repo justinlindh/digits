@@ -10,7 +10,7 @@
   <section class="rooms" aria-label="Lines">
     {{if .Lines}}
       {{range .Lines}}
-      <a class="rooms__card{{if .OnCall}} rooms__card--live{{end}}" href="/phones/{{.Line.Number}}">
+      <a class="rooms__card{{if .OnCall}} rooms__card--live{{end}}" href="{{if and .OnCall .OnCallID}}/call/live/{{.OnCallID}}{{else}}/phones/{{.Line.Number}}{{end}}">
         <div class="rooms__head">
           <span class="rooms__name">{{.Line.Name}}</span>
           {{if .OnCall}}
