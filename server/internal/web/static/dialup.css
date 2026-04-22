@@ -2086,6 +2086,50 @@ body.crt-all .crt__brand::after {
   body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }
 
+/* Portrait mobile: drop the CRT bezel entirely (closes #225). The bezel
+   is a desktop-era frame; at phone-portrait aspect ratios the filled
+   rectangle leaves dead teal around the dialup window, doesn't track
+   the inner chrome's rounded corners, and pushes the DIGITS ONLINE
+   brand label well below the fold. Fall back to the same viewport
+   lock the non-CRT path uses so the dialup window still scales to
+   100vh with chrome pinned and .dialup-main scrolling inside. */
+@media (max-width: 640px) and (orientation: portrait) {
+  body.crt-all {
+    height: 100vh;
+    overflow: hidden;
+  }
+  body.crt-all .crt {
+    display: contents;
+    background: none;
+    position: static;
+    perspective: none;
+  }
+  body.crt-all .crt__screen {
+    position: static;
+    display: block;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    overflow: visible;
+    aspect-ratio: auto;
+  }
+  body.crt-all .crt__screen::before,
+  body.crt-all .crt__screen::after { display: none; }
+  body.crt-all .crt__brand { display: none; }
+  body.crt-all .crt__screen > .dialup-window {
+    flex: initial;
+    overflow-y: visible;
+    min-height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+  }
+}
+
 /* Dialup: the Ringer panel is a Win95 groupbox-style frame. The checkbox
    uses native rendering with the Win95 highlight blue. */
 body.dialup .checkbox-row {
