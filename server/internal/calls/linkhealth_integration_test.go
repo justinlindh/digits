@@ -5,6 +5,7 @@ package calls
 import (
 	"context"
 	"database/sql"
+	"reflect"
 	"testing"
 	"time"
 
@@ -357,5 +358,71 @@ func TestWriteSampleConferenceRejectsEmptyPeer(t *testing.T) {
 	}
 	if rowCount != 0 {
 		t.Fatalf("no row should be inserted when empty-peer rejected; got %d", rowCount)
+	}
+}
+
+func TestFlushOnceWritesConferenceRows(t *testing.T) {
+	d := setupTestDB(t)
+
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	s := NewHealthStore(d)
+	s.InitConference(confID)
+
+	loss := float32(1.1)
+	s.RecordEdge(confID, "+15555550001", "+15555550002",
+		Sample{TS: time.Unix(0, 1000), LossPct: &loss, ConnType: "host"})
+	jitter := float32(2.2)
+	s.RecordEdge(confID, "+15555550002", "+15555550001",
+		Sample{TS: time.Unix(0, 2000), JitterMs: &jitter, ConnType: "srflx"})
+
+	if err := s.FlushOnce(context.Background()); err != nil {
+		t.Fatalf("FlushOnce: %v", err)
+	}
+
+	var count int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM call_link_health WHERE conference_id = $1`, confID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count conference rows: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 conference rows after flush; got %d", count)
+	}
+
+	// Sanity: both edges land with correct (endpoint, peer) pairs.
+	rows, err := d.DB.Query(
+		`SELECT endpoint, peer FROM call_link_health
+		 WHERE conference_id = $1 ORDER BY ts`, confID,
+	)
+	if err != nil {
+		t.Fatalf("select conference rows: %v", err)
+	}
+	defer rows.Close()
+
+	var got []string
+	for rows.Next() {
+		var ep, peer string
+		if err := rows.Scan(&ep, &peer); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, ep+"|"+peer)
+	}
+	want := []string{"+15555550001|+15555550002", "+15555550002|+15555550001"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("edges: got %v want %v", got, want)
 	}
 }

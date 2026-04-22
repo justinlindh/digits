@@ -484,12 +484,6 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 }
 
 func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sessionRings) error {
-	if key.IsConf() {
-		// Conference flush lands in a later phase with schema support for
-		// conference_id + peer columns. Until then, conference-keyed sessions
-		// live in memory only; the ticker loop must not try to persist them.
-		return nil
-	}
 	sr.mu.Lock()
 	// Collect work under lock, then release before DB I/O.
 	type pending struct {
