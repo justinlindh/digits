@@ -1,0 +1,23 @@
+{{define "title"}}Live session{{end}}
+
+{{define "content"}}
+<div class="page deck">
+  <header class="deck-header">
+    <span class="label">live session</span>
+    <h1>{{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}</h1>
+    {{if .Ended}}
+      <div class="deck-ended">
+        {{if .ForceEndedBy}}Ended by {{.ForceEndedBy}}.{{else}}Call ended.{{end}}
+      </div>
+    {{else}}
+      <button class="deck-kill" data-call-id="{{.Call.ID}}">End call</button>
+    {{end}}
+  </header>
+  <div id="call-live-panel" class="deck-panel"
+       {{if not .Ended}}hx-ext="sse"
+       sse-connect="/api/call/{{.Call.ID}}/link-health/stream"
+       sse-swap="sample"{{end}}>
+    <div class="deck-panel placeholder">panel placeholder</div>
+  </div>
+</div>
+{{end}}

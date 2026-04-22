@@ -93,7 +93,8 @@ type Handler struct {
 	tmplPhoneDetail  *template.Template
 	tmplLinks        *template.Template
 	tmplConnecting   *template.Template
-	tmplCallLivePanel *template.Template
+	tmplCallLivePanel  *template.Template
+	tmplCallLiveDetail *template.Template
 	cfg             HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -188,6 +189,10 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-panel: %w", err)
 	}
+	tmplCallLiveDetail, err := parsePage("call-live-detail.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse call-live-detail: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -216,7 +221,8 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		tmplPhoneDetail:   tmplPhoneDetail,
 		tmplLinks:         tmplLinks,
 		tmplConnecting:    tmplConnecting,
-		tmplCallLivePanel: tmplCallLivePanel,
+		tmplCallLivePanel:  tmplCallLivePanel,
+		tmplCallLiveDetail: tmplCallLiveDetail,
 		cfg:             cfg,
 		authStore:       authStore,
 		authHandlers:    authHandlers,
@@ -302,6 +308,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /links/{id}/revoke", h.handleLinksRevokePost)
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
+	protected.HandleFunc("GET /call/live/{id}", h.handleCallLiveDetail)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
@@ -2600,6 +2607,79 @@ func layoutFor(r *http.Request) string {
 
 func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
+}
+
+// ---- Call live detail ----
+
+type callLiveDetailData struct {
+	Page          string
+	Version       string
+	User          *auth.User
+	HouseholdName string
+	Call          calls.Call
+	Caller        LinkHealthEndpointResp
+	Callee        LinkHealthEndpointResp
+	Ended         bool
+	ForceEndedBy  string
+}
+
+// handleCallLiveDetail renders the observation-deck page for a specific call.
+// Auth uses the same ownership check as the JSON endpoint. Ended calls are
+// NOT 404'd here — they render in terminal state with the last-known samples
+// from DB fallback, making the URL useful as a postmortem surface.
+func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	user := auth.UserFromContext(r.Context())
+	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
+	callerEp, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("call-live: build caller endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	calleeEp, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("call-live: build callee endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	data := callLiveDetailData{
+		Page:          "call-live",
+		Version:       version.Version,
+		User:          user,
+		HouseholdName: h.householdNameFromContext(r),
+		Call:          call,
+		Caller:        callerEp,
+		Callee:        calleeEp,
+		Ended:         call.Status == "ended",
+		ForceEndedBy:  h.forceEndedLabel(call),
+	}
+
+	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)
+}
+
+// forceEndedLabel returns the display label for who force-ended a call.
+// Returns "" if peer-initiated or user lookup fails.
+func (h *Handler) forceEndedLabel(call calls.Call) string {
+	if call.ForceEndedBy == nil {
+		return ""
+	}
+	u, err := h.authStore.GetUserByID(*call.ForceEndedBy)
+	if err != nil || u == nil {
+		return ""
+	}
+	return userDisplayLabel(u)
 }
 
 func mustMarshal(msg *signaling.Message) []byte {

@@ -13,14 +13,15 @@ import (
 )
 
 type Call struct {
-	ID         int64
-	Caller     string
-	Callee     string
-	Status     string
-	StartedAt  time.Time
-	AnsweredAt *time.Time
-	EndedAt    *time.Time
-	DurationS  int
+	ID           int64
+	Caller       string
+	Callee       string
+	Status       string
+	StartedAt    time.Time
+	AnsweredAt   *time.Time
+	EndedAt      *time.Time
+	DurationS    int
+	ForceEndedBy *string // UUID of user who force-ended, nil if peer-initiated
 }
 
 type activeCall struct {
@@ -235,7 +236,7 @@ func (t *Tracker) Active() []activeCall {
 
 func (t *Tracker) Recent(limit int) ([]Call, error) {
 	rows, err := t.db.DB.Query(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s, force_ended_by
 		 FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
 	)
 	if err != nil {
@@ -246,9 +247,14 @@ func (t *Tracker) Recent(limit int) ([]Call, error) {
 	var calls []Call
 	for rows.Next() {
 		var c Call
+		var feb sql.NullString
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS); err != nil {
+			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS, &feb); err != nil {
 			return nil, err
+		}
+		if feb.Valid {
+			s := feb.String
+			c.ForceEndedBy = &s
 		}
 		calls = append(calls, c)
 	}
@@ -273,10 +279,11 @@ func (t *Tracker) MarkForceEnded(callID int64, userID string) error {
 func (t *Tracker) GetCall(id int64) (Call, error) {
 	var c Call
 	var answered, ended sql.NullTime
+	var forceEndedBy sql.NullString
 	err := t.db.DB.QueryRow(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s, force_ended_by
 		 FROM calls WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS)
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS, &forceEndedBy)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Call{}, nil
 	}
@@ -288,6 +295,10 @@ func (t *Tracker) GetCall(id int64) (Call, error) {
 	}
 	if ended.Valid {
 		c.EndedAt = &ended.Time
+	}
+	if forceEndedBy.Valid {
+		s := forceEndedBy.String
+		c.ForceEndedBy = &s
 	}
 	return c, nil
 }
@@ -302,7 +313,7 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	// Build IN clause — reuse same $1..$N placeholders for both caller and callee
 	n := len(phoneNumbers)
 	ph := dbutil.Placeholders(n, 0)
-	query := fmt.Sprintf(`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s
+	query := fmt.Sprintf(`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s, force_ended_by
 		FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
 	args := make([]interface{}, 0, n+1)
@@ -320,9 +331,14 @@ func (t *Tracker) RecentForPhones(phoneNumbers []string, limit int) ([]Call, err
 	var calls []Call
 	for rows.Next() {
 		var c Call
+		var feb sql.NullString
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS); err != nil {
+			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS, &feb); err != nil {
 			return nil, err
+		}
+		if feb.Valid {
+			s := feb.String
+			c.ForceEndedBy = &s
 		}
 		calls = append(calls, c)
 	}
