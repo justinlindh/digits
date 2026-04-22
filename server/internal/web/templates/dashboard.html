@@ -69,10 +69,10 @@
     </header>
     <div class="connected-row">
       {{range .LinkedFamilies}}
-      <span class="connected-row__chip">
+      <a class="connected-row__chip" href="/links#family-{{.ID}}">
         <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
         <span>{{.Name}}</span>
-      </span>
+      </a>
       {{end}}
     </div>
   </section>

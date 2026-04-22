@@ -92,7 +92,7 @@
     <!-- Neighborhood: two-pane address-book rows -->
     <div class="neighborhood panel">
       {{range .LinkedFamilies}}
-      <div class="neighborhood__row">
+      <div class="neighborhood__row" id="family-{{.ID}}">
         <div class="neighborhood__identity">
           <div class="neighborhood__name">
             <svg class="hub__house" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>

@@ -1457,7 +1457,10 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   font-family: var(--font-display);
   font-style: italic;
   font-size: 13px;
+  color: var(--ink);
+  text-decoration: none;
 }
+.connected-row__chip:hover { background: var(--paper); border-color: var(--brass); }
 .connected-row__chip svg { width: 18px; height: 18px; color: var(--ink-soft); }
 
 /* Confirm dialog (shared pattern; triggers: data-confirm attributes) */
