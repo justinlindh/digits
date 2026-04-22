@@ -80,5 +80,9 @@ func main() {
 		logger.Error("run", "err", err, "tag", res.Tag, "action", res.Action)
 		os.Exit(1)
 	}
+	if res.Action == autodeploy.ActionNoop {
+		logger.Debug("run", "action", res.Action)
+		return
+	}
 	logger.Info("run", "action", res.Action, "tag", res.Tag)
 }

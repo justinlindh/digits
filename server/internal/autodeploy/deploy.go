@@ -78,10 +78,13 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("github: %w", err)
 	}
-	if rel.NotModified || rel.TagName == "" {
+	if rel.NotModified {
 		return Result{Action: ActionNoop}, nil
 	}
-	if rel.TagName == state.LastDeployedTag {
+	// 200 OK paths: if the response brought a new ETag (no-match or same-tag),
+	// persist it so the next tick can ask with If-None-Match and stay under
+	// the GitHub rate-limit budget.
+	if rel.TagName == "" || rel.TagName == state.LastDeployedTag {
 		if rel.ETag != "" && rel.ETag != state.GitHubETag {
 			state.GitHubETag = rel.ETag
 			_ = d.Store.Write(state)

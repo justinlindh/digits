@@ -138,12 +138,4 @@ func LoadConfig(path string) (Config, error) {
 	return c, nil
 }
 
-func splitFields(s string) []string {
-	out := []string{}
-	for _, f := range strings.Fields(s) {
-		if f != "" {
-			out = append(out, f)
-		}
-	}
-	return out
-}
+func splitFields(s string) []string { return strings.Fields(s) }

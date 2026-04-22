@@ -7,12 +7,9 @@ import (
 	"io"
 	"net/http"
 	"time"
-)
 
-type healthResponse struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
-}
+	"github.com/justinlindh/digits/server/internal/httputil"
+)
 
 // PollHealth issues GETs to url at interval until the response is a 200 with
 // version == wantVersion, or ctx is done.
@@ -40,7 +37,7 @@ func PollHealth(ctx context.Context, url, wantVersion string, interval time.Dura
 		if resp.StatusCode != http.StatusOK {
 			return false
 		}
-		var h healthResponse
+		var h httputil.HealthResponse
 		if err := json.Unmarshal(b, &h); err != nil {
 			lastErr = fmt.Errorf("decode: %w", err)
 			return false
