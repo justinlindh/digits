@@ -15,8 +15,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: read
-  artifacts: write
 
 jobs:
   e2e:
