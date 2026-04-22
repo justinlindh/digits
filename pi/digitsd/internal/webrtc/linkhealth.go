@@ -119,7 +119,6 @@ func (r *Reporter) sample() (Sample, bool) {
 		bout := int64(nominated.BytesSent)
 		out.BytesIn = &bin
 		out.BytesOut = &bout
-		// Look up the local candidate to get the connection type.
 		if local, ok := report[nominated.LocalCandidateID]; ok {
 			if lc, ok := local.(pionwebrtc.ICECandidateStats); ok {
 				out.ConnType = lc.CandidateType.String()

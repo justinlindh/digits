@@ -64,7 +64,7 @@ func (r *ring) latest() *Sample {
 }
 
 // HealthStore holds per-call in-memory telemetry. The database handle is
-// accepted by the constructor for use by the flusher added in Task 5; when
+// accepted by the constructor for use by the periodic DB flusher; when
 // nil the store operates in memory-only mode. Zero-value is NOT valid; use
 // NewHealthStore.
 type HealthStore struct {
@@ -221,11 +221,12 @@ func (s *HealthStore) flushCall(ctx context.Context, callID int64, cr *callRings
 		endpoint string
 		sample   Sample
 	}
-	var todo []pending
-	var advance []struct {
+	type flushAdvance struct {
 		endpoint string
 		ts       time.Time
 	}
+	var todo []pending
+	var advance []flushAdvance
 	for ep, r := range cr.byEndpoint {
 		latest := r.latest()
 		if latest == nil {
@@ -235,10 +236,7 @@ func (s *HealthStore) flushCall(ctx context.Context, callID int64, cr *callRings
 			continue // nothing new since last flush
 		}
 		todo = append(todo, pending{endpoint: ep, sample: *latest})
-		advance = append(advance, struct {
-			endpoint string
-			ts       time.Time
-		}{ep, latest.TS})
+		advance = append(advance, flushAdvance{ep, latest.TS})
 	}
 	cr.mu.Unlock()
 

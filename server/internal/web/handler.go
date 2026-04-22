@@ -2010,38 +2010,37 @@ func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request,
 	return h.requireLineOwnership(w, r, number) != nil
 }
 
-// ownedNumbersForUser returns the set of phone numbers owned by any household
-// the user belongs to, plus the list of household IDs. Returns (nil, nil, false)
+// ownedLinesForUser returns the lines owned by any household the user belongs
+// to, keyed by number, plus the primary household ID. Returns (nil, "", false)
 // if the user has no households or any lookup fails — caller writes 404, same
 // response shape as nonexistent.
-func (h *Handler) ownedNumbersForUser(user *auth.User) (map[string]struct{}, []string, bool) {
+func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, string, bool) {
 	households, err := h.householdStore.GetForUser(user.ID)
 	if err != nil {
 		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
-		return nil, nil, false
+		return nil, "", false
 	}
 	if len(households) == 0 {
-		return nil, nil, false
+		return nil, "", false
 	}
-	householdIDs := make([]string, 0, len(households))
-	numbers := make(map[string]struct{})
+	lines := make(map[string]*line.Line)
 	for _, hh := range households {
-		householdIDs = append(householdIDs, hh.ID)
-		lines, err := h.lineStore.ListByHousehold(hh.ID)
+		hhLines, err := h.lineStore.ListByHousehold(hh.ID)
 		if err != nil {
 			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
-			return nil, nil, false
+			return nil, "", false
 		}
-		for _, ln := range lines {
-			numbers[ln.Number] = struct{}{}
+		for i := range hhLines {
+			ln := hhLines[i]
+			lines[ln.Number] = &ln
 		}
 	}
-	return numbers, householdIDs, true
+	return lines, households[0].ID, true
 }
 
 // requireCallEndpointOwnership verifies the authenticated user owns either
 // endpoint of the call (across ANY household the user belongs to). Returns
-// the call, the user's household IDs (for later display-name resolution),
+// the call, the owned-lines map (keyed by number), the primary household ID,
 // and true on success. On any failure, writes 404 (unauthorized and
 // nonexistent are indistinguishable).
 //
@@ -2049,34 +2048,34 @@ func (h *Handler) ownedNumbersForUser(user *auth.User) (map[string]struct{}, []s
 // regardless of auth outcome, to avoid a timing side channel on call-id
 // enumeration. Linked households do NOT grant access to telemetry; only
 // direct household ownership of a call endpoint does.
-func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, []string, bool) {
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, string, bool) {
 	user := auth.UserFromContext(r.Context())
-	if user == nil || h.lineStore == nil || h.householdStore == nil || h.tracker == nil || h.healthStore == nil {
+	if user == nil {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, false
+		return calls.Call{}, nil, "", false
 	}
 
 	// Always do both queries in the same order, regardless of miss reason.
-	numbers, householdIDs, ok := h.ownedNumbersForUser(user)
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(user)
 	call, callErr := h.tracker.GetCall(callID)
 
 	if callErr != nil {
 		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
 		http.NotFound(w, r)
-		return calls.Call{}, nil, false
+		return calls.Call{}, nil, "", false
 	}
 	if !ok || call.ID == 0 {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, false
+		return calls.Call{}, nil, "", false
 	}
 
-	_, ownsCaller := numbers[call.Caller]
-	_, ownsCallee := numbers[call.Callee]
+	_, ownsCaller := ownedLines[call.Caller]
+	_, ownsCallee := ownedLines[call.Callee]
 	if !ownsCaller && !ownsCallee {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, false
+		return calls.Call{}, nil, "", false
 	}
-	return call, householdIDs, true
+	return call, ownedLines, primaryHH, true
 }
 
 // ---- Link Health API ----
@@ -2128,7 +2127,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	call, householdIDs, ok := h.requireCallEndpointOwnership(w, r, callID)
+	call, ownedLines, primaryHH, ok := h.requireCallEndpointOwnership(w, r, callID)
 	if !ok {
 		return
 	}
@@ -2138,19 +2137,19 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// their call log; the underlying auth check does not grant read access to
 	// calls the user was not part of.
 	var linkedIndex map[string]string
-	if len(householdIDs) > 0 {
-		linkedFamilies := h.buildLinkedFamilies(householdIDs[0])
+	if primaryHH != "" {
+		linkedFamilies := h.buildLinkedFamilies(primaryHH)
 		linkedIndex = buildLinkedLineIndex(linkedFamilies)
 	}
 
 	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
-	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex)
+	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
 		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex)
+	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
 	if err != nil {
 		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -2165,12 +2164,12 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) (LinkHealthEndpointResp, error) {
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
 	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
 
-	// Display name resolution — silent fallback on error is appropriate here;
-	// GetByNumber failure is non-security-critical for display purposes.
-	if ln, err := h.lineStore.GetByNumber(number); err == nil && ln != nil {
+	// Display name resolution: owned line first (no extra DB query), then
+	// linked-index for peer names, then bare number as fallback.
+	if ln, ok := ownedLines[number]; ok && ln != nil {
 		out.DisplayName = ln.Name
 	} else {
 		out.DisplayName = resolvePeerName(number, linkedIndex)
