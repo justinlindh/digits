@@ -238,7 +238,15 @@
         {{range .Lines}}
         <tr>
           <td class="num"><a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a></td>
-          <td><a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a></td>
+          <td>
+            <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{if .Line.Settings.SilentMode}}
+            <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
+              <span class="phone-silent__dot" aria-hidden="true"></span>
+              <span class="phone-silent__text">SILENT</span>
+            </span>
+            {{end}}
+          </td>
           <td>
             {{if .Online}}
               <span class="chip chip--on"><span class="chip__dot"></span>online</span>
@@ -267,6 +275,12 @@
       <a class="lines__row" href="/phones/{{.Line.Number}}">
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
         <span class="lines__name">{{.Line.Name}}</span>
+        {{if .Line.Settings.SilentMode}}
+        <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
+          <span class="phone-silent__dot" aria-hidden="true"></span>
+          <span class="phone-silent__text">SILENT</span>
+        </span>
+        {{end}}
         <span class="lines__num">{{fmtPhone .Line.Number}}</span>
         <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
       </a>

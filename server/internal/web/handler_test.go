@@ -973,3 +973,38 @@ func TestSettingsCRTModePost_Invalid(t *testing.T) {
 		t.Errorf("CRTMode = %q, want %q (unchanged after invalid POST)", got.CRTMode, auth.CRTModeConnecting)
 	}
 }
+
+func TestPhonesListShowsSilentBadgeWhenSilent(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup: got %d", w.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /phones: got %d, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `class="phone-silent"`) {
+		t.Errorf("expected phone-silent badge in /phones HTML, body:\n%s", w.Body.String())
+	}
+}
+
+func TestPhonesListOmitsSilentBadgeWhenNotSilent(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `phone-silent`) {
+		t.Errorf("unexpected silent badge in /phones HTML when silent mode off")
+	}
+}
