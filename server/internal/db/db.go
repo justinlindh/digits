@@ -288,6 +288,37 @@ END $$;`,
 		// v19: capture which user initiated a force-disconnect on a call.
 		// NULL for peer-initiated hangups.
 		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS force_ended_by UUID REFERENCES users(id)`,
+		// v20: conference-scoped link-health samples.
+		// Relaxes call_id to nullable and adds conference_id + peer with an
+		// XOR CHECK so exactly one session type is attributed per row. The
+		// old PRIMARY KEY (call_id, endpoint, ts) is replaced by two partial
+		// unique indexes (one per session kind) and a conference-scoped ts
+		// index used by the Phase 3 readback path. Gated on schema_version
+		// so re-running on a v20-applied DB is a no-op.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 20) THEN
+
+        ALTER TABLE call_link_health DROP CONSTRAINT IF EXISTS call_link_health_pkey;
+        ALTER TABLE call_link_health ALTER COLUMN call_id DROP NOT NULL;
+        ALTER TABLE call_link_health ADD COLUMN IF NOT EXISTS conference_id UUID NULL REFERENCES conferences(id) ON DELETE CASCADE;
+        ALTER TABLE call_link_health ADD COLUMN IF NOT EXISTS peer TEXT NULL;
+        ALTER TABLE call_link_health ADD CONSTRAINT call_link_health_exactly_one_session
+            CHECK ((call_id IS NOT NULL) != (conference_id IS NOT NULL));
+
+        CREATE UNIQUE INDEX IF NOT EXISTS call_link_health_call_ep_ts
+            ON call_link_health (call_id, endpoint, ts)
+            WHERE call_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS call_link_health_conf_ep_peer_ts
+            ON call_link_health (conference_id, endpoint, peer, ts)
+            WHERE conference_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_call_link_health_conf_ts
+            ON call_link_health (conference_id, ts DESC)
+            WHERE conference_id IS NOT NULL;
+
+        INSERT INTO schema_version (version) VALUES (20);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

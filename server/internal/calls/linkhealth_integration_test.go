@@ -87,3 +87,52 @@ func TestReadbackFromDB(t *testing.T) {
 		t.Fatalf("readback value mismatch: %+v", got[0])
 	}
 }
+
+func TestCallLinkHealthSchemaV20(t *testing.T) {
+	d := setupTestDB(t)
+
+	// conference_id and peer columns exist.
+	var colCount int
+	if err := d.DB.QueryRow(
+		`SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_name = 'call_link_health'
+           AND column_name IN ('conference_id', 'peer')`,
+	).Scan(&colCount); err != nil {
+		t.Fatalf("query columns: %v", err)
+	}
+	if colCount != 2 {
+		t.Fatalf("expected 2 new columns (conference_id, peer); got %d", colCount)
+	}
+
+	// call_id is now nullable.
+	var isNullable string
+	if err := d.DB.QueryRow(
+		`SELECT is_nullable FROM information_schema.columns
+         WHERE table_name = 'call_link_health' AND column_name = 'call_id'`,
+	).Scan(&isNullable); err != nil {
+		t.Fatalf("query call_id nullability: %v", err)
+	}
+	if isNullable != "YES" {
+		t.Fatalf("call_id should be nullable after v20; got %q", isNullable)
+	}
+
+	// XOR CHECK: both set should fail.
+	_, err := d.DB.Exec(
+		`INSERT INTO call_link_health (call_id, conference_id, endpoint, ts)
+         VALUES ($1, $2, $3, NOW())`,
+		1, "00000000-0000-0000-0000-000000000000", "+15555550001",
+	)
+	if err == nil {
+		t.Fatal("expected CHECK violation inserting with both call_id and conference_id set")
+	}
+
+	// XOR CHECK: neither set should fail.
+	_, err = d.DB.Exec(
+		`INSERT INTO call_link_health (call_id, conference_id, endpoint, ts)
+         VALUES (NULL, NULL, $1, NOW())`,
+		"+15555550001",
+	)
+	if err == nil {
+		t.Fatal("expected CHECK violation inserting with neither call_id nor conference_id set")
+	}
+}
