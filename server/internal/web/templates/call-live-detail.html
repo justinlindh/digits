@@ -1,23 +1,119 @@
-{{define "title"}}Live session{{end}}
+{{define "title"}}Live session — {{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}{{end}}
 
 {{define "content"}}
-<div class="page deck">
+<div class="page deck" data-started-at="{{.Call.StartedAt.UnixMilli}}">
   <header class="deck-header">
-    <span class="label">live session</span>
-    <h1>{{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}</h1>
+    <div class="deck-header__labels">
+      <span class="deck-kicker label">live session</span>
+      <h1 class="deck-title">{{.Caller.DisplayName}} <span class="deck-arrow">&harr;</span> {{.Callee.DisplayName}}</h1>
+      <div class="deck-meta">
+        <span class="deck-duration" data-duration-since="{{.Call.StartedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        {{with .Caller.Latest}}
+          {{if .ConnType}}<span class="deck-conn">via {{.ConnType}}</span>{{end}}
+        {{end}}
+      </div>
+    </div>
     {{if .Ended}}
-      <div class="deck-ended">
-        {{if .ForceEndedBy}}Ended by {{.ForceEndedBy}}.{{else}}Call ended.{{end}}
+      <div class="deck-ended-chip">
+        {{if .ForceEndedBy}}Ended by {{.ForceEndedBy}}{{else}}Ended{{end}}
       </div>
     {{else}}
-      <button class="deck-kill" data-call-id="{{.Call.ID}}">End call</button>
+      <button class="deck-kill" type="button" onclick="document.getElementById('deck-confirm').showModal()">
+        {{if eq .User.Theme "dialup"}}◉ Disconnect{{else}}End call{{end}}
+      </button>
     {{end}}
   </header>
+
+  <div class="deck-cards">
+    <div class="deck-card">
+      <div class="label">caller</div>
+      <div class="deck-card__name">{{.Caller.DisplayName}}</div>
+      <div class="deck-card__num num">{{.Caller.Number}}</div>
+    </div>
+    <div class="deck-card">
+      <div class="label">callee</div>
+      <div class="deck-card__name">{{.Callee.DisplayName}}</div>
+      <div class="deck-card__num num">{{.Callee.Number}}</div>
+    </div>
+  </div>
+
   <div id="call-live-panel" class="deck-panel"
        {{if not .Ended}}hx-ext="sse"
        sse-connect="/api/call/{{.Call.ID}}/link-health/stream"
        sse-swap="sample"{{end}}>
-    <div class="deck-panel placeholder">panel placeholder</div>
+    {{template "call-live-panel" .}}
   </div>
+
+  {{if not .Ended}}
+    <dialog id="deck-confirm" class="deck-confirm">
+      <form method="dialog" class="deck-confirm__form">
+        <h2 class="deck-confirm__title">
+          {{if eq .User.Theme "dialup"}}Disconnect call?{{else}}End this call?{{end}}
+        </h2>
+        <p class="deck-confirm__body">
+          The server sends a hangup signal to both handsets. The call will drop within a second or two.
+          The server does not touch audio &mdash; only the signaling channel.
+        </p>
+        <div class="deck-confirm__actions">
+          <button type="button" class="deck-confirm__cancel" onclick="document.getElementById('deck-confirm').close()">Cancel</button>
+          <button type="button" class="deck-confirm__go"
+                  hx-post="/api/call/{{.Call.ID}}/disconnect"
+                  hx-swap="none"
+                  onclick="document.getElementById('deck-confirm').close()">
+            {{if eq .User.Theme "dialup"}}Disconnect{{else}}End call{{end}}
+          </button>
+        </div>
+      </form>
+    </dialog>
+  {{end}}
+
+  <p class="deck-disclaimer">
+    Bars show packet loss and jitter reported by each endpoint. The server sees the pipe, not the audio.
+  </p>
 </div>
+
+<script>
+  (function () {
+    var el = document.querySelector('.deck-duration');
+    if (!el) return;
+    var since = parseInt(el.getAttribute('data-duration-since'), 10);
+    if (!since) return;
+    function tick() {
+      if (!document.body.contains(el)) return;
+      var now = Date.now();
+      var s = Math.max(0, Math.floor((now - since) / 1000));
+      var h = Math.floor(s / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      var sec = s % 60;
+      function pad(n) { return n < 10 ? '0' + n : String(n); }
+      el.textContent = (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(sec);
+    }
+    tick();
+    var iv = setInterval(tick, 1000);
+
+    var lastEvent = Date.now();
+    var panel = document.getElementById('call-live-panel');
+    if (panel) {
+      panel.addEventListener('htmx:sseMessage', function () { lastEvent = Date.now(); });
+      setInterval(function () {
+        if (Date.now() - lastEvent > 30000) {
+          var banner = document.getElementById('deck-stale-banner');
+          if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'deck-stale-banner';
+            banner.className = 'deck-stale';
+            banner.innerHTML = 'Connection lost. <button onclick="location.reload()">Refresh</button>';
+            document.querySelector('.deck').prepend(banner);
+          }
+        }
+      }, 5000);
+    }
+
+    document.body.addEventListener('htmx:sseMessage', function (ev) {
+      if (ev.detail && (ev.detail.type === 'ended' || ev.detail.type === 'disconnect')) {
+        clearInterval(iv);
+      }
+    });
+  })();
+</script>
 {{end}}

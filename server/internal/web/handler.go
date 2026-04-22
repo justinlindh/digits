@@ -118,6 +118,14 @@ type Handler struct {
 	Releases *updates.GitHubReleases
 }
 
+// segDesc drives bar segment rendering. Lit is the count (0..10) of
+// segments that should be rendered as lit; Severity ("" | "warn" | "bad")
+// controls their color via CSS classes.
+type segDesc struct {
+	Lit      int
+	Severity string
+}
+
 type HandlerConfig struct {
 	Addr string
 	// DevMode enables development-only conveniences. Today that means
@@ -140,6 +148,69 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 				return fmt.Sprintf("%ds", seconds)
 			}
 			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
+		"derefFloat32": func(p *float32) float32 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"derefInt64": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"iter": func(n int) []int {
+			out := make([]int, n)
+			for i := range out {
+				out[i] = i
+			}
+			return out
+		},
+		"humanBytes": func(n int64) string {
+			switch {
+			case n > 1024*1024:
+				return fmt.Sprintf("%.1fM", float64(n)/(1024*1024))
+			case n > 1024:
+				return fmt.Sprintf("%.1fK", float64(n)/1024)
+			default:
+				return fmt.Sprintf("%dB", n)
+			}
+		},
+		"pctToSegments": func(pct float32) segDesc {
+			lit := int(pct / 10.0)
+			if pct > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case pct >= 2.0:
+				sev = "bad"
+			case pct >= 0.5:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
+		},
+		"msToSegments": func(ms float32) segDesc {
+			lit := int(ms / 6.0)
+			if ms > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case ms >= 40.0:
+				sev = "bad"
+			case ms >= 20.0:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
 		},
 	}
 	// parsePage closes over the layout + shared-partials file list so each
@@ -192,6 +263,10 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	tmplCallLiveDetail, err := parsePage("call-live-detail.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-detail: %w", err)
+	}
+	// Merge the panel partial so {{template "call-live-panel"}} resolves inside the detail page.
+	if _, err := tmplCallLiveDetail.ParseFS(templateFS, "templates/_call-live-panel.html"); err != nil {
+		return nil, fmt.Errorf("parse call-live-panel partial into detail: %w", err)
 	}
 
 	u := websocket.Upgrader{
