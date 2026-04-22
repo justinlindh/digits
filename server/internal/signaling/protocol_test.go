@@ -179,7 +179,13 @@ func TestLinkHealthPeerOmitEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if strings.Contains(string(b), `"peer"`) {
-		t.Fatalf("empty Peer should be omitted from JSON: %s", b)
+	var env struct {
+		LinkHealth map[string]json.RawMessage `json:"link_health"`
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		t.Fatalf("unmarshal envelope: %v", err)
+	}
+	if _, ok := env.LinkHealth["peer"]; ok {
+		t.Fatalf("empty Peer should be omitted from link_health object: %s", b)
 	}
 }
