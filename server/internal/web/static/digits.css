@@ -1710,3 +1710,76 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .deck-shared__row { grid-template-columns: 1fr; }
 }
 
+
+/* Update chip expansion (intercom theme) */
+.update-details { display: inline-block; }
+.update-details > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.update-details > summary::-webkit-details-marker { display: none; }
+
+.update-notes {
+  margin-top: 8px;
+  padding: 12px 14px;
+  background: #efe8db;
+  border: 1px solid rgba(46, 35, 27, 0.12);
+  border-radius: 8px;
+  color: #2e231b;
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 420px;
+}
+.update-notes .update-note + .update-note {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(46, 35, 27, 0.08);
+}
+.update-note__version {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(46, 35, 27, 0.55);
+  margin-bottom: 6px;
+}
+.update-note p { margin: 0 0 8px; }
+.update-note p:last-child { margin: 0; }
+.update-note__empty { color: rgba(46, 35, 27, 0.55); font-style: italic; }
+
+/* Pair confirmation banner (intercom theme) */
+.pair-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  background: #efe8db;
+  border: 1px solid rgba(46, 35, 27, 0.12);
+  border-left: 3px solid #8a6b2f;
+  border-radius: 6px;
+  color: #2e231b;
+  font-size: 14px;
+}
+.pair-banner__icon {
+  color: #8a6b2f;
+  font-weight: 700;
+}
+.pair-banner__text { flex: 1; }
+.pair-banner__close {
+  background: transparent;
+  border: none;
+  color: rgba(46, 35, 27, 0.55);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.pair-banner__close:hover { color: #2e231b; }
+
+/* Mobile variant: full-width details sibling below the .lines__row anchor. */
+.update-details--mobile { display: block; margin: 0 12px 8px; }
+.update-details--mobile > summary { display: inline-flex; align-items: center; gap: 4px; }
+.update-details--mobile .update-notes { max-width: none; margin-top: 6px; }
+

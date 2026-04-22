@@ -37,7 +37,7 @@ e2e:
 # Requires a running PostgreSQL with DATABASE_URL set (defaults to local dev DB).
 e2e-ci:
 	$(MAKE) build
-	DEV_MODE=true SIGNALD_ADDR=:8080 BASE_URL=http://localhost:8080 DATABASE_URL=$(DATABASE_URL) ./bin/signald & SERVER_PID=$$!; \
+	DEV_MODE=true TEST_FAKE_UPDATES=1 SIGNALD_ADDR=:8080 BASE_URL=http://localhost:8080 DATABASE_URL=$(DATABASE_URL) ./bin/signald & SERVER_PID=$$!; \
 	trap "kill $$SERVER_PID 2>/dev/null" EXIT; \
 	for i in $$(seq 1 30); do \
 		curl -sf http://localhost:8080/healthz > /dev/null 2>&1 && break; \

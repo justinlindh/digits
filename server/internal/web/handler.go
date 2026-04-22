@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -131,7 +132,8 @@ type HandlerConfig struct {
 	// DevMode enables development-only conveniences. Today that means
 	// serving /static/ from disk instead of the embedded FS, so CSS and
 	// JS edits don't require a signald rebuild. When false, the embedded
-	// FS is used.
+	// FS is used. DevMode also registers the /dev/seed-firmware test
+	// helper used by e2e.
 	DevMode bool
 	// DevStaticDir is the disk path served for /static/ when DevMode is
 	// true. Empty falls back to devStaticDirDefault ("internal/web/static"),
@@ -212,6 +214,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 			}
 			return segDesc{Lit: lit, Severity: sev}
 		},
+		"renderNotes": renderNotes,
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
@@ -350,11 +353,14 @@ func (h *Handler) Router() http.Handler {
 		http.ServeFile(w, r, "static/test-client.html")
 	})
 
-	// DEV-MODE ONLY: harness endpoint for e2e tests to seed an active call
-	// without going through the full signaling dance. Never registered in
-	// production builds.
+	// Dev-only routes: gated by DevMode, not registered in production builds.
 	if h.cfg.DevMode {
+		// Harness endpoint for /call/live e2e tests to seed an active call
+		// without going through the full signaling dance.
 		mux.HandleFunc("POST /test-harness/start-call", h.handleTestStartCall)
+		// Seed a fake hub entry so e2e tests can exercise the firmware update
+		// chip without a real device connection.
+		mux.HandleFunc("POST /dev/seed-firmware", h.handleDevSeedFirmware)
 	}
 
 	// Protected routes — require valid session
@@ -779,6 +785,11 @@ func fmtElapsed(d time.Duration) string {
 
 // ---- Lines (Phones) ----
 
+type pairSuccess struct {
+	Name            string
+	FirmwareVersion string
+}
+
 type linesData struct {
 	Page                  string
 	Version               string
@@ -787,20 +798,22 @@ type linesData struct {
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
+	PairSuccess           *pairSuccess
 	User                  *auth.User
 	LatestPiVersion       string
 	LatestFirmwareVersion string
 }
 
 type lineRow struct {
-	Line            line.Line
-	Online          bool
-	OnCall          bool
-	OnCallPeerName  string
-	OnCallElapsed   string // "mm:ss" for the Dashboard room-card callout
-	OnCallID        int64  // 0 when not on a call; otherwise the active call id
-	DeviceInfo      *signaling.DeviceInfoSnapshot
-	UpdateAvailable bool // either Pi or firmware is behind the latest release
+	Line                line.Line
+	Online              bool
+	OnCall              bool
+	OnCallPeerName      string
+	OnCallElapsed       string // "mm:ss" for the Dashboard room-card callout
+	OnCallID            int64  // 0 when not on a call; otherwise the active call id
+	DeviceInfo          *signaling.DeviceInfoSnapshot
+	FirmwareUpdateNotes []updates.Release
+	PiUpdateNotes       []updates.Release
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
@@ -830,24 +843,28 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		onlineSet[n] = true
 	}
 
-	var latestPi, latestFw string
+	var (
+		idx                *updates.ReleaseIndex
+		latestPi, latestFw string
+	)
 	if h.Releases != nil {
-		if idx := h.Releases.ReleaseIndex(); idx != nil {
-			latestPi = idx.Pi.Latest
-			latestFw = idx.Firmware.Latest
-		}
+		idx = h.Releases.ReleaseIndex()
+	}
+	if idx != nil {
+		latestPi = idx.Pi.Latest
+		latestFw = idx.Firmware.Latest
 	}
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		if info != nil {
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.UpdateAvailable = true
-			}
+		if idx != nil && info != nil {
 			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.UpdateAvailable = true
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+			}
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
 			}
 		}
 		rows[i] = row
@@ -866,7 +883,14 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	renderWith(w, h.tmplPhones, layoutFor(r), h.buildLinesData(r, ""))
+	data := h.buildLinesData(r, "")
+	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
+		data.PairSuccess = &pairSuccess{
+			Name:            pairedName,
+			FirmwareVersion: r.URL.Query().Get("fw"),
+		}
+	}
+	renderWith(w, h.tmplPhones, layoutFor(r), data)
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
@@ -971,7 +995,9 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+	v := url.Values{}
+	v.Set("paired", name)
+	http.Redirect(w, r, "/phones?"+v.Encode(), http.StatusSeeOther)
 }
 
 type lineDetailData struct {
@@ -1027,8 +1053,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		if idx := h.Releases.ReleaseIndex(); idx != nil {
 			latestPi = idx.Pi.Latest
 			latestFw = idx.Firmware.Latest
-			piReleases = idx.SortedReleases("pi")
-			fwReleases = idx.SortedReleases("firmware")
+			piReleases = idx.SortedReleases(updates.ComponentPi)
+			fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 		}
 	}
 
@@ -2805,5 +2831,31 @@ func (h *Handler) handleTestStartCall(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
+}
+
+// handleDevSeedFirmware registers a fake hub entry for a line number with the
+// given firmware version. It is only reachable when DevMode is true and lets
+// the Playwright e2e suite exercise the firmware update chip without a real
+// device connection.
+//
+// POST /dev/seed-firmware?number=<line-number>&fw=<semver>
+func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) {
+	number := r.URL.Query().Get("number")
+	fw := r.URL.Query().Get("fw")
+	if number == "" || fw == "" {
+		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
+		return
+	}
+	conn := &signaling.Conn{Send: make(chan []byte, 8)}
+	// Drain Send so any hub fan-out to this fake device is silently discarded
+	// instead of blocking at the channel cap during interactive dev testing.
+	go func() {
+		for range conn.Send {
+		}
+	}()
+	h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
 }
 

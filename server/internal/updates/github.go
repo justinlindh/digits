@@ -1,6 +1,7 @@
 package updates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 type ghRelease struct {
 	TagName     string    `json:"tag_name"`
 	PublishedAt string    `json:"published_at"`
+	Body        string    `json:"body"`
 	Assets      []ghAsset `json:"assets"`
 }
 
@@ -80,7 +82,7 @@ func (g *GitHubReleases) poll() {
 }
 
 func (g *GitHubReleases) refresh() {
-	idx, err := g.fetch()
+	idx, err := g.fetch(context.Background())
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
 		return
@@ -108,10 +110,10 @@ func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
 // fetch retrieves releases from the GitHub API and builds a ReleaseIndex.
 // Note: fetches up to 100 releases (no pagination). If the repo exceeds 100
 // total releases across all tag types, older ones will be silently omitted.
-func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
+func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=100", g.apiBase, g.owner, g.repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -167,13 +169,14 @@ func (g *GitHubReleases) fetch() (*ReleaseIndex, error) {
 			SHA256:  sha256,
 			URL:     binaryURL,
 			Date:    date,
+			Notes:   StripGroomedSentinel(rel.Body),
 		}
 
 		var ci *ComponentIndex
 		switch component {
-		case "pi":
+		case ComponentPi:
 			ci = &idx.Pi
-		case "firmware":
+		case ComponentFirmware:
 			ci = &idx.Firmware
 		default:
 			continue
@@ -227,9 +230,9 @@ func parseTag(tag string) (component, version string, ok bool) {
 
 	switch parts[0] {
 	case "fw":
-		return "firmware", parts[1], true
+		return ComponentFirmware, parts[1], true
 	case "pi":
-		return "pi", parts[1], true
+		return ComponentPi, parts[1], true
 	default:
 		return "", "", false
 	}
@@ -261,4 +264,30 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 		}
 	}
 	return
+}
+
+// NewGitHubReleasesWithIndex returns a GitHubReleases prepopulated with
+// the given index. Intended for tests that do not want to hit the real
+// API. The returned instance does not poll.
+func NewGitHubReleasesWithIndex(idx *ReleaseIndex) *GitHubReleases {
+	g := &GitHubReleases{}
+	g.mu.Lock()
+	g.cached = idx
+	g.mu.Unlock()
+	return g
+}
+
+// GroomedSentinel is the idempotency marker the release-groom workflow
+// prepends to groomed release bodies. Exported so tests and external
+// callers can reference the same literal as the production code.
+const GroomedSentinel = "<!-- groomed:v1 -->"
+
+// StripGroomedSentinel removes the GroomedSentinel prefix from a release
+// body if present. Leaves non-groomed bodies untouched.
+func StripGroomedSentinel(s string) string {
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	if !strings.HasPrefix(trimmed, GroomedSentinel) {
+		return s
+	}
+	return strings.TrimLeft(trimmed[len(GroomedSentinel):], " \t\r\n")
 }
