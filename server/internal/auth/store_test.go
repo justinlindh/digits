@@ -298,3 +298,33 @@ func TestCleanupExpired(t *testing.T) {
 		t.Error("expired session should be invalid after cleanup")
 	}
 }
+
+func TestSetAndLoadCRTMode(t *testing.T) {
+	s := testDB(t)
+
+	u, err := s.CreateUser("crt@test.com", "CRT User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	// Newly-created users default to CRTModeConnecting.
+	if u.CRTMode != CRTModeConnecting {
+		t.Errorf("default CRTMode = %q, want %q", u.CRTMode, CRTModeConnecting)
+	}
+
+	if err := s.SetCRTMode(u.ID, CRTModeAll); err != nil {
+		t.Fatalf("SetCRTMode: %v", err)
+	}
+
+	got, err := s.GetUserByID(u.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.CRTMode != CRTModeAll {
+		t.Errorf("after SetCRTMode(all), loaded CRTMode = %q, want %q", got.CRTMode, CRTModeAll)
+	}
+
+	// Invalid values are rejected.
+	if err := s.SetCRTMode(u.ID, CRTMode("bogus")); err == nil {
+		t.Error("expected error for invalid CRTMode, got nil")
+	}
+}
