@@ -149,7 +149,7 @@ body.dialup:not(.crt-page) {
   color: var(--dialup-ink);
 }
 .dialer__status-line b {
-  color: var(--dialup-blue-dark);
+  color: #8a6800;
   letter-spacing: 0.02em;
 }
 .dialer__spinner {
@@ -185,7 +185,7 @@ body.dialup:not(.crt-page) {
   transition: background 0.1s;
 }
 .dialer__progress-cell.is-filled {
-  background: linear-gradient(180deg, var(--dialup-blue), var(--dialup-blue-dark));
+  background: linear-gradient(180deg, var(--dialup-gold), var(--dialup-gold-dark));
 }
 
 .dialer__log-wrap {
@@ -203,6 +203,11 @@ body.dialup:not(.crt-page) {
   line-height: 1.5;
   color: #7ad77a;
   text-shadow: 0 0 4px rgba(122, 215, 122, 0.5);
+  transition: height 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+}
+.dialer__log-placeholder {
+  color: #4a8a4a;
+  text-shadow: 0 0 3px rgba(74, 138, 74, 0.4);
 }
 .dialer__log {
   margin: 0;
@@ -255,30 +260,38 @@ body.dialup:not(.crt-page) {
   font-size: 14px;
   font-weight: bold;
   color: var(--dialup-ink);
-  background: linear-gradient(180deg, var(--dialup-gold), var(--dialup-gold-dark));
-  border-top: 2px solid #fff6c0;
-  border-left: 2px solid #fff6c0;
-  border-right: 2px solid #8a6800;
-  border-bottom: 2px solid #8a6800;
+  background: linear-gradient(180deg, #efd989 0%, #c9a44a 100%);
+  border-top: 2px solid #fae6a0;
+  border-left: 2px solid #fae6a0;
+  border-right: 2px solid #7a5a18;
+  border-bottom: 2px solid #7a5a18;
   cursor: pointer;
   letter-spacing: 0.05em;
-  text-shadow: 1px 1px 0 rgba(255,255,255,0.4);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  text-shadow: 1px 1px 0 rgba(255, 240, 200, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 200, 0.45);
 }
-.dialer__connect:hover { background: linear-gradient(180deg, #ffe54a, var(--dialup-gold-dark)); }
+.dialer__connect:hover { background: linear-gradient(180deg, #f4e29a 0%, #d4ae54 100%); }
 .dialer__connect:active {
-  border-top: 2px solid #8a6800;
-  border-left: 2px solid #8a6800;
-  border-right: 2px solid #fff6c0;
-  border-bottom: 2px solid #fff6c0;
+  border-top: 2px solid #7a5a18;
+  border-left: 2px solid #7a5a18;
+  border-right: 2px solid #fae6a0;
+  border-bottom: 2px solid #fae6a0;
+}
+.dialer__connect-icon {
+  color: #5a3f00;
+  margin-right: 4px;
+  font-size: 12px;
+  vertical-align: 1px;
 }
 .dialer__connect[disabled] { opacity: 0.6; cursor: not-allowed; }
 
-.dialer[data-state="idle"] .dialer__progress,
-.dialer[data-state="idle"] .dialer__log-wrap {
+.dialer[data-state="idle"] .dialer__progress {
   opacity: 0.5;
   filter: saturate(0.6);
   pointer-events: none;
+}
+.dialer[data-state="idle"] .dialer__log-wrap {
+  height: 26px;
 }
 
 .dialer__hint {

@@ -69,7 +69,15 @@
   }
 
   let logLines = [];
+  let placeholderCleared = false;
+  function clearPlaceholder() {
+    if (placeholderCleared) return;
+    placeholderCleared = true;
+    const ph = document.getElementById('log-placeholder');
+    if (ph) ph.remove();
+  }
   function appendLog(html) {
+    clearPlaceholder();
     const li = document.createElement('li');
     li.innerHTML = html + ' <span class="caret"></span>';
     const prev = logEl.querySelector('li .caret');
