@@ -1,12 +1,15 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"html/template"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -82,14 +85,15 @@ type Handler struct {
 	relay       *signaling.Relay
 	healthStore *calls.HealthStore
 	// Per-page template sets to avoid {{define}} name conflicts
-	tmplDashboard   *template.Template
-	tmplPhones      *template.Template
-	tmplCalls       *template.Template
-	tmplSettings    *template.Template
-	tmplOnboard     *template.Template
-	tmplPhoneDetail *template.Template
-	tmplLinks       *template.Template
-	tmplConnecting  *template.Template
+	tmplDashboard    *template.Template
+	tmplPhones       *template.Template
+	tmplCalls        *template.Template
+	tmplSettings     *template.Template
+	tmplOnboard      *template.Template
+	tmplPhoneDetail  *template.Template
+	tmplLinks        *template.Template
+	tmplConnecting   *template.Template
+	tmplCallLivePanel *template.Template
 	cfg             HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -180,6 +184,10 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	if err != nil {
 		return nil, err
 	}
+	tmplCallLivePanel, err := template.New("call-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_call-live-panel.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse call-live-panel: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -198,16 +206,17 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		deviceStore:     deviceStore,
 		hub:             hub,
 		tracker:         tracker,
-		relay:           relay,
-		healthStore:     healthStore,
-		tmplDashboard:   tmplDashboard,
-		tmplPhones:      tmplPhones,
-		tmplCalls:       tmplCalls,
-		tmplSettings:    tmplSettings,
-		tmplOnboard:     tmplOnboard,
-		tmplPhoneDetail: tmplPhoneDetail,
-		tmplLinks:       tmplLinks,
-		tmplConnecting:  tmplConnecting,
+		relay:             relay,
+		healthStore:       healthStore,
+		tmplDashboard:     tmplDashboard,
+		tmplPhones:        tmplPhones,
+		tmplCalls:         tmplCalls,
+		tmplSettings:      tmplSettings,
+		tmplOnboard:       tmplOnboard,
+		tmplPhoneDetail:   tmplPhoneDetail,
+		tmplLinks:         tmplLinks,
+		tmplConnecting:    tmplConnecting,
+		tmplCallLivePanel: tmplCallLivePanel,
 		cfg:             cfg,
 		authStore:       authStore,
 		authHandlers:    authHandlers,
@@ -294,6 +303,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
+	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
@@ -2249,6 +2259,185 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 		out.Latest = &la
 	}
 	return out, nil
+}
+
+// sseHeartbeatInterval is how often we emit a synthetic heartbeat event
+// on the link-health stream. Clients use this for liveness detection:
+// absence of any event for >2x this interval triggers a "connection lost"
+// banner.
+const sseHeartbeatInterval = 15 * time.Second
+
+// handleCallLinkHealthStream opens an SSE stream for a call's telemetry.
+// Delivers:
+//   - one initial "sample" event per endpoint with the current snapshot
+//   - one "sample" event per future Record
+//   - one "disconnect" event if a user force-disconnects
+//   - one "ended" event when the call ends (any cause), then closes
+//   - periodic "heartbeat" events for client-side liveness
+//
+// Auth: same as the JSON endpoint (direct-endpoint-ownership). Ended calls
+// return 404 before any stream bytes are written.
+func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+	if call.Status == "ended" {
+		http.NotFound(w, r)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		slog.Error("SSE stream: ResponseWriter does not implement Flusher")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines); err != nil {
+		slog.Debug("SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
+		return
+	}
+
+	sub := h.healthStore.Subscribe(callID)
+	defer sub.Close()
+
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				// Channel closed by Evict. Send one final ended event and return.
+				_ = writeSSE(w, "ended", renderEndedFragment(""))
+				flusher.Flush()
+				return
+			}
+			if err := h.writeEvent(w, flusher, call, ownedLines, ev); err != nil {
+				slog.Debug("SSE stream: write failed; client gone", "call_id", callID, "err", err)
+				return
+			}
+		case <-heartbeat.C:
+			if err := writeSSE(w, "heartbeat", "{}"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// writeSSE emits one SSE event frame: "event: <name>\ndata: <data>\n\n".
+func writeSSE(w io.Writer, event, data string) error {
+	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+		return err
+	}
+	// Each line of data must be prefixed per the SSE spec.
+	for _, line := range strings.Split(data, "\n") {
+		if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprint(w, "\n")
+	return err
+}
+
+func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line) error {
+	linkedIndex := h.linkedIndexForCall(ctx, ownedLines)
+	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
+	if err != nil {
+		return err
+	}
+	if err := writeSSE(w, "sample", fragment); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
+}
+
+func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, ev calls.Event) error {
+	switch ev.Kind {
+	case calls.SampleKind:
+		linkedIndex := h.linkedIndexForCall(context.Background(), ownedLines)
+		callerEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Caller, linkedIndex, ownedLines)
+		if err != nil {
+			return err
+		}
+		calleeEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Callee, linkedIndex, ownedLines)
+		if err != nil {
+			return err
+		}
+		fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
+		if err != nil {
+			return err
+		}
+		if err := writeSSE(w, "sample", fragment); err != nil {
+			return err
+		}
+	case calls.DisconnectKind:
+		if err := writeSSE(w, "disconnect", renderEndedFragment(ev.EndedBy)); err != nil {
+			return err
+		}
+	case calls.EndedKind:
+		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
+			return err
+		}
+	}
+	flusher.Flush()
+	return nil
+}
+
+// linkedIndexForCall builds the linked-families index for display-name
+// resolution. Returns nil when the user belongs to no households.
+func (h *Handler) linkedIndexForCall(ctx context.Context, ownedLines map[string]*line.Line) map[string]string {
+	for _, ln := range ownedLines {
+		if ln != nil {
+			return buildLinkedLineIndex(h.buildLinkedFamilies(ln.HouseholdID))
+		}
+	}
+	return nil
+}
+
+// renderLinkHealthPanel executes the _call-live-panel.html template against
+// a LinkHealthResp and returns the rendered HTML.
+func (h *Handler) renderLinkHealthPanel(call calls.Call, caller, callee LinkHealthEndpointResp) (string, error) {
+	var buf bytes.Buffer
+	data := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt, Caller: caller, Callee: callee}
+	if err := h.tmplCallLivePanel.ExecuteTemplate(&buf, "call-live-panel", data); err != nil {
+		return "", fmt.Errorf("render call-live-panel: %w", err)
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// renderEndedFragment returns the small HTML shown when a call ends.
+func renderEndedFragment(endedBy string) string {
+	if endedBy != "" {
+		return fmt.Sprintf(`<div class="deck-ended">Ended by %s.</div>`, html.EscapeString(endedBy))
+	}
+	return `<div class="deck-ended">Call ended.</div>`
 }
 
 // handleCallDisconnect force-ends an active call. Any user whose household
