@@ -846,3 +846,35 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 		t.Fatalf("expected timeout error, got: %v", err)
 	}
 }
+
+func TestCallsPage_CallLogTitle(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, ">Call log<") {
+		t.Errorf("calls page missing 'Call log' heading")
+	}
+	if strings.Contains(body, ">Call history<") {
+		t.Errorf("calls page still has old 'Call history' heading")
+	}
+}
+
+func TestSettingsPage_CallLogLabel(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Call log") {
+		t.Errorf("settings page missing 'Call log'")
+	}
+}
