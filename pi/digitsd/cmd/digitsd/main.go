@@ -666,25 +666,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 		})
 	}
 
-	// Spawn a link-health reporter once the mesh peer reaches Connected.
-	// Idempotent: cancels any prior reporter for this peer (ICE restart).
-	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		if state != webrtc.PeerConnectionStateConnected {
-			return
-		}
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		if d.linkHealthDisabled {
-			return
-		}
-		if cancel, ok := d.meshReporterCancels[phone]; ok {
-			cancel()
-		}
-		rctx, cancel := context.WithCancel(context.Background())
-		d.meshReporterCancels[phone] = cancel
-		reporter := owebrtc.NewReporter(pm, buildMeshLinkHealthSend(d.sig, phone), d.linkHealthInterval)
-		go reporter.Run(rctx)
-	}
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, phone)
 
 	if initiator {
 		// Initiator creates and sends the SDP offer to the peer.
@@ -802,25 +784,7 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 		})
 	}
 
-	// Spawn a link-health reporter once the mesh peer reaches Connected.
-	// Idempotent: cancels any prior reporter for this peer (ICE restart).
-	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		if state != webrtc.PeerConnectionStateConnected {
-			return
-		}
-		d.mu.Lock()
-		defer d.mu.Unlock()
-		if d.linkHealthDisabled {
-			return
-		}
-		if cancel, ok := d.meshReporterCancels[peer]; ok {
-			cancel()
-		}
-		rctx, cancel := context.WithCancel(context.Background())
-		d.meshReporterCancels[peer] = cancel
-		reporter := owebrtc.NewReporter(pm, buildMeshLinkHealthSend(d.sig, peer), d.linkHealthInterval)
-		go reporter.Run(rctx)
-	}
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, peer)
 
 	// Use confID from the offer rather than ctrl.ConferenceID() so the answer
 	// is correctly routed even if ConferenceMember has not yet arrived.
