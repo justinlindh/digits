@@ -2285,3 +2285,83 @@ body.dialup .phone-silent__text {
 .confirm-dialog__actions .btn {
   min-width: 88px;
 }
+
+/* Update chip expansion (dialup theme) */
+.update-details > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.update-details > summary::-webkit-details-marker { display: none; }
+
+.update-notes {
+  margin-top: 8px;
+  padding: 0;
+  background: #ffffff;
+  border: 2px solid #0a3a8a;
+  border-radius: 4px;
+  color: #0a2a5a;
+  font-family: Tahoma, Geneva, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 420px;
+  box-shadow: 3px 3px 0 rgba(10, 58, 138, 0.25);
+}
+.update-notes::before {
+  content: "What's New!";
+  display: block;
+  padding: 6px 10px;
+  background: linear-gradient(to bottom, #2a5abf 0%, #0a3a8a 100%);
+  color: #ffffff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.update-notes > *:not(.update-note:first-child) { padding-left: 10px; padding-right: 10px; }
+.update-note {
+  padding: 10px;
+}
+.update-notes .update-note + .update-note {
+  border-top: 1px dashed rgba(10, 58, 138, 0.3);
+}
+.update-note__version {
+  display: inline-block;
+  font-family: Tahoma, Geneva, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #0a3a8a;
+  margin-bottom: 4px;
+}
+.update-note p { margin: 0 0 6px; }
+.update-note p:last-child { margin: 0; }
+.update-note__empty { color: rgba(10, 42, 90, 0.6); font-style: italic; }
+
+/* Pair confirmation banner (dialup theme) */
+.pair-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  background: linear-gradient(to bottom, #7ab4ff 0%, #2a5abf 100%);
+  border: 1px solid #0a3a8a;
+  border-radius: 4px;
+  color: #ffffff;
+  font-family: Tahoma, Geneva, sans-serif;
+  font-size: 13px;
+  box-shadow: 2px 2px 0 rgba(10, 58, 138, 0.25);
+}
+.pair-banner__icon { font-weight: 700; font-size: 16px; }
+.pair-banner__text { flex: 1; }
+.pair-banner__close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.pair-banner__close:hover { color: #ffffff; }

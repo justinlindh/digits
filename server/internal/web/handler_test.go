@@ -22,6 +22,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/updates"
 )
 
 func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
@@ -1451,5 +1452,193 @@ func TestPhonesListOmitsSilentBadgeWhenNotSilent(t *testing.T) {
 	h.Router().ServeHTTP(w, req)
 	if strings.Contains(w.Body.String(), `phone-silent`) {
 		t.Errorf("unexpected silent badge in /phones HTML when silent mode off")
+	}
+}
+
+// seedPairedHandsetForTest inserts a line row and registers a signaling.Conn
+// with the hub so the /phones handler sees the device as online with the given
+// firmware version.
+func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, householdID, number, fwVersion string) {
+	t.Helper()
+	_, err := database.DB.Exec(
+		`INSERT INTO lines (number, name, household_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		number, "Test Handset", householdID,
+	)
+	if err != nil {
+		t.Fatalf("seed line %s: %v", number, err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register(number, conn)
+	h.Hub().UpdateDeviceInfo(number, "", "", fwVersion, "", false)
+}
+
+// fakeReleasesForTest builds a fake GitHubReleases populated with the given
+// version->notes map for the "firmware" component. The sentinel is stripped
+// from notes before insertion to mirror what the real fetcher does.
+func fakeReleasesForTest(t *testing.T, versionNotes map[string]string) *updates.GitHubReleases {
+	t.Helper()
+	releases := make(map[string]*updates.Release, len(versionNotes))
+	var latest string
+	for v, notes := range versionNotes {
+		releases[v] = &updates.Release{Version: v, Notes: updates.StripGroomedSentinel(notes)}
+		if latest == "" || updates.CompareSemver(v, latest) > 0 {
+			latest = v
+		}
+	}
+	idx := &updates.ReleaseIndex{
+		Firmware: updates.ComponentIndex{Latest: latest, Releases: releases},
+		Pi:       updates.ComponentIndex{Latest: "", Releases: make(map[string]*updates.Release)},
+	}
+	return updates.NewGitHubReleasesWithIndex(idx)
+}
+
+// seedLineWithoutDeviceInfoForTest inserts a line row but does NOT register a
+// hub connection or call UpdateDeviceInfo, so the handler sees the device as
+// offline with no version information.
+func seedLineWithoutDeviceInfoForTest(t *testing.T, database *db.Database, householdID, number string) {
+	t.Helper()
+	_, err := database.DB.Exec(
+		`INSERT INTO lines (number, name, household_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		number, "Offline Handset", householdID,
+	)
+	if err != nil {
+		t.Fatalf("seed line %s: %v", number, err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+	})
+}
+
+func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Seed a line without any hub registration (never-connected device).
+	seedLineWithoutDeviceInfoForTest(t, database, hh.ID, "+15551230001")
+
+	h.Releases = fakeReleasesForTest(t, map[string]string{
+		"1.4.0": "<!-- groomed:v1 -->\nshould not appear for offline device",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "should not appear for offline device") {
+		t.Errorf("offline device should not show release notes, but body contained them")
+	}
+}
+
+func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Seed a paired handset at fw 1.2.0.
+	seedPairedHandsetForTest(t, h, database, hh.ID, "+15551230000", "1.2.0")
+
+	// Build a fake release index with fw 1.2.0, 1.3.0, 1.4.0.
+	h.Releases = fakeReleasesForTest(t, map[string]string{
+		"1.2.0": "older release",
+		"1.3.0": "<!-- groomed:v1 -->\nmid release",
+		"1.4.0": "<!-- groomed:v1 -->\nlatest release",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "latest release") {
+		t.Errorf("body missing latest note text:\n%s", body)
+	}
+	if !strings.Contains(body, "mid release") {
+		t.Errorf("body missing mid note text:\n%s", body)
+	}
+	if strings.Contains(body, "older release") {
+		t.Errorf("body should not show the 1.2.0 note text (device is on 1.2.0):\n%s", body)
+	}
+	if strings.Contains(body, "<!-- groomed:v1 -->") {
+		t.Errorf("sentinel should be stripped before render")
+	}
+}
+
+func TestPairRedirectIncludesQueryParams(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Generate a real pairing code so ClaimDevice accepts it.
+	hwID := fmt.Sprintf("test-redirect-hw-%d", time.Now().UnixNano())
+	code, err := h.pairingStore.GenerateCode(hwID)
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	number := fmt.Sprintf("55%05d", time.Now().UnixNano()%100000)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+	})
+
+	form := url.Values{}
+	form.Set("number", number)
+	form.Set("name", "Front Porch")
+	form.Set("code", code)
+
+	req := httptest.NewRequest(http.MethodPost, "/phones/pair", strings.NewReader(form.Encode()))
+	req.AddCookie(cookie)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	parsed, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("bad Location header %q: %v", loc, err)
+	}
+	if parsed.Path != "/phones" {
+		t.Errorf("redirect path = %q, want /phones", parsed.Path)
+	}
+	if got := parsed.Query().Get("paired"); got != "Front Porch" {
+		t.Errorf("paired param = %q, want %q", got, "Front Porch")
+	}
+}
+
+func TestPairBannerRendersOnQueryParam(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones?paired=Kitchen&fw=1.4.0", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `class="pair-banner"`) {
+		t.Errorf("body missing pair-banner element")
+	}
+	if !strings.Contains(body, "Kitchen") {
+		t.Errorf("body missing paired name")
+	}
+	if !strings.Contains(body, "fw 1.4.0") {
+		t.Errorf("body missing fw version")
 	}
 }
