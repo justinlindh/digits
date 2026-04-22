@@ -110,13 +110,20 @@ func waitForRegister(t *testing.T, hub *signaling.Hub, number string) {
 // testDeps builds a Deps populated with real stores against the provided DB,
 // suitable for integration tests. Callers that want to omit a particular
 // collaborator can zero out the field after this returns.
+//
+// HealthStore is wired with the flusher disabled so tests don't need a
+// separate lifecycle goroutine. Tests that want the real flusher running
+// can swap the field for their own instance.
 func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	t.Helper()
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
+	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(true))
+	tracker.SetHealthStore(healthStore)
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
+	relay.HealthStore = healthStore
 
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)
@@ -136,6 +143,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		Hub:            hub,
 		Tracker:        tracker,
 		Relay:          relay,
+		HealthStore:    healthStore,
 		AuthStore:      authStore,
 		AuthHandlers:   authHandlers,
 		GoogleAuth:     googleAuth,

@@ -71,18 +71,26 @@ func (g *GitHubReleases) ReleaseIndex() *ReleaseIndex {
 	return g.cached
 }
 
-// poll fetches immediately, then refreshes on the TTL interval.
+// poll fetches immediately, then refreshes on the TTL interval until ctx
+// is cancelled. Binding the loop to ctx matters for graceful shutdown: the
+// signald caller passes its run-scoped ctx so this goroutine doesn't
+// outlive the process's serve loop.
 func (g *GitHubReleases) poll(ctx context.Context) {
 	g.refresh(ctx)
 	ticker := time.NewTicker(g.ttl)
 	defer ticker.Stop()
-	for range ticker.C {
-		g.refresh(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			g.refresh(ctx)
+		}
 	}
 }
 
 func (g *GitHubReleases) refresh(ctx context.Context) {
-	idx, err := g.fetch(context.Background())
+	idx, err := g.fetch(ctx)
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
 		return

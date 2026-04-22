@@ -14,7 +14,11 @@ import (
 	"github.com/justinlindh/digits/server/internal/line"
 )
 
-// an HTTP error response (404 to avoid leaking line existence).
+// requireLineOwnership looks up a line by its number and verifies the
+// authenticated user's household owns it. Returns the line on success, or
+// nil after writing a 404 — unauthenticated, unknown, and unauthorized
+// responses are intentionally indistinguishable to avoid leaking whether a
+// given number exists.
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
 	ln, err := h.lineStore.GetByNumber(r.Context(), number)
 	if err != nil {
@@ -112,11 +116,8 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	return call, ownedLines, primaryHH, true
 }
 
-// ---- Link Health API ----
-
-// LinkHealthSample is the JSON representation of a single link-health
-
-// User.Name if set, else the email local-part, else the bare email.
+// userDisplayLabel returns a human-friendly label for a user: Name if set,
+// else the email local-part, else the bare email. Nil user returns "".
 func userDisplayLabel(u *auth.User) string {
 	if u == nil {
 		return ""
@@ -205,4 +206,3 @@ func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
 
-// ---- Call live detail ----

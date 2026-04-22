@@ -501,4 +501,3 @@ func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
 	})
 }
 
-// ---- Onboarding ----

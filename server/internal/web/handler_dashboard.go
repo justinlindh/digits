@@ -260,7 +260,6 @@ func fmtElapsed(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-// ---- Lines (Phones) ----
 
 type connectingData struct {
 	Page          string

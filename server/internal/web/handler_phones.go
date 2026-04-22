@@ -611,4 +611,3 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
-// ---- Calls ----

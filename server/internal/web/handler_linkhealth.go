@@ -217,7 +217,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 				flusher.Flush()
 				return
 			}
-			if err := h.writeEvent(w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
+			if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
 				slog.Debug("SSE stream: write failed; client gone", "call_id", callID, "err", err)
 				return
 			}
@@ -265,14 +265,14 @@ func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher
 	return nil
 }
 
-func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
 	switch ev.Kind {
 	case calls.SampleKind:
-		callerEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Caller, linkedIndex, ownedLines)
+		callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
 		if err != nil {
 			return err
 		}
-		calleeEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Callee, linkedIndex, ownedLines)
+		calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
 		if err != nil {
 			return err
 		}

@@ -4,7 +4,6 @@ package web
 
 import (
 	"context"
-	"html/template"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +14,9 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
-	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
-	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
 // callsTestEnv bundles the pieces that integration tests for the calls-related
@@ -37,8 +33,8 @@ type callsTestEnv struct {
 	healthStore    *calls.HealthStore
 }
 
-// setupCallsTestServer creates a full server with householdStore, linkStore,
-// and healthStore wired in. Returns the bundled callsTestEnv.
+// setupCallsTestServer creates a full server with all stores wired via
+// testDeps, returning a callsTestEnv bundle for the test body.
 func setupCallsTestServer(t *testing.T) callsTestEnv {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -51,42 +47,8 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 	}
 	t.Cleanup(func() { _ = database.Close() })
 
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
-	hub := signaling.NewHub()
-	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil, nil)
-
-	authStore := auth.NewStoreFromDB(database.DB)
-	householdStore := household.NewStore(database.DB)
-	linkStore := household.NewLinkStore(database.DB)
-	pairingStore := pairing.NewStore(database.DB)
-	healthStore := calls.NewHealthStore(database)
-	tracker.SetHealthStore(healthStore)
-
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
-	if err != nil {
-		t.Fatalf("parse login template: %v", err)
-	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
-
-	h, err := NewHandler(Deps{
-		LineStore:      lineStore,
-		DeviceStore:    deviceStore,
-		Hub:            hub,
-		Tracker:        tracker,
-		Relay:          relay,
-		HealthStore:    healthStore,
-		AuthStore:      authStore,
-		AuthHandlers:   authHandlers,
-		GoogleAuth:     googleAuth,
-		HouseholdStore: householdStore,
-		PairingStore:   pairingStore,
-		LinkStore:      linkStore,
-		EmailSender:    emailSender,
-	}, HandlerConfig{Addr: ":0"})
+	deps, authStore := testDeps(t, database)
+	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -96,13 +58,13 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 	return callsTestEnv{
 		srv:            srv,
 		database:       database,
-		lineStore:      lineStore,
-		tracker:        tracker,
+		lineStore:      deps.LineStore,
+		tracker:        deps.Tracker,
 		authStore:      authStore,
-		householdStore: householdStore,
-		linkStore:      linkStore,
-		pairingStore:   pairingStore,
-		healthStore:    healthStore,
+		householdStore: deps.HouseholdStore,
+		linkStore:      deps.LinkStore,
+		pairingStore:   deps.PairingStore,
+		healthStore:    deps.HealthStore,
 	}
 }
 

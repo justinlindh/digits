@@ -24,8 +24,8 @@ const (
 
 // withTx runs fn inside a database transaction. Commits on success,
 // rolls back on error or panic.
-func withTx(d *sql.DB, fn func(*sql.Tx) error) error {
-	tx, err := d.Begin()
+func withTx(ctx context.Context, d *sql.DB, fn func(*sql.Tx) error) error {
+	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -398,7 +398,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil, err
 	}
 
-	txErr := withTx(t.db.DB, func(tx *sql.Tx) error {
+	txErr := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
 			conf.ID, conf.Host, conf.OriginatingCallID,
@@ -459,7 +459,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	if _, err := t.conferences.EndConference(confID, reason); err != nil {
 		return err
 	}
-	return withTx(t.db.DB, func(tx *sql.Tx) error {
+	return withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
 			reason, confID,
@@ -496,7 +496,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	var continuationCallID int64
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
-	if txErr := withTx(t.db.DB, func(tx *sql.Tx) error {
+	if txErr := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conference_members SET left_at = NOW(), left_reason = $1
 			 WHERE conference_id = $2 AND phone = $3`,

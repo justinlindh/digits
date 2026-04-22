@@ -84,7 +84,6 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ---- API ----
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	ld := h.buildLinesData(r, "")
@@ -163,7 +162,6 @@ func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]bool{"available": !exists}) //nolint:errcheck
 }
 
-// ---- WebSocket ----
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

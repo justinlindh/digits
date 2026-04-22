@@ -77,7 +77,6 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Entries: entries, User: user})
 }
 
-// ---- Settings ----
 
 type callLiveDetailData struct {
 	Page               string

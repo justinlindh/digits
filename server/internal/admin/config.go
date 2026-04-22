@@ -1,6 +1,6 @@
 package admin
 
-import "os"
+import "github.com/justinlindh/digits/server/internal/config"
 
 type Config struct {
 	Addr          string // Listen address
@@ -15,23 +15,11 @@ func LoadConfig() *Config {
 	c := &Config{
 		Addr: ":9090",
 	}
-	if v := os.Getenv("ADMIN_ADDR"); v != "" {
-		c.Addr = v
-	}
-	if v := os.Getenv("ADMIN_DATABASE_URL"); v != "" {
-		c.AdminDBURL = v
-	}
-	if v := os.Getenv("ADMIN_STATS_URL"); v != "" {
-		c.StatsURL = v
-	}
-	if v := os.Getenv("ADMIN_STATS_SECRET"); v != "" {
-		c.StatsSecret = v
-	}
-	if v := os.Getenv("ADMIN_INITIAL_USER"); v != "" {
-		c.InitialAdmin = v
-	}
-	if v := os.Getenv("ADMIN_INITIAL_SECRET"); v != "" {
-		c.InitialSecret = v
-	}
+	config.StringEnv("ADMIN_ADDR", &c.Addr)
+	config.StringEnv("ADMIN_DATABASE_URL", &c.AdminDBURL)
+	config.StringEnv("ADMIN_STATS_URL", &c.StatsURL)
+	config.StringEnv("ADMIN_STATS_SECRET", &c.StatsSecret)
+	config.StringEnv("ADMIN_INITIAL_USER", &c.InitialAdmin)
+	config.StringEnv("ADMIN_INITIAL_SECRET", &c.InitialSecret)
 	return c
 }

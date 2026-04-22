@@ -4,20 +4,12 @@ package web
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
-	"html/template"
-	"net/http/httptest"
-	"os"
-
-	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
-	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
-	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
 func setupRateLimitTestServer(t *testing.T) *httptest.Server {
@@ -32,35 +24,11 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	}
 	t.Cleanup(func() { _ = database.Close() })
 
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
-	hub := signaling.NewHub()
-	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil, nil)
-
-	authStore := auth.NewStoreFromDB(database.DB)
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
-	if err != nil {
-		t.Fatalf("parse login template: %v", err)
-	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
-
-	h, err := NewHandler(Deps{
-		LineStore:    lineStore,
-		DeviceStore:  deviceStore,
-		Hub:          hub,
-		Tracker:      tracker,
-		Relay:        relay,
-		AuthStore:    authStore,
-		AuthHandlers: authHandlers,
-		GoogleAuth:   googleAuth,
-	}, HandlerConfig{Addr: ":0"})
+	deps, _ := testDeps(t, database)
+	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
-
 	srv := httptest.NewServer(h.Router())
 	t.Cleanup(srv.Close)
 	return srv

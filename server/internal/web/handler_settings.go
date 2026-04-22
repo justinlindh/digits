@@ -70,7 +70,6 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
-// ---- Links (Connected Families) ----
 
 func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
 	if h.householdStore == nil {

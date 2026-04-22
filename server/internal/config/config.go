@@ -37,24 +37,6 @@ type Config struct {
 	GitHubToken string
 }
 
-// stringEnv assigns a non-empty env var to *dst, keeping the current default
-// if the variable is unset. Keeps Load() scannable instead of a wall of
-// five-line if blocks.
-func stringEnv(key string, dst *string) {
-	if v := os.Getenv(key); v != "" {
-		*dst = v
-	}
-}
-
-// boolEnv sets *dst to true iff the env var is literal "true". Matches the
-// existing convention (a stricter-than-strconv.ParseBool check that rejects
-// "1", "yes", etc.).
-func boolEnv(key string, dst *bool) {
-	if os.Getenv(key) == "true" {
-		*dst = true
-	}
-}
-
 func Load() *Config {
 	c := &Config{
 		Addr:     ":8443",
@@ -62,29 +44,29 @@ func Load() *Config {
 		SMTPFrom: "noreply@digits.family",
 		BaseURL:  "https://app.digits.family",
 	}
-	stringEnv("SIGNALD_ADDR", &c.Addr)
-	stringEnv("DATABASE_URL", &c.DatabaseURL)
-	stringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
-	stringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
-	boolEnv("SIGNALD_TURN_ENABLED", &c.TURNEnabled)
-	stringEnv("SIGNALD_TURN_SECRET", &c.TURNSecret)
-	stringEnv("SIGNALD_TURN_DOMAIN", &c.TURNDomain)
+	StringEnv("SIGNALD_ADDR", &c.Addr)
+	StringEnv("DATABASE_URL", &c.DatabaseURL)
+	StringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
+	StringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
+	BoolEnv("SIGNALD_TURN_ENABLED", &c.TURNEnabled)
+	StringEnv("SIGNALD_TURN_SECRET", &c.TURNSecret)
+	StringEnv("SIGNALD_TURN_DOMAIN", &c.TURNDomain)
 	// Auth
-	stringEnv("GOOGLE_CLIENT_ID", &c.GoogleClientID)
-	stringEnv("GOOGLE_CLIENT_SECRET", &c.GoogleClientSecret)
-	stringEnv("GOOGLE_REDIRECT_URL", &c.GoogleRedirectURL)
-	stringEnv("BASE_URL", &c.BaseURL)
-	stringEnv("COOKIE_DOMAIN", &c.CookieDomain)
+	StringEnv("GOOGLE_CLIENT_ID", &c.GoogleClientID)
+	StringEnv("GOOGLE_CLIENT_SECRET", &c.GoogleClientSecret)
+	StringEnv("GOOGLE_REDIRECT_URL", &c.GoogleRedirectURL)
+	StringEnv("BASE_URL", &c.BaseURL)
+	StringEnv("COOKIE_DOMAIN", &c.CookieDomain)
 	// Email
-	stringEnv("SMTP_HOST", &c.SMTPHost)
-	stringEnv("SMTP_PORT", &c.SMTPPort)
-	stringEnv("SMTP_USER", &c.SMTPUser)
-	stringEnv("SMTP_PASS", &c.SMTPPass)
-	stringEnv("SMTP_FROM", &c.SMTPFrom)
+	StringEnv("SMTP_HOST", &c.SMTPHost)
+	StringEnv("SMTP_PORT", &c.SMTPPort)
+	StringEnv("SMTP_USER", &c.SMTPUser)
+	StringEnv("SMTP_PASS", &c.SMTPPass)
+	StringEnv("SMTP_FROM", &c.SMTPFrom)
 	// Admin
-	stringEnv("ADMIN_SECRET", &c.AdminSecret)
+	StringEnv("ADMIN_SECRET", &c.AdminSecret)
 	// Dev
-	boolEnv("DEV_MODE", &c.DevMode)
+	BoolEnv("DEV_MODE", &c.DevMode)
 	// Link health: env is "1" (not "true") to match the daemon's convention.
 	if os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1" {
 		c.LinkHealthFlushDisabled = true
@@ -93,7 +75,7 @@ func Load() *Config {
 	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
 		c.FakeUpdates = true
 	}
-	stringEnv("GITHUB_REPO", &c.GitHubRepo)
-	stringEnv("GITHUB_TOKEN", &c.GitHubToken)
+	StringEnv("GITHUB_REPO", &c.GitHubRepo)
+	StringEnv("GITHUB_TOKEN", &c.GitHubToken)
 	return c
 }

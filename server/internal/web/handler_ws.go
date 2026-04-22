@@ -161,7 +161,6 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ---- Helpers ----
 
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
