@@ -111,8 +111,17 @@ func (s *HealthStore) Init(callID int64) {
 
 // Record appends a sample for the given call and endpoint. Safe for
 // concurrent use. No-op if Init was not called for this callID first
-// or if the call has been Evicted — this matches the tracker-authoritative
+// or if the call has been Evicted -- this matches the tracker-authoritative
 // lifecycle and prevents post-Evict resurrection of map entries.
+//
+// Race note: between releasing the top-level map lock and acquiring the
+// per-call lock, a concurrent Evict can remove the callRings entry from
+// the map. The captured *callRings reference remains valid (the struct is
+// not freed) but is no longer reachable from the map; the sample appended
+// to it will be silently dropped -- never flushed, eventually GC'd. This
+// is intentional telemetry loss on a racing call-end. The alternative --
+// auto-recreating the map entry -- would resurrect evicted calls, which
+// was the exact bug fixed during the T6 review cycle.
 func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 	s.mu.Lock()
 	cr, ok := s.calls[callID]

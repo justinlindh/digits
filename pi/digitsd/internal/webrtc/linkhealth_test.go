@@ -136,8 +136,8 @@ type fakeInput struct {
 	BytesReceived uint64
 }
 
-func buildFakeReport(t *testing.T, in fakeInput) pionwebrtc.StatsReport {
-	t.Helper()
+func buildFakeReport(tb testing.TB, in fakeInput) pionwebrtc.StatsReport {
+	tb.Helper()
 	report := pionwebrtc.StatsReport{}
 	report["remote-inbound-0"] = pionwebrtc.RemoteInboundRTPStreamStats{
 		FractionLost: in.FractionLost,

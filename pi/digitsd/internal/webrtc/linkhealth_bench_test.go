@@ -7,7 +7,7 @@ import (
 )
 
 func BenchmarkReporterSample(b *testing.B) {
-	report := buildFakeReport(&testing.T{}, fakeInput{
+	report := buildFakeReport(b, fakeInput{
 		FractionLost:  0.012,
 		JitterSec:     0.0154,
 		RttSec:        0.072,
