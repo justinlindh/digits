@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -76,8 +77,24 @@ func TestCreateAndGetUser(t *testing.T) {
 func TestGetUserByEmail_NotFound(t *testing.T) {
 	s := testDB(t)
 	_, err := s.GetUserByEmail("nobody@example.com")
-	if err == nil {
-		t.Error("expected error for missing user, got nil")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("expected ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestGetUserByGoogleID_NotFound(t *testing.T) {
+	s := testDB(t)
+	_, err := s.GetUserByGoogleID("no-such-google-id")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("expected ErrUserNotFound, got %v", err)
+	}
+}
+
+func TestGetUserByID_NotFound(t *testing.T) {
+	s := testDB(t)
+	_, err := s.GetUserByID("00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("expected ErrUserNotFound, got %v", err)
 	}
 }
 
