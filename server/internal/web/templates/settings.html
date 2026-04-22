@@ -341,30 +341,32 @@
 
   function update() {
     var m = scrollMetrics();
+    var viewTop = m.scrollTop;
+    var viewBottom = viewTop + m.viewHeight;
 
-    // Bottom-of-page clamp: if the content overflows AND we've
-    // scrolled to the end, the last section is "what you're looking
-    // at" regardless of its top. Guard on pageHeight > viewHeight so
-    // this doesn't latch on a short page where scrollTop is simply
-    // pinned at 0 (false-positive that would always select the last
-    // nav item at rest).
-    if (m.pageHeight > m.viewHeight + 4 && m.scrollTop + m.viewHeight >= m.pageHeight - 4) {
-      setActive(sections[sections.length - 1].id);
-      return;
-    }
-
-    // Walk sections top-down and keep the last one whose top sits
-    // above the focus line (25% from the top of the viewport).
-    var focusLine = m.scrollTop + m.viewHeight * 0.25;
-    var active = sections[0];
+    // Pick the section whose visible area inside the scroller's
+    // viewport is the largest. This naturally handles the edges:
+    //   - At the very top, Account fills the viewport and wins.
+    //   - Mid-scroll, whichever section occupies the most of what
+    //     the user is looking at is the active one.
+    //   - At the bottom, the final short section has the most
+    //     visible area and latches cleanly -- no special-case clamp.
+    // Ties go to the later section (>=), so on exact boundaries the
+    // highlight advances with scroll direction rather than getting
+    // stuck on the earlier section.
+    var bestSec = sections[0];
+    var bestVisible = -1;
     for (var i = 0; i < sections.length; i++) {
-      if (sectionTopRelative(sections[i]) <= focusLine) {
-        active = sections[i];
-      } else {
-        break;
+      var sec = sections[i];
+      var top = sectionTopRelative(sec);
+      var bottom = top + sec.offsetHeight;
+      var visible = Math.max(0, Math.min(bottom, viewBottom) - Math.max(top, viewTop));
+      if (visible >= bestVisible) {
+        bestVisible = visible;
+        bestSec = sec;
       }
     }
-    setActive(active.id);
+    setActive(bestSec.id);
   }
 
   // rAF-throttle so rapid scroll events don't thrash the DOM.
