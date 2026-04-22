@@ -39,6 +39,17 @@
   const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // --- Helpers -------------------------------------------------------------
+  // appendLog writes to innerHTML so log templates can carry <span> tags
+  // for colour. Values that originate from user input (e.g. household name)
+  // must be escaped before interpolation to prevent stored XSS.
+  function escapeHTML(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
   function setStatus(html) { statusText.innerHTML = html; }
   function setProgressPct(pct) {
     const n = Math.round((pct / 100) * PROG_CELLS);
@@ -197,7 +208,7 @@
       setProgressPct(97);
     });
     at(14800, function () {
-      appendLog('<span class="ok">[ok]</span> Welcome' + (HOUSEHOLD ? ', <b>' + HOUSEHOLD + '</b>' : '') + '!');
+      appendLog('<span class="ok">[ok]</span> Welcome' + (HOUSEHOLD ? ', <b>' + escapeHTML(HOUSEHOLD) + '</b>' : '') + '!');
       setStatus('Connected.');
       spinner.classList.add('dialer__spinner--done');
       setLed('txd', true, 'grn');

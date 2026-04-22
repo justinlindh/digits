@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="/static/dialup.css">
 <link rel="stylesheet" href="/static/connecting.css">
 </head>
-<body class="dialup{{if ne .User.CRTMode "off"}} crt-page{{end}}"
+<body class="dialup{{if and .User (ne .User.CRTMode "off")}} crt-page{{end}}"
       data-household="{{.HouseholdName}}"
       data-version="{{.Version}}">
 
