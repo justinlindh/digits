@@ -2,6 +2,7 @@ package autodeploy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,6 +18,43 @@ const (
 	ActionReverted   Action = "reverted"
 	ActionCritical   Action = "critical"
 )
+
+// Step identifies which phase of a deploy attempt produced an error.
+// Stored alongside emails so debounce keys on the structural step, not on
+// a fragile substring of an error message.
+type Step string
+
+const (
+	StepLogin       Step = "login"
+	StepPull        Step = "pull"
+	StepUp          Step = "up"
+	StepHealthcheck Step = "healthcheck"
+)
+
+// needsRevert reports whether a failure at this step left the new container
+// running and therefore warrants reverting to the previous version.
+// Login and pull happen before any container churn.
+func (s Step) needsRevert() bool {
+	return s == StepUp || s == StepHealthcheck
+}
+
+// stepError tags an error with the deploy phase it came from. Returned by
+// deployVersion and unwrapped by Run to drive revert and email-class logic.
+type stepError struct {
+	Step Step
+	Err  error
+}
+
+func (e *stepError) Error() string { return string(e.Step) + ": " + e.Err.Error() }
+func (e *stepError) Unwrap() error { return e.Err }
+
+func stepOf(err error) Step {
+	var se *stepError
+	if errors.As(err, &se) {
+		return se.Step
+	}
+	return ""
+}
 
 type Result struct {
 	Action Action
@@ -109,11 +147,10 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 	}
 
 	if err := d.deployVersion(ctx, version, d.Cfg.HealthTimeout); err != nil {
-		errorClass := classifyError(err)
-		d.log().Error("deploy failed", "err", err, "class", errorClass)
+		step := stepOf(err)
+		d.log().Error("deploy failed", "err", err, "step", step)
 
-		// Login and pull failures leave the old container running; no revert needed.
-		if prevVersion != "" && errorClass != "login" && errorClass != "pull" {
+		if prevVersion != "" && step.needsRevert() {
 			if revertErr := d.deployVersion(ctx, prevVersion, d.Cfg.RevertHealthTimeout); revertErr != nil {
 				d.log().Error("revert also failed", "err", revertErr)
 				state.LastAttemptStatus = StatusCritical
@@ -124,14 +161,14 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 			}
 			state.LastAttemptStatus = StatusFailedReverted
 			state.LastAttemptError = err.Error()
-			d.finalize(&state, rel, errorClass)
+			d.finalize(&state, rel, string(step))
 			_ = d.Store.Write(state)
 			return Result{Action: ActionReverted, Tag: rel.TagName}, err
 		}
 
 		state.LastAttemptStatus = StatusFailed
 		state.LastAttemptError = err.Error()
-		d.finalize(&state, rel, errorClass)
+		d.finalize(&state, rel, string(step))
 		_ = d.Store.Write(state)
 		return Result{Tag: rel.TagName}, err
 	}
@@ -160,7 +197,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 		Args:  []string{"login", "ghcr.io", "-u", d.Cfg.GHCRUsername, "--password-stdin"},
 		Stdin: []byte(d.Cfg.GHCRToken),
 	}); err != nil {
-		return fmt.Errorf("login: %w", err)
+		return &stepError{Step: StepLogin, Err: err}
 	}
 
 	composeArgs := []string{
@@ -175,7 +212,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 	if _, err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: pullArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
-		return fmt.Errorf("pull: %w", err)
+		return &stepError{Step: StepPull, Err: err}
 	}
 
 	upArgs := append(append([]string{}, composeArgs...), "up", "-d", "--wait")
@@ -183,14 +220,14 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 	if _, err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: upArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
-		return fmt.Errorf("up: %w", err)
+		return &stepError{Step: StepUp, Err: err}
 	}
 
 	hctx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
 	for _, u := range d.Cfg.HealthURLs {
 		if err := d.Health.Poll(hctx, u, version, 2*time.Second); err != nil {
-			return fmt.Errorf("healthcheck: %w", err)
+			return &stepError{Step: StepHealthcheck, Err: err}
 		}
 	}
 	return nil
@@ -212,7 +249,7 @@ func (d *Deployer) finalize(state *State, rel Release, errorClass string) {
 		return
 	}
 
-	body := fmt.Sprintf("tag: %s\ncommit: %s\nstatus: %s\nerror class: %s\nerror: %s\n",
+	body := fmt.Sprintf("tag: %s\ncommit: %s\nstatus: %s\nstep: %s\nerror: %s\n",
 		rel.TagName, rel.CommitSHA, state.LastAttemptStatus, errorClass, state.LastAttemptError)
 	if err := d.Mailer.Send(EmailInput{
 		To: d.Cfg.AlertTo, Subject: subject, Body: body,
@@ -230,20 +267,4 @@ func isFailed(s AttemptStatus) bool {
 		return true
 	}
 	return false
-}
-
-func classifyError(err error) string {
-	s := err.Error()
-	switch {
-	case strings.Contains(s, "login:"):
-		return "login"
-	case strings.Contains(s, "pull:"):
-		return "pull"
-	case strings.Contains(s, "up:"):
-		return "up"
-	case strings.Contains(s, "healthcheck:"):
-		return "healthcheck"
-	default:
-		return "unknown"
-	}
 }

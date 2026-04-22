@@ -176,6 +176,11 @@ func TestDeploy_LoginFails(t *testing.T) {
 	if store.s.LastAttemptStatus != StatusFailed {
 		t.Errorf("LastAttemptStatus=%q", store.s.LastAttemptStatus)
 	}
+	// Login failure must NOT trigger a revert: nothing was pulled or restarted,
+	// so the only docker call should be the failed login itself.
+	if len(runner.calls) != 1 {
+		t.Errorf("expected exactly 1 runner call (the failed login), got %d", len(runner.calls))
+	}
 	if len(mailer.sent) != 1 {
 		t.Fatalf("expected 1 email, got %d", len(mailer.sent))
 	}
@@ -296,5 +301,33 @@ func TestDeploy_EmailDebounce(t *testing.T) {
 	_, _ = d.Run(context.Background())
 	if len(mailer.sent) != 0 {
 		t.Errorf("email sent during debounce window: %+v", mailer.sent)
+	}
+}
+
+func TestDeploy_EmailAfterDebounceWindow(t *testing.T) {
+	// LastEmailAt is older than EmailDebounce (30m), so a new failure of the
+	// same class must email again.
+	now := time.Unix(10_000, 0).UTC()
+	store := &memStore{s: State{
+		LastDeployedTag:     "server/v1.9.0",
+		LastAttemptTag:      "server/v1.9.1",
+		LastAttemptStatus:   StatusFailed,
+		LastEmailAt:         now.Add(-45 * time.Minute),
+		LastEmailErrorClass: "login",
+	}}
+	runner := &mockRunner{errs: map[string]error{"docker login": errors.New("denied")}}
+	mailer := &mockMailer{}
+	d := &Deployer{
+		Cfg: baseCfg(),
+		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
+		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Now: func() time.Time { return now },
+	}
+	_, _ = d.Run(context.Background())
+	if len(mailer.sent) != 1 {
+		t.Fatalf("expected 1 email after debounce window expired, got %d", len(mailer.sent))
+	}
+	if !store.s.LastEmailAt.Equal(now) {
+		t.Errorf("LastEmailAt=%v, want %v", store.s.LastEmailAt, now)
 	}
 }
