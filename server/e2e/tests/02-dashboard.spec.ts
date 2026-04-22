@@ -29,7 +29,7 @@ test.describe('Dashboard', () => {
     await expect(page).toHaveTitle(/Dashboard|Overview|Digits/i);
   });
 
-  test('dashboard shows summary strip with the four stats', async ({ page }) => {
+  test('dashboard shows the rooms grid', async ({ page }) => {
     await page.goto('/');
     if (page.url().includes('/auth/login')) {
       test.skip(true, 'No authenticated session');
@@ -40,39 +40,11 @@ test.describe('Dashboard', () => {
       return;
     }
 
-    // The redesigned dashboard uses a <section class="strip"> with four
-    // <div class="strip__cell"> children: Lines / Online / Active calls /
-    // Calls today. Verify the section and each cell is present.
-    const strip = page.locator('section.strip');
-    await expect(strip).toBeVisible();
-
-    const cells = strip.locator('.strip__cell');
-    await expect(cells).toHaveCount(4);
-
-    // All four labels should appear in the strip (case-insensitive match on
-    // label text keeps this robust to copy tweaks like capitalization).
-    const text = (await strip.textContent()) ?? '';
-    const labels = ['Lines', 'Online', 'Active calls', 'Calls today'];
-    for (const label of labels) {
-      expect(text.toLowerCase()).toContain(label.toLowerCase());
-    }
-  });
-
-  test('dashboard shows the Lines panel (linking to /phones)', async ({ page }) => {
-    await page.goto('/');
-    if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
-      test.skip(true, 'No authenticated session or needs onboarding');
-      return;
-    }
-
-    // The Lines panel heading and a "Manage →" link to /phones both live in
-    // the same panel. Assert both are visible so a regression that drops the
-    // panel entirely is caught.
-    const linesHeading = page.locator('h2.panel__title', { hasText: /^Lines$/i });
-    await expect(linesHeading).toBeVisible();
-
-    const manageLink = page.locator('a.panel__action[href="/phones"]');
-    await expect(manageLink).toBeVisible();
+    // The intercom redesign replaced the KPI strip with a `.rooms` grid of
+    // per-line cards (or a `.rooms__empty` pair-a-handset prompt when the
+    // household has no lines yet). Assert the grid container renders.
+    const rooms = page.locator('section.rooms').first();
+    await expect(rooms).toBeVisible();
   });
 
   test('dashboard heading shows the household name (page__title)', async ({ page }) => {

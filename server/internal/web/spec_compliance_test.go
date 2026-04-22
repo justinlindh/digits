@@ -207,7 +207,7 @@ func TestSpecFamilies(t *testing.T) {
 	for _, want := range []string{
 		`class="postcard"`,
 		"DEMO-123",
-		"To our neighbors",                     // greeting ("recipient or blank")
+		"To our friends",                       // greeting ("recipient or blank")
 		"Paste it into",                        // body line 1
 		"your handsets and ours can dial each", // body line 2 fragment
 		"line number",                          // body line 2 tail

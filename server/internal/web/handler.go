@@ -421,6 +421,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	active := h.tracker.Active()
 	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
+	hhName, callHistoryEnabled, loc := h.householdContext(r)
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
@@ -430,10 +431,13 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Build set of own line numbers for active-call resolution.
+	// Build set of own line numbers for active-call resolution and for
+	// scoping call-history queries to this household.
 	ownLineByNumber := make(map[string]*lineRow, len(ld.Lines))
+	ownNumbers := make([]string, 0, len(ld.Lines))
 	for i := range ld.Lines {
 		ownLineByNumber[ld.Lines[i].Line.Number] = &ld.Lines[i]
+		ownNumbers = append(ownNumbers, ld.Lines[i].Line.Number)
 	}
 
 	// Build linked-family index for peer-name resolution.
@@ -467,16 +471,16 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	callHistoryEnabled := h.callHistoryEnabled(r)
-
-	// Build today's call rows when history is enabled. The DB fetch is also
-	// gated here: with history off, the Today panel never renders, so there
-	// is no reason to pay the query.
+	// Build today's call rows when history is enabled. Scoped to this
+	// household's own line numbers so one family never sees another's
+	// activity. "Today" is relative to the household's configured timezone,
+	// not server-UTC.
 	var callsTodayRecent []callRow
 	var callsTodayTotalSec int
-	if callHistoryEnabled {
-		recent, _ := h.tracker.Recent(20)
-		today := time.Now().Truncate(24 * time.Hour)
+	if callHistoryEnabled && len(ownNumbers) > 0 {
+		recent, _ := h.tracker.RecentForPhones(ownNumbers, 20)
+		now := time.Now().In(loc)
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		for _, c := range recent {
 			if !c.StartedAt.After(today) {
 				continue
@@ -494,7 +498,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			callsTodayRecent = append(callsTodayRecent, callRow{
-				StartedAt: c.StartedAt,
+				StartedAt: c.StartedAt.In(loc),
 				LineName:  lineName,
 				PeerName:  resolvePeerName(peerNumber, linkedLineIndex),
 				Direction: direction,
@@ -508,7 +512,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Page:               "dashboard",
 		Version:            version.Version,
 		CallHistoryEnabled: callHistoryEnabled,
-		HouseholdName:      h.householdNameFromContext(r),
+		HouseholdName:      hhName,
 		Stats: dashStats{
 			TotalLines:  len(ld.Lines),
 			OnlineLines: countOnline(ld.Lines),

@@ -290,7 +290,7 @@
 {{define "phone-edit-row"}}
 <tr>
   <td class="num">{{fmtPhone .Line.Number}}</td>
-  <td colspan="3">
+  <td colspan="4">
     <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML"
           class="hstack hstack--wrap">
       <input type="text" name="name" value="{{.Line.Name}}" class="field__input" style="width: 240px;">
