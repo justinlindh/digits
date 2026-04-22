@@ -244,6 +244,9 @@ END $$;`,
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_call_link_health_call_ts
 			ON call_link_health (call_id, ts DESC)`,
+		// v17: capture which user initiated a force-disconnect on a call.
+		// NULL for peer-initiated hangups.
+		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS force_ended_by UUID REFERENCES users(id)`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
