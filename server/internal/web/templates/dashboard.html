@@ -26,6 +26,7 @@
           <div class="rooms__callout">
             <div class="rooms__callout-kicker">Talking to</div>
             <div class="rooms__callout-name">{{.OnCallPeerName}}</div>
+            {{if .OnCallElapsed}}<div class="rooms__callout-elapsed num">&middot; {{.OnCallElapsed}} elapsed</div>{{end}}
           </div>
         {{end}}
       </a>
@@ -41,7 +42,7 @@
   <section class="panel" id="today-panel">
     <header class="panel__head">
       <h2 class="panel__title">Today</h2>
-      <span class="panel__title-sub">{{len .CallsTodayRecent}} call{{if ne (len .CallsTodayRecent) 1}}s{{end}}</span>
+      <span class="panel__title-sub">{{len .CallsTodayRecent}} call{{if ne (len .CallsTodayRecent) 1}}s{{end}} &middot; {{.CallsTodayTotalMin}} min total</span>
     </header>
     {{if .CallsTodayRecent}}
     <ul class="today-list">

@@ -381,15 +381,16 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 // ---- Dashboard ----
 
 type dashboardData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	Stats              dashStats
-	Lines              []lineRow
-	CallsTodayRecent   []callRow
-	LinkedFamilies     []linkedFamilyRow
-	User               *auth.User
+	Page                 string
+	Version              string
+	CallHistoryEnabled   bool
+	HouseholdName        string
+	Stats                dashStats
+	Lines                []lineRow
+	CallsTodayRecent     []callRow
+	CallsTodayTotalMin   int
+	LinkedFamilies       []linkedFamilyRow
+	User                 *auth.User
 }
 
 type callRow struct {
@@ -451,8 +452,10 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, pair := range active {
 		callerRow := ownLineByNumber[pair.Caller]
 		calleeRow := ownLineByNumber[pair.Callee]
+		elapsed := fmtElapsed(time.Since(pair.StartedAt))
 		if callerRow != nil {
 			callerRow.OnCall = true
+			callerRow.OnCallElapsed = elapsed
 			if calleeRow != nil {
 				callerRow.OnCallPeerName = calleeRow.Line.Name
 			} else {
@@ -461,6 +464,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		if calleeRow != nil {
 			calleeRow.OnCall = true
+			calleeRow.OnCallElapsed = elapsed
 			if callerRow != nil {
 				calleeRow.OnCallPeerName = callerRow.Line.Name
 			} else {
@@ -473,6 +477,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Build today's call rows when history is enabled.
 	var callsTodayRecent []callRow
+	var callsTodayTotalSec int
 	if callHistoryEnabled {
 		today := time.Now().Truncate(24 * time.Hour)
 		for _, c := range recent {
@@ -498,6 +503,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 				Direction: direction,
 				DurationS: c.DurationS,
 			})
+			callsTodayTotalSec += c.DurationS
 		}
 	}
 
@@ -512,10 +518,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			ActiveCalls:  len(active),
 			CallsToday:   countCallsToday(recent),
 		},
-		Lines:            ld.Lines,
-		CallsTodayRecent: callsTodayRecent,
-		LinkedFamilies:   linkedFamilies,
-		User:             user,
+		Lines:              ld.Lines,
+		CallsTodayRecent:   callsTodayRecent,
+		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // round to nearest minute
+		LinkedFamilies:     linkedFamilies,
+		User:               user,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }
@@ -604,6 +611,22 @@ func countCallsToday(allCalls []calls.Call) int {
 	return count
 }
 
+// fmtElapsed renders a duration as "m:ss" for short calls and "h:mm:ss"
+// for calls that run past an hour. Used by the Dashboard active-call callout.
+func fmtElapsed(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	total := int(d.Seconds())
+	h := total / 3600
+	m := (total % 3600) / 60
+	s := total % 60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
 // ---- Lines (Phones) ----
 
 type linesData struct {
@@ -622,6 +645,7 @@ type lineRow struct {
 	Online         bool
 	OnCall         bool
 	OnCallPeerName string
+	OnCallElapsed  string // "mm:ss" for the Dashboard room-card callout
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {

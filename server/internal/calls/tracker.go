@@ -22,8 +22,9 @@ type Call struct {
 }
 
 type activeCall struct {
-	Caller string
-	Callee string
+	Caller    string
+	Callee    string
+	StartedAt time.Time
 }
 
 type Tracker struct {
@@ -52,7 +53,7 @@ func (t *Tracker) OnCallInitiated(from, to string) error {
 		return fmt.Errorf("track call: %w", err)
 	}
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to}
+	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, StartedAt: time.Now()}
 	t.mu.Unlock()
 	return nil
 }

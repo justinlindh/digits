@@ -1326,6 +1326,13 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   line-height: 1;
   margin-bottom: 12px;
 }
+.postcard__greeting {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--ink);
+  margin: 10px 0 4px;
+}
 .postcard__message {
   font-family: var(--font-display);
   font-style: italic;
@@ -1405,6 +1412,13 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   font-style: italic;
   font-size: 15px;
   color: var(--ink);
+  display: inline;
+}
+.rooms__callout-elapsed {
+  display: inline;
+  margin-left: 4px;
+  font-size: 12px;
+  color: var(--ink-muted);
 }
 .rooms__empty {
   grid-column: 1 / -1;
