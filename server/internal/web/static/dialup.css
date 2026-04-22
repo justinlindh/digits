@@ -1198,7 +1198,10 @@ body.crt-all .crt__brand {
   body.crt-all .crt__screen::after { animation: none; }
 }
 
-/* Narrow viewports: shrink the bezel rings so the inner content has room. */
+/* Narrow viewports: shrink the bezel rings so the inner content has room.
+   Drop the 4:3 aspect-ratio on /connecting — at ~360px wide the forced 4:3
+   leaves only ~248px of height, which clips the Connect + Skip controls
+   out of view with the screen's overflow: hidden. Let content size it. */
 @media (max-width: 640px) {
   body.crt-page .crt__screen,
   body.crt-all .crt__screen {
@@ -1210,6 +1213,10 @@ body.crt-all .crt__brand {
       0 0 0 7px #8a8070,
       0 0 0 10px #3b3328,
       0 20px 40px rgba(0,0,0,0.8);
+  }
+  body.crt-page .crt__screen {
+    aspect-ratio: auto;
+    max-height: 92vh;
   }
   body.crt-page .crt__brand,
   body.crt-all .crt__brand { bottom: -32px; font-size: 9px; letter-spacing: 0.3em; }
