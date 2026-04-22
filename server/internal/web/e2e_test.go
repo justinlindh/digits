@@ -3,137 +3,15 @@
 package web
 
 import (
-	"encoding/json"
-	"html/template"
 	"io"
 	"net/http"
-	"net/http/httptest"
-	neturl "net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/db"
-	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
-	"github.com/justinlindh/digits/server/internal/household"
-	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
-
-func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store) {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-	database, err := db.Open(dsn)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
-	hub := signaling.NewHub()
-	tracker := calls.New(database)
-	relay := signaling.NewRelay(hub, tracker, nil, nil)
-
-	authStore := auth.NewStoreFromDB(database.DB)
-	householdStore := household.NewStore(database.DB)
-	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
-	if err != nil {
-		t.Fatalf("parse login template: %v", err)
-	}
-	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
-
-	h, err := NewHandler(Deps{
-		LineStore:      lineStore,
-		DeviceStore:    deviceStore,
-		Hub:            hub,
-		Tracker:        tracker,
-		Relay:          relay,
-		AuthStore:      authStore,
-		AuthHandlers:   authHandlers,
-		GoogleAuth:     googleAuth,
-		HouseholdStore: householdStore,
-	}, HandlerConfig{Addr: ":0"})
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
-
-	srv := httptest.NewServer(h.Router())
-	t.Cleanup(srv.Close)
-	return srv, database, lineStore, tracker, authStore
-}
-
-// seedE2EHousehold creates a household owned by the test user (test@example.com,
-// created on demand) and returns its UUID. The onboarding middleware and the
-// lines.household_id FK both require a real household membership; tests that
-// insert lines or hit routes behind the onboarding gate must call this.
-func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store) string {
-	t.Helper()
-	user, err := authStore.GetUserByEmail("test@example.com")
-	if err != nil {
-		user, err = authStore.CreateUser("test@example.com", "Test User", nil)
-		if err != nil {
-			t.Fatalf("create test user: %v", err)
-		}
-	}
-	store := household.NewStore(database.DB)
-	hh, err := store.Create("E2E Test Household", user.ID)
-	if err != nil {
-		t.Fatalf("create household: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
-		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
-	})
-	return hh.ID
-}
-
-func dialWS(t *testing.T, srv *httptest.Server) *websocket.Conn {
-	t.Helper()
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("dial ws: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return conn
-}
-
-func sendMsg(t *testing.T, conn *websocket.Conn, msg signaling.Message) {
-	t.Helper()
-	data, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-}
-
-func recvMsg(t *testing.T, conn *websocket.Conn) *signaling.Message {
-	t.Helper()
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, data, err := conn.ReadMessage()
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	msg, err := signaling.ParseMessage(data)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	return msg
-}
 
 func TestE2EFullCallFlow(t *testing.T) {
 	srv, database, lineStore, tracker, authStore := setupTestServer(t)
@@ -327,15 +205,4 @@ func TestE2EWebUIWithData(t *testing.T) {
 	if !strings.Contains(body, "3140001") || !strings.Contains(body, "3140002") {
 		t.Fatalf("phones page missing registered phones")
 	}
-}
-
-// testCookieJar is a minimal cookie jar that attaches a single cookie to all requests.
-type testCookieJar struct {
-	cookie *http.Cookie
-	url    string
-}
-
-func (j *testCookieJar) SetCookies(u *neturl.URL, cookies []*http.Cookie) {}
-func (j *testCookieJar) Cookies(u *neturl.URL) []*http.Cookie {
-	return []*http.Cookie{j.cookie}
 }

@@ -100,9 +100,14 @@ type Handler struct {
 	linkStore *household.LinkStore
 	// Email
 	emailSender email.Sender
-	// Rate limiters
-	authLimiter    *ratelimit.Limiter
-	pairingLimiter *ratelimit.Limiter
+	// Rate limiters. All four are Handler fields so Router() has a single
+	// construction pattern; previously the magic-link verify and Google
+	// login limiters were instantiated inline inside Router(), which made
+	// them harder to spot and impossible to share across request types.
+	authLimiter        *ratelimit.Limiter // POST /auth/magic (magic link request)
+	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
+	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
+	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
 	// Updates
 	Releases *updates.GitHubReleases
 }
@@ -322,6 +327,8 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		linkStore:          deps.LinkStore,
 		emailSender:        deps.EmailSender,
 		authLimiter:        ratelimit.New(5, time.Minute),
+		magicVerifyLimiter: ratelimit.New(10, time.Minute),
+		googleLoginLimiter: ratelimit.New(10, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
 	}, nil
 }
@@ -345,10 +352,10 @@ func (h *Handler) Router() http.Handler {
 	// Public routes — no auth required
 	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
-	mux.Handle("GET /auth/magic/{token}", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
+	mux.Handle("GET /auth/magic/{token}", h.magicVerifyLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
 	mux.HandleFunc("POST /auth/logout", h.authHandlers.HandleLogout)
 	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
-	mux.Handle("GET /auth/google/login", ratelimit.New(10, time.Minute).Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
+	mux.Handle("GET /auth/google/login", h.googleLoginLimiter.Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
@@ -359,8 +366,11 @@ func (h *Handler) Router() http.Handler {
 		mux.HandleFunc("GET /api/updates/releases", h.Releases.ServeReleases())
 		slog.Info("updates: serving release index from GitHub")
 	}
+	// /test is a legacy alias for the dev test client. The file now lives in
+	// the embedded static FS so it works from any CWD, and /static/* serves
+	// it directly; this alias keeps any bookmarked URLs working.
 	mux.HandleFunc("GET /test", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "static/test-client.html")
+		http.Redirect(w, r, "/static/test-client.html", http.StatusFound)
 	})
 
 	// Dev-only routes: gated by DevMode, not registered in production builds.

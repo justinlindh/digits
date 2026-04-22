@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -28,66 +31,65 @@ import (
 
 func main() {
 	logging.Setup()
-
-	cfg := config.Load()
-
-	// Open database
-	if cfg.DatabaseURL == "" {
-		log.Fatal("DATABASE_URL must be set")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx); err != nil {
+		slog.Error("signald exited with error", "err", err)
+		os.Exit(1)
 	}
+}
+
+// run is the real entrypoint: all wiring lives here, main stays a one-liner
+// so the ListenAndServe/signal/exit path is testable and errors propagate
+// through slog instead of bypassing it via log.Fatal.
+func run(ctx context.Context) error {
+	cfg := config.Load()
+	if cfg.DatabaseURL == "" {
+		return errors.New("DATABASE_URL must be set")
+	}
+
 	database, err := db.Open(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("open database: %v", err)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = database.Close() }()
 
-	// Create components
+	// Core stores
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
-
-	// Household store
 	householdStore := household.NewStore(database.DB)
-
-	// Pairing store
 	pairingStore := pairing.NewStore(database.DB)
-
-	// Link store
 	linkStore := household.NewLinkStore(database.DB)
 
-	flushDisabled := os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1"
-	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(flushDisabled))
-	if flushDisabled {
+	// Link-health store with its own lifecycle; flusher runs until ctx is cancelled.
+	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(cfg.LinkHealthFlushDisabled))
+	if cfg.LinkHealthFlushDisabled {
 		slog.Warn("link-health flusher disabled via SIGNALD_LINK_HEALTH_FLUSH_DISABLED")
 	}
 	tracker.SetHealthStore(healthStore)
 
-	healthCtx, cancelHealth := context.WithCancel(context.Background())
 	healthDone := make(chan struct{})
 	go func() {
 		defer close(healthDone)
-		healthStore.Run(healthCtx)
+		healthStore.Run(ctx)
 	}()
-	defer func() {
-		cancelHealth()
-		<-healthDone // wait for final flush before DB close unwinds
-	}()
+	defer func() { <-healthDone }() // wait for final flush before DB close unwinds
 
+	// Relay and TURN
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
-
-	// Configure TURN credential generation if enabled
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
-			log.Fatal("SIGNALD_TURN_SECRET must be set when TURN is enabled")
+			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
 		}
 		relay.TURNGen = turn.NewCredentialGenerator(cfg.TURNSecret, 24*time.Hour)
 		relay.TURNDomain = cfg.TURNDomain
 		slog.Info("TURN credential generation enabled", "domain", cfg.TURNDomain)
 	}
 
-	// Auth setup
+	// Auth
 	authStore := auth.NewStoreFromDB(database.DB)
 	authStore.CookieDomain = cfg.CookieDomain
 
@@ -107,31 +109,19 @@ func main() {
 
 	loginTmpl, err := template.ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
-		log.Fatalf("parse login template: %v", err)
+		return fmt.Errorf("parse login template: %w", err)
 	}
-
 	if cfg.DevMode {
 		slog.Warn("dev mode enabled — magic link URLs will be logged to stdout")
 	}
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode)
 
-	// Periodic cleanup: sessions, magic links, expired pairing codes
-	go func() {
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := authStore.CleanupExpired(); err != nil {
-				slog.Error("session cleanup failed", "err", err)
-			}
-			if n, err := pairingStore.CleanupExpired(); err != nil {
-				slog.Error("pairing cleanup failed", "err", err)
-			} else if n > 0 {
-				slog.Info("pairing cleanup complete", "expired_codes", n)
-			}
-		}
-	}()
+	// Periodic cleanup: sessions, magic links, expired pairing codes. Ticker
+	// goroutine is bound to the same ctx as the main server so shutdown is
+	// tidy (previous code leaked this goroutine on signal).
+	go cleanupLoop(ctx, authStore, pairingStore)
 
-	// Create web handler
+	// Web handler
 	handler, err := web.NewHandler(web.Deps{
 		LineStore:      lineStore,
 		DeviceStore:    deviceStore,
@@ -153,34 +143,72 @@ func main() {
 		DevMode:     cfg.DevMode,
 	})
 	if err != nil {
-		log.Fatalf("create handler: %v", err)
+		return fmt.Errorf("create handler: %w", err)
 	}
 
-	// Release index: prefer a static fixture (e2e/CI) over live GitHub data.
-	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
+	// Release index: prefer the static fixture (e2e/CI) over live GitHub data.
+	switch {
+	case cfg.FakeUpdates:
 		handler.Releases = updates.FakeReleaseIndex()
 		slog.Info("updates: using fake release index (TEST_FAKE_UPDATES=1)")
-	} else if ghRepo := os.Getenv("GITHUB_REPO"); ghRepo != "" {
-		parts := strings.SplitN(ghRepo, "/", 2)
+	case cfg.GitHubRepo != "":
+		parts := strings.SplitN(cfg.GitHubRepo, "/", 2)
 		if len(parts) == 2 {
-			gh := updates.NewGitHubReleases(parts[0], parts[1], os.Getenv("GITHUB_TOKEN"), 300) // 5 min cache
-			handler.Releases = gh
-			slog.Info("updates: release index from GitHub", "repo", ghRepo)
+			handler.Releases = updates.NewGitHubReleases(parts[0], parts[1], cfg.GitHubToken, 300) // 5 min cache
+			slog.Info("updates: release index from GitHub", "repo", cfg.GitHubRepo)
 		} else {
-			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", ghRepo)
+			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", cfg.GitHubRepo)
 		}
 	}
 
-	// Start server
-	slog.Info("server started", "addr", cfg.Addr)
-	if cfg.TLSCert != "" && cfg.TLSKey != "" {
-		slog.Info("TLS enabled", "cert", cfg.TLSCert, "key", cfg.TLSKey)
-		if err := http.ListenAndServeTLS(cfg.Addr, cfg.TLSCert, cfg.TLSKey, handler.Router()); err != nil {
-			log.Fatalf("listen TLS: %v", err)
+	// Serve. http.Server gives us graceful shutdown on ctx cancellation.
+	srv := &http.Server{Addr: cfg.Addr, Handler: handler.Router()}
+	serveErr := make(chan error, 1)
+	go func() {
+		slog.Info("server started", "addr", cfg.Addr)
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			slog.Info("TLS enabled", "cert", cfg.TLSCert, "key", cfg.TLSKey)
+			serveErr <- srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+		} else {
+			serveErr <- srv.ListenAndServe()
 		}
-	} else {
-		if err := http.ListenAndServe(cfg.Addr, handler.Router()); err != nil {
-			log.Fatalf("listen: %v", err)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("listen: %w", err)
+	case <-ctx.Done():
+		slog.Info("shutdown signal received, draining")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("http shutdown: %w", err)
+		}
+		return nil
+	}
+}
+
+// cleanupLoop runs the hourly cleanup sweep until ctx is cancelled.
+// Extracted from run() only for readability; it has no other callers.
+func cleanupLoop(ctx context.Context, authStore *auth.Store, pairingStore *pairing.Store) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := authStore.CleanupExpired(); err != nil {
+				slog.Error("session cleanup failed", "err", err)
+			}
+			if n, err := pairingStore.CleanupExpired(); err != nil {
+				slog.Error("pairing cleanup failed", "err", err)
+			} else if n > 0 {
+				slog.Info("pairing cleanup complete", "expired_codes", n)
+			}
 		}
 	}
 }
