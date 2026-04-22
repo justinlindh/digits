@@ -7,49 +7,76 @@
     <h1 class="page__title">{{if .HouseholdName}}{{.HouseholdName}}{{else}}Overview{{end}}</h1>
   </header>
 
-  <section class="strip" aria-label="Summary">
-    <div class="strip__cell">
-      <div class="strip__label">Lines</div>
-      <div class="strip__value">{{.Stats.TotalLines}}</div>
-    </div>
-    <div class="strip__cell {{if eq .Stats.OnlineLines 0}}strip__cell--muted{{end}}">
-      <div class="strip__label">Online</div>
-      <div class="strip__value {{if gt .Stats.OnlineLines 0}}strip__value--forest{{end}}">{{.Stats.OnlineLines}}</div>
-    </div>
-    <div class="strip__cell {{if eq .Stats.ActiveCalls 0}}strip__cell--muted{{end}}">
-      <div class="strip__label">Active calls</div>
-      <div class="strip__value {{if gt .Stats.ActiveCalls 0}}strip__value--brass{{end}}">{{.Stats.ActiveCalls}}</div>
-    </div>
-    <div class="strip__cell {{if eq .Stats.CallsToday 0}}strip__cell--muted{{end}}">
-      <div class="strip__label">Calls today</div>
-      <div class="strip__value">{{.Stats.CallsToday}}</div>
-    </div>
+  <section class="rooms" aria-label="Lines">
+    {{if .Lines}}
+      {{range .Lines}}
+      <a class="rooms__card{{if .OnCall}} rooms__card--live{{end}}" href="/phones/{{.Line.Number}}">
+        <div class="rooms__head">
+          <span class="rooms__name">{{.Line.Name}}</span>
+          {{if .OnCall}}
+            <span class="chip chip--live"><span class="chip__dot"></span>on a call</span>
+          {{else if .Online}}
+            <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+          {{else}}
+            <span class="chip"><span class="chip__dot"></span>offline</span>
+          {{end}}
+        </div>
+        <div class="rooms__num num">{{fmtPhone .Line.Number}}</div>
+        {{if .OnCall}}
+          <div class="rooms__callout">
+            <div class="rooms__callout-kicker">Talking to</div>
+            <div class="rooms__callout-name">{{.OnCallPeerName}}</div>
+          </div>
+        {{end}}
+      </a>
+      {{end}}
+    {{else}}
+      <div class="rooms__empty">
+        No lines registered. <a href="/phones">Pair a handset</a>.
+      </div>
+    {{end}}
   </section>
 
-  <section class="panel">
+  {{if .CallHistoryEnabled}}
+  <section class="panel" id="today-panel">
     <header class="panel__head">
-      <h2 class="panel__title">Lines</h2>
-      <a class="panel__action" href="/phones">Manage →</a>
+      <h2 class="panel__title">Today</h2>
+      <span class="panel__title-sub">{{len .CallsTodayRecent}} call{{if ne (len .CallsTodayRecent) 1}}s{{end}}</span>
     </header>
-    {{if .Lines}}
-    <ul class="lines">
-      {{range .Lines}}
-      <li>
-        <a class="lines__row" href="/phones/{{.Line.Number}}">
-          <span class="lines__dot{{if .Online}} lines__dot--on{{end}}" aria-hidden="true"></span>
-          <span class="lines__name">{{.Line.Name}}</span>
-          <span class="lines__num">{{fmtPhone .Line.Number}}</span>
-          <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
-        </a>
+    {{if .CallsTodayRecent}}
+    <ul class="today-list">
+      {{range .CallsTodayRecent}}
+      <li class="today-list__row">
+        <span class="today-list__time num muted">{{.StartedAt.Format "3:04 pm"}}</span>
+        <span class="today-list__dir today-list__dir--{{.Direction}}">{{if eq .Direction "in"}}&#x2199;{{else}}&#x2197;{{end}}</span>
+        <span class="today-list__peer">{{.PeerName}}<span class="muted"> &middot; {{.LineName}}</span></span>
+        <span class="today-list__dur num muted">{{fmtDuration .DurationS}}</span>
       </li>
       {{end}}
     </ul>
     {{else}}
-    <div style="padding: 28px 16px; text-align: center; color: var(--ink-muted); font-size: 13px;">
-      No lines registered. <a href="/phones" style="color: var(--brass);">Pair one</a>.
-    </div>
+    <div class="today-list__empty muted">No calls yet today.</div>
     {{end}}
   </section>
+  {{end}}
+
+  {{if .LinkedFamilies}}
+  <section class="panel" style="margin-top: 14px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Connected families</h2>
+      <a class="panel__action" href="/links">Manage &#x2192;</a>
+    </header>
+    <div class="connected-row">
+      {{range .LinkedFamilies}}
+      <span class="connected-row__chip">
+        <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">{{template "house-icon"}}</svg>
+        <span>{{.Name}}</span>
+      </span>
+      {{end}}
+      <a href="/links" class="btn btn--sm btn--quiet" style="margin-left: auto;">+ Invite</a>
+    </div>
+  </section>
+  {{end}}
 
   {{template "page-footer" .}}
 

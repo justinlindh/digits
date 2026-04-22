@@ -84,6 +84,12 @@ type HandlerConfig struct {
 func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling.Hub, tracker *calls.Tracker, relay *signaling.Relay, cfg HandlerConfig, authStore *auth.Store, authHandlers *auth.Handlers, googleAuth *auth.GoogleAuth, householdStore *household.Store, pairingStore *pairing.Store, linkStore *household.LinkStore, emailSender email.Sender, baseURL string, adminSecret string) (*Handler, error) {
 	funcMap := template.FuncMap{
 		"fmtPhone": line.FormatNumber,
+		"fmtDuration": func(seconds int) string {
+			if seconds < 60 {
+				return fmt.Sprintf("%ds", seconds)
+			}
+			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
@@ -371,6 +377,16 @@ type dashboardData struct {
 	HouseholdName      string
 	Stats              dashStats
 	Lines              []lineRow
+	CallsTodayRecent   []callRow
+	LinkedFamilies     []linkedFamilyRow
+}
+
+type callRow struct {
+	StartedAt time.Time
+	LineName  string
+	PeerName  string
+	Direction string // "in" or "out"
+	DurationS int
 }
 
 type dashStats struct {
@@ -392,14 +408,78 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	active := h.tracker.Active()
-	recent, _ := h.tracker.Recent(10)
+	recent, _ := h.tracker.Recent(20)
 
 	ld := h.buildLinesData(r, "")
+
+	// Determine current household ID for linked-family lookup.
+	var householdID string
+	if h.householdStore != nil {
+		user := auth.UserFromContext(r.Context())
+		if user != nil {
+			if households, err := h.householdStore.GetForUser(user.ID); err == nil && len(households) > 0 {
+				householdID = households[0].ID
+			}
+		}
+	}
+
+	// Build set of own line numbers for active-call resolution.
+	ownLineByNumber := make(map[string]*lineRow, len(ld.Lines))
+	for i := range ld.Lines {
+		ownLineByNumber[ld.Lines[i].Line.Number] = &ld.Lines[i]
+	}
+
+	// Build linked-family index for peer-name resolution.
+	linkedFamilies := h.buildLinkedFamilies(householdID)
+	linkedLineIndex := buildLinkedLineIndex(linkedFamilies)
+
+	// Annotate lines with active-call state.
+	for _, pair := range active {
+		if lr := ownLineByNumber[pair.Caller]; lr != nil {
+			lr.OnCall = true
+			lr.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
+		} else if lr := ownLineByNumber[pair.Callee]; lr != nil {
+			lr.OnCall = true
+			lr.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
+		}
+	}
+
+	callHistoryEnabled := h.callHistoryEnabled(r)
+
+	// Build today's call rows when history is enabled.
+	var callsTodayRecent []callRow
+	if callHistoryEnabled {
+		today := time.Now().Truncate(24 * time.Hour)
+		for _, c := range recent {
+			if !c.StartedAt.After(today) {
+				continue
+			}
+			var direction, lineName, peerNumber string
+			if lr := ownLineByNumber[c.Caller]; lr != nil {
+				direction = "out"
+				lineName = lr.Line.Name
+				peerNumber = c.Callee
+			} else if lr := ownLineByNumber[c.Callee]; lr != nil {
+				direction = "in"
+				lineName = lr.Line.Name
+				peerNumber = c.Caller
+			} else {
+				continue
+			}
+			callsTodayRecent = append(callsTodayRecent, callRow{
+				StartedAt: c.StartedAt,
+				LineName:  lineName,
+				PeerName:  resolvePeerName(peerNumber, linkedLineIndex),
+				Direction: direction,
+				DurationS: c.DurationS,
+			})
+		}
+	}
 
 	data := dashboardData{
 		Page:               "dashboard",
 		Version:            version.Version,
-		CallHistoryEnabled: h.callHistoryEnabled(r),
+		CallHistoryEnabled: callHistoryEnabled,
 		HouseholdName:      h.householdNameFromContext(r),
 		Stats: dashStats{
 			TotalLines:   len(ld.Lines),
@@ -407,9 +487,74 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			ActiveCalls:  len(active),
 			CallsToday:   countCallsToday(recent),
 		},
-		Lines: ld.Lines,
+		Lines:            ld.Lines,
+		CallsTodayRecent: callsTodayRecent,
+		LinkedFamilies:   linkedFamilies,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
+}
+
+// buildLinkedFamilies fetches the list of linked households and their lines
+// for the given householdID. Returns an empty slice if householdID is empty or
+// the lookup fails.
+func (h *Handler) buildLinkedFamilies(householdID string) []linkedFamilyRow {
+	if householdID == "" || h.linkStore == nil {
+		return nil
+	}
+	activeLinks, err := h.linkStore.GetLinkedHouseholds(householdID)
+	if err != nil {
+		slog.Error("buildLinkedFamilies: get linked households failed", "err", err)
+		return nil
+	}
+	otherIDs := make([]string, 0, len(activeLinks))
+	for _, l := range activeLinks {
+		otherID := l.HouseholdAID
+		if otherID == householdID && l.HouseholdBID != nil {
+			otherID = *l.HouseholdBID
+		}
+		otherIDs = append(otherIDs, otherID)
+	}
+	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
+	if err != nil {
+		slog.Error("buildLinkedFamilies: batch list lines failed", "err", err)
+	}
+	var families []linkedFamilyRow
+	for i, l := range activeLinks {
+		otherID := otherIDs[i]
+		otherName := otherID
+		if other, err := h.householdStore.GetByID(otherID); err == nil {
+			otherName = other.Name
+		}
+		families = append(families, linkedFamilyRow{
+			ID:         l.ID,
+			Name:       otherName,
+			Lines:      linesByHousehold[otherID],
+			Status:     l.Status,
+			AcceptedAt: l.AcceptedAt,
+		})
+	}
+	return families
+}
+
+// buildLinkedLineIndex flattens a slice of linkedFamilyRow into a map from
+// line number to "FamilyName · LineName" for fast peer-name resolution.
+func buildLinkedLineIndex(families []linkedFamilyRow) map[string]string {
+	index := make(map[string]string)
+	for _, f := range families {
+		for _, l := range f.Lines {
+			index[l.Number] = f.Name + " · " + l.Name
+		}
+	}
+	return index
+}
+
+// resolvePeerName returns the friendly name for a peer number using the linked
+// line index, falling back to fmtPhone formatting.
+func resolvePeerName(number string, linkedLines map[string]string) string {
+	if name, ok := linkedLines[number]; ok {
+		return name
+	}
+	return line.FormatNumber(number)
 }
 
 func countOnline(lines []lineRow) int {
@@ -446,8 +591,10 @@ type linesData struct {
 }
 
 type lineRow struct {
-	Line   line.Line
-	Online bool
+	Line           line.Line
+	Online         bool
+	OnCall         bool
+	OnCallPeerName string
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
@@ -1116,40 +1263,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Active links — build connected family directory
-	activeLinks, err := h.linkStore.GetLinkedHouseholds(myHousehold.ID)
-	if err != nil {
-		slog.Error("get linked households failed", "err", err)
-	}
-
-	// Collect linked household IDs for a single batched line query
-	otherIDs := make([]string, 0, len(activeLinks))
-	for _, l := range activeLinks {
-		otherID := l.HouseholdAID
-		if otherID == myHousehold.ID && l.HouseholdBID != nil {
-			otherID = *l.HouseholdBID
-		}
-		otherIDs = append(otherIDs, otherID)
-	}
-	linesByHousehold, err := h.lineStore.ListByHouseholds(otherIDs)
-	if err != nil {
-		slog.Error("batch list lines for linked households failed", "err", err)
-	}
-
-	for i, l := range activeLinks {
-		otherID := otherIDs[i]
-		otherName := otherID
-		if other, err := h.householdStore.GetByID(otherID); err == nil {
-			otherName = other.Name
-		}
-
-		data.LinkedFamilies = append(data.LinkedFamilies, linkedFamilyRow{
-			ID:         l.ID,
-			Name:       otherName,
-			Lines:      linesByHousehold[otherID],
-			Status:     l.Status,
-			AcceptedAt: l.AcceptedAt,
-		})
-	}
+	data.LinkedFamilies = h.buildLinkedFamilies(myHousehold.ID)
 
 	// Pending invites sent by this household
 	pending, err := h.linkStore.GetPendingForHousehold(myHousehold.ID)

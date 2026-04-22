@@ -1023,6 +1023,88 @@ func TestLinksPage_Neighborhood(t *testing.T) {
 	}
 }
 
+func TestDashboard_HasRoomCards(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if _, err := h.lineStore.Add("2456390", "Kitchen", hh.ID); err != nil {
+		t.Fatalf("seed line: %v", err)
+	}
+	if _, err := h.lineStore.Add("2486881", "Living room", hh.ID); err != nil {
+		t.Fatalf("seed line: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="rooms"`,
+		`class="rooms__card`,
+		"Kitchen",
+		"Living room",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(body, `class="strip"`) {
+		t.Errorf("dashboard still renders old KPI strip")
+	}
+}
+
+func TestDashboard_TodayPanelGatedByHistoryFlag(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_ = hh
+
+	// Default: call history disabled. Today panel must not render.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `id="today-panel"`) {
+		t.Errorf("Today panel rendered while history disabled")
+	}
+
+	// Enable history.
+	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.AddCookie(cookie)
+	w2 := httptest.NewRecorder()
+	h.Router().ServeHTTP(w2, req2)
+	if !strings.Contains(w2.Body.String(), `id="today-panel"`) {
+		t.Errorf("Today panel not rendered when history enabled")
+	}
+}
+
+func TestDashboard_ConnectedFamiliesChipRow(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="connected-row"`,
+		`class="connected-row__chip"`,
+		"Grandma Lindh",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+}
+
 func TestLinksPage_InvitePostcard(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)

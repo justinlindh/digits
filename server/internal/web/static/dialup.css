@@ -1187,3 +1187,23 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .postcard__message code { font-family: var(--font-mono); background: var(--dialup-chrome-l); padding: 0 3px; }
 .postcard__stamp { border: 1px dotted var(--dialup-blue); padding: 4px; text-align: center; font-size: 9px; color: var(--dialup-blue); }
 .postcard__stamp svg { width: 22px; height: 22px; }
+
+/* Dashboard rooms placeholder - see issue #214 for full dialup treatment */
+.rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin-bottom: 12px; }
+.rooms__card { padding: 8px; background: #fff; border: 2px inset var(--dialup-chrome); display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--dialup-ink); }
+.rooms__card:hover { background: var(--dialup-chrome-l); }
+.rooms__card--live { border-color: var(--dialup-blue); }
+.rooms__head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+.rooms__num { font-family: var(--font-mono); font-size: 11px; color: var(--dialup-ink-muted); }
+.rooms__callout { margin-top: auto; padding: 4px; border: 1px dotted var(--dialup-blue); background: #e8f0fa; }
+.rooms__callout-kicker { font-size: 9px; color: var(--dialup-ink-muted); }
+.rooms__callout-name { font-weight: bold; font-size: 13px; }
+.rooms__empty { grid-column: 1 / -1; padding: 20px; text-align: center; font-size: 12px; }
+
+.today-list { list-style: none; margin: 0; padding: 0; }
+.today-list__row { display: grid; grid-template-columns: 60px 14px 1fr auto; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--dialup-bevel-lo); font-size: 12px; }
+.today-list__empty { padding: 16px; text-align: center; }
+
+.connected-row { display: flex; gap: 6px; padding: 8px; align-items: center; flex-wrap: wrap; }
+.connected-row__chip { display: inline-flex; gap: 4px; padding: 2px 8px; background: var(--dialup-chrome-l); border: 1px solid var(--dialup-bevel-lo); font-size: 12px; align-items: center; }
+.connected-row__chip svg { width: 16px; height: 16px; }
