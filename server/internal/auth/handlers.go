@@ -171,8 +171,8 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Secure=false: this endpoint only exists in dev mode and CI runs over
-	// plain HTTP. Chromium won't send Secure cookies over http://localhost.
+	// Set Secure when request is HTTPS (directly or via common proxy header),
+	// while keeping local HTTP dev/CI behavior working.
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
 		Value:    sessionToken,
@@ -180,7 +180,7 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   int(SessionTTL.Seconds()),
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 		SameSite: http.SameSiteLaxMode,
 	})
 
