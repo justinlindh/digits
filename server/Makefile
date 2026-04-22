@@ -1,4 +1,4 @@
-.PHONY: build build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
+.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -13,6 +13,9 @@ css:
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/signald ./cmd/signald/
+
+build-autodeploy:
+	go build -ldflags '$(LDFLAGS)' -o bin/autodeploy ./cmd/autodeploy/
 
 build-dev:
 	go build -o bin/signald ./cmd/signald/

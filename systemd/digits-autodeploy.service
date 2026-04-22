@@ -1,0 +1,24 @@
+[Unit]
+Description=Digits autodeploy (poll GitHub, deploy new releases)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/autodeploy --config /etc/digits-autodeploy/config.env
+User=root
+Group=root
+# docker login persists credentials to $DOCKER_CONFIG/config.json. With
+# ProtectHome=read-only and ProtectSystem=strict, /root/.docker isn't
+# writable. Redirect the config to /tmp, which PrivateTmp=true makes a
+# fresh per-invocation tmpfs so credentials never outlive the process.
+Environment=DOCKER_CONFIG=/tmp/digits-docker
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/digits-autodeploy /var/run/docker.sock /home/justin/src/digits/server
+PrivateTmp=true
+LockPersonality=true
+RestrictSUIDSGID=true
+TimeoutStartSec=300s

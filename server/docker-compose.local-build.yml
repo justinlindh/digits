@@ -1,0 +1,19 @@
+# Override for local source builds. Used by `deploy.sh --local-build`.
+# Restores the build: blocks removed from docker-compose.prod.yml.
+services:
+  signald:
+    build:
+      context: .
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
+        COMMIT: ${BUILD_COMMIT:-unknown}
+    image: digits-local/signald:${BUILD_VERSION:-dev}
+
+  admind:
+    build:
+      context: .
+      dockerfile: cmd/admind/Dockerfile
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
+        COMMIT: ${BUILD_COMMIT:-unknown}
+    image: digits-local/admind:${BUILD_VERSION:-dev}

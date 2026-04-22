@@ -28,6 +28,10 @@ jobs:
         working-directory: server
         run: go build -o bin/signald ./cmd/signald/
 
+      - name: Build autodeploy
+        working-directory: server
+        run: go build -o bin/autodeploy ./cmd/autodeploy/
+
       - name: Unit tests
         working-directory: server
         run: go test -race -count=1 ./...

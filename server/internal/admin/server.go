@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 //go:embed templates/*.html
@@ -70,7 +71,7 @@ func (s *Server) router() http.Handler {
 	mux.Handle("GET /admin/static/", http.StripPrefix("/admin", http.FileServer(http.FS(adminStaticFS))))
 
 	// Health check — no auth required
-	mux.HandleFunc("GET /healthz", httputil.Healthz())
+	mux.HandleFunc("GET /healthz", httputil.Healthz(version.Version))
 
 	// Public
 	mux.HandleFunc("GET /admin/login", s.handleLoginGet)

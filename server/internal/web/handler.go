@@ -24,6 +24,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/ratelimit"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 //go:embed templates/*.html
@@ -347,7 +348,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("GET /static/", staticFileServer(h.cfg.DevMode, h.cfg.DevStaticDir))
 
 	// Health check — no auth required
-	mux.HandleFunc("GET /healthz", httputil.Healthz())
+	mux.HandleFunc("GET /healthz", httputil.Healthz(version.Version))
 
 	// Public routes — no auth required
 	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
