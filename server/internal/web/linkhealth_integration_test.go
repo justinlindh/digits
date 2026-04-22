@@ -62,21 +62,46 @@ type lhSetup struct {
 
 // newLHEnv creates three users in three independent households, each with one
 // line, and registers cleanup. Users A/B/C own lines numA/numB/numC.
+//
+// Cleanup is registered BEFORE any setup DB work so that partial-setup
+// failures do not leak rows into the shared test database.
 func newLHEnv(t *testing.T) lhSetup {
 	t.Helper()
-	env := setupCallsTestServer(t)
 
-	numA := nextPhone()
-	numB := nextPhone()
-	numC := nextPhone()
+	// Derive all unique identifiers up front, before touching the DB, so that
+	// cleanup can reference them whether or not setup completed.
+	seq := phoneCounter.Add(3) // reserve three numbers atomically
+	numA := fmt.Sprintf("%07d", seq-2)
+	numB := fmt.Sprintf("%07d", seq-1)
+	numC := fmt.Sprintf("%07d", seq)
 	hwA := "lh-hw-" + numA
 	hwB := "lh-hw-" + numB
 	hwC := "lh-hw-" + numC
-
 	emailA := "lh-a-" + numA + "@example.com"
 	emailB := "lh-b-" + numB + "@example.com"
 	emailC := "lh-c-" + numC + "@example.com"
+	hhNameA := "LH Family A " + numA
+	hhNameB := "LH Family B " + numB
+	hhNameC := "LH Family C " + numC
 
+	env := setupCallsTestServer(t)
+	db := env.database.DB
+
+	// Register cleanup IMMEDIATELY — before any partial setup can fail.
+	// All DELETEs are idempotent against missing rows.
+	t.Cleanup(func() {
+		_, _ = db.Exec("DELETE FROM call_link_health WHERE call_id IN (SELECT id FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3))", numA, numB, numC)
+		_, _ = db.Exec("DELETE FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3)", numA, numB, numC)
+		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id IN ($1,$2,$3)", hwA, hwB, hwC)
+		_, _ = db.Exec("DELETE FROM lines WHERE number IN ($1,$2,$3)", numA, numB, numC)
+		_, _ = db.Exec("DELETE FROM household_links WHERE household_a_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3)) OR household_b_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3))", hhNameA, hhNameB, hhNameC)
+		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3))", hhNameA, hhNameB, hhNameC)
+		_, _ = db.Exec("DELETE FROM households WHERE name IN ($1,$2,$3)", hhNameA, hhNameB, hhNameC)
+		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ($1,$2,$3))", emailA, emailB, emailC)
+		_, _ = db.Exec("DELETE FROM users WHERE email IN ($1,$2,$3)", emailA, emailB, emailC)
+	})
+
+	// Create users.
 	userA, err := env.authStore.CreateUser(emailA, "LH User A", nil)
 	if err != nil {
 		t.Fatalf("create user A: %v", err)
@@ -90,15 +115,16 @@ func newLHEnv(t *testing.T) lhSetup {
 		t.Fatalf("create user C: %v", err)
 	}
 
-	hhA, err := env.householdStore.Create("LH Family A "+numA, userA.ID)
+	// Create households.
+	hhA, err := env.householdStore.Create(hhNameA, userA.ID)
 	if err != nil {
 		t.Fatalf("create household A: %v", err)
 	}
-	hhB, err := env.householdStore.Create("LH Family B "+numB, userB.ID)
+	hhB, err := env.householdStore.Create(hhNameB, userB.ID)
 	if err != nil {
 		t.Fatalf("create household B: %v", err)
 	}
-	hhC, err := env.householdStore.Create("LH Family C "+numC, userC.ID)
+	hhC, err := env.householdStore.Create(hhNameC, userC.ID)
 	if err != nil {
 		t.Fatalf("create household C: %v", err)
 	}
@@ -127,19 +153,6 @@ func newLHEnv(t *testing.T) lhSetup {
 	if _, _, err := env.pairingStore.ClaimDevice(codeC, numC, "Phone C", hhC.ID); err != nil {
 		t.Fatalf("claim phone C: %v", err)
 	}
-
-	db := env.database.DB
-	t.Cleanup(func() {
-		_, _ = db.Exec("DELETE FROM call_link_health WHERE call_id IN (SELECT id FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3))", numA, numB, numC)
-		_, _ = db.Exec("DELETE FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3)", numA, numB, numC)
-		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id IN ($1,$2,$3)", hwA, hwB, hwC)
-		_, _ = db.Exec("DELETE FROM lines WHERE number IN ($1,$2,$3)", numA, numB, numC)
-		_, _ = db.Exec("DELETE FROM household_links WHERE household_a_id IN ($1,$2,$3) OR household_b_id IN ($1,$2,$3)", hhA.ID, hhB.ID, hhC.ID)
-		_, _ = db.Exec("DELETE FROM household_members WHERE user_id IN ($1,$2,$3)", userA.ID, userB.ID, userC.ID)
-		_, _ = db.Exec("DELETE FROM households WHERE id IN ($1,$2,$3)", hhA.ID, hhB.ID, hhC.ID)
-		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN ($1,$2,$3)", userA.ID, userB.ID, userC.ID)
-		_, _ = db.Exec("DELETE FROM users WHERE id IN ($1,$2,$3)", userA.ID, userB.ID, userC.ID)
-	})
 
 	return lhSetup{
 		env:   env,
@@ -207,23 +220,15 @@ func TestLinkHealth_OwnerReadsOwnCall(t *testing.T) {
 		t.Fatalf("caller owner: got %d want 200", resp.StatusCode)
 	}
 
-	var body map[string]any
+	var body LinkHealthResp
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if int64(body["call_id"].(float64)) != callID {
-		t.Fatalf("call_id mismatch: got %v want %d", body["call_id"], callID)
+	if body.CallID != callID {
+		t.Fatalf("call_id mismatch: got %d want %d", body.CallID, callID)
 	}
-	callerObj, ok := body["caller"].(map[string]any)
-	if !ok {
-		t.Fatalf("caller field missing or wrong type")
-	}
-	window, ok := callerObj["window"].([]any)
-	if !ok {
-		t.Fatalf("caller.window missing or wrong type")
-	}
-	if len(window) != 1 {
-		t.Fatalf("caller.window: got %d samples want 1", len(window))
+	if len(body.Caller.Window) != 1 {
+		t.Fatalf("caller.window: got %d samples want 1", len(body.Caller.Window))
 	}
 }
 
@@ -310,9 +315,15 @@ func TestLinkHealth_LinkedHouseholdStillGets404(t *testing.T) {
 func TestLinkHealth_NonexistentCallIs404(t *testing.T) {
 	s := newLHEnv(t)
 
+	// Compute an ID that is guaranteed unused: MAX(id)+10000. This stays within
+	// INT range (< 2^31) and exercises the sql.ErrNoRows -> zero-Call -> 404
+	// branch, not the int32-overflow driver error path.
+	var maxID int64
+	_ = s.env.database.DB.QueryRow("SELECT COALESCE(MAX(id), 0) FROM calls").Scan(&maxID)
+	unknownID := maxID + 10000
+
 	client := authedClient(t, s, s.userA)
-	// Use a very large ID that cannot exist in the test DB.
-	resp, err := client.Get(fmt.Sprintf("%s/api/call/999999999999/link-health", s.env.srv.URL))
+	resp, err := client.Get(fmt.Sprintf("%s/api/call/%d/link-health", s.env.srv.URL, unknownID))
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -380,19 +391,11 @@ func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
 		t.Fatalf("post-evict read: got %d want 200", resp.StatusCode)
 	}
 
-	var body map[string]any
+	var body LinkHealthResp
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	callerObj, ok := body["caller"].(map[string]any)
-	if !ok {
-		t.Fatalf("caller field missing or wrong type")
-	}
-	window, ok := callerObj["window"].([]any)
-	if !ok {
-		t.Fatalf("caller.window missing or wrong type")
-	}
-	if len(window) != 1 {
-		t.Fatalf("post-evict window: got %d samples want 1 (DB fallback must serve the flushed sample)", len(window))
+	if len(body.Caller.Window) != 1 {
+		t.Fatalf("post-evict window: got %d samples want 1 (DB fallback must serve the flushed sample)", len(body.Caller.Window))
 	}
 }

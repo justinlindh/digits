@@ -2081,7 +2081,9 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 
 // ---- Link Health API ----
 
-type linkHealthSample struct {
+// LinkHealthSample is the JSON representation of a single link-health
+// measurement returned by GET /api/call/{id}/link-health.
+type LinkHealthSample struct {
 	TS       int64    `json:"ts"`
 	LossPct  *float32 `json:"loss_pct,omitempty"`
 	JitterMs *float32 `json:"jitter_ms,omitempty"`
@@ -2091,22 +2093,24 @@ type linkHealthSample struct {
 	BytesOut *int64   `json:"bytes_out,omitempty"`
 }
 
-type linkHealthEndpointResp struct {
-	Number      string             `json:"number"`
-	DisplayName string             `json:"display_name"`
-	Latest      *linkHealthSample  `json:"latest,omitempty"`
-	Window      []linkHealthSample `json:"window"`
+// LinkHealthEndpointResp is the per-endpoint section of a LinkHealthResp.
+type LinkHealthEndpointResp struct {
+	Number      string            `json:"number"`
+	DisplayName string            `json:"display_name"`
+	Latest      *LinkHealthSample `json:"latest,omitempty"`
+	Window      []LinkHealthSample `json:"window"`
 }
 
-type linkHealthResp struct {
+// LinkHealthResp is the top-level response body for GET /api/call/{id}/link-health.
+type LinkHealthResp struct {
 	CallID    int64                  `json:"call_id"`
 	StartedAt time.Time              `json:"started_at"`
-	Caller    linkHealthEndpointResp `json:"caller"`
-	Callee    linkHealthEndpointResp `json:"callee"`
+	Caller    LinkHealthEndpointResp `json:"caller"`
+	Callee    LinkHealthEndpointResp `json:"callee"`
 }
 
-func toAPISample(s calls.Sample) linkHealthSample {
-	return linkHealthSample{
+func toAPISample(s calls.Sample) LinkHealthSample {
+	return LinkHealthSample{
 		TS:       s.TS.UnixMilli(),
 		LossPct:  s.LossPct,
 		JitterMs: s.JitterMs,
@@ -2139,7 +2143,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 		linkedIndex = buildLinkedLineIndex(linkedFamilies)
 	}
 
-	resp := linkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
+	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
 	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex)
 	if err != nil {
 		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
@@ -2161,8 +2165,8 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) (linkHealthEndpointResp, error) {
-	out := linkHealthEndpointResp{Number: number, Window: []linkHealthSample{}}
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string) (LinkHealthEndpointResp, error) {
+	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
 
 	// Display name resolution — silent fallback on error is appropriate here;
 	// GetByNumber failure is non-security-critical for display purposes.
@@ -2178,7 +2182,7 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 	// Memory first.
 	windowMem := h.healthStore.Window(callID, number)
 	if len(windowMem) > 0 {
-		out.Window = make([]linkHealthSample, len(windowMem))
+		out.Window = make([]LinkHealthSample, len(windowMem))
 		for i, s := range windowMem {
 			out.Window[i] = toAPISample(s)
 		}
@@ -2192,7 +2196,7 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 	if err != nil {
 		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
 	}
-	out.Window = make([]linkHealthSample, len(dbSamples))
+	out.Window = make([]LinkHealthSample, len(dbSamples))
 	for i, s := range dbSamples {
 		out.Window[i] = toAPISample(s)
 	}
