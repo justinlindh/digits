@@ -13,7 +13,7 @@ import (
 func TestPollHealthMatches(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","version":"1.9.1"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","version":"1.9.1"}`))
 	}))
 	defer srv.Close()
 
@@ -30,10 +30,10 @@ func TestPollHealthEventuallyMatches(t *testing.T) {
 		n := atomic.AddInt32(&hits, 1)
 		w.Header().Set("Content-Type", "application/json")
 		if n < 3 {
-			fmt.Fprint(w, `{"status":"ok","version":"1.9.0"}`)
+			_, _ = fmt.Fprint(w, `{"status":"ok","version":"1.9.0"}`)
 			return
 		}
-		fmt.Fprint(w, `{"status":"ok","version":"1.9.1"}`)
+		_, _ = fmt.Fprint(w, `{"status":"ok","version":"1.9.1"}`)
 	}))
 	defer srv.Close()
 
@@ -47,7 +47,7 @@ func TestPollHealthEventuallyMatches(t *testing.T) {
 func TestPollHealthTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"status":"ok","version":"0.0.0"}`)
+		_, _ = fmt.Fprint(w, `{"status":"ok","version":"0.0.0"}`)
 	}))
 	defer srv.Close()
 
@@ -67,7 +67,7 @@ func TestPollHealth5xxKeepsPolling(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"status":"ok","version":"1.9.1"}`)
+		_, _ = fmt.Fprint(w, `{"status":"ok","version":"1.9.1"}`)
 	}))
 	defer srv.Close()
 

@@ -69,7 +69,7 @@ func (c *GitHubClient) LatestReleaseWithETag(ctx context.Context, repo, tagPrefi
 	if err != nil {
 		return Release{}, fmt.Errorf("github request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusNotModified:

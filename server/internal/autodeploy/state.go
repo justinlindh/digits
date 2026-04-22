@@ -54,7 +54,7 @@ func (fs *FileStore) Read() (State, error) {
 		}
 		return State{}, fmt.Errorf("open state: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH); err != nil {
 		return State{}, fmt.Errorf("flock(sh): %w", err)
@@ -78,7 +78,7 @@ func (fs *FileStore) Write(s State) error {
 	if err != nil {
 		return fmt.Errorf("open lock: %w", err)
 	}
-	defer lockFile.Close()
+	defer func() { _ = lockFile.Close() }()
 	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("flock(ex): %w", err)
 	}
@@ -99,11 +99,11 @@ func (fs *FileStore) Write(s State) error {
 	enc := json.NewEncoder(tmp)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(s); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("encode: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("sync: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

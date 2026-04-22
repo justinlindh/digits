@@ -15,7 +15,7 @@ func TestLatestReleaseHappyPath(t *testing.T) {
 			return
 		}
 		w.Header().Set("ETag", `W/"abc"`)
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"tag_name":"firmware/v2.0.0","target_commitish":"aaa","draft":false,"prerelease":false},
 			{"tag_name":"server/v1.9.1","target_commitish":"bbb","draft":false,"prerelease":false},
 			{"tag_name":"server/v1.9.0","target_commitish":"ccc","draft":false,"prerelease":false}
@@ -64,7 +64,7 @@ func TestLatestReleaseETagNotModified(t *testing.T) {
 
 func TestLatestReleaseSkipsDraftsAndPrereleases(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[
+		_, _ = w.Write([]byte(`[
 			{"tag_name":"server/v2.0.0","draft":true,"target_commitish":"xxx"},
 			{"tag_name":"server/v1.9.9","prerelease":true,"target_commitish":"yyy"},
 			{"tag_name":"server/v1.9.1","target_commitish":"bbb"}
@@ -84,7 +84,7 @@ func TestLatestReleaseSkipsDraftsAndPrereleases(t *testing.T) {
 
 func TestLatestReleaseNoMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`[{"tag_name":"firmware/v1.0.0"}]`))
+		_, _ = w.Write([]byte(`[{"tag_name":"firmware/v1.0.0"}]`))
 	}))
 	defer srv.Close()
 

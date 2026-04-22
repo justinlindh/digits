@@ -38,7 +38,7 @@ func LoadConfig(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("open config: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	raw := map[string]string{}
 	sc := bufio.NewScanner(f)

@@ -30,7 +30,7 @@ func PollHealth(ctx context.Context, url, wantVersion string, interval time.Dura
 			lastErr = err
 			return false
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		lastStatus = resp.StatusCode
 		lastBody = string(b)
