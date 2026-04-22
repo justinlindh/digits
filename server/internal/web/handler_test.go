@@ -150,6 +150,28 @@ func TestPhonesPage_PairPanelTitle(t *testing.T) {
 	}
 }
 
+func TestPhonesPage_HandsetNameField(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		"Handset name",
+		"Kitchen · Grandma&#39;s bedroom · Garage",
+		"Most families name handsets by where they live",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("phones page missing %q", want)
+		}
+	}
+	if strings.Contains(body, ">Line name<") {
+		t.Errorf("phones page still shows old 'Line name' label")
+	}
+}
+
 func TestAddPhoneViaHTMX(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
