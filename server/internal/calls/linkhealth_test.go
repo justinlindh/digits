@@ -168,3 +168,116 @@ func TestHealthStoreFlushDisabledDefaultsFalse(t *testing.T) {
 		t.Fatal("expected flushDisabled default false")
 	}
 }
+
+func TestHealthStoreSubscribeReceivesSamples(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+	defer sub.Close()
+
+	loss := float32(0.5)
+	s.Record(1, "A", Sample{TS: time.Now(), LossPct: &loss})
+
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != SampleKind {
+			t.Fatalf("kind: got %v want SampleKind", ev.Kind)
+		}
+		if ev.Endpoint != "A" {
+			t.Fatalf("endpoint: got %q want A", ev.Endpoint)
+		}
+		if ev.Sample.LossPct == nil || *ev.Sample.LossPct != 0.5 {
+			t.Fatalf("sample loss: %+v", ev.Sample)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for sample event")
+	}
+}
+
+func TestHealthStoreSubscribeDropsOnFullBuffer(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+	defer sub.Close()
+
+	loss := float32(0.5)
+	for i := 0; i < 64; i++ {
+		s.Record(1, "A", Sample{TS: time.Now(), LossPct: &loss})
+	}
+
+	received := 0
+	for {
+		select {
+		case <-sub.C:
+			received++
+		default:
+			goto done
+		}
+	}
+done:
+	if received > 16 {
+		t.Fatalf("received more than buffer size: %d > 16", received)
+	}
+	if received == 0 {
+		t.Fatal("received zero events; broadcast never fired")
+	}
+}
+
+func TestHealthStoreEvictClosesSubscribers(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+
+	s.Evict(1)
+
+	deadline := time.After(time.Second)
+	sawEnded := false
+	for {
+		select {
+		case ev, ok := <-sub.C:
+			if !ok {
+				if !sawEnded {
+					t.Fatal("channel closed without EndedKind event")
+				}
+				return
+			}
+			if ev.Kind == EndedKind {
+				sawEnded = true
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for EndedKind + close")
+		}
+	}
+}
+
+func TestHealthStoreSubscribeOnMissingCallReturnsClosedChannel(t *testing.T) {
+	s := NewHealthStore(nil)
+	sub := s.Subscribe(999)
+	defer sub.Close()
+	select {
+	case _, ok := <-sub.C:
+		if ok {
+			t.Fatal("expected closed channel, got event")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected closed channel, got block")
+	}
+}
+
+func TestHealthStoreCloseSubscriptionIsIdempotent(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+	sub.Close()
+	sub.Close() // must not panic
+	loss := float32(0.5)
+	s.Record(1, "A", Sample{TS: time.Now(), LossPct: &loss})
+}
+
+func TestHealthStoreCloseAfterEvict(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+	s.Evict(1)
+	sub.Close() // must not panic
+}
