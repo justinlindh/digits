@@ -1,0 +1,207 @@
+package web
+
+import (
+	"encoding/json"
+	"html/template"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/line"
+)
+
+// an HTTP error response (404 to avoid leaking line existence).
+func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
+	ln, err := h.lineStore.GetByNumber(number)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		http.NotFound(w, r)
+		return nil
+	}
+	for _, hh := range households {
+		if hh.ID == ln.HouseholdID {
+			return ln
+		}
+	}
+	http.NotFound(w, r)
+	return nil
+}
+
+// ownedLinesForUser returns the lines owned by any household the user belongs
+// to, keyed by number, plus the primary household ID. Returns (nil, "", false)
+// if the user has no households or any lookup fails — caller writes 404, same
+// response shape as nonexistent.
+func (h *Handler) ownedLinesForUser(user *auth.User) (map[string]*line.Line, string, bool) {
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil {
+		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		return nil, "", false
+	}
+	if len(households) == 0 {
+		return nil, "", false
+	}
+	lines := make(map[string]*line.Line)
+	for _, hh := range households {
+		hhLines, err := h.lineStore.ListByHousehold(hh.ID)
+		if err != nil {
+			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			return nil, "", false
+		}
+		for i := range hhLines {
+			ln := hhLines[i]
+			lines[ln.Number] = &ln
+		}
+	}
+	return lines, households[0].ID, true
+}
+
+// requireCallEndpointOwnership verifies the authenticated user owns either
+// endpoint of the call (across ANY household the user belongs to). Returns
+// the call, the owned-lines map (keyed by number), the primary household ID,
+// and true on success. On any failure, writes 404 (unauthorized and
+// nonexistent are indistinguishable).
+//
+// Implementation detail: always performs the same sequence of DB queries
+// regardless of auth outcome, to avoid a timing side channel on call-id
+// enumeration. Linked households do NOT grant access to telemetry; only
+// direct household ownership of a call endpoint does.
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	// Always do both queries in the same order, regardless of miss reason.
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(user)
+	call, callErr := h.tracker.GetCall(callID)
+
+	if callErr != nil {
+		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	if !ok || call.ID == 0 {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+
+	_, ownsCaller := ownedLines[call.Caller]
+	_, ownsCallee := ownedLines[call.Callee]
+	if !ownsCaller && !ownsCallee {
+		http.NotFound(w, r)
+		return calls.Call{}, nil, "", false
+	}
+	return call, ownedLines, primaryHH, true
+}
+
+// ---- Link Health API ----
+
+// LinkHealthSample is the JSON representation of a single link-health
+
+// User.Name if set, else the email local-part, else the bare email.
+func userDisplayLabel(u *auth.User) string {
+	if u == nil {
+		return ""
+	}
+	if u.Name != "" {
+		return u.Name
+	}
+	if at := strings.IndexByte(u.Email, '@'); at > 0 {
+		return u.Email[:at]
+	}
+	return u.Email
+}
+
+// householdNumbers returns the set of phone numbers belonging to the
+// authenticated user's household. Returns nil if the user has no household.
+func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.householdStore == nil {
+		return nil
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		return nil
+	}
+	lines, err := h.lineStore.ListByHousehold(households[0].ID)
+	if err != nil {
+		return nil
+	}
+	nums := make(map[string]bool, len(lines))
+	for _, l := range lines {
+		nums[l.Number] = true
+	}
+	return nums
+}
+
+// householdContext returns the household name, call-history flag, and timezone location for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
+	if h.householdStore == nil {
+		return "", false, time.UTC
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return "", false, time.UTC
+	}
+	households, err := h.householdStore.GetForUser(user.ID)
+	if err != nil || len(households) == 0 {
+		return "", false, time.UTC
+	}
+	return households[0].Name, households[0].CallHistoryEnabled, households[0].Location()
+}
+
+func (h *Handler) callHistoryEnabled(r *http.Request) bool {
+	_, ch, _ := h.householdContext(r)
+	return ch
+}
+
+func (h *Handler) householdNameFromContext(r *http.Request) string {
+	name, _, _ := h.householdContext(r)
+	return name
+}
+
+func jsonError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
+}
+
+func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, name, data); err != nil {
+		slog.Error("template render failed", "template", name, "err", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+// layoutFor returns the layout template name for the current user's theme.
+// Falls back to direction C when no theme is set (unauthenticated or new user).
+func layoutFor(r *http.Request) string {
+	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeDialup {
+		return "layout-dialup.html"
+	}
+	return "layout-v2.html"
+}
+
+func isHTMX(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
+// ---- Call live detail ----

@@ -1,0 +1,391 @@
+package web
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"html"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/line"
+)
+
+// measurement returned by GET /api/call/{id}/link-health.
+type LinkHealthSample struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
+}
+
+// LinkHealthEndpointResp is the per-endpoint section of a LinkHealthResp.
+type LinkHealthEndpointResp struct {
+	Number      string             `json:"number"`
+	DisplayName string             `json:"display_name"`
+	Latest      *LinkHealthSample  `json:"latest,omitempty"`
+	Window      []LinkHealthSample `json:"window"`
+}
+
+// LinkHealthResp is the top-level response body for GET /api/call/{id}/link-health.
+type LinkHealthResp struct {
+	CallID    int64                  `json:"call_id"`
+	StartedAt time.Time              `json:"started_at"`
+	Caller    LinkHealthEndpointResp `json:"caller"`
+	Callee    LinkHealthEndpointResp `json:"callee"`
+}
+
+func toAPISample(s calls.Sample) LinkHealthSample {
+	return LinkHealthSample{
+		TS:       s.TS.UnixMilli(),
+		LossPct:  s.LossPct,
+		JitterMs: s.JitterMs,
+		RttMs:    s.RttMs,
+		ConnType: s.ConnType,
+		BytesIn:  s.BytesIn,
+		BytesOut: s.BytesOut,
+	}
+}
+
+func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, primaryHH, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	// Display-name resolution — same helpers as /calls page. No new data exposure.
+	// Linked-household names are shown for peers that the user already sees in
+	// their call log; the underlying auth check does not grant read access to
+	// calls the user was not part of.
+	var linkedIndex map[string]string
+	if primaryHH != "" {
+		linkedFamilies := h.buildLinkedFamilies(primaryHH)
+		linkedIndex = buildLinkedLineIndex(linkedFamilies)
+	}
+
+	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
+	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	resp.Caller = callerEndpoint
+	resp.Callee = calleeEndpoint
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("link_health encode failed", "call_id", callID, "err", err)
+	}
+}
+
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
+	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
+
+	// Display name resolution: owned line first (no extra DB query), then
+	// linked-index for peer names, then bare number as fallback.
+	if ln, ok := ownedLines[number]; ok && ln != nil {
+		out.DisplayName = ln.Name
+	} else {
+		out.DisplayName = resolvePeerName(number, linkedIndex)
+	}
+	if out.DisplayName == "" {
+		out.DisplayName = number
+	}
+
+	// Memory first.
+	windowMem := h.healthStore.Window(callID, number)
+	if len(windowMem) > 0 {
+		out.Window = make([]LinkHealthSample, len(windowMem))
+		for i, s := range windowMem {
+			out.Window[i] = toAPISample(s)
+		}
+		la := toAPISample(windowMem[len(windowMem)-1])
+		out.Latest = &la
+		return out, nil
+	}
+
+	// DB fallback.
+	dbSamples, err := h.healthStore.Readback(ctx, callID, number, 60)
+	if err != nil {
+		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
+	}
+	out.Window = make([]LinkHealthSample, len(dbSamples))
+	for i, s := range dbSamples {
+		out.Window[i] = toAPISample(s)
+	}
+	if len(dbSamples) > 0 {
+		la := toAPISample(dbSamples[len(dbSamples)-1])
+		out.Latest = &la
+	}
+	return out, nil
+}
+
+// sseHeartbeatInterval is how often we emit a synthetic heartbeat event
+// on the link-health stream. Clients use this for liveness detection:
+// absence of any event for >2x this interval triggers a "connection lost"
+// banner.
+const sseHeartbeatInterval = 15 * time.Second
+
+// handleCallLinkHealthStream opens an SSE stream for a call's telemetry.
+// Delivers:
+//   - one initial "sample" event per endpoint with the current snapshot
+//   - one "sample" event per future Record
+//   - one "disconnect" event if a user force-disconnects
+//   - one "ended" event when the call ends (any cause), then closes
+//   - periodic "heartbeat" events for client-side liveness
+//
+// Auth: same as the JSON endpoint (direct-endpoint-ownership). Ended calls
+// return 404 before any stream bytes are written.
+func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+	if call.Status == "ended" {
+		http.NotFound(w, r)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		slog.Error("SSE stream: ResponseWriter does not implement Flusher")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Compute the linked-families index once at subscribe time. It can't
+	// change mid-call (household membership changes don't retroactively
+	// apply to a live call), and buildLinkedFamilies + buildLinkedLineIndex
+	// together issue DB queries we don't want on the per-sample hot path.
+	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
+
+	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
+		slog.Debug("SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
+		return
+	}
+
+	sub := h.healthStore.Subscribe(callID)
+	defer sub.Close()
+
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				// Channel closed by Evict. Send one final ended event and return.
+				_ = writeSSE(w, "ended", renderEndedFragment(""))
+				flusher.Flush()
+				return
+			}
+			if err := h.writeEvent(w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
+				slog.Debug("SSE stream: write failed; client gone", "call_id", callID, "err", err)
+				return
+			}
+		case <-heartbeat.C:
+			if err := writeSSE(w, "heartbeat", "{}"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+// writeSSE emits one SSE event frame: "event: <name>\ndata: <data>\n\n".
+func writeSSE(w io.Writer, event, data string) error {
+	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+		return err
+	}
+	// Each line of data must be prefixed per the SSE spec.
+	for _, line := range strings.Split(data, "\n") {
+		if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprint(w, "\n")
+	return err
+}
+
+func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
+	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
+	if err != nil {
+		return err
+	}
+	if err := writeSSE(w, "sample", fragment); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
+}
+
+func (h *Handler) writeEvent(w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+	switch ev.Kind {
+	case calls.SampleKind:
+		callerEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Caller, linkedIndex, ownedLines)
+		if err != nil {
+			return err
+		}
+		calleeEp, err := h.buildLinkHealthEndpoint(context.Background(), call.ID, call.Callee, linkedIndex, ownedLines)
+		if err != nil {
+			return err
+		}
+		fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
+		if err != nil {
+			return err
+		}
+		if err := writeSSE(w, "sample", fragment); err != nil {
+			return err
+		}
+	case calls.DisconnectKind:
+		if err := writeSSE(w, "disconnect", renderEndedFragment(ev.EndedBy)); err != nil {
+			return err
+		}
+	case calls.EndedKind:
+		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
+			return err
+		}
+	}
+	flusher.Flush()
+	return nil
+}
+
+// linkedIndexForCall builds the linked-families index for display-name
+// resolution. Returns nil when the user belongs to no households.
+func (h *Handler) linkedIndexForCall(ctx context.Context, ownedLines map[string]*line.Line) map[string]string {
+	for _, ln := range ownedLines {
+		if ln != nil {
+			return buildLinkedLineIndex(h.buildLinkedFamilies(ln.HouseholdID))
+		}
+	}
+	return nil
+}
+
+// renderLinkHealthPanel executes the _call-live-panel.html template against
+// a LinkHealthResp and returns the rendered HTML.
+func (h *Handler) renderLinkHealthPanel(call calls.Call, caller, callee LinkHealthEndpointResp) (string, error) {
+	var buf bytes.Buffer
+	data := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt, Caller: caller, Callee: callee}
+	if err := h.tmplCallLivePanel.ExecuteTemplate(&buf, "call-live-panel", data); err != nil {
+		return "", fmt.Errorf("render call-live-panel: %w", err)
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// renderEndedFragment returns the small HTML shown when a call ends.
+func renderEndedFragment(endedBy string) string {
+	if endedBy != "" {
+		return fmt.Sprintf(`<div class="deck-ended">Ended by %s.</div>`, html.EscapeString(endedBy))
+	}
+	return `<div class="deck-ended">Call ended.</div>`
+}
+
+// handleCallDisconnect force-ends an active call. Any user whose household
+// owns either endpoint (direct ownership only; linked households do NOT
+// qualify) can trigger this. The server records the actor in calls.force_ended_by,
+// notifies any open SSE subscribers, sends hangup to both peers via the
+// relay, and calls Tracker.OnCallEnded for deterministic DB close.
+//
+// Idempotent: calling against an already-ended call returns 200 without
+// overwriting the audit column.
+func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	callID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	call, _, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	if !ok {
+		return
+	}
+
+	// Idempotency: if the call already ended, just return 200 without
+	// touching the audit column.
+	if call.Status == "ended" {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{}"))
+		return
+	}
+
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Record who force-ended the call BEFORE the teardown fires, so the
+	// audit row is in place even if we crash mid-teardown.
+	if err := h.tracker.MarkForceEnded(callID, user.ID); err != nil {
+		slog.Error("force-disconnect audit write failed", "call_id", callID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Notify SSE subscribers before teardown so open pages flip to terminal
+	// state immediately rather than flickering through a dropped stream.
+	label := userDisplayLabel(user)
+	h.healthStore.NotifyDisconnected(callID, label)
+
+	// Send hangup to both peers. Errors per-peer are logged in ForceHangup.
+	h.relay.ForceHangup(call.Caller, call.Callee)
+
+	// Close the DB row deterministically. OnCallEnded is idempotent; a
+	// peer-initiated hangup arriving later is a safe no-op.
+	if err := h.tracker.OnCallEnded(call.Caller, call.Callee); err != nil {
+		slog.Error("force-disconnect OnCallEnded failed", "call_id", callID, "err", err)
+		// Phones are hung up regardless; the status transition will happen
+		// when the next peer hangup arrives or during the daily cleanup.
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}"))
+}
+
+// userDisplayLabel returns the preferred name for an audit/display context:
