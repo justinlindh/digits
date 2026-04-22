@@ -57,6 +57,7 @@ type Controller struct {
 	digits         string
 	ownNumber      string
 	contactChecker ContactChecker
+	silentMode     bool // when true, onSignalRing suppresses SendRing(true)
 	// treatmentGen is incremented each time runPermanentSignalTreatment starts.
 	// The spawned goroutine captures the value and aborts on mismatch, so a
 	// hook-flap that re-enters off-hook treatment within ~4 min won't let the
@@ -102,6 +103,23 @@ func (c *Controller) SetContactChecker(cc ContactChecker) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.contactChecker = cc
+}
+
+// SetSilentMode updates the silent-mode flag. When newly true during an
+// active ring, the current bell is stopped (LED keeps blinking). When newly
+// false during an active ring, the bell does NOT start - the user would
+// find a mid-ring bell start jarring, and they can answer if they want
+// audio. Thread-safe.
+func (c *Controller) SetSilentMode(silent bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.silentMode == silent {
+		return
+	}
+	c.silentMode = silent
+	if silent && c.state == StateRINGING {
+		c.cb.SendRing(false)
+	}
 }
 
 // State returns the current FSM state (thread-safe).
@@ -324,7 +342,9 @@ func (c *Controller) onSignalRing() {
 		return
 	}
 	c.state = StateRINGING
-	c.cb.SendRing(true)
+	if !c.silentMode {
+		c.cb.SendRing(true)
+	}
 	c.cb.SendLED("BLINK")
 }
 

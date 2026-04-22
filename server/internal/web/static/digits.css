@@ -1188,6 +1188,55 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .show-sm { display: block; }
 }
 
+/* Ringer panel: checkbox-with-label row. Distinct from the .toggle pill-switch
+   used elsewhere; this is a plain native checkbox paired with text. */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--ink);
+}
+.checkbox-row__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* Silent-mode badge in the phones list. Intercom theme uses a muted bell
+   glyph (neutral grey, not alert-red) because silent is a chosen state,
+   not a problem state. The dialup theme overrides this with an amber LED. */
+.phone-silent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+  color: var(--ink-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.phone-silent__dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a7a63' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/><path d='M10 21a2 2 0 0 0 4 0'/><line x1='2' y1='2' x2='22' y2='22'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+/* Intercom hides the SILENT text label (the glyph carries the meaning and the
+   row is already dense). Dialup shows it. */
+.phone-silent__text {
+  display: none;
+}
+
 /* Settings two-column layout */
 .settings-layout {
   display: grid;

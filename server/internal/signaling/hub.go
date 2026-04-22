@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -8,6 +9,12 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+// ErrNotConnected is returned by SendTo and SendToHardware when the target
+// device has no active hub connection. Callers that treat "device offline" as
+// expected (e.g., best-effort pushes) can check for it with errors.Is and skip
+// logging.
+var ErrNotConnected = errors.New("not connected")
 
 type Conn struct {
 	WS         *websocket.Conn
@@ -86,7 +93,7 @@ func (h *Hub) Get(number string) *Conn {
 func (h *Hub) SendTo(number string, msg *Message) error {
 	conn := h.Get(number)
 	if conn == nil {
-		return fmt.Errorf("phone %s not connected", number)
+		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
 	data, err := msg.Marshal()
 	if err != nil {
@@ -105,7 +112,7 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	conn := h.hwConns[hardwareID]
 	h.mu.RUnlock()
 	if conn == nil {
-		return fmt.Errorf("hardware %s not connected", hardwareID)
+		return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
 	}
 	data, err := msg.Marshal()
 	if err != nil {

@@ -699,6 +699,187 @@ func TestPhoneVoiceStyleUnknownValueNormalizesToCopper(t *testing.T) {
 	}
 }
 
+func readSilentMode(t *testing.T, database *db.Database) bool {
+	t.Helper()
+	var raw bool
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE((settings->>'silent_mode')::bool, false) FROM lines WHERE number = '3140001'`,
+	).Scan(&raw); err != nil {
+		t.Fatalf("read silent_mode: %v", err)
+	}
+	return raw
+}
+
+func postSilentMode(t *testing.T, h *Handler, cookie *http.Cookie, value string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"silent_mode": {value}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/silent-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestPhoneSilentModeOnPersistsAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postSilentMode(t, h, cookie, "on", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	if !readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=true in db")
+	}
+}
+
+func TestPhoneSilentModeOffPersists(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup on: got %d", w.Code)
+	}
+	if !readSilentMode(t, database) {
+		t.Fatal("setup failed: expected silent_mode=true before turning off")
+	}
+	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("off: got %d", w.Code)
+	}
+	if readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=false in db after turning off")
+	}
+}
+
+func TestPhoneSilentModeMissingFieldTreatedAsOff(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup on: got %d", w.Code)
+	}
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/silent-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if readSilentMode(t, database) {
+		t.Fatal("expected silent_mode=false when form omits the key")
+	}
+}
+
+func TestPhoneSilentModeHTMXReturnsPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postSilentMode(t, h, cookie, "on", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="silent-mode-section"`) {
+		t.Fatalf("htmx response missing silent-mode-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, `name="silent_mode"`) {
+		t.Fatalf("htmx response missing silent_mode input:\n%s", body)
+	}
+	checkboxIdx := strings.Index(body, `name="silent_mode"`)
+	if checkboxIdx < 0 {
+		t.Fatalf("missing checkbox:\n%s", body)
+	}
+	tag := body[checkboxIdx:strings.Index(body[checkboxIdx:], ">")+checkboxIdx]
+	if !strings.Contains(tag, "checked") {
+		t.Errorf("expected checkbox checked after turning on: %q", tag)
+	}
+}
+
+func TestPhoneSilentModeMissingLineReturns404(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create("Silent Mode Missing", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	w := postSilentMode(t, h, cookie, "on", false)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneSilentModePushesToConnectedDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse pushed message: %v", err)
+		}
+		if msg.Type != signaling.TypeLineSettings {
+			t.Fatalf("expected %s push, got %s", signaling.TypeLineSettings, msg.Type)
+		}
+		if msg.LineSettings == nil || !msg.LineSettings.SilentMode {
+			t.Fatalf("expected silent_mode=true line_settings, got %+v", msg.LineSettings)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive line_settings push")
+	}
+}
+
+func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	// Line defaults to silent_mode=false on insert. Saving false again must be a no-op.
+	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case data := <-conn.Send:
+		t.Fatalf("expected no push on no-op save, got message: %s", string(data))
+	case <-time.After(100 * time.Millisecond):
+		// Expected: no push.
+	}
+}
+
 func TestPhoneVoiceStyleMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
@@ -1235,5 +1416,40 @@ func TestSettingsCRTModePost_Invalid(t *testing.T) {
 	// Default is 'connecting' for new users; invalid POST should leave it unchanged.
 	if got.CRTMode != auth.CRTModeConnecting {
 		t.Errorf("CRTMode = %q, want %q (unchanged after invalid POST)", got.CRTMode, auth.CRTModeConnecting)
+	}
+}
+
+func TestPhonesListShowsSilentBadgeWhenSilent(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup: got %d", w.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /phones: got %d, body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `class="phone-silent"`) {
+		t.Errorf("expected phone-silent badge in /phones HTML, body:\n%s", w.Body.String())
+	}
+}
+
+func TestPhonesListOmitsSilentBadgeWhenNotSilent(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `phone-silent`) {
+		t.Errorf("unexpected silent badge in /phones HTML when silent mode off")
 	}
 }
