@@ -254,14 +254,18 @@ func TestSpecSettings(t *testing.T) {
 		}
 	}
 
-	// Theme cards + every swatch hex value (Spec: explicit palettes).
-	// (Spec: "Intercom palette: #f5f1ea, #2e231b, #c48b3a. Dialup palette:
-	//  #0a3a8a, #7ab4ff, #f0c020.")
+	// Theme cards + every swatch hex value.
+	// Intercom stays on the shipped palette values, which match its
+	// canonical tokens. Dialup's swatches were reconciled to actual
+	// --dialup-chrome-l / --dialup-blue-dark / --dialup-gold so the
+	// preview matches what the theme actually renders (see the
+	// 2026-04-21 dialup-theme-port design: "palette tokens are
+	// canonical").
 	for _, want := range []string{
 		`class="theme-card`,
 		"theme-card__swatch",
 		"#f5f1ea", "#2e231b", "#c48b3a",
-		"#0a3a8a", "#7ab4ff", "#f0c020",
+		"#ece9d8", "#003da7", "#ffcc00",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("Settings theme section missing %q", want)

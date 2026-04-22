@@ -1306,15 +1306,77 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   }
 }
 
-/* Theme picker cards placeholder - see issue #214 for full dialup treatment */
-.theme-card { display: grid; grid-template-columns: 18px 60px 1fr auto; gap: 8px; padding: 6px; border: 2px inset var(--dialup-chrome); background: var(--dialup-chrome-l); align-items: center; }
-.theme-card + .theme-card { margin-top: 4px; }
-.theme-card--selected { background: var(--dialup-blue-light); }
-.theme-card__swatch { display: flex; height: 24px; border: 1px solid var(--dialup-bevel-lo); }
-.theme-card__swatch-strip { flex: 1; }
-.theme-card__body { display: flex; flex-direction: column; }
-.theme-card__name { font-weight: bold; font-size: 12px; }
-.theme-card__desc { font-size: 11px; color: var(--dialup-ink-muted); }
+/* --------- Settings theme picker cards ---------
+   Each theme card is a raised outset button (clickable) holding a
+   radio + three color swatches + theme name + description. The
+   currently selected theme card is pressed-in with a pale gold
+   fill, matching the dialup "this is the active selection"
+   vocabulary used elsewhere (e.g. .rooms__card--live). */
+
+.theme-card {
+  display: grid;
+  grid-template-columns: 20px 64px 1fr auto;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-lo);
+  border-bottom: 2px solid var(--dialup-bevel-lo);
+  align-items: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+.theme-card + .theme-card { margin-top: 6px; }
+
+.theme-card:hover { background: var(--dialup-chrome-l); }
+
+.theme-card input[type="radio"] {
+  margin: 0;
+  accent-color: var(--dialup-blue);
+}
+
+.theme-card--selected {
+  background: #fff7d0;
+  border-top-color: var(--dialup-bevel-lo);
+  border-left-color: var(--dialup-bevel-lo);
+  border-right-color: var(--dialup-bevel-hi);
+  border-bottom-color: var(--dialup-bevel-hi);
+}
+
+.theme-card__swatch {
+  display: flex;
+  height: 28px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+  border-left: 1px solid var(--dialup-bevel-lo);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+}
+
+.theme-card__swatch-strip {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.theme-card__name {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+
+.theme-card__desc {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  line-height: 1.4;
+}
 
 /* --------- Families neighborhood rows (two-pane address book) ---------
    Left identity pane on chrome background with a mini-glyph of the
