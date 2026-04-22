@@ -9,6 +9,12 @@ import (
 
 // Sample is one point of per-endpoint call telemetry. Pointer fields are
 // nullable: nil means "not available this sample."
+//
+// Ownership: once a Sample is passed to HealthStore.Record, its pointer
+// fields must not be mutated by the caller. The store retains the pointers
+// as-is (no deep copy on the hot path); concurrent readers will see
+// whatever the pointers point to. Callers should construct fresh
+// *float32 / *int64 values per sample and not reuse backing storage.
 type Sample struct {
 	TS       time.Time
 	LossPct  *float32

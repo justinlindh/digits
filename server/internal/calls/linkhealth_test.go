@@ -57,14 +57,47 @@ func TestHealthStoreEvict(t *testing.T) {
 	}
 }
 
-func TestHealthStoreConcurrentWriters(t *testing.T) {
+func TestHealthStoreConcurrentWritersSameRing(t *testing.T) {
+	// Multiple goroutines hammer the SAME (callID, endpoint) ring to
+	// exercise in-ring contention under the per-call mutex. This is the
+	// contract Record documents: safe for concurrent use.
+	s := NewHealthStore(nil)
+	var wg sync.WaitGroup
+	const writers = 4
+	const samplesPerWriter = 500
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < samplesPerWriter; i++ {
+				s.Record(1, "A", sample(int64(w)*100000+int64(i), float32(i)))
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	// Sanity: ring holds ringCapacity samples and latest() returns one.
+	win := s.Window(1, "A")
+	if len(win) != ringCapacity {
+		t.Fatalf("window size: got %d want %d", len(win), ringCapacity)
+	}
+	a, _ := s.Latest(1, "A", "B")
+	if a == nil {
+		t.Fatalf("Latest returned nil after %d concurrent samples", writers*samplesPerWriter)
+	}
+}
+
+func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
+	// Spread goroutines across calls and endpoints so every callID in
+	// [1,4] ends up with samples on BOTH "A" and "B". Exercises top-level
+	// map races + per-call-map-creation races.
 	s := NewHealthStore(nil)
 	var wg sync.WaitGroup
 	for w := 0; w < 8; w++ {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
-			callID := int64(w/2 + 1) // calls 1-4, two goroutines each
+			callID := int64(w/2 + 1) // w=0,1->1 ; 2,3->2 ; 4,5->3 ; 6,7->4
 			endpoint := "A"
 			if w%2 == 1 {
 				endpoint = "B"
