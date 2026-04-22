@@ -266,6 +266,17 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 	return
 }
 
+// NewGitHubReleasesWithIndex returns a GitHubReleases prepopulated with
+// the given index. Intended for tests that do not want to hit the real
+// API. The returned instance does not poll.
+func NewGitHubReleasesWithIndex(idx *ReleaseIndex) *GitHubReleases {
+	g := &GitHubReleases{}
+	g.mu.Lock()
+	g.cached = idx
+	g.mu.Unlock()
+	return g
+}
+
 // stripGroomedSentinel removes the idempotency marker the release-groom
 // workflow prepends to groomed release bodies. Leaves non-groomed bodies
 // untouched.
