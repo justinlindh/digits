@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/email"
 )
 
 type Action string
@@ -77,16 +80,12 @@ type GitHubReleases interface {
 	LatestReleaseWithETag(ctx context.Context, repo, prefix, etag string) (Release, error)
 }
 
-type MailerIface interface {
-	Send(in EmailInput) error
-}
-
 type Deployer struct {
 	Cfg    Config
 	GH     GitHubReleases
 	Runner Runner
 	Health HealthPoller
-	Mailer MailerIface
+	Mailer email.Sender
 	Store  Store
 	Logger *slog.Logger
 	Now    func() time.Time
@@ -151,7 +150,11 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 		d.log().Error("deploy failed", "err", err, "step", step)
 
 		if prevVersion != "" && step.needsRevert() {
-			if revertErr := d.deployVersion(ctx, prevVersion, d.Cfg.RevertHealthTimeout); revertErr != nil {
+			// Revert must not inherit a cancelled parent context: a user-
+			// interrupted forward deploy would otherwise escalate to CRITICAL
+			// without actually trying to bring the old container back.
+			revertCtx := context.WithoutCancel(ctx)
+			if revertErr := d.deployVersion(revertCtx, prevVersion, d.Cfg.RevertHealthTimeout); revertErr != nil {
 				d.log().Error("revert also failed", "err", revertErr)
 				state.LastAttemptStatus = StatusCritical
 				state.LastAttemptError = fmt.Sprintf("deploy: %v; revert: %v", err, revertErr)
@@ -251,9 +254,10 @@ func (d *Deployer) finalize(state *State, rel Release, errorClass string) {
 
 	body := fmt.Sprintf("tag: %s\ncommit: %s\nstatus: %s\nstep: %s\nerror: %s\n",
 		rel.TagName, rel.CommitSHA, state.LastAttemptStatus, errorClass, state.LastAttemptError)
-	if err := d.Mailer.Send(EmailInput{
-		To: d.Cfg.AlertTo, Subject: subject, Body: body,
-	}); err != nil {
+	// email.Sender expects HTML; wrap in <pre> so newlines render and escape
+	// the payload so docker/git error text can't break the markup.
+	htmlBody := "<pre>" + html.EscapeString(body) + "</pre>"
+	if err := d.Mailer.Send(d.Cfg.AlertTo, subject, htmlBody); err != nil {
 		d.log().Error("email send failed", "err", err)
 		return
 	}

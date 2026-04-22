@@ -19,6 +19,7 @@ type Config struct {
 	HealthURLs          []string
 	GHCRUsername        string
 	GHCRToken           string
+	GitHubToken         string
 	StateFile           string
 	SMTPHost            string
 	SMTPPort            string
@@ -80,6 +81,7 @@ func LoadConfig(path string) (Config, error) {
 	}{
 		{"GHCR_TOKEN", "GHCR_TOKEN_FILE", &c.GHCRToken},
 		{"SMTP_PASS", "SMTP_PASS_FILE", &c.SMTPPass},
+		{"GITHUB_TOKEN", "GITHUB_TOKEN_FILE", &c.GitHubToken},
 	} {
 		if p := raw[r.pathKey]; p != "" {
 			b, err := os.ReadFile(p)

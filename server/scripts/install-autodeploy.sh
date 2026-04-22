@@ -45,6 +45,9 @@ SERVICES=signald admind
 HEALTH_URLS=http://localhost:8090/healthz http://localhost:9094/healthz
 GHCR_USERNAME=justinlindh
 GHCR_TOKEN_FILE=/etc/digits-autodeploy/ghcr_token
+# Optional: path to a read-only GitHub PAT for the releases API. With this set,
+# the rate limit goes from 60/hr (unauthenticated) to 5000/hr. Not required.
+# GITHUB_TOKEN_FILE=/etc/digits-autodeploy/github_token
 STATE_FILE=/var/lib/digits-autodeploy/state.json
 SMTP_HOST=${SMTP_HOST_DEFAULT:-CHANGEME}
 SMTP_PORT=${SMTP_PORT_DEFAULT}

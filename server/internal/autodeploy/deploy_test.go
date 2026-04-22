@@ -37,13 +37,19 @@ func (m *mockRunner) Run(ctx context.Context, spec RunSpec) (RunOutput, error) {
 	return RunOutput{}, nil
 }
 
+type sentEmail struct {
+	To      string
+	Subject string
+	Body    string
+}
+
 type mockMailer struct {
-	sent []EmailInput
+	sent []sentEmail
 	err  error
 }
 
-func (m *mockMailer) Send(in EmailInput) error {
-	m.sent = append(m.sent, in)
+func (m *mockMailer) Send(to, subject, htmlBody string) error {
+	m.sent = append(m.sent, sentEmail{To: to, Subject: subject, Body: htmlBody})
 	return m.err
 }
 

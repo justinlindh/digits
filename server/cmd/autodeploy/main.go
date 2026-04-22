@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/justinlindh/digits/server/internal/autodeploy"
+	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -47,8 +48,8 @@ func main() {
 		logger.Info("cleared spin-protection")
 	}
 
-	gh := autodeploy.NewGitHubClient("", "")
-	mailer := autodeploy.NewMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom, nil)
+	gh := autodeploy.NewGitHubClient("", cfg.GitHubToken)
+	mailer := email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom)
 
 	d := &autodeploy.Deployer{
 		Cfg:    cfg,
