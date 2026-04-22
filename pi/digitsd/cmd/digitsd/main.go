@@ -1028,6 +1028,15 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	}
 }
 
+// resetPicoHardware clears any residual ring or LED state on the Pico in case
+// the Pi rebooted mid-call. Safe no-op on clean boots where none of these
+// hardware states were active.
+func resetPicoHardware(sp *phone.SerialPort) {
+	slog.Info("pico: clearing residual hardware state on startup")
+	sp.Ring(false)
+	sp.LED("OFF")
+}
+
 func main() {
 	flag.Parse()
 
@@ -1229,6 +1238,13 @@ func main() {
 		if !hookOk {
 			log.Fatal("hook invert: failed after 3 attempts — refusing to run with wrong hook polarity")
 		}
+	}
+
+	// Clear any residual Pico hardware state from before the last reboot.
+	// If the Pi crashed mid-ring the Pico keeps ringing until told otherwise;
+	// this is a safe no-op on clean boots.
+	if postOk {
+		resetPicoHardware(sp)
 	}
 
 	// 2. Open ALSA playback (direct hardware, no dmix)
