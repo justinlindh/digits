@@ -66,6 +66,8 @@ Sign in by visiting `http://localhost:<SIGNALD_ADDR port>/auth/dev-session?email
 
 `make dev-seed` is idempotent -- re-running never duplicates. `make dev-down && make dev-up` does a full reset. Pass `-minimal` to `go run ./cmd/devseed/` directly if you only want the primary user with no lines or links (e.g. for testing onboarding flows).
 
+When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static/` relative to its CWD) instead of the embedded FS, so CSS and JS edits are visible on reload without a rebuild. Template edits still require restart (they are parsed at startup). Production builds always use the embedded FS.
+
 Prefer this over hand-running `go run ./cmd/signald/` with a local DB; `dev-up` handles the Postgres container, migrations, and seeding as one command.
 
 ## Linting
