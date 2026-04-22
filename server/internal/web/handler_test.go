@@ -942,3 +942,19 @@ func TestSettingsPage_ThemeSwatches(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsPage_PrivacyCopy(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "kids deserve the same phone privacy you grew up with") {
+		t.Errorf("settings privacy copy not updated")
+	}
+	if strings.Contains(body, "kids deserve the same phone privacy you had growing up") {
+		t.Errorf("settings page still shows old privacy copy")
+	}
+}
