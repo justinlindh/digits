@@ -112,6 +112,11 @@
     document.body.addEventListener('htmx:sseMessage', function (ev) {
       if (ev.detail && (ev.detail.type === 'ended' || ev.detail.type === 'disconnect')) {
         clearInterval(iv);
+        // Refresh after a short delay so the server re-renders the page
+        // in postmortem mode (End-call button hidden, CONNECTED indicator
+        // gone, terminal chip in the header). The inline swap handles the
+        // panel; the reload handles the header and theme chrome.
+        setTimeout(function () { location.reload(); }, 800);
       }
     });
   })();
