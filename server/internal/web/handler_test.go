@@ -1126,3 +1126,75 @@ func TestLinksPage_InvitePostcard(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsCRTModePost(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	// Reset CRTMode to the default so the assertion is meaningful even when
+	// the shared test user was mutated by a prior test in the same run.
+	if err := authStore.SetCRTMode(user.ID, auth.CRTModeConnecting); err != nil {
+		t.Fatalf("reset CRTMode: %v", err)
+	}
+
+	form := url.Values{"crt_mode": {"all"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/crt-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/settings?saved=1" {
+		t.Errorf("redirect = %q, want /settings?saved=1", loc)
+	}
+
+	got, err := authStore.GetUserByID(user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.CRTMode != auth.CRTModeAll {
+		t.Errorf("CRTMode = %q, want %q", got.CRTMode, auth.CRTModeAll)
+	}
+}
+
+func TestSettingsCRTModePost_Invalid(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	// Reset CRTMode to the default so we can assert the invalid POST does
+	// not change it, regardless of state left by earlier tests.
+	if err := authStore.SetCRTMode(user.ID, auth.CRTModeConnecting); err != nil {
+		t.Fatalf("reset CRTMode: %v", err)
+	}
+
+	form := url.Values{"crt_mode": {"bogus"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/crt-mode", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303 redirect, got %d", w.Code)
+	}
+
+	got, err := authStore.GetUserByID(user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	// Default is 'connecting' for new users; invalid POST should leave it unchanged.
+	if got.CRTMode != auth.CRTModeConnecting {
+		t.Errorf("CRTMode = %q, want %q (unchanged after invalid POST)", got.CRTMode, auth.CRTModeConnecting)
+	}
+}

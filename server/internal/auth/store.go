@@ -4,12 +4,19 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/device"
 	_ "github.com/lib/pq"
 )
+
+// ErrUserNotFound is returned by GetUserBy* when no matching row exists.
+// Callers that want find-or-create semantics must check for this explicitly
+// so that real DB errors (connection loss, context cancellation, etc.) are
+// not silently treated as "user missing".
+var ErrUserNotFound = errors.New("user not found")
 
 // User represents a registered user account.
 type User struct {
@@ -18,6 +25,7 @@ type User struct {
 	Name        string
 	GoogleID    *string
 	Theme       Theme
+	CRTMode     CRTMode
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
 }
@@ -59,9 +67,9 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 	u := &User{}
 	err := s.db.QueryRow(
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, theme, created_at, last_login_at`,
+		 RETURNING id, email, name, google_id, theme, crt_mode, created_at, last_login_at`,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -72,11 +80,11 @@ func (s *Store) CreateUser(email, name string, googleID *string) (*User, error) 
 func (s *Store) GetUserByEmail(email string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found")
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -88,11 +96,11 @@ func (s *Store) GetUserByEmail(email string) (*User, error) {
 func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE google_id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE google_id = $1`,
 		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found")
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -104,11 +112,11 @@ func (s *Store) GetUserByGoogleID(googleID string) (*User, error) {
 func (s *Store) GetUserByID(id string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRow(
-		`SELECT id, email, name, google_id, theme, created_at, last_login_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CreatedAt, &u.LastLoginAt)
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("user not found")
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrUserNotFound
 	}
 	if err != nil {
 		return nil, err
@@ -134,6 +142,15 @@ func (s *Store) SetTheme(userID string, theme Theme) error {
 		return fmt.Errorf("invalid theme: %q", theme)
 	}
 	_, err := s.db.Exec(`UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
+	return err
+}
+
+// SetCRTMode updates the user's selected CRT bezel mode.
+func (s *Store) SetCRTMode(userID string, mode CRTMode) error {
+	if !mode.Valid() {
+		return fmt.Errorf("invalid crt mode: %q", mode)
+	}
+	_, err := s.db.Exec(`UPDATE users SET crt_mode = $1 WHERE id = $2`, mode, userID)
 	return err
 }
 
@@ -167,7 +184,7 @@ func (s *Store) ValidateSession(token string) (*Session, error) {
 		 WHERE token_hash = $1 AND expires_at > NOW()`,
 		hash,
 	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("invalid or expired session")
 	}
 	if err != nil {
@@ -223,7 +240,7 @@ func (s *Store) ValidateMagicLink(token string) (string, error) {
 		 RETURNING email`,
 		hash,
 	).Scan(&email)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("invalid, expired, or already used magic link")
 	}
 	if err != nil {

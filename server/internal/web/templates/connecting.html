@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connecting - Digits</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/dialup.css">
+<link rel="stylesheet" href="/static/connecting.css">
+</head>
+<body class="dialup{{if and .User (ne .User.CRTMode "off")}} crt-page{{end}}"
+      data-household="{{.HouseholdName}}"
+      data-version="{{.Version}}">
+
+<div class="crt" role="main" aria-label="Dial-up connection">
+  <div class="crt__screen">
+
+    <section class="dialer" id="dialer" data-state="idle" aria-live="polite">
+
+      <header class="dialer__title">
+        <span class="dialer__title-icon" aria-hidden="true"></span>
+        <span class="dialer__title-app">Dial-Up Connection {{if .HouseholdName}}{{.HouseholdName}}{{else}}Digits Online{{end}}</span>
+        <span class="dialer__title-btns" aria-hidden="true">
+          <span class="dialer__title-btn">_</span>
+          <span class="dialer__title-btn">&#9634;</span>
+          <span class="dialer__title-btn">&#10005;</span>
+        </span>
+      </header>
+
+      <div class="dialer__body">
+
+        <div class="dialer__hero">
+          <div class="dialer__modem" aria-hidden="true">
+            <span class="dialer__modem-leds">
+              <span class="dialer__modem-led" data-led="pwr"></span>
+              <span class="dialer__modem-led" data-led="rdy"></span>
+              <span class="dialer__modem-led" data-led="txd"></span>
+              <span class="dialer__modem-led" data-led="rxd"></span>
+              <span class="dialer__modem-led" data-led="cd"></span>
+              <span class="dialer__modem-led" data-led="oh"></span>
+            </span>
+          </div>
+          <div class="dialer__hero-copy">
+            <p class="dialer__network-label">CONNECTING TO</p>
+            <h1 class="dialer__network">Digits Online {{if .HouseholdName}}{{.HouseholdName}}{{end}}</h1>
+            <p class="dialer__phone"><b>555-6390</b> &middot; v.90 &middot; 56 000 bps</p>
+          </div>
+        </div>
+
+        <div class="dialer__status-line">
+          <span class="dialer__spinner" id="spinner" aria-hidden="true"></span>
+          <span>Status: <b id="status-text">Ready to dial.</b></span>
+        </div>
+
+        <div class="dialer__progress" id="progress" aria-hidden="true"></div>
+
+        <div class="dialer__log-wrap" role="log" aria-label="Connection log">
+          <ol class="dialer__log" id="log"></ol>
+        </div>
+
+        <div class="dialer__foot">
+          <span class="dialer__foot-meta">
+            Number: <b>555-6390</b> &middot; Protocol: <b>PPP</b> &middot; Tone dialing
+          </span>
+          <button type="button" class="dialer__connect" id="connect-btn">
+            &#9654; Connect
+          </button>
+        </div>
+
+        <p class="dialer__hint" id="hint">Click <b>Connect</b> to dial in. Turn your speakers on for the full experience.</p>
+
+        <p class="dialer__skip-wrap">
+          <a href="/" class="dialer__skip" id="skip-btn">Skip to dashboard &rarr;</a>
+        </p>
+
+      </div>
+
+      <footer class="dialer__statusbar">
+        <span class="dot" id="sb-dot"></span>
+        <span id="sb-conn">Not connected</span>
+        <span class="sep">&middot;</span>
+        <span class="num" id="sb-bps">-</span>
+        <span class="sep">&middot;</span>
+        <span>Account: <b>{{if .User}}{{.User.Email}}{{end}}</b></span>
+        <span class="spacer"></span>
+        <span class="num">{{.Version}}</span>
+      </footer>
+
+    </section>
+
+  </div>
+  <div class="crt__brand" aria-hidden="true">D I G I T S  &middot;  O N L I N E</div>
+</div>
+
+<audio id="dialup-audio" preload="auto" src="/static/audio/dialup.m4a"></audio>
+<script src="/static/connecting.js"></script>
+</body>
+</html>

@@ -193,6 +193,46 @@
   </section>
   {{end}}
 
+  <!-- Dialup theme options -->
+  {{if and .User (eq .User.Theme "dialup")}}
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Dialup theme options</h2>
+      <span class="panel__title-sub">Where the CRT monitor bezel appears.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/crt-mode" method="POST" class="stack-md">
+        <label class="radio-card">
+          <input type="radio" name="crt_mode" value="off" {{if eq .User.CRTMode "off"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Off
+          </div>
+          <p class="radio-card__desc">No CRT bezel anywhere. Plain windows on the desktop.</p>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="crt_mode" value="connecting" {{if eq .User.CRTMode "connecting"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Connecting page only
+            <span class="radio-card__meta">default</span>
+          </div>
+          <p class="radio-card__desc">The dial-in screen wears the CRT. Every other page looks normal.</p>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="crt_mode" value="all" {{if eq .User.CRTMode "all"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            All pages
+          </div>
+          <p class="radio-card__desc">The whole app lives inside the CRT monitor. Most immersive.</p>
+        </label>
+        <button type="submit" class="btn btn--primary">Save</button>
+      </form>
+    </div>
+  </section>
+  {{end}}
+
   <!-- Privacy -->
   <section id="privacy" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">

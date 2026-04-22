@@ -1,0 +1,327 @@
+/* =========================================================================
+   /connecting — dial-up dialing intro. Lives inside a CRT screen (or not,
+   depending on body.crt-page). Consumes tokens from dialup.css.
+   ========================================================================= */
+
+html, body {
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+body.dialup {
+  padding: 0;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+
+/* When CRT is off, center the dialer directly on the teal desktop. */
+body.dialup:not(.crt-page) {
+  background: var(--dialup-desktop);
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+.dialer {
+  position: relative;
+  z-index: 2;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  box-shadow: 3px 3px 0 rgba(0,0,0,0.45);
+  width: min(540px, 100%);
+  display: flex;
+  flex-direction: column;
+}
+.dialer__title {
+  background: linear-gradient(90deg, var(--dialup-blue-dark), var(--dialup-blue) 60%, var(--dialup-blue-light));
+  color: #fff;
+  padding: 3px 4px 3px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: bold;
+  font-size: 12px;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.35);
+  min-height: 22px;
+}
+.dialer__title-icon {
+  width: 14px; height: 14px;
+  background:
+    radial-gradient(circle at 30% 30%, #fff 0 2px, transparent 2.5px),
+    conic-gradient(var(--dialup-gold) 0 25%, var(--dialup-accent-red) 0 50%, var(--dialup-accent-grn) 0 75%, var(--dialup-blue-light) 0 100%);
+  border: 1px solid #000;
+}
+.dialer__title-app { flex: 1; }
+.dialer__title-btns { display: flex; gap: 2px; }
+.dialer__title-btn {
+  width: 18px; height: 16px;
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  color: #000;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.dialer__body {
+  padding: 18px 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dialer__hero { display: flex; align-items: center; gap: 14px; }
+.dialer__modem {
+  flex-shrink: 0;
+  width: 64px;
+  height: 44px;
+  background: linear-gradient(180deg, #2a2a2a, #161616);
+  border-top: 2px solid #4a4a4a;
+  border-left: 2px solid #4a4a4a;
+  border-right: 2px solid #000;
+  border-bottom: 2px solid #000;
+  position: relative;
+  box-shadow: inset 0 -6px 0 rgba(0,0,0,0.4);
+}
+.dialer__modem-leds {
+  position: absolute;
+  top: 6px; left: 8px;
+  width: 48px; height: 4px;
+  display: flex; gap: 4px;
+}
+.dialer__modem-led {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: #330000;
+  box-shadow: inset 0 0 2px rgba(0,0,0,0.6);
+}
+.dialer__modem-led.is-on {
+  background: #ff2a0f;
+  box-shadow: 0 0 4px #ff5030, inset 0 0 1px #fff;
+}
+.dialer__modem-led.is-on--grn {
+  background: #28e030;
+  box-shadow: 0 0 4px #50ff60, inset 0 0 1px #fff;
+}
+.dialer__modem::after {
+  content: "";
+  position: absolute;
+  bottom: 6px; left: 8px; right: 8px; height: 4px;
+  background: repeating-linear-gradient(90deg, #0c0c0c 0 2px, #2a2a2a 2px 4px);
+}
+
+.dialer__hero-copy { flex: 1; min-width: 0; }
+.dialer__network-label {
+  font-size: 10px;
+  font-weight: bold;
+  color: var(--dialup-ink-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 0 0 2px;
+}
+.dialer__network {
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  margin: 0;
+  line-height: 1.15;
+}
+.dialer__phone {
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  color: var(--dialup-ink-soft);
+  margin: 2px 0 0;
+}
+.dialer__phone b { color: var(--dialup-blue-dark); }
+
+.dialer__status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dialup-ink);
+}
+.dialer__status-line b {
+  color: var(--dialup-blue-dark);
+  letter-spacing: 0.02em;
+}
+.dialer__spinner {
+  width: 14px; height: 14px;
+  display: inline-block;
+  background: conic-gradient(from 0deg, var(--dialup-blue-dark), transparent 70%);
+  border-radius: 50%;
+  animation: dialer-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes dialer-spin { to { transform: rotate(360deg); } }
+.dialer__spinner--done {
+  background: var(--dialup-accent-grn);
+  animation: none;
+  box-shadow: 0 0 4px var(--dialup-accent-grn);
+}
+
+.dialer__progress {
+  height: 18px;
+  background: #fff;
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  padding: 2px;
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+}
+.dialer__progress-cell {
+  flex: 1;
+  background: var(--dialup-chrome-l);
+  transition: background 0.1s;
+}
+.dialer__progress-cell.is-filled {
+  background: linear-gradient(180deg, var(--dialup-blue), var(--dialup-blue-dark));
+}
+
+.dialer__log-wrap {
+  background: #000;
+  border-top: 1px solid var(--dialup-bevel-ll);
+  border-left: 1px solid var(--dialup-bevel-ll);
+  border-right: 1px solid var(--dialup-bevel-hi);
+  border-bottom: 1px solid var(--dialup-bevel-hi);
+  padding: 6px 8px;
+  height: 128px;
+  overflow: hidden;
+  position: relative;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #7ad77a;
+  text-shadow: 0 0 4px rgba(122, 215, 122, 0.5);
+}
+.dialer__log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  right: 8px;
+}
+.dialer__log li {
+  white-space: pre;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.08s ease, transform 0.12s ease;
+}
+.dialer__log li.is-shown {
+  opacity: 1;
+  transform: translateY(0);
+}
+.dialer__log li .tag { color: #ffcc00; }
+.dialer__log li .err { color: #ff5050; }
+.dialer__log li .ok  { color: #50ff80; }
+.dialer__log li .caret {
+  display: inline-block;
+  width: 7px;
+  background: #7ad77a;
+  height: 1em;
+  vertical-align: -2px;
+  animation: dialer-caret 1s steps(2, end) infinite;
+}
+@keyframes dialer-caret { 50% { background: transparent; } }
+
+.dialer__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.dialer__foot-meta { font-size: 11px; color: var(--dialup-ink-muted); }
+.dialer__foot-meta b { color: var(--dialup-ink); }
+
+.dialer__connect {
+  padding: 10px 26px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  background: linear-gradient(180deg, var(--dialup-gold), var(--dialup-gold-dark));
+  border-top: 2px solid #fff6c0;
+  border-left: 2px solid #fff6c0;
+  border-right: 2px solid #8a6800;
+  border-bottom: 2px solid #8a6800;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  text-shadow: 1px 1px 0 rgba(255,255,255,0.4);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+}
+.dialer__connect:hover { background: linear-gradient(180deg, #ffe54a, var(--dialup-gold-dark)); }
+.dialer__connect:active {
+  border-top: 2px solid #8a6800;
+  border-left: 2px solid #8a6800;
+  border-right: 2px solid #fff6c0;
+  border-bottom: 2px solid #fff6c0;
+}
+.dialer__connect[disabled] { opacity: 0.6; cursor: not-allowed; }
+
+.dialer[data-state="idle"] .dialer__progress,
+.dialer[data-state="idle"] .dialer__log-wrap {
+  opacity: 0.5;
+  filter: saturate(0.6);
+  pointer-events: none;
+}
+
+.dialer__hint {
+  font-size: 11px;
+  color: var(--dialup-ink-muted);
+  font-style: italic;
+  text-align: center;
+  margin: 0;
+}
+
+.dialer__skip-wrap { text-align: center; margin: 0; }
+.dialer__skip {
+  font-size: 11px;
+  color: var(--dialup-blue);
+  text-decoration: underline;
+}
+.dialer__skip:hover { color: var(--dialup-blue-dark); }
+
+.dialer__statusbar {
+  background: var(--dialup-chrome);
+  border-top: 1px solid var(--dialup-bevel-hi);
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--dialup-ink-soft);
+}
+.dialer__statusbar .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--dialup-chrome-d);
+}
+.dialer__statusbar .dot.on  { background: var(--dialup-accent-grn); box-shadow: 0 0 4px var(--dialup-accent-grn); }
+.dialer__statusbar .sep { color: var(--dialup-ink-muted); }
+.dialer__statusbar .spacer { flex: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dialer__log li { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .dialer { width: min(420px, 100%); }
+  .dialer__body { padding: 14px 14px 12px; gap: 10px; }
+  .dialer__network { font-size: 13px; }
+  .dialer__log-wrap { height: 96px; }
+}

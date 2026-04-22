@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -95,12 +96,16 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 
 	// Find or create user
 	user, err := h.store.GetUserByEmail(emailAddr)
-	if err != nil {
+	if errors.Is(err, ErrUserNotFound) {
 		user, err = h.store.CreateUser(emailAddr, "", nil)
 		if err != nil {
 			http.Error(w, "failed to create user", http.StatusInternalServerError)
 			return
 		}
+	} else if err != nil {
+		slog.Error("magic link verify: lookup user", "err", err)
+		http.Error(w, "failed to look up user", http.StatusInternalServerError)
+		return
 	}
 
 	if err := h.store.UpdateLastLogin(user.ID); err != nil {
@@ -144,12 +149,16 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 
 	// Find or create user (same pattern as HandleMagicLinkVerify)
 	user, err := h.store.GetUserByEmail(emailAddr)
-	if err != nil {
+	if errors.Is(err, ErrUserNotFound) {
 		user, err = h.store.CreateUser(emailAddr, "", nil)
 		if err != nil {
 			http.Error(w, "failed to create user", http.StatusInternalServerError)
 			return
 		}
+	} else if err != nil {
+		slog.Error("dev-session: lookup user", "err", err)
+		http.Error(w, "failed to look up user", http.StatusInternalServerError)
+		return
 	}
 
 	if err := h.store.UpdateLastLogin(user.ID); err != nil {
@@ -179,11 +188,12 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginRedirectFor returns the URL to redirect a newly-authenticated user to.
-// For dial-up theme users, the welcome=1 query param triggers the login
-// greeting sound in layout-dialup.html; other themes get a plain "/".
+// For dial-up theme users, /connecting renders a modem-dialing intro whose
+// Connect button provides the user gesture needed for post-auth audio.
+// All other themes go straight to the dashboard.
 func loginRedirectFor(u *User) string {
 	if u != nil && u.Theme == ThemeDialup {
-		return "/?welcome=1"
+		return "/connecting"
 	}
 	return "/"
 }
