@@ -56,7 +56,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store,
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":0",
-	}, authStore, authHandlers, googleAuth, householdStore, nil, nil, nil, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, nil, nil, nil, "", "", nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
