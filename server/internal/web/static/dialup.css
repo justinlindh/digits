@@ -1583,6 +1583,10 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   flex-wrap: wrap;
 }
 
+/* Chips are <span> tags -- decorative summary, not navigation. The
+   intercom theme treats them the same (no hover, no press). Default
+   cursor avoids the text-select I-beam that <span> would otherwise
+   get on mouseover. */
 .connected-row__chip {
   display: inline-flex;
   gap: 6px;
@@ -1595,21 +1599,9 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   font-size: 11px;
   font-weight: bold;
   color: var(--dialup-ink);
-  text-decoration: none;
   align-items: center;
   line-height: 1.2;
-}
-
-.connected-row__chip:hover {
-  background: var(--dialup-chrome-l);
-  text-decoration: none;
-}
-
-.connected-row__chip:active {
-  border-top-color: var(--dialup-bevel-lo);
-  border-left-color: var(--dialup-bevel-lo);
-  border-right-color: var(--dialup-bevel-hi);
-  border-bottom-color: var(--dialup-bevel-hi);
+  cursor: default;
 }
 
 .connected-row__chip svg {
