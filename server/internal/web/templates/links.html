@@ -11,6 +11,7 @@
   {{if .Accepted}}<div class="banner banner--ok">Family connected successfully.</div>{{end}}
   {{if .Conflicts}}<div class="banner banner--warn">Number conflict: line numbers <strong>{{.Conflicts}}</strong> exist in both households. One family will need to change these numbers under Lines before calls can be placed.</div>{{end}}
   {{if .Revoked}}<div class="banner banner--warn">Family disconnected.</div>{{end}}
+  {{if .Canceled}}<div class="banner banner--warn">Invite canceled.</div>{{end}}
 
   <!-- Create / Accept -->
   <div class="cols cols--2" style="margin-bottom: 22px;">

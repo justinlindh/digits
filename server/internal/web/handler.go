@@ -1249,6 +1249,7 @@ type linksData struct {
 	CreatedCode     string
 	Accepted        bool
 	Revoked         bool
+	Canceled        bool
 	Conflicts       string
 	Error           string
 	User            *auth.User
@@ -1293,6 +1294,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		CreatedCode:        r.URL.Query().Get("created"),
 		Accepted:           r.URL.Query().Get("accepted") == "1",
 		Revoked:            r.URL.Query().Get("revoked") == "1",
+		Canceled:           r.URL.Query().Get("canceled") == "1",
 		Conflicts:          r.URL.Query().Get("conflicts"),
 		Error:              r.URL.Query().Get("error"),
 		User:               user,
@@ -1406,13 +1408,27 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	id := r.PathValue("id")
+
+	// Look up the link's status before revoking so we can pick accurate
+	// post-action copy (pending invite -> "canceled", active link ->
+	// "disconnected"). If the lookup fails, fall through with disconnected
+	// copy as the safer default.
+	wasPending := false
+	if link, err := h.linkStore.GetByID(id); err == nil && link != nil {
+		wasPending = link.Status == "pending"
+	}
+
 	if err := h.linkStore.RevokeLink(id, user.ID); err != nil {
 		slog.Error("revoke link failed", "link_id", id, "err", err)
 		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/links?revoked=1", http.StatusSeeOther)
+	target := "/links?revoked=1"
+	if wasPending {
+		target = "/links?canceled=1"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // ---- Internal Stats ----
