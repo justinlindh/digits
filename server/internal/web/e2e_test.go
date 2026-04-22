@@ -15,7 +15,7 @@ import (
 )
 
 func TestE2EFullCallFlow(t *testing.T) {
-	srv, database, lineStore, tracker, authStore := setupTestServer(t)
+	srv, database, lineStore, tracker, authStore, hub := setupTestServer(t)
 	// Create authenticated client for protected route checks
 	cookie := addSessionCookie(t, authStore)
 	jar := &testCookieJar{cookie: cookie, url: srv.URL}
@@ -45,8 +45,10 @@ func TestE2EFullCallFlow(t *testing.T) {
 	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001", HardwareID: "e2e-hw-a"})
 	sendMsg(t, ws2, signaling.Message{Type: signaling.TypeRegister, Number: "3140002", HardwareID: "e2e-hw-b"})
 
-	// Give server time to register
-	time.Sleep(50 * time.Millisecond)
+	// Both ws goroutines handle their own register; the call below needs ws2's
+	// entry to be present in the hub, which the two sendMsg calls don't order.
+	waitForRegister(t, hub, "3140001")
+	waitForRegister(t, hub, "3140002")
 
 	// Phone 1 calls Phone 2
 	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeCall, To: "3140002"})
@@ -89,9 +91,9 @@ func TestE2EFullCallFlow(t *testing.T) {
 	if hangup.Type != signaling.TypeHangup {
 		t.Fatalf("expected hangup, got %s", hangup.Type)
 	}
-
-	// Give tracker time to update DB
-	time.Sleep(50 * time.Millisecond)
+	// The relay calls Tracker.OnCallEnded synchronously before forwarding
+	// Hangup to the peer, so by the time ws2 has read it the DB UPDATE is
+	// already done.
 
 	// Verify call appears in history via HTTP (authenticated)
 	resp, err := authedClient.Get(srv.URL + "/api/status")
@@ -124,11 +126,11 @@ func TestE2EFullCallFlow(t *testing.T) {
 }
 
 func TestE2ECallToOfflinePhone(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, hub := setupTestServer(t)
 
 	ws1 := dialWS(t, srv)
 	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeRegister, Number: "3140001", HardwareID: "e2e-offline-a"})
-	time.Sleep(30 * time.Millisecond)
+	waitForRegister(t, hub, "3140001")
 
 	// Call a phone that's not connected
 	sendMsg(t, ws1, signaling.Message{Type: signaling.TypeCall, To: "3140099"})
@@ -140,7 +142,7 @@ func TestE2ECallToOfflinePhone(t *testing.T) {
 }
 
 func TestE2ENoRegisterRejected(t *testing.T) {
-	srv, _, _, _, _ := setupTestServer(t)
+	srv, _, _, _, _, _ := setupTestServer(t)
 
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -166,7 +168,7 @@ func TestE2ENoRegisterRejected(t *testing.T) {
 }
 
 func TestE2EWebUIWithData(t *testing.T) {
-	srv, database, lineStore, _, authStore := setupTestServer(t)
+	srv, database, lineStore, _, authStore, _ := setupTestServer(t)
 
 	hhID := seedE2EHousehold(t, database, authStore)
 	if _, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hhID); err != nil {

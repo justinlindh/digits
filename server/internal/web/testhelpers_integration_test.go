@@ -68,8 +68,8 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 // setupTestServer builds the same Handler and wraps it in an httptest.Server.
 // Returns the server plus the collaborators individual tests need to seed
 // or assert against. The trailing *signaling.Hub return is used by WS tests
-// that need to poll hub state.
-func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store) {
+// that need to poll hub state via waitForRegister.
+func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store, *calls.Tracker, *auth.Store, *signaling.Hub) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -88,7 +88,23 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store,
 	}
 	srv := httptest.NewServer(h.Router())
 	t.Cleanup(srv.Close)
-	return srv, database, deps.LineStore, deps.Tracker, authStore
+	return srv, database, deps.LineStore, deps.Tracker, authStore, deps.Hub
+}
+
+// waitForRegister polls hub.Get until the given number is registered or the
+// deadline expires. Needed between two test phones on different WebSockets:
+// each ws read goroutine handles its own register independently, so ws1 may
+// start sending Call before ws2's register has run.
+func waitForRegister(t *testing.T, hub *signaling.Hub, number string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if hub.Get(number) != nil {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s to register", number)
 }
 
 // testDeps builds a Deps populated with real stores against the provided DB,
