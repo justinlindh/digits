@@ -255,12 +255,13 @@ func TestMixerWebRTCFeed(t *testing.T) {
 
 	mx.Start()
 
-	// Feed a WebRTC frame
+	// Feed a WebRTC frame via a named source
+	ch := mx.AddWebRTCSource("default")
 	frame := make([]int16, 960)
 	for i := range frame {
 		frame[i] = 777
 	}
-	mx.FeedWebRTC(frame)
+	ch <- frame
 	time.Sleep(50 * time.Millisecond)
 	mx.Stop()
 
@@ -291,12 +292,13 @@ func TestMixerWebRTCMixesWithLoop(t *testing.T) {
 	mx.PlayLoop("loop")
 	time.Sleep(25 * time.Millisecond)
 
-	// Feed WebRTC frame
+	// Feed WebRTC frame via a named source
+	ch := mx.AddWebRTCSource("default")
 	frame := make([]int16, 960)
 	for i := range frame {
 		frame[i] = 50
 	}
-	mx.FeedWebRTC(frame)
+	ch <- frame
 	time.Sleep(50 * time.Millisecond)
 	mx.Stop()
 
@@ -406,6 +408,106 @@ func TestLoadWAVDir(t *testing.T) {
 			t.Errorf("%s: expected 2 samples, got %d", name, len(samples))
 		}
 	}
+}
+
+// --- AddWebRTCSource / RemoveWebRTCSource ---
+
+func TestMixer_TwoWebRTCSources_SumAndClip(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+	mx.Start()
+	defer mx.Stop()
+
+	chA := mx.AddWebRTCSource("peerA")
+	chB := mx.AddWebRTCSource("peerB")
+
+	frameA := make([]int16, 960)
+	frameB := make([]int16, 960)
+	for i := range frameA {
+		frameA[i] = 8192
+		frameB[i] = 8192
+	}
+	chA <- frameA
+	chB <- frameB
+
+	time.Sleep(50 * time.Millisecond)
+	mx.Stop()
+
+	// Find a period where the two sources summed: 8192 + 8192 = 16384
+	found := false
+	for _, p := range w.periods {
+		if p[0] == 16384 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected a period with sum 16384 (8192+8192), but didn't find any")
+	}
+}
+
+func TestMixer_TwoWebRTCSources_Clipping(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+	mx.Start()
+	defer mx.Stop()
+
+	chA := mx.AddWebRTCSource("peerA")
+	chB := mx.AddWebRTCSource("peerB")
+
+	frameA := make([]int16, 960)
+	frameB := make([]int16, 960)
+	for i := range frameA {
+		frameA[i] = 30000
+		frameB[i] = 30000
+	}
+	chA <- frameA
+	chB <- frameB
+
+	time.Sleep(50 * time.Millisecond)
+	mx.Stop()
+
+	// 30000 + 30000 = 60000 which overflows int16 max (32767) — expect saturation
+	found := false
+	for _, p := range w.periods {
+		if p[0] == 32767 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected a period with saturated value 32767, but didn't find any")
+	}
+}
+
+func TestMixer_AddAndRemoveSource(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+	mx.Start()
+	defer mx.Stop()
+
+	ch := mx.AddWebRTCSource("peerX")
+	if ch == nil {
+		t.Fatal("expected non-nil channel from AddWebRTCSource")
+	}
+
+	// Adding the same key again should return the same channel
+	ch2 := mx.AddWebRTCSource("peerX")
+	if ch2 != ch {
+		t.Error("expected same channel for duplicate key")
+	}
+
+	mx.RemoveWebRTCSource("peerX")
+
+	// After removal, a new AddWebRTCSource with the same key should return a fresh channel
+	ch3 := mx.AddWebRTCSource("peerX")
+	if ch3 == nil {
+		t.Fatal("expected non-nil channel after re-adding")
+	}
+	if ch3 == ch {
+		t.Error("expected fresh channel after remove+re-add, but got the same channel")
+	}
+	mx.RemoveWebRTCSource("peerX")
 }
 
 // --- LoadTonesFromDir ---

@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/signal"
 )
 
 // mockCallbacks captures controller side-effects for assertions. All methods
@@ -19,6 +21,14 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
+	mutedPeers         map[string]bool   // phone -> current mute state
+	torndownPeers      []string          // peers that had TearDownPeer called
+	removedMeshPeers   []string          // peers that had RemoveMeshPeer called
+	mergeRequests      [][2]string       // [held, active] pairs
+	meshPeers          map[string]bool   // phone -> initiator flag
+	allTorndown        bool              // true if TearDownAllMeshPeers was called
+	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -36,6 +46,11 @@ func (m *mockCallbacks) SendLED(mode string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.leds = append(m.leds, mode)
+}
+func (m *mockCallbacks) SetFlashEnabled(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.flashEnabledLog = append(m.flashEnabledLog, enabled)
 }
 func (m *mockCallbacks) InitiateCall(number string) {
 	m.mu.Lock()
@@ -56,6 +71,50 @@ func (m *mockCallbacks) NotifyCallConnected() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.callConnectedCalls++
+}
+func (m *mockCallbacks) MutePeer(phone string, muted bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.mutedPeers == nil {
+		m.mutedPeers = make(map[string]bool)
+	}
+	m.mutedPeers[phone] = muted
+}
+func (m *mockCallbacks) TearDownPeer(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.torndownPeers = append(m.torndownPeers, phone)
+}
+func (m *mockCallbacks) RequestConferenceMerge(held, active string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mergeRequests = append(m.mergeRequests, [2]string{held, active})
+}
+func (m *mockCallbacks) AddMeshPeer(phone string, initiator bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.meshPeers == nil {
+		m.meshPeers = make(map[string]bool)
+	}
+	m.meshPeers[phone] = initiator
+}
+func (m *mockCallbacks) RemoveMeshPeer(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.removedMeshPeers = append(m.removedMeshPeers, phone)
+}
+func (m *mockCallbacks) TearDownAllMeshPeers() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allTorndown = true
+}
+func (m *mockCallbacks) MigrateToMesh(phone string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.migratedToMesh == nil {
+		m.migratedToMesh = make(map[string]bool)
+	}
+	m.migratedToMesh[phone] = true
 }
 
 // Snapshot accessors — return copies under lock so test assertions are
@@ -94,6 +153,90 @@ func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callConnectedCalls
+}
+
+// peerMuted returns whether the given peer is currently muted.
+func (m *mockCallbacks) peerMuted(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.mutedPeers[phone]
+}
+
+// peerTorndown returns whether TearDownPeer was called for the given phone.
+func (m *mockCallbacks) peerTorndown(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.torndownPeers {
+		if p == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// meshPeerRemoved returns whether RemoveMeshPeer was called for the given phone.
+func (m *mockCallbacks) meshPeerRemoved(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, p := range m.removedMeshPeers {
+		if p == phone {
+			return true
+		}
+	}
+	return false
+}
+
+// tonePlayed returns whether the given tone name was ever sent.
+func (m *mockCallbacks) tonePlayed(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.tones {
+		if t == name {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeRequested returns whether RequestConferenceMerge was called with the given held/active pair.
+func (m *mockCallbacks) mergeRequested(held, active string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.mergeRequests {
+		if r[0] == held && r[1] == active {
+			return true
+		}
+	}
+	return false
+}
+
+// peerAdded returns whether AddMeshPeer was called for the given phone.
+func (m *mockCallbacks) peerAdded(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.meshPeers[phone]
+	return ok
+}
+
+// peerInitiator returns whether the given phone was added as initiator.
+func (m *mockCallbacks) peerInitiator(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.meshPeers[phone]
+}
+
+// allPeersTorndown returns whether TearDownAllMeshPeers was called.
+func (m *mockCallbacks) allPeersTorndown() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.allTorndown
+}
+
+// wasMigrated returns whether MigrateToMesh was called for the given phone.
+func (m *mockCallbacks) wasMigrated(phone string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.migratedToMesh[phone]
 }
 
 // waitForCall waits up to 2s for a call to be initiated (async after dial delay).
@@ -170,7 +313,7 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 	}
 
 	// Remote answers
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED after answer signal, got %s", c.State())
 	}
@@ -199,7 +342,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	c := NewController(cb, "")
 
 	// Incoming ring
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 	if c.State() != StateRINGING {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
@@ -225,7 +368,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	}
 
 	// Remote hangs up — enters REMOTE_HANGUP (off-hook warning sequence)
-	c.HandleSignal("hangup")
+	c.HandleSignal("hangup", "")
 	if c.State() != StateREMOTE_HANGUP {
 		t.Fatalf("expected REMOTE_HANGUP after hangup signal, got %s", c.State())
 	}
@@ -309,7 +452,7 @@ func TestController_BusySignal(t *testing.T) {
 	}
 
 	tonesBefore := len(cb.Tones())
-	c.HandleSignal("busy")
+	c.HandleSignal("busy", "")
 
 	// SendTone("STOP") should have been called
 	if len(cb.Tones()) <= tonesBefore {
@@ -427,12 +570,12 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
 
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 	if c.State() != StateRINGING {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
 
-	c.HandleSignal("hangup")
+	c.HandleSignal("hangup", "")
 	if c.State() != StateIDLE {
 		t.Fatalf("expected IDLE after caller hangup during ring, got %s", c.State())
 	}
@@ -472,7 +615,7 @@ func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 		t.Errorf("NotifyCallConnected should not be called before answer, got %d", cb.CallConnectedCalls())
 	}
 
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 
 	if c.State() != StateCONNECTED {
 		t.Errorf("expected StateCONNECTED after answer, got %s", c.State())
@@ -515,14 +658,14 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 	c.HandleEvent("KEY:5")
 	c.HandleEvent("DIAL:5551234")
 	waitForCall(cb)
-	c.HandleSignal("answer")
+	c.HandleSignal("answer", "")
 
 	if c.State() != StateCONNECTED {
 		t.Fatalf("expected CONNECTED, got %s", c.State())
 	}
 
 	ringsBefore := len(cb.Rings())
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 
 	// State should still be CONNECTED
 	if c.State() != StateCONNECTED {
@@ -648,13 +791,752 @@ func TestIsCallActive(t *testing.T) {
 	}
 }
 
+func TestController_FlashFromConnectedEntersAddDialtone(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+
+	c.HandleHookFlash("5550002")
+
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected A<->B muted")
+	}
+	if !mock.tonePlayed("DIAL") {
+		t.Fatalf("expected dial tone started")
+	}
+}
+
+func TestController_FlashInAddDialtoneAborts(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected A<->B unmuted on abort")
+	}
+}
+
+func TestController_FlashInAddCallingAbortsAndTearsDown(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected A<->C torn down")
+	}
+}
+
+func TestController_FlashInAddPrivateMerges(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_PRIVATE)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("expected StateCONFERENCE_MERGED, got %v", c.State())
+	}
+	if !mock.mergeRequested("5550002", "5550003") {
+		t.Fatalf("expected ConferenceMerge requested with B=5550002, C=5550003")
+	}
+}
+
+func TestController_NonHostFlashIsNoop(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.setStateForTest(StateCONNECTED)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+	})
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("non-host flash should be no-op; state changed to %v", c.State())
+	}
+}
+
+func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+	})
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("flash during CONFERENCE_MERGED should be no-op; state changed to %v", c.State())
+	}
+}
+
+func TestController_FlashInAddInterceptAborts(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_INTERCEPT)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleHookFlash("")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected return to StateCONNECTED from ADD_INTERCEPT, got %v", c.State())
+	}
+}
+
+// calledNumber returns true if InitiateCall was invoked with the given number.
+func (m *mockCallbacks) calledNumber(number string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, c := range m.calls {
+		if c == number {
+			return true
+		}
+	}
+	return false
+}
+
+func TestController_DialInAddDialtoneEntersAddDialing(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	c.HandleEvent("KEY:5")
+
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+	// Second dial tone should stop on first digit.
+	if !mock.tonePlayed(ToneStop) {
+		t.Fatalf("expected dial tone stopped on first digit")
+	}
+}
+
+func TestController_DialInAddDialingReachesAddCallingOnDialEvent(t *testing.T) {
+	// The firmware collects digits and sends DIAL:<number> when done —
+	// matching the existing StateDIALING → StateCALLING pattern exactly.
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE → ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+
+	// Firmware sends DIAL event with complete number.
+	c.HandleEvent("DIAL:5550003")
+
+	if c.State() != StateADD_CALLING {
+		t.Fatalf("expected StateADD_CALLING after DIAL event, got %v", c.State())
+	}
+	// InitiateCall fires after brief async delay.
+	waitForCall(mock)
+	if !mock.calledNumber("5550003") {
+		t.Fatalf("expected call placed to 5550003, got calls: %v", mock.Calls())
+	}
+}
+
+func TestController_ThirdAnswersEntersAddPrivate(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("answer", "5550003")
+
+	if c.State() != StateADD_PRIVATE {
+		t.Fatalf("expected StateADD_PRIVATE, got %v", c.State())
+	}
+}
+
+func TestController_ThirdBusyPlaysBusyTone(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("busy", "5550003")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT, got %v", c.State())
+	}
+	if !mock.tonePlayed(ToneBusy) {
+		t.Fatalf("expected BUSY tone on subscriber-busy (matches 2-party), got tones: %v", mock.Tones())
+	}
+	if mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("SIT INTERCEPT is reserved for 'cannot be completed as dialed'; subscriber-busy should play BUSY, got tones: %v", mock.Tones())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on busy")
+	}
+}
+
+func TestController_ThirdHangupDuringPrivateGoesToAddIntercept(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_PRIVATE)
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleSignal("hangup", "5550003")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on hangup")
+	}
+}
+
+func TestController_ThirdRingTimeoutGoesToAddIntercept(t *testing.T) {
+	// Ring timeout not modeled locally; handled by server responding with TypeBusy.
+	t.Skip("ring timeout not modeled locally; handled by server responding with TypeBusy")
+}
+
+func TestController_ConferenceMemberMarksHostRole(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	if c.ConferenceID() != "conf-abc" {
+		t.Fatalf("expected conf id conf-abc, got %s", c.ConferenceID())
+	}
+	if !c.IsConferenceHost() {
+		t.Fatalf("5550001 should be host")
+	}
+}
+
+func TestController_ConferenceMemberNonHost(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
+	})
+	if c.IsConferenceHost() {
+		t.Fatalf("5550002 should not be host")
+	}
+}
+
+func TestController_ConferenceConnectOpensPeer(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	c.HandleConferenceConnect("conf-abc", "5550003", true)
+
+	if !mock.peerAdded("5550003") {
+		t.Fatalf("expected AddMeshPeer(5550003)")
+	}
+	if !mock.peerInitiator("5550003") {
+		t.Fatalf("expected 5550003 to be added as initiator")
+	}
+}
+
+func TestController_ConferenceConnectWrongConfIDIgnored(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550002")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	c.HandleConferenceConnect("conf-wrong", "5550003", true)
+
+	if mock.peerAdded("5550003") {
+		t.Fatalf("AddMeshPeer should not be called for wrong conf id")
+	}
+}
+
+func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	c.HandleConferenceLeave("conf-abc", "5550002", "hangup")
+
+	if !mock.meshPeerRemoved("5550002") {
+		t.Fatalf("expected RemoveMeshPeer(5550002)")
+	}
+	if mock.peerTorndown("5550002") {
+		t.Fatalf("RemoveMeshPeer should not push to torndownPeers")
+	}
+}
+
+func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	defer c.Close()
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+	// When the user is still off-hook (CONFERENCE_MERGED) when the conference
+	// ends, the controller transitions to REMOTE_HANGUP and plays the permanent-
+	// signal treatment, matching 2-party remote-hangup semantics.
+	if c.State() != StateREMOTE_HANGUP {
+		t.Fatalf("expected REMOTE_HANGUP after conference end (user still off-hook), got %v", c.State())
+	}
+	if !mock.allPeersTorndown() {
+		t.Fatalf("expected TearDownAllMeshPeers")
+	}
+	if c.ConferenceID() != "" {
+		t.Fatalf("expected conf state cleared, got %q", c.ConferenceID())
+	}
+}
+
+func TestController_ConferenceEndFromIdleReturnsIdle(t *testing.T) {
+	// Verify that HandleConferenceEnd from a non-conference state (e.g. IDLE
+	// after the user already hung up) goes to IDLE, not REMOTE_HANGUP.
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	defer c.Close()
+	// Simulate: user hung up, then ConferenceEnd arrives late.
+	c.setStateForTest(StateIDLE)
+	// Bypass confID guard by setting it manually.
+	c.mu.Lock()
+	c.confID = "conf-abc"
+	c.mu.Unlock()
+
+	c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE when conference ends while already idle, got %v", c.State())
+	}
+}
+
+func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	// Establish conference ID via HandleConferenceMember so the confID guard is satisfied.
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost},
+		{Phone: "5550002", Role: signal.RoleAdded},
+		{Phone: "5550003", Role: signal.RoleAdded},
+	})
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	c.HandleConferenceRejected("conf-abc", "merge_failed")
+
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED on rejection, got %v", c.State())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("expected intercept tone on rejection")
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected A->C torn down")
+	}
+	if c.ConferenceID() != "" {
+		t.Fatalf("expected conference state cleared, got %q", c.ConferenceID())
+	}
+}
+
+func TestController_MuteLiftsOnMerge(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+
+	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B, true) and enters ADD_DIALTONE.
+	c.HandleHookFlash("5550002")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("expected StateADD_DIALTONE after flash, got %v", c.State())
+	}
+	if !mock.wasMigrated("5550002") {
+		t.Fatalf("expected MigrateToMesh(5550002) on flash to ADD_DIALTONE")
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B muted after flash")
+	}
+
+	// First digit transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING after first digit, got %v", c.State())
+	}
+
+	// DIAL event transitions ADD_DIALING -> ADD_CALLING.
+	c.HandleEvent("DIAL:5550003")
+	if c.State() != StateADD_CALLING {
+		t.Fatalf("expected StateADD_CALLING after DIAL, got %v", c.State())
+	}
+	// B should still be muted while dialing C.
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B to remain muted in ADD_CALLING")
+	}
+
+	// C answers: ADD_CALLING -> ADD_PRIVATE.
+	c.HandleSignal("answer", "5550003")
+	if c.State() != StateADD_PRIVATE {
+		t.Fatalf("expected StateADD_PRIVATE after C answers, got %v", c.State())
+	}
+	// B should STILL be muted while A is in ADD_PRIVATE.
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("expected B to remain muted in ADD_PRIVATE")
+	}
+
+	// Flash to merge: B should be unmuted and C migrated into mesh before merge request.
+	c.HandleHookFlash("")
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("expected StateCONFERENCE_MERGED after flash, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted after merge")
+	}
+	if !mock.wasMigrated("5550003") {
+		t.Fatalf("expected MigrateToMesh(5550003) on merge")
+	}
+	if !mock.mergeRequested("5550002", "5550003") {
+		t.Fatalf("expected ConferenceMerge requested with B=5550002, C=5550003")
+	}
+}
+
+// TestController_OnHookOnFromConferenceStates verifies that hanging up from any
+// conference-related state tears down all mesh peers, calls HangupCall, stops
+// tones, turns off the LED, and resets all conference fields.
+func TestController_OnHookOnFromConferenceStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		state State
+	}{
+		{"ADD_DIALTONE", StateADD_DIALTONE},
+		{"ADD_DIALING", StateADD_DIALING},
+		{"ADD_CALLING", StateADD_CALLING},
+		{"ADD_PRIVATE", StateADD_PRIVATE},
+		{"ADD_INTERCEPT", StateADD_INTERCEPT},
+		{"CONFERENCE_MERGED", StateCONFERENCE_MERGED},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockCallbacks{}
+			c := NewController(mock, "5550001")
+			c.setStateForTest(tc.state)
+			c.setHeldPeerForTest("5550002")
+			c.setAddingPeerForTest("5550003")
+			// Simulate being part of a conference so the guard fires.
+			c.mu.Lock()
+			c.confID = "conf-abc"
+			c.mu.Unlock()
+
+			c.HandleEvent("HOOK:ON")
+
+			if c.State() != StateIDLE {
+				t.Errorf("expected StateIDLE, got %v", c.State())
+			}
+			if !mock.allPeersTorndown() {
+				t.Errorf("expected TearDownAllMeshPeers to be called")
+			}
+			if mock.Hangups() == 0 {
+				t.Errorf("expected HangupCall to be called")
+			}
+			if !mock.tonePlayed(ToneStop) {
+				t.Errorf("expected SendTone(STOP)")
+			}
+			leds := mock.LEDs()
+			if len(leds) == 0 || leds[len(leds)-1] != "OFF" {
+				t.Errorf("expected SendLED(OFF), got %v", leds)
+			}
+			if c.ConferenceID() != "" {
+				t.Errorf("expected confID cleared, got %q", c.ConferenceID())
+			}
+			// Verify heldPeer and addingPeer cleared (via setters using lock — read directly under lock).
+			c.mu.Lock()
+			held, adding := c.heldPeer, c.addingPeer
+			c.mu.Unlock()
+			if held != "" {
+				t.Errorf("expected heldPeer cleared, got %q", held)
+			}
+			if adding != "" {
+				t.Errorf("expected addingPeer cleared, got %q", adding)
+			}
+		})
+	}
+}
+
+// TestController_HandleConferenceEndFromAddStates verifies that HandleConferenceEnd
+// transitions to REMOTE_HANGUP (not IDLE) and tears down all mesh peers when
+// called from any of the ADD_* intermediate states.
+func TestController_HandleConferenceEndFromAddStates(t *testing.T) {
+	cases := []struct {
+		name  string
+		state State
+	}{
+		{"ADD_DIALTONE", StateADD_DIALTONE},
+		{"ADD_DIALING", StateADD_DIALING},
+		{"ADD_CALLING", StateADD_CALLING},
+		{"ADD_PRIVATE", StateADD_PRIVATE},
+		{"ADD_INTERCEPT", StateADD_INTERCEPT},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockCallbacks{}
+			c := NewController(mock, "5550001")
+			defer c.Close()
+			// Set the conference state so the confID guard passes.
+			c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+				{Phone: "5550001", Role: signal.RoleHost},
+				{Phone: "5550002", Role: signal.RoleAdded},
+			})
+			c.setStateForTest(tc.state)
+
+			c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+			if c.State() != StateREMOTE_HANGUP {
+				t.Errorf("expected StateREMOTE_HANGUP from %v, got %v", tc.state, c.State())
+			}
+			if !mock.allPeersTorndown() {
+				t.Errorf("expected TearDownAllMeshPeers to be called")
+			}
+			if c.ConferenceID() != "" {
+				t.Errorf("expected confID cleared, got %q", c.ConferenceID())
+			}
+		})
+	}
+}
+
+// TestController_DialThirdPartyRejectsSelfDial verifies that dialThirdParty
+// rejects a self-call (ADD_DIALING -> ADD_INTERCEPT) without calling InitiateCall.
+func TestController_DialThirdPartyRejectsSelfDial(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING, got %v", c.State())
+	}
+
+	// Dial own number as third party.
+	c.HandleEvent("DIAL:5550001")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT on self-dial, got %v", c.State())
+	}
+	if len(mock.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall on self-dial, got %v", mock.Calls())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Errorf("expected ToneIntercept on self-dial, got tones: %v", mock.Tones())
+	}
+}
+
+// TestController_DialThirdPartyRejectsBlockedContact verifies that dialThirdParty
+// rejects a number not in the contact list (ADD_DIALING -> ADD_INTERCEPT).
+func TestController_DialThirdPartyRejectsBlockedContact(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	// Only 5550002 is allowed; 5550004 is blocked.
+	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5550002": true}})
+	c.setStateForTest(StateADD_DIALTONE)
+	c.setHeldPeerForTest("5550002")
+
+	// First digit: transitions ADD_DIALTONE -> ADD_DIALING.
+	c.HandleEvent("KEY:5")
+	if c.State() != StateADD_DIALING {
+		t.Fatalf("expected StateADD_DIALING, got %v", c.State())
+	}
+
+	// Dial a blocked number as third party.
+	c.HandleEvent("DIAL:5550004")
+
+	if c.State() != StateADD_INTERCEPT {
+		t.Fatalf("expected StateADD_INTERCEPT on blocked contact, got %v", c.State())
+	}
+	if len(mock.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall for blocked contact, got %v", mock.Calls())
+	}
+	if !mock.tonePlayed(ToneIntercept) {
+		t.Errorf("expected ToneIntercept on blocked contact, got tones: %v", mock.Tones())
+	}
+}
+
+func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONFERENCE_MERGED)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
+		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
+	})
+
+	// Rejection for a different conf -- should be ignored.
+	c.HandleConferenceRejected("conf-xyz", "merge_failed")
+
+	if c.State() != StateCONFERENCE_MERGED {
+		t.Fatalf("state should remain StateCONFERENCE_MERGED on mismatched confID, got %v", c.State())
+	}
+	if c.ConferenceID() != "conf-abc" {
+		t.Fatalf("confID should remain conf-abc, got %q", c.ConferenceID())
+	}
+	if mock.tonePlayed(ToneIntercept) {
+		t.Fatalf("intercept tone should not play for mismatched rejection")
+	}
+}
+
+// TestController_DoubleFlashFromConnectedIsStable exercises the enter-ADD /
+// abort-ADD cycle twice in succession to confirm the FSM returns to a clean
+// CONNECTED state each time. Regression guard for the abort-then-retry flow
+// that surfaced mesh-leak and stale-callPeer bugs during manual testing.
+func TestController_DoubleFlashFromConnectedIsStable(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateCONNECTED)
+
+	// Flash 1: CONNECTED -> ADD_DIALTONE.
+	c.HandleHookFlash("5550002")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("flash 1: expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("flash 1: expected B muted")
+	}
+
+	// Flash 2: ADD_DIALTONE -> CONNECTED (abort).
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("flash 2: expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("flash 2: expected B unmuted on abort")
+	}
+	// heldPeer/addingPeer should be cleared after abort.
+	held, adding := c.heldPeerForTest(), c.addingPeerForTest()
+	if held != "" || adding != "" {
+		t.Fatalf("flash 2: expected heldPeer and addingPeer cleared, got held=%q adding=%q", held, adding)
+	}
+
+	// Flash 3: CONNECTED -> ADD_DIALTONE again.
+	c.HandleHookFlash("5550002")
+	if c.State() != StateADD_DIALTONE {
+		t.Fatalf("flash 3: expected StateADD_DIALTONE, got %v", c.State())
+	}
+	if !mock.peerMuted("5550002") {
+		t.Fatalf("flash 3: expected B muted again")
+	}
+
+	// Flash 4: ADD_DIALTONE -> CONNECTED (abort again).
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("flash 4: expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("flash 4: expected B unmuted on second abort")
+	}
+	held, adding = c.heldPeerForTest(), c.addingPeerForTest()
+	if held != "" || adding != "" {
+		t.Fatalf("flash 4: expected heldPeer and addingPeer cleared, got held=%q adding=%q", held, adding)
+	}
+}
+
+// TestController_FlashRaceWithAnswerFlashFirst simulates the user flashing
+// out of ADD_CALLING at the exact moment the added party's answer arrives.
+// The flash wins: state -> CONNECTED (via abortAddCalling) and C is torn
+// down. A subsequent answer signal from the now-defunct C must be ignored;
+// the controller must not fall into ADD_PRIVATE or CONFERENCE_MERGED on
+// stale input.
+func TestController_FlashRaceWithAnswerFlashFirst(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	c.setStateForTest(StateADD_CALLING)
+	c.setHeldPeerForTest("5550002")
+	c.setAddingPeerForTest("5550003")
+
+	// Flash first -- aborts the add attempt.
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED after flash-abort, got %v", c.State())
+	}
+	if !mock.peerTorndown("5550003") {
+		t.Fatalf("expected C torn down on flash-abort")
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted on flash-abort")
+	}
+
+	// Now a stale answer from the torn-down C arrives. Must not transition.
+	c.HandleSignal("answer", "5550003")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED to persist on stale answer, got %v", c.State())
+	}
+}
+
+// TestController_AbortFromInterceptAfterSelfDial covers the path where
+// dialThirdParty rejected the input locally (self-dial or blocked contact)
+// and landed in ADD_INTERCEPT without ever calling InitiateCall, so no add
+// peer was created. Flashing out of ADD_INTERCEPT must recover cleanly
+// without crashing on a TearDownPeer for an empty addingPeer.
+func TestController_AbortFromInterceptAfterSelfDial(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	// Simulate the post-self-dial state: dialThirdParty set intercept but
+	// did not run InitiateCall, so addingPeer stays empty.
+	c.setStateForTest(StateADD_INTERCEPT)
+	c.setHeldPeerForTest("5550002")
+	// c.addingPeer is intentionally empty here.
+
+	// Flash to return. Must not crash, must restore CONNECTED, must unmute B.
+	c.HandleHookFlash("")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected StateCONNECTED, got %v", c.State())
+	}
+	if mock.peerMuted("5550002") {
+		t.Fatalf("expected B unmuted")
+	}
+	// No TearDownPeer should have been called for an empty phone -- the
+	// guard in abortAdd skips the call when addingPeer is "".
+	for _, p := range mock.torndownPeers {
+		if p == "" {
+			t.Fatalf("TearDownPeer called with empty phone; guard missing")
+		}
+	}
+}
+
 // Silent mode suppresses the bell but keeps LED + state transition.
 func TestController_IncomingRingSilentModeSuppressesBell(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
 	c.SetSilentMode(true) // seeded from config at startup
 
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 
 	if c.State() != StateRINGING {
 		t.Fatalf("state: got %s, want RINGING", c.State())
@@ -675,7 +1557,7 @@ func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
 	c := NewController(cb, "")
 	c.SetSilentMode(false)
 
-	c.HandleSignal("ring")
+	c.HandleSignal("ring", "")
 
 	if c.State() != StateRINGING {
 		t.Fatalf("state: got %s", c.State())
@@ -694,7 +1576,7 @@ func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := NewController(cb, "")
 
-	c.HandleSignal("ring") // state RINGING, SendRing(true), SendLED("BLINK")
+	c.HandleSignal("ring", "") // state RINGING, SendRing(true), SendLED("BLINK")
 	if c.State() != StateRINGING {
 		t.Fatalf("precondition: state %s != RINGING", c.State())
 	}
@@ -721,7 +1603,7 @@ func TestController_SetSilentModeOffDuringRingDoesNotStartBell(t *testing.T) {
 	c := NewController(cb, "")
 	c.SetSilentMode(true)
 
-	c.HandleSignal("ring") // silent: no SendRing(true), only LED:BLINK
+	c.HandleSignal("ring", "") // silent: no SendRing(true), only LED:BLINK
 	ringsBefore := len(cb.Rings())
 
 	c.SetSilentMode(false)

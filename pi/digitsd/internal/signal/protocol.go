@@ -57,6 +57,23 @@ const (
 	TypeLinkHealth = "link_health"
 )
 
+// Conference message types (three-way calling)
+const (
+	TypeConferenceMerge    = "conference_merge"    // client -> server
+	TypeConferenceMember   = "conference_member"   // server -> client
+	TypeConferenceConnect  = "conference_connect"  // server -> client
+	TypeConferenceLeave    = "conference_leave"    // server -> client
+	TypeConferenceEnd      = "conference_end"      // server -> client
+	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
+)
+
+// Conference member role constants. These match the server-side DB CHECK
+// constraint and the wire representation in ConferenceMemberInfo.Role.
+const (
+	RoleHost  = "host"
+	RoleAdded = "added"
+)
+
 // LinkHealthPayload carries per-sample call-quality telemetry from phone to
 // signald. Mirrors server/internal/signaling.LinkHealthPayload; the two must
 // stay in sync. All numeric fields are pointers so "not available" is omitted
@@ -87,6 +104,12 @@ type ContactEntry struct {
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+}
+
+// ConferenceMemberInfo describes one participant in a conference call.
+type ConferenceMemberInfo struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"` // "host" or "added"
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -134,6 +157,15 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// Conference fields (party-line / three-way calling).
+	ConfID     string                 `json:"conf_id,omitempty"`
+	HeldPeer   string                 `json:"held_peer,omitempty"`
+	ActivePeer string                 `json:"active_peer,omitempty"`
+	Peer       string                 `json:"peer,omitempty"`
+	Initiator  bool                   `json:"initiator,omitempty"`
+	Members    []ConferenceMemberInfo `json:"members,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
 
 	// Link-health telemetry (link_health messages)
 	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`

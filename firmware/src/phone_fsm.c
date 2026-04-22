@@ -121,8 +121,7 @@ static void process_pi_command(const char *cmd) {
     if (strcmp(cmd, "RING:START") == 0) {
         // Flush any pending hook event (e.g. from HOOK:FORCE:ON sent just before)
         // to prevent the on-hook event from immediately reverting us to IDLE.
-        bool dummy;
-        hook_get_event(&dummy);
+        hook_get_event();
         set_state(PHONE_STATE_RINGING);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
         // Direct hardware test — bypass FSM entirely.
@@ -198,6 +197,12 @@ static void process_pi_command(const char *cmd) {
     } else if (strcmp(cmd, "HOOK:INVERT:OFF") == 0) {
         hook_set_inverted(false);
         uart_proto_send("HOOK:INVERT:OFF");
+    } else if (strcmp(cmd, "HOOK:FLASH:ON") == 0) {
+        hook_set_flash_enabled(true);
+        uart_proto_send("HOOK:FLASH:ON");
+    } else if (strcmp(cmd, "HOOK:FLASH:OFF") == 0) {
+        hook_set_flash_enabled(false);
+        uart_proto_send("HOOK:FLASH:OFF");
     } else if (strcmp(cmd, "KEYTEST") == 0) {
         s_keytest_mode = true;
         set_state(PHONE_STATE_IDLE);
@@ -310,23 +315,44 @@ void phone_fsm_update(void) {
     }
 
     // Normal FSM operation
-    bool off_hook_event = false;
-    if (hook_get_event(&off_hook_event)) {
-        printf("HOOK:%s\n", off_hook_event ? "OFF" : "ON");
-        stdio_flush();
-        uart_proto_send(off_hook_event ? "HOOK:OFF" : "HOOK:ON");
-        if (!off_hook_event) {
-            set_state(PHONE_STATE_IDLE);
+    hook_event_t hook_ev = hook_get_event();
+    if (hook_ev != HOOK_EVENT_NONE) {
+        switch (hook_ev) {
+            case HOOK_EVENT_OFF:
+                printf("HOOK:OFF\n");
+                stdio_flush();
+                uart_proto_send("HOOK:OFF");
+                break;
+            case HOOK_EVENT_ON:
+                printf("HOOK:ON\n");
+                stdio_flush();
+                uart_proto_send("HOOK:ON");
+                set_state(PHONE_STATE_IDLE);
+                break;
+            case HOOK_EVENT_FLASH:
+                printf("HOOK:FLASH\n");
+                stdio_flush();
+                uart_proto_send("HOOK:FLASH");
+                break;
+            default:
+                break;
         }
     }
 
-    if (!hook_is_off_hook() && s_state != PHONE_STATE_IDLE &&
-        s_state != PHONE_STATE_RINGING) {
-        set_state(PHONE_STATE_IDLE);
-    }
+    // Skip raw-state-driven transitions while a flash window is open: the
+    // hook is transiently on-hook during the press phase but we don't know yet
+    // whether this is a real hangup (-> IDLE) or a flash (stays in CONNECTED).
+    // The flash window resolution path emits HOOK_EVENT_ON or HOOK_EVENT_FLASH,
+    // which the event switch above handles.
+    if (!hook_is_flash_pending()) {
+        if (!hook_is_off_hook() && s_state != PHONE_STATE_IDLE &&
+            s_state != PHONE_STATE_RINGING) {
+            set_state(PHONE_STATE_IDLE);
+        }
 
-    if (hook_is_off_hook() && s_state == PHONE_STATE_IDLE) {
-        set_state(PHONE_STATE_DIAL_TONE);
+        if (hook_is_off_hook() && s_state == PHONE_STATE_IDLE) {
+            set_state(PHONE_STATE_DIAL_TONE);
+        }
     }
 
     if (s_state == PHONE_STATE_RINGING && hook_is_off_hook()) {

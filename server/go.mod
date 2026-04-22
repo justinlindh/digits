@@ -9,7 +9,10 @@ require (
 	golang.org/x/crypto v0.50.0
 )
 
-require github.com/yuin/goldmark v1.8.2
+require (
+	github.com/google/uuid v1.6.0
+	github.com/yuin/goldmark v1.8.2
+)
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect

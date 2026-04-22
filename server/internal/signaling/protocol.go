@@ -28,6 +28,23 @@ const (
 	TypeLinkHealth      = "link_health"        // Phone → Server: per-call stats snapshot
 )
 
+// Conference message types (three-way calling)
+const (
+	TypeConferenceMerge    = "conference_merge"    // client -> server
+	TypeConferenceMember   = "conference_member"   // server -> client
+	TypeConferenceConnect  = "conference_connect"  // server -> client
+	TypeConferenceLeave    = "conference_leave"    // server -> client
+	TypeConferenceEnd      = "conference_end"      // server -> client
+	TypeConferenceRejected = "conference_rejected" // server -> client (merge validation failed)
+)
+
+// Conference member role constants. These match the DB CHECK constraint in
+// db.go and the wire representation in ConferenceMemberInfo.Role.
+const (
+	RoleHost  = "host"
+	RoleAdded = "added"
+)
+
 // LineSettings is the wire-format copy of server/internal/line.Settings used
 // in signaling messages. Kept as a separate struct (not imported directly
 // from internal/line) so the dependency on internal/line is isolated to
@@ -39,6 +56,12 @@ const (
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+}
+
+// ConferenceMemberInfo describes one participant in a conference call.
+type ConferenceMemberInfo struct {
+	Phone string `json:"phone"`
+	Role  string `json:"role"` // "host" or "added"
 }
 
 // NOTE: this struct is mirrored in pi/digitsd/internal/signal/protocol.go.
@@ -114,6 +137,15 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// Conference fields (party-line / three-way calling).
+	ConfID     string                 `json:"conf_id,omitempty"`
+	HeldPeer   string                 `json:"held_peer,omitempty"`
+	ActivePeer string                 `json:"active_peer,omitempty"`
+	Peer       string                 `json:"peer,omitempty"`
+	Initiator  bool                   `json:"initiator,omitempty"`
+	Members    []ConferenceMemberInfo `json:"members,omitempty"`
+	Reason     string                 `json:"reason,omitempty"`
 
 	// Link-health telemetry (link_health messages)
 	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
