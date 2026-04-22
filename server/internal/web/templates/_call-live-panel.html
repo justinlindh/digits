@@ -21,24 +21,24 @@
   <div class="deck-row">
     <span class="deck-row__lbl label">loss</span>
     <div class="deck-bar" data-metric="loss">
-      {{with pctToSegments (derefFloat32 .LossPct)}}
+      {{if .}}{{$seg := pctToSegments (derefFloat32 .LossPct)}}{{if $seg.Lit}}
         {{range $i := iter 10}}
-          <span class="deck-seg{{if lt $i $.Lit}} deck-seg--on{{end}}{{if eq $.Severity "warn"}} deck-seg--warn{{else if eq $.Severity "bad"}} deck-seg--bad{{end}}"></span>
+          <span class="deck-seg{{if lt $i $seg.Lit}} deck-seg--on{{end}}{{if eq $seg.Severity "warn"}} deck-seg--warn{{else if eq $seg.Severity "bad"}} deck-seg--bad{{end}}"></span>
         {{end}}
-      {{end}}
+      {{end}}{{end}}
     </div>
-    <span class="deck-row__val num">{{if .LossPct}}{{printf "%.1f%%" (derefFloat32 .LossPct)}}{{else}}&mdash;{{end}}</span>
+    <span class="deck-row__val num">{{if and . .LossPct}}{{printf "%.1f%%" (derefFloat32 .LossPct)}}{{else}}&mdash;{{end}}</span>
   </div>
   <div class="deck-row">
     <span class="deck-row__lbl label">jitter</span>
     <div class="deck-bar" data-metric="jitter">
-      {{with msToSegments (derefFloat32 .JitterMs)}}
+      {{if .}}{{$seg := msToSegments (derefFloat32 .JitterMs)}}{{if $seg.Lit}}
         {{range $i := iter 10}}
-          <span class="deck-seg{{if lt $i $.Lit}} deck-seg--on{{end}}{{if eq $.Severity "warn"}} deck-seg--warn{{else if eq $.Severity "bad"}} deck-seg--bad{{end}}"></span>
+          <span class="deck-seg{{if lt $i $seg.Lit}} deck-seg--on{{end}}{{if eq $seg.Severity "warn"}} deck-seg--warn{{else if eq $seg.Severity "bad"}} deck-seg--bad{{end}}"></span>
         {{end}}
-      {{end}}
+      {{end}}{{end}}
     </div>
-    <span class="deck-row__val num">{{if .JitterMs}}{{printf "%.0f ms" (derefFloat32 .JitterMs)}}{{else}}&mdash;{{end}}</span>
+    <span class="deck-row__val num">{{if and . .JitterMs}}{{printf "%.0f ms" (derefFloat32 .JitterMs)}}{{else}}&mdash;{{end}}</span>
   </div>
 </div>
 {{end}}
