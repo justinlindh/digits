@@ -1,28 +1,20 @@
 //go:build integration
 
-// Spec-compliance tests for the intercom-redesign spec at
-// docs/superpowers/specs/2026-04-21-intercom-redesign-design.md.
-//
-// Each test in this file maps to a screen in the spec and asserts that the
-// rendered HTML contains the exact strings, classes, and structural hooks
-// the spec requires. The intent is to catch regressions that visual review
-// alone would miss (dropped greeting lines, missing sub-labels, renamed
-// classes) and to keep the spec file honest.
-//
-// When the spec moves on (e.g., a future redesign replaces "Home intercom"
-// or renames "Call log"), update both the spec file AND the matching
-// assertion here in the same commit.
+// Screen-level compliance tests for the intercom theme redesign. Each test
+// asserts that the rendered HTML for a given page contains the exact
+// strings, classes, and structural hooks the redesign committed to. The
+// intent is to catch regressions that visual review alone would miss:
+// dropped greeting lines, missing sub-labels, renamed classes.
 //
 // Conventions:
 //   - One test function per screen, named TestSpec<Screen>.
-//   - Each assertion comes with an inline comment quoting the spec line it
-//     enforces.
+//   - Each assertion is followed by a short comment stating the rule it
+//     enforces, so a failure points straight at the broken requirement.
 //   - Setup reuses existing helpers (setupHandler, setupAuthedHousehold,
-//     seedLinkedFamily, h.lineStore.Add, etc) so these tests add no new
+//     seedLinkedFamily, h.lineStore.Add) so these tests add no new
 //     fixtures.
 //
-// These tests live under the `integration` build tag alongside the rest of
-// handler_test.go. Run:
+// Runs under the `integration` build tag alongside handler_test.go:
 //
 //   go test -tags=integration -run 'TestSpec' ./internal/web/...
 package web
