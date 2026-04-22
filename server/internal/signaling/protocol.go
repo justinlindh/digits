@@ -25,7 +25,7 @@ const (
 	TypeFactoryReset    = "factory_reset"    // Server → Phone: trigger factory reset
 	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
 	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
-	TypeLinkHealth      = "link_health"        // Phone -> Server: per-call stats snapshot
+	TypeLinkHealth      = "link_health"        // Phone → Server: per-call stats snapshot
 )
 
 // LineSettings is the wire-format copy of server/internal/line.Settings used
