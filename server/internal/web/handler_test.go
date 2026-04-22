@@ -735,6 +735,77 @@ func TestPhoneSilentModeHTMXReturnsPartial(t *testing.T) {
 	}
 }
 
+func TestPhoneSilentModeMissingLineReturns404(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create("Silent Mode Missing", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	w := postSilentMode(t, h, cookie, "on", false)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneSilentModePushesToConnectedDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse pushed message: %v", err)
+		}
+		if msg.Type != signaling.TypeLineSettings {
+			t.Fatalf("expected %s push, got %s", signaling.TypeLineSettings, msg.Type)
+		}
+		if msg.LineSettings == nil || !msg.LineSettings.SilentMode {
+			t.Fatalf("expected silent_mode=true line_settings, got %+v", msg.LineSettings)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive line_settings push")
+	}
+}
+
+func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140001", conn)
+
+	// Line defaults to silent_mode=false on insert. Saving false again must be a no-op.
+	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case data := <-conn.Send:
+		t.Fatalf("expected no push on no-op save, got message: %s", string(data))
+	case <-time.After(100 * time.Millisecond):
+		// Expected: no push.
+	}
+}
+
 func TestPhoneVoiceStyleMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
