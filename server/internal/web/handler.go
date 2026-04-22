@@ -1089,7 +1089,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !h.requireNumberOwnership(w, r, number) {
+	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
 	online := h.hub.Get(number) != nil
@@ -1221,7 +1221,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !h.requireNumberOwnership(w, r, number) {
+	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -1267,7 +1267,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !h.requireNumberOwnership(w, r, number) {
+	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
 	status := h.hub.GetUpdateStatus(number)
@@ -1285,7 +1285,7 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !h.requireNumberOwnership(w, r, number) {
+	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
 
@@ -1318,7 +1318,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !h.requireNumberOwnership(w, r, number) {
+	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -2175,13 +2175,6 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 	}
 	http.NotFound(w, r)
 	return nil
-}
-
-// requireNumberOwnership verifies the authenticated user's household owns the
-// given phone number without needing the full line record. Returns true if
-// ownership is confirmed, or false after writing an HTTP 404 response.
-func (h *Handler) requireNumberOwnership(w http.ResponseWriter, r *http.Request, number string) bool {
-	return h.requireLineOwnership(w, r, number) != nil
 }
 
 // ownedLinesForUser returns the lines owned by any household the user belongs
