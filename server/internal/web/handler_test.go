@@ -134,6 +134,22 @@ func TestPhonesPageReturns200(t *testing.T) {
 	}
 }
 
+func TestPhonesPage_PairPanelTitle(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Pair a new handset") {
+		t.Errorf("phones page missing new pair panel title")
+	}
+	if strings.Contains(body, "Pair a device") {
+		t.Errorf("phones page still shows old pair panel title")
+	}
+}
+
 func TestAddPhoneViaHTMX(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
