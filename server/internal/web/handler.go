@@ -491,8 +491,11 @@ func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
 			return
 		}
 
-		// Don't redirect WebSocket or API paths
-		if strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/api/") {
+		// Don't redirect WebSocket, API, or healthcheck paths. /healthz in
+		// particular is hit over plain HTTP against localhost by the
+		// autodeploy binary, which expects 200 + JSON and would mis-fire
+		// on every tick if redirected to the canonical HTTPS origin.
+		if strings.HasPrefix(r.URL.Path, "/ws") || strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/healthz" {
 			next.ServeHTTP(w, r)
 			return
 		}
