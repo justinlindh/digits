@@ -1583,3 +1583,71 @@ func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
 		t.Errorf("sentinel should be stripped before render")
 	}
 }
+
+func TestPairRedirectIncludesQueryParams(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Generate a real pairing code so ClaimDevice accepts it.
+	hwID := fmt.Sprintf("test-redirect-hw-%d", time.Now().UnixNano())
+	code, err := h.pairingStore.GenerateCode(hwID)
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	number := fmt.Sprintf("55%05d", time.Now().UnixNano()%100000)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = $1", number)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+	})
+
+	form := url.Values{}
+	form.Set("number", number)
+	form.Set("name", "Front Porch")
+	form.Set("code", code)
+
+	req := httptest.NewRequest(http.MethodPost, "/phones/pair", strings.NewReader(form.Encode()))
+	req.AddCookie(cookie)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	parsed, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("bad Location header %q: %v", loc, err)
+	}
+	if parsed.Path != "/phones" {
+		t.Errorf("redirect path = %q, want /phones", parsed.Path)
+	}
+	if got := parsed.Query().Get("paired"); got != "Front Porch" {
+		t.Errorf("paired param = %q, want %q", got, "Front Porch")
+	}
+}
+
+func TestPairBannerRendersOnQueryParam(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones?paired=Kitchen&fw=1.4.0", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `class="pair-banner"`) {
+		t.Errorf("body missing pair-banner element")
+	}
+	if !strings.Contains(body, "Kitchen") {
+		t.Errorf("body missing paired name")
+	}
+	if !strings.Contains(body, "fw 1.4.0") {
+		t.Errorf("body missing fw version")
+	}
+}

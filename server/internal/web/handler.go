@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -625,6 +626,11 @@ func fmtElapsed(d time.Duration) string {
 
 // ---- Lines (Phones) ----
 
+type pairSuccess struct {
+	Name            string
+	FirmwareVersion string
+}
+
 type linesData struct {
 	Page                  string
 	Version               string
@@ -633,6 +639,7 @@ type linesData struct {
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
+	PairSuccess           *pairSuccess
 	User                  *auth.User
 	LatestPiVersion       string
 	LatestFirmwareVersion string
@@ -722,7 +729,14 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	renderWith(w, h.tmplPhones, layoutFor(r), h.buildLinesData(r, ""))
+	data := h.buildLinesData(r, "")
+	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
+		data.PairSuccess = &pairSuccess{
+			Name:            pairedName,
+			FirmwareVersion: r.URL.Query().Get("fw"),
+		}
+	}
+	renderWith(w, h.tmplPhones, layoutFor(r), data)
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
@@ -827,7 +841,9 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+	v := url.Values{}
+	v.Set("paired", name)
+	http.Redirect(w, r, "/phones?"+v.Encode(), http.StatusSeeOther)
 }
 
 type lineDetailData struct {
