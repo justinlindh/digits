@@ -462,6 +462,25 @@ func TestPhoneRestartOnline(t *testing.T) {
 	}
 }
 
+func TestPhonesPage_FirmwareColumn(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Seed one line so the lines table renders (the Firmware column header
+	// only appears when .Lines is non-empty).
+	_, err := h.lineStore.Add("2456390", "Test Line", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, ">Firmware<") {
+		t.Errorf("phones table missing Firmware column header")
+	}
+}
+
 func TestPhoneRestartOffline(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)

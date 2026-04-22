@@ -230,6 +230,7 @@
           <th>Number</th>
           <th>Label</th>
           <th>Status</th>
+          <th>Firmware</th>
           <th>Added</th>
           <th class="r">Actions</th>
         </tr>
@@ -246,6 +247,7 @@
               <span class="chip"><span class="chip__dot"></span>offline</span>
             {{end}}
           </td>
+          <td class="muted" style="font-size: 12px;">unknown</td>
           <td class="num muted">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</td>
           <td class="r">
             <button class="btn btn--quiet btn--sm"
