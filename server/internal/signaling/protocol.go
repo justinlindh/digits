@@ -41,6 +41,10 @@ type LineSettings struct {
 	SilentMode bool   `json:"silent_mode,omitempty"`
 }
 
+// NOTE: this struct is mirrored in pi/digitsd/internal/signal/protocol.go.
+// Any field change must be applied in both places; drift-detection tests
+// on each side assert the round-trip shape.
+//
 // LinkHealthPayload carries per-sample call-quality telemetry from phone to
 // signald. All numeric fields are pointers so "not available this sample" is
 // expressed as nil (omitted from JSON). Units:

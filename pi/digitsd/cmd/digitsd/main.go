@@ -573,7 +573,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 				}
 				return sig.Send(&sigclient.Message{Type: sigclient.TypeLinkHealth, LinkHealth: payload})
 			}
-			reporter := owebrtc.NewReporter(pm.PeerConnection(), send, interval)
+			reporter := owebrtc.NewReporter(pm, send, interval)
 			go reporter.Run(rctx)
 		} else {
 			d.mu.Unlock()
