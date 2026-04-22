@@ -607,6 +607,9 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
 			}
+			if id, ok := h.tracker.CallIDFor(callerRow.Line.Number); ok {
+				callerRow.OnCallID = id
+			}
 		}
 		if calleeRow != nil {
 			calleeRow.OnCall = true
@@ -615,6 +618,9 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 				calleeRow.OnCallPeerName = callerRow.Line.Name
 			} else {
 				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
+			}
+			if id, ok := h.tracker.CallIDFor(calleeRow.Line.Number); ok {
+				calleeRow.OnCallID = id
 			}
 		}
 	}
@@ -785,6 +791,7 @@ type lineRow struct {
 	OnCall          bool
 	OnCallPeerName  string
 	OnCallElapsed   string // "mm:ss" for the Dashboard room-card callout
+	OnCallID        int64  // 0 when not on a call; otherwise the active call id
 	DeviceInfo      *signaling.DeviceInfoSnapshot
 	UpdateAvailable bool // either Pi or firmware is behind the latest release
 }
