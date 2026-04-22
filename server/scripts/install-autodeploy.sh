@@ -44,7 +44,10 @@ COMPOSE_ENV_FILE=$SERVER_DIR/.env.prod
 SERVICES=signald admind
 HEALTH_URLS=http://localhost:8090/healthz http://localhost:9094/healthz
 GHCR_USERNAME=justinlindh
-GHCR_TOKEN_FILE=/etc/digits-autodeploy/ghcr_token
+# Optional: path to a read-only GHCR PAT. Only needed if the images are
+# private; for public packages docker pull works unauthenticated and
+# autodeploy skips the docker login step entirely.
+# GHCR_TOKEN_FILE=/etc/digits-autodeploy/ghcr_token
 # Optional: path to a read-only GitHub PAT for the releases API. With this set,
 # the rate limit goes from 60/hr (unauthenticated) to 5000/hr. Not required.
 # GITHUB_TOKEN_FILE=/etc/digits-autodeploy/github_token

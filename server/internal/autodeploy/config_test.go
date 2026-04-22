@@ -77,6 +77,70 @@ func TestLoadConfigMissingRequired(t *testing.T) {
 	}
 }
 
+func TestLoadConfigOptionalTokenFileMissing(t *testing.T) {
+	// GHCR_TOKEN_FILE points at a non-existent path. For public images the
+	// token is optional, so a missing file should leave GHCRToken empty
+	// rather than aborting config load.
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.env")
+	body := `
+REPO=justinlindh/digits
+TAG_PREFIX=server/v
+COMPOSE_DIR=/srv
+COMPOSE_FILE=docker-compose.prod.yml
+COMPOSE_PROJECT=digits-prod
+COMPOSE_ENV_FILE=/srv/.env.prod
+SERVICES=signald
+HEALTH_URLS=http://localhost:8090/healthz
+GHCR_USERNAME=justinlindh
+GHCR_TOKEN_FILE=` + filepath.Join(dir, "does-not-exist") + `
+STATE_FILE=/tmp/state.json
+ALERT_TO=alert@example
+`
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v (missing optional token file should not abort)", err)
+	}
+	if got.GHCRToken != "" {
+		t.Errorf("GHCRToken=%q, want empty", got.GHCRToken)
+	}
+}
+
+func TestLoadConfigOptionalTokenFileUnreadable(t *testing.T) {
+	// A file that exists but cannot be read (permission denied, etc) is a
+	// real config problem, not an "optional unset" — must still error.
+	dir := t.TempDir()
+	tokenPath := filepath.Join(dir, "tok")
+	if err := os.WriteFile(tokenPath, []byte("ghp_x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.env")
+	body := `
+REPO=justinlindh/digits
+TAG_PREFIX=server/v
+COMPOSE_DIR=/srv
+COMPOSE_FILE=docker-compose.prod.yml
+COMPOSE_PROJECT=digits-prod
+COMPOSE_ENV_FILE=/srv/.env.prod
+SERVICES=signald
+HEALTH_URLS=http://localhost:8090/healthz
+GHCR_USERNAME=justinlindh
+GHCR_TOKEN_FILE=` + tokenPath + `
+STATE_FILE=/tmp/state.json
+ALERT_TO=alert@example
+`
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig(cfgPath)
+	if err == nil {
+		t.Fatal("expected error for unreadable token file")
+	}
+}
+
 func TestLoadConfigIgnoresCommentsAndBlankLines(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.env")

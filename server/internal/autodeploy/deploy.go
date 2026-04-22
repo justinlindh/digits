@@ -200,12 +200,16 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 func (d *Deployer) deployVersion(ctx context.Context, version string, healthTimeout time.Duration) error {
 	env := []string{"BUILD_VERSION=" + version}
 
-	if _, err := d.Runner.Run(ctx, RunSpec{
-		Name:  "docker",
-		Args:  []string{"login", "ghcr.io", "-u", d.Cfg.GHCRUsername, "--password-stdin"},
-		Stdin: []byte(d.Cfg.GHCRToken),
-	}); err != nil {
-		return &stepError{Step: StepLogin, Err: err}
+	// Skip docker login for public images: docker pull works unauthenticated
+	// and `login --password-stdin` with an empty token errors anyway.
+	if d.Cfg.GHCRToken != "" {
+		if _, err := d.Runner.Run(ctx, RunSpec{
+			Name:  "docker",
+			Args:  []string{"login", "ghcr.io", "-u", d.Cfg.GHCRUsername, "--password-stdin"},
+			Stdin: []byte(d.Cfg.GHCRToken),
+		}); err != nil {
+			return &stepError{Step: StepLogin, Err: err}
+		}
 	}
 
 	composeArgs := []string{
