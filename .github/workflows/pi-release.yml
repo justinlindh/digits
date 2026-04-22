@@ -82,4 +82,8 @@ jobs:
             npx semantic-release --extends ./pi/.releaserc.cjs
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Publish the release with ADMIN_PAT so that `release: published`
+          # fires downstream workflows (release-groom.yml). Releases created
+          # via the default GITHUB_TOKEN are suppressed by GitHub's recursive
+          # workflow prevention rule.
+          GITHUB_TOKEN: ${{ secrets.ADMIN_PAT }}
