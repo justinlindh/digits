@@ -278,3 +278,57 @@ func TestHealthStoreCloseAfterEvict(t *testing.T) {
 	s.Evict(1)
 	sub.Close() // must not panic
 }
+
+func TestHealthStoreNotifyDisconnectedBroadcasts(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	sub := s.Subscribe(1)
+	defer sub.Close()
+
+	s.NotifyDisconnected(1, "Alice")
+
+	select {
+	case ev := <-sub.C:
+		if ev.Kind != DisconnectKind {
+			t.Fatalf("kind: got %v want DisconnectKind", ev.Kind)
+		}
+		if ev.EndedBy != "Alice" {
+			t.Fatalf("ended by: got %q want Alice", ev.EndedBy)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for DisconnectKind")
+	}
+}
+
+func TestHealthStoreNotifyDisconnectedOnUnknownCallIsNoOp(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.NotifyDisconnected(999, "Alice") // must not panic, must not allocate
+}
+
+func TestHealthStoreNotifyDisconnectedDoesNotCrossCalls(t *testing.T) {
+	s := NewHealthStore(nil)
+	s.Init(1)
+	s.Init(2)
+	sub1 := s.Subscribe(1)
+	sub2 := s.Subscribe(2)
+	defer sub1.Close()
+	defer sub2.Close()
+
+	s.NotifyDisconnected(1, "Alice")
+
+	select {
+	case ev := <-sub1.C:
+		if ev.Kind != DisconnectKind {
+			t.Fatalf("sub1: got %v want DisconnectKind", ev.Kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sub1 timeout")
+	}
+
+	select {
+	case ev := <-sub2.C:
+		t.Fatalf("sub2 should not have received an event, got %+v", ev)
+	case <-time.After(50 * time.Millisecond):
+		// good
+	}
+}

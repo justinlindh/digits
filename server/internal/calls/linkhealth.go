@@ -306,6 +306,24 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 	}
 }
 
+// NotifyDisconnected broadcasts a DisconnectKind event naming the user who
+// initiated a force-disconnect. Subscribers can render a terminal "ended by
+// X" state BEFORE the subsequent Evict (which arrives when the teardown
+// propagates through Tracker.OnCallEnded) closes the stream.
+//
+// No-op for unknown callIDs.
+func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
+	s.mu.Lock()
+	cr, ok := s.calls[callID]
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	cr.mu.Lock()
+	defer cr.mu.Unlock()
+	cr.broadcastLocked(Event{Kind: DisconnectKind, EndedBy: endedBy})
+}
+
 // broadcastLocked sends an event to every subscriber under cr.mu. Non-blocking
 // per subscriber: if a channel is full, the event drops and a debug log fires
 // once per 32 drops to avoid log spam under sustained slow-client pressure.
