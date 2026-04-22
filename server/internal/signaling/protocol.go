@@ -25,6 +25,7 @@ const (
 	TypeFactoryReset    = "factory_reset"    // Server → Phone: trigger factory reset
 	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
 	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
+	TypeLinkHealth      = "link_health"        // Phone -> Server: per-call stats snapshot
 )
 
 // LineSettings is the wire-format copy of server/internal/line.Settings used
@@ -38,6 +39,28 @@ const (
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+}
+
+// LinkHealthPayload carries per-sample call-quality telemetry from phone to
+// signald. All numeric fields are pointers so "not available this sample" is
+// expressed as nil (omitted from JSON). Units:
+//
+//	LossPct:  packet loss as percent (0-100)
+//	JitterMs: RTCP jitter, milliseconds
+//	RttMs:    ICE nominated-pair round-trip time, milliseconds
+//	BytesIn:  bytes received on the nominated pair since call start
+//	BytesOut: bytes sent on the nominated pair since call start
+//
+// ConnType is "host", "srflx", or "relay" (empty if nominated pair unknown).
+// TS is phone-local unix milliseconds at the moment of sampling.
+type LinkHealthPayload struct {
+	TS       int64    `json:"ts"`
+	LossPct  *float32 `json:"loss_pct,omitempty"`
+	JitterMs *float32 `json:"jitter_ms,omitempty"`
+	RttMs    *float32 `json:"rtt_ms,omitempty"`
+	ConnType string   `json:"conn_type,omitempty"`
+	BytesIn  *int64   `json:"bytes_in,omitempty"`
+	BytesOut *int64   `json:"bytes_out,omitempty"`
 }
 
 // ICEServer represents a STUN or TURN server configuration.
@@ -83,6 +106,9 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// Link-health telemetry (link_health messages)
+	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
 }
 
 func ParseMessage(data []byte) (*Message, error) {
