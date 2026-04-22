@@ -1291,3 +1291,68 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .neighborhood__lines { grid-template-columns: 1fr; }
 }
 
+/* Families invite postcard */
+.postcard {
+  background: linear-gradient(180deg, var(--paper) 0%, #f2ebdc 100%);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 20px;
+  align-items: center;
+  box-shadow: var(--shadow-1);
+  margin-bottom: 14px;
+}
+.postcard__body { min-width: 0; }
+.postcard__kicker {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 4px;
+}
+.postcard__code {
+  font-family: var(--font-mono);
+  font-size: 30px;
+  letter-spacing: 0.22em;
+  color: var(--brass);
+  font-weight: 500;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.postcard__message {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  margin: 0;
+}
+.postcard__message code {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 12px;
+  background: var(--paper-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.postcard__stamp {
+  border: 1px dashed var(--brass);
+  border-radius: 6px;
+  padding: 10px 6px;
+  text-align: center;
+  color: var(--brass);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.postcard__stamp svg { width: 28px; height: 28px; margin-bottom: 4px; }
+
+@media (max-width: 600px) {
+  .postcard { grid-template-columns: 1fr; }
+  .postcard__stamp { justify-self: start; }
+}
+

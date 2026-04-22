@@ -21,13 +21,22 @@
       </header>
       <div class="panel__body">
         {{if .CreatedCode}}
-        <div style="text-align: center; margin-bottom: 14px; padding: 16px; border: 1px dashed var(--brass); border-radius: var(--radius-1); background: rgba(196,139,58,0.04);">
-          <div class="muted" style="font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">Invite code</div>
-          <div class="num brass" style="font-size: 26px; letter-spacing: 0.2em; font-weight: 500; user-select: all;">{{.CreatedCode}}</div>
+        <div class="postcard">
+          <div class="postcard__body">
+            <div class="postcard__kicker">Your invite code</div>
+            <div class="postcard__code num" style="user-select: all;">{{.CreatedCode}}</div>
+            <p class="postcard__message">
+              Here's our code. Paste it into <code>app.digits.family/links</code> to connect our families. After that, your handsets and ours can dial each other by line number.
+            </p>
+          </div>
+          <div class="postcard__stamp" aria-hidden="true">
+            <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">{{template "house-icon"}}</svg>
+            <div>FAMILY MAIL</div>
+          </div>
         </div>
         {{end}}
         <form method="POST" action="/links/invite">
-          <button type="submit" class="btn btn--primary" style="width: 100%;">Invite a friend</button>
+          <button type="submit" class="btn btn--primary" style="width: 100%;">{{if .CreatedCode}}Generate another{{else}}Invite a friend{{end}}</button>
         </form>
       </div>
     </section>

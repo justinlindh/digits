@@ -1022,3 +1022,25 @@ func TestLinksPage_Neighborhood(t *testing.T) {
 		}
 	}
 }
+
+func TestLinksPage_InvitePostcard(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/links?created=DEMO-123", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="postcard"`,
+		`class="postcard__code num"`,
+		"DEMO-123",
+		"Paste it into",
+		"line number",
+		"FAMILY MAIL",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("links page missing %q", want)
+		}
+	}
+}
