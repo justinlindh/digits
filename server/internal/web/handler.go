@@ -1438,6 +1438,10 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
+	if h.householdStore == nil {
+		http.NotFound(w, r)
+		return
+	}
 	households, err := h.householdStore.GetForUser(user.ID)
 	if err != nil || len(households) == 0 {
 		http.NotFound(w, r)
