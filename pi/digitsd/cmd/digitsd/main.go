@@ -872,6 +872,12 @@ func (d *daemonCallbacks) HangupCall() {
 		}
 		d.peerMgr = nil
 	}
+	// Drain any active mesh reporter goroutines before closing their
+	// PeerConnections so GetStats() is never called on a closed peer.
+	for phone, cancel := range d.meshReporterCancels {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
 	// Tear down any mesh peers as well. The mesh may still hold a peer adopted
 	// from an earlier flash (ADD_DIALTONE MigrateToMesh) that was aborted
 	// before a conference merge; leaving it behind causes the next Adopt to
