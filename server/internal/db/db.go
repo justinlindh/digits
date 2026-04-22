@@ -226,12 +226,19 @@ END $$;`,
 		//      (only affects pre-release branches where v12 shipped with DEFAULT 'c')
 		`UPDATE users SET theme = 'intercom' WHERE theme = 'c'`,
 		`ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'intercom'`,
-		// v15: party line (three-way calling) support
+		// v15: per-user CRT bezel preference for the dialup theme.
+		// 'off' / 'connecting' (default) / 'all'.
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS crt_mode TEXT NOT NULL DEFAULT 'connecting'`,
+		// v17: party line (three-way calling) support.
+		// Inner statements are idempotent (IF NOT EXISTS) so the block is safe on
+		// environments where the tables were created under an earlier version=15
+		// label (prod before this PR's rebase; main rebase-concurrently claimed 15
+		// for the CRT bezel column above).
 		`DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 15) THEN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 17) THEN
 
-        CREATE TABLE conferences (
+        CREATE TABLE IF NOT EXISTS conferences (
             id UUID PRIMARY KEY,
             host_phone TEXT NOT NULL,
             originating_call_id INTEGER NOT NULL REFERENCES calls(id),
@@ -241,10 +248,10 @@ BEGIN
             end_reason TEXT
         );
 
-        CREATE INDEX conferences_host_phone_idx ON conferences(host_phone);
-        CREATE INDEX conferences_state_idx ON conferences(state);
+        CREATE INDEX IF NOT EXISTS conferences_host_phone_idx ON conferences(host_phone);
+        CREATE INDEX IF NOT EXISTS conferences_state_idx ON conferences(state);
 
-        CREATE TABLE conference_members (
+        CREATE TABLE IF NOT EXISTS conference_members (
             conference_id UUID NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
             phone TEXT NOT NULL,
             role TEXT NOT NULL CHECK (role IN ('host', 'added')),
@@ -254,14 +261,14 @@ BEGIN
             PRIMARY KEY (conference_id, phone)
         );
 
-        CREATE INDEX conference_members_phone_idx ON conference_members(phone);
+        CREATE INDEX IF NOT EXISTS conference_members_phone_idx ON conference_members(phone);
 
-        ALTER TABLE calls ADD COLUMN originating_conference_id UUID REFERENCES conferences(id);
+        ALTER TABLE calls ADD COLUMN IF NOT EXISTS originating_conference_id UUID REFERENCES conferences(id);
 
-        INSERT INTO schema_version (version) VALUES (15);
+        INSERT INTO schema_version (version) VALUES (17);
     END IF;
 END $$;`,
-		// v16: track why a call ended (e.g. 'merged_to_conference' vs a normal hangup)
+		// v18: track why a call ended (e.g. 'merged_to_conference' vs a normal hangup)
 		`ALTER TABLE calls ADD COLUMN IF NOT EXISTS end_reason TEXT`,
 	}
 	for _, m := range migrations {

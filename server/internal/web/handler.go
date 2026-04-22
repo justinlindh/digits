@@ -54,6 +54,7 @@ type Handler struct {
 	tmplOnboard     *template.Template
 	tmplPhoneDetail *template.Template
 	tmplLinks       *template.Template
+	tmplConnecting  *template.Template
 	cfg             HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -124,6 +125,10 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 	if err != nil {
 		return nil, err
 	}
+	tmplConnecting, err := parsePage("connecting.html")
+	if err != nil {
+		return nil, err
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -150,6 +155,7 @@ func NewHandler(lineStore *line.Store, deviceStore *device.Store, hub *signaling
 		tmplOnboard:     tmplOnboard,
 		tmplPhoneDetail: tmplPhoneDetail,
 		tmplLinks:       tmplLinks,
+		tmplConnecting:  tmplConnecting,
 		cfg:             cfg,
 		authStore:       authStore,
 		authHandlers:    authHandlers,
@@ -203,6 +209,7 @@ func (h *Handler) Router() http.Handler {
 	// Protected routes — require valid session
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
+	protected.HandleFunc("GET /connecting", h.handleConnecting)
 	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
 	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
@@ -224,6 +231,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
+	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -319,6 +327,7 @@ type onboardData struct {
 	HouseholdName      string
 	SuggestedName      string
 	Version            string
+	User               *auth.User
 }
 
 func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
@@ -332,6 +341,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
 		SuggestedName:      suggested,
+		User:               user,
 	})
 }
 
@@ -371,6 +381,7 @@ type dashboardData struct {
 	HouseholdName      string
 	Stats              dashStats
 	Lines              []lineRow
+	User               *auth.User
 }
 
 type dashStats struct {
@@ -395,6 +406,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	recent, _ := h.tracker.Recent(10)
 
 	ld := h.buildLinesData(r, "")
+	user := auth.UserFromContext(r.Context())
 
 	data := dashboardData{
 		Page:               "dashboard",
@@ -408,6 +420,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			CallsToday:   countCallsToday(recent),
 		},
 		Lines: ld.Lines,
+		User:  user,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }
@@ -443,6 +456,7 @@ type linesData struct {
 	Lines              []lineRow
 	Error              string
 	PairError          string
+	User               *auth.User
 }
 
 type lineRow struct {
@@ -451,16 +465,18 @@ type lineRow struct {
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
+	var user *auth.User
+	if r != nil {
+		user = auth.UserFromContext(r.Context())
+	}
+
 	var lines []line.Line
 
 	// Scope to household if user has one and householdStore is available
-	if r != nil && h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(user.ID)
-			if err == nil && len(households) > 0 {
-				lines, _ = h.lineStore.ListByHousehold(households[0].ID)
-			}
+	if user != nil && h.householdStore != nil {
+		households, err := h.householdStore.GetForUser(user.ID)
+		if err == nil && len(households) > 0 {
+			lines, _ = h.lineStore.ListByHousehold(households[0].ID)
 		}
 	}
 
@@ -478,7 +494,7 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for i, l := range lines {
 		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
 	}
-	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg}
+	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: user}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
@@ -604,6 +620,7 @@ type lineDetailData struct {
 	LatestFirmwareVersion string
 	PiReleases            []updates.Release
 	FWReleases            []updates.Release
+	User                  *auth.User
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -657,6 +674,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	devInfo := h.hub.DeviceInfo(number)
 
+	user := auth.UserFromContext(r.Context())
+
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		Page:                  "phones",
 		Version:               version.Version,
@@ -671,6 +690,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
 		FWReleases:            fwReleases,
+		User:                  user,
 	})
 }
 
@@ -942,6 +962,7 @@ type callsData struct {
 	CallHistoryEnabled bool
 	HouseholdName      string
 	Entries            []calls.HistoryEntry
+	User               *auth.User
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
@@ -998,7 +1019,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Entries: entries})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Entries: entries, User: user})
 }
 
 // ---- Settings ----
@@ -1077,6 +1098,7 @@ type linksData struct {
 	Revoked         bool
 	Conflicts       string
 	Error           string
+	User            *auth.User
 }
 
 type linkedFamilyRow struct {
@@ -1120,6 +1142,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		Revoked:            r.URL.Query().Get("revoked") == "1",
 		Conflicts:          r.URL.Query().Get("conflicts"),
 		Error:              r.URL.Query().Get("error"),
+		User:               user,
 	}
 
 	// Active links — build connected family directory
@@ -1635,6 +1658,46 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsCRTMode(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	mode := auth.CRTMode(r.FormValue("crt_mode"))
+	if err := h.authStore.SetCRTMode(user.ID, mode); err != nil {
+		slog.Error("set crt_mode failed", "err", err, "crt_mode", mode)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+type connectingData struct {
+	Page          string
+	Version       string
+	HouseholdName string
+	User          *auth.User
+}
+
+func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || user.Theme != auth.ThemeDialup {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
+		Page:          "connecting",
+		Version:       version.Version,
+		HouseholdName: h.householdNameFromContext(r),
+		User:          user,
+	})
 }
 
 // householdContext returns the household name, call-history flag, and timezone location for the current user.

@@ -179,11 +179,12 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // loginRedirectFor returns the URL to redirect a newly-authenticated user to.
-// For dial-up theme users, the welcome=1 query param triggers the login
-// greeting sound in layout-dialup.html; other themes get a plain "/".
+// For dial-up theme users, /connecting renders a modem-dialing intro whose
+// Connect button provides the user gesture needed for post-auth audio.
+// All other themes go straight to the dashboard.
 func loginRedirectFor(u *User) string {
 	if u != nil && u.Theme == ThemeDialup {
-		return "/?welcome=1"
+		return "/connecting"
 	}
 	return "/"
 }
