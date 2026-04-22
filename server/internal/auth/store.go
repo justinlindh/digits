@@ -174,7 +174,7 @@ func (s *Store) ValidateSession(token string) (*Session, error) {
 		 WHERE token_hash = $1 AND expires_at > NOW()`,
 		hash,
 	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("invalid or expired session")
 	}
 	if err != nil {
@@ -230,7 +230,7 @@ func (s *Store) ValidateMagicLink(token string) (string, error) {
 		 RETURNING email`,
 		hash,
 	).Scan(&email)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("invalid, expired, or already used magic link")
 	}
 	if err != nil {
