@@ -1,0 +1,19 @@
+[Unit]
+Description=Digits autodeploy (poll GitHub, deploy new releases)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/autodeploy --config /etc/digits-autodeploy/config.env
+User=root
+Group=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/digits-autodeploy /var/run/docker.sock /home/justin/src/digits/server
+PrivateTmp=true
+LockPersonality=true
+RestrictSUIDSGID=true
+TimeoutStartSec=300s

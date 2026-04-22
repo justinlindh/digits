@@ -1,0 +1,12 @@
+[Unit]
+Description=Digits autodeploy timer
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=true
+Unit=digits-autodeploy.service
+
+[Install]
+WantedBy=timers.target
