@@ -77,7 +77,9 @@
     if (redirected) return;
     redirected = true;
     try { audioEl.pause(); } catch (e) { /* ignore */ }
-    window.location.assign('/');
+    // ?welcome=1 signals the dashboard to play the welcome chime. The Connect
+    // click unlocked audio for this origin, so autoplay there should succeed.
+    window.location.assign('/?welcome=1');
   }
 
   // --- Reduced-motion fast path --------------------------------------------

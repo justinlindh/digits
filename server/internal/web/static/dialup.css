@@ -1165,14 +1165,18 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 .crt__screen { background: transparent; }
 .crt__brand { display: none; }
 
-/* Active: .crt-page (just this page) or .crt-all (every dialup page). */
+/* Active: .crt-page (just this page) or .crt-all (every dialup page).
+   Horizontal gradient suggests a dim room: darker toward the top (wall in
+   shadow) and warmer toward the bottom (desk surface catching a lamp).
+   Avoids the "floating in a void" feel of pure black at the edges. */
 body.crt-page .crt,
 body.crt-all .crt {
   display: grid;
   position: fixed;
   inset: 0;
   place-items: center;
-  background: radial-gradient(ellipse at center, #0a1a2a 0%, #000 78%);
+  background:
+    linear-gradient(180deg, #1a1309 0%, #26180e 55%, #382414 100%);
   perspective: 1400px;
   z-index: 0;
 }
@@ -1196,9 +1200,30 @@ body.crt-all .crt__screen {
   transform: rotateX(0.8deg);
 }
 
-/* Connecting-page screen is 4:3; when wrapping the dashboard we let it
-   match the window's natural aspect instead. */
+/* Connecting-page screen keeps 4:3 on narrow viewports where content is
+   short; desktop drops it (rule below) so the bezel fills the screen. */
 body.crt-page .crt__screen { aspect-ratio: 4 / 3; }
+
+/* Desktop: bezel fills the viewport minus slack for the rings (+40px) and
+   the brand label (+48px below). Applies to both /connecting and the
+   wrapped dashboard. The mobile @media below keeps the narrower shared
+   rule so small viewports don't overstretch. */
+@media (min-width: 641px) {
+  body.crt-page .crt__screen,
+  body.crt-all .crt__screen {
+    width: calc(100vw - 80px);
+    max-width: none;
+    height: calc(100vh - 120px);
+    max-height: none;
+  }
+  /* /connecting floats a small dialer dialog; center it in the large frame. */
+  body.crt-page .crt__screen {
+    aspect-ratio: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
 
 body.crt-page .crt__screen::before,
 body.crt-all .crt__screen::before {
@@ -1236,7 +1261,7 @@ body.crt-page .crt__brand,
 body.crt-all .crt__brand {
   display: block;
   position: absolute;
-  bottom: -48px;
+  bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
   color: #cfc6b3;
@@ -1246,6 +1271,36 @@ body.crt-all .crt__brand {
   font-weight: bold;
   text-shadow: 0 1px 0 #000;
   z-index: 7;
+}
+
+/* Power LED: tiny green indicator below the bezel, to the right of the brand.
+   Pulses softly like an idle CRT power indicator. */
+body.crt-page .crt__brand::after,
+body.crt-all .crt__brand::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: calc(100% + 18px);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3aff6a;
+  box-shadow:
+    0 0 6px rgba(58, 255, 106, 0.75),
+    0 0 12px rgba(58, 255, 106, 0.4),
+    inset 0 0 1px #fff;
+  animation: crt-led-pulse 3.2s ease-in-out infinite;
+}
+
+@keyframes crt-led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.crt-page .crt__brand::after,
+  body.crt-all .crt__brand::after { animation: none; }
 }
 
 /* Reduced motion: cut the flicker. Scanlines stay because they don't move. */
@@ -1275,5 +1330,5 @@ body.crt-all .crt__brand {
     max-height: 92vh;
   }
   body.crt-page .crt__brand,
-  body.crt-all .crt__brand { bottom: -32px; font-size: 9px; letter-spacing: 0.3em; }
+  body.crt-all .crt__brand { bottom: 8px; font-size: 9px; letter-spacing: 0.3em; }
 }

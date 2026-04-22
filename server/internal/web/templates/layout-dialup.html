@@ -134,7 +134,25 @@
   </div>
 
 </div>
-<div class="crt__brand" aria-hidden="true">D I G I T S  &middot;  O N L I N E</div></div></div>
+</div><div class="crt__brand" aria-hidden="true">D I G I T S  &middot;  O N L I N E</div></div>
+
+{{/* Welcome chime. /connecting redirects here with ?welcome=1 after the
+     modem intro; the Connect click on that page unlocks audio for this
+     origin, so autoplay here succeeds. preload="none" keeps the file off
+     the wire on every navigation; only the welcome=1 branch fetches it. */}}
+<audio id="dialup-welcome" src="/static/audio/welcome.mp3" preload="none"></audio>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('welcome') !== '1') return;
+  params.delete('welcome');
+  var q = params.toString();
+  var clean = window.location.pathname + (q ? '?' + q : '') + window.location.hash;
+  window.history.replaceState({}, '', clean);
+  var audio = document.getElementById('dialup-welcome');
+  if (audio) audio.play().catch(function () { /* autoplay blocked; silent */ });
+})();
+</script>
 {{else}}
 <!-- Login / unauthenticated: show bare content with no client chrome -->
 {{block "content" .}}{{end}}
