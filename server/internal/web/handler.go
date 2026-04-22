@@ -1037,7 +1037,6 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -1047,50 +1046,40 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	next := ln.Settings
-	next.VoiceStyle = raw
-	next = next.Normalize()
-	if next.VoiceStyle != ln.Settings.VoiceStyle {
-		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := h.pushLineSettings(number, next); err != nil {
-			slog.Warn("push line settings failed", "number", number, "err", err)
-		}
-		ln.Settings = next
-	}
-	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, "voice-style-section", struct {
-			Line line.Line
-		}{Line: *ln})
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.updateLineSetting(w, r, "voice-style-section", func(s *line.Settings) {
+		s.VoiceStyle = raw
+	})
 }
 
 func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
+	h.updateLineSetting(w, r, "silent-mode-section", func(s *line.Settings) {
+		s.SilentMode = silent
+	})
+}
 
+// updateLineSetting applies a mutation to the Settings of the line identified
+// by the {number} path value, persists and pushes it if anything changed, and
+// then renders the named template partial (or redirects to the phone detail
+// page for non-htmx callers). Handlers are expected to have already called
+// ParseForm and extracted the field they need before invoking this helper.
+func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, partial string, mutate func(*line.Settings)) {
+	number := r.PathValue("number")
 	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
 		return
 	}
 	next := ln.Settings
-	next.SilentMode = silent
+	mutate(&next)
 	next = next.Normalize()
-	if next.SilentMode != ln.Settings.SilentMode {
+	if next != ln.Settings {
 		if err := h.lineStore.UpdateSettings(ln.ID, next); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			slog.Error("update line settings failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		if err := h.pushLineSettings(number, next); err != nil {
@@ -1099,7 +1088,7 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 		ln.Settings = next
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, "silent-mode-section", struct {
+		renderWith(w, h.tmplPhoneDetail, partial, struct {
 			Line line.Line
 		}{Line: *ln})
 		return
