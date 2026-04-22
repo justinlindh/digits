@@ -3,6 +3,7 @@
 package device
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -65,7 +66,7 @@ func TestCreateAndGetByID(t *testing.T) {
 	hhID := createTestHousehold(t, database, "Test Household")
 	lineID := createTestLine(t, database, "5551234567", hhID)
 
-	dev, err := s.Create(lineID, "hw-abc-123")
+	dev, err := s.Create(context.Background(), lineID, "hw-abc-123")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -79,7 +80,7 @@ func TestCreateAndGetByID(t *testing.T) {
 		t.Errorf("HardwareID = %q, want hw-abc-123", dev.HardwareID)
 	}
 
-	got, err := s.GetByID(dev.ID)
+	got, err := s.GetByID(context.Background(), dev.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -96,12 +97,12 @@ func TestGetByHardwareID(t *testing.T) {
 	hhID := createTestHousehold(t, database, "HW Household")
 	lineID := createTestLine(t, database, "5559876543", hhID)
 
-	dev, err := s.Create(lineID, "hw-xyz-999")
+	dev, err := s.Create(context.Background(), lineID, "hw-xyz-999")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	got, err := s.GetByHardwareID("hw-xyz-999")
+	got, err := s.GetByHardwareID(context.Background(), "hw-xyz-999")
 	if err != nil {
 		t.Fatalf("GetByHardwareID: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestGetByHardwareID(t *testing.T) {
 		t.Errorf("ID = %d, want %d", got.ID, dev.ID)
 	}
 
-	_, err = s.GetByHardwareID("does-not-exist")
+	_, err = s.GetByHardwareID(context.Background(), "does-not-exist")
 	if err != ErrNotFound {
 		t.Errorf("expected ErrNotFound for missing hardware ID, got %v", err)
 	}
@@ -121,20 +122,20 @@ func TestListByLine(t *testing.T) {
 	lineA := createTestLine(t, database, "5550001111", hhID)
 	lineB := createTestLine(t, database, "5550002222", hhID)
 
-	_, err := s.Create(lineA, "hw-a1")
+	_, err := s.Create(context.Background(), lineA, "hw-a1")
 	if err != nil {
 		t.Fatalf("Create device 1: %v", err)
 	}
-	_, err = s.Create(lineA, "hw-a2")
+	_, err = s.Create(context.Background(), lineA, "hw-a2")
 	if err != nil {
 		t.Fatalf("Create device 2: %v", err)
 	}
-	_, err = s.Create(lineB, "hw-b1")
+	_, err = s.Create(context.Background(), lineB, "hw-b1")
 	if err != nil {
 		t.Fatalf("Create device 3: %v", err)
 	}
 
-	devicesA, err := s.ListByLine(lineA)
+	devicesA, err := s.ListByLine(context.Background(), lineA)
 	if err != nil {
 		t.Fatalf("ListByLine(lineA): %v", err)
 	}
@@ -142,7 +143,7 @@ func TestListByLine(t *testing.T) {
 		t.Errorf("ListByLine(lineA) = %d devices, want 2", len(devicesA))
 	}
 
-	devicesB, err := s.ListByLine(lineB)
+	devicesB, err := s.ListByLine(context.Background(), lineB)
 	if err != nil {
 		t.Fatalf("ListByLine(lineB): %v", err)
 	}
@@ -156,22 +157,22 @@ func TestDelete(t *testing.T) {
 	hhID := createTestHousehold(t, database, "Delete Household")
 	lineID := createTestLine(t, database, "5553334444", hhID)
 
-	dev, err := s.Create(lineID, "hw-del-001")
+	dev, err := s.Create(context.Background(), lineID, "hw-del-001")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := s.Delete(dev.ID); err != nil {
+	if err := s.Delete(context.Background(), dev.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	_, err = s.GetByID(dev.ID)
+	_, err = s.GetByID(context.Background(), dev.ID)
 	if err != ErrNotFound {
 		t.Errorf("expected ErrNotFound after delete, got %v", err)
 	}
 
 	// Deleting again should return ErrNotFound
-	err = s.Delete(dev.ID)
+	err = s.Delete(context.Background(), dev.ID)
 	if err != ErrNotFound {
 		t.Errorf("expected ErrNotFound on second delete, got %v", err)
 	}
@@ -182,7 +183,7 @@ func TestTouchLastSeen(t *testing.T) {
 	hhID := createTestHousehold(t, database, "LastSeen Household")
 	lineID := createTestLine(t, database, "5558880001", hhID)
 
-	dev, err := s.Create(lineID, "hw-lastseen-001")
+	dev, err := s.Create(context.Background(), lineID, "hw-lastseen-001")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -193,11 +194,11 @@ func TestTouchLastSeen(t *testing.T) {
 	}
 
 	// Touch it
-	if err := s.TouchLastSeen("hw-lastseen-001"); err != nil {
+	if err := s.TouchLastSeen(context.Background(), "hw-lastseen-001"); err != nil {
 		t.Fatalf("TouchLastSeen: %v", err)
 	}
 
-	got, err := s.GetByID(dev.ID)
+	got, err := s.GetByID(context.Background(), dev.ID)
 	if err != nil {
 		t.Fatalf("GetByID after touch: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestTouchLastSeen_UnknownHardware(t *testing.T) {
 	s, _ := testStore(t)
 
 	// Should not error for unknown hardware ID (just no rows affected)
-	if err := s.TouchLastSeen("does-not-exist"); err != nil {
+	if err := s.TouchLastSeen(context.Background(), "does-not-exist"); err != nil {
 		t.Errorf("TouchLastSeen for unknown hardware: %v", err)
 	}
 }
@@ -223,17 +224,17 @@ func TestPairingCode(t *testing.T) {
 	hhID := createTestHousehold(t, database, "Pairing Household")
 	lineID := createTestLine(t, database, "5556667777", hhID)
 
-	dev, err := s.Create(lineID, "hw-pair-001")
+	dev, err := s.Create(context.Background(), lineID, "hw-pair-001")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	expiresAt := time.Now().Add(10 * time.Minute)
-	if err := s.SetPairingCode(dev.ID, "SECRET123", expiresAt); err != nil {
+	if err := s.SetPairingCode(context.Background(), dev.ID, "SECRET123", expiresAt); err != nil {
 		t.Fatalf("SetPairingCode: %v", err)
 	}
 
-	got, err := s.GetByPairingCode("SECRET123")
+	got, err := s.GetByPairingCode(context.Background(), "SECRET123")
 	if err != nil {
 		t.Fatalf("GetByPairingCode: %v", err)
 	}
@@ -243,23 +244,23 @@ func TestPairingCode(t *testing.T) {
 
 	// Expired code should not be found
 	pastExpiry := time.Now().Add(-1 * time.Minute)
-	if err := s.SetPairingCode(dev.ID, "EXPIRED", pastExpiry); err != nil {
+	if err := s.SetPairingCode(context.Background(), dev.ID, "EXPIRED", pastExpiry); err != nil {
 		t.Fatalf("SetPairingCode (expired): %v", err)
 	}
-	_, err = s.GetByPairingCode("EXPIRED")
+	_, err = s.GetByPairingCode(context.Background(), "EXPIRED")
 	if err != ErrNotFound {
 		t.Errorf("expected ErrNotFound for expired pairing code, got %v", err)
 	}
 
 	// CompletePairing clears the code
-	if err := s.SetPairingCode(dev.ID, "COMPLETE", time.Now().Add(10*time.Minute)); err != nil {
+	if err := s.SetPairingCode(context.Background(), dev.ID, "COMPLETE", time.Now().Add(10*time.Minute)); err != nil {
 		t.Fatalf("SetPairingCode (complete): %v", err)
 	}
-	if err := s.CompletePairing(dev.ID); err != nil {
+	if err := s.CompletePairing(context.Background(), dev.ID); err != nil {
 		t.Fatalf("CompletePairing: %v", err)
 	}
 
-	completed, err := s.GetByID(dev.ID)
+	completed, err := s.GetByID(context.Background(), dev.ID)
 	if err != nil {
 		t.Fatalf("GetByID after CompletePairing: %v", err)
 	}
@@ -276,7 +277,7 @@ func TestValidateToken_Correct(t *testing.T) {
 	hhID := createTestHousehold(t, database, "Token Household")
 	lineID := createTestLine(t, database, "5551110001", hhID)
 
-	dev, err := s.Create(lineID, "hw-token-001")
+	dev, err := s.Create(context.Background(), lineID, "hw-token-001")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -292,7 +293,7 @@ func TestValidateToken_Correct(t *testing.T) {
 		t.Fatalf("set hashed token: %v", err)
 	}
 
-	valid, err := s.ValidateToken("hw-token-001", plaintext)
+	valid, err := s.ValidateToken(context.Background(), "hw-token-001", plaintext)
 	if err != nil {
 		t.Fatalf("ValidateToken: %v", err)
 	}
@@ -306,7 +307,7 @@ func TestValidateToken_Wrong(t *testing.T) {
 	hhID := createTestHousehold(t, database, "Token Wrong Household")
 	lineID := createTestLine(t, database, "5551110002", hhID)
 
-	dev, err := s.Create(lineID, "hw-token-002")
+	dev, err := s.Create(context.Background(), lineID, "hw-token-002")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -321,7 +322,7 @@ func TestValidateToken_Wrong(t *testing.T) {
 		t.Fatalf("set hashed token: %v", err)
 	}
 
-	valid, err := s.ValidateToken("hw-token-002", "wrong-token")
+	valid, err := s.ValidateToken(context.Background(), "hw-token-002", "wrong-token")
 	if err != nil {
 		t.Fatalf("ValidateToken: %v", err)
 	}
@@ -333,7 +334,7 @@ func TestValidateToken_Wrong(t *testing.T) {
 func TestValidateToken_NonExistent(t *testing.T) {
 	s, _ := testStore(t)
 
-	valid, err := s.ValidateToken("hw-does-not-exist", "any-token")
+	valid, err := s.ValidateToken(context.Background(), "hw-does-not-exist", "any-token")
 	if err != nil {
 		t.Fatalf("ValidateToken: %v", err)
 	}

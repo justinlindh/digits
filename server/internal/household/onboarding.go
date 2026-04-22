@@ -1,11 +1,14 @@
 package household
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // NeedsOnboarding returns true if the given user has no household memberships.
-func (s *Store) NeedsOnboarding(userID string) bool {
+func (s *Store) NeedsOnboarding(ctx context.Context, userID string) bool {
 	var count int
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM household_members WHERE user_id = $1`,
 		userID,
 	).Scan(&count)
@@ -18,10 +21,10 @@ func (s *Store) NeedsOnboarding(userID string) bool {
 
 // Onboard creates a default household named "<userName>'s Family" and adds the
 // user as its admin member. It returns the new household.
-func (s *Store) Onboard(userID, userName string) (*Household, error) {
+func (s *Store) Onboard(ctx context.Context, userID, userName string) (*Household, error) {
 	name := fmt.Sprintf("%s's Family", userName)
 	if userName == "" {
 		name = "My Family"
 	}
-	return s.Create(name, userID)
+	return s.Create(ctx, name, userID)
 }

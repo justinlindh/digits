@@ -1,6 +1,7 @@
 package household
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -34,15 +35,15 @@ func NewStore(db *sql.DB) *Store {
 }
 
 // Create inserts a new household and adds ownerUserID as an admin member in a single transaction.
-func (s *Store) Create(name, ownerUserID string) (*Household, error) {
-	tx, err := s.db.Begin()
+func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Household, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	h := &Household{}
-	err = tx.QueryRow(
+	err = tx.QueryRowContext(ctx,
 		`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
 		name,
 	).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt)
@@ -50,7 +51,7 @@ func (s *Store) Create(name, ownerUserID string) (*Household, error) {
 		return nil, fmt.Errorf("insert household: %w", err)
 	}
 
-	_, err = tx.Exec(
+	_, err = tx.ExecContext(ctx,
 		`INSERT INTO household_members (user_id, household_id, role) VALUES ($1, $2, 'admin')`,
 		ownerUserID, h.ID,
 	)
@@ -65,9 +66,9 @@ func (s *Store) Create(name, ownerUserID string) (*Household, error) {
 }
 
 // GetByID retrieves a household by its UUID.
-func (s *Store) GetByID(id string) (*Household, error) {
+func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
 	h := &Household{}
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT id, name, call_history_enabled, timezone, created_at FROM households WHERE id = $1`,
 		id,
 	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt)
@@ -81,8 +82,8 @@ func (s *Store) GetByID(id string) (*Household, error) {
 }
 
 // GetForUser returns all households the given user belongs to.
-func (s *Store) GetForUser(userID string) ([]*Household, error) {
-	rows, err := s.db.Query(
+func (s *Store) GetForUser(ctx context.Context, userID string) ([]*Household, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT h.id, h.name, h.call_history_enabled, h.timezone, h.created_at
 		 FROM households h
 		 JOIN household_members m ON m.household_id = h.id
@@ -107,9 +108,9 @@ func (s *Store) GetForUser(userID string) ([]*Household, error) {
 }
 
 // GetRole returns the role of a user in a given household, or an error if not a member.
-func (s *Store) GetRole(userID, householdID string) (string, error) {
+func (s *Store) GetRole(ctx context.Context, userID, householdID string) (string, error) {
 	var role string
-	err := s.db.QueryRow(
+	err := s.db.QueryRowContext(ctx,
 		`SELECT role FROM household_members WHERE user_id = $1 AND household_id = $2`,
 		userID, householdID,
 	).Scan(&role)
@@ -124,8 +125,8 @@ func (s *Store) GetRole(userID, householdID string) (string, error) {
 
 // AddMember adds a user to a household with the given role. If the user is already
 // a member, their role is updated.
-func (s *Store) AddMember(userID, householdID, role string) error {
-	_, err := s.db.Exec(
+func (s *Store) AddMember(ctx context.Context, userID, householdID, role string) error {
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO household_members (user_id, household_id, role)
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (user_id, household_id) DO UPDATE SET role = EXCLUDED.role`,
@@ -138,8 +139,8 @@ func (s *Store) AddMember(userID, householdID, role string) error {
 }
 
 // GetMembers returns all members of a household.
-func (s *Store) GetMembers(householdID string) ([]Member, error) {
-	rows, err := s.db.Query(
+func (s *Store) GetMembers(ctx context.Context, householdID string) ([]Member, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT user_id, household_id, role FROM household_members WHERE household_id = $1`,
 		householdID,
 	)
@@ -159,15 +160,15 @@ func (s *Store) GetMembers(householdID string) ([]Member, error) {
 }
 
 // CountHouseholds returns the total number of households.
-func (s *Store) CountHouseholds() (int, error) {
+func (s *Store) CountHouseholds(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM households`).Scan(&count)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households`).Scan(&count)
 	return count, err
 }
 
 // UpdateName changes the name of a household.
-func (s *Store) UpdateName(householdID, name string) error {
-	_, err := s.db.Exec(
+func (s *Store) UpdateName(ctx context.Context, householdID, name string) error {
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE households SET name = $1 WHERE id = $2`,
 		name, householdID,
 	)
@@ -188,8 +189,8 @@ func (h *Household) Location() *time.Location {
 }
 
 // SetCallHistoryEnabled toggles call history for a household.
-func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
-	_, err := s.db.Exec(
+func (s *Store) SetCallHistoryEnabled(ctx context.Context, householdID string, enabled bool) error {
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE households SET call_history_enabled = $1 WHERE id = $2`,
 		enabled, householdID,
 	)
@@ -200,11 +201,11 @@ func (s *Store) SetCallHistoryEnabled(householdID string, enabled bool) error {
 }
 
 // SetTimezone updates the IANA timezone for a household.
-func (s *Store) SetTimezone(householdID, tz string) error {
+func (s *Store) SetTimezone(ctx context.Context, householdID, tz string) error {
 	if _, err := time.LoadLocation(tz); err != nil {
 		return fmt.Errorf("invalid timezone %q: %w", tz, err)
 	}
-	_, err := s.db.Exec(
+	_, err := s.db.ExecContext(ctx,
 		`UPDATE households SET timezone = $1 WHERE id = $2`,
 		tz, householdID,
 	)

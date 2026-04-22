@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -63,11 +64,11 @@ func TestRequireAuth_InvalidSession(t *testing.T) {
 func TestRequireAuth_ValidSession(t *testing.T) {
 	s := testDB(t)
 
-	user, err := s.CreateUser("middleware@test.com", "MW User", nil)
+	user, err := s.CreateUser(context.Background(), "middleware@test.com", "MW User", nil)
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	token, _, err := s.CreateSession(user.ID, 24*time.Hour)
+	token, _, err := s.CreateSession(context.Background(), user.ID, 24*time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -96,4 +97,3 @@ func TestRequireAuth_ValidSession(t *testing.T) {
 		t.Errorf("context user email = %s, want middleware@test.com", ctxUser.Email)
 	}
 }
-

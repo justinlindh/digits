@@ -33,8 +33,8 @@ type Conn struct {
 
 type Hub struct {
 	mu           sync.RWMutex
-	conns        map[string]*Conn                // phone number → connection
-	hwConns      map[string]*Conn                // hardware ID → connection
+	conns        map[string]*Conn                 // phone number → connection
+	hwConns      map[string]*Conn                 // hardware ID → connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number → last update status
 }
 
@@ -128,8 +128,8 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 
 // UpdateStatusSnapshot holds the last update status reported by a phone.
 type UpdateStatusSnapshot struct {
-	Status    string    `json:"status"`    // downloading, applying, rebooting, success, failed, ""
-	Detail    string    `json:"detail"`    // human-readable detail
+	Status    string    `json:"status"` // downloading, applying, rebooting, success, failed, ""
+	Detail    string    `json:"detail"` // human-readable detail
 	UpdatedAt time.Time `json:"updated_at"`
 }
 

@@ -49,19 +49,19 @@ func nextPhone() string {
 
 // lhSetup holds the per-test state created by newLHEnv.
 type lhSetup struct {
-	env    callsTestEnv
-	userA  *auth.User
-	userB  *auth.User
-	userC  *auth.User
-	hhAID  string
-	hhBID  string
-	hhCID  string
-	numA   string // phone number owned by household A
-	numB   string // phone number owned by household B
-	numC   string // phone number owned by household C
-	hwA    string
-	hwB    string
-	hwC    string
+	env   callsTestEnv
+	userA *auth.User
+	userB *auth.User
+	userC *auth.User
+	hhAID string
+	hhBID string
+	hhCID string
+	numA  string // phone number owned by household A
+	numB  string // phone number owned by household B
+	numC  string // phone number owned by household C
+	hwA   string
+	hwB   string
+	hwC   string
 }
 
 // newLHEnv creates three users in three independent households, each with one
@@ -106,55 +106,55 @@ func newLHEnv(t *testing.T) lhSetup {
 	})
 
 	// Create users.
-	userA, err := env.authStore.CreateUser(emailA, "LH User A", nil)
+	userA, err := env.authStore.CreateUser(context.Background(), emailA, "LH User A", nil)
 	if err != nil {
 		t.Fatalf("create user A: %v", err)
 	}
-	userB, err := env.authStore.CreateUser(emailB, "LH User B", nil)
+	userB, err := env.authStore.CreateUser(context.Background(), emailB, "LH User B", nil)
 	if err != nil {
 		t.Fatalf("create user B: %v", err)
 	}
-	userC, err := env.authStore.CreateUser(emailC, "LH User C", nil)
+	userC, err := env.authStore.CreateUser(context.Background(), emailC, "LH User C", nil)
 	if err != nil {
 		t.Fatalf("create user C: %v", err)
 	}
 
 	// Create households.
-	hhA, err := env.householdStore.Create(hhNameA, userA.ID)
+	hhA, err := env.householdStore.Create(context.Background(), hhNameA, userA.ID)
 	if err != nil {
 		t.Fatalf("create household A: %v", err)
 	}
-	hhB, err := env.householdStore.Create(hhNameB, userB.ID)
+	hhB, err := env.householdStore.Create(context.Background(), hhNameB, userB.ID)
 	if err != nil {
 		t.Fatalf("create household B: %v", err)
 	}
-	hhC, err := env.householdStore.Create(hhNameC, userC.ID)
+	hhC, err := env.householdStore.Create(context.Background(), hhNameC, userC.ID)
 	if err != nil {
 		t.Fatalf("create household C: %v", err)
 	}
 
 	// Pair phones so each household owns its line.
-	codeA, err := env.pairingStore.GenerateCode(hwA)
+	codeA, err := env.pairingStore.GenerateCode(context.Background(), hwA)
 	if err != nil {
 		t.Fatalf("generate code A: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(codeA, numA, "Phone A", hhA.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeA, numA, "Phone A", hhA.ID); err != nil {
 		t.Fatalf("claim phone A: %v", err)
 	}
 
-	codeB, err := env.pairingStore.GenerateCode(hwB)
+	codeB, err := env.pairingStore.GenerateCode(context.Background(), hwB)
 	if err != nil {
 		t.Fatalf("generate code B: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(codeB, numB, "Phone B", hhB.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeB, numB, "Phone B", hhB.ID); err != nil {
 		t.Fatalf("claim phone B: %v", err)
 	}
 
-	codeC, err := env.pairingStore.GenerateCode(hwC)
+	codeC, err := env.pairingStore.GenerateCode(context.Background(), hwC)
 	if err != nil {
 		t.Fatalf("generate code C: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(codeC, numC, "Phone C", hhC.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeC, numC, "Phone C", hhC.ID); err != nil {
 		t.Fatalf("claim phone C: %v", err)
 	}
 
@@ -172,7 +172,7 @@ func newLHEnv(t *testing.T) lhSetup {
 // from 200 successes.
 func authedClient(t *testing.T, s lhSetup, user *auth.User) *http.Client {
 	t.Helper()
-	token, _, err := s.env.authStore.CreateSession(user.ID, auth.SessionTTL)
+	token, _, err := s.env.authStore.CreateSession(context.Background(), user.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -207,7 +207,7 @@ func recordSample(s lhSetup, callID int64, endpoint string, lossPct float32) {
 func TestLinkHealth_OwnerReadsOwnCall(t *testing.T) {
 	s := newLHEnv(t)
 
-	callID, err := s.env.tracker.OnCallInitiated(s.numA, s.numB)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numA, s.numB)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestLinkHealth_OwnerReadsOwnCall(t *testing.T) {
 func TestLinkHealth_CalleeOwnerReadsOwnCall(t *testing.T) {
 	s := newLHEnv(t)
 
-	callID, err := s.env.tracker.OnCallInitiated(s.numA, s.numB)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numA, s.numB)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestLinkHealth_CalleeOwnerReadsOwnCall(t *testing.T) {
 func TestLinkHealth_UnrelatedHouseholdGets404(t *testing.T) {
 	s := newLHEnv(t)
 
-	callID, err := s.env.tracker.OnCallInitiated(s.numA, s.numB)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numA, s.numB)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -288,16 +288,16 @@ func TestLinkHealth_LinkedHouseholdStillGets404(t *testing.T) {
 	s := newLHEnv(t)
 
 	// Link household A to household B.
-	invite, err := s.env.linkStore.CreateInvite(s.hhAID, s.userA.ID)
+	invite, err := s.env.linkStore.CreateInvite(context.Background(), s.hhAID, s.userA.ID)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	if _, err := s.env.linkStore.AcceptInvite(invite.InviteCode, s.userB.ID, s.hhBID); err != nil {
+	if _, err := s.env.linkStore.AcceptInvite(context.Background(), invite.InviteCode, s.userB.ID, s.hhBID); err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
 	// Call is between B and C — A is NOT an endpoint owner.
-	callID, err := s.env.tracker.OnCallInitiated(s.numB, s.numC)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numB, s.numC)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestLinkHealth_NonexistentCallIs404(t *testing.T) {
 func TestLinkHealth_UnauthenticatedRedirectsOr401(t *testing.T) {
 	s := newLHEnv(t)
 
-	callID, err := s.env.tracker.OnCallInitiated(s.numA, s.numB)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numA, s.numB)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestLinkHealth_UnauthenticatedRedirectsOr401(t *testing.T) {
 // startCall initiates a call via the tracker. Returns the call id.
 func startCall(t *testing.T, s lhSetup, caller, callee string) int64 {
 	t.Helper()
-	id, err := s.env.tracker.OnCallInitiated(caller, callee)
+	id, err := s.env.tracker.OnCallInitiated(context.Background(), caller, callee)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -385,7 +385,7 @@ func disconnectURL(s lhSetup, callID int64) string {
 func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
 	s := newLHEnv(t)
 
-	callID, err := s.env.tracker.OnCallInitiated(s.numA, s.numB)
+	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numA, s.numB)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
 	s := newLHEnv(t)
 	callID := startCall(t, s, s.numA, s.numB)
 	// End the call.
-	if err := s.env.tracker.OnCallEnded(s.numA, s.numB); err != nil {
+	if err := s.env.tracker.OnCallEnded(context.Background(), s.numA, s.numB); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 

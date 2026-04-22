@@ -4,28 +4,28 @@ import "encoding/json"
 
 // Message types
 const (
-	TypeRegister   = "register"
-	TypeCall       = "call"
-	TypeRing       = "ring"
-	TypeSDP        = "sdp"
-	TypeICE        = "ice"
-	TypeAnswer     = "answer"
-	TypeHangup     = "hangup"
-	TypeBusy       = "busy"
-	TypeDTMF       = "dtmf"
-	TypeError      = "error"
-	TypeICEServers = "ice-servers"
-	TypeRequestICE = "request-ice-servers"
-	TypePairingCode = "pairing_code"
-	TypePaired      = "paired"
-	TypeDeviceInfo  = "device_info" // Phone → Server: version info on connect
-	TypeUpdateTrigger   = "update_trigger"    // Server → Phone: check and apply updates
-	TypeUpdateStatus    = "update_status"     // Phone → Server: update progress report
-	TypeICERestart      = "ice_restart"       // Bidirectional: ICE restart offer with new credentials
-	TypeFactoryReset    = "factory_reset"    // Server → Phone: trigger factory reset
-	TypeRestart         = "restart"            // Server → Phone: restart service or reboot
-	TypeLineSettings    = "line_settings"      // Server → Phone: per-line config update
-	TypeLinkHealth      = "link_health"        // Phone → Server: per-call stats snapshot
+	TypeRegister      = "register"
+	TypeCall          = "call"
+	TypeRing          = "ring"
+	TypeSDP           = "sdp"
+	TypeICE           = "ice"
+	TypeAnswer        = "answer"
+	TypeHangup        = "hangup"
+	TypeBusy          = "busy"
+	TypeDTMF          = "dtmf"
+	TypeError         = "error"
+	TypeICEServers    = "ice-servers"
+	TypeRequestICE    = "request-ice-servers"
+	TypePairingCode   = "pairing_code"
+	TypePaired        = "paired"
+	TypeDeviceInfo    = "device_info"    // Phone → Server: version info on connect
+	TypeUpdateTrigger = "update_trigger" // Server → Phone: check and apply updates
+	TypeUpdateStatus  = "update_status"  // Phone → Server: update progress report
+	TypeICERestart    = "ice_restart"    // Bidirectional: ICE restart offer with new credentials
+	TypeFactoryReset  = "factory_reset"  // Server → Phone: trigger factory reset
+	TypeRestart       = "restart"        // Server → Phone: restart service or reboot
+	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
+	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
 )
 
 // Conference message types (three-way calling)
@@ -102,14 +102,14 @@ type ICEServer struct {
 }
 
 type Message struct {
-	Type        string         `json:"type"`
-	From        string         `json:"from,omitempty"`
-	To          string         `json:"to,omitempty"`
-	Number      string         `json:"number,omitempty"`
-	Digit       string         `json:"digit,omitempty"`
-	SDP         string         `json:"sdp,omitempty"`
-	Candidate   string         `json:"candidate,omitempty"`
-	Error       string         `json:"error,omitempty"`
+	Type        string      `json:"type"`
+	From        string      `json:"from,omitempty"`
+	To          string      `json:"to,omitempty"`
+	Number      string      `json:"number,omitempty"`
+	Digit       string      `json:"digit,omitempty"`
+	SDP         string      `json:"sdp,omitempty"`
+	Candidate   string      `json:"candidate,omitempty"`
+	Error       string      `json:"error,omitempty"`
 	Servers     []ICEServer `json:"servers,omitempty"`
 	PairingCode string      `json:"pairing_code,omitempty"`
 	HardwareID  string      `json:"hardware_id,omitempty"`

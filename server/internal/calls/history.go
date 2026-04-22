@@ -1,6 +1,7 @@
 package calls
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -54,17 +55,17 @@ type ConferenceSummary struct {
 // capped at limit total entries. Calls that were merged into a conference
 // (end_reason = 'merged_to_conference') are excluded — they are represented
 // by the conference entry instead.
-func (t *Tracker) RecentHistoryForPhones(phones []string, limit int) ([]HistoryEntry, error) {
+func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, limit int) ([]HistoryEntry, error) {
 	if len(phones) == 0 {
 		return nil, nil
 	}
 
-	calls, err := t.recentCallsForHistory(phones, limit)
+	calls, err := t.recentCallsForHistory(ctx, phones, limit)
 	if err != nil {
 		return nil, fmt.Errorf("recent calls: %w", err)
 	}
 
-	confs, err := t.recentConferencesForHistory(phones, limit)
+	confs, err := t.recentConferencesForHistory(ctx, phones, limit)
 	if err != nil {
 		return nil, fmt.Errorf("recent conferences: %w", err)
 	}
@@ -96,7 +97,7 @@ func (t *Tracker) RecentHistoryForPhones(phones []string, limit int) ([]HistoryE
 
 // recentCallsForHistory returns calls for the given phones, excluding rows
 // that were merged into a conference.
-func (t *Tracker) recentCallsForHistory(phones []string, limit int) ([]Call, error) {
+func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, limit int) ([]Call, error) {
 	n := len(phones)
 	ph := dbutil.Placeholders(n, 0)
 	query := fmt.Sprintf(
@@ -114,7 +115,7 @@ func (t *Tracker) recentCallsForHistory(phones []string, limit int) ([]Call, err
 	}
 	args = append(args, limit)
 
-	rows, err := t.db.DB.Query(query, args...)
+	rows, err := t.db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +136,7 @@ func (t *Tracker) recentCallsForHistory(phones []string, limit int) ([]Call, err
 
 // recentConferencesForHistory returns conferences where any of the phones is
 // a member, including the ordered member list for each conference.
-func (t *Tracker) recentConferencesForHistory(phones []string, limit int) ([]ConferenceSummary, error) {
+func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, limit int) ([]ConferenceSummary, error) {
 	// One query: join conferences + conference_members, aggregate member list.
 	// host_phone always sorts first via CASE, remaining members sort alphabetically
 	// so ordering is stable across queries.
@@ -156,7 +157,7 @@ func (t *Tracker) recentConferencesForHistory(phones []string, limit int) ([]Con
 		LIMIT $2`
 	args := []interface{}{pq.Array(phones), limit}
 
-	rows, err := t.db.DB.Query(query, args...)
+	rows, err := t.db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

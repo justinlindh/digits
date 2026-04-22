@@ -3,6 +3,7 @@
 package household
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -103,7 +104,7 @@ func TestCreateInvite_ReturnsValidLink(t *testing.T) {
 	userID := createLinkTestUser(t, db, "create-invite")
 	householdID := createLinkTestHousehold(t, db, "Household A")
 
-	link, err := store.CreateInvite(householdID, userID)
+	link, err := store.CreateInvite(context.Background(), householdID, userID)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -133,12 +134,12 @@ func TestAcceptInvite_ActivatesLink(t *testing.T) {
 	hA := createLinkTestHousehold(t, db, "Accept Household A")
 	hB := createLinkTestHousehold(t, db, "Accept Household B")
 
-	invite, err := store.CreateInvite(hA, userA)
+	invite, err := store.CreateInvite(context.Background(), hA, userA)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
 
-	link, err := store.AcceptInvite(invite.InviteCode, userB, hB)
+	link, err := store.AcceptInvite(context.Background(), invite.InviteCode, userB, hB)
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
@@ -167,7 +168,7 @@ func TestAcceptInvite_FailsOnInvalidCode(t *testing.T) {
 	userB := createLinkTestUser(t, db, "invalid-code")
 	hB := createLinkTestHousehold(t, db, "Invalid Code Household")
 
-	_, err := store.AcceptInvite("NOTVALID", userB, hB)
+	_, err := store.AcceptInvite(context.Background(), "NOTVALID", userB, hB)
 	if err == nil {
 		t.Fatal("expected error for invalid invite code, got nil")
 	}
@@ -182,15 +183,15 @@ func TestAreLinked_TrueAfterAccept(t *testing.T) {
 	hA := createLinkTestHousehold(t, db, "Linked Household A")
 	hB := createLinkTestHousehold(t, db, "Linked Household B")
 
-	invite, err := store.CreateInvite(hA, userA)
+	invite, err := store.CreateInvite(context.Background(), hA, userA)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	if _, err := store.AcceptInvite(invite.InviteCode, userB, hB); err != nil {
+	if _, err := store.AcceptInvite(context.Background(), invite.InviteCode, userB, hB); err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	linked, err := store.AreLinked(hA, hB)
+	linked, err := store.AreLinked(context.Background(), hA, hB)
 	if err != nil {
 		t.Fatalf("AreLinked: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestAreLinked_TrueAfterAccept(t *testing.T) {
 	}
 
 	// Also test reverse order
-	linked, err = store.AreLinked(hB, hA)
+	linked, err = store.AreLinked(context.Background(), hB, hA)
 	if err != nil {
 		t.Fatalf("AreLinked (reverse): %v", err)
 	}
@@ -217,20 +218,20 @@ func TestRevokeLink_ChangesStatus(t *testing.T) {
 	hA := createLinkTestHousehold(t, db, "Revoke Household A")
 	hB := createLinkTestHousehold(t, db, "Revoke Household B")
 
-	invite, err := store.CreateInvite(hA, userA)
+	invite, err := store.CreateInvite(context.Background(), hA, userA)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	link, err := store.AcceptInvite(invite.InviteCode, userB, hB)
+	link, err := store.AcceptInvite(context.Background(), invite.InviteCode, userB, hB)
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	if err := store.RevokeLink(link.ID, userA); err != nil {
+	if err := store.RevokeLink(context.Background(), link.ID, userA); err != nil {
 		t.Fatalf("RevokeLink: %v", err)
 	}
 
-	updated, err := store.GetByID(link.ID)
+	updated, err := store.GetByID(context.Background(), link.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -255,24 +256,24 @@ func TestCreateInvite_NoDuplicateLinks(t *testing.T) {
 	hB := createLinkTestHousehold(t, db, "NoDup Household B")
 
 	// Create and accept a link between hA and hB
-	invite, err := store.CreateInvite(hA, userA)
+	invite, err := store.CreateInvite(context.Background(), hA, userA)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	if _, err := store.AcceptInvite(invite.InviteCode, userB, hB); err != nil {
+	if _, err := store.AcceptInvite(context.Background(), invite.InviteCode, userB, hB); err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
 	// Now hA tries to create another invite — hB then tries to accept from a different direction
 	// The real duplicate prevention is in AcceptInvite via AreLinked check.
 	// Create a new invite from hB (now it can create a pending one since no pending exists for hB)
-	invite2, err := store.CreateInvite(hB, userB)
+	invite2, err := store.CreateInvite(context.Background(), hB, userB)
 	if err != nil {
 		t.Fatalf("CreateInvite from hB: %v", err)
 	}
 
 	// Trying to accept with hA should fail (already linked)
-	_, err = store.AcceptInvite(invite2.InviteCode, userA, hA)
+	_, err = store.AcceptInvite(context.Background(), invite2.InviteCode, userA, hA)
 	if err == nil {
 		t.Fatal("expected error when accepting invite between already-linked households, got nil")
 	}

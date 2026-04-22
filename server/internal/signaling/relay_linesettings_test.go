@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"testing"
 )
 
@@ -18,7 +19,7 @@ func (f *fakeLineStore) set(number string, s *LineSettings) {
 	f.settings[number] = s
 }
 
-func (f *fakeLineStore) LineSettingsByNumber(number string) (*LineSettings, error) {
+func (f *fakeLineStore) LineSettingsByNumber(ctx context.Context, number string) (*LineSettings, error) {
 	return f.settings[number], nil
 }
 
@@ -38,7 +39,7 @@ func TestOnRegisteredPushesSilentMode(t *testing.T) {
 	conn := &Conn{Send: make(chan []byte, 10)}
 	hub.Register("3140001", conn)
 
-	relay.OnRegistered("3140001")
+	relay.OnRegistered(context.Background(), "3140001")
 
 	select {
 	case data := <-conn.Send:
@@ -80,7 +81,7 @@ func TestOnRegisteredPushesSilentModeFalseByDefault(t *testing.T) {
 	conn := &Conn{Send: make(chan []byte, 10)}
 	hub.Register("3140002", conn)
 
-	relay.OnRegistered("3140002")
+	relay.OnRegistered(context.Background(), "3140002")
 
 	select {
 	case data := <-conn.Send:

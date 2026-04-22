@@ -3,6 +3,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,7 +29,7 @@ func TestE2EAdminLoginAndDashboard(t *testing.T) {
 	}))
 	defer statsSrv.Close()
 
-	db, err := OpenAdmin(dsn)
+	db, err := OpenAdmin(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -41,7 +42,7 @@ func TestE2EAdminLoginAndDashboard(t *testing.T) {
 
 	authStore := NewAuthStore(db)
 	hash, _ := HashSecret("e2epass")
-	if _, err := authStore.CreateAdmin("e2eadmin", hash); err != nil {
+	if _, err := authStore.CreateAdmin(context.Background(), "e2eadmin", hash); err != nil {
 		t.Fatal(err)
 	}
 

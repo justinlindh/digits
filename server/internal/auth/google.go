@@ -98,23 +98,23 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Find or create user. Lookups distinguish ErrUserNotFound (fall through to
 	// the next strategy) from real DB errors (abort with 500) so a transient
 	// failure does not silently create a duplicate account.
-	user, err := g.store.GetUserByGoogleID(info.ID)
+	user, err := g.store.GetUserByGoogleID(r.Context(), info.ID)
 	switch {
 	case err == nil:
 		// Found by Google ID; use as-is.
 	case errors.Is(err, ErrUserNotFound):
 		// Try by email (user may have used magic link before)
-		user, err = g.store.GetUserByEmail(info.Email)
+		user, err = g.store.GetUserByEmail(r.Context(), info.Email)
 		switch {
 		case err == nil:
 			// Link Google ID to existing account
-			if err := g.store.LinkGoogleID(user.ID, info.ID); err != nil {
+			if err := g.store.LinkGoogleID(r.Context(), user.ID, info.ID); err != nil {
 				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
 			}
 		case errors.Is(err, ErrUserNotFound):
 			// New user
 			googleID := info.ID
-			user, err = g.store.CreateUser(info.Email, info.Name, &googleID)
+			user, err = g.store.CreateUser(r.Context(), info.Email, info.Name, &googleID)
 			if err != nil {
 				http.Error(w, "failed to create user", http.StatusInternalServerError)
 				return
@@ -130,12 +130,12 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := g.store.UpdateLastLogin(user.ID); err != nil {
+	if err := g.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
 		slog.Warn("auth: failed to update last login for user", "user_id", user.ID, "error", err)
 	}
 
 	// Create session
-	sessionToken, _, err := g.store.CreateSession(user.ID, SessionTTL)
+	sessionToken, _, err := g.store.CreateSession(r.Context(), user.ID, SessionTTL)
 	if err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
