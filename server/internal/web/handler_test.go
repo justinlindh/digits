@@ -45,6 +45,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
+	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
 	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/login.html")
@@ -55,7 +56,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "")
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -169,6 +170,22 @@ func TestPhonesPage_HandsetNameField(t *testing.T) {
 	}
 	if strings.Contains(body, ">Line name<") {
 		t.Errorf("phones page still shows old 'Line name' label")
+	}
+}
+
+func TestLinksPage_InviteFriendButton(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Invite a friend") {
+		t.Errorf("links page missing new invite CTA")
+	}
+	if strings.Contains(body, "Generate invite code") {
+		t.Errorf("links page still shows old CTA")
 	}
 }
 
