@@ -18,9 +18,11 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,6 +363,21 @@ func TestLinkHealth_UnauthenticatedRedirectsOr401(t *testing.T) {
 	}
 }
 
+// startCall initiates a call via the tracker. Returns the call id.
+func startCall(t *testing.T, s lhSetup, caller, callee string) int64 {
+	t.Helper()
+	id, err := s.env.tracker.OnCallInitiated(caller, callee)
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	return id
+}
+
+// disconnectURL builds the force-disconnect endpoint URL for a call ID.
+func disconnectURL(s lhSetup, callID int64) string {
+	return fmt.Sprintf("%s/api/call/%s/disconnect", s.env.srv.URL, strconv.FormatInt(callID, 10))
+}
+
 // TestLinkHealth_DBFallbackAfterEvict: samples flushed to DB before eviction
 // are returned via the Readback path even after in-memory state is cleared.
 func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
@@ -397,5 +414,125 @@ func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
 	}
 	if len(body.Caller.Window) != 1 {
 		t.Fatalf("post-evict window: got %d samples want 1 (DB fallback must serve the flushed sample)", len(body.Caller.Window))
+	}
+}
+
+// TestForceDisconnect_WritesAuditAndTearsDown verifies that a successful
+// force-disconnect sets force_ended_by, marks status=ended, and sets ended_at.
+func TestForceDisconnect_WritesAuditAndTearsDown(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// Record a sample so the endpoint has something to observe.
+	loss := float32(0.5)
+	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
+
+	client := authedClient(t, s, s.userA)
+	postResp, err := client.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("post disconnect: %v", err)
+	}
+	defer func() { _ = postResp.Body.Close() }()
+	if postResp.StatusCode != http.StatusOK {
+		t.Fatalf("disconnect: got %d want 200", postResp.StatusCode)
+	}
+
+	// Audit column set to user A's id.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan force_ended_by: %v", err)
+	}
+	if !forceEndedBy.Valid || forceEndedBy.String != s.userA.ID {
+		t.Fatalf("force_ended_by: got (%v,%q) want user %s", forceEndedBy.Valid, forceEndedBy.String, s.userA.ID)
+	}
+
+	// Call row is ended.
+	var status string
+	var endedAt sql.NullTime
+	if err := s.env.database.DB.QueryRow(
+		"SELECT status, ended_at FROM calls WHERE id = $1", callID,
+	).Scan(&status, &endedAt); err != nil {
+		t.Fatalf("scan call: %v", err)
+	}
+	if status != "ended" {
+		t.Fatalf("status: got %q want ended", status)
+	}
+	if !endedAt.Valid {
+		t.Fatal("ended_at is NULL")
+	}
+}
+
+// TestForceDisconnect_UnauthorizedGets404 verifies that a user from an
+// unrelated household cannot force-disconnect a call, and that the audit
+// column is not written.
+func TestForceDisconnect_UnauthorizedGets404(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// User C is in an unrelated household.
+	client := authedClient(t, s, s.userC)
+	resp, err := client.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", resp.StatusCode)
+	}
+
+	// Audit column should be unset.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if forceEndedBy.Valid {
+		t.Fatalf("unauthorized request wrote to audit: %q", forceEndedBy.String)
+	}
+}
+
+// TestForceDisconnect_IdempotentOnAlreadyEnded verifies that a second
+// force-disconnect from a different owner returns 200 but does NOT overwrite
+// the force_ended_by audit column set by the first caller.
+func TestForceDisconnect_IdempotentOnAlreadyEnded(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// First disconnect: user A.
+	clientA := authedClient(t, s, s.userA)
+	r1, err := clientA.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("first post: %v", err)
+	}
+	_ = r1.Body.Close()
+	if r1.StatusCode != http.StatusOK {
+		t.Fatalf("first: got %d want 200", r1.StatusCode)
+	}
+
+	// Second POST by user B -- still an owner (callee side). Should succeed
+	// but NOT overwrite the audit column.
+	clientB := authedClient(t, s, s.userB)
+	r2, err := clientB.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("second post: %v", err)
+	}
+	_ = r2.Body.Close()
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("second: got %d want 200", r2.StatusCode)
+	}
+
+	// Audit column still names user A.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if !forceEndedBy.Valid || forceEndedBy.String != s.userA.ID {
+		t.Fatalf("audit overwritten by second caller: got (%v,%q) want user A %s",
+			forceEndedBy.Valid, forceEndedBy.String, s.userA.ID)
 	}
 }
