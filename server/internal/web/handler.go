@@ -619,22 +619,26 @@ func fmtElapsed(d time.Duration) string {
 // ---- Lines (Phones) ----
 
 type linesData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	Lines              []lineRow
-	Error              string
-	PairError          string
-	User               *auth.User
+	Page                  string
+	Version               string
+	CallHistoryEnabled    bool
+	HouseholdName         string
+	Lines                 []lineRow
+	Error                 string
+	PairError             string
+	User                  *auth.User
+	LatestPiVersion       string
+	LatestFirmwareVersion string
 }
 
 type lineRow struct {
-	Line           line.Line
-	Online         bool
-	OnCall         bool
-	OnCallPeerName string
-	OnCallElapsed  string // "mm:ss" for the Dashboard room-card callout
+	Line            line.Line
+	Online          bool
+	OnCall          bool
+	OnCallPeerName  string
+	OnCallElapsed   string // "mm:ss" for the Dashboard room-card callout
+	DeviceInfo      *signaling.DeviceInfoSnapshot
+	UpdateAvailable bool // either Pi or firmware is behind the latest release
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
@@ -663,11 +667,40 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 	for _, n := range online {
 		onlineSet[n] = true
 	}
+
+	var latestPi, latestFw string
+	if h.Releases != nil {
+		if idx := h.Releases.ReleaseIndex(); idx != nil {
+			latestPi = idx.Pi.Latest
+			latestFw = idx.Firmware.Latest
+		}
+	}
+
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
-		rows[i] = lineRow{Line: l, Online: onlineSet[l.Number]}
+		info := h.hub.DeviceInfo(l.Number)
+		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
+		if info != nil {
+			if latestPi != "" && info.PiVersion != "" && info.PiVersion != latestPi {
+				row.UpdateAvailable = true
+			}
+			if latestFw != "" && info.FirmwareVersion != "" && info.FirmwareVersion != latestFw {
+				row.UpdateAvailable = true
+			}
+		}
+		rows[i] = row
 	}
-	return linesData{Page: "phones", Version: version.Version, CallHistoryEnabled: h.callHistoryEnabled(r), HouseholdName: h.householdNameFromContext(r), Lines: rows, Error: errMsg, User: user}
+	return linesData{
+		Page:                  "phones",
+		Version:               version.Version,
+		CallHistoryEnabled:    h.callHistoryEnabled(r),
+		HouseholdName:         h.householdNameFromContext(r),
+		Lines:                 rows,
+		Error:                 errMsg,
+		User:                  user,
+		LatestPiVersion:       latestPi,
+		LatestFirmwareVersion: latestFw,
+	}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
