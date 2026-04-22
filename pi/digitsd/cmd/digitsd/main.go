@@ -1794,15 +1794,12 @@ func main() {
 				continue // skip normal controller handling
 			}
 
-			// Handle DTMF tone playback for key presses
+			// The controller's FSM stops the dial tone loop on the first key
+			// via SendTone(ToneStop); we only queue the DTMF beep here.
 			if strings.HasPrefix(event, "KEY:") && len(event) > 4 {
 				key := string(event[4])
 				dtmfName := dtmfToneName(key)
 				if dtmfName != "" {
-					// Stop dial tone on first key
-					if mixer.Active() == "tone_dial" {
-						mixer.StopTone()
-					}
 					mixer.PlayOnce(dtmfName)
 				}
 				// Forward DTMF to the remote peer if a call is connected.
