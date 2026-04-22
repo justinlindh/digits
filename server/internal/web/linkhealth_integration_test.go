@@ -18,9 +18,13 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -361,6 +365,21 @@ func TestLinkHealth_UnauthenticatedRedirectsOr401(t *testing.T) {
 	}
 }
 
+// startCall initiates a call via the tracker. Returns the call id.
+func startCall(t *testing.T, s lhSetup, caller, callee string) int64 {
+	t.Helper()
+	id, err := s.env.tracker.OnCallInitiated(caller, callee)
+	if err != nil {
+		t.Fatalf("OnCallInitiated: %v", err)
+	}
+	return id
+}
+
+// disconnectURL builds the force-disconnect endpoint URL for a call ID.
+func disconnectURL(s lhSetup, callID int64) string {
+	return fmt.Sprintf("%s/api/call/%s/disconnect", s.env.srv.URL, strconv.FormatInt(callID, 10))
+}
+
 // TestLinkHealth_DBFallbackAfterEvict: samples flushed to DB before eviction
 // are returned via the Readback path even after in-memory state is cleared.
 func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
@@ -397,5 +416,228 @@ func TestLinkHealth_DBFallbackAfterEvict(t *testing.T) {
 	}
 	if len(body.Caller.Window) != 1 {
 		t.Fatalf("post-evict window: got %d samples want 1 (DB fallback must serve the flushed sample)", len(body.Caller.Window))
+	}
+}
+
+// TestForceDisconnect_WritesAuditAndTearsDown verifies that a successful
+// force-disconnect sets force_ended_by, marks status=ended, and sets ended_at.
+func TestForceDisconnect_WritesAuditAndTearsDown(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// Record a sample so the endpoint has something to observe.
+	loss := float32(0.5)
+	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
+
+	client := authedClient(t, s, s.userA)
+	postResp, err := client.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("post disconnect: %v", err)
+	}
+	defer func() { _ = postResp.Body.Close() }()
+	if postResp.StatusCode != http.StatusOK {
+		t.Fatalf("disconnect: got %d want 200", postResp.StatusCode)
+	}
+
+	// Audit column set to user A's id.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan force_ended_by: %v", err)
+	}
+	if !forceEndedBy.Valid || forceEndedBy.String != s.userA.ID {
+		t.Fatalf("force_ended_by: got (%v,%q) want user %s", forceEndedBy.Valid, forceEndedBy.String, s.userA.ID)
+	}
+
+	// Call row is ended.
+	var status string
+	var endedAt sql.NullTime
+	if err := s.env.database.DB.QueryRow(
+		"SELECT status, ended_at FROM calls WHERE id = $1", callID,
+	).Scan(&status, &endedAt); err != nil {
+		t.Fatalf("scan call: %v", err)
+	}
+	if status != "ended" {
+		t.Fatalf("status: got %q want ended", status)
+	}
+	if !endedAt.Valid {
+		t.Fatal("ended_at is NULL")
+	}
+}
+
+// TestForceDisconnect_UnauthorizedGets404 verifies that a user from an
+// unrelated household cannot force-disconnect a call, and that the audit
+// column is not written.
+func TestForceDisconnect_UnauthorizedGets404(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// User C is in an unrelated household.
+	client := authedClient(t, s, s.userC)
+	resp, err := client.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", resp.StatusCode)
+	}
+
+	// Audit column should be unset.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if forceEndedBy.Valid {
+		t.Fatalf("unauthorized request wrote to audit: %q", forceEndedBy.String)
+	}
+}
+
+// TestForceDisconnect_IdempotentOnAlreadyEnded verifies that a second
+// force-disconnect from a different owner returns 200 but does NOT overwrite
+// the force_ended_by audit column set by the first caller.
+func TestForceDisconnect_IdempotentOnAlreadyEnded(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	// First disconnect: user A.
+	clientA := authedClient(t, s, s.userA)
+	r1, err := clientA.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("first post: %v", err)
+	}
+	_ = r1.Body.Close()
+	if r1.StatusCode != http.StatusOK {
+		t.Fatalf("first: got %d want 200", r1.StatusCode)
+	}
+
+	// Second POST by user B -- still an owner (callee side). Should succeed
+	// but NOT overwrite the audit column.
+	clientB := authedClient(t, s, s.userB)
+	r2, err := clientB.Post(disconnectURL(s, callID), "application/json", nil)
+	if err != nil {
+		t.Fatalf("second post: %v", err)
+	}
+	_ = r2.Body.Close()
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("second: got %d want 200", r2.StatusCode)
+	}
+
+	// Audit column still names user A.
+	var forceEndedBy sql.NullString
+	if err := s.env.database.DB.QueryRow(
+		"SELECT force_ended_by FROM calls WHERE id = $1", callID,
+	).Scan(&forceEndedBy); err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if !forceEndedBy.Valid || forceEndedBy.String != s.userA.ID {
+		t.Fatalf("audit overwritten by second caller: got (%v,%q) want user A %s",
+			forceEndedBy.Valid, forceEndedBy.String, s.userA.ID)
+	}
+}
+
+// authedGet issues an authenticated GET request to path on s.env.srv and
+// returns the response. The caller is responsible for closing the body.
+// Redirects are not followed so auth-failure 303s are distinguishable from 200s.
+func authedGet(t *testing.T, s lhSetup, user *auth.User, path string) *http.Response {
+	t.Helper()
+	client := authedClient(t, s, user)
+	resp, err := client.Get(s.env.srv.URL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
+	}
+	return resp
+}
+
+func TestCallLiveDetail_OwnerRenders(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+	// Seed a sample so the initial snapshot renders with data.
+	loss := float32(0.5)
+	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
+
+	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+
+	// Both endpoint numbers appear in the .deck-card__num rendering.
+	if !strings.Contains(bodyStr, s.numA) {
+		t.Fatalf("body missing caller number %q", s.numA)
+	}
+	if !strings.Contains(bodyStr, s.numB) {
+		t.Fatalf("body missing callee number %q", s.numB)
+	}
+	// SSE stream URL is wired.
+	expectedSSE := "/api/call/" + strconv.FormatInt(callID, 10) + "/link-health/stream"
+	if !strings.Contains(bodyStr, expectedSSE) {
+		t.Fatalf("body missing SSE stream URL %q", expectedSSE)
+	}
+	// End-call button rendered (call is live).
+	if !strings.Contains(bodyStr, "deck-kill") {
+		t.Fatal("body missing deck-kill (End-call) button")
+	}
+}
+
+func TestCallLiveDetail_UnrelatedHouseholdGets404(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	resp := authedGet(t, s, s.userC, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status: got %d want 404", resp.StatusCode)
+	}
+}
+
+func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+	// End the call.
+	if err := s.env.tracker.OnCallEnded(s.numA, s.numB); err != nil {
+		t.Fatalf("OnCallEnded: %v", err)
+	}
+
+	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (postmortem view)", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	// Terminal state should NOT auto-connect the SSE stream.
+	if strings.Contains(bodyStr, "sse-connect=") {
+		t.Fatal("ended-call page should not wire SSE auto-connect")
+	}
+	// End-call button should not render.
+	if strings.Contains(bodyStr, "deck-kill") {
+		t.Fatal("ended-call page should not render End-call button")
+	}
+	// Terminal state chip should be visible.
+	if !strings.Contains(bodyStr, "deck-ended-chip") && !strings.Contains(bodyStr, "deck-ended") {
+		t.Fatal("ended-call page missing terminal-state indicator")
+	}
+}
+
+func TestDashboardLineCardLinksToCallLive(t *testing.T) {
+	s := newLHEnv(t)
+	callID := startCall(t, s, s.numA, s.numB)
+
+	resp := authedGet(t, s, s.userA, "/")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	bodyStr := string(body)
+	expected := `href="/call/live/` + strconv.FormatInt(callID, 10) + `"`
+	if !strings.Contains(bodyStr, expected) {
+		t.Fatalf("dashboard missing link %q", expected)
 	}
 }
