@@ -1,7 +1,7 @@
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
-<div class="page" style="max-width: 720px;">
+<div class="page" style="max-width: 900px;">
 
   <header class="page__head">
     <h1 class="page__title">Settings</h1>
@@ -11,8 +11,21 @@
   <div class="banner banner--ok">Settings saved.</div>
   {{end}}
 
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="Settings sections">
+      <a href="#account" class="settings-nav__item is-active">Account</a>
+      {{if .Household}}
+      <a href="#household" class="settings-nav__item">Household</a>
+      <a href="#timezone" class="settings-nav__item">Timezone</a>
+      {{if .User}}<a href="#theme" class="settings-nav__item">Theme</a>{{end}}
+      <a href="#privacy" class="settings-nav__item">Privacy</a>
+      {{end}}
+      <a href="#session" class="settings-nav__item">Session</a>
+    </nav>
+    <div class="settings-sections">
+
   <!-- Account -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="account" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Account</h2>
     </header>
@@ -38,7 +51,7 @@
 
   {{if .Household}}
   <!-- Household -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="household" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Household</h2>
       <span class="panel__title-sub">Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}</span>
@@ -55,7 +68,7 @@
   </section>
 
   <!-- Timezone -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="timezone" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Timezone</h2>
       <span class="panel__title-sub">Used for displayed timestamps.</span>
@@ -142,29 +155,37 @@
 
   <!-- Theme -->
   {{if .User}}
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="theme" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Theme</h2>
       <span class="panel__title-sub">Pick the look you'd like for this app.</span>
     </header>
     <div class="panel__body">
       <form action="/settings/theme" method="POST" class="stack-md">
-        <label class="radio-card">
+        <label class="theme-card {{if eq .User.Theme "intercom"}}theme-card--selected{{end}}">
           <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
-          <div class="radio-card__title">
-            <span class="radio-card__indicator"></span>
-            Home intercom
-            <span class="radio-card__meta">default</span>
-          </div>
-          <p class="radio-card__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</p>
+          <span class="theme-card__swatch">
+            <span class="theme-card__swatch-strip" style="background: #f5f1ea;"></span>
+            <span class="theme-card__swatch-strip" style="background: #2e231b;"></span>
+            <span class="theme-card__swatch-strip" style="background: #c48b3a;"></span>
+          </span>
+          <span class="theme-card__body">
+            <span class="theme-card__name">Home intercom</span>
+            <span class="theme-card__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
+          </span>
+          <span class="chip chip--live" style="font-size: 10px;">default</span>
         </label>
-        <label class="radio-card">
+        <label class="theme-card {{if eq .User.Theme "dialup"}}theme-card--selected{{end}}">
           <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
-          <div class="radio-card__title">
-            <span class="radio-card__indicator"></span>
-            Online service 1997
-          </div>
-          <p class="radio-card__desc">Blue gradients, chunky 3D bevels, Tahoma, a Keyword bar, and dial-up-era "Welcome!" energy.</p>
+          <span class="theme-card__swatch">
+            <span class="theme-card__swatch-strip" style="background: #0a3a8a;"></span>
+            <span class="theme-card__swatch-strip" style="background: #7ab4ff;"></span>
+            <span class="theme-card__swatch-strip" style="background: #f0c020;"></span>
+          </span>
+          <span class="theme-card__body">
+            <span class="theme-card__name">Online service 1997</span>
+            <span class="theme-card__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
+          </span>
         </label>
         <button type="submit" class="btn btn--primary">Save theme</button>
       </form>
@@ -213,7 +234,7 @@
   {{end}}
 
   <!-- Privacy -->
-  <section class="panel" style="margin-bottom: 18px;">
+  <section id="privacy" class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
       <h2 class="panel__title">Privacy</h2>
     </header>
@@ -225,9 +246,9 @@
             <span class="toggle__track"></span>
           </label>
           <div>
-            <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Call history</div>
+            <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Call log</div>
             <p class="muted" style="font-size: 13px; margin: 0; line-height: 1.55;">
-              Records phone numbers, timestamps, and duration only. No audio is ever recorded. Worth noting: Digits is built on the idea that kids deserve the same phone privacy you had growing up. Call logs are light, but they're still surveillance. Most families don't need this.
+              Only numbers, timestamps, and duration. Never audio. Digits was built on the idea kids deserve the same phone privacy you grew up with. Most families don't need this.
             </p>
           </div>
         </div>
@@ -237,7 +258,7 @@
   {{end}}
 
   <!-- Session -->
-  <section class="panel" style="border-color: rgba(160,90,58,0.25);">
+  <section id="session" class="panel" style="border-color: rgba(160,90,58,0.25);">
     <header class="panel__head">
       <h2 class="panel__title" style="color: var(--rust);">Session</h2>
     </header>
@@ -247,6 +268,9 @@
       </form>
     </div>
   </section>
+
+    </div>
+  </div>
 
   {{template "page-footer" .}}
 

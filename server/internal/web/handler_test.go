@@ -45,9 +45,10 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	authStore := auth.NewStoreFromDB(database.DB)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
+	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/login.html")
+	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
@@ -55,7 +56,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 
 	h, err := NewHandler(lineStore, deviceStore, hub, tracker, relay, HandlerConfig{
 		Addr:        ":8443",
-	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, nil, emailSender, "", "")
+	}, authStore, authHandlers, googleAuth, householdStore, pairingStore, linkStore, emailSender, "", "")
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -131,6 +132,60 @@ func TestPhonesPageReturns200(t *testing.T) {
 	h.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestPhonesPage_PairPanelTitle(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Pair a new handset") {
+		t.Errorf("phones page missing new pair panel title")
+	}
+	if strings.Contains(body, "Pair a device") {
+		t.Errorf("phones page still shows old pair panel title")
+	}
+}
+
+func TestPhonesPage_HandsetNameField(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		"Handset name",
+		"Kitchen · Grandma&#39;s bedroom · Garage",
+		"Most families name handsets by where they live",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("phones page missing %q", want)
+		}
+	}
+	if strings.Contains(body, ">Line name<") {
+		t.Errorf("phones page still shows old 'Line name' label")
+	}
+}
+
+func TestLinksPage_InviteFriendButton(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Invite a friend") {
+		t.Errorf("links page missing new invite CTA")
+	}
+	if strings.Contains(body, "Generate invite code") {
+		t.Errorf("links page still shows old CTA")
 	}
 }
 
@@ -404,6 +459,25 @@ func TestPhoneRestartOnline(t *testing.T) {
 		}
 	default:
 		t.Fatal("device did not receive restart message")
+	}
+}
+
+func TestPhonesPage_FirmwareColumn(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Seed one line so the lines table renders (the Firmware column header
+	// only appears when .Lines is non-empty).
+	_, err := h.lineStore.Add("2456390", "Test Line", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, ">Firmware<") {
+		t.Errorf("phones table missing Firmware column header")
 	}
 }
 
@@ -789,6 +863,304 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	// A timeout (deadline exceeded) means no error was sent, which is success.
 	if !strings.Contains(err.Error(), "i/o timeout") {
 		t.Fatalf("expected timeout error, got: %v", err)
+	}
+}
+
+func TestCallsPage_CallLogTitle(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, ">Call log<") {
+		t.Errorf("calls page missing 'Call log' heading")
+	}
+	if strings.Contains(body, ">Call history<") {
+		t.Errorf("calls page still has old 'Call history' heading")
+	}
+}
+
+func TestSettingsPage_CallLogLabel(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Call log") {
+		t.Errorf("settings page missing 'Call log'")
+	}
+}
+
+func TestSettingsPage_StickyNav(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="settings-layout"`,
+		`class="settings-nav"`,
+		`href="#account"`,
+		`href="#theme"`,
+		`href="#privacy"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings page missing %q", want)
+		}
+	}
+}
+
+func TestSettingsPage_ThemeSwatches(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="theme-card`,
+		`theme-card__swatch`,
+		`#f5f1ea`,
+		`#2e231b`,
+		`#c48b3a`,
+		`#0a3a8a`,
+		`#7ab4ff`,
+		`#f0c020`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings theme section missing %q", want)
+		}
+	}
+}
+
+func TestSettingsPage_PrivacyCopy(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "kids deserve the same phone privacy you grew up with") {
+		t.Errorf("settings privacy copy not updated")
+	}
+	if strings.Contains(body, "kids deserve the same phone privacy you had growing up") {
+		t.Errorf("settings page still shows old privacy copy")
+	}
+}
+
+// seedLinkedFamily creates a second household with one line and links it to the
+// primary household via an invite/accept handshake. Returns the second household
+// so tests can assert its name appears in /links renderings.
+func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore *auth.Store, primaryHouseholdID, primaryUserID, otherName, lineNumber, lineName string) *household.Household {
+	t.Helper()
+	// Ensure the other user does not exist from a prior run before creating.
+	_, _ = database.DB.Exec("DELETE FROM users WHERE email = 'test-other@example.com'")
+	// Create a second user + household.
+	otherUser, err := authStore.CreateUser("test-other@example.com", "Other Test User", nil)
+	if err != nil {
+		t.Fatalf("create other user: %v", err)
+	}
+	otherHH, err := h.householdStore.Create(otherName, otherUser.ID)
+	if err != nil {
+		t.Fatalf("create other household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_links WHERE household_a_id = $1 OR household_b_id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", otherHH.ID)
+		_, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", otherUser.ID)
+	})
+	// Seed a line for the other household.
+	if _, err := h.lineStore.Add(lineNumber, lineName, otherHH.ID); err != nil {
+		t.Fatalf("seed line on other hh: %v", err)
+	}
+	// Link: primary invites, other accepts.
+	invite, err := h.linkStore.CreateInvite(primaryHouseholdID, primaryUserID)
+	if err != nil {
+		t.Fatalf("create invite: %v", err)
+	}
+	if _, err := h.linkStore.AcceptInvite(invite.InviteCode, otherUser.ID, otherHH.ID); err != nil {
+		t.Fatalf("accept invite: %v", err)
+	}
+	return otherHH
+}
+
+func TestLinksPage_Neighborhood(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="neighborhood`,
+		`class="neighborhood__row"`,
+		`class="neighborhood__identity"`,
+		`class="neighborhood__lines"`,
+		"Grandma Lindh",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("links page missing %q", want)
+		}
+	}
+}
+
+func TestDashboard_HasRoomCards(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if _, err := h.lineStore.Add("2456390", "Kitchen", hh.ID); err != nil {
+		t.Fatalf("seed line: %v", err)
+	}
+	if _, err := h.lineStore.Add("2486881", "Living room", hh.ID); err != nil {
+		t.Fatalf("seed line: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="rooms"`,
+		`class="rooms__card`,
+		"Kitchen",
+		"Living room",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+	if strings.Contains(body, `class="strip"`) {
+		t.Errorf("dashboard still renders old KPI strip")
+	}
+}
+
+func TestDashboard_TodayPanelGatedByHistoryFlag(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_ = hh
+
+	// Default: call history disabled. Today panel must not render.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if strings.Contains(w.Body.String(), `id="today-panel"`) {
+		t.Errorf("Today panel rendered while history disabled")
+	}
+
+	// Enable history.
+	if err := h.householdStore.SetCallHistoryEnabled(hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.AddCookie(cookie)
+	w2 := httptest.NewRecorder()
+	h.Router().ServeHTTP(w2, req2)
+	if !strings.Contains(w2.Body.String(), `id="today-panel"`) {
+		t.Errorf("Today panel not rendered when history enabled")
+	}
+}
+
+func TestDashboard_ConnectedFamiliesChipRow(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="connected-row"`,
+		`class="connected-row__chip"`,
+		"Grandma Lindh",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard missing %q", want)
+		}
+	}
+}
+
+func TestLinksPage_InvitePostcard(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	req := httptest.NewRequest(http.MethodGet, "/links?created=DEMO-123", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	for _, want := range []string{
+		`class="postcard"`,
+		`class="postcard__code num"`,
+		"DEMO-123",
+		"Paste it into",
+		"line number",
+		"FAMILY MAIL",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("links page missing %q", want)
+		}
+	}
+}
+
+// TestLinksPage_MultiplePendingInvites verifies that a household can create
+// multiple concurrent pending invites (no artificial cap). Regression guard
+// for a cap that used to reject the second invite with "household already
+// has a pending invite".
+func TestLinksPage_MultiplePendingInvites(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	user, err := authStore.GetUserByEmail("test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := h.linkStore.CreateInvite(hh.ID, user.ID); err != nil {
+			t.Fatalf("CreateInvite #%d: %v", i+1, err)
+		}
+	}
+	pending, err := h.linkStore.GetPendingForHousehold(hh.ID)
+	if err != nil {
+		t.Fatalf("GetPendingForHousehold: %v", err)
+	}
+	if len(pending) != 3 {
+		t.Errorf("expected 3 pending invites, got %d", len(pending))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/links", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	body := w.Body.String()
+	if !strings.Contains(body, "Pending invites sent") {
+		t.Errorf("links page missing Pending invites heading")
+	}
+	if strings.Count(body, `data-confirm-action="/links/`) < 3 {
+		t.Errorf("expected at least 3 revoke triggers for pending invites, got fewer in body")
 	}
 }
 

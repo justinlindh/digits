@@ -57,9 +57,10 @@ type Call struct {
 }
 
 type activeCall struct {
-	Caller string
-	Callee string
-	callID int64
+	Caller    string
+	Callee    string
+	StartedAt time.Time
+	callID    int64
 }
 
 type Tracker struct {
@@ -95,7 +96,7 @@ func (t *Tracker) OnCallInitiated(from, to string) (int64, error) {
 		return 0, fmt.Errorf("insert call: %w", err)
 	}
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, callID: id}
+	t.active[callKey(from, to)] = &activeCall{Caller: from, Callee: to, StartedAt: time.Now(), callID: id}
 	t.mu.Unlock()
 	return id, nil
 }
@@ -435,7 +436,7 @@ func (t *Tracker) DropMemberPersistent(confID uuid.UUID, phone, reason string) (
 			a, b = b, a
 		}
 		t.mu.Lock()
-		t.active[callKey(a, b)] = &activeCall{Caller: a, Callee: b, callID: continuationCallID}
+		t.active[callKey(a, b)] = &activeCall{Caller: a, Callee: b, StartedAt: time.Now(), callID: continuationCallID}
 		t.mu.Unlock()
 	}
 
