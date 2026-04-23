@@ -333,6 +333,9 @@ func TestConferenceKicksSchemaV22_Integration(t *testing.T) {
 	).Scan(&originatingCallID); err != nil {
 		t.Fatalf("seed call: %v", err)
 	}
+	t.Cleanup(func() {
+		_, _ = d.DB.Exec("DELETE FROM calls WHERE id = $1", originatingCallID)
+	})
 	if _, err := d.DB.Exec(
 		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
 		confID, "+15555550001", originatingCallID,
