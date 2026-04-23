@@ -172,8 +172,6 @@ func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Requ
 // Query sequence matches requireCallEndpointOwnership and
 // requireConferenceOwnership to avoid a timing side channel on
 // conference-id enumeration.
-//
-//nolint:unused // First production caller lands in the next commit.
 func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {

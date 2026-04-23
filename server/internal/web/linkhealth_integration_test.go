@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -985,5 +986,118 @@ func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
 	}
 	if !foundHostToB {
 		t.Errorf("A->B edge missing from response")
+	}
+}
+
+func TestConferenceKickEndpoint_HostSucceeds(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	form := url.Values{"phone": {env.numC}}
+	req, _ := http.NewRequest(http.MethodPost,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+
+	var count int
+	if err := env.env.database.DB.QueryRow(
+		`SELECT COUNT(*) FROM conference_kicks WHERE conference_id = $1 AND kicked_phone = $2 AND kicked_by_user_id = $3`,
+		confID, env.numC, env.userA.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count audit: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 audit row; got %d", count)
+	}
+
+	got, err := env.env.tracker.GetConferenceByID(ctx, confID)
+	if err != nil {
+		t.Fatalf("GetConferenceByID: %v", err)
+	}
+	if got == nil || got.EndedAt == nil {
+		t.Errorf("expected conference ended; got %+v", got)
+	}
+}
+
+func TestConferenceKickEndpoint_MemberForbidden(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+
+	token, _, _ := env.env.authStore.CreateSession(ctx, env.userB.ID, auth.SessionTTL)
+	form := url.Values{"phone": {env.numC}}
+	req, _ := http.NewRequest(http.MethodPost,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("member-household user: got %d want 404", resp.StatusCode)
+	}
+}
+
+func TestConferenceKickEndpoint_KickHostReturns400(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+
+	token, _, _ := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	form := url.Values{"phone": {env.numA}}
+	req, _ := http.NewRequest(http.MethodPost,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("kick-host: got %d want 400", resp.StatusCode)
+	}
+}
+
+func TestConferenceKickEndpoint_EndedConferenceReturns404(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+	if err := env.env.tracker.EndConferencePersistent(ctx, confID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	token, _, _ := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	form := url.Values{"phone": {env.numC}}
+	req, _ := http.NewRequest(http.MethodPost,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("ended conference: got %d want 404", resp.StatusCode)
 	}
 }
