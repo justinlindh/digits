@@ -27,6 +27,7 @@ type CallTracker interface {
 	CallIDFor(ctx context.Context, number string) (int64, bool)
 	EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error
 	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
+	RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone, userID string) error
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.

@@ -377,6 +377,60 @@ func TestConferenceKicksSchemaV22_Integration(t *testing.T) {
 	}
 }
 
+func TestRecordKick_Integration(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+	ctx := context.Background()
+
+	var hostUserID string
+	if err := d.DB.QueryRow(
+		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
+		"recordkick-host@example.com", "Host",
+	).Scan(&hostUserID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB.Exec("DELETE FROM users WHERE id = $1", hostUserID) })
+
+	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550102"); err != nil {
+		t.Fatalf("seed call 1: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550103"); err != nil {
+		t.Fatalf("seed call 2: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550102")
+	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550103")
+	originatingCallID := tr.CallIDForPair(ctx, "+15555550101", "+15555550102")
+	conf, err := tr.CreateConferencePersistent(ctx, "+15555550101", originatingCallID, []string{"+15555550102", "+15555550103"})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	if err := tr.RecordKick(ctx, conf.ID, "+15555550103", hostUserID); err != nil {
+		t.Fatalf("RecordKick: %v", err)
+	}
+
+	var (
+		dbConfID     string
+		dbKickedPh   string
+		dbKickedByID string
+	)
+	if err := d.DB.QueryRow(
+		`SELECT conference_id, kicked_phone, kicked_by_user_id FROM conference_kicks WHERE conference_id = $1`,
+		conf.ID,
+	).Scan(&dbConfID, &dbKickedPh, &dbKickedByID); err != nil {
+		t.Fatalf("readback kick row: %v", err)
+	}
+	if dbConfID != conf.ID.String() {
+		t.Errorf("conference_id: got %s want %s", dbConfID, conf.ID)
+	}
+	if dbKickedPh != "+15555550103" {
+		t.Errorf("kicked_phone: got %s want +15555550103", dbKickedPh)
+	}
+	if dbKickedByID != hostUserID {
+		t.Errorf("kicked_by_user_id: got %s want %s", dbKickedByID, hostUserID)
+	}
+}
+
 func TestGetConferenceByID_Integration(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)

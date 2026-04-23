@@ -497,6 +497,19 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	return nil
 }
 
+// RecordKick writes one audit row to conference_kicks. Append-only; no
+// update path. userID is the authenticated user who triggered the kick.
+func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone, userID string) error {
+	_, err := t.db.DB.ExecContext(ctx,
+		`INSERT INTO conference_kicks (conference_id, kicked_phone, kicked_by_user_id) VALUES ($1, $2, $3)`,
+		confID, kickedPhone, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("record kick: %w", err)
+	}
+	return nil
+}
+
 // GetConferenceByID returns a conference summary from the DB by ID. Returns
 // (nil, nil) if not found. Handles both active and ended conferences.
 func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*ConferenceSummary, error) {
