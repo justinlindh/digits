@@ -1976,16 +1976,8 @@ html[data-theme="dark"] .btn--brass:hover {
    should feel definitely-unlit so the lit states pop by contrast. Leave
    it flat, no halo. */
 
-/* Hover tint on rows lifts a warm amber instead of falling back to
-   the cream-rgba baked into light mode (which disappears on dark). */
-html[data-theme="dark"] .lines__row:hover,
-html[data-theme="dark"] .rail__nav a:hover,
-html[data-theme="dark"] .btn:hover,
-html[data-theme="dark"] .btn--quiet:hover,
-html[data-theme="dark"] .radio-card:hover,
-html[data-theme="dark"] .connected-row__chip:hover {
-  background: rgba(221,168,103,0.07);
-}
+/* Table row hover uses a fixed cream rgba in light mode that disappears
+   on dark paper; swap to an amber tint that composites over the panel. */
 html[data-theme="dark"] .t tbody tr:hover { background: rgba(221,168,103,0.06); }
 
 /* Input surfaces: the light theme hard-codes #fbf7ef for the "paper
