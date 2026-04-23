@@ -27,6 +27,7 @@ type User struct {
 	GoogleID    *string
 	Theme       Theme
 	CRTMode     CRTMode
+	Appearance  Appearance
 	CreatedAt   time.Time
 	LastLoginAt *time.Time
 }
@@ -68,9 +69,9 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *st
 	u := &User{}
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, theme, crt_mode, created_at, last_login_at`,
+		 RETURNING id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at`,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
@@ -81,9 +82,9 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *st
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE email = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -97,9 +98,9 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 func (s *Store) GetUserByGoogleID(ctx context.Context, googleID string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE google_id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE google_id = $1`,
 		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -113,9 +114,9 @@ func (s *Store) GetUserByGoogleID(ctx context.Context, googleID string) (*User, 
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, created_at, last_login_at FROM users WHERE id = $1`,
+		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -152,6 +153,15 @@ func (s *Store) SetCRTMode(ctx context.Context, userID string, mode CRTMode) err
 		return fmt.Errorf("invalid crt mode: %q", mode)
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET crt_mode = $1 WHERE id = $2`, mode, userID)
+	return err
+}
+
+// SetAppearance updates the user's selected intercom appearance (day/night).
+func (s *Store) SetAppearance(ctx context.Context, userID string, appearance Appearance) error {
+	if !appearance.Valid() {
+		return fmt.Errorf("invalid appearance: %q", appearance)
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET appearance = $1 WHERE id = $2`, appearance, userID)
 	return err
 }
 

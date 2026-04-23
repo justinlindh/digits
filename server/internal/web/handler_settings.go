@@ -162,3 +162,22 @@ func (h *Handler) handleSettingsCRTMode(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
+
+func (h *Handler) handleSettingsAppearance(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	appearance := auth.Appearance(r.FormValue("appearance"))
+	if err := h.authStore.SetAppearance(r.Context(), user.ID, appearance); err != nil {
+		slog.Error("set appearance failed", "err", err, "appearance", appearance)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}

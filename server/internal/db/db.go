@@ -356,6 +356,9 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (22);
     END IF;
 END $$;`,
+		// v23: per-user intercom appearance preference.
+		// 'day' (default) / 'night'. Only meaningful when theme = 'intercom'.
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS appearance TEXT NOT NULL DEFAULT 'day'`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

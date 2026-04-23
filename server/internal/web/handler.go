@@ -438,6 +438,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
+	protected.HandleFunc("POST /settings/appearance", h.handleSettingsAppearance)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
