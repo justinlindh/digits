@@ -2,6 +2,17 @@
 
 Private encrypted phone network built from gutted vintage desk phones. Three components talk to each other: firmware on a Pico H, a Go daemon on a Pi Zero 2 W, and a Go signaling server.
 
+## Hard rules
+
+These override default behavior and apply to every output: chat, code, commits, PRs, issues, GitHub comments, in-app copy.
+
+- **No em dashes anywhere.** Use a colon, period, comma, or restructure. Common slip: bullet hook patterns where an em dash sits between a bold label and its explanation feel like markdown structure; write `**Label.** Text` instead.
+- **No Co-Authored-By trailers** on commits.
+- **No Claude Code session links** (`claude.ai/code/session_*`) in commits, PRs, comments, or any committed content.
+- **No "was removed" / "was here" comments** when deleting code; just delete it.
+- **Never force push.** Push new commits on top of existing branches. No `--force`, no `--force-with-lease`, no amending pushed commits.
+- **Reply to PR review comments** on GitHub (via `gh api`) at the same time as pushing the fix; acknowledge what was changed.
+
 ## Repo layout
 
 ```
@@ -18,19 +29,19 @@ docs/           Hardware notes, protocol specs, architecture
 ## Prerequisites
 
 - **Go 1.26+**
-- **PostgreSQL** -- the server reads `DATABASE_URL` to connect. Migrations run automatically on startup (inline in `internal/db/db.go`).
-- **Docker** (for digitsd cross-compile): `make build` uses a Docker container, no host cross-compile toolchain needed
-- **Pico SDK** (for firmware): set `PICO_SDK_PATH` to your checkout
+- **PostgreSQL**: server reads `DATABASE_URL`. Migrations run on startup (`server/internal/db/db.go`).
+- **Docker** (for digitsd cross-compile): `make build` uses a container, no host toolchain needed.
+- **Pico SDK** (for firmware): set `PICO_SDK_PATH` to your checkout. `scripts/build.sh` auto-detects common locations.
 
 ## Build and test
 
 Server (from `server/`):
 ```
-make build          # builds bin/signald
-make run            # build + run the server
-make test           # go test ./...
-make e2e            # Playwright tests (needs running server via make run)
-go vet ./...
+make build              # builds bin/signald
+make run                # build + run
+make test               # unit tests (fast, default)
+make test-integration   # unit + integration; see server/TESTING.md
+make e2e                # Playwright (needs running stack)
 ```
 
 digitsd (from `pi/digitsd/`):
@@ -42,16 +53,16 @@ make test
 
 Firmware (from repo root):
 ```
-make firmware         # builds in Docker, no host toolchain needed
+make firmware         # builds in Docker
 make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
 ./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
 
-`make firmware-local` runs `./scripts/build.sh`, which auto-detects `PICO_SDK_PATH` from common locations (`/usr/share/pico-sdk`, `~/pico-sdk`, etc.). Only set `PICO_SDK_PATH` explicitly if the SDK is installed somewhere non-standard.
+Test tiers, build tag syntax, env vars, and CI workflow names live in `server/TESTING.md`.
 
 ## Local dev server
 
-For running the webapp against a disposable local Postgres with a pre-seeded dialup-themed user (so UI work does not need a hand-wired DB):
+For UI work against a disposable local Postgres with a pre-seeded dialup-themed user, from `server/`:
 
 ```
 make dev-up      # brings up user-db in Docker, seeds dev@digits.local + household, runs host-native signald (foreground)
@@ -60,80 +71,17 @@ make dev-seed    # re-runs the idempotent seeder only
 make dev-logs    # tails the DB container
 ```
 
-All from `server/`. Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored) -- e.g. change `SIGNALD_ADDR` if `:8080` is taken on your machine.
+Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored). Sign in via `http://localhost:<port>/auth/dev-session?email=dev@digits.local`. The seeded user has `theme='dialup'` and is preloaded with three lines, two linked households, and one pending invite, so every surface (`/`, `/links`, `/phones`, `/calls`, `/settings`) renders with real data.
 
-Sign in by visiting `http://localhost:<SIGNALD_ADDR port>/auth/dev-session?email=dev@digits.local` -- the primary seeded user has `theme='dialup'` and is preloaded with three lines (Kitchen / Living room / Garage), two linked families (Grandma Lindh, The Coopers) each with their own lines, and one outstanding pending invite so every surface on `/`, `/links`, `/phones`, `/calls`, `/settings` renders with real data.
-
-`make dev-seed` is idempotent -- re-running never duplicates. `make dev-down && make dev-up` does a full reset. Pass `-minimal` to `go run ./cmd/devseed/` directly if you only want the primary user with no lines or links (e.g. for testing onboarding flows).
-
-When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static/` relative to its CWD) instead of the embedded FS, so CSS and JS edits are visible on reload without a rebuild. Template edits still require restart (they are parsed at startup). Production builds always use the embedded FS.
-
-Prefer this over hand-running `go run ./cmd/signald/` with a local DB; `dev-up` handles the Postgres container, migrations, and seeding as one command.
+When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static/`), so CSS and JS edits show on reload. Template edits still require a restart.
 
 ## Linting
 
-golangci-lint v2 with `standard` defaults. Config is in `.golangci.yml` at repo root.
-
-Run manually (from each module directory):
-```
-golangci-lint run ./...
-```
-
-Pre-commit hook (opt in once per checkout):
-```
-git config core.hooksPath .githooks
-```
-
-## Testing
-
-The Go test suite is split into two tiers. Pick the right tier when you write a new test; do not mix.
-
-**Unit tests** run in-process with no external services. They must not require Postgres, Redis, a real HTTP backend, a real file system beyond `t.TempDir`, or a network. `httptest.Server`, `httptest.ResponseRecorder`, and in-memory fakes are fine. Unit tests are the default: no build tag, no naming convention required.
-
-**Integration tests** require at least one real external dependency (today: PostgreSQL). They are gated by a build tag so they don't compile into the default unit binary:
-
-```go
-//go:build integration
-
-package foo
-```
-
-The blank line between the build tag and the `package` declaration is required by `go build` syntax. Integration test files should also use the `_integration_test.go` suffix for new files (e.g., `store_integration_test.go`). Existing files use less consistent names but all carry the build tag.
-
-**End-to-end tests** are the Playwright suite in `server/internal/web/e2e/` driven by `make e2e` from `server/`. They spin up the full stack (signald + admind + Postgres via `docker compose`) and drive a real browser. They are outside the Go test runner and have their own invocation.
-
-### Running tests locally
-
-From `server/`:
-
-```
-go test ./...                                   # unit only (fast, default)
-make test-integration                           # unit + integration (starts test-db, resets, runs)
-make e2e                                        # playwright e2e (needs running stack)
-```
-
-`make test-integration` is the preferred local workflow: it spins up an ephemeral Postgres (the `test-db` service in `docker-compose.yml`, profile `test`), drops any leftover schemas, and runs the full integration suite with the `TEST_DATABASE_URL` / `TEST_ADMIN_DATABASE_URL` env vars already set. Individual targets (`test-db-up`, `test-db-down`, `test-db-reset`) are available if you want to manage the container separately.
-
-Manual invocation still works if you prefer:
-
-```
-go test -tags=integration ./...                 # assumes DSNs already exported
-export TEST_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_test?sslmode=disable"
-export TEST_ADMIN_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable"
-```
-
-If either variable is unset, the tests that require it call `t.Skip` and log the reason. That means `go test -tags=integration ./...` without a DSN is safe -- it just skips anything it can't run.
-
-### CI
-
-- **`.github/workflows/server-ci.yml`** -- the unit job. Runs on every push and every PR. Fast (seconds). Required for merge.
-- **`.github/workflows/server-integration.yml`** -- the integration job. Runs on PRs targeting main and on pushes to main. Provisions Postgres service containers for both databases and runs `go test -tags=integration`. Required for merge to main.
-
-The unit job must stay fast. If you find yourself adding a Postgres dependency to something that could be tested in-process, the right move is to restructure the code (extract a pure function, use an interface, inject a fake) rather than reach for the integration tag.
+golangci-lint v2 with `standard` defaults (`.golangci.yml` at repo root). Run `golangci-lint run ./...` from each module directory before pushing Go changes; CI enforces errcheck that `go vet` does not. Pre-commit hook: `git config core.hooksPath .githooks`.
 
 ## Production deployment
 
-The server runs on the GPU box via Docker Compose. All commands from `server/`:
+Server runs on the GPU box via Docker Compose, project name `digits-prod`. From `server/`:
 
 ```
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d      # start
@@ -141,47 +89,25 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod down        # sto
 docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f     # tail logs
 ```
 
-The project name is `digits-prod` (set via `COMPOSE_PROJECT_NAME` in `.env.prod`). Do not omit `--env-file .env.prod` or use a bare `docker compose up` -- that creates a separate `server-*` set of containers and volumes, disconnected from production data.
+Always include `--env-file .env.prod`. A bare `docker compose up` creates a separate `server-*` set of containers disconnected from production data. Services auto-start on reboot.
 
-Services auto-start on reboot (`restart: unless-stopped`, Docker enabled at boot).
+## Conventions
 
-## Commit conventions
+**Commits.** Conventional commit format with required scope. PR titles must use this format (they become the squash commit message on merge); individual commits on feature branches don't need to. Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`.
 
-Conventional commit format. Scope is required.
-
-PR titles must use this format (they become the squash commit message on merge). Individual commits on feature branches don't need to.
-
-Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`
-
-Examples:
 ```
 fix(server): handle NULL line_id in device lookup
 feat(digitsd): add volume service code
 docs: update wiring notes
 ```
 
-## Git workflow
+**Git.** Remote: `github` (`git@github.com:justinlindh/digits.git`). PRs required to merge into main; no direct pushes. PR template at `.github/pull_request_template.md`.
 
-Remote: **github** (git@github.com:justinlindh/digits.git)
-
-PRs required to merge into main. No direct pushes. Use the PR template at `.github/pull_request_template.md`.
-
-**Never force push.** Always push new commits on top of existing branches. No `--force`, no `--force-with-lease`, no amending pushed commits.
-
-When addressing PR review comments, always reply to each comment on GitHub (via `gh api`) acknowledging the feedback and noting what was changed. Do this at the same time as pushing the fix.
+**Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 
 ## CI
 
-GitHub Actions workflows (`.github/workflows/`):
-- **server-ci** -- build, test, vet (triggers on `server/` changes)
-- **fw-release / pi-release / server-release** -- tag-triggered release pipelines
-
-## Style
-
-- Go: standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked
-- Server web UI: htmx + Tailwind, templates in `internal/web/templates/`
-- Firmware: C with Pico SDK conventions
-- Never use em dashes in any written copy
-- Never add Co-Authored-By trailers to commits
-- Never include Claude Code session links (claude.ai/code/session_*) in commits, PRs, or any other content
-- Don't leave "was removed" or "was here" comments when deleting code; just delete it
+GitHub Actions workflows in `.github/workflows/`:
+- `server-ci.yml`: build, test, vet (triggers on `server/` changes); required for merge.
+- `server-integration.yml`: integration tests (Postgres service containers); required for merge to main.
+- `fw-release` / `pi-release` / `server-release`: tag-triggered release pipelines.
