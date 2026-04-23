@@ -86,9 +86,10 @@ type Handler struct {
 	tmplPhoneDetail    *template.Template
 	tmplLinks          *template.Template
 	tmplConnecting     *template.Template
-	tmplCallLivePanel       *template.Template
-	tmplCallLiveDetail      *template.Template
-	tmplConferenceLivePanel *template.Template
+	tmplCallLivePanel          *template.Template
+	tmplCallLiveDetail         *template.Template
+	tmplConferenceLivePanel    *template.Template
+	tmplConferenceLiveDetail   *template.Template
 	cfg                HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -302,6 +303,14 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if _, err := tmplCallLiveDetail.ParseFS(templateFS, "templates/_call-live-panel.html"); err != nil {
 		return nil, fmt.Errorf("parse call-live-panel partial into detail: %w", err)
 	}
+	tmplConferenceLiveDetail, err := parsePage("conference-live-detail.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse conference-live-detail: %w", err)
+	}
+	// Merge the panel partial so {{template "conference-live-panel"}} resolves inside the detail page.
+	if _, err := tmplConferenceLiveDetail.ParseFS(templateFS, "templates/_conference-live-panel.html"); err != nil {
+		return nil, fmt.Errorf("parse conference-live-panel partial into detail: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -330,9 +339,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplPhoneDetail:    tmplPhoneDetail,
 		tmplLinks:          tmplLinks,
 		tmplConnecting:     tmplConnecting,
-		tmplCallLivePanel:       tmplCallLivePanel,
-		tmplCallLiveDetail:      tmplCallLiveDetail,
-		tmplConferenceLivePanel: tmplConferenceLivePanel,
+		tmplCallLivePanel:          tmplCallLivePanel,
+		tmplCallLiveDetail:         tmplCallLiveDetail,
+		tmplConferenceLivePanel:    tmplConferenceLivePanel,
+		tmplConferenceLiveDetail:   tmplConferenceLiveDetail,
 		cfg:                cfg,
 		authStore:          deps.AuthStore,
 		authHandlers:       deps.AuthHandlers,
@@ -393,6 +403,9 @@ func (h *Handler) Router() http.Handler {
 		// Harness endpoint for /call/live e2e tests to seed an active call
 		// without going through the full signaling dance.
 		mux.HandleFunc("POST /test-harness/start-call", h.handleTestStartCall)
+		// Harness endpoint for /conference/live e2e tests to seed a conference
+		// without going through the full signaling dance.
+		mux.HandleFunc("POST /test-harness/start-conference", h.handleTestStartConference)
 		// Seed a fake hub entry so e2e tests can exercise the firmware update
 		// chip without a real device connection.
 		mux.HandleFunc("POST /dev/seed-firmware", h.handleDevSeedFirmware)
@@ -432,6 +445,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/status", h.handleAPIStatus)
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
 	protected.HandleFunc("GET /call/live/{id}", h.handleCallLiveDetail)
+	protected.HandleFunc("GET /conference/live/{uuid}", h.handleConferenceLiveDetail)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("GET /api/conference/{uuid}/link-health", h.handleConferenceLinkHealth)

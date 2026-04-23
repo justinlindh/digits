@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // ConferenceLinkHealthEdge is the per-directed-edge section of
@@ -261,4 +263,49 @@ func (h *Handler) renderConferenceLinkHealthPanel(resp ConferenceLinkHealthResp)
 		return "", fmt.Errorf("render conference-live-panel: %w", err)
 	}
 	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// conferenceLiveDetailData is the render payload for conference-live-detail.html.
+type conferenceLiveDetailData struct {
+	Page               string
+	Version            string
+	User               *auth.User
+	HouseholdName      string
+	CallHistoryEnabled bool
+	Conf               *calls.ConferenceSummary
+	Resp               ConferenceLinkHealthResp
+	Ended              bool
+}
+
+// handleConferenceLiveDetail renders the observation deck for a conference.
+// Ended conferences render in terminal state (no SSE wiring, no kick button).
+func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Request) {
+	confID, err := uuid.Parse(r.PathValue("uuid"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
+	if !ok {
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+
+	var linkedIndex map[string]string
+	if primaryHH != "" {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	}
+	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
+
+	data := conferenceLiveDetailData{
+		Page:               "conference-live",
+		Version:            version.Version,
+		User:               user,
+		HouseholdName:      h.householdNameFromContext(r),
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		Conf:               conf,
+		Resp:               resp,
+		Ended:              conf.EndedAt != nil,
+	}
+	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }

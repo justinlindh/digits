@@ -330,6 +330,51 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	t.Logf("✓ /calls page renders 3-way conference with chip--conf and all participant numbers")
 }
 
+func TestCallsPageConferenceRowLinksToLive(t *testing.T) {
+	s := newLHEnv(t)
+	ctx := context.Background()
+	tr := s.env.tracker
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
+	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+	// End the conference so it shows up in /calls history (active ones
+	// aren't in the historical list).
+	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("end: %v", err)
+	}
+
+	// /calls needs CallHistoryEnabled. Enable it for userA's household.
+	if err := s.env.householdStore.SetCallHistoryEnabled(ctx, s.hhAID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/calls", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	wantLink := `href="/conference/live/` + conf.ID.String() + `"`
+	if !strings.Contains(string(body), wantLink) {
+		t.Errorf("expected /calls to link conference row to %s", wantLink)
+	}
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

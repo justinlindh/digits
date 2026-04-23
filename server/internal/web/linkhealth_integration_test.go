@@ -889,6 +889,103 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	}
 }
 
+func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
+	s := newLHEnv(t)
+	ctx := context.Background()
+	tr := s.env.tracker
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
+	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+conf.ID.String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	bodyStr := string(body)
+	for _, want := range []string{
+		"/api/conference/" + conf.ID.String() + "/link-health/stream",
+		s.numA, s.numB, s.numC,
+		"deck-matrix",
+	} {
+		if !strings.Contains(bodyStr, want) {
+			t.Errorf("expected body to contain %q", want)
+		}
+	}
+}
+
+func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {
+	s := newLHEnv(t)
+	ctx := context.Background()
+	tr := s.env.tracker
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
+	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
+	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("end: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+conf.ID.String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ended status: got %d want 200 (terminal render); body=%s", resp.StatusCode, string(body))
+	}
+	bodyStr := string(body)
+	if strings.Contains(bodyStr, `sse-connect="/api/conference/`) {
+		t.Error("ended page should NOT wire the SSE stream")
+	}
+	if !strings.Contains(bodyStr, "deck-ended-chip") {
+		t.Error("ended page should show the terminal chip")
+	}
+}
+
+func TestConferenceLiveDetailPage_UnknownUUID_404(t *testing.T) {
+	s := newLHEnv(t)
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+uuid.New().String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown uuid: got %d want 404", resp.StatusCode)
+	}
+}
+
 // TestConferenceLinkHealthJSON_DBFallback verifies that after a conference
 // ends and its in-memory rings are evicted, ReadbackEdge restores the edge
 // window from the flushed DB rows so the JSON response still carries

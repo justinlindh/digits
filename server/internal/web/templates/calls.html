@@ -46,7 +46,7 @@
             </td>
             <td class="num">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</td>
             <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&mdash;{{end}}</td>
-            <td></td>
+            <td class="r"><a href="/conference/live/{{.Conference.ID}}" aria-label="View conference details">Details &rarr;</a></td>
           </tr>
           {{else}}
           <tr>
@@ -93,6 +93,7 @@
           <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
           <span class="num muted">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</span>
           {{if gt .Conference.DurationS 0}}<span class="num muted">· {{.Conference.DurationS}}s</span>{{end}}
+          <a href="/conference/live/{{.Conference.ID}}" style="margin-left: auto;" aria-label="View conference details">Details &rarr;</a>
         </div>
         {{else}}
         <div class="hstack num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">

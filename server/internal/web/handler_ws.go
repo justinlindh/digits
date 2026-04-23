@@ -192,6 +192,49 @@ func (h *Handler) handleTestStartCall(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
 }
 
+// handleTestStartConference is a DEV_MODE test-harness endpoint that seeds
+// two 2-party calls and then merges them into a conference. Used by the
+// Playwright suite to drive the observation deck without going through
+// signaling.
+func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Host  string   `json:"host"`
+		Added []string `json:"added"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	if body.Host == "" || len(body.Added) != 2 {
+		http.Error(w, "host and exactly 2 added members required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	for _, callee := range body.Added {
+		if _, err := h.tracker.OnCallInitiated(ctx, body.Host, callee); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := h.tracker.OnCallAnswered(ctx, body.Host, callee); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	originatingCallID := h.tracker.CallIDForPair(ctx, body.Host, body.Added[0])
+	if originatingCallID == 0 {
+		http.Error(w, "originating call not found", http.StatusInternalServerError)
+		return
+	}
+	conf, err := h.tracker.CreateConferencePersistent(ctx, body.Host, originatingCallID, body.Added)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"conf_id": conf.ID.String()})
+}
+
 // handleDevSeedFirmware registers a fake hub entry for a line number with the
 // given firmware version. It is only reachable when DevMode is true and lets
 // the Playwright e2e suite exercise the firmware update chip without a real

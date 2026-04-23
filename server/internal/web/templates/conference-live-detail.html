@@ -1,0 +1,70 @@
+{{define "title"}}Live conference &mdash; {{len .Conf.Members}} parties{{end}}
+
+{{define "content"}}
+<div class="page deck" data-started-at="{{.Conf.CreatedAt.UnixMilli}}">
+  <header class="deck-header">
+    <div class="deck-header__labels">
+      <span class="deck-kicker label">live 3-way</span>
+      <h1 class="deck-title">
+        {{range $i, $m := .Resp.Members}}{{if $i}} &harr; {{end}}{{$m.DisplayName}}{{end}}
+      </h1>
+      <div class="deck-meta">
+        <span class="deck-duration" data-duration-since="{{.Conf.CreatedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+      </div>
+    </div>
+    {{if .Ended}}
+      <div class="deck-ended-chip">Ended</div>
+    {{end}}
+  </header>
+
+  <div class="deck-cards">
+    {{range .Resp.Members}}
+      <div class="deck-card{{if .IsHost}} deck-card--host{{end}}">
+        <div class="label">{{if .IsHost}}host{{else}}member{{end}}</div>
+        <div class="deck-card__name">{{.DisplayName}}</div>
+        <div class="deck-card__num num">{{.Number}}</div>
+      </div>
+    {{end}}
+  </div>
+
+  <div id="conference-live-panel" class="deck-panel"
+       {{if not .Ended}}hx-ext="sse"
+       sse-connect="/api/conference/{{.Conf.ID}}/link-health/stream"
+       sse-swap="sample,disconnect,ended"{{end}}>
+    {{template "conference-live-panel" .Resp}}
+  </div>
+
+  <p class="deck-disclaimer">
+    Bars show per-edge loss and jitter. Each member reports its own view of every other member.
+    The server sees the pipe, not the audio.
+  </p>
+</div>
+
+<script>
+  (function () {
+    var el = document.querySelector('.deck-duration');
+    if (!el) return;
+    var since = parseInt(el.getAttribute('data-duration-since'), 10);
+    if (!since) return;
+    function tick() {
+      if (!document.body.contains(el)) return;
+      var now = Date.now();
+      var s = Math.max(0, Math.floor((now - since) / 1000));
+      var h = Math.floor(s / 3600);
+      var m = Math.floor((s % 3600) / 60);
+      var sec = s % 60;
+      function pad(n) { return n < 10 ? '0' + n : String(n); }
+      el.textContent = (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(sec);
+    }
+    tick();
+    var iv = setInterval(tick, 1000);
+
+    document.body.addEventListener('htmx:sseMessage', function (ev) {
+      if (ev.detail && (ev.detail.type === 'ended' || ev.detail.type === 'disconnect')) {
+        clearInterval(iv);
+        setTimeout(function () { location.reload(); }, 800);
+      }
+    });
+  })();
+</script>
+{{end}}
