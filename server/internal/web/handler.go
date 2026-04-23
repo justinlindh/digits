@@ -86,8 +86,9 @@ type Handler struct {
 	tmplPhoneDetail    *template.Template
 	tmplLinks          *template.Template
 	tmplConnecting     *template.Template
-	tmplCallLivePanel  *template.Template
-	tmplCallLiveDetail *template.Template
+	tmplCallLivePanel       *template.Template
+	tmplCallLiveDetail      *template.Template
+	tmplConferenceLivePanel *template.Template
 	cfg                HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -233,6 +234,14 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			return segDesc{Lit: lit, Severity: sev}
 		},
 		"renderNotes": renderNotes,
+		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
+			for i := range edges {
+				if edges[i].From == from && edges[i].Peer == peer {
+					return &edges[i]
+				}
+			}
+			return nil
+		},
 	}
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
@@ -281,6 +290,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-panel: %w", err)
 	}
+	tmplConferenceLivePanel, err := template.New("conference-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_conference-live-panel.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse conference-live-panel: %w", err)
+	}
 	tmplCallLiveDetail, err := parsePage("call-live-detail.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-detail: %w", err)
@@ -317,8 +330,9 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplPhoneDetail:    tmplPhoneDetail,
 		tmplLinks:          tmplLinks,
 		tmplConnecting:     tmplConnecting,
-		tmplCallLivePanel:  tmplCallLivePanel,
-		tmplCallLiveDetail: tmplCallLiveDetail,
+		tmplCallLivePanel:       tmplCallLivePanel,
+		tmplCallLiveDetail:      tmplCallLiveDetail,
+		tmplConferenceLivePanel: tmplConferenceLivePanel,
 		cfg:                cfg,
 		authStore:          deps.AuthStore,
 		authHandlers:       deps.AuthHandlers,

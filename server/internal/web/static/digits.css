@@ -1803,3 +1803,55 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .update-details--mobile > summary { display: inline-flex; align-items: center; gap: 4px; }
 .update-details--mobile .update-notes { max-width: none; margin-top: 6px; }
 
+
+/* --------- Conference observation deck: 3x3 edge matrix --------- */
+.deck-matrix {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 16px;
+}
+.deck-matrix__head {
+  padding: 4px 8px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.deck-matrix__cell {
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--paper-2);
+}
+.deck-matrix__cell--blank {
+  background: transparent;
+  border: 1px dashed var(--rule-soft);
+  opacity: 0.3;
+}
+.deck-matrix__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.deck-matrix__lbl {
+  font-size: 10px;
+  color: var(--ink-muted);
+}
+.deck-matrix__val {
+  font-size: 13px;
+  color: var(--ink);
+}
+@media (max-width: 640px) {
+  .deck-matrix {
+    grid-template-columns: 1fr;
+  }
+  .deck-matrix__head {
+    display: none;
+  }
+  .deck-matrix__cell--blank {
+    display: none;
+  }
+}
