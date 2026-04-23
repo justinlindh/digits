@@ -881,6 +881,7 @@ func TestRequireConferenceHostOwnership(t *testing.T) {
 	confID := startConference(t, env)
 
 	check := func(label, userID string, wantOK bool, wantCode int) {
+		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, "/api/conference/"+confID.String()+"/kick", nil)
 		req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"}))
 		rec := httptest.NewRecorder()
