@@ -182,6 +182,11 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
 	}
 
+	// Subscribe FIRST so samples arriving between the initial snapshot and
+	// the select loop are buffered rather than silently dropped.
+	sub := h.healthStore.SubscribeConference(confID)
+	defer sub.Close()
+
 	// Initial snapshot.
 	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
@@ -194,9 +199,6 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	}
 	flusher.Flush()
 
-	sub := h.healthStore.SubscribeConference(confID)
-	defer sub.Close()
-
 	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 
@@ -206,7 +208,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 			return
 		case ev, okEv := <-sub.C:
 			if !okEv {
-				_ = writeSSE(w, "ended", renderEndedFragment(""))
+				_ = writeSSE(w, "ended", renderEndedConferenceFragment(""))
 				flusher.Flush()
 				return
 			}
@@ -224,17 +226,24 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 }
 
 func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher http.Flusher, conf *calls.ConferenceSummary, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
-	if handled, err := writeTerminalEvent(w, flusher, ev); handled {
-		return err
-	}
-	// SampleKind
-	snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
-	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
-	if err != nil {
-		return err
-	}
-	if err := writeSSE(w, "sample", fragment); err != nil {
-		return err
+	switch ev.Kind {
+	case calls.SampleKind:
+		snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
+		fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
+		if err != nil {
+			return err
+		}
+		if err := writeSSE(w, "sample", fragment); err != nil {
+			return err
+		}
+	case calls.EndedKind:
+		if err := writeSSE(w, "ended", renderEndedConferenceFragment("")); err != nil {
+			return err
+		}
+	case calls.DisconnectKind:
+		if err := writeSSE(w, "disconnect", renderEndedConferenceFragment(ev.EndedBy)); err != nil {
+			return err
+		}
 	}
 	flusher.Flush()
 	return nil

@@ -411,12 +411,15 @@ func TestConferenceSSEStream_ReceivesEndedOnEvict(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	ev, _, err := readSSEFrame(t, ctx, sr)
+	ev, data, err := readSSEFrame(t, ctx, sr)
 	if err != nil {
 		t.Fatalf("read ended frame: %v", err)
 	}
 	if ev != "ended" {
 		t.Fatalf("event on evict: got %q want ended", ev)
+	}
+	if !strings.Contains(data, "Conference") {
+		t.Fatalf("ended data missing conference copy: %q", data)
 	}
 }
 

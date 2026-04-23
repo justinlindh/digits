@@ -332,6 +332,15 @@ func renderEndedFragment(endedBy string) string {
 	return `<div class="deck-ended">Call ended.</div>`
 }
 
+// renderEndedConferenceFragment is the matrix-deck counterpart of
+// renderEndedFragment. Returns the small HTML shown when a conference ends.
+func renderEndedConferenceFragment(endedBy string) string {
+	if endedBy != "" {
+		return fmt.Sprintf(`<div class="deck-ended">Conference ended by %s.</div>`, html.EscapeString(endedBy))
+	}
+	return `<div class="deck-ended">Conference ended.</div>`
+}
+
 // handleCallDisconnect force-ends an active call. Any user whose household
 // owns either endpoint (direct ownership only; linked households do NOT
 // qualify) can trigger this. The server records the actor in calls.force_ended_by,
