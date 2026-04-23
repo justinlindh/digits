@@ -12,6 +12,7 @@ These override default behavior and apply to every output: chat, code, commits, 
 - **No "was removed" / "was here" comments** when deleting code; just delete it.
 - **Never force push.** Push new commits on top of existing branches. No `--force`, no `--force-with-lease`, no amending pushed commits.
 - **Reply to PR review comments** on GitHub (via `gh api`) at the same time as pushing the fix; acknowledge what was changed.
+- **No "follow-up" talk.** Never label a skipped finding, deferred refactor, or known gap as "follow-up," "addressed later," or "future PR." Chat transcripts and PR comments are not durable tracking. When skipping a review finding, pick one: (a) the work is real and planned: file a GitHub issue at the same moment, cite the number, and mean it (no "close as wontfix if X" hedging in the body); or (b) skip-and-say-why with a concrete reason (YAGNI, pre-existing, out of spec). YAGNI means don't file an issue: a "maybe someday if X" ticket is the same vapor with a number attached. No middle state, no zombie tickets.
 
 ## Repo layout
 
