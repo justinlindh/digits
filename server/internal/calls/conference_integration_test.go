@@ -382,15 +382,6 @@ func TestRecordKick_Integration(t *testing.T) {
 	tr := calls.New(d)
 	ctx := context.Background()
 
-	var hostUserID string
-	if err := d.DB.QueryRow(
-		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
-		"recordkick-host@example.com", "Host",
-	).Scan(&hostUserID); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
-	t.Cleanup(func() { _, _ = d.DB.Exec("DELETE FROM users WHERE id = $1", hostUserID) })
-
 	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550102"); err != nil {
 		t.Fatalf("seed call 1: %v", err)
 	}
@@ -404,6 +395,16 @@ func TestRecordKick_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
+
+	var hostUserID string
+	email := "recordkick-" + conf.ID.String() + "@example.com"
+	if err := d.DB.QueryRow(
+		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
+		email, "Host",
+	).Scan(&hostUserID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB.Exec("DELETE FROM users WHERE id = $1", hostUserID) })
 
 	if err := tr.RecordKick(ctx, conf.ID, "+15555550103", hostUserID); err != nil {
 		t.Fatalf("RecordKick: %v", err)
