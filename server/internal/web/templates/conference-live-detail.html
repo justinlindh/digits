@@ -1,7 +1,7 @@
-{{define "title"}}Live conference &mdash; {{len .Conf.Members}} parties{{end}}
+{{define "title"}}Live conference &mdash; {{len .Resp.Members}} parties{{end}}
 
 {{define "content"}}
-<div class="page deck" data-started-at="{{.Conf.CreatedAt.UnixMilli}}">
+<div class="page deck" data-started-at="{{.Resp.CreatedAt.UnixMilli}}">
   <header class="deck-header">
     <div class="deck-header__labels">
       <span class="deck-kicker label">live 3-way</span>
@@ -9,10 +9,10 @@
         {{range $i, $m := .Resp.Members}}{{if $i}} &harr; {{end}}{{$m.DisplayName}}{{end}}
       </h1>
       <div class="deck-meta">
-        <span class="deck-duration" data-duration-since="{{.Conf.CreatedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        <span class="deck-duration" data-duration-since="{{.Resp.CreatedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
       </div>
     </div>
-    {{if .Ended}}
+    {{if .Resp.Ended}}
       <div class="deck-ended-chip">Ended</div>
     {{end}}
   </header>
@@ -28,8 +28,8 @@
   </div>
 
   <div id="conference-live-panel" class="deck-panel"
-       {{if not .Ended}}hx-ext="sse"
-       sse-connect="/api/conference/{{.Conf.ID}}/link-health/stream"
+       {{if not .Resp.Ended}}hx-ext="sse"
+       sse-connect="/api/conference/{{.Resp.ConfID}}/link-health/stream"
        sse-swap="sample,disconnect,ended"{{end}}>
     {{template "conference-live-panel" .Resp}}
   </div>

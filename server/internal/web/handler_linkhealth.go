@@ -104,16 +104,9 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
 	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
 
-	// Display name resolution: owned line first (no extra DB query), then
+	// Display name resolution: owned line first (non-empty name only), then
 	// linked-index for peer names, then bare number as fallback.
-	if ln, ok := ownedLines[number]; ok && ln != nil {
-		out.DisplayName = ln.Name
-	} else {
-		out.DisplayName = resolvePeerName(number, linkedIndex)
-	}
-	if out.DisplayName == "" {
-		out.DisplayName = number
-	}
+	out.DisplayName = resolveMemberDisplayName(number, ownedLines, linkedIndex)
 
 	// Memory first.
 	windowMem := h.healthStore.Window(callID, number)
@@ -128,7 +121,7 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 	}
 
 	// DB fallback.
-	dbSamples, err := h.healthStore.Readback(ctx, callID, number, 60)
+	dbSamples, err := h.healthStore.Readback(ctx, callID, number, calls.RingCapacity)
 	if err != nil {
 		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
 	}
@@ -265,32 +258,45 @@ func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher
 	return nil
 }
 
-func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+// writeTerminalEvent writes an SSE frame for an EndedKind or DisconnectKind
+// event using renderEndedFragment. Returns true if the event was a terminal
+// kind and was handled, false for SampleKind (which the caller handles).
+func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool, error) {
 	switch ev.Kind {
-	case calls.SampleKind:
-		callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
-		if err != nil {
-			return err
-		}
-		calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
-		if err != nil {
-			return err
-		}
-		fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
-		if err != nil {
-			return err
-		}
-		if err := writeSSE(w, "sample", fragment); err != nil {
-			return err
+	case calls.EndedKind:
+		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
+			return true, err
 		}
 	case calls.DisconnectKind:
 		if err := writeSSE(w, "disconnect", renderEndedFragment(ev.EndedBy)); err != nil {
-			return err
+			return true, err
 		}
-	case calls.EndedKind:
-		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
-			return err
-		}
+	default:
+		return false, nil
+	}
+	flusher.Flush()
+	return true, nil
+}
+
+func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+	if handled, err := writeTerminalEvent(w, flusher, ev); handled {
+		return err
+	}
+	// SampleKind
+	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		return err
+	}
+	fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
+	if err != nil {
+		return err
+	}
+	if err := writeSSE(w, "sample", fragment); err != nil {
+		return err
 	}
 	flusher.Flush()
 	return nil

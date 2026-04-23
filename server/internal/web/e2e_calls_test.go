@@ -333,23 +333,10 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 func TestCallsPageConferenceRowLinksToLive(t *testing.T) {
 	s := newLHEnv(t)
 	ctx := context.Background()
-	tr := s.env.tracker
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
-	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
+	confID := startConference(t, s)
 	// End the conference so it shows up in /calls history (active ones
 	// aren't in the historical list).
-	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+	if err := s.env.tracker.EndConferencePersistent(ctx, confID, "host_hangup"); err != nil {
 		t.Fatalf("end: %v", err)
 	}
 
@@ -369,7 +356,7 @@ func TestCallsPageConferenceRowLinksToLive(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
 	}
-	wantLink := `href="/conference/live/` + conf.ID.String() + `"`
+	wantLink := `href="/conference/live/` + confID.String() + `"`
 	if !strings.Contains(string(body), wantLink) {
 		t.Errorf("expected /calls to link conference row to %s", wantLink)
 	}

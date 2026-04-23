@@ -79,7 +79,7 @@ func TestReadbackFromDB(t *testing.T) {
 	// Simulate post-restart: drop in-memory state.
 	s.Evict(callID)
 
-	got, err := s.Readback(context.Background(), callID, "555-3333", ringCapacity)
+	got, err := s.Readback(context.Background(), callID, "555-3333", RingCapacity)
 	if err != nil {
 		t.Fatalf("Readback: %v", err)
 	}

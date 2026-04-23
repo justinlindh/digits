@@ -290,34 +290,6 @@ func TestSSEStream_EndedCallGets404(t *testing.T) {
 	}
 }
 
-// startConference seeds two 2-party calls (host->A, host->B where host is
-// numA, A is numB, B is numC), then merges them into a conference. Returns
-// the conference UUID. Caller owns cleanup via t.Cleanup on any rows
-// created (newLHEnv already cleans up calls table).
-func startConference(t *testing.T, s lhSetup) uuid.UUID {
-	t.Helper()
-	ctx := context.Background()
-	tr := s.env.tracker
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
-		t.Fatalf("OnCallInitiated A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
-		t.Fatalf("OnCallInitiated A->C: %v", err)
-	}
-	if err := tr.OnCallAnswered(ctx, s.numA, s.numB); err != nil {
-		t.Fatalf("OnCallAnswered A->B: %v", err)
-	}
-	if err := tr.OnCallAnswered(ctx, s.numA, s.numC); err != nil {
-		t.Fatalf("OnCallAnswered A->C: %v", err)
-	}
-	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
-	return conf.ID
-}
-
 // confStreamURL builds the SSE stream endpoint URL for a conference UUID.
 func confStreamURL(s lhSetup, confID uuid.UUID) string {
 	return s.env.srv.URL + "/api/conference/" + confID.String() + "/link-health/stream"
@@ -454,34 +426,7 @@ func TestConferenceSSEStream_UnrelatedHouseholdGets404(t *testing.T) {
 
 	// Create a fourth user in a fourth household that owns a line but is
 	// NOT a conference member.
-	numD := nextPhone()
-	hwD := "conf-sse-d-" + numD
-	emailD := "conf-sse-d-" + numD + "@example.com"
-	hhNameD := "Conf SSE D " + numD
-	t.Cleanup(func() {
-		db := s.env.database.DB
-		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
-		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
-		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhNameD)
-		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhNameD)
-		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", emailD)
-		_, _ = db.Exec("DELETE FROM users WHERE email = $1", emailD)
-	})
-	userD, err := s.env.authStore.CreateUser(context.Background(), emailD, "Conf SSE D", nil)
-	if err != nil {
-		t.Fatalf("create user D: %v", err)
-	}
-	hhD, err := s.env.householdStore.Create(context.Background(), hhNameD, userD.ID)
-	if err != nil {
-		t.Fatalf("create household D: %v", err)
-	}
-	codeD, err := s.env.pairingStore.GenerateCode(context.Background(), hwD)
-	if err != nil {
-		t.Fatalf("gen code D: %v", err)
-	}
-	if _, _, err := s.env.pairingStore.ClaimDevice(context.Background(), codeD, numD, "Phone D", hhD.ID); err != nil {
-		t.Fatalf("claim D: %v", err)
-	}
+	userD := seedUnrelatedUser(t, s.env, "conf-sse-d")
 
 	client := authedClient(t, s, userD)
 	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)

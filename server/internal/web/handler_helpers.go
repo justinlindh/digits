@@ -163,6 +163,19 @@ func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Requ
 	return conf, ownedLines, primaryHH, true
 }
 
+// resolveMemberDisplayName picks the best label for a member phone.
+// Priority: owned-line name (only if non-empty), linked-index peer name,
+// bare number fallback.
+func resolveMemberDisplayName(number string, ownedLines map[string]*line.Line, linkedIndex map[string]string) string {
+	if ln, ok := ownedLines[number]; ok && ln != nil && ln.Name != "" {
+		return ln.Name
+	}
+	if name := resolvePeerName(number, linkedIndex); name != "" {
+		return name
+	}
+	return number
+}
+
 // userDisplayLabel returns a human-friendly label for a user: Name if set,
 // else the email local-part, else the bare email. Nil user returns "".
 func userDisplayLabel(u *auth.User) string {

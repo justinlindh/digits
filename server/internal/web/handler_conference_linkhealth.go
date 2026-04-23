@@ -57,7 +57,6 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Display-name resolution via linked-families index (same as 2-party).
 	var linkedIndex map[string]string
 	if primaryHH != "" {
 		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
@@ -79,7 +78,7 @@ func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls
 	for _, m := range conf.Members {
 		members = append(members, ConferenceMemberInfo{
 			Number:      m,
-			DisplayName: h.resolveMemberDisplayName(m, ownedLines, linkedIndex),
+			DisplayName: resolveMemberDisplayName(m, ownedLines, linkedIndex),
 			IsHost:      m == conf.Host,
 		})
 	}
@@ -102,6 +101,16 @@ func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls
 	}
 }
 
+// lastSample returns a pointer to the last element of window, or nil if empty.
+// Copies the value to avoid aliasing the slice backing array.
+func lastSample(window []LinkHealthSample) *LinkHealthSample {
+	if len(window) == 0 {
+		return nil
+	}
+	s := window[len(window)-1]
+	return &s
+}
+
 func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid.UUID, from, peer string) ConferenceLinkHealthEdge {
 	out := ConferenceLinkHealthEdge{From: from, Peer: peer, Window: []LinkHealthSample{}}
 
@@ -112,12 +121,11 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 		for i, s := range windowMem {
 			out.Window[i] = toAPISample(s)
 		}
-		la := toAPISample(windowMem[len(windowMem)-1])
-		out.Latest = &la
+		out.Latest = lastSample(out.Window)
 		return out
 	}
 	// DB fallback.
-	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, 60)
+	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
 	if err != nil {
 		slog.Warn("ReadbackEdge failed; serving empty window",
 			"conf_id", confID, "from", from, "peer", peer, "err", err)
@@ -127,26 +135,8 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 	for i, s := range dbSamples {
 		out.Window[i] = toAPISample(s)
 	}
-	if len(dbSamples) > 0 {
-		la := toAPISample(dbSamples[len(dbSamples)-1])
-		out.Latest = &la
-	}
+	out.Latest = lastSample(out.Window)
 	return out
-}
-
-// resolveMemberDisplayName picks the best label for a member phone.
-// Priority: owned-line name (only if non-empty), linked-index peer name,
-// bare number fallback. The non-empty guard on the owned line is an
-// intentional tightening over the 2-party inline behavior: a blank line
-// name should not preempt a useful linked-family name.
-func (h *Handler) resolveMemberDisplayName(number string, ownedLines map[string]*line.Line, linkedIndex map[string]string) string {
-	if ln, ok := ownedLines[number]; ok && ln != nil && ln.Name != "" {
-		return ln.Name
-	}
-	if name := resolvePeerName(number, linkedIndex); name != "" {
-		return name
-	}
-	return number
 }
 
 // handleConferenceLinkHealthStream opens an SSE stream for a conference's
@@ -234,24 +224,17 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 }
 
 func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher http.Flusher, conf *calls.ConferenceSummary, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
-	switch ev.Kind {
-	case calls.SampleKind:
-		snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
-		fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
-		if err != nil {
-			return err
-		}
-		if err := writeSSE(w, "sample", fragment); err != nil {
-			return err
-		}
-	case calls.EndedKind:
-		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
-			return err
-		}
-	case calls.DisconnectKind:
-		if err := writeSSE(w, "disconnect", renderEndedFragment(ev.EndedBy)); err != nil {
-			return err
-		}
+	if handled, err := writeTerminalEvent(w, flusher, ev); handled {
+		return err
+	}
+	// SampleKind
+	snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
+	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
+	if err != nil {
+		return err
+	}
+	if err := writeSSE(w, "sample", fragment); err != nil {
+		return err
 	}
 	flusher.Flush()
 	return nil
@@ -272,9 +255,7 @@ type conferenceLiveDetailData struct {
 	User               *auth.User
 	HouseholdName      string
 	CallHistoryEnabled bool
-	Conf               *calls.ConferenceSummary
 	Resp               ConferenceLinkHealthResp
-	Ended              bool
 }
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
@@ -303,9 +284,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 		User:               user,
 		HouseholdName:      h.householdNameFromContext(r),
 		CallHistoryEnabled: h.callHistoryEnabled(r),
-		Conf:               conf,
 		Resp:               resp,
-		Ended:              conf.EndedAt != nil,
 	}
 	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }

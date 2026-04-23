@@ -297,7 +297,7 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	}
 }
 
-func TestGetConferenceByID(t *testing.T) {
+func TestGetConferenceByID_Integration(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)
 	ctx := context.Background()

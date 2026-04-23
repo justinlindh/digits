@@ -1,22 +1,20 @@
 {{define "conference-live-panel"}}
-<div class="deck-panel__inner">
-  <div class="deck-matrix">
-    <div class="deck-matrix__head"></div>
-    {{range .Members}}<div class="deck-matrix__head label">to {{.DisplayName}}</div>{{end}}
-    {{range $row := .Members}}
-      <div class="deck-matrix__head label">from {{$row.DisplayName}}</div>
-      {{range $col := $.Members}}
-        {{if eq $row.Number $col.Number}}
-          <div class="deck-matrix__cell deck-matrix__cell--blank"></div>
-        {{else}}
-          {{$edge := edgeFor $.Edges $row.Number $col.Number}}
-          <div class="deck-matrix__cell">
-            {{template "deck-matrix-metrics" $edge}}
-          </div>
-        {{end}}
+<div class="deck-matrix">
+  <div class="deck-matrix__head"></div>
+  {{range .Members}}<div class="deck-matrix__head label">to {{.DisplayName}}</div>{{end}}
+  {{range $row := .Members}}
+    <div class="deck-matrix__head label">from {{$row.DisplayName}}</div>
+    {{range $col := $.Members}}
+      {{if eq $row.Number $col.Number}}
+        <div class="deck-matrix__cell deck-matrix__cell--blank"></div>
+      {{else}}
+        {{$edge := edgeFor $.Edges $row.Number $col.Number}}
+        <div class="deck-matrix__cell">
+          {{template "deck-matrix-metrics" $edge}}
+        </div>
       {{end}}
     {{end}}
-  </div>
+  {{end}}
 </div>
 {{end}}
 

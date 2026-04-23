@@ -73,9 +73,10 @@ type endpointKey struct {
 	Peer string // remote endpoint the sample describes; "" for 2-party
 }
 
-// ringCapacity is the per-endpoint in-memory sample retention.
+// RingCapacity is the per-endpoint in-memory sample retention.
 // At the default 2s reporting cadence this holds 2 minutes of history.
-const ringCapacity = 60
+// Readback and ReadbackEdge callers use this constant for the limit argument.
+const RingCapacity = 60
 
 // sessionRings holds per-endpoint bounded sample rings and last-flushed
 // timestamps used by the DB flusher. All state is guarded by mu.
@@ -91,17 +92,17 @@ type subscriber struct {
 }
 
 type ring struct {
-	samples     []Sample // length up to ringCapacity
+	samples     []Sample // length up to RingCapacity
 	lastFlushed time.Time
 }
 
 func (r *ring) append(s Sample) {
-	if len(r.samples) < ringCapacity {
+	if len(r.samples) < RingCapacity {
 		r.samples = append(r.samples, s)
 		return
 	}
 	copy(r.samples, r.samples[1:])
-	r.samples[ringCapacity-1] = s
+	r.samples[RingCapacity-1] = s
 }
 
 func (r *ring) latest() *Sample {

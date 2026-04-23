@@ -655,27 +655,11 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 func TestConferenceLinkHealthJSON(t *testing.T) {
 	env := newLHEnv(t)
 	ctx := context.Background()
-	tr := env.env.tracker
-
-	// Seed two 2-party calls and merge into a conference. All three phones
-	// are owned by separate households (A, B, C); A is host.
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
-	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
+	confID := startConference(t, env)
 
 	// Record one per-edge sample so the JSON carries a non-empty window.
 	loss := float32(1.5)
-	env.env.healthStore.RecordEdge(conf.ID, env.numA, env.numB,
+	env.env.healthStore.RecordEdge(confID, env.numA, env.numB,
 		calls.Sample{TS: time.Unix(0, 1), LossPct: &loss})
 
 	// GET as user A.
@@ -684,7 +668,7 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 		t.Fatalf("create session A: %v", err)
 	}
 	req, _ := http.NewRequest(http.MethodGet,
-		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
 	if err != nil {
@@ -700,8 +684,8 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("decode body: %v; body=%s", err, string(body))
 	}
-	if got.ConfID != conf.ID {
-		t.Fatalf("ConfID: got %s want %s", got.ConfID, conf.ID)
+	if got.ConfID != confID {
+		t.Fatalf("ConfID: got %s want %s", got.ConfID, confID)
 	}
 	if got.Ended {
 		t.Errorf("expected Ended=false for a live conference; got true")
@@ -743,41 +727,13 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 
 	// 404 for a user whose household owns no conference member (parallels
 	// TestRequireConferenceOwnership userD case, but via HTTP).
-	numD := nextPhone()
-	hwD := "json-d-" + numD
-	emailD := "json-d-" + numD + "@example.com"
-	hhNameD := "JSON D " + numD
-	t.Cleanup(func() {
-		db := env.env.database.DB
-		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
-		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
-		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhNameD)
-		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhNameD)
-		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", emailD)
-		_, _ = db.Exec("DELETE FROM users WHERE email = $1", emailD)
-	})
-	userD, err := env.env.authStore.CreateUser(ctx, emailD, "JSON D", nil)
-	if err != nil {
-		t.Fatalf("create user D: %v", err)
-	}
-	hhD, err := env.env.householdStore.Create(ctx, hhNameD, userD.ID)
-	if err != nil {
-		t.Fatalf("create household D: %v", err)
-	}
-	codeD, err := env.env.pairingStore.GenerateCode(ctx, hwD)
-	if err != nil {
-		t.Fatalf("gen code D: %v", err)
-	}
-	if _, _, err := env.env.pairingStore.ClaimDevice(ctx, codeD, numD, "Phone D", hhD.ID); err != nil {
-		t.Fatalf("claim D: %v", err)
-	}
-
+	userD := seedUnrelatedUser(t, env.env, "json-d")
 	tokenD, _, err := env.env.authStore.CreateSession(ctx, userD.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session D: %v", err)
 	}
 	reqD, _ := http.NewRequest(http.MethodGet,
-		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
 	reqD.AddCookie(&http.Cookie{Name: auth.CookieName, Value: tokenD})
 	respD, err := env.env.srv.Client().Do(reqD)
 	if err != nil {
@@ -795,34 +751,18 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 // observation (parity with requireCallEndpointOwnership).
 func TestRequireConferenceOwnership(t *testing.T) {
 	env := newLHEnv(t)
-	ctx := context.Background()
-	tr := env.env.tracker
-
-	// Seed two 2-party calls and merge into a conference.
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
-	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
+	confID := startConference(t, env)
 
 	// Use the Handler that shares state with the tracker used to seed data above.
 	h := env.env.handler
 
 	check := func(label, userID string, wantOK bool, wantCode int) {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodGet, "/conference/live/"+conf.ID.String(), nil)
+		req := httptest.NewRequest(http.MethodGet, "/conference/live/"+confID.String(), nil)
 		ctx2 := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"})
 		req = req.WithContext(ctx2)
 		rec := httptest.NewRecorder()
-		_, _, _, ok := h.requireConferenceOwnership(rec, req, conf.ID)
+		_, _, _, ok := h.requireConferenceOwnership(rec, req, confID)
 		if ok != wantOK {
 			t.Errorf("%s: ok=%v want %v", label, ok, wantOK)
 		}
@@ -845,41 +785,7 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	check("userC (member household)", env.userC.ID, true, 0)
 
 	// A user whose household owns no conference member gets 404.
-	numD := nextPhone()
-	hwD := "ownership-d-" + numD
-	emailD := "ownership-d-" + numD + "@example.com"
-	hhNameD := "Ownership D " + numD
-
-	// Register cleanup BEFORE any fallible DB work so partial-setup failures
-	// don't leak rows. All DELETEs are idempotent against missing rows.
-	t.Cleanup(func() {
-		db := env.env.database.DB
-		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
-		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
-		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhNameD)
-		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhNameD)
-		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", emailD)
-		_, _ = db.Exec("DELETE FROM users WHERE email = $1", emailD)
-	})
-
-	userD, err := env.env.authStore.CreateUser(context.Background(), emailD, "User D", nil)
-	if err != nil {
-		t.Fatalf("create user D: %v", err)
-	}
-	hhD, err := env.env.householdStore.Create(context.Background(), hhNameD, userD.ID)
-	if err != nil {
-		t.Fatalf("create household D: %v", err)
-	}
-	// Seed a line owned by D so ownedLinesForUser returns non-empty (proving
-	// the 404 is due to lack of conference membership, not lack of any line).
-	codeD, err := env.env.pairingStore.GenerateCode(context.Background(), hwD)
-	if err != nil {
-		t.Fatalf("gen code D: %v", err)
-	}
-	if _, _, err := env.env.pairingStore.ClaimDevice(context.Background(), codeD, numD, "Phone D", hhD.ID); err != nil {
-		t.Fatalf("claim D: %v", err)
-	}
-
+	userD := seedUnrelatedUser(t, env.env, "ownership-d")
 	check("userD (unrelated household)", userD.ID, false, http.StatusNotFound)
 
 	// Unknown conference ID returns 404.
@@ -899,24 +805,10 @@ func TestRequireConferenceOwnership(t *testing.T) {
 
 func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
 	s := newLHEnv(t)
-	ctx := context.Background()
-	tr := s.env.tracker
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
-	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
+	confID := startConference(t, s)
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+conf.ID.String(), nil)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
@@ -929,7 +821,7 @@ func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
 	}
 	bodyStr := string(body)
 	for _, want := range []string{
-		"/api/conference/" + conf.ID.String() + "/link-health/stream",
+		"/api/conference/" + confID.String() + "/link-health/stream",
 		s.numA, s.numB, s.numC,
 		"deck-matrix",
 	} {
@@ -941,27 +833,13 @@ func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
 
 func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {
 	s := newLHEnv(t)
-	ctx := context.Background()
-	tr := s.env.tracker
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numB)
-	_ = tr.OnCallAnswered(ctx, s.numA, s.numC)
-	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
-	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+	confID := startConference(t, s)
+	if err := s.env.tracker.EndConferencePersistent(context.Background(), confID, "host_hangup"); err != nil {
 		t.Fatalf("end: %v", err)
 	}
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+conf.ID.String(), nil)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
@@ -1001,36 +879,22 @@ func TestConferenceLiveDetailPage_UnknownUUID_404(t *testing.T) {
 func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
 	env := newLHEnv(t)
 	ctx := context.Background()
-	tr := env.env.tracker
-
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
-		t.Fatalf("seed call A->B: %v", err)
-	}
-	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
-		t.Fatalf("seed call A->C: %v", err)
-	}
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
-	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
-	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
-	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
-	if err != nil {
-		t.Fatalf("CreateConferencePersistent: %v", err)
-	}
+	confID := startConference(t, env)
 
 	// Record + flush one per-edge sample, then end the conference so the
 	// in-memory ring is evicted. Subsequent reads must come from the DB.
 	loss := float32(2.5)
-	env.env.healthStore.RecordEdge(conf.ID, env.numA, env.numB,
+	env.env.healthStore.RecordEdge(confID, env.numA, env.numB,
 		calls.Sample{TS: time.Unix(0, 1000), LossPct: &loss})
 	if err := env.env.healthStore.FlushOnce(ctx); err != nil {
 		t.Fatalf("FlushOnce: %v", err)
 	}
-	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+	if err := env.env.tracker.EndConferencePersistent(ctx, confID, "host_hangup"); err != nil {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
 	// Confirm the in-memory window is now empty.
-	if w := env.env.healthStore.WindowEdge(conf.ID, env.numA, env.numB); len(w) != 0 {
+	if w := env.env.healthStore.WindowEdge(confID, env.numA, env.numB); len(w) != 0 {
 		t.Fatalf("expected in-memory window to be empty post-evict; got %d", len(w))
 	}
 
@@ -1041,7 +905,7 @@ func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	req, _ := http.NewRequest(http.MethodGet,
-		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
 	if err != nil {
