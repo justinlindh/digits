@@ -179,9 +179,21 @@ func TestConferenceLifecycleHooks(t *testing.T) {
 		t.Fatal("CallIDForPair returned 0 for originating pair")
 	}
 
+	// Seed fired 2-party Init twice; confirm before creating the conference
+	// so a regression that swapped InitConference with Init is catchable.
+	if len(h.inits) != 2 {
+		t.Fatalf("expected 2 Init calls from seeding; got %d", len(h.inits))
+	}
+
 	conf, err := tr.CreateConferencePersistent(ctx, hostNum, originatingCallID, []string{m2, m3})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// CreateConferencePersistent must NOT have incremented Init (2-party
+	// hooks stay separate from conference hooks).
+	if len(h.inits) != 2 {
+		t.Fatalf("CreateConferencePersistent should not fire Init; got %d total Init calls", len(h.inits))
 	}
 
 	if len(h.confInits) != 1 || h.confInits[0] != conf.ID {
