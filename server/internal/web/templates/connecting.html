@@ -19,7 +19,7 @@
 
       <header class="dialer__title">
         <span class="dialer__title-icon" aria-hidden="true"></span>
-        <span class="dialer__title-app">Dial-Up Connection {{if .HouseholdName}}{{.HouseholdName}}{{else}}Digits Online{{end}}</span>
+        <span class="dialer__title-app">Dial-Up Connection</span>
         <span class="dialer__title-btns" aria-hidden="true">
           <span class="dialer__title-btn">_</span>
           <span class="dialer__title-btn">&#9634;</span>
@@ -42,7 +42,7 @@
           </div>
           <div class="dialer__hero-copy">
             <p class="dialer__network-label">CONNECTING TO</p>
-            <h1 class="dialer__network">Digits Online {{if .HouseholdName}}{{.HouseholdName}}{{end}}</h1>
+            <h1 class="dialer__network">{{if .HouseholdName}}{{.HouseholdName}}{{else}}Digits Online{{end}}</h1>
             <p class="dialer__phone"><b>555-6390</b> &middot; v.90 &middot; 56 000 bps</p>
           </div>
         </div>
@@ -55,7 +55,9 @@
         <div class="dialer__progress" id="progress" aria-hidden="true"></div>
 
         <div class="dialer__log-wrap" role="log" aria-label="Connection log">
-          <ol class="dialer__log" id="log"></ol>
+          <ol class="dialer__log" id="log">
+            <li class="dialer__log-placeholder is-shown" id="log-placeholder">&gt; waiting for dial tone<span class="caret"></span></li>
+          </ol>
         </div>
 
         <div class="dialer__foot">
@@ -63,7 +65,7 @@
             Number: <b>555-6390</b> &middot; Protocol: <b>PPP</b> &middot; Tone dialing
           </span>
           <button type="button" class="dialer__connect" id="connect-btn">
-            &#9654; Connect
+            <span class="dialer__connect-icon" aria-hidden="true">&#9654;</span>Connect
           </button>
         </div>
 
