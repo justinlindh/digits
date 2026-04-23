@@ -390,6 +390,61 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 }
 
+func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testing.T) {
+	d := openSignalingTestDB(t)
+	tr := calls.New(d)
+	hub := signaling.NewHub()
+	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
+
+	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
+	hub.Register("5550001", aConn)
+	hub.Register("5550002", bConn)
+	hub.Register("5550003", cConn)
+
+	// Set up an active conference: A hosts, B and C are members.
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallInitiated A->B: %v", err)
+	}
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
+		t.Fatalf("OnCallAnswered A->B: %v", err)
+	}
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallInitiated A->C: %v", err)
+	}
+	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550003"); err != nil {
+		t.Fatalf("OnCallAnswered A->C: %v", err)
+	}
+	conf, err := tr.CreateConferencePersistent(context.Background(), "5550001", callID, []string{"5550002", "5550003"})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Drain any pre-kick messages (e.g., conference setup signaling).
+	_ = drainConn(t, aConn)
+	_ = drainConn(t, bConn)
+	_ = drainConn(t, cConn)
+
+	// Kick C.
+	r.KickMember(context.Background(), conf.ID, "5550003", "kicked by test")
+
+	// All three members must receive TypeConferenceEnd.
+	aMsgs := drainConn(t, aConn)
+	bMsgs := drainConn(t, bConn)
+	cMsgs := drainConn(t, cConn)
+	if countType(aMsgs, signaling.TypeConferenceEnd) < 1 {
+		t.Errorf("A: expected >=1 ConferenceEnd, got %d (msgs: %v)", countType(aMsgs, signaling.TypeConferenceEnd), aMsgs)
+	}
+	if countType(bMsgs, signaling.TypeConferenceEnd) < 1 {
+		t.Errorf("B: expected >=1 ConferenceEnd, got %d (msgs: %v)", countType(bMsgs, signaling.TypeConferenceEnd), bMsgs)
+	}
+	if countType(cMsgs, signaling.TypeConferenceEnd) < 1 {
+		t.Errorf("C (kicked): expected >=1 ConferenceEnd, got %d (msgs: %v)", countType(cMsgs, signaling.TypeConferenceEnd), cMsgs)
+	}
+}
+
 // TestDisconnectConferenceParticipant_Integration verifies that when a
 // conference member disconnects, the conference is ended in the DB, remaining
 // members receive ConferenceEnd, and IsBusy returns false for them.

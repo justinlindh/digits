@@ -421,7 +421,20 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 //
 // No-op for unknown callIDs.
 func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
-	key := SessionKey{CallID: callID}
+	s.notifyDisconnectedSession(SessionKey{CallID: callID}, endedBy)
+}
+
+// NotifyDisconnectedConference broadcasts a DisconnectKind event to every
+// subscriber of a conference session. Used by the kick endpoint so
+// observer decks flip to a "Conference ended by <name>." terminal state
+// before the Evict cascade closes the channel.
+//
+// No-op for unknown conference IDs.
+func (s *HealthStore) NotifyDisconnectedConference(confID uuid.UUID, endedBy string) {
+	s.notifyDisconnectedSession(SessionKey{ConfID: confID}, endedBy)
+}
+
+func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	s.mu.Unlock()

@@ -117,6 +117,30 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	return call, ownedLines, primaryHH, true
 }
 
+// loadConferenceForUser runs the constant-time dual-query sequence the
+// conference auth helpers share: snapshot the user's owned lines and fetch
+// the conference, both unconditionally, then 404 on any failure. Callers
+// layer their own ownership predicate on the returned (conf, ownedLines).
+func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, confID uuid.UUID, errLog string) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
+	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
+	if confErr != nil {
+		slog.Error(errLog+": get conference failed", "conf_id", confID, "err", confErr)
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	if !ok || conf == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	return conf, ownedLines, primaryHH, true
+}
+
 // requireConferenceOwnership verifies the authenticated user directly owns
 // at least one conference member line (across any household the user belongs
 // to). Linked households do NOT grant observation; only direct household
@@ -128,35 +152,34 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 // Mirrors requireCallEndpointOwnership's constant-time query sequence to
 // avoid a timing side channel on conference-id enumeration.
 func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.NotFound(w, r)
+	conf, ownedLines, primaryHH, ok := h.loadConferenceForUser(w, r, confID, "conference_link_health")
+	if !ok {
 		return nil, nil, "", false
 	}
-
-	// Always do both queries in the same order, regardless of miss reason.
-	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
-	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
-
-	if confErr != nil {
-		slog.Error("conference_link_health: get conference failed", "conf_id", confID, "err", confErr)
-		http.NotFound(w, r)
-		return nil, nil, "", false
-	}
-	if !ok || conf == nil {
-		http.NotFound(w, r)
-		return nil, nil, "", false
-	}
-
-	// User must directly own at least one member.
-	anyOwned := false
 	for _, member := range conf.Members {
-		if _, has := ownedLines[member]; has {
-			anyOwned = true
-			break
+		if _, owns := ownedLines[member]; owns {
+			return conf, ownedLines, primaryHH, true
 		}
 	}
-	if !anyOwned {
+	http.NotFound(w, r)
+	return nil, nil, "", false
+}
+
+// requireConferenceHostOwnership verifies the authenticated user's
+// household directly owns the conference host phone. Non-host-household
+// observers receive 404 (same information-hiding posture as
+// requireConferenceOwnership). Used to gate the kick endpoint and the
+// kick buttons on the deck.
+//
+// Query sequence matches requireCallEndpointOwnership and
+// requireConferenceOwnership to avoid a timing side channel on
+// conference-id enumeration.
+func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+	conf, ownedLines, primaryHH, ok := h.loadConferenceForUser(w, r, confID, "conference_kick")
+	if !ok {
+		return nil, nil, "", false
+	}
+	if _, owns := ownedLines[conf.Host]; !owns {
 		http.NotFound(w, r)
 		return nil, nil, "", false
 	}

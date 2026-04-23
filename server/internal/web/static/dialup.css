@@ -710,6 +710,11 @@ body.dialup:not(.crt-all) .dialup-window {
   cursor: pointer;
   border-radius: 0;
   margin: 0;
+  /* Contain the visually-hidden absolute-positioned input; without this it
+     escapes to the initial containing block, expanding <html>'s scroll
+     height. Clicking the label then scrolls the window (not .dialup-main)
+     to the input, pushing the dialup window off screen. */
+  position: relative;
 }
 .radio-card + .radio-card { margin-top: 4px; }
 .radio-card:hover { background: var(--dialup-blue-light); }
@@ -2626,4 +2631,19 @@ body.dialup .phone-silent__text {
   .deck-matrix__cell--blank {
     display: none;
   }
+}
+.deck-card__kick {
+  margin-top: 8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.deck-card__kick:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
 }

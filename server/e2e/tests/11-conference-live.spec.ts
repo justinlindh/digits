@@ -126,4 +126,60 @@ test.describe('conference-live: dialup theme', () => {
     await expect(page.locator('.deck-matrix__cell')).toHaveCount(9);
     await expect(page.locator('.deck-matrix__cell--blank')).toHaveCount(3);
   });
+
+  test('host household sees Remove buttons on non-host member cards', async ({ page }) => {
+    const ok = await devLogin(page, 'dev@digits.local');
+    if (!ok) {
+      test.skip(true, 'dev-session not available or user needs onboarding');
+      return;
+    }
+    const confID = await seedConference(page, '2480001', ['2480002', '2480003']);
+    await page.goto(`/conference/live/${confID}`);
+
+    await expect(page.locator('.deck-card--host')).toHaveCount(1);
+    await expect(page.locator('.deck-card__kick')).toHaveCount(2);
+  });
+
+  test('Remove button opens confirm dialog and posts kick', async ({ page }) => {
+    const ok = await devLogin(page, 'dev@digits.local');
+    if (!ok) {
+      test.skip(true, 'dev-session not available or user needs onboarding');
+      return;
+    }
+    const confID = await seedConference(page, '2480001', ['2480002', '2480003']);
+    await page.goto(`/conference/live/${confID}`);
+
+    const kickBtn = page.locator('.deck-card__kick').first();
+    await kickBtn.click();
+    await expect(page.locator('dialog.deck-kick-confirm[open]')).toBeVisible();
+
+    const kickPosted = page.waitForResponse(
+      (r) => r.url().includes('/kick') && r.request().method() === 'POST' && r.ok()
+    );
+    await page.locator('dialog.deck-kick-confirm[open] .deck-confirm__go').click();
+    await kickPosted;
+
+    await page.reload();
+    await expect(page.locator('.deck-ended-chip')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.deck-card__kick')).toHaveCount(0);
+  });
+
+  test('kick buttons absent on the ended postmortem render', async ({ page }) => {
+    const ok = await devLogin(page, 'dev@digits.local');
+    if (!ok) {
+      test.skip(true, 'dev-session not available or user needs onboarding');
+      return;
+    }
+    const confID = await seedConference(page, '2480001', ['2480002', '2480003']);
+    await page.goto(`/conference/live/${confID}`);
+    await expect(page.locator('.deck-card__kick')).toHaveCount(2);
+
+    await page.locator('.deck-card__kick').first().click();
+    const kickPosted = page.waitForResponse((r) => r.url().includes('/kick') && r.ok());
+    await page.locator('dialog.deck-kick-confirm[open] .deck-confirm__go').click();
+    await kickPosted;
+    await page.reload();
+
+    await expect(page.locator('.deck-card__kick')).toHaveCount(0);
+  });
 });

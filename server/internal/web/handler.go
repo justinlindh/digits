@@ -450,6 +450,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("GET /api/conference/{uuid}/link-health", h.handleConferenceLinkHealth)
 	protected.HandleFunc("GET /api/conference/{uuid}/link-health/stream", h.handleConferenceLinkHealthStream)
+	protected.HandleFunc("POST /api/conference/{uuid}/kick", h.handleConferenceKick)
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 

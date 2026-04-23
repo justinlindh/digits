@@ -112,7 +112,21 @@
                 </span>
                 {{if .DeviceInfo.PiCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.PiCommit}}</span>{{end}}
                 {{if and .LatestPiVersion (ne .DeviceInfo.PiVersion .LatestPiVersion)}}
+                  {{if .PiUpdateNotes}}
+                  <details class="update-details" style="display: inline-block;">
+                    <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</summary>
+                    <div class="update-notes">
+                      {{range .PiUpdateNotes}}
+                        <article class="update-note">
+                          <span class="update-note__version">pi {{.Version}}</span>
+                          {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+                        </article>
+                      {{end}}
+                    </div>
+                  </details>
+                  {{else}}
                   <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</span>
+                  {{end}}
                 {{else if .LatestPiVersion}}
                   <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
                 {{end}}
@@ -129,7 +143,21 @@
                   <span class="chip"><span class="chip__dot"></span>SWD</span>
                 {{end}}
                 {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
+                  {{if .FirmwareUpdateNotes}}
+                  <details class="update-details" style="display: inline-block;">
+                    <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</summary>
+                    <div class="update-notes">
+                      {{range .FirmwareUpdateNotes}}
+                        <article class="update-note">
+                          <span class="update-note__version">fw {{.Version}}</span>
+                          {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+                        </article>
+                      {{end}}
+                    </div>
+                  </details>
+                  {{else}}
                   <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</span>
+                  {{end}}
                 {{else if .LatestFirmwareVersion}}
                   <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
                 {{end}}

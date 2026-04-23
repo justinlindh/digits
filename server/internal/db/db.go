@@ -337,6 +337,25 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (21);
     END IF;
 END $$;`,
+		// v22: conference_kicks audit table. One row per host-triggered kick.
+		// Append-only; cascade delete tied to the conferences parent.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 22) THEN
+
+        CREATE TABLE IF NOT EXISTS conference_kicks (
+            id                BIGSERIAL PRIMARY KEY,
+            conference_id     UUID NOT NULL REFERENCES conferences(id) ON DELETE CASCADE,
+            kicked_phone      TEXT NOT NULL,
+            kicked_by_user_id UUID NOT NULL REFERENCES users(id),
+            kicked_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_conference_kicks_conf
+            ON conference_kicks (conference_id);
+
+        INSERT INTO schema_version (version) VALUES (22);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
