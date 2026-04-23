@@ -5,7 +5,6 @@
    template a readable look in AM palette until those phases reskin it.
    ========================================================================= */
 
-@font-face { font-family: 'Inter Tight'; src: url('/static/fonts/inter-tight-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Inter Tight'; src: url('/static/fonts/inter-tight-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 @font-face { font-family: 'Inter Tight'; src: url('/static/fonts/inter-tight-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
 @font-face { font-family: 'JetBrains Mono'; src: url('/static/fonts/jetbrains-mono-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
@@ -52,12 +51,9 @@
 }
 
 html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--ink); }
-body.am { background: #2a2520; min-height: 100vh; }
 
-/* App shell: the whole app is the machine's face. Applied to <main.am> in
-   layout-answering-machine.html so the injection-mold speckle covers the
-   whole content viewport regardless of page length. */
 .am {
+  min-height: 100vh;
   position: relative;
   background:
     radial-gradient(ellipse at 30% 20%, var(--case-light) 0%, var(--case) 40%, var(--case-2) 100%),
@@ -67,7 +63,7 @@ body.am { background: #2a2520; min-height: 100vh; }
   color: var(--ink);
   font-family: var(--font-body);
 }
-.am *, .am *::before, .am *::after { box-sizing: border-box; }
+.am-shell, .am-shell *, .am-shell *::before, .am-shell *::after { box-sizing: border-box; }
 .am button { font: inherit; cursor: pointer; }
 .am button:not([class]) { background: none; border: none; padding: 0; color: inherit; }
 .am a { color: var(--ink); }
@@ -87,7 +83,7 @@ body.am { background: #2a2520; min-height: 100vh; }
   text-shadow: 0 1px 0 rgba(255,255,255,0.4);
   text-transform: uppercase;
 }
-.am__brand small { display: block; font-weight: 400; font-size: 9px; letter-spacing: 0.22em; margin-top: 2px; color: rgba(30,25,15,0.35); }
+.am__brand small { display: block; font-weight: 500; font-size: 9px; letter-spacing: 0.22em; margin-top: 2px; color: rgba(30,25,15,0.35); }
 
 /* Speaker grille: decorative element, used sparingly */
 .am__grille { display: grid; grid-template-columns: repeat(12, 6px); gap: 5px; }
@@ -494,7 +490,6 @@ body.am { background: #2a2520; min-height: 100vh; }
 .am-serial { font-family: var(--font-mono); font-size: 10.5px; color: #2a2318; letter-spacing: 0.05em; }
 .am-serial dt { display: inline; font-weight: 600; }
 .am-serial dd { display: inline; margin: 0 12px 0 4px; }
-.am-serial br + dt { display: inline; }
 
 /* =========================================================================
    Layout chrome (used by layout-answering-machine.html)
@@ -507,9 +502,9 @@ body.am { background: #2a2520; min-height: 100vh; }
   flex-wrap: wrap;
 }
 .am-shell__brand-slot { display: inline-flex; align-items: center; gap: 12px; padding-right: 8px; }
-.am-shell__spacer { flex: 1; }
-.am-shell__household { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--ink-muted); font-weight: 600; text-transform: uppercase; }
-.am-shell__signout { appearance: none; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+.am-shell__household { margin-left: auto; font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--ink-muted); font-weight: 600; text-transform: uppercase; }
+.am-shell__signout-form { margin: 0; }
+.am-key--nav { min-width: 0; min-height: 32px; padding: 4px 10px; }
 .am-shell__main { flex: 1; padding: 4px 36px 32px; }
 
 /* Mobile nav toggle (hidden on desktop) */
