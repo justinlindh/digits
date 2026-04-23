@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
@@ -520,7 +521,7 @@ func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*Con
 		return nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get conference %s: %w", confID, err)
 	}
 	if endReason != nil {
 		cs.EndReason = *endReason
