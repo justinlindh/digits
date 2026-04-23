@@ -1,8 +1,20 @@
 name: Groom Release Notes
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to groom (e.g. fw/v1.4.0).'
+        required: true
+        type: string
+      force:
+        description: 'Re-groom even if already groomed.'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
@@ -17,17 +29,13 @@ on:
 
 jobs:
   groom:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.event.release.tag_name, 'fw/v') ||
-      startsWith(github.event.release.tag_name, 'pi/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      FORCE: ${{ inputs.force || 'false' }}
+      TAG: ${{ inputs.tag }}
+      FORCE: ${{ inputs.force && 'true' || 'false' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
