@@ -1214,25 +1214,30 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
     font-size: 11px;
   }
 
-  /* Channels move from left sidebar to a horizontal scrolling strip. */
+  /* Channels move from left sidebar to an AOL-style channel grid.
+     Three tiles per row, icon stacked over label, so 4 or 5 channels
+     wrap onto two rows with the last row centered. */
   .dialup-body { flex-direction: column; min-height: 0; }
   .dialup-channels {
     width: auto;
     flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 4px;
     padding: 4px;
   }
   .dialup-channels__header { display: none; }
   .dialup-channel {
-    flex: 0 0 auto;
-    padding: 5px 10px;
-    font-size: 11px;
-    white-space: nowrap;
+    flex: 0 1 calc(33.333% - 3px);
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 4px;
+    font-size: 10px;
+    text-align: center;
+    min-height: 44px;
   }
-  .dialup-channel__icon { width: 16px; height: 16px; }
+  .dialup-channel__icon { width: 20px; height: 20px; }
 
   /* Main content no longer fights the sidebar for width. */
   .dialup-main { padding: 8px; }
