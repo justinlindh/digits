@@ -156,10 +156,6 @@ func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, ph
 	return m.conferences.DropMember(id, phone, reason)
 }
 
-func (m *mockTracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone, userID string) error {
-	return nil
-}
-
 // fakeHealthRecorder records calls for assertion in tests.
 type fakeHealthRecorder struct {
 	records []struct {
