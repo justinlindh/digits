@@ -420,6 +420,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /call/live/{id}", h.handleCallLiveDetail)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
+	protected.HandleFunc("GET /api/conference/{uuid}/link-health", h.handleConferenceLinkHealth)
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 

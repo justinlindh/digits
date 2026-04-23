@@ -644,6 +644,140 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	}
 }
 
+func TestConferenceLinkHealthJSON(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	tr := env.env.tracker
+
+	// Seed two 2-party calls and merge into a conference. All three phones
+	// are owned by separate households (A, B, C); A is host.
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
+	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Record one per-edge sample so the JSON carries a non-empty window.
+	loss := float32(1.5)
+	env.env.healthStore.RecordEdge(conf.ID, env.numA, env.numB,
+		calls.Sample{TS: time.Unix(0, 1), LossPct: &loss})
+
+	// GET as user A.
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session A: %v", err)
+	}
+	req, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	var got ConferenceLinkHealthResp
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v; body=%s", err, string(body))
+	}
+	if got.ConfID != conf.ID {
+		t.Fatalf("ConfID: got %s want %s", got.ConfID, conf.ID)
+	}
+	if len(got.Members) != 3 {
+		t.Fatalf("Members len: got %d want 3", len(got.Members))
+	}
+	if len(got.Edges) != 6 {
+		t.Fatalf("Edges len: got %d want 6 (3x2 directed edges)", len(got.Edges))
+	}
+
+	// Host flag.
+	var hostCount int
+	for _, m := range got.Members {
+		if m.IsHost {
+			hostCount++
+			if m.Number != env.numA {
+				t.Errorf("IsHost on wrong member: got %s want %s", m.Number, env.numA)
+			}
+		}
+	}
+	if hostCount != 1 {
+		t.Errorf("exactly one host expected; got %d", hostCount)
+	}
+
+	// Host -> numB edge carries the recorded sample.
+	var foundHostToB bool
+	for _, e := range got.Edges {
+		if e.From == env.numA && e.Peer == env.numB {
+			foundHostToB = true
+			if e.Latest == nil || e.Latest.LossPct == nil || *e.Latest.LossPct != 1.5 {
+				t.Errorf("A->B edge latest lossPct not preserved: %+v", e.Latest)
+			}
+		}
+	}
+	if !foundHostToB {
+		t.Errorf("A->B edge missing from response")
+	}
+
+	// 404 for a user whose household owns no conference member (parallels
+	// TestRequireConferenceOwnership userD case, but via HTTP).
+	numD := nextPhone()
+	hwD := "json-d-" + numD
+	emailD := "json-d-" + numD + "@example.com"
+	hhNameD := "JSON D " + numD
+	t.Cleanup(func() {
+		db := env.env.database.DB
+		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
+		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
+		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhNameD)
+		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhNameD)
+		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", emailD)
+		_, _ = db.Exec("DELETE FROM users WHERE email = $1", emailD)
+	})
+	userD, err := env.env.authStore.CreateUser(ctx, emailD, "JSON D", nil)
+	if err != nil {
+		t.Fatalf("create user D: %v", err)
+	}
+	hhD, err := env.env.householdStore.Create(ctx, hhNameD, userD.ID)
+	if err != nil {
+		t.Fatalf("create household D: %v", err)
+	}
+	codeD, err := env.env.pairingStore.GenerateCode(ctx, hwD)
+	if err != nil {
+		t.Fatalf("gen code D: %v", err)
+	}
+	if _, _, err := env.env.pairingStore.ClaimDevice(ctx, codeD, numD, "Phone D", hhD.ID); err != nil {
+		t.Fatalf("claim D: %v", err)
+	}
+
+	tokenD, _, err := env.env.authStore.CreateSession(ctx, userD.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session D: %v", err)
+	}
+	reqD, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+	reqD.AddCookie(&http.Cookie{Name: auth.CookieName, Value: tokenD})
+	respD, err := env.env.srv.Client().Do(reqD)
+	if err != nil {
+		t.Fatalf("do D: %v", err)
+	}
+	_ = respD.Body.Close()
+	if respD.StatusCode != http.StatusNotFound {
+		t.Errorf("unrelated user: got %d want 404", respD.StatusCode)
+	}
+}
+
 // TestRequireConferenceOwnership verifies the conference-scope auth helper.
 // Any household that directly owns at least one member may observe; others
 // get 404; unknown conferences get 404; linked households do NOT grant
