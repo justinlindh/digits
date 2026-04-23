@@ -171,6 +171,18 @@
             <span class="theme-card__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
           </span>
         </label>
+        <label class="theme-card {{if eq .User.Theme "answering-machine"}}theme-card--selected{{end}}">
+          <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
+          <span class="theme-card__swatch">
+            <span class="theme-card__swatch-strip" style="background: #d6ccae;"></span>
+            <span class="theme-card__swatch-strip" style="background: #1a1912;"></span>
+            <span class="theme-card__swatch-strip" style="background: #ffa520;"></span>
+          </span>
+          <span class="theme-card__body">
+            <span class="theme-card__name">Answering machine</span>
+            <span class="theme-card__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
+          </span>
+        </label>
         <button type="submit" class="btn btn--primary">Save theme</button>
       </form>
     </div>

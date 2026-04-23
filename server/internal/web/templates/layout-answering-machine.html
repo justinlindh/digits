@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{block "title" .}}Digits{{end}} · Digits</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="preload" href="/static/fonts/inter-tight-500.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/answering-machine.css">
+<script src="/static/htmx.min.js"></script>
+<script src="/static/sse.min.js"></script>
+</head>
+<body class="am">
+
+{{if ne .Page "login"}}
+<div class="am-shell">
+  <header class="am-shell__nav" aria-label="Primary">
+    <div class="am-shell__brand-slot">
+      <span class="am__brand">Digits 2500<small>Family Telephone System</small></span>
+    </div>
+
+    <button class="am-shell__toggle" type="button" aria-label="Toggle navigation" onclick="this.parentElement.querySelector('.am-tabs').classList.toggle('is-open')">Menu</button>
+
+    <nav class="am-tabs" aria-label="Sections">
+      <a class="am-tab {{if eq .Page "dashboard"}}is-active{{end}}" href="/">Overview</a>
+      <a class="am-tab {{if eq .Page "phones"}}is-active{{end}}" href="/phones">Lines</a>
+      <a class="am-tab {{if eq .Page "links"}}is-active{{end}}" href="/links">Families</a>
+      {{if .CallHistoryEnabled}}
+      <a class="am-tab {{if eq .Page "calls"}}is-active{{end}}" href="/calls">Calls</a>
+      {{end}}
+      <a class="am-tab {{if eq .Page "settings"}}is-active{{end}}" href="/settings">Settings</a>
+    </nav>
+
+    <div class="am-shell__spacer"></div>
+
+    {{if .HouseholdName}}<span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>{{end}}
+
+    <form method="POST" action="/auth/logout" style="margin: 0;">
+      <button class="am-key" type="submit" style="min-width: 0; min-height: 32px; padding: 4px 10px;">
+        <span class="am-key__label">Sign out</span>
+      </button>
+    </form>
+  </header>
+
+  <main class="am-shell__main">
+    {{block "content" .}}{{end}}
+  </main>
+</div>
+{{else}}
+<main class="am-shell__main">
+  {{block "content" .}}{{end}}
+</main>
+{{end}}
+
+{{template "confirm-dialog" .}}
+
+</body>
+</html>

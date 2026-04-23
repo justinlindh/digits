@@ -251,6 +251,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			"templates/_partials.html",
 			"templates/layout-v2.html",
 			"templates/layout-dialup.html",
+			"templates/layout-answering-machine.html",
 			"templates/"+page,
 		)
 	}
