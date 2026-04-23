@@ -562,7 +562,7 @@ func TestCallLiveDetail_OwnerRenders(t *testing.T) {
 	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
 
 	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
@@ -592,7 +592,7 @@ func TestCallLiveDetail_UnrelatedHouseholdGets404(t *testing.T) {
 	callID := startCall(t, s, s.numA, s.numB)
 
 	resp := authedGet(t, s, s.userC, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status: got %d want 404", resp.StatusCode)
 	}
@@ -607,7 +607,7 @@ func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
 	}
 
 	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200 (postmortem view)", resp.StatusCode)
 	}
@@ -632,7 +632,7 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	callID := startCall(t, s, s.numA, s.numB)
 
 	resp := authedGet(t, s, s.userA, "/")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
@@ -694,6 +694,9 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 	}
 	if got.ConfID != conf.ID {
 		t.Fatalf("ConfID: got %s want %s", got.ConfID, conf.ID)
+	}
+	if got.Ended {
+		t.Errorf("expected Ended=false for a live conference; got true")
 	}
 	if len(got.Members) != 3 {
 		t.Fatalf("Members len: got %d want 3", len(got.Members))
@@ -883,5 +886,91 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("unknown conference id: code=%d want 404", rec.Code)
+	}
+}
+
+// TestConferenceLinkHealthJSON_DBFallback verifies that after a conference
+// ends and its in-memory rings are evicted, ReadbackEdge restores the edge
+// window from the flushed DB rows so the JSON response still carries
+// historical samples.
+func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	tr := env.env.tracker
+
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
+	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Record + flush one per-edge sample, then end the conference so the
+	// in-memory ring is evicted. Subsequent reads must come from the DB.
+	loss := float32(2.5)
+	env.env.healthStore.RecordEdge(conf.ID, env.numA, env.numB,
+		calls.Sample{TS: time.Unix(0, 1000), LossPct: &loss})
+	if err := env.env.healthStore.FlushOnce(ctx); err != nil {
+		t.Fatalf("FlushOnce: %v", err)
+	}
+	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	// Confirm the in-memory window is now empty.
+	if w := env.env.healthStore.WindowEdge(conf.ID, env.numA, env.numB); len(w) != 0 {
+		t.Fatalf("expected in-memory window to be empty post-evict; got %d", len(w))
+	}
+
+	// GET the JSON endpoint as user A. The A->B edge should carry the
+	// flushed sample from the DB fallback.
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	req, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+conf.ID.String()+"/link-health", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+
+	var got ConferenceLinkHealthResp
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !got.Ended {
+		t.Error("expected Ended=true for an ended conference")
+	}
+
+	var foundHostToB bool
+	for _, e := range got.Edges {
+		if e.From == env.numA && e.Peer == env.numB {
+			foundHostToB = true
+			if e.Latest == nil {
+				t.Errorf("A->B edge Latest should be populated from DB fallback")
+			} else if e.Latest.LossPct == nil || *e.Latest.LossPct != 2.5 {
+				t.Errorf("A->B edge LossPct not preserved: %+v", e.Latest)
+			}
+			if len(e.Window) == 0 {
+				t.Errorf("A->B edge Window should be non-empty from DB fallback")
+			}
+		}
+	}
+	if !foundHostToB {
+		t.Errorf("A->B edge missing from response")
 	}
 }

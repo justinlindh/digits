@@ -113,7 +113,7 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 	// DB fallback.
 	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, 60)
 	if err != nil {
-		slog.Debug("ReadbackEdge failed; serving empty window",
+		slog.Warn("ReadbackEdge failed; serving empty window",
 			"conf_id", confID, "from", from, "peer", peer, "err", err)
 		return out
 	}
@@ -128,8 +128,11 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 	return out
 }
 
-// resolveMemberDisplayName picks the best label for a member phone: owned
-// line name first, then linked-index peer name, then bare number fallback.
+// resolveMemberDisplayName picks the best label for a member phone.
+// Priority: owned-line name (only if non-empty), linked-index peer name,
+// bare number fallback. The non-empty guard on the owned line is an
+// intentional tightening over the 2-party inline behavior: a blank line
+// name should not preempt a useful linked-family name.
 func (h *Handler) resolveMemberDisplayName(number string, ownedLines map[string]*line.Line, linkedIndex map[string]string) string {
 	if ln, ok := ownedLines[number]; ok && ln != nil && ln.Name != "" {
 		return ln.Name
