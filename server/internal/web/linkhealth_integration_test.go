@@ -937,6 +937,9 @@ func TestRequireConferenceHostOwnership(t *testing.T) {
 		if !wantOK && rec.Code != wantCode {
 			t.Errorf("%s: code=%d want %d", label, rec.Code, wantCode)
 		}
+		if wantOK && rec.Code != http.StatusOK && rec.Code != 0 {
+			t.Errorf("%s: success path wrote unexpected code %d", label, rec.Code)
+		}
 	}
 
 	// startConference uses env.numA as host. userA's household owns numA.

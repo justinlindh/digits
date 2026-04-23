@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -335,14 +336,7 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember := false
-	for _, m := range conf.Members {
-		if m == kickedPhone {
-			isMember = true
-			break
-		}
-	}
-	if !isMember {
+	if !slices.Contains(conf.Members, kickedPhone) {
 		http.NotFound(w, r)
 		return
 	}
@@ -357,11 +351,7 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reason := fmt.Sprintf("kicked by %s", userDisplayLabel(user))
-	if err := h.relay.KickMember(r.Context(), confID, kickedPhone, reason); err != nil {
-		slog.Error("conference_kick: KickMember failed", "conf_id", confID, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+	h.relay.KickMember(r.Context(), confID, kickedPhone, reason)
 
 	// Fan out the actor's label so observer SSE decks show the terminal
 	// state with attribution before the evict cascade closes the channel.

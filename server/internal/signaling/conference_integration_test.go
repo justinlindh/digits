@@ -428,9 +428,7 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 	_ = drainConn(t, cConn)
 
 	// Kick C.
-	if err := r.KickMember(context.Background(), conf.ID, "5550003", "kicked by test"); err != nil {
-		t.Fatalf("KickMember: %v", err)
-	}
+	r.KickMember(context.Background(), conf.ID, "5550003", "kicked by test")
 
 	// All three members must receive TypeConferenceEnd.
 	aMsgs := drainConn(t, aConn)

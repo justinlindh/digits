@@ -499,6 +499,11 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 
 // RecordKick writes one audit row to conference_kicks. Append-only; no
 // update path. userID is the authenticated user who triggered the kick.
+//
+// Callers audit BEFORE invoking the kick so a failed teardown still
+// records the attempt; an orphaned audit row for a failed kick is the
+// intentional trade-off. Conference cascade delete cleans orphans when
+// the parent conference row is eventually removed.
 func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone, userID string) error {
 	_, err := t.db.DB.ExecContext(ctx,
 		`INSERT INTO conference_kicks (conference_id, kicked_phone, kicked_by_user_id) VALUES ($1, $2, $3)`,
