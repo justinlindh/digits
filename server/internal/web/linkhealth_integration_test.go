@@ -97,7 +97,15 @@ func newLHEnv(t *testing.T) lhSetup {
 	// All DELETEs are idempotent against missing rows.
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM call_link_health WHERE call_id IN (SELECT id FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3))", numA, numB, numC)
+		// Conference-scoped link-health rows. Phase 2 flush writes rows with
+		// conference_id set; the existing call_id-scoped delete above does
+		// not catch them.
+		_, _ = db.Exec("DELETE FROM call_link_health WHERE conference_id IN (SELECT id FROM conferences WHERE host_phone IN ($1,$2,$3))", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3)", numA, numB, numC)
+		// conference_members before conferences (FK cascade would also work,
+		// but keeping the deletes explicit matches the pattern).
+		_, _ = db.Exec("DELETE FROM conference_members WHERE conference_id IN (SELECT id FROM conferences WHERE host_phone IN ($1,$2,$3))", numA, numB, numC)
+		_, _ = db.Exec("DELETE FROM conferences WHERE host_phone IN ($1,$2,$3)", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id IN ($1,$2,$3)", hwA, hwB, hwC)
 		_, _ = db.Exec("DELETE FROM lines WHERE number IN ($1,$2,$3)", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM household_links WHERE household_a_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3)) OR household_b_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3))", hhNameA, hhNameB, hhNameC)
