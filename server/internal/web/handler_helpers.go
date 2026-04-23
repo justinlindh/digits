@@ -163,6 +163,44 @@ func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Requ
 	return conf, ownedLines, primaryHH, true
 }
 
+// requireConferenceHostOwnership verifies the authenticated user's
+// household directly owns the conference host phone. Non-host-household
+// observers receive 404 (same information-hiding posture as
+// requireConferenceOwnership). Used to gate the kick endpoint and the
+// kick buttons on the deck.
+//
+// Query sequence matches requireCallEndpointOwnership and
+// requireConferenceOwnership to avoid a timing side channel on
+// conference-id enumeration.
+//
+//nolint:unused // First production caller lands in the next commit.
+func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
+	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
+
+	if confErr != nil {
+		slog.Error("conference_kick: get conference failed", "conf_id", confID, "err", confErr)
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	if !ok || conf == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+
+	if _, owns := ownedLines[conf.Host]; !owns {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	return conf, ownedLines, primaryHH, true
+}
+
 // resolveMemberDisplayName picks the best label for a member phone.
 // Priority: owned-line name (only if non-empty), linked-index peer name,
 // bare number fallback.

@@ -876,6 +876,49 @@ func TestConferenceLiveDetailPage_UnknownUUID_404(t *testing.T) {
 // ends and its in-memory rings are evicted, ReadbackEdge restores the edge
 // window from the flushed DB rows so the JSON response still carries
 // historical samples.
+func TestRequireConferenceHostOwnership(t *testing.T) {
+	env := newLHEnv(t)
+	confID := startConference(t, env)
+
+	check := func(label, userID string, wantOK bool, wantCode int) {
+		req := httptest.NewRequest(http.MethodPost, "/api/conference/"+confID.String()+"/kick", nil)
+		req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"}))
+		rec := httptest.NewRecorder()
+		_, _, _, ok := env.env.handler.requireConferenceHostOwnership(rec, req, confID)
+		if ok != wantOK {
+			t.Errorf("%s: ok=%v want %v", label, ok, wantOK)
+		}
+		if !wantOK && rec.Code != wantCode {
+			t.Errorf("%s: code=%d want %d", label, rec.Code, wantCode)
+		}
+	}
+
+	// startConference uses env.numA as host. userA's household owns numA.
+	check("userA (host household)", env.userA.ID, true, 0)
+
+	// userB owns a member line (numB) but NOT the host line.
+	check("userB (member, non-host household)", env.userB.ID, false, http.StatusNotFound)
+
+	// userC same story.
+	check("userC (member, non-host household)", env.userC.ID, false, http.StatusNotFound)
+
+	// Unrelated user.
+	userD := seedUnrelatedUser(t, env.env, "hostown-d")
+	check("userD (unrelated household)", userD.ID, false, http.StatusNotFound)
+
+	// Unknown UUID.
+	req := httptest.NewRequest(http.MethodPost, "/api/conference/"+uuid.New().String()+"/kick", nil)
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: env.userA.ID, Email: "x", Name: "x"}))
+	rec := httptest.NewRecorder()
+	_, _, _, ok := env.env.handler.requireConferenceHostOwnership(rec, req, uuid.New())
+	if ok {
+		t.Error("unknown conference id: should not be ok")
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown conference id: code=%d want 404", rec.Code)
+	}
+}
+
 func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
 	env := newLHEnv(t)
 	ctx := context.Background()
