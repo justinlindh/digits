@@ -246,6 +246,40 @@ func TestSettingsTimezonePost(t *testing.T) {
 	}
 }
 
+func TestSettingsPageRendersSavedTimezone(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	if err := h.householdStore.SetTimezone(context.Background(), hh.ID, "America/Chicago"); err != nil {
+		t.Fatalf("SetTimezone: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /settings = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+
+	// Saved option must be server-side marked as selected so it survives
+	// page load regardless of client-side JS.
+	wantSelected := `value="America/Chicago" selected`
+	if !strings.Contains(body, wantSelected) {
+		t.Errorf("settings page missing %q", wantSelected)
+	}
+
+	// Any other option that happens to match the browser-detected zone
+	// must not be server-rendered as selected. Check a zone the test
+	// household definitely isn't set to.
+	dontWant := `value="America/Los_Angeles" selected`
+	if strings.Contains(body, dontWant) {
+		t.Errorf("settings page unexpectedly contains %q", dontWant)
+	}
+}
+
 func TestSettingsTimezonePost_Invalid(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
