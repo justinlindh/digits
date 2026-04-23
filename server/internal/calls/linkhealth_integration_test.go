@@ -418,6 +418,51 @@ func TestReadbackEdgeFromDB(t *testing.T) {
 	}
 }
 
+func TestCallLinkHealthSchemaV21ConfRequiresPeer(t *testing.T) {
+	d := setupTestDB(t)
+
+	// Seed a conference and its originating call so the FK is satisfied.
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+
+	// Conference row with NULL peer must be rejected.
+	_, err := d.DB.Exec(
+		`INSERT INTO call_link_health (conference_id, endpoint, ts) VALUES ($1, $2, NOW())`,
+		confID, "+15555550001",
+	)
+	if err == nil {
+		t.Fatal("expected CHECK violation inserting conference row with NULL peer")
+	}
+
+	// Conference row with peer set succeeds.
+	if _, err := d.DB.Exec(
+		`INSERT INTO call_link_health (conference_id, endpoint, peer, ts) VALUES ($1, $2, $3, NOW())`,
+		confID, "+15555550001", "+15555550002",
+	); err != nil {
+		t.Fatalf("conference row with peer should succeed: %v", err)
+	}
+
+	// 2-party row (conference_id NULL, peer NULL) still succeeds.
+	if _, err := d.DB.Exec(
+		`INSERT INTO call_link_health (call_id, endpoint, ts) VALUES ($1, $2, NOW())`,
+		originatingCallID, "+15555550001",
+	); err != nil {
+		t.Fatalf("2-party row should succeed: %v", err)
+	}
+}
+
 func TestFlushOnceWritesConferenceRows(t *testing.T) {
 	d := setupTestDB(t)
 

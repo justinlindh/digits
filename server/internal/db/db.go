@@ -321,6 +321,22 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (20);
     END IF;
 END $$;`,
+		// v21: enforce that conference-scoped link-health rows always have a
+		// non-NULL peer. The partial unique index on (conference_id, endpoint,
+		// peer, ts) cannot dedupe NULL peer rows because NULLs are distinct in
+		// unique indexes; Go-side writeSample rejects this case but any non-Go
+		// write path would bypass that guard. Belt-and-suspenders at the DB
+		// layer.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 21) THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'call_link_health_conf_requires_peer') THEN
+            ALTER TABLE call_link_health ADD CONSTRAINT call_link_health_conf_requires_peer
+                CHECK (conference_id IS NULL OR peer IS NOT NULL);
+        END IF;
+        INSERT INTO schema_version (version) VALUES (21);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
