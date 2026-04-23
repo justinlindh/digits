@@ -830,6 +830,50 @@ func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
 			t.Errorf("expected body to contain %q", want)
 		}
 	}
+
+	// Host household user: Remove buttons visible on non-host member cards.
+	removeRefs := []string{
+		`hx-post="/api/conference/` + confID.String() + `/kick"`,
+		`name="phone"`,
+		`value="` + s.numB + `"`,
+		`value="` + s.numC + `"`,
+	}
+	for _, want := range removeRefs {
+		if !strings.Contains(bodyStr, want) {
+			t.Errorf("host-household page should contain %q", want)
+		}
+	}
+	// No kick form targeting the host itself.
+	if strings.Count(bodyStr, `<input type="hidden" name="phone" value="`+s.numA+`"`) != 0 {
+		t.Error("host-household page should not render a kick form for the host")
+	}
+}
+
+func TestConferenceLiveDetailPage_MemberHouseholdNoKickButtons(t *testing.T) {
+	env := newLHEnv(t)
+	confID := startConference(t, env)
+
+	client := authedClient(t, env, env.userB)
+	req, _ := http.NewRequest(http.MethodGet, env.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, "deck-matrix") {
+		t.Error("expected matrix render for observer")
+	}
+	if strings.Contains(bodyStr, `hx-post="/api/conference/`) {
+		t.Error("member-household observer should not see kick buttons")
+	}
+	if strings.Contains(bodyStr, "deck-kick-confirm") {
+		t.Error("member-household observer should not see kick confirm dialog")
+	}
 }
 
 func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {

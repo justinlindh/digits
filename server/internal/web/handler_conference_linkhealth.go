@@ -265,6 +265,7 @@ type conferenceLiveDetailData struct {
 	HouseholdName      string
 	CallHistoryEnabled bool
 	Resp               ConferenceLinkHealthResp
+	IsHostHousehold    bool
 }
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
@@ -287,6 +288,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	}
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
+	_, isHostHH := ownedLines[conf.Host]
 	data := conferenceLiveDetailData{
 		Page:               "conference-live",
 		Version:            version.Version,
@@ -294,6 +296,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 		HouseholdName:      h.householdNameFromContext(r),
 		CallHistoryEnabled: h.callHistoryEnabled(r),
 		Resp:               resp,
+		IsHostHousehold:    isHostHH,
 	}
 	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }
