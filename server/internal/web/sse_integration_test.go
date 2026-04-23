@@ -384,6 +384,12 @@ func TestConferenceSSEStream_ReceivesSampleOnRecordEdge(t *testing.T) {
 		t.Fatalf("drain initial: %v", err)
 	}
 
+	// Give the handler goroutine time to reach SubscribeConference after
+	// flushing the initial snapshot. Without this, a RecordEdge that fires
+	// immediately may miss the not-yet-registered subscriber. Matches the
+	// pattern in TestSSEStream_ReceivesSamples.
+	time.Sleep(50 * time.Millisecond)
+
 	// RecordEdge after subscription is live.
 	loss := float32(1.25)
 	s.env.healthStore.RecordEdge(confID, s.numA, s.numB,
@@ -422,6 +428,11 @@ func TestConferenceSSEStream_ReceivesEndedOnEvict(t *testing.T) {
 	if _, _, err := readSSEFrame(t, ctx, sr); err != nil {
 		t.Fatalf("drain initial: %v", err)
 	}
+
+	// Same subscribe-window sleep as the sample-event test; cheap
+	// consistency insurance even though EvictConference closes the
+	// channel rather than broadcasting.
+	time.Sleep(50 * time.Millisecond)
 
 	// EndConferencePersistent fires EvictConference which closes the subscription.
 	if err := s.env.tracker.EndConferencePersistent(context.Background(), confID, "host_hangup"); err != nil {
