@@ -684,6 +684,12 @@ func TestRequireConferenceOwnership(t *testing.T) {
 		if !wantOK && rec.Code != wantCode {
 			t.Errorf("%s: code=%d want %d", label, rec.Code, wantCode)
 		}
+		if wantOK && rec.Code != http.StatusOK && rec.Code != 0 {
+			// httptest.NewRecorder starts at 200 implicitly; if nothing was written,
+			// rec.Code is 0, which is also acceptable for a success path that did
+			// not invoke WriteHeader.
+			t.Errorf("%s: success path wrote unexpected code %d", label, rec.Code)
+		}
 	}
 
 	// Household A owns the host line: expect ok.
@@ -695,17 +701,32 @@ func TestRequireConferenceOwnership(t *testing.T) {
 
 	// A user whose household owns no conference member gets 404.
 	numD := nextPhone()
-	userD, err := env.env.authStore.CreateUser(context.Background(), "ownership-d-"+numD+"@example.com", "User D", nil)
+	hwD := "ownership-d-" + numD
+	emailD := "ownership-d-" + numD + "@example.com"
+	hhNameD := "Ownership D " + numD
+
+	// Register cleanup BEFORE any fallible DB work so partial-setup failures
+	// don't leak rows. All DELETEs are idempotent against missing rows.
+	t.Cleanup(func() {
+		db := env.env.database.DB
+		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
+		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
+		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhNameD)
+		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhNameD)
+		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", emailD)
+		_, _ = db.Exec("DELETE FROM users WHERE email = $1", emailD)
+	})
+
+	userD, err := env.env.authStore.CreateUser(context.Background(), emailD, "User D", nil)
 	if err != nil {
 		t.Fatalf("create user D: %v", err)
 	}
-	hhD, err := env.env.householdStore.Create(context.Background(), "Ownership D "+numD, userD.ID)
+	hhD, err := env.env.householdStore.Create(context.Background(), hhNameD, userD.ID)
 	if err != nil {
 		t.Fatalf("create household D: %v", err)
 	}
 	// Seed a line owned by D so ownedLinesForUser returns non-empty (proving
 	// the 404 is due to lack of conference membership, not lack of any line).
-	hwD := "ownership-d-" + numD
 	codeD, err := env.env.pairingStore.GenerateCode(context.Background(), hwD)
 	if err != nil {
 		t.Fatalf("gen code D: %v", err)
@@ -713,15 +734,6 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	if _, _, err := env.env.pairingStore.ClaimDevice(context.Background(), codeD, numD, "Phone D", hhD.ID); err != nil {
 		t.Fatalf("claim D: %v", err)
 	}
-	t.Cleanup(func() {
-		db := env.env.database.DB
-		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
-		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
-		_, _ = db.Exec("DELETE FROM household_members WHERE household_id = $1", hhD.ID)
-		_, _ = db.Exec("DELETE FROM households WHERE id = $1", hhD.ID)
-		_, _ = db.Exec("DELETE FROM sessions WHERE user_id = $1", userD.ID)
-		_, _ = db.Exec("DELETE FROM users WHERE id = $1", userD.ID)
-	})
 
 	check("userD (unrelated household)", userD.ID, false, http.StatusNotFound)
 
