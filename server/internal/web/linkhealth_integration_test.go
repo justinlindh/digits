@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
@@ -639,5 +641,101 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	expected := `href="/call/live/` + strconv.FormatInt(callID, 10) + `"`
 	if !strings.Contains(bodyStr, expected) {
 		t.Fatalf("dashboard missing link %q", expected)
+	}
+}
+
+// TestRequireConferenceOwnership verifies the conference-scope auth helper.
+// Any household that directly owns at least one member may observe; others
+// get 404; unknown conferences get 404; linked households do NOT grant
+// observation (parity with requireCallEndpointOwnership).
+func TestRequireConferenceOwnership(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	tr := env.env.tracker
+
+	// Seed two 2-party calls and merge into a conference.
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numB); err != nil {
+		t.Fatalf("seed call A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, env.numA, env.numC); err != nil {
+		t.Fatalf("seed call A->C: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numB)
+	_ = tr.OnCallAnswered(ctx, env.numA, env.numC)
+	originatingCallID := tr.CallIDForPair(ctx, env.numA, env.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, env.numA, originatingCallID, []string{env.numB, env.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	// Use the Handler that shares state with the tracker used to seed data above.
+	h := env.env.handler
+
+	check := func(label, userID string, wantOK bool, wantCode int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/conference/live/"+conf.ID.String(), nil)
+		ctx2 := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"})
+		req = req.WithContext(ctx2)
+		rec := httptest.NewRecorder()
+		_, _, _, ok := h.requireConferenceOwnership(rec, req, conf.ID)
+		if ok != wantOK {
+			t.Errorf("%s: ok=%v want %v", label, ok, wantOK)
+		}
+		if !wantOK && rec.Code != wantCode {
+			t.Errorf("%s: code=%d want %d", label, rec.Code, wantCode)
+		}
+	}
+
+	// Household A owns the host line: expect ok.
+	check("userA (host household)", env.userA.ID, true, 0)
+	// Household B owns an added-member line: expect ok.
+	check("userB (member household)", env.userB.ID, true, 0)
+	// Household C owns an added-member line: expect ok.
+	check("userC (member household)", env.userC.ID, true, 0)
+
+	// A user whose household owns no conference member gets 404.
+	numD := nextPhone()
+	userD, err := env.env.authStore.CreateUser(context.Background(), "ownership-d-"+numD+"@example.com", "User D", nil)
+	if err != nil {
+		t.Fatalf("create user D: %v", err)
+	}
+	hhD, err := env.env.householdStore.Create(context.Background(), "Ownership D "+numD, userD.ID)
+	if err != nil {
+		t.Fatalf("create household D: %v", err)
+	}
+	// Seed a line owned by D so ownedLinesForUser returns non-empty (proving
+	// the 404 is due to lack of conference membership, not lack of any line).
+	hwD := "ownership-d-" + numD
+	codeD, err := env.env.pairingStore.GenerateCode(context.Background(), hwD)
+	if err != nil {
+		t.Fatalf("gen code D: %v", err)
+	}
+	if _, _, err := env.env.pairingStore.ClaimDevice(context.Background(), codeD, numD, "Phone D", hhD.ID); err != nil {
+		t.Fatalf("claim D: %v", err)
+	}
+	t.Cleanup(func() {
+		db := env.env.database.DB
+		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwD)
+		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", numD)
+		_, _ = db.Exec("DELETE FROM household_members WHERE household_id = $1", hhD.ID)
+		_, _ = db.Exec("DELETE FROM households WHERE id = $1", hhD.ID)
+		_, _ = db.Exec("DELETE FROM sessions WHERE user_id = $1", userD.ID)
+		_, _ = db.Exec("DELETE FROM users WHERE id = $1", userD.ID)
+	})
+
+	check("userD (unrelated household)", userD.ID, false, http.StatusNotFound)
+
+	// Unknown conference ID returns 404.
+	unknownID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/conference/live/"+unknownID.String(), nil)
+	reqCtx := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: env.userA.ID, Email: "x", Name: "x"})
+	req = req.WithContext(reqCtx)
+	rec := httptest.NewRecorder()
+	_, _, _, ok := h.requireConferenceOwnership(rec, req, unknownID)
+	if ok {
+		t.Error("unknown conference id: should not be ok")
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown conference id: code=%d want 404", rec.Code)
 	}
 }

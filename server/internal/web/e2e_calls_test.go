@@ -31,6 +31,7 @@ type callsTestEnv struct {
 	linkStore      *household.LinkStore
 	pairingStore   *pairing.Store
 	healthStore    *calls.HealthStore
+	handler        *Handler
 }
 
 // setupCallsTestServer creates a full server with all stores wired via
@@ -65,6 +66,7 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 		linkStore:      deps.LinkStore,
 		pairingStore:   deps.PairingStore,
 		healthStore:    deps.HealthStore,
+		handler:        h,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -114,6 +115,52 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 		return calls.Call{}, nil, "", false
 	}
 	return call, ownedLines, primaryHH, true
+}
+
+// requireConferenceOwnership verifies the authenticated user directly owns
+// at least one conference member line (across any household the user belongs
+// to). Linked households do NOT grant observation; only direct household
+// ownership of a member line does. Returns the conference, the owned-lines
+// map (keyed by number), the primary household ID, and true on success. On
+// any failure, writes 404 (unauthorized and nonexistent are
+// indistinguishable).
+//
+// Mirrors requireCallEndpointOwnership's constant-time query sequence to
+// avoid a timing side channel on conference-id enumeration.
+func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+
+	// Always do both queries in the same order, regardless of miss reason.
+	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
+	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
+
+	if confErr != nil {
+		slog.Error("conference_link_health: get conference failed", "conf_id", confID, "err", confErr)
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	if !ok || conf == nil {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+
+	// User must directly own at least one member.
+	anyOwned := false
+	for _, member := range conf.Members {
+		if _, has := ownedLines[member]; has {
+			anyOwned = true
+			break
+		}
+	}
+	if !anyOwned {
+		http.NotFound(w, r)
+		return nil, nil, "", false
+	}
+	return conf, ownedLines, primaryHH, true
 }
 
 // userDisplayLabel returns a human-friendly label for a user: Name if set,
