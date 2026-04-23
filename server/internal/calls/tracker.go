@@ -67,10 +67,13 @@ type activeCall struct {
 }
 
 // healthLifecycle is the subset of *HealthStore that Tracker drives for
-// per-call lifecycle. Init is called at call start; Evict at call end.
+// per-session lifecycle. Init/Evict handle 2-party calls; InitConference/
+// EvictConference handle 3-way conferences.
 type healthLifecycle interface {
 	Init(callID int64)
 	Evict(callID int64)
+	InitConference(confID uuid.UUID)
+	EvictConference(confID uuid.UUID)
 }
 
 type Tracker struct {
@@ -448,8 +451,12 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 			delete(t.active, k)
 		}
 	}
+	h := t.health
 	t.mu.Unlock()
 
+	if h != nil {
+		h.InitConference(conf.ID)
+	}
 	return conf, nil
 }
 
@@ -459,7 +466,11 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	if _, err := t.conferences.EndConference(confID, reason); err != nil {
 		return err
 	}
-	return withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	t.mu.Lock()
+	h := t.health
+	t.mu.Unlock()
+
+	if err := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
 			reason, confID,
@@ -474,7 +485,14 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 			return fmt.Errorf("update members: %w", err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+
+	if h != nil {
+		h.EvictConference(confID)
+	}
+	return nil
 }
 
 // DropMemberPersistent drops a single member from an active conference, ends the
@@ -540,16 +558,20 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	// Register the surviving pair in the 2-party active map so Busy() and
 	// InCall() continue to work after the conference ends. The conference
 	// tracker already removed them from its own memberIndex in DropMember.
+	t.mu.Lock()
 	if len(remaining) == 2 {
 		a, b := remaining[0], remaining[1]
 		if b < a {
 			a, b = b, a
 		}
-		t.mu.Lock()
 		t.active[callKey(a, b)] = &activeCall{ID: continuationCallID, Caller: a, Callee: b, StartedAt: time.Now()}
-		t.mu.Unlock()
 	}
+	h := t.health
+	t.mu.Unlock()
 
+	if h != nil && ended {
+		h.EvictConference(confID)
+	}
 	return remaining, ended, nil
 }
 

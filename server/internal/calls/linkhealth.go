@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,7 +67,7 @@ func (k SessionKey) IsConf() bool { return k.ConfID != uuid.Nil }
 
 // endpointKey is the composite map key for per-endpoint sample rings.
 // Peer is zero for 2-party samples; set to the remote endpoint phone
-// for 3-way per-edge samples (populated in a later phase).
+// for 3-way per-edge samples.
 type endpointKey struct {
 	From string // phone that emitted the sample
 	Peer string // remote endpoint the sample describes; "" for 2-party
@@ -484,12 +485,6 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 }
 
 func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sessionRings) error {
-	if key.IsConf() {
-		// Conference flush lands in a later phase with schema support for
-		// conference_id + peer columns. Until then, conference-keyed sessions
-		// live in memory only; the ticker loop must not try to persist them.
-		return nil
-	}
 	sr.mu.Lock()
 	// Collect work under lock, then release before DB I/O.
 	type pending struct {
@@ -519,8 +514,8 @@ func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sess
 		return nil
 	}
 	for _, p := range todo {
-		if err := s.writeSample(ctx, key.CallID, p.epKey.From, p.sample); err != nil {
-			return fmt.Errorf("write sample (%v,%s): %w", key, p.epKey.From, err)
+		if err := s.writeSample(ctx, key, p.epKey, p.sample); err != nil {
+			return fmt.Errorf("write sample (%v,%v): %w", key, p.epKey, err)
 		}
 	}
 	// On success, advance lastFlushed.
@@ -534,13 +529,32 @@ func (s *HealthStore) flushSession(ctx context.Context, key SessionKey, sr *sess
 	return nil
 }
 
-func (s *HealthStore) writeSample(ctx context.Context, callID int64, endpoint string, sample Sample) error {
+// writeSample inserts a single link-health sample for either a 2-party call
+// or a 3-way conference, depending on key.IsConf(). ON CONFLICT DO NOTHING
+// (no conflict target) handles either of the two partial unique indexes
+// introduced by the v20 migration, so idempotency works for both kinds.
+func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpointKey, sample Sample) error {
+	if key.IsConf() && ep.Peer == "" {
+		return fmt.Errorf("writeSample: conference session requires non-empty peer (from=%q)", ep.From)
+	}
+	var (
+		callID sql.NullInt64
+		confID sql.NullString
+		peer   sql.NullString
+	)
+	if key.IsConf() {
+		confID = sql.NullString{String: key.ConfID.String(), Valid: true}
+		peer = sql.NullString{String: ep.Peer, Valid: true}
+	} else {
+		callID = sql.NullInt64{Int64: key.CallID, Valid: key.CallID != 0}
+	}
 	_, err := s.db.DB.ExecContext(ctx,
 		`INSERT INTO call_link_health
-		   (call_id, endpoint, ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		 ON CONFLICT (call_id, endpoint, ts) DO NOTHING`,
-		callID, endpoint, sample.TS,
+		   (call_id, conference_id, endpoint, peer, ts,
+		    loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 ON CONFLICT DO NOTHING`,
+		callID, confID, ep.From, peer, sample.TS,
 		nullableFloat(sample.LossPct),
 		nullableFloat(sample.JitterMs),
 		nullableFloat(sample.RttMs),
@@ -596,20 +610,49 @@ func (s *HealthStore) Run(ctx context.Context) {
 	}
 }
 
-// Readback returns the last `limit` samples for a call+endpoint from the DB,
-// oldest first. Used when in-memory state is empty (ended call, post-restart).
+// Readback returns the last `limit` samples for a 2-party call+endpoint from
+// the DB, oldest first. Used when in-memory state is empty (ended call,
+// post-restart).
 func (s *HealthStore) Readback(ctx context.Context, callID int64, endpoint string, limit int) ([]Sample, error) {
 	if s.db == nil {
 		return nil, nil
 	}
-	rows, err := s.db.DB.QueryContext(ctx,
-		`SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
-		 FROM call_link_health
-		 WHERE call_id = $1 AND endpoint = $2
-		 ORDER BY ts DESC
-		 LIMIT $3`,
-		callID, endpoint, limit,
+	return s.readbackSession(ctx,
+		`WHERE call_id = $1 AND endpoint = $2`,
+		[]any{callID, endpoint},
+		limit,
 	)
+}
+
+// ReadbackEdge returns the last `limit` samples for a conference edge
+// (from -> peer) from the DB, oldest first. Mirrors Readback for the
+// conference path.
+func (s *HealthStore) ReadbackEdge(ctx context.Context, confID uuid.UUID, from, peer string, limit int) ([]Sample, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	return s.readbackSession(ctx,
+		`WHERE conference_id = $1 AND endpoint = $2 AND peer = $3`,
+		[]any{confID, from, peer},
+		limit,
+	)
+}
+
+// readbackSession runs a parameterized readback query against call_link_health
+// with a caller-supplied WHERE fragment. `where` must begin with "WHERE " and
+// its placeholders must be numbered $1..$N in order of `args`. Returns samples
+// oldest-first.
+func (s *HealthStore) readbackSession(ctx context.Context, where string, args []any, limit int) ([]Sample, error) {
+	// Compute $N before appending limit so the index is correct; swapping
+	// these two lines would misalign the placeholder.
+	limitPlaceholder := "$" + strconv.Itoa(len(args)+1)
+	args = append(args, limit)
+	sqlStr := `SELECT ts, loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out
+		 FROM call_link_health ` + where + `
+		 ORDER BY ts DESC
+		 LIMIT ` + limitPlaceholder
+
+	rows, err := s.db.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("readback query: %w", err)
 	}
