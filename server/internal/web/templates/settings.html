@@ -74,83 +74,67 @@
       <span class="panel__title-sub">Used for displayed timestamps.</span>
     </header>
     <div class="panel__body">
+      {{$tz := .Household.Timezone}}
       <form action="/settings/timezone" method="POST" class="hstack hstack--wrap" style="gap: 10px;">
         <div class="field" style="flex: 1; min-width: 220px; margin: 0;">
           <label for="timezone" class="field__label">Display timezone</label>
           <select id="timezone" name="timezone" class="field__select">
             <optgroup label="Americas">
-              <option value="Pacific/Honolulu">Honolulu (HST)</option>
-              <option value="America/Anchorage">Anchorage (AKST)</option>
-              <option value="America/Los_Angeles">Los Angeles (PST)</option>
-              <option value="America/Phoenix">Phoenix (MST)</option>
-              <option value="America/Denver">Denver (MST)</option>
-              <option value="America/Chicago">Chicago (CST)</option>
-              <option value="America/New_York">New York (EST)</option>
-              <option value="America/Toronto">Toronto (EST)</option>
-              <option value="America/Vancouver">Vancouver (PST)</option>
-              <option value="America/Mexico_City">Mexico City (CST)</option>
-              <option value="America/Sao_Paulo">Sao Paulo (BRT)</option>
-              <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+              <option value="Pacific/Honolulu" {{if eq $tz "Pacific/Honolulu"}}selected{{end}}>Honolulu (HST)</option>
+              <option value="America/Anchorage" {{if eq $tz "America/Anchorage"}}selected{{end}}>Anchorage (AKST)</option>
+              <option value="America/Los_Angeles" {{if eq $tz "America/Los_Angeles"}}selected{{end}}>Los Angeles (PST)</option>
+              <option value="America/Phoenix" {{if eq $tz "America/Phoenix"}}selected{{end}}>Phoenix (MST)</option>
+              <option value="America/Denver" {{if eq $tz "America/Denver"}}selected{{end}}>Denver (MST)</option>
+              <option value="America/Chicago" {{if eq $tz "America/Chicago"}}selected{{end}}>Chicago (CST)</option>
+              <option value="America/New_York" {{if eq $tz "America/New_York"}}selected{{end}}>New York (EST)</option>
+              <option value="America/Toronto" {{if eq $tz "America/Toronto"}}selected{{end}}>Toronto (EST)</option>
+              <option value="America/Vancouver" {{if eq $tz "America/Vancouver"}}selected{{end}}>Vancouver (PST)</option>
+              <option value="America/Mexico_City" {{if eq $tz "America/Mexico_City"}}selected{{end}}>Mexico City (CST)</option>
+              <option value="America/Sao_Paulo" {{if eq $tz "America/Sao_Paulo"}}selected{{end}}>Sao Paulo (BRT)</option>
+              <option value="America/Argentina/Buenos_Aires" {{if eq $tz "America/Argentina/Buenos_Aires"}}selected{{end}}>Buenos Aires (ART)</option>
             </optgroup>
             <optgroup label="Europe">
-              <option value="Europe/London">London (GMT)</option>
-              <option value="Europe/Paris">Paris (CET)</option>
-              <option value="Europe/Berlin">Berlin (CET)</option>
-              <option value="Europe/Amsterdam">Amsterdam (CET)</option>
-              <option value="Europe/Rome">Rome (CET)</option>
-              <option value="Europe/Madrid">Madrid (CET)</option>
-              <option value="Europe/Stockholm">Stockholm (CET)</option>
-              <option value="Europe/Helsinki">Helsinki (EET)</option>
-              <option value="Europe/Moscow">Moscow (MSK)</option>
-              <option value="Europe/Istanbul">Istanbul (TRT)</option>
+              <option value="Europe/London" {{if eq $tz "Europe/London"}}selected{{end}}>London (GMT)</option>
+              <option value="Europe/Paris" {{if eq $tz "Europe/Paris"}}selected{{end}}>Paris (CET)</option>
+              <option value="Europe/Berlin" {{if eq $tz "Europe/Berlin"}}selected{{end}}>Berlin (CET)</option>
+              <option value="Europe/Amsterdam" {{if eq $tz "Europe/Amsterdam"}}selected{{end}}>Amsterdam (CET)</option>
+              <option value="Europe/Rome" {{if eq $tz "Europe/Rome"}}selected{{end}}>Rome (CET)</option>
+              <option value="Europe/Madrid" {{if eq $tz "Europe/Madrid"}}selected{{end}}>Madrid (CET)</option>
+              <option value="Europe/Stockholm" {{if eq $tz "Europe/Stockholm"}}selected{{end}}>Stockholm (CET)</option>
+              <option value="Europe/Helsinki" {{if eq $tz "Europe/Helsinki"}}selected{{end}}>Helsinki (EET)</option>
+              <option value="Europe/Moscow" {{if eq $tz "Europe/Moscow"}}selected{{end}}>Moscow (MSK)</option>
+              <option value="Europe/Istanbul" {{if eq $tz "Europe/Istanbul"}}selected{{end}}>Istanbul (TRT)</option>
             </optgroup>
             <optgroup label="Asia">
-              <option value="Asia/Dubai">Dubai (GST)</option>
-              <option value="Asia/Kolkata">Kolkata (IST)</option>
-              <option value="Asia/Bangkok">Bangkok (ICT)</option>
-              <option value="Asia/Singapore">Singapore (SGT)</option>
-              <option value="Asia/Shanghai">Shanghai (CST)</option>
-              <option value="Asia/Hong_Kong">Hong Kong (HKT)</option>
-              <option value="Asia/Tokyo">Tokyo (JST)</option>
-              <option value="Asia/Seoul">Seoul (KST)</option>
+              <option value="Asia/Dubai" {{if eq $tz "Asia/Dubai"}}selected{{end}}>Dubai (GST)</option>
+              <option value="Asia/Kolkata" {{if eq $tz "Asia/Kolkata"}}selected{{end}}>Kolkata (IST)</option>
+              <option value="Asia/Bangkok" {{if eq $tz "Asia/Bangkok"}}selected{{end}}>Bangkok (ICT)</option>
+              <option value="Asia/Singapore" {{if eq $tz "Asia/Singapore"}}selected{{end}}>Singapore (SGT)</option>
+              <option value="Asia/Shanghai" {{if eq $tz "Asia/Shanghai"}}selected{{end}}>Shanghai (CST)</option>
+              <option value="Asia/Hong_Kong" {{if eq $tz "Asia/Hong_Kong"}}selected{{end}}>Hong Kong (HKT)</option>
+              <option value="Asia/Tokyo" {{if eq $tz "Asia/Tokyo"}}selected{{end}}>Tokyo (JST)</option>
+              <option value="Asia/Seoul" {{if eq $tz "Asia/Seoul"}}selected{{end}}>Seoul (KST)</option>
             </optgroup>
             <optgroup label="Oceania">
-              <option value="Australia/Perth">Perth (AWST)</option>
-              <option value="Australia/Brisbane">Brisbane (AEST)</option>
-              <option value="Australia/Sydney">Sydney (AEST)</option>
-              <option value="Australia/Melbourne">Melbourne (AEST)</option>
-              <option value="Pacific/Auckland">Auckland (NZST)</option>
+              <option value="Australia/Perth" {{if eq $tz "Australia/Perth"}}selected{{end}}>Perth (AWST)</option>
+              <option value="Australia/Brisbane" {{if eq $tz "Australia/Brisbane"}}selected{{end}}>Brisbane (AEST)</option>
+              <option value="Australia/Sydney" {{if eq $tz "Australia/Sydney"}}selected{{end}}>Sydney (AEST)</option>
+              <option value="Australia/Melbourne" {{if eq $tz "Australia/Melbourne"}}selected{{end}}>Melbourne (AEST)</option>
+              <option value="Pacific/Auckland" {{if eq $tz "Pacific/Auckland"}}selected{{end}}>Auckland (NZST)</option>
             </optgroup>
             <optgroup label="Africa">
-              <option value="Africa/Cairo">Cairo (EET)</option>
-              <option value="Africa/Lagos">Lagos (WAT)</option>
-              <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+              <option value="Africa/Cairo" {{if eq $tz "Africa/Cairo"}}selected{{end}}>Cairo (EET)</option>
+              <option value="Africa/Lagos" {{if eq $tz "Africa/Lagos"}}selected{{end}}>Lagos (WAT)</option>
+              <option value="Africa/Johannesburg" {{if eq $tz "Africa/Johannesburg"}}selected{{end}}>Johannesburg (SAST)</option>
             </optgroup>
             <optgroup label="Other">
-              <option value="UTC">UTC</option>
+              <option value="UTC" {{if eq $tz "UTC"}}selected{{end}}>UTC</option>
             </optgroup>
           </select>
         </div>
         <button type="submit" class="btn btn--primary" style="align-self: end;">Save</button>
       </form>
     </div>
-    <script>
-    (function() {
-      var tz = document.getElementById('timezone');
-      var current = '{{.Household.Timezone}}';
-      for (var i = 0; i < tz.options.length; i++) {
-        if (tz.options[i].value === current) { tz.selectedIndex = i; break; }
-      }
-      if (current === 'UTC') {
-        try {
-          var detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          for (var j = 0; j < tz.options.length; j++) {
-            if (tz.options[j].value === detected) { tz.selectedIndex = j; break; }
-          }
-        } catch(e) {}
-      }
-    })();
-    </script>
   </section>
 
   <!-- Theme -->
