@@ -2632,3 +2632,18 @@ body.dialup .phone-silent__text {
     display: none;
   }
 }
+.deck-card__kick {
+  margin-top: 8px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.deck-card__kick:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}

@@ -132,3 +132,27 @@ func (r *Relay) dropMemberFromConference(ctx context.Context, confID uuid.UUID, 
 		})
 	}
 }
+
+// KickMember drops a member from the conference and notifies the kicked
+// phone so it tears down its mesh cleanly. v1 conference semantics
+// (DropMemberPersistent) end the whole conference on any drop, so
+// remaining members receive TypeConferenceEnd via the existing
+// dropMemberFromConference path. Kick adds one extra TypeConferenceEnd to
+// the kicked phone itself.
+//
+// Reason is logged on the kicked phone's ConferenceEnd message; callers
+// may pass any human-friendly string (e.g., "kicked by <display name>").
+func (r *Relay) KickMember(ctx context.Context, confID uuid.UUID, kickedPhone, reason string) {
+	// Notify the kicked phone first so it starts tearing down before the
+	// drop cascade reassigns the surviving pair to a continuation call.
+	// Non-member or unregistered phones get a no-op send; the caller is
+	// responsible for pre-validating membership.
+	if err := r.Hub.SendTo(kickedPhone, &Message{
+		Type:   TypeConferenceEnd,
+		ConfID: confID.String(),
+		Reason: reason,
+	}); err != nil {
+		slog.Debug("kick: send ConferenceEnd to kicked phone failed", "phone", kickedPhone, "err", err)
+	}
+	r.dropMemberFromConference(ctx, confID, kickedPhone, reason)
+}

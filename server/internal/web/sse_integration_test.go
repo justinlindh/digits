@@ -21,12 +21,14 @@ import (
 	"bufio"
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -459,5 +461,56 @@ func TestConferenceSSEStream_EndedConferenceGets404(t *testing.T) {
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("ended conference: got %d want 404", resp.StatusCode)
+	}
+}
+
+func TestConferenceSSEStream_KickTriggersDisconnectEvent(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	sr := newSSEReader(resp)
+
+	if _, _, err := readSSEFrame(t, ctx, sr); err != nil {
+		t.Fatalf("drain initial: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	token, _, _ := s.env.authStore.CreateSession(context.Background(), s.userA.ID, auth.SessionTTL)
+	form := url.Values{"phone": {s.numC}}
+	kickReq, _ := http.NewRequest(http.MethodPost,
+		s.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
+		strings.NewReader(form.Encode()))
+	kickReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	kickReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	kickResp, err := s.env.srv.Client().Do(kickReq)
+	if err != nil {
+		t.Fatalf("kick do: %v", err)
+	}
+	_ = kickResp.Body.Close()
+	if kickResp.StatusCode != http.StatusOK {
+		t.Fatalf("kick status: got %d want 200", kickResp.StatusCode)
+	}
+
+	// Next frame is either a disconnect (from NotifyDisconnectedConference)
+	// or ended (from the evict cascade). Accept either ordering.
+	ev, data, err := readSSEFrame(t, ctx, sr)
+	if err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	if ev != "disconnect" && ev != "ended" {
+		t.Fatalf("event: got %q want disconnect or ended", ev)
+	}
+	if ev == "disconnect" && !strings.Contains(data, "Conference ended by") {
+		t.Errorf("disconnect data missing actor label: %q", data)
 	}
 }

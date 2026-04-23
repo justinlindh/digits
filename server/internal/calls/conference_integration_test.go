@@ -297,6 +297,141 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	}
 }
 
+func TestConferenceKicksSchemaV22_Integration(t *testing.T) {
+	d := openTestDB(t)
+
+	rows, err := d.DB.Query(`SELECT column_name, data_type, is_nullable
+		FROM information_schema.columns WHERE table_name = 'conference_kicks'
+		ORDER BY ordinal_position`)
+	if err != nil {
+		t.Fatalf("query columns: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	type col struct{ name, dataType, nullable string }
+	var got []col
+	for rows.Next() {
+		var c col
+		if err := rows.Scan(&c.name, &c.dataType, &c.nullable); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, c)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err: %v", err)
+	}
+	if len(got) == 0 {
+		t.Fatalf("conference_kicks table not found")
+	}
+
+	// Cascade delete: dropping a conference wipes its kicks.
+	confID := uuid.New()
+	var originatingCallID int64
+	if err := d.DB.QueryRow(
+		`INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id`,
+		"+15555550001", "+15555550002",
+	).Scan(&originatingCallID); err != nil {
+		t.Fatalf("seed call: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.DB.Exec("DELETE FROM calls WHERE id = $1", originatingCallID)
+	})
+	if _, err := d.DB.Exec(
+		`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
+		confID, "+15555550001", originatingCallID,
+	); err != nil {
+		t.Fatalf("seed conference: %v", err)
+	}
+	var hostUserID string
+	if err := d.DB.QueryRow(
+		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
+		"kick-test-"+confID.String()+"@example.com", "Kick Test",
+	).Scan(&hostUserID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = d.DB.Exec("DELETE FROM users WHERE id = $1", hostUserID)
+	})
+
+	if _, err := d.DB.Exec(
+		`INSERT INTO conference_kicks (conference_id, kicked_phone, kicked_by_user_id) VALUES ($1, $2, $3)`,
+		confID, "+15555550002", hostUserID,
+	); err != nil {
+		t.Fatalf("insert kick row: %v", err)
+	}
+	var count int
+	if err := d.DB.QueryRow(`SELECT COUNT(*) FROM conference_kicks WHERE conference_id = $1`, confID).Scan(&count); err != nil {
+		t.Fatalf("count kicks: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 kick row; got %d", count)
+	}
+	if _, err := d.DB.Exec(`DELETE FROM conferences WHERE id = $1`, confID); err != nil {
+		t.Fatalf("delete conference: %v", err)
+	}
+	if err := d.DB.QueryRow(`SELECT COUNT(*) FROM conference_kicks WHERE conference_id = $1`, confID).Scan(&count); err != nil {
+		t.Fatalf("count kicks after cascade: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("cascade delete broken; got %d rows want 0", count)
+	}
+}
+
+func TestRecordKick_Integration(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+	ctx := context.Background()
+
+	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550102"); err != nil {
+		t.Fatalf("seed call 1: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550103"); err != nil {
+		t.Fatalf("seed call 2: %v", err)
+	}
+	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550102")
+	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550103")
+	originatingCallID := tr.CallIDForPair(ctx, "+15555550101", "+15555550102")
+	conf, err := tr.CreateConferencePersistent(ctx, "+15555550101", originatingCallID, []string{"+15555550102", "+15555550103"})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+
+	var hostUserID string
+	email := "recordkick-" + conf.ID.String() + "@example.com"
+	if err := d.DB.QueryRow(
+		`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
+		email, "Host",
+	).Scan(&hostUserID); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = d.DB.Exec("DELETE FROM users WHERE id = $1", hostUserID) })
+
+	if err := tr.RecordKick(ctx, conf.ID, "+15555550103", hostUserID); err != nil {
+		t.Fatalf("RecordKick: %v", err)
+	}
+
+	var (
+		dbConfID     string
+		dbKickedPh   string
+		dbKickedByID string
+	)
+	if err := d.DB.QueryRow(
+		`SELECT conference_id, kicked_phone, kicked_by_user_id FROM conference_kicks WHERE conference_id = $1`,
+		conf.ID,
+	).Scan(&dbConfID, &dbKickedPh, &dbKickedByID); err != nil {
+		t.Fatalf("readback kick row: %v", err)
+	}
+	if dbConfID != conf.ID.String() {
+		t.Errorf("conference_id: got %s want %s", dbConfID, conf.ID)
+	}
+	if dbKickedPh != "+15555550103" {
+		t.Errorf("kicked_phone: got %s want +15555550103", dbKickedPh)
+	}
+	if dbKickedByID != hostUserID {
+		t.Errorf("kicked_by_user_id: got %s want %s", dbKickedByID, hostUserID)
+	}
+}
+
 func TestGetConferenceByID_Integration(t *testing.T) {
 	d := openTestDB(t)
 	tr := calls.New(d)

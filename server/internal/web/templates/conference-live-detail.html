@@ -23,6 +23,12 @@
         <div class="label">{{if .IsHost}}host{{else}}member{{end}}</div>
         <div class="deck-card__name">{{.DisplayName}}</div>
         <div class="deck-card__num num">{{.Number}}</div>
+        {{if and $.IsHostHousehold (not .IsHost) (not $.Resp.Ended)}}
+          <button type="button" class="deck-card__kick"
+                  onclick="document.getElementById('deck-kick-confirm-{{.Number}}').showModal()">
+            Remove
+          </button>
+        {{end}}
       </div>
     {{end}}
   </div>
@@ -33,6 +39,28 @@
        sse-swap="sample,disconnect,ended"{{end}}>
     {{template "conference-live-panel" .Resp}}
   </div>
+
+  {{if and .IsHostHousehold (not .Resp.Ended)}}
+    {{range .Resp.Members}}{{if not .IsHost}}
+      <dialog id="deck-kick-confirm-{{.Number}}" class="deck-confirm deck-kick-confirm">
+        <form method="dialog" class="deck-confirm__form"
+              hx-post="/api/conference/{{$.Resp.ConfID}}/kick"
+              hx-swap="none">
+          <input type="hidden" name="phone" value="{{.Number}}">
+          <h2 class="deck-confirm__title">Remove {{.DisplayName}}?</h2>
+          <p class="deck-confirm__body">
+            Removing {{.DisplayName}} ends the 3-way call. The remaining two phones continue in a 2-party call.
+          </p>
+          <div class="deck-confirm__actions">
+            <button type="button" class="deck-confirm__cancel"
+                    onclick="document.getElementById('deck-kick-confirm-{{.Number}}').close()">Cancel</button>
+            <button type="submit" class="deck-confirm__go"
+                    onclick="document.getElementById('deck-kick-confirm-{{.Number}}').close()">Remove</button>
+          </div>
+        </form>
+      </dialog>
+    {{end}}{{end}}
+  {{end}}
 
   <p class="deck-disclaimer">
     Bars show per-edge loss and jitter. Each member reports its own view of every other member.

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -265,6 +266,7 @@ type conferenceLiveDetailData struct {
 	HouseholdName      string
 	CallHistoryEnabled bool
 	Resp               ConferenceLinkHealthResp
+	IsHostHousehold    bool
 }
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
@@ -287,6 +289,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	}
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
+	_, isHostHH := ownedLines[conf.Host]
 	data := conferenceLiveDetailData{
 		Page:               "conference-live",
 		Version:            version.Version,
@@ -294,6 +297,66 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 		HouseholdName:      h.householdNameFromContext(r),
 		CallHistoryEnabled: h.callHistoryEnabled(r),
 		Resp:               resp,
+		IsHostHousehold:    isHostHH,
 	}
 	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
+}
+
+// handleConferenceKick force-ends a conference on behalf of the host
+// household. Writes an audit row, notifies the kicked phone via
+// TypeConferenceEnd, drops the member via Relay.KickMember (which
+// cascades to the remaining pair), and fans out a DisconnectKind event
+// to observer SSE streams.
+func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
+	confID, err := uuid.Parse(r.PathValue("uuid"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	conf, _, _, ok := h.requireConferenceHostOwnership(w, r, confID)
+	if !ok {
+		return
+	}
+	if conf.EndedAt != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	kickedPhone := r.PostForm.Get("phone")
+	if kickedPhone == "" {
+		http.Error(w, "phone required", http.StatusBadRequest)
+		return
+	}
+	if kickedPhone == conf.Host {
+		http.Error(w, "cannot kick the host", http.StatusBadRequest)
+		return
+	}
+
+	if !slices.Contains(conf.Members, kickedPhone) {
+		http.NotFound(w, r)
+		return
+	}
+
+	user := auth.UserFromContext(r.Context())
+
+	// Audit first: if downstream teardown fails, the record still lands.
+	if err := h.tracker.RecordKick(r.Context(), confID, kickedPhone, user.ID); err != nil {
+		slog.Error("conference_kick: audit write failed", "conf_id", confID, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	reason := fmt.Sprintf("kicked by %s", userDisplayLabel(user))
+	h.relay.KickMember(r.Context(), confID, kickedPhone, reason)
+
+	// Fan out the actor's label so observer SSE decks show the terminal
+	// state with attribution before the evict cascade closes the channel.
+	h.healthStore.NotifyDisconnectedConference(confID, userDisplayLabel(user))
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{}`))
 }
