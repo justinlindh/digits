@@ -246,6 +246,8 @@ type lineDetailData struct {
 	LatestFirmwareVersion string
 	PiReleases            []updates.Release
 	FWReleases            []updates.Release
+	PiUpdateNotes         []updates.Release
+	FirmwareUpdateNotes   []updates.Release
 	User                  *auth.User
 }
 
@@ -281,13 +283,15 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 
 	var latestPi, latestFw string
 	var piReleases, fwReleases []updates.Release
+	var idx *updates.ReleaseIndex
 	if h.Releases != nil {
-		if idx := h.Releases.ReleaseIndex(); idx != nil {
-			latestPi = idx.Pi.Latest
-			latestFw = idx.Firmware.Latest
-			piReleases = idx.SortedReleases(updates.ComponentPi)
-			fwReleases = idx.SortedReleases(updates.ComponentFirmware)
-		}
+		idx = h.Releases.ReleaseIndex()
+	}
+	if idx != nil {
+		latestPi = idx.Pi.Latest
+		latestFw = idx.Firmware.Latest
+		piReleases = idx.SortedReleases(updates.ComponentPi)
+		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
 	hhName, callHistory, loc := h.householdContext(r)
@@ -298,6 +302,16 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	devInfo := h.hub.DeviceInfo(number)
+
+	var piUpdateNotes, firmwareUpdateNotes []updates.Release
+	if idx != nil && devInfo != nil {
+		if latestPi != "" && devInfo.PiVersion != "" && updates.CompareSemver(devInfo.PiVersion, latestPi) < 0 {
+			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, devInfo.PiVersion, latestPi)
+		}
+		if latestFw != "" && devInfo.FirmwareVersion != "" && updates.CompareSemver(devInfo.FirmwareVersion, latestFw) < 0 {
+			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, devInfo.FirmwareVersion, latestFw)
+		}
+	}
 
 	user := auth.UserFromContext(r.Context())
 
@@ -315,6 +329,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		LatestFirmwareVersion: latestFw,
 		PiReleases:            piReleases,
 		FWReleases:            fwReleases,
+		PiUpdateNotes:         piUpdateNotes,
+		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		User:                  user,
 	})
 }

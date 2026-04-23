@@ -710,6 +710,11 @@ body.dialup:not(.crt-all) .dialup-window {
   cursor: pointer;
   border-radius: 0;
   margin: 0;
+  /* Contain the visually-hidden absolute-positioned input; without this it
+     escapes to the initial containing block, expanding <html>'s scroll
+     height. Clicking the label then scrolls the window (not .dialup-main)
+     to the input, pushing the dialup window off screen. */
+  position: relative;
 }
 .radio-card + .radio-card { margin-top: 4px; }
 .radio-card:hover { background: var(--dialup-blue-light); }
