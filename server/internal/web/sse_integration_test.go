@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -286,5 +287,177 @@ func TestSSEStream_EndedCallGets404(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("ended call: got %d want 404", resp.StatusCode)
+	}
+}
+
+// confStreamURL builds the SSE stream endpoint URL for a conference UUID.
+func confStreamURL(s lhSetup, confID uuid.UUID) string {
+	return s.env.srv.URL + "/api/conference/" + confID.String() + "/link-health/stream"
+}
+
+func TestConferenceSSEStream_ReceivesInitialSample(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	client := authedClient(t, s, s.userA)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("Content-Type: got %q want text/event-stream", ct)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	sr := newSSEReader(resp)
+
+	event, data, err := readSSEFrame(t, ctx, sr)
+	if err != nil {
+		t.Fatalf("read initial frame: %v", err)
+	}
+	if event != "sample" {
+		t.Fatalf("initial event: got %q want sample", event)
+	}
+	// The data is the rendered matrix partial -- just verify it contains
+	// the matrix wrapper element so we know it is the conference partial.
+	if !strings.Contains(data, "deck-matrix") {
+		t.Fatalf("initial data missing matrix marker; data=%q", data)
+	}
+}
+
+func TestConferenceSSEStream_ReceivesSampleOnRecordEdge(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	sr := newSSEReader(resp)
+
+	// Drain the initial sample.
+	if _, _, err := readSSEFrame(t, ctx, sr); err != nil {
+		t.Fatalf("drain initial: %v", err)
+	}
+
+	// Give the handler goroutine time to reach SubscribeConference after
+	// flushing the initial snapshot. Without this, a RecordEdge that fires
+	// immediately may miss the not-yet-registered subscriber. Matches the
+	// pattern in TestSSEStream_ReceivesSamples.
+	time.Sleep(50 * time.Millisecond)
+
+	// RecordEdge after subscription is live.
+	loss := float32(1.25)
+	s.env.healthStore.RecordEdge(confID, s.numA, s.numB,
+		calls.Sample{TS: time.Now(), LossPct: &loss})
+
+	ev, data, err := readSSEFrame(t, ctx, sr)
+	if err != nil {
+		t.Fatalf("read post-record frame: %v", err)
+	}
+	if ev != "sample" {
+		t.Fatalf("post-record event: got %q want sample", ev)
+	}
+	if !strings.Contains(data, "1.2%") && !strings.Contains(data, "1.3%") {
+		// The matrix renders LossPct with "%.1f%%" so 1.25 displays as "1.2%"
+		// or "1.3%" depending on rounding mode. Accept either.
+		t.Errorf("post-record data missing rendered lossPct; data=%q", data)
+	}
+}
+
+func TestConferenceSSEStream_ReceivesEndedOnEvict(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	sr := newSSEReader(resp)
+
+	if _, _, err := readSSEFrame(t, ctx, sr); err != nil {
+		t.Fatalf("drain initial: %v", err)
+	}
+
+	// Same subscribe-window sleep as the sample-event test; cheap
+	// consistency insurance even though EvictConference closes the
+	// channel rather than broadcasting.
+	time.Sleep(50 * time.Millisecond)
+
+	// EndConferencePersistent fires EvictConference which closes the subscription.
+	if err := s.env.tracker.EndConferencePersistent(context.Background(), confID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	ev, data, err := readSSEFrame(t, ctx, sr)
+	if err != nil {
+		t.Fatalf("read ended frame: %v", err)
+	}
+	if ev != "ended" {
+		t.Fatalf("event on evict: got %q want ended", ev)
+	}
+	if !strings.Contains(data, "Conference") {
+		t.Fatalf("ended data missing conference copy: %q", data)
+	}
+}
+
+func TestConferenceSSEStream_UnrelatedHouseholdGets404(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	// Create a fourth user in a fourth household that owns a line but is
+	// NOT a conference member.
+	userD := seedUnrelatedUser(t, s.env, "conf-sse-d")
+
+	client := authedClient(t, s, userD)
+	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unrelated user: got %d want 404", resp.StatusCode)
+	}
+}
+
+func TestConferenceSSEStream_EndedConferenceGets404(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+	if err := s.env.tracker.EndConferencePersistent(context.Background(), confID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("ended conference: got %d want 404", resp.StatusCode)
 	}
 }

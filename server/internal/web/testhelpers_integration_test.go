@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -263,6 +264,70 @@ func recvMsg(t *testing.T, conn *websocket.Conn) *signaling.Message {
 		t.Fatalf("parse: %v", err)
 	}
 	return msg
+}
+
+// seedUnrelatedUser creates a fresh user + household + line owned by that
+// household, registers cleanup, and returns the user. Use when a test needs
+// a principal whose household owns no conference member line.
+func seedUnrelatedUser(t *testing.T, env callsTestEnv, label string) *auth.User {
+	t.Helper()
+	num := nextPhone()
+	hw := label + "-" + num
+	email := label + "-" + num + "@example.com"
+	hhName := label + " " + num
+	t.Cleanup(func() {
+		db := env.database.DB
+		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id = $1", hw)
+		_, _ = db.Exec("DELETE FROM lines WHERE number = $1", num)
+		_, _ = db.Exec("DELETE FROM household_members WHERE household_id IN (SELECT id FROM households WHERE name = $1)", hhName)
+		_, _ = db.Exec("DELETE FROM households WHERE name = $1", hhName)
+		_, _ = db.Exec("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
+		_, _ = db.Exec("DELETE FROM users WHERE email = $1", email)
+	})
+	u, err := env.authStore.CreateUser(context.Background(), email, label, nil)
+	if err != nil {
+		t.Fatalf("seedUnrelatedUser %s: CreateUser: %v", label, err)
+	}
+	hh, err := env.householdStore.Create(context.Background(), hhName, u.ID)
+	if err != nil {
+		t.Fatalf("seedUnrelatedUser %s: Create household: %v", label, err)
+	}
+	code, err := env.pairingStore.GenerateCode(context.Background(), hw)
+	if err != nil {
+		t.Fatalf("seedUnrelatedUser %s: GenerateCode: %v", label, err)
+	}
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+label, hh.ID); err != nil {
+		t.Fatalf("seedUnrelatedUser %s: ClaimDevice: %v", label, err)
+	}
+	return u
+}
+
+// startConference seeds two 2-party calls (host->A, host->B where host is
+// numA, A is numB, B is numC), then merges them into a conference. Returns
+// the conference UUID. Caller owns cleanup via t.Cleanup on any rows
+// created (newLHEnv already cleans up calls table).
+func startConference(t *testing.T, s lhSetup) uuid.UUID {
+	t.Helper()
+	ctx := context.Background()
+	tr := s.env.tracker
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numB); err != nil {
+		t.Fatalf("OnCallInitiated A->B: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, s.numA, s.numC); err != nil {
+		t.Fatalf("OnCallInitiated A->C: %v", err)
+	}
+	if err := tr.OnCallAnswered(ctx, s.numA, s.numB); err != nil {
+		t.Fatalf("OnCallAnswered A->B: %v", err)
+	}
+	if err := tr.OnCallAnswered(ctx, s.numA, s.numC); err != nil {
+		t.Fatalf("OnCallAnswered A->C: %v", err)
+	}
+	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
+	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
+	if err != nil {
+		t.Fatalf("CreateConferencePersistent: %v", err)
+	}
+	return conf.ID
 }
 
 // testCookieJar is a minimal cookie jar that attaches a single cookie to all requests.

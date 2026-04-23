@@ -31,6 +31,7 @@ type callsTestEnv struct {
 	linkStore      *household.LinkStore
 	pairingStore   *pairing.Store
 	healthStore    *calls.HealthStore
+	handler        *Handler
 }
 
 // setupCallsTestServer creates a full server with all stores wired via
@@ -65,6 +66,7 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 		linkStore:      deps.LinkStore,
 		pairingStore:   deps.PairingStore,
 		healthStore:    deps.HealthStore,
+		handler:        h,
 	}
 }
 
@@ -326,6 +328,38 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	}
 
 	t.Logf("✓ /calls page renders 3-way conference with chip--conf and all participant numbers")
+}
+
+func TestCallsPageConferenceRowLinksToLive(t *testing.T) {
+	s := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, s)
+	// End the conference so it shows up in /calls history (active ones
+	// aren't in the historical list).
+	if err := s.env.tracker.EndConferencePersistent(ctx, confID, "host_hangup"); err != nil {
+		t.Fatalf("end: %v", err)
+	}
+
+	// /calls needs CallHistoryEnabled. Enable it for userA's household.
+	if err := s.env.householdStore.SetCallHistoryEnabled(ctx, s.hhAID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/calls", nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	wantLink := `href="/conference/live/` + confID.String() + `"`
+	if !strings.Contains(string(body), wantLink) {
+		t.Errorf("expected /calls to link conference row to %s", wantLink)
+	}
 }
 
 func truncate(s string, n int) string {

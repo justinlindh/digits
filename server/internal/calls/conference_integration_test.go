@@ -296,3 +296,77 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 		}
 	}
 }
+
+func TestGetConferenceByID_Integration(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+	ctx := context.Background()
+
+	// Seed two calls, create a conference.
+	if _, err := tr.OnCallInitiated(ctx, "+15555550001", "+15555550002"); err != nil {
+		t.Fatalf("seed call 1: %v", err)
+	}
+	if _, err := tr.OnCallInitiated(ctx, "+15555550001", "+15555550003"); err != nil {
+		t.Fatalf("seed call 2: %v", err)
+	}
+	if err := tr.OnCallAnswered(ctx, "+15555550001", "+15555550002"); err != nil {
+		t.Fatalf("answer call 1: %v", err)
+	}
+	if err := tr.OnCallAnswered(ctx, "+15555550001", "+15555550003"); err != nil {
+		t.Fatalf("answer call 2: %v", err)
+	}
+	originatingCallID := tr.CallIDForPair(ctx, "+15555550001", "+15555550002")
+	conf, err := tr.CreateConferencePersistent(ctx, "+15555550001", originatingCallID, []string{"+15555550002", "+15555550003"})
+	if err != nil {
+		t.Fatalf("create conference: %v", err)
+	}
+
+	// Active conference fetch.
+	got, err := tr.GetConferenceByID(ctx, conf.ID)
+	if err != nil {
+		t.Fatalf("GetConferenceByID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("got nil conference")
+	}
+	if got.ID != conf.ID {
+		t.Fatalf("ID: got %s want %s", got.ID, conf.ID)
+	}
+	if got.Host != "+15555550001" {
+		t.Fatalf("Host: got %s want +15555550001", got.Host)
+	}
+	if len(got.Members) != 3 {
+		t.Fatalf("Members len: got %d want 3", len(got.Members))
+	}
+	// Host sorts first, added members alphabetically.
+	if got.Members[0] != "+15555550001" {
+		t.Fatalf("Members[0]: got %s want host", got.Members[0])
+	}
+
+	// Unknown ID returns (nil, nil).
+	got, err = tr.GetConferenceByID(ctx, uuid.New())
+	if err != nil {
+		t.Fatalf("GetConferenceByID unknown: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("expected nil for unknown id; got %v", got)
+	}
+
+	// Ended conference is still retrievable.
+	if err := tr.EndConferencePersistent(ctx, conf.ID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+	got, err = tr.GetConferenceByID(ctx, conf.ID)
+	if err != nil {
+		t.Fatalf("GetConferenceByID after end: %v", err)
+	}
+	if got == nil {
+		t.Fatal("ended conference not retrievable")
+	}
+	if got.EndReason != "host_hangup" {
+		t.Fatalf("EndReason: got %q want host_hangup", got.EndReason)
+	}
+	if got.EndedAt == nil {
+		t.Fatal("EndedAt should be populated on an ended conference")
+	}
+}

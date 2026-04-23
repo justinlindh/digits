@@ -83,10 +83,10 @@ func TestHealthStoreConcurrentWritersSameRing(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Sanity: ring holds ringCapacity samples and latest() returns one.
+	// Sanity: ring holds RingCapacity samples and latest() returns one.
 	win := s.Window(1, "A")
-	if len(win) != ringCapacity {
-		t.Fatalf("window size: got %d want %d", len(win), ringCapacity)
+	if len(win) != RingCapacity {
+		t.Fatalf("window size: got %d want %d", len(win), RingCapacity)
 	}
 	a, _ := s.Latest(1, "A", "B")
 	if a == nil {

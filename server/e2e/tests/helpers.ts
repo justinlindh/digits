@@ -117,3 +117,18 @@ export async function expectNavActive(page: Page, labelPattern: RegExp) {
   const text = await link.textContent();
   expect(text ?? '').toMatch(labelPattern);
 }
+
+/**
+ * Log in as a seeded user via the dev-session endpoint.
+ * Only works when the server runs with DEV_MODE=true.
+ * Returns false if the endpoint is unavailable or the user needs onboarding.
+ */
+export async function devLogin(page: Page, email: string): Promise<boolean> {
+  const resp = await page.goto(`/auth/dev-session?email=${encodeURIComponent(email)}`);
+  const status = resp?.status() ?? 0;
+  if (status === 404) return false;
+  const url = page.url();
+  if (url.includes('/auth/login')) return false;
+  if (url.includes('/onboard')) return false;
+  return true;
+}

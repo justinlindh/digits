@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
@@ -95,7 +97,15 @@ func newLHEnv(t *testing.T) lhSetup {
 	// All DELETEs are idempotent against missing rows.
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM call_link_health WHERE call_id IN (SELECT id FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3))", numA, numB, numC)
+		// Conference-scoped link-health rows. Phase 2 flush writes rows with
+		// conference_id set; the existing call_id-scoped delete above does
+		// not catch them.
+		_, _ = db.Exec("DELETE FROM call_link_health WHERE conference_id IN (SELECT id FROM conferences WHERE host_phone IN ($1,$2,$3))", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3)", numA, numB, numC)
+		// conference_members before conferences (FK cascade would also work,
+		// but keeping the deletes explicit matches the pattern).
+		_, _ = db.Exec("DELETE FROM conference_members WHERE conference_id IN (SELECT id FROM conferences WHERE host_phone IN ($1,$2,$3))", numA, numB, numC)
+		_, _ = db.Exec("DELETE FROM conferences WHERE host_phone IN ($1,$2,$3)", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM devices WHERE hardware_id IN ($1,$2,$3)", hwA, hwB, hwC)
 		_, _ = db.Exec("DELETE FROM lines WHERE number IN ($1,$2,$3)", numA, numB, numC)
 		_, _ = db.Exec("DELETE FROM household_links WHERE household_a_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3)) OR household_b_id IN (SELECT id FROM households WHERE name IN ($1,$2,$3))", hhNameA, hhNameB, hhNameC)
@@ -560,7 +570,7 @@ func TestCallLiveDetail_OwnerRenders(t *testing.T) {
 	s.env.healthStore.Record(callID, s.numA, calls.Sample{TS: time.Now(), LossPct: &loss})
 
 	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
@@ -590,7 +600,7 @@ func TestCallLiveDetail_UnrelatedHouseholdGets404(t *testing.T) {
 	callID := startCall(t, s, s.numA, s.numB)
 
 	resp := authedGet(t, s, s.userC, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status: got %d want 404", resp.StatusCode)
 	}
@@ -605,7 +615,7 @@ func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
 	}
 
 	resp := authedGet(t, s, s.userA, "/call/live/"+strconv.FormatInt(callID, 10))
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200 (postmortem view)", resp.StatusCode)
 	}
@@ -630,7 +640,7 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	callID := startCall(t, s, s.numA, s.numB)
 
 	resp := authedGet(t, s, s.userA, "/")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
@@ -639,5 +649,297 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	expected := `href="/call/live/` + strconv.FormatInt(callID, 10) + `"`
 	if !strings.Contains(bodyStr, expected) {
 		t.Fatalf("dashboard missing link %q", expected)
+	}
+}
+
+func TestConferenceLinkHealthJSON(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+
+	// Record one per-edge sample so the JSON carries a non-empty window.
+	loss := float32(1.5)
+	env.env.healthStore.RecordEdge(confID, env.numA, env.numB,
+		calls.Sample{TS: time.Unix(0, 1), LossPct: &loss})
+
+	// GET as user A.
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session A: %v", err)
+	}
+	req, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	var got ConferenceLinkHealthResp
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v; body=%s", err, string(body))
+	}
+	if got.ConfID != confID {
+		t.Fatalf("ConfID: got %s want %s", got.ConfID, confID)
+	}
+	if got.Ended {
+		t.Errorf("expected Ended=false for a live conference; got true")
+	}
+	if len(got.Members) != 3 {
+		t.Fatalf("Members len: got %d want 3", len(got.Members))
+	}
+	if len(got.Edges) != 6 {
+		t.Fatalf("Edges len: got %d want 6 (3x2 directed edges)", len(got.Edges))
+	}
+
+	// Host flag.
+	var hostCount int
+	for _, m := range got.Members {
+		if m.IsHost {
+			hostCount++
+			if m.Number != env.numA {
+				t.Errorf("IsHost on wrong member: got %s want %s", m.Number, env.numA)
+			}
+		}
+	}
+	if hostCount != 1 {
+		t.Errorf("exactly one host expected; got %d", hostCount)
+	}
+
+	// Host -> numB edge carries the recorded sample.
+	var foundHostToB bool
+	for _, e := range got.Edges {
+		if e.From == env.numA && e.Peer == env.numB {
+			foundHostToB = true
+			if e.Latest == nil || e.Latest.LossPct == nil || *e.Latest.LossPct != 1.5 {
+				t.Errorf("A->B edge latest lossPct not preserved: %+v", e.Latest)
+			}
+		}
+	}
+	if !foundHostToB {
+		t.Errorf("A->B edge missing from response")
+	}
+
+	// 404 for a user whose household owns no conference member (parallels
+	// TestRequireConferenceOwnership userD case, but via HTTP).
+	userD := seedUnrelatedUser(t, env.env, "json-d")
+	tokenD, _, err := env.env.authStore.CreateSession(ctx, userD.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session D: %v", err)
+	}
+	reqD, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	reqD.AddCookie(&http.Cookie{Name: auth.CookieName, Value: tokenD})
+	respD, err := env.env.srv.Client().Do(reqD)
+	if err != nil {
+		t.Fatalf("do D: %v", err)
+	}
+	_ = respD.Body.Close()
+	if respD.StatusCode != http.StatusNotFound {
+		t.Errorf("unrelated user: got %d want 404", respD.StatusCode)
+	}
+}
+
+// TestRequireConferenceOwnership verifies the conference-scope auth helper.
+// Any household that directly owns at least one member may observe; others
+// get 404; unknown conferences get 404; linked households do NOT grant
+// observation (parity with requireCallEndpointOwnership).
+func TestRequireConferenceOwnership(t *testing.T) {
+	env := newLHEnv(t)
+	confID := startConference(t, env)
+
+	// Use the Handler that shares state with the tracker used to seed data above.
+	h := env.env.handler
+
+	check := func(label, userID string, wantOK bool, wantCode int) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "/conference/live/"+confID.String(), nil)
+		ctx2 := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"})
+		req = req.WithContext(ctx2)
+		rec := httptest.NewRecorder()
+		_, _, _, ok := h.requireConferenceOwnership(rec, req, confID)
+		if ok != wantOK {
+			t.Errorf("%s: ok=%v want %v", label, ok, wantOK)
+		}
+		if !wantOK && rec.Code != wantCode {
+			t.Errorf("%s: code=%d want %d", label, rec.Code, wantCode)
+		}
+		if wantOK && rec.Code != http.StatusOK && rec.Code != 0 {
+			// httptest.NewRecorder starts at 200 implicitly; if nothing was written,
+			// rec.Code is 0, which is also acceptable for a success path that did
+			// not invoke WriteHeader.
+			t.Errorf("%s: success path wrote unexpected code %d", label, rec.Code)
+		}
+	}
+
+	// Household A owns the host line: expect ok.
+	check("userA (host household)", env.userA.ID, true, 0)
+	// Household B owns an added-member line: expect ok.
+	check("userB (member household)", env.userB.ID, true, 0)
+	// Household C owns an added-member line: expect ok.
+	check("userC (member household)", env.userC.ID, true, 0)
+
+	// A user whose household owns no conference member gets 404.
+	userD := seedUnrelatedUser(t, env.env, "ownership-d")
+	check("userD (unrelated household)", userD.ID, false, http.StatusNotFound)
+
+	// Unknown conference ID returns 404.
+	unknownID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/conference/live/"+unknownID.String(), nil)
+	reqCtx := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: env.userA.ID, Email: "x", Name: "x"})
+	req = req.WithContext(reqCtx)
+	rec := httptest.NewRecorder()
+	_, _, _, ok := h.requireConferenceOwnership(rec, req, unknownID)
+	if ok {
+		t.Error("unknown conference id: should not be ok")
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown conference id: code=%d want 404", rec.Code)
+	}
+}
+
+func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+	bodyStr := string(body)
+	for _, want := range []string{
+		"/api/conference/" + confID.String() + "/link-health/stream",
+		s.numA, s.numB, s.numC,
+		"deck-matrix",
+	} {
+		if !strings.Contains(bodyStr, want) {
+			t.Errorf("expected body to contain %q", want)
+		}
+	}
+}
+
+func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {
+	s := newLHEnv(t)
+	confID := startConference(t, s)
+	if err := s.env.tracker.EndConferencePersistent(context.Background(), confID, "host_hangup"); err != nil {
+		t.Fatalf("end: %v", err)
+	}
+
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ended status: got %d want 200 (terminal render); body=%s", resp.StatusCode, string(body))
+	}
+	bodyStr := string(body)
+	if strings.Contains(bodyStr, `sse-connect="/api/conference/`) {
+		t.Error("ended page should NOT wire the SSE stream")
+	}
+	if !strings.Contains(bodyStr, "deck-ended-chip") {
+		t.Error("ended page should show the terminal chip")
+	}
+}
+
+func TestConferenceLiveDetailPage_UnknownUUID_404(t *testing.T) {
+	s := newLHEnv(t)
+	client := authedClient(t, s, s.userA)
+	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+uuid.New().String(), nil)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("unknown uuid: got %d want 404", resp.StatusCode)
+	}
+}
+
+// TestConferenceLinkHealthJSON_DBFallback verifies that after a conference
+// ends and its in-memory rings are evicted, ReadbackEdge restores the edge
+// window from the flushed DB rows so the JSON response still carries
+// historical samples.
+func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
+	env := newLHEnv(t)
+	ctx := context.Background()
+	confID := startConference(t, env)
+
+	// Record + flush one per-edge sample, then end the conference so the
+	// in-memory ring is evicted. Subsequent reads must come from the DB.
+	loss := float32(2.5)
+	env.env.healthStore.RecordEdge(confID, env.numA, env.numB,
+		calls.Sample{TS: time.Unix(0, 1000), LossPct: &loss})
+	if err := env.env.healthStore.FlushOnce(ctx); err != nil {
+		t.Fatalf("FlushOnce: %v", err)
+	}
+	if err := env.env.tracker.EndConferencePersistent(ctx, confID, "host_hangup"); err != nil {
+		t.Fatalf("EndConferencePersistent: %v", err)
+	}
+
+	// Confirm the in-memory window is now empty.
+	if w := env.env.healthStore.WindowEdge(confID, env.numA, env.numB); len(w) != 0 {
+		t.Fatalf("expected in-memory window to be empty post-evict; got %d", len(w))
+	}
+
+	// GET the JSON endpoint as user A. The A->B edge should carry the
+	// flushed sample from the DB fallback.
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	req, _ := http.NewRequest(http.MethodGet,
+		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+	resp, err := env.env.srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
+	}
+
+	var got ConferenceLinkHealthResp
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if !got.Ended {
+		t.Error("expected Ended=true for an ended conference")
+	}
+
+	var foundHostToB bool
+	for _, e := range got.Edges {
+		if e.From == env.numA && e.Peer == env.numB {
+			foundHostToB = true
+			if e.Latest == nil {
+				t.Errorf("A->B edge Latest should be populated from DB fallback")
+			} else if e.Latest.LossPct == nil || *e.Latest.LossPct != 2.5 {
+				t.Errorf("A->B edge LossPct not preserved: %+v", e.Latest)
+			}
+			if len(e.Window) == 0 {
+				t.Errorf("A->B edge Window should be non-empty from DB fallback")
+			}
+		}
+	}
+	if !foundHostToB {
+		t.Errorf("A->B edge missing from response")
 	}
 }
