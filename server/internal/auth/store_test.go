@@ -346,3 +346,33 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 		t.Error("expected error for invalid CRTMode, got nil")
 	}
 }
+
+func TestSetAndLoadAppearance(t *testing.T) {
+	s := testDB(t)
+
+	u, err := s.CreateUser(context.Background(), "appearance@test.com", "Appearance User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	// Newly-created users default to AppearanceDay.
+	if u.Appearance != AppearanceDay {
+		t.Errorf("default Appearance = %q, want %q", u.Appearance, AppearanceDay)
+	}
+
+	if err := s.SetAppearance(context.Background(), u.ID, AppearanceNight); err != nil {
+		t.Fatalf("SetAppearance: %v", err)
+	}
+
+	got, err := s.GetUserByID(context.Background(), u.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.Appearance != AppearanceNight {
+		t.Errorf("after SetAppearance(night), loaded Appearance = %q, want %q", got.Appearance, AppearanceNight)
+	}
+
+	// Invalid values are rejected.
+	if err := s.SetAppearance(context.Background(), u.ID, Appearance("bogus")); err == nil {
+		t.Error("expected error for invalid Appearance, got nil")
+	}
+}

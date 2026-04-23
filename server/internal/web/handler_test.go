@@ -1331,6 +1331,78 @@ func TestSettingsCRTModePost(t *testing.T) {
 	}
 }
 
+func TestSettingsAppearancePost(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	// Reset Appearance to the default so the assertion is meaningful even
+	// when the shared test user was mutated by a prior test in the same run.
+	if err := authStore.SetAppearance(context.Background(), user.ID, auth.AppearanceDay); err != nil {
+		t.Fatalf("reset Appearance: %v", err)
+	}
+
+	form := url.Values{"appearance": {"night"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/appearance", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/settings?saved=1" {
+		t.Errorf("redirect = %q, want /settings?saved=1", loc)
+	}
+
+	got, err := authStore.GetUserByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if got.Appearance != auth.AppearanceNight {
+		t.Errorf("Appearance = %q, want %q", got.Appearance, auth.AppearanceNight)
+	}
+}
+
+func TestSettingsAppearancePost_Invalid(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("GetUserByEmail: %v", err)
+	}
+	// Reset Appearance to the default so we can assert the invalid POST does
+	// not change it, regardless of state left by earlier tests.
+	if err := authStore.SetAppearance(context.Background(), user.ID, auth.AppearanceDay); err != nil {
+		t.Fatalf("reset Appearance: %v", err)
+	}
+
+	form := url.Values{"appearance": {"bogus"}}
+	req := httptest.NewRequest(http.MethodPost, "/settings/appearance", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303 redirect, got %d", w.Code)
+	}
+
+	got, err := authStore.GetUserByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	// Default is 'day' for new users; invalid POST should leave it unchanged.
+	if got.Appearance != auth.AppearanceDay {
+		t.Errorf("Appearance = %q, want %q (unchanged after invalid POST)", got.Appearance, auth.AppearanceDay)
+	}
+}
+
 func TestSettingsCRTModePost_Invalid(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)

@@ -177,6 +177,38 @@
   </section>
   {{end}}
 
+  <!-- Intercom theme options -->
+  {{if and .User (eq .User.Theme "intercom")}}
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Intercom theme options</h2>
+      <span class="panel__title-sub">Time of day for the intercom palette.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/appearance" method="POST" class="stack-md">
+        <label class="radio-card">
+          <input type="radio" name="appearance" value="day" {{if eq .User.Appearance "day"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Day
+            <span class="radio-card__meta">default</span>
+          </div>
+          <p class="radio-card__desc">Warm paper and walnut under a bright room. The standard intercom palette.</p>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="appearance" value="night" {{if eq .User.Appearance "night"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Night
+          </div>
+          <p class="radio-card__desc">Walnut charcoal with backlit brass. Easier on the eyes in low light.</p>
+        </label>
+        <button type="submit" class="btn btn--primary">Save</button>
+      </form>
+    </div>
+  </section>
+  {{end}}
+
   <!-- Dialup theme options -->
   {{if and .User (eq .User.Theme "dialup")}}
   <section class="panel" style="margin-bottom: 18px;">
