@@ -1879,71 +1879,102 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
    ========================================================================= */
 
 html[data-theme="dark"] {
-  /* Palette: deeper walnut, brighter parchment to hold contrast against it. */
-  --paper:      #120c06;
-  --paper-2:    #1b140c;
-  --ink:        #f3ead7;
-  --ink-soft:   #bba88a;
-  --ink-muted:  #7e6e54;
-  --rule:       #2e251a;
-  --rule-soft:  #1f1810;
-  --brass:      #e2ae6d;
+  /* Palette: v1 walnut, with brass bumped slightly to feel luminous. */
+  --paper:      #1a140e;
+  --paper-2:    #241c13;
+  --ink:        #ede3d1;
+  --ink-soft:   #b6a587;
+  --ink-muted:  #7b6c54;
+  --rule:       #332a1e;
+  --rule-soft:  #261e14;
+  --brass:      #ecb874;
   --brass-soft: #8a6835;
-  --forest:     #7fa98b;
-  --rust:       #d28467;
+  --forest:     #8fbf9c;
+  --rust:       #de8e71;
   --ochre:      #e0b964;
 
-  /* Shadows: deeper, with a slightly stronger amber top-edge highlight. */
-  --shadow-1: 0 1px 0 rgba(226,174,109,0.06), 0 3px 10px rgba(0,0,0,0.55);
-  --shadow-2: 0 1px 0 rgba(226,174,109,0.08), 0 14px 34px rgba(0,0,0,0.65);
+  --shadow-1: 0 2px 8px rgba(0,0,0,0.45);
+  --shadow-2: 0 10px 26px rgba(0,0,0,0.55);
 }
 
-/* Strong amber bloom above the fold plus a soft vignette at the page
-   edges, like the lamp light falls off before reaching the walls. */
-html[data-theme="dark"] body {
-  background:
-    radial-gradient(1200px 520px at 50% -180px,
-                    rgba(226,174,109,0.14),
-                    transparent 62%),
-    radial-gradient(140% 80% at 50% 40%,
-                    transparent 55%,
-                    rgba(0,0,0,0.35) 100%),
-    var(--paper);
-}
+/* Plain walnut paper, no ambient bloom: all the atmosphere comes from
+   the interactive elements themselves (below). */
+html[data-theme="dark"] body { background: var(--paper); }
 
-/* Paper grain overlay: tiny SVG noise fixed to the viewport. Sits on top
-   of content at low opacity with overlay blend; pointer-events:none so
-   interaction passes through. */
-html[data-theme="dark"] body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 100;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.35' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.87 0 0 0 0 0.66 0 0 0 0 0.4 0 0 0 0.55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  background-size: 220px 220px;
-  opacity: 0.09;
-  mix-blend-mode: overlay;
-}
-
-/* Top rail picks up a whisper of the same glow so it feels lit,
-   not a hard band of flat chrome. */
-html[data-theme="dark"] .rail {
-  background:
-    linear-gradient(180deg, rgba(221,168,103,0.04), transparent 140%),
-    var(--paper);
-}
-
-/* Cards and panels get a faint top-edge highlight to simulate the
-   lamp catching the raised face of the object. */
+/* V3 "Dials Lit": no ambient highlights on surfaces. Cards stay flat
+   walnut; the atmosphere comes from luminous interactive bits below. */
+html[data-theme="dark"] .rail,
 html[data-theme="dark"] .rooms__card,
 html[data-theme="dark"] .panel,
 html[data-theme="dark"] .strip,
 html[data-theme="dark"] .banner {
-  background:
-    linear-gradient(180deg, rgba(221,168,103,0.025), transparent 28%),
-    var(--paper);
+  background: var(--paper);
 }
+
+/* Active nav underline radiates a little, like a warm LED strip under
+   the label. Applied via ::after so we can layer the glow alongside the
+   existing inset brass bar. */
+html[data-theme="dark"] .rail__nav a.is-active {
+  position: relative;
+}
+html[data-theme="dark"] .rail__nav a.is-active::after {
+  content: "";
+  position: absolute;
+  left: 12px; right: 12px; bottom: -1px;
+  height: 2px;
+  background: var(--brass);
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(236,184,116,0.55),
+              0 0 22px rgba(236,184,116,0.32);
+}
+
+/* Room cards: flat until hovered, then the brass border lights up and
+   radiates outward like the edge of a lit dial. */
+html[data-theme="dark"] .rooms__card {
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+html[data-theme="dark"] .rooms__card:hover {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1px rgba(236,184,116,0.35),
+              0 0 22px rgba(236,184,116,0.18),
+              0 10px 26px rgba(0,0,0,0.55);
+}
+
+/* Live callout: the brass dashed frame should look filament-lit, not
+   printed. */
+html[data-theme="dark"] .rooms__card--live {
+  border-color: rgba(236,184,116,0.55);
+  box-shadow: 0 0 18px rgba(236,184,116,0.18);
+}
+html[data-theme="dark"] .rooms__callout {
+  background: rgba(236,184,116,0.1);
+  border-color: rgba(236,184,116,0.52);
+  box-shadow: inset 0 0 14px rgba(236,184,116,0.09);
+}
+
+/* Brass chip (the --live state, and by extension the "default" theme
+   badge in settings) glows. */
+html[data-theme="dark"] .chip--live {
+  box-shadow: 0 0 14px rgba(236,184,116,0.32);
+}
+
+/* Connected-families chips gain a warm halo on hover. */
+html[data-theme="dark"] .connected-row__chip:hover {
+  border-color: rgba(236,184,116,0.5);
+  box-shadow: 0 0 14px rgba(236,184,116,0.22);
+}
+
+/* Brass buttons (Pair, etc.) look hot. */
+html[data-theme="dark"] .btn--brass {
+  box-shadow: 0 0 14px rgba(236,184,116,0.28);
+}
+html[data-theme="dark"] .btn--brass:hover {
+  box-shadow: 0 0 18px rgba(236,184,116,0.42);
+}
+
+/* Room "offline" dot is just gray in light mode; in dials-lit dark it
+   should feel definitely-unlit so the lit states pop by contrast. Leave
+   it flat, no halo. */
 
 /* Hover tint on rows lifts a warm amber instead of falling back to
    the cream-rgba baked into light mode (which disappears on dark). */
