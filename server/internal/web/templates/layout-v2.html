@@ -8,6 +8,12 @@
 <link rel="preload" href="/static/fonts/fraunces-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/inter-tight-500.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/digits.css">
+<script>
+/* Dark-mode preview: restore the chosen theme before first paint to avoid
+   a flash of light-mode while the stylesheet resolves. Opt-in via the
+   Day/Night toggle on the dashboard. No-op for users who never toggled it. */
+(function(){try{if(localStorage.getItem('digits:theme-preview')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();
+</script>
 <script src="/static/htmx.min.js"></script>
 <script src="/static/sse.min.js"></script>
 </head>

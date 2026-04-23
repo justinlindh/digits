@@ -5,6 +5,15 @@
 
   <header class="page__head">
     <h1 class="page__title">{{if .HouseholdName}}{{.HouseholdName}}{{else}}Overview{{end}}</h1>
+    <div class="theme-preview" role="group" aria-label="Theme preview">
+      <span class="theme-preview__label">Preview</span>
+      <button type="button" class="theme-preview__btn" data-theme-set="light" aria-pressed="true">
+        <span class="theme-preview__glyph" aria-hidden="true">&#x263C;</span>Day
+      </button>
+      <button type="button" class="theme-preview__btn" data-theme-set="dark" aria-pressed="false">
+        <span class="theme-preview__glyph" aria-hidden="true">&#x263E;</span>Night
+      </button>
+    </div>
   </header>
 
   <section class="rooms" aria-label="Lines">
@@ -81,4 +90,23 @@
   {{template "page-footer" .}}
 
 </div>
+<script>
+(function(){
+  var buttons = document.querySelectorAll('.theme-preview__btn');
+  if (!buttons.length) return;
+  function apply(mode){
+    if (mode === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('digits:theme-preview', mode); } catch(e) {}
+    buttons.forEach(function(b){
+      b.setAttribute('aria-pressed', b.dataset.themeSet === mode ? 'true' : 'false');
+    });
+  }
+  var initial = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  buttons.forEach(function(b){
+    b.setAttribute('aria-pressed', b.dataset.themeSet === initial ? 'true' : 'false');
+    b.addEventListener('click', function(){ apply(b.dataset.themeSet); });
+  });
+})();
+</script>
 {{end}}
