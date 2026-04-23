@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
@@ -493,6 +494,39 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 		h.EvictConference(confID)
 	}
 	return nil
+}
+
+// GetConferenceByID returns a conference summary from the DB by ID. Returns
+// (nil, nil) if not found. Handles both active and ended conferences.
+func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*ConferenceSummary, error) {
+	const query = `
+		SELECT c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at,
+		       c.end_reason,
+		       COALESCE(EXTRACT(EPOCH FROM (c.ended_at - c.created_at))::INT, 0) AS duration_s,
+		       array_agg(m.phone ORDER BY CASE WHEN m.phone = c.host_phone THEN 0 ELSE 1 END, m.phone) AS members
+		FROM conferences c
+		JOIN conference_members m ON m.conference_id = c.id
+		WHERE c.id = $1
+		GROUP BY c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason`
+
+	var cs ConferenceSummary
+	var endReason *string
+	var members pq.StringArray
+	err := t.db.DB.QueryRowContext(ctx, query, confID).Scan(
+		&cs.ID, &cs.Host, &cs.OriginatingCallID, &cs.CreatedAt, &cs.EndedAt,
+		&endReason, &cs.DurationS, &members,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if endReason != nil {
+		cs.EndReason = *endReason
+	}
+	cs.Members = []string(members)
+	return &cs, nil
 }
 
 // DropMemberPersistent drops a single member from an active conference, ends the
