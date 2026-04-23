@@ -269,6 +269,40 @@ type conferenceLiveDetailData struct {
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
 // Ended conferences render in terminal state (no SSE wiring, no kick button).
+func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Request) {
+	confID, err := uuid.Parse(r.PathValue("uuid"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
+	if !ok {
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+
+	var linkedIndex map[string]string
+	if primaryHH != "" {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	}
+	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
+
+	data := conferenceLiveDetailData{
+		Page:               "conference-live",
+		Version:            version.Version,
+		User:               user,
+		HouseholdName:      h.householdNameFromContext(r),
+		CallHistoryEnabled: h.callHistoryEnabled(r),
+		Resp:               resp,
+	}
+	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
+}
+
+// handleConferenceKick force-ends a conference on behalf of the host
+// household. Writes an audit row, notifies the kicked phone via
+// TypeConferenceEnd, drops the member via Relay.KickMember (which
+// cascades to the remaining pair), and fans out a DisconnectKind event
+// to observer SSE streams.
 func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 	confID, err := uuid.Parse(r.PathValue("uuid"))
 	if err != nil {
@@ -336,33 +370,4 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{}`))
-}
-
-func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Request) {
-	confID, err := uuid.Parse(r.PathValue("uuid"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
-	if !ok {
-		return
-	}
-	user := auth.UserFromContext(r.Context())
-
-	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
-	}
-	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
-
-	data := conferenceLiveDetailData{
-		Page:               "conference-live",
-		Version:            version.Version,
-		User:               user,
-		HouseholdName:      h.householdNameFromContext(r),
-		CallHistoryEnabled: h.callHistoryEnabled(r),
-		Resp:               resp,
-	}
-	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }
