@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.released_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -82,8 +84,26 @@ jobs:
             npx semantic-release --extends ./pi/.releaserc.cjs
           fi
         env:
-          # Publish the release with ADMIN_PAT so that `release: published`
-          # fires downstream workflows (release-groom.yml). Releases created
-          # via the default GITHUB_TOKEN are suppressed by GitHub's recursive
-          # workflow prevention rule.
           GITHUB_TOKEN: ${{ secrets.ADMIN_PAT }}
+
+      - name: Detect released tag
+        id: released_tag
+        run: |
+          tag=$(git tag --points-at HEAD | grep -E '^pi/v' | sort -V | tail -n1 || true)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ -n "$tag" ]; then
+            echo "Released $tag"
+          else
+            echo "No pi release was created"
+          fi
+
+  groom:
+    needs: release
+    if: needs.release.outputs.tag != ''
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/release-groom.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
