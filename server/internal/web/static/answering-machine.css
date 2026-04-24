@@ -913,7 +913,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 
 /* === AM /phones/{number}: handset detail === */
 
-.am-handset { display: flex; flex-direction: column; gap: 18px; max-width: 1020px; }
+.am-handset { display: flex; flex-direction: column; gap: 18px; }
 
 /* Back-to-lines link, rendered as a cassette tab so it reads as in-idiom chrome. */
 .am-handset__back { align-self: flex-start; padding: 6px 14px; }
