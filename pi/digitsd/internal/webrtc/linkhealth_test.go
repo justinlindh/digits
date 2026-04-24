@@ -16,22 +16,23 @@ type fakeStatsGetter struct {
 func (f *fakeStatsGetter) GetStats() pionwebrtc.StatsReport { return f.report }
 
 func TestReporterSampleNominalPath(t *testing.T) {
-	report := buildFakeReport(t, fakeInput{
-		FractionLost:  0.012, // 1.2%
+	in := fakeInput{
 		JitterSec:     0.0154,
 		RttSec:        0.072,
 		LocalCandType: pionwebrtc.ICECandidateTypeSrflx,
 		BytesSent:     5000,
 		BytesReceived: 4800,
-	})
-	r := NewReporter(&fakeStatsGetter{report: report}, nil, 0)
+	}
+	r := NewReporter(&fakeStatsGetter{report: buildFakeReport(t, in)}, nil, 0)
 
 	s, ok := r.sample()
 	if !ok {
 		t.Fatal("expected sample, got drop")
 	}
-	if s.LossPct == nil || *s.LossPct < 1.15 || *s.LossPct > 1.25 {
-		t.Fatalf("loss_pct: got %v want ≈1.2", s.LossPct)
+	// First sample has no prior baseline, so LossPct stays nil even though
+	// jitter is populated immediately from InboundRTPStreamStats.
+	if s.LossPct != nil {
+		t.Fatalf("loss_pct: got %v want nil on first sample", *s.LossPct)
 	}
 	if s.JitterMs == nil || *s.JitterMs < 15.0 || *s.JitterMs > 16.0 {
 		t.Fatalf("jitter_ms: got %v want ≈15.4", s.JitterMs)
@@ -57,21 +58,21 @@ func TestReporterSampleSkipsEmptyReport(t *testing.T) {
 	}
 }
 
-func TestReporterSampleOnlyRemoteInbound(t *testing.T) {
-	// Only RR data (loss + jitter), no ICE pair. Should still emit a sample.
+func TestReporterSampleOnlyInboundRTP(t *testing.T) {
+	// Only InboundRTP data (jitter), no ICE pair. Should still emit a sample
+	// because JitterMs is populated.
 	report := pionwebrtc.StatsReport{
-		"remote-inbound-0": pionwebrtc.RemoteInboundRTPStreamStats{
-			FractionLost: 0.05,
-			Jitter:       0.010,
+		"inbound-0": pionwebrtc.InboundRTPStreamStats{
+			Jitter: 0.010,
 		},
 	}
 	r := NewReporter(&fakeStatsGetter{report: report}, nil, 0)
 	s, ok := r.sample()
 	if !ok {
-		t.Fatal("expected sample from RR-only report")
+		t.Fatal("expected sample from InboundRTP-only report")
 	}
-	if s.LossPct == nil {
-		t.Fatalf("LossPct nil")
+	if s.JitterMs == nil {
+		t.Fatalf("JitterMs nil")
 	}
 	if s.RttMs != nil {
 		t.Fatalf("RttMs should be nil without ICE pair")
@@ -128,7 +129,6 @@ func TestReporterRunCancelsCleanly(t *testing.T) {
 // --- Test helpers ---
 
 type fakeInput struct {
-	FractionLost  float64
 	JitterSec     float64
 	RttSec        float64
 	LocalCandType pionwebrtc.ICECandidateType
@@ -139,9 +139,8 @@ type fakeInput struct {
 func buildFakeReport(tb testing.TB, in fakeInput) pionwebrtc.StatsReport {
 	tb.Helper()
 	report := pionwebrtc.StatsReport{}
-	report["remote-inbound-0"] = pionwebrtc.RemoteInboundRTPStreamStats{
-		FractionLost: in.FractionLost,
-		Jitter:       in.JitterSec,
+	report["inbound-0"] = pionwebrtc.InboundRTPStreamStats{
+		Jitter: in.JitterSec,
 	}
 	report["candidate-local-0"] = pionwebrtc.ICECandidateStats{
 		ID:            "candidate-local-0",
@@ -156,4 +155,59 @@ func buildFakeReport(tb testing.TB, in fakeInput) pionwebrtc.StatsReport {
 		LocalCandidateID:     "candidate-local-0",
 	}
 	return report
+}
+
+func TestSample_PopulatesJitterFromInboundRTP(t *testing.T) {
+	g := &fakeStatsGetter{
+		report: pionwebrtc.StatsReport{
+			"id1": pionwebrtc.InboundRTPStreamStats{
+				Jitter: 0.012, // 12 ms in seconds
+			},
+		},
+	}
+	r := NewReporter(g, nil, time.Second)
+	s, ok := r.sample()
+	if !ok {
+		t.Fatal("expected sample, got drop")
+	}
+	if s.JitterMs == nil {
+		t.Fatal("JitterMs nil")
+	}
+	if got := *s.JitterMs; got < 11.9 || got > 12.1 {
+		t.Errorf("JitterMs=%v want ~12.0", got)
+	}
+}
+
+func TestSample_PopulatesLossFromInboundRTPDelta(t *testing.T) {
+	g := &fakeStatsGetter{}
+	r := NewReporter(g, nil, time.Second)
+
+	// First sample establishes baseline: 100 received, 0 lost.
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{
+			PacketsReceived: 100,
+			PacketsLost:     0,
+		},
+	}
+	if _, ok := r.sample(); !ok {
+		t.Fatal("first sample dropped unexpectedly")
+	}
+
+	// Second sample: 200 received, 5 lost since baseline (5 / (100+5) ~= 4.76%).
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{
+			PacketsReceived: 200,
+			PacketsLost:     5,
+		},
+	}
+	s, ok := r.sample()
+	if !ok {
+		t.Fatal("second sample dropped")
+	}
+	if s.LossPct == nil {
+		t.Fatal("LossPct nil on second sample")
+	}
+	if got := *s.LossPct; got < 4.5 || got > 5.0 {
+		t.Errorf("LossPct=%v want ~4.76", got)
+	}
 }
