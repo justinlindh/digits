@@ -1072,7 +1072,13 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 		event := cmd[11:]
 		slog.Info("test: injecting event", "event", event)
 		if d.ctrl != nil {
-			d.ctrl.HandleEvent(event)
+			// HOOK:FLASH has a dedicated dispatch that needs the active
+			// 2-party peer, mirroring the serial reader path in main.go.
+			if event == "HOOK:FLASH" {
+				d.ctrl.HandleHookFlash(d.currentPeer())
+			} else {
+				d.ctrl.HandleEvent(event)
+			}
 		}
 		return "OK"
 	}
