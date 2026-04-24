@@ -238,7 +238,7 @@
       <form action="/settings/call-history" method="POST">
         <div class="hstack" style="align-items: flex-start; gap: 14px;">
           <label class="toggle" style="margin-top: 2px;">
-            <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()">
+            <input type="checkbox" name="enabled" value="true" {{if .Household.CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()">
             <span class="toggle__track"></span>
           </label>
           <div>
@@ -262,7 +262,7 @@
       <form action="/settings/do-not-disturb" method="POST">
         <div class="hstack" style="align-items: flex-start; gap: 14px;">
           <label class="toggle" style="margin-top: 2px;">
-            <input type="checkbox" name="enabled" value="true" {{if .HouseholdDND}}checked{{end}} onchange="this.form.submit()">
+            <input type="checkbox" name="enabled" value="true" {{if .Household.DoNotDisturb}}checked{{end}} onchange="this.form.submit()">
             <span class="toggle__track"></span>
           </label>
           <div>
@@ -643,7 +643,7 @@
         <div class="am-plate__label">Privacy</div>
         <form action="/settings/call-history" method="POST" class="am-settings__toggle-row">
           <label class="am-settings__dip" aria-label="Call log">
-            <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()" class="am-settings__dip-input">
+            <input type="checkbox" name="enabled" value="true" {{if .Household.CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()" class="am-settings__dip-input">
             <span class="am-settings__dip-body" aria-hidden="true">
               <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
               <span class="am-settings__dip-lever"></span>
