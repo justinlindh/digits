@@ -356,6 +356,8 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (22);
     END IF;
 END $$;`,
+		// v23: household-level do-not-disturb master switch.
+		`ALTER TABLE households ADD COLUMN IF NOT EXISTS do_not_disturb BOOLEAN NOT NULL DEFAULT FALSE`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

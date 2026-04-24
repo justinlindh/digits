@@ -273,3 +273,43 @@ func TestUpdateName(t *testing.T) {
 		t.Errorf("name = %q, want New Name", got.Name)
 	}
 }
+
+func TestSetDoNotDisturb(t *testing.T) {
+	s, database := testStore(t)
+	userID := createTestUser(t, database, "dnd@example.com")
+	ctx := context.Background()
+
+	h, err := s.Create(ctx, "Test Family", userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := s.GetByID(ctx, h.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.DoNotDisturb {
+		t.Errorf("new household DoNotDisturb = true, want false")
+	}
+
+	if err := s.SetDoNotDisturb(ctx, h.ID, true); err != nil {
+		t.Fatalf("SetDoNotDisturb true: %v", err)
+	}
+	got, err = s.GetByID(ctx, h.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if !got.DoNotDisturb {
+		t.Errorf("after SetDoNotDisturb(true), DoNotDisturb = false, want true")
+	}
+
+	if err := s.SetDoNotDisturb(ctx, h.ID, false); err != nil {
+		t.Fatalf("SetDoNotDisturb false: %v", err)
+	}
+	got, err = s.GetByID(ctx, h.ID)
+	if err != nil {
+		t.Fatalf("GetByID after off: %v", err)
+	}
+	if got.DoNotDisturb {
+		t.Errorf("after SetDoNotDisturb(false), DoNotDisturb = true, want false")
+	}
+}
