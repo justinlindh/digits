@@ -426,7 +426,7 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 // ParseForm and extracted the field they need before invoking this helper.
 func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, partial string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -440,13 +440,8 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 			return
 		}
 		dnd := false
-		if h.householdStore != nil {
-			hh, err := h.householdStore.GetByID(r.Context(), ln.HouseholdID)
-			if err != nil {
-				slog.Warn("household DND lookup failed", "line_id", ln.ID, "household_id", ln.HouseholdID, "err", err)
-			} else {
-				dnd = hh.DoNotDisturb
-			}
+		if hh != nil {
+			dnd = hh.DoNotDisturb
 		}
 		if err := h.pushLineSettings(number, next, dnd); err != nil {
 			slog.Warn("push line settings failed", "number", number, "err", err)
