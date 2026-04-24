@@ -190,6 +190,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			}
 			return out
 		},
+		"inc": func(n int) int { return n + 1 },
 		"humanBytes": func(n int64) string {
 			switch {
 			case n > 1024*1024:
