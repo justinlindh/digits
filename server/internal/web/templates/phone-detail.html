@@ -1,6 +1,9 @@
 {{define "title"}}{{.Line.Name}}{{end}}
 
 {{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+  {{template "phone-detail-am" .}}
+{{else}}
 <div class="page">
 
   <div style="margin-bottom: 10px;">
@@ -247,13 +250,13 @@
             </div>
           </details>
           {{else}}
-          <p class="muted" style="font-size: 12.5px; margin: 0;">Firmware updates require SWD wiring — flash via USB.</p>
+          <p class="muted" style="font-size: 12.5px; margin: 0;">Firmware updates require SWD wiring: flash via USB.</p>
           {{end}}
           {{end}}
 
           {{else}}
             {{if .Online}}
-            <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report — device is online but hasn't reported version info yet.</p>
+            <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report: device is online but hasn't reported version info yet.</p>
             <form method="POST" action="/phones/{{.Line.Number}}/update">
               <button type="submit" class="btn btn--primary">Check for updates</button>
             </form>
@@ -356,7 +359,7 @@
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { showResult(prefix, 'failed', 'Failed to send: ' + data.error); return; }
-      if (progressText) progressText.textContent = 'Update triggered — waiting for device...';
+      if (progressText) progressText.textContent = 'Update triggered: waiting for device...';
       startPolling(prefix);
     })
     .catch(function(err) { showResult(prefix, 'failed', 'Network error: ' + err.message); });
@@ -499,6 +502,7 @@
 
 </div>
 {{end}}
+{{end}}
 
 {{define "voice-style-section"}}
 <div id="voice-style-section">
@@ -546,10 +550,230 @@
 </div>
 {{end}}
 
+{{define "am-voice-style-section"}}
+<div id="voice-style-section">
+  <form hx-post="/phones/{{.Line.Number}}/voice-style"
+        hx-target="#voice-style-section"
+        hx-swap="outerHTML"
+        class="am-settings__form am-settings__form--stack">
+    <label class="am-cartridge {{if eq .Line.Settings.VoiceStyle "copper"}}am-cartridge--selected{{end}}">
+      <input type="radio" name="voice_style" value="copper" {{if eq .Line.Settings.VoiceStyle "copper"}}checked{{end}}>
+      <span class="am-cartridge__body">
+        <span class="am-cartridge__name">Copper wire</span>
+        <span class="am-cartridge__desc">Warm vintage POTS sound. Narrow 300 to 3400 Hz band, like the old phone network.</span>
+      </span>
+      <span class="am-cartridge__lamp" aria-hidden="true"></span>
+    </label>
+    <label class="am-cartridge {{if eq .Line.Settings.VoiceStyle "modern"}}am-cartridge--selected{{end}}">
+      <input type="radio" name="voice_style" value="modern" {{if eq .Line.Settings.VoiceStyle "modern"}}checked{{end}}>
+      <span class="am-cartridge__body">
+        <span class="am-cartridge__name">Modern HD</span>
+        <span class="am-cartridge__desc">Full-range clean audio. No coloration, maximum clarity.</span>
+      </span>
+      <span class="am-cartridge__lamp" aria-hidden="true"></span>
+    </label>
+    <button type="submit" class="am-key am-settings__submit">
+      <span class="am-key__symbol">&#x25B6;</span>
+      <span class="am-key__label">Save</span>
+    </button>
+  </form>
+</div>
+{{end}}
+
+{{define "am-silent-mode-section"}}
+<div id="silent-mode-section">
+  <form hx-post="/phones/{{.Line.Number}}/silent-mode"
+        hx-target="#silent-mode-section"
+        hx-swap="outerHTML"
+        class="am-settings__toggle-row">
+    <label class="am-settings__dip" aria-label="Silent mode">
+      <input type="checkbox" name="silent_mode" value="on"
+             {{if .Line.Settings.SilentMode}}checked{{end}}
+             onchange="this.form.requestSubmit()"
+             class="am-settings__dip-input">
+      <span class="am-settings__dip-body" aria-hidden="true">
+        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+        <span class="am-settings__dip-lever"></span>
+        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+      </span>
+    </label>
+    <div class="am-settings__toggle-info">
+      <div class="am-label am-settings__toggle-title">Silent mode</div>
+      <p class="am-hint am-settings__toggle-desc">
+        Incoming calls won't ring. The light still flashes and you can still answer.
+      </p>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "phone-detail-am"}}
+<div class="am-handset">
+
+  <a href="/phones" class="am-tab am-handset__back" aria-label="Back to lines">&larr; Lines</a>
+
+  <div class="am-plate am-page-header">
+    <div class="am-page-header__info">
+      <span class="am-label">Handset detail</span>
+      <span class="am-title">{{.Line.Name}}</span>
+    </div>
+    <div class="am-page-header__spacer"></div>
+    <div class="am-well am-page-header__well">
+      <div class="am-led am-page-header__led">{{fmtPhone .Line.Number}}</div>
+      <div class="am-led am-led--dim am-page-header__cap">LINE</div>
+    </div>
+    <div class="am-well am-page-header__well am-handset__status-well">
+      <span id="status-badge"
+            hx-get="/phones/{{.Line.Number}}/online"
+            hx-trigger="every 10s"
+            hx-swap="innerHTML">
+        {{template "am-phone-status" .}}
+      </span>
+    </div>
+  </div>
+
+  <script>
+  document.getElementById('status-badge').addEventListener('htmx:afterSwap', function(evt) {
+    var newOnline = evt.target.querySelector('[data-online]').getAttribute('data-online') === 'true';
+    var prev = this.dataset.prevOnline === 'true';
+    if (this.dataset.prevOnline !== undefined && newOnline !== prev) { location.reload(); return; }
+    this.dataset.prevOnline = newOnline;
+  });
+  (function() {
+    var badge = document.getElementById('status-badge');
+    var span = badge.querySelector('[data-online]');
+    if (span) badge.dataset.prevOnline = span.getAttribute('data-online');
+  })();
+  </script>
+
+  <section class="am-plate am-handset__hero">
+    <span class="am-plate__label">Handset</span>
+    <div class="am-handset__hero-frame">
+      <img class="am-handset__hero-img" src="/static/images/phone-silhouette.png" alt="Desk phone">
+    </div>
+    <div class="am-handset__hero-caption">
+      <span class="am-handset__hero-name">{{.Line.Name}}</span>
+      <span class="am-led am-handset__hero-num">{{fmtPhone .Line.Number}}</span>
+    </div>
+  </section>
+
+  <div class="am-handset__grid">
+
+    <section class="am-plate am-handset__plate">
+      <span class="am-plate__label">Details</span>
+      <dl class="am-settings__kv">
+        <div class="am-settings__kv-row">
+          <dt class="am-settings__kv-key am-label">Number</dt>
+          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{fmtPhone .Line.Number}}</span></dd>
+        </div>
+        <div class="am-settings__kv-row">
+          <dt class="am-settings__kv-key am-label">Name</dt>
+          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.Line.Name}}</span></dd>
+        </div>
+        <div class="am-settings__kv-row">
+          <dt class="am-settings__kv-key am-label">Added</dt>
+          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</span></dd>
+        </div>
+        {{if .Devices}}
+        <div class="am-settings__kv-row">
+          <dt class="am-settings__kv-key am-label">Paired</dt>
+          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{len .Devices}} device{{if ne (len .Devices) 1}}s{{end}}</span></dd>
+        </div>
+        {{end}}
+        {{if .DeviceInfo}}
+          {{if .DeviceInfo.PiVersion}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">Pi</dt>
+            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.PiVersion}}{{if .DeviceInfo.PiCommit}} &middot; {{.DeviceInfo.PiCommit}}{{end}}</span></dd>
+          </div>
+          {{end}}
+          {{if .DeviceInfo.FirmwareVersion}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">Firmware</dt>
+            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.FirmwareVersion}}{{if .DeviceInfo.FirmwareCommit}} &middot; {{.DeviceInfo.FirmwareCommit}}{{end}}{{if .DeviceInfo.FlashCapable}} &middot; SWD{{end}}</span></dd>
+          </div>
+          {{end}}
+        {{end}}
+        {{if .LastSeenAt}}
+        <div class="am-settings__kv-row">
+          <dt class="am-settings__kv-key am-label">Last seen</dt>
+          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</span></dd>
+        </div>
+        {{end}}
+      </dl>
+    </section>
+
+    <section class="am-plate am-handset__plate">
+      <span class="am-plate__label">Voice style</span>
+      {{template "am-voice-style-section" .}}
+    </section>
+
+    <section class="am-plate am-handset__plate">
+      <span class="am-plate__label">Ringer</span>
+      {{template "am-silent-mode-section" .}}
+    </section>
+
+    {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Update notes</span>
+      <div class="am-handset__updates">
+        {{range .PiUpdateNotes}}
+        <article class="am-handset__update-note">
+          <span class="am-handset__update-ver">pi {{.Version}}</span>
+          {{if .Notes}}<div class="am-handset__update-body">{{renderNotes .Notes}}</div>{{else}}<p class="am-handset__update-empty">Notes not available yet.</p>{{end}}
+        </article>
+        {{end}}
+        {{range .FirmwareUpdateNotes}}
+        <article class="am-handset__update-note">
+          <span class="am-handset__update-ver">fw {{.Version}}</span>
+          {{if .Notes}}<div class="am-handset__update-body">{{renderNotes .Notes}}</div>{{else}}<p class="am-handset__update-empty">Notes not available yet.</p>{{end}}
+        </article>
+        {{end}}
+      </div>
+    </section>
+    {{end}}
+
+    <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
+      <span class="am-plate__label">Actions</span>
+      <p class="am-hint am-handset__action-desc">Removing a handset is permanent. The device will need to be re-paired to come back online.</p>
+      <div class="am-handset__actions-row">
+        <form class="am-handset__action-form"
+              method="POST"
+              action="/phones/{{.Line.Number}}/delete"
+              onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
+          <button type="submit" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x2716;</span>
+            <span class="am-key__label">Delete line</span>
+          </button>
+        </form>
+      </div>
+    </section>
+
+  </div>
+
+  {{template "page-footer" .}}
+
+</div>
+{{end}}
+
 {{define "phone-status"}}
 {{if .Online}}
-  <span class="chip chip--on" data-online="true"><span class="chip__dot"></span>online</span>
+<span class="chip chip--on" data-online="true"><span class="chip__dot"></span>online</span>
 {{else}}
-  <span class="chip" data-online="false"><span class="chip__dot"></span>offline</span>
+<span class="chip" data-online="false"><span class="chip__dot"></span>offline</span>
+{{end}}
+{{end}}
+
+{{define "am-phone-status"}}
+{{if .Online}}
+<span class="am-handset__status" data-online="true">
+  <span class="am-lamp am-lamp--on-green am-handset__status-lamp" aria-hidden="true"></span>
+  <span class="am-led am-led--green am-handset__status-cap">ONLINE</span>
+</span>
+{{else}}
+<span class="am-handset__status" data-online="false">
+  <span class="am-lamp am-handset__status-lamp" aria-hidden="true"></span>
+  <span class="am-led am-led--dim am-handset__status-cap">OFFLINE</span>
+</span>
 {{end}}
 {{end}}

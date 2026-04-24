@@ -250,6 +250,32 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-screw--br { position: absolute; bottom: 6px; right: 6px; }
 
 /* =========================================================================
+   Shared page scaffolding: header plate + roster list. Applied on /phones,
+   /links, /settings alongside any page-namespaced override class.
+   ========================================================================= */
+
+/* Header plate: engraved label stack on the left, LED well on the right. */
+.am-page-header { display: flex; align-items: center; gap: 18px; padding: 16px 22px; flex-wrap: wrap; }
+.am-page-header__info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.am-page-header__spacer { flex: 1; }
+.am-page-header__well { padding: 10px 14px; }
+.am-page-header__led { font-size: 22px; line-height: 1; }
+.am-page-header__cap { font-size: 9px; letter-spacing: 0.2em; margin-top: 2px; }
+
+/* Plate-scoped list: section label strip plus dashed-separated rows. Grid
+   column templates belong to the page-scoped override since each roster
+   (handsets, families, outbox) uses its own column count. */
+.am-roster { padding: 0; overflow: hidden; }
+.am-roster__head { padding: 14px 18px 8px; border-bottom: 1px solid rgba(100,80,40,0.2); }
+.am-roster__row { display: grid; gap: 12px; border-bottom: 1px dashed rgba(100,80,40,0.2); }
+.am-roster__row:last-child { border-bottom: 0; }
+.am-roster__num { font-family: var(--font-led); font-size: 18px; color: var(--led-amber); text-shadow: 0 0 4px rgba(255,165,32,0.4); }
+.am-roster__body { min-width: 0; }
+.am-roster__name { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--ink); }
+.am-roster__meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); letter-spacing: 0.06em; margin-top: 2px; }
+.am-roster__actions { display: inline-flex; gap: 6px; }
+
+/* =========================================================================
    Patchbay (Lines screen, phase 3)
    ========================================================================= */
 
@@ -286,7 +312,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   width: 52px; height: 52px; border-radius: 50%;
   background: radial-gradient(circle at 50% 50%,
     #050301 0%, #050301 26%,
-    #3a3226 28%, #4a402e 32%,
+    #c9ae53 27%, #a08934 30%, #6a5a2a 34%,
     #1a1610 38%, #2a251d 48%,
     #12100a 100%);
   box-shadow:
@@ -295,23 +321,25 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
     0 1px 0 rgba(255,255,255,0.12);
   position: relative;
   display: flex; align-items: center; justify-content: center;
+  isolation: isolate;
 }
 .am-jack__plug {
-  position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
-  width: 14px; height: 60px; border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg,
-    #d8d4cc 0%, #d8d4cc 18%,
-    #18150f 20%, #18150f 24%,
-    #c8c4bc 26%, #c8c4bc 46%,
-    #18150f 48%, #18150f 52%,
-    #b8b4ac 54%);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.5), inset 1px 0 0 rgba(255,255,255,0.4), inset -1px 0 0 rgba(0,0,0,0.4);
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,0.45),
+    0 0 2px rgba(0,0,0,0.5);
+  z-index: 3;
 }
-.am-jack__plug::before {
-  content: ''; position: absolute; top: -6px; left: -2px; right: -2px; height: 10px; border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg, #d63826 0%, #a0201a 100%);
-  box-shadow: inset 0 1px 0 rgba(255,180,160,0.4), 0 1px 2px rgba(0,0,0,0.5);
-}
+.am-jack__plug--c0 { background: #b23628; }
+.am-jack__plug--c1 { background: #c9a441; }
+.am-jack__plug--c2 { background: #4e7a3f; }
+.am-jack__plug--c3 { background: #3a5a78; }
+.am-jack__plug--c4 { background: #b8722a; }
+.am-jack__plug--c5 { background: #7a4a8a; }
 .am-jack--unpatched .am-jack__plug { display: none; }
 .am-jack__label-bot {
   font-family: var(--font-mono); font-size: 11px; color: #d8caa0; letter-spacing: 0.06em;
@@ -505,6 +533,9 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 }
 .am-shell__brand-slot { display: inline-flex; align-items: center; gap: 12px; padding-right: 8px; }
 .am-shell__household { margin-left: auto; font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--ink-muted); font-weight: 600; text-transform: uppercase; }
+.am-shell__dnd { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+.am-shell__dnd:hover, .am-shell__dnd:focus-visible { background: rgba(255,61,46,0.08); outline: none; }
+.am-shell__dnd-cap { font-size: 10px; letter-spacing: 0.18em; font-family: var(--font-led); }
 .am-shell__signout-form { margin: 0; }
 .am-key--nav { min-width: 0; min-height: 32px; padding: 4px 10px; }
 .am-shell__main { flex: 1; padding: 4px 36px 32px; }
@@ -526,6 +557,829 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   .am-tabs { flex-wrap: wrap; width: 100%; order: 99; }
   .am-tabs:not(.is-open) { display: none; }
   .am-shell__household { font-size: 8px; }
+}
+
+/* =========================================================================
+   AM /links: Families
+   ========================================================================= */
+
+.am-links { display: flex; flex-direction: column; gap: 18px; }
+
+/* Header plate uses the shared .am-page-header primitives. */
+
+/* Label-maker + Accept pair: two plates side by side */
+.am-links__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+
+.am-labelmaker { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 16px; }
+.am-labelmaker__hint { margin: 0; }
+.am-labelmaker__form { margin: 0; }
+.am-labelmaker__button { padding: 9px 18px; }
+
+/* Tape label: cassette-style cream card showing a freshly printed invite code */
+.am-tape-label {
+  background: #f4e8c4;
+  border: 1px solid #a89774;
+  border-radius: 3px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5);
+  position: relative;
+}
+.am-tape-label::before {
+  content: ''; position: absolute; inset: 4px; border: 1px dashed rgba(60,45,20,0.25); border-radius: 2px; pointer-events: none;
+}
+.am-tape-label__stripe {
+  display: inline-block;
+  font-family: var(--font-body); font-size: 8.5px; letter-spacing: 0.22em; font-weight: 600;
+  color: #fff0e8; background: var(--chip-red); padding: 2px 8px; border-radius: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.am-tape-label__code {
+  font-family: var(--font-led); font-size: 28px; font-weight: 700;
+  color: #2a2318; letter-spacing: 0.18em;
+  user-select: all;
+  line-height: 1.1;
+}
+.am-tape-label__note { font-family: var(--font-body); font-size: 10.5px; color: #5a4f30; margin-top: 6px; }
+
+/* Accept plate: code entry + brass key */
+.am-accept { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 16px; }
+.am-accept__hint { margin: 0; }
+.am-accept__form { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.am-accept__input {
+  flex: 1; min-width: 0;
+  background: var(--slot);
+  border: 1px solid var(--slot-edge);
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-family: var(--font-led); font-size: 18px; font-weight: 700;
+  color: var(--led-amber);
+  text-shadow: 0 0 6px rgba(255,165,32,0.45);
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.4);
+}
+.am-accept__input::placeholder { color: var(--led-amber-dim); text-shadow: none; letter-spacing: 0.18em; }
+.am-accept__input:focus { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 1px; }
+.am-accept__submit { min-width: 80px; }
+
+/* Station directory: numbered roster of linked families. Shared .am-roster
+   primitives supply the wrapper, head, row, num, body, name, meta, and
+   actions; page-scoped rules below cover the per-page overrides and the
+   unique chip-row/lamp accents. */
+.am-directory__row { grid-template-columns: 28px 14px 1fr auto; align-items: start; padding: 12px 18px; }
+.am-directory__num { line-height: 1.4; }
+.am-directory__lamp { margin-top: 6px; }
+.am-directory__name { letter-spacing: 0.02em; }
+.am-directory__lines { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.am-directory__line {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 3px 9px;
+  background: rgba(255,255,255,0.35);
+  border: 1px solid rgba(100,80,40,0.25);
+  border-radius: 3px;
+  font-size: 11px;
+}
+.am-directory__line-name { font-family: var(--font-body); color: var(--ink); font-weight: 600; }
+.am-directory__line-num { font-family: var(--font-mono); color: var(--ink-muted); letter-spacing: 0.04em; }
+.am-directory__empty { padding: 14px 18px 16px; }
+
+/* Outbox: thin strip of pending invites. Shares .am-roster wrapper + head;
+   the row uses its own 3-column grid with a wider gap. */
+.am-outbox__row { grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 10px 18px; }
+.am-outbox__code {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 500;
+  color: var(--label); letter-spacing: 0.2em;
+}
+.am-outbox__date { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); letter-spacing: 0.04em; }
+
+/* Mobile: stack the label-maker/accept pair */
+@media (max-width: 780px) {
+  .am-links__pair { grid-template-columns: 1fr; }
+  .am-directory__row { grid-template-columns: 24px 14px 1fr; grid-template-rows: auto auto; row-gap: 8px; }
+  .am-directory__actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .am-outbox__row { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .am-outbox__date { grid-column: 1 / -1; }
+}
+
+/* === AM /settings: rear-panel service menu === */
+
+.am-settings { max-width: 1020px; display: flex; flex-direction: column; gap: 18px; }
+
+/* Header plate uses the shared .am-page-header primitives. The well clips
+   long emails and the LED downsizes to fit wrapping text. */
+.am-settings__header-well { max-width: 320px; overflow: hidden; }
+.am-settings__header-led { font-size: 14px; line-height: 1.2; word-break: break-all; }
+
+/* Two-column layout: sticky TOC + plate stack */
+.am-settings__layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+/* Sidebar TOC: overrides the shared .settings-nav shim so the AM variant
+   becomes a vertical brass-tabbed strip. Uses the same class names so the
+   scrollspy script in settings.html binds without modification. */
+.am-settings__nav {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 100%);
+  border-radius: 10px;
+  padding: 14px 10px 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    inset 0 -1px 0 rgba(100,80,40,0.12),
+    0 1px 0 rgba(255,255,255,0.6),
+    0 2px 4px rgba(40,30,15,0.12);
+  margin: 0;
+  flex-wrap: nowrap;
+}
+.am-settings__nav-label { padding: 0 6px 4px; }
+.am-settings__nav .settings-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: transparent;
+  border-radius: 4px;
+  text-decoration: none;
+  position: relative;
+}
+.am-settings__nav .settings-nav__item::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #40100a 0%, #1a0804 70%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
+  flex: 0 0 auto;
+}
+.am-settings__nav .settings-nav__item:hover { color: var(--ink); background: rgba(255,255,255,0.35); }
+.am-settings__nav .settings-nav__item.is-active {
+  background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 55%, var(--btn-bot) 100%);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 0 rgba(255,255,255,0.3), 0 2px 3px rgba(40,30,15,0.25);
+}
+.am-settings__nav .settings-nav__item.is-active::before {
+  background: radial-gradient(circle at 30% 30%, #ffd080 0%, var(--led-amber) 60%, #9a5808 100%);
+  box-shadow: 0 0 5px rgba(255,165,32,0.6), 0 0 10px rgba(255,165,32,0.2);
+}
+
+/* Right column: stacked plates */
+.am-settings__body { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+/* Plate row: engraved label sits in .am-plate__label, padding matches the AM
+   other-page conventions. Uses the plate primitive directly. */
+.am-settings__section { padding: 18px 20px 16px; }
+.am-settings__section--danger { border: 1px solid rgba(196,62,46,0.25); }
+
+.am-settings__hint { margin: 0 0 10px; }
+
+/* Form row: label + input + chicklet submit. Gaps match .am-accept__form. */
+.am-settings__form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 0; }
+.am-settings__form--stack { flex-direction: column; align-items: stretch; gap: 10px; }
+.am-settings__field { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.am-settings__field-label { letter-spacing: 0.22em; }
+
+/* Brass-framed text input (mirrors .am-accept__input but warmer, lower-case text). */
+.am-settings__input {
+  width: 100%;
+  background: var(--slot);
+  border: 1px solid var(--slot-edge);
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-family: var(--font-led); font-size: 14px; font-weight: 500;
+  color: var(--led-amber);
+  text-shadow: 0 0 5px rgba(255,165,32,0.35);
+  letter-spacing: 0.06em;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.4);
+}
+.am-settings__input::placeholder { color: var(--led-amber-dim); text-shadow: none; }
+.am-settings__input:focus { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 1px; }
+
+/* Brass-framed select. Inner <select> keeps native chrome for a11y;
+   the wrapper supplies the recessed-slot look. */
+.am-settings__select-wrap {
+  background: var(--slot);
+  border: 1px solid var(--slot-edge);
+  border-radius: 3px;
+  padding: 2px;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.4);
+}
+.am-settings__select {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  font-family: var(--font-mono); font-size: 12.5px;
+  color: var(--led-amber);
+  text-shadow: 0 0 5px rgba(255,165,32,0.3);
+  letter-spacing: 0.04em;
+  box-shadow: none;
+  appearance: auto;
+}
+.am-settings__select:focus { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 0; }
+.am-settings__select optgroup { background: var(--slot); color: var(--led-amber); }
+.am-settings__select option { background: var(--slot); color: #f0e5c5; }
+
+.am-settings__submit { padding: 9px 14px 7px; min-width: 90px; }
+.am-settings__submit--wide { align-self: flex-start; min-width: 120px; }
+
+/* Account key/value rows: brass label plus amber LED value in a small well. */
+.am-settings__kv { display: flex; flex-direction: column; gap: 10px; margin: 0; }
+.am-settings__kv-row { display: grid; grid-template-columns: 120px 1fr; gap: 14px; align-items: center; margin: 0; }
+.am-settings__kv-key { margin: 0; }
+.am-settings__kv-val { margin: 0; padding: 8px 12px; display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.am-settings__kv-led { font-size: 13px; letter-spacing: 0.06em; word-break: break-all; }
+.am-settings__kv-lamp { flex: 0 0 auto; }
+
+/* Theme picker cartridge: swatch strip + name + description + LED lamp */
+.am-cartridge {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 100%);
+  border: 1px solid var(--btn-press);
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(40,30,15,0.1);
+  transition: transform 80ms, box-shadow 80ms;
+  position: relative;
+}
+.am-cartridge:hover { transform: translateY(-1px); }
+.am-cartridge input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+.am-cartridge__swatch {
+  display: flex; gap: 2px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25), 0 1px 1px rgba(40,30,15,0.2);
+  background: var(--slot);
+  padding: 1px;
+}
+.am-cartridge__strip { width: 12px; height: 34px; }
+.am-cartridge__body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.am-cartridge__name { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.02em; }
+.am-cartridge__desc { font-family: var(--font-body); font-size: 11px; color: var(--ink-muted); line-height: 1.4; }
+.am-cartridge__tag {
+  font-family: var(--font-body); font-size: 8.5px; font-weight: 600; letter-spacing: 0.22em;
+  text-transform: uppercase; padding: 3px 8px;
+  background: var(--case-shade); color: #f4ebcb; border-radius: 3px;
+  align-self: center;
+}
+.am-cartridge__lamp {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #40100a 0%, #1a0804 70%);
+  border: 1px solid #0a0504;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
+  align-self: center;
+}
+.am-cartridge:focus-within { outline: 2px solid rgba(255,165,32,0.55); outline-offset: 2px; }
+.am-cartridge--selected {
+  border-color: rgba(255,165,32,0.6);
+  box-shadow: 0 0 0 2px rgba(255,165,32,0.18), 0 2px 4px rgba(40,30,15,0.1);
+}
+.am-cartridge--selected .am-cartridge__lamp {
+  background: radial-gradient(circle at 30% 30%, #ffd080 0%, var(--led-amber) 60%, #9a5808 100%);
+  box-shadow: 0 0 6px rgba(255,165,32,0.6), 0 0 12px rgba(255,165,32,0.25);
+}
+
+/* Privacy DIP-style toggle row. The hidden checkbox drives the lever position. */
+.am-settings__toggle-row { display: flex; gap: 16px; align-items: flex-start; margin: 0; }
+.am-settings__dip {
+  display: inline-flex;
+  padding: 6px 6px 4px;
+  background: var(--chip-red);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(255,180,160,0.35), 0 2px 3px rgba(40,10,5,0.3);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.am-settings__dip-input { position: absolute; opacity: 0; pointer-events: none; }
+.am-settings__dip-body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  gap: 2px;
+  width: 22px;
+  padding: 3px 3px 2px;
+  background: linear-gradient(180deg, #2a2520 0%, #14120e 100%);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08), inset 0 -1px 1px rgba(0,0,0,0.4);
+}
+.am-settings__dip-label {
+  font-family: var(--font-mono); font-size: 8px; color: #fff0e8; line-height: 1;
+  opacity: 0.55;
+}
+.am-settings__dip-lever {
+  width: 14px; height: 12px;
+  background: linear-gradient(180deg, #f4ebd0 0%, #c8b988 60%, #8a7d58 100%);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), inset 0 -1px 0 rgba(100,80,40,0.4), 0 1px 2px rgba(0,0,0,0.5);
+  transition: transform 120ms;
+}
+.am-settings__dip-input:checked ~ .am-settings__dip-body .am-settings__dip-lever { transform: translateY(-4px); }
+.am-settings__dip-input:checked ~ .am-settings__dip-body .am-settings__dip-label--on { opacity: 1; color: var(--led-amber); text-shadow: 0 0 4px rgba(255,165,32,0.55); }
+.am-settings__dip-input:not(:checked) ~ .am-settings__dip-body .am-settings__dip-lever { transform: translateY(4px); }
+.am-settings__dip-input:not(:checked) ~ .am-settings__dip-body .am-settings__dip-label--off { opacity: 1; }
+.am-settings__dip-input:focus-visible ~ .am-settings__dip-body { outline: 2px solid rgba(255,165,32,0.55); outline-offset: 2px; }
+
+.am-settings__toggle-info { flex: 1; min-width: 0; }
+.am-settings__toggle-title { margin-bottom: 6px; }
+.am-settings__toggle-desc { margin: 0; line-height: 1.55; }
+
+.am-settings__signout { padding: 10px 18px 8px; min-width: 120px; }
+
+/* Mobile: stack nav above body, cartridge collapses to two rows */
+@media (max-width: 780px) {
+  .am-settings__layout { grid-template-columns: 1fr; }
+  .am-settings__nav { position: static; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .am-settings__nav-label { flex-basis: 100%; padding: 0 0 4px; }
+  .am-cartridge { grid-template-columns: auto 1fr auto; }
+  .am-cartridge__tag { grid-column: 2 / 3; grid-row: 2; justify-self: start; }
+  .am-settings__kv-row { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* === AM /phones/{number}: handset detail === */
+
+.am-handset { display: flex; flex-direction: column; gap: 18px; }
+
+/* Back-to-lines link, rendered as a cassette tab so it reads as in-idiom chrome. */
+.am-handset__back { align-self: flex-start; padding: 6px 14px; }
+
+/* Page header lamp + cap. The header plate is shared; the status cluster
+   on the right re-uses .am-page-header__well / __led / __cap with a small
+   inner gap for the lamp. */
+.am-handset__status-well { display: inline-flex; align-items: center; gap: 10px; padding: 10px 14px; }
+.am-handset__status-cap { font-size: 11px; letter-spacing: 0.22em; }
+
+/* Hero plate: silhouette framed like a cassette display window. A recessed
+   brass inset around the image, with a caption well underneath. */
+.am-handset__hero { padding: 20px 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.am-handset__hero-frame {
+  width: 100%;
+  max-width: 320px;
+  padding: 14px 18px 16px;
+  background: linear-gradient(180deg, #1a1812 0%, #24201a 100%);
+  border-radius: 6px;
+  box-shadow: inset 0 3px 6px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.am-handset__hero-frame::before {
+  content: ''; position: absolute; inset: 6px; border: 1px solid rgba(255,165,32,0.22); border-radius: 4px; pointer-events: none;
+}
+.am-handset__hero-img { display: block; width: 100%; max-width: 220px; height: auto; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.35)); }
+.am-handset__hero-caption { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.am-handset__hero-name { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.04em; text-transform: uppercase; }
+.am-handset__hero-num { font-size: 18px; letter-spacing: 0.12em; }
+
+/* Two-column grid for the lower detail plates. Stacks on narrow viewports. */
+.am-handset__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+.am-handset__grid > * { min-width: 0; }
+
+.am-handset__plate { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 12px; }
+.am-handset__plate--wide { grid-column: 1 / -1; }
+.am-handset__plate--danger { border: 1px solid rgba(196,62,46,0.25); }
+
+/* Update notes list: tape-log style, each release in its own engraved card. */
+.am-handset__updates { display: flex; flex-direction: column; gap: 10px; }
+.am-handset__update-note {
+  background: rgba(255,255,255,0.35);
+  border: 1px solid rgba(100,80,40,0.25);
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.am-handset__update-ver {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; color: var(--ink);
+  text-transform: uppercase;
+}
+.am-handset__update-body { font-family: var(--font-body); font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+.am-handset__update-body p { margin: 0 0 4px; }
+.am-handset__update-body p:last-child { margin-bottom: 0; }
+.am-handset__update-body ul, .am-handset__update-body ol { margin: 0 0 4px; padding-left: 20px; }
+.am-handset__update-body code { font-family: var(--font-mono); font-size: 11px; }
+.am-handset__update-empty { margin: 0; font-style: italic; color: var(--ink-muted); font-size: 12px; }
+
+/* Actions plate: brass Save/Delete keys aligned left, with hint text. */
+.am-handset__actions { display: flex; flex-direction: column; gap: 10px; }
+.am-handset__actions-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.am-handset__action-form { margin: 0; }
+.am-handset__action-desc { margin: 0 0 2px; line-height: 1.45; }
+
+/* Status lamp cluster used by the polled phone-status partial. Uses .am-lamp
+   variants for the indicator and .am-led variants for the cap word. */
+.am-handset__status { display: inline-flex; align-items: center; gap: 8px; }
+.am-handset__status-lamp { flex: 0 0 auto; }
+
+/* Mobile: stack columns, shrink hero, collapse grids. */
+@media (max-width: 780px) {
+  .am-handset__grid { grid-template-columns: 1fr; }
+  .am-handset__hero-frame { max-width: 240px; }
+  .am-handset__hero-img { max-width: 180px; }
+}
+
+/* === AM /calls: tape log === */
+
+.am-calls { display: flex; flex-direction: column; gap: 18px; }
+
+/* Header LIVE well: compact green-LED cluster showing auto-refresh heartbeat. */
+.am-calls__live-well { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.am-calls__live-cap { font-size: 11px; letter-spacing: 0.22em; }
+
+/* Tape plate: the roster plate that carries every log entry. htmx swaps this
+   element every 10s, so the header stays static. */
+.am-calls__tape { min-width: 0; }
+
+/* Entry row: LED time, caller/callee body, kind chip, duration, details link.
+   The grid template overrides the shared .am-roster__row default. */
+.am-calls__entry { grid-template-columns: 92px 1fr auto auto auto; align-items: center; padding: 10px 18px; }
+
+/* LED-amber time column, dot-matrix feel. */
+.am-calls__time { font-family: var(--font-led); font-weight: 700; font-size: 14px; color: var(--led-amber); text-shadow: 0 0 4px rgba(255,165,32,0.4); letter-spacing: 0.06em; }
+
+/* Body holds parties on top and meta (date + status word) underneath. */
+.am-calls__body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.am-calls__parties { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 13px; color: var(--ink); letter-spacing: 0.02em; }
+.am-calls__party { font-family: var(--font-mono); color: var(--ink); letter-spacing: 0.04em; }
+.am-calls__arrow { color: var(--ink-muted); font-family: var(--font-mono); }
+
+/* Multi-party row for conferences: inline wrap, phones separated by midpoints. */
+.am-calls__conf-parts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 13px; color: var(--ink); letter-spacing: 0.02em; }
+
+/* "from 3-way" inline badge for calls originating from a merged conference. */
+.am-calls__from-conf { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--chip-blue); padding: 2px 6px; border: 1px solid rgba(42,86,128,0.4); border-radius: 3px; }
+
+/* Meta line: date plus per-call state word (ended/missed/ringing/...). */
+.am-calls__meta { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); letter-spacing: 0.06em; }
+.am-calls__meta-state { text-transform: uppercase; letter-spacing: 0.16em; font-size: 9.5px; font-weight: 600; color: var(--ink-muted); }
+.am-calls__meta-state--connected { color: var(--led-green-dark); }
+.am-calls__meta-state--missed { color: var(--chip-red-dk); }
+.am-calls__meta-state--ringing { color: var(--led-amber-dim); }
+.am-calls__meta-state--initiated { color: var(--chip-blue); }
+
+/* Kind chip: REG for 2-party, 3-WAY for conferences. */
+.am-calls__status {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  background: var(--case-shade);
+  border-radius: 999px;
+  font-family: var(--font-body); font-size: 9.5px; font-weight: 600; letter-spacing: 0.18em;
+  color: #f4ebcb; text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+}
+.am-calls__status--conf { background: linear-gradient(180deg, #4a84b4 0%, var(--chip-blue) 100%); }
+
+/* Right-aligned duration, monospace so columns line up visually. */
+.am-calls__duration { font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); letter-spacing: 0.04em; text-align: right; min-width: 44px; }
+
+.am-calls__details { font-family: var(--font-body); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--chip-blue); text-decoration: none; white-space: nowrap; }
+.am-calls__details:hover { color: var(--chip-red); }
+
+.am-calls__empty { padding: 18px 20px 20px; }
+
+/* Mobile: stack time + parties on top, push chip/duration/details onto a
+   second row so nothing clips at narrow widths. */
+@media (max-width: 780px) {
+  .am-calls__entry { grid-template-columns: 82px 1fr auto; grid-template-rows: auto auto; row-gap: 6px; padding: 10px 14px; }
+  .am-calls__duration { grid-column: 3; grid-row: 1; }
+  .am-calls__status { grid-column: 1 / 3; grid-row: 2; justify-self: start; }
+  .am-calls__details { grid-column: 3; grid-row: 2; }
+  .am-calls__body { grid-column: 2; grid-row: 1; }
+}
+
+/* === AM /onboard: welcome === */
+
+/* Centered wrapper: vertically centers the welcome plate in the main area so
+   first-run households see a single focused card, not a rail-aligned form. */
+.am-welcome { display: flex; justify-content: center; padding: 24px 16px; }
+
+/* Frame: bounded plate with cornered screws, a little wider than the accept
+   plate on /links so the long "family name" input has room to breathe. */
+.am-welcome__frame { width: 100%; max-width: 440px; padding: 26px 26px 22px; }
+
+/* Title: matches .am-title weight but bumped up for the primary headline. */
+.am-welcome__mark { font-family: var(--font-body); font-size: 18px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink); margin: 0 0 4px; }
+
+/* Tagline sits under the title, shares .am-hint tone but keeps its own
+   bottom margin so the form doesn't hug the copy. */
+.am-welcome__tagline { margin: 0 0 16px; }
+
+/* Form: stacked label + input + full-width submit. Gaps match .am-settings
+   stacked forms so all AM forms feel like the same rack of controls. */
+.am-welcome__form { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.am-welcome__field { display: flex; flex-direction: column; gap: 6px; }
+
+/* Submit stretches to the plate edges for a clear primary action. */
+.am-welcome__submit { width: 100%; min-height: 44px; }
+
+/* === AM /calls/{id}/live: deck ===
+   Live 2-party and 3-way call pages ship the same shared .deck-* markup.
+   AM overlays the existing structure as a brass-framed tape-deck readout:
+   engraved header plate, LED-amber duration ticker, amber segment bars,
+   red STOP chicklet for End call, recessed cassette-window metrics plate. */
+
+body.am .deck { display: flex; flex-direction: column; gap: 16px; padding: 0; }
+
+body.am .deck-header {
+  display: flex; align-items: stretch; justify-content: space-between; gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 55%, var(--case-2) 100%);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    inset 0 -1px 0 rgba(100,80,40,0.18),
+    0 1px 0 rgba(255,255,255,0.6),
+    0 2px 4px rgba(40,30,15,0.16);
+  border: 1px solid rgba(100,80,40,0.28);
+}
+body.am .deck-header__labels { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+body.am .deck-kicker {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px;
+  background: linear-gradient(180deg, #e28a20 0%, #b86d10 100%);
+  color: #1a0f02;
+  border-radius: 2px;
+  font-family: var(--font-body); font-size: 9px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255,220,160,0.55), 0 1px 0 rgba(60,30,5,0.4);
+}
+body.am .deck-title {
+  font-family: var(--font-body); font-style: normal;
+  font-size: 18px; font-weight: 600; letter-spacing: 0.02em; line-height: 1.2;
+  color: var(--ink); margin: 0;
+}
+body.am .deck-arrow { color: var(--case-dark); margin: 0 6px; font-weight: 500; }
+body.am .deck-meta { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 12px; }
+body.am .deck-duration {
+  font-family: var(--font-led);
+  font-size: 20px; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--led-amber); text-shadow: 0 0 6px rgba(255,165,32,0.55);
+  padding: 4px 10px;
+  background: var(--led-bg);
+  border-radius: 3px;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.35);
+  border: 1px solid var(--slot-edge);
+}
+body.am .deck-conn {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+body.am .deck-kill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  align-self: center;
+  min-width: 108px; min-height: 40px;
+  padding: 8px 16px;
+  background: linear-gradient(180deg, #e05448 0%, var(--chip-red) 100%);
+  border: 1px solid var(--chip-red-dk);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,200,180,0.6),
+    0 2px 0 var(--chip-red-dk),
+    0 3px 4px rgba(40,10,5,0.3);
+  color: #fff8f0;
+  font-family: var(--font-body); font-size: 11px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 60ms;
+}
+body.am .deck-kill:hover { filter: brightness(1.04); }
+body.am .deck-kill:active { transform: translateY(2px); box-shadow: inset 0 2px 3px rgba(40,10,5,0.35); }
+
+body.am .deck-ended-chip {
+  align-self: center;
+  padding: 5px 12px;
+  background: var(--case-shade);
+  border-radius: 999px;
+  color: #f4ebcb;
+  font-family: var(--font-body); font-size: 10px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+body.am .deck-cards {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+body.am .deck-card {
+  padding: 14px 16px 12px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 100%);
+  border: 1px solid rgba(100,80,40,0.28);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 1px 0 rgba(255,255,255,0.6),
+    0 2px 4px rgba(40,30,15,0.12);
+  position: relative;
+}
+body.am .deck-card::before { content: none; }
+body.am .deck-card .label {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--label);
+}
+body.am .deck-card__name { font-family: var(--font-body); font-style: normal; font-size: 14px; font-weight: 600; color: var(--ink); margin-top: 6px; letter-spacing: 0.01em; }
+body.am .deck-card__num { font-family: var(--font-mono); font-size: 12px; color: var(--ink-muted); margin-top: 2px; letter-spacing: 0.04em; }
+body.am .deck-card--host { box-shadow: inset 0 0 0 1px rgba(255,165,32,0.35), inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(40,30,15,0.12); }
+
+body.am .deck-panel {
+  padding: 14px 16px;
+  background: var(--led-bg);
+  border: 1px solid var(--slot-edge);
+  border-radius: 6px;
+  box-shadow: inset 0 3px 5px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.35);
+}
+body.am .deck-panel__inner { display: flex; flex-direction: column; gap: 12px; color: var(--tape-ink); }
+body.am .deck-panel__streams { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+body.am .deck-stream__head {
+  margin-bottom: 8px;
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+  color: rgba(255,165,32,0.7);
+}
+body.am .deck-bars { display: flex; flex-direction: column; gap: 6px; }
+body.am .deck-row { display: grid; grid-template-columns: 60px 1fr 60px; gap: 8px; align-items: center; font-size: 11px; }
+body.am .deck-row__lbl {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(232,218,168,0.65);
+}
+body.am .deck-row__val { font-family: var(--font-mono); font-size: 11px; color: var(--tape-ink); text-align: right; letter-spacing: 0.04em; }
+body.am .deck-bar {
+  display: flex; gap: 2px; height: 8px;
+  background: rgba(0,0,0,0.4);
+  border-radius: 2px;
+  padding: 1px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
+  overflow: hidden;
+}
+body.am .deck-seg { flex: 1; background: transparent; border-radius: 1px; }
+body.am .deck-seg--on { background: var(--led-amber-dim); }
+body.am .deck-seg--on.deck-seg--warn { background: var(--led-amber); box-shadow: 0 0 3px rgba(255,165,32,0.55); }
+body.am .deck-seg--on.deck-seg--bad { background: var(--led-red); box-shadow: 0 0 3px rgba(255,61,46,0.6); }
+
+body.am .deck-shared {
+  border-top: 1px dashed rgba(255,165,32,0.18);
+  padding-top: 10px; margin-top: 2px;
+}
+body.am .deck-shared__row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+body.am .deck-shared__item .label {
+  display: block;
+  margin-bottom: 3px;
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(232,218,168,0.65);
+}
+body.am .deck-shared__item .num { font-family: var(--font-mono); font-size: 12px; color: var(--tape-ink); letter-spacing: 0.04em; }
+
+body.am .deck-disclaimer {
+  margin: 0; padding: 8px 4px 0;
+  font-family: var(--font-body); font-size: 11px; color: var(--ink-muted); font-style: italic; line-height: 1.5;
+  border: none;
+}
+
+body.am .deck-confirm {
+  padding: 0;
+  max-width: 440px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 100%);
+  border: 1px solid rgba(100,80,40,0.3);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(40,30,15,0.32);
+  color: var(--ink);
+}
+body.am .deck-confirm::backdrop { background: rgba(26,25,18,0.55); }
+body.am .deck-confirm__form { padding: 18px 20px 16px; }
+body.am .deck-confirm__title {
+  font-family: var(--font-body); font-style: normal;
+  font-size: 15px; font-weight: 600; letter-spacing: 0.01em; color: var(--ink);
+  margin: 0 0 10px;
+}
+body.am .deck-confirm__body { font-family: var(--font-body); font-size: 12px; color: var(--ink-soft); line-height: 1.5; margin: 0 0 16px; }
+body.am .deck-confirm__actions { display: flex; justify-content: flex-end; gap: 10px; padding: 0; }
+body.am .deck-confirm__cancel {
+  padding: 7px 14px;
+  background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 55%, var(--btn-bot) 100%);
+  border: 1px solid var(--btn-press);
+  border-radius: 5px;
+  color: var(--btn-label);
+  font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 2px 0 var(--btn-press);
+}
+body.am .deck-confirm__cancel:active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(60,45,20,0.3); }
+body.am .deck-confirm__go {
+  padding: 7px 16px;
+  background: linear-gradient(180deg, #e05448 0%, var(--chip-red) 100%);
+  border: 1px solid var(--chip-red-dk);
+  border-radius: 5px;
+  color: #fff8f0;
+  font-family: var(--font-body); font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,200,180,0.55), 0 2px 0 var(--chip-red-dk);
+}
+body.am .deck-confirm__go:active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(60,15,5,0.35); }
+
+body.am .deck-stale {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #e05448 0%, var(--chip-red) 100%);
+  color: #fff8f0;
+  border: 1px solid var(--chip-red-dk);
+  border-radius: 5px;
+  font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+  box-shadow: inset 0 1px 0 rgba(255,200,180,0.45);
+}
+body.am .deck-stale button {
+  padding: 4px 10px;
+  background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 55%, var(--btn-bot) 100%);
+  border: 1px solid var(--btn-press);
+  border-radius: 4px;
+  color: var(--btn-label);
+  font: inherit; font-weight: 600; letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+body.am .deck-ended {
+  padding: 14px; text-align: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); letter-spacing: 0.08em;
+}
+
+/* Conference deck: 3-way call matrix. Same markup family; override for
+   the brass-plate look with LED-well cells. */
+body.am .deck-matrix {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+body.am .deck-matrix__head {
+  padding: 4px 6px;
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+body.am .deck-matrix__cell {
+  padding: 10px 12px;
+  background: var(--led-bg);
+  border: 1px solid var(--slot-edge);
+  border-radius: 5px;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.6);
+  color: var(--tape-ink);
+}
+body.am .deck-matrix__cell--blank {
+  background: transparent;
+  border: 1px dashed rgba(100,80,40,0.3);
+  box-shadow: none;
+  opacity: 0.4;
+}
+body.am .deck-matrix__row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  padding: 2px 0;
+}
+body.am .deck-matrix__lbl {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(232,218,168,0.65);
+}
+body.am .deck-matrix__val { font-family: var(--font-mono); font-size: 12px; color: var(--tape-ink); letter-spacing: 0.04em; }
+
+body.am .deck-card__kick {
+  margin-top: 10px;
+  padding: 5px 12px;
+  background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 55%, var(--btn-bot) 100%);
+  border: 1px solid var(--btn-press);
+  border-radius: 4px;
+  color: var(--btn-label);
+  font-family: var(--font-body); font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 0 var(--btn-press);
+}
+body.am .deck-card__kick:hover { filter: brightness(1.03); }
+body.am .deck-card__kick:active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(60,45,20,0.3); }
+
+body.am .deck-kick-confirm .deck-confirm__go {
+  background: linear-gradient(180deg, #e28a20 0%, #b86d10 100%);
+  border-color: #6a3b05;
+  box-shadow: inset 0 1px 0 rgba(255,220,160,0.55), 0 2px 0 #6a3b05;
+  color: #1a0f02;
+}
+
+@media (max-width: 720px) {
+  body.am .deck-header { flex-direction: column; align-items: stretch; gap: 12px; }
+  body.am .deck-kill,
+  body.am .deck-ended-chip { align-self: flex-start; }
+  body.am .deck-cards,
+  body.am .deck-panel__streams,
+  body.am .deck-shared__row { grid-template-columns: 1fr; }
+  body.am .deck-matrix { grid-template-columns: 1fr; }
+  body.am .deck-matrix__head { display: none; }
+  body.am .deck-matrix__cell--blank { display: none; }
 }
 
 /* =========================================================================
@@ -626,7 +1480,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   box-shadow: inset 0 2px 3px rgba(60,45,20,0.25);
 }
 .am input:focus, .am select:focus, .am textarea:focus {
-  outline: 2px solid var(--chip-blue);
+  outline: 2px solid rgba(255,165,32,0.55);
   outline-offset: 1px;
 }
 .am label { font-family: var(--font-body); font-size: 11px; font-weight: 600; color: var(--ink); }
@@ -792,4 +1646,83 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   .am-overview__led-spacer { display: none; }
   .am-overview__led-sep { display: none; }
   .am-overview__led-group--right { align-items: flex-start; text-align: left; }
+}
+
+/* =========================================================================
+   Lines page layout: patchbay rail, handset roster, pair panel.
+   ========================================================================= */
+
+.am-phones { display: flex; flex-direction: column; gap: 18px; }
+
+/* Header plate: patched count LED + patch-new chicklet. Uses the shared
+   .am-page-header primitives; no page-specific overrides needed. */
+
+/* Patchbay rail wrapper on this page. The inner .am-patchbay__rail grid
+   is defined in the patchbay primitives section. */
+.am-phones__rail { padding: 22px 24px; }
+.am-phones__empty-rail { display: flex; align-items: center; gap: 14px; padding: 18px 22px; }
+
+/* Two-column body: roster (wider) + pair panel (narrower) */
+.am-phones__body { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start; }
+
+/* Handset roster: sits inside the narrower 2-col body, so needs min-width: 0
+   on top of the shared .am-roster padding and overflow. */
+.am-phones__roster { min-width: 0; }
+
+/* Roster row column template is page-specific: 28px num, 14px lamp, 1fr body,
+   two auto slots (caption + actions). Shared .am-roster__row supplies the
+   grid display, gap, and dashed separator. */
+.am-phones__row { grid-template-columns: 28px 14px 1fr auto auto; align-items: center; padding: 10px 18px; }
+.am-phones__row-name a { color: inherit; text-decoration: none; }
+.am-phones__row-name a:hover { color: var(--chip-blue); }
+.am-phones__empty { padding: 14px 18px; }
+.am-phones__row-num-caption { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); letter-spacing: 0.04em; }
+.am-phones__row--edit { display: flex; align-items: center; gap: 10px; }
+.am-phones__edit-form { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.am-phones__edit-input { flex: 1; min-width: 0; padding: 6px 10px; font: 13px/1 var(--font-body); color: var(--ink); background: rgba(0,0,0,0.12); border: 1px solid rgba(100,80,40,0.35); border-radius: 4px; }
+.am-phones__edit-input:focus { outline: none; border-color: var(--led-amber); box-shadow: 0 0 0 2px rgba(255,165,32,0.15); }
+
+/* Pair panel: LED pin display + chicklet keypad + form */
+.am-phones__pair { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+.am-phones__pair-label,
+.am-phones__pair-field-label { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--label); font-weight: 600; text-transform: uppercase; }
+.am-phones__pair-label { margin-bottom: 2px; }
+.am-phones__pair-hint { font-family: var(--font-body); font-size: 10.5px; color: var(--ink-muted); line-height: 1.4; }
+
+/* LED pin display: six slots; dim by default, .is-filled lights them up. */
+.am-phones__pin { display: flex; gap: 6px; justify-content: center; }
+.am-phones__pin-slot { width: 32px; height: 40px; background: var(--slot); border-radius: 3px; box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.4); display: flex; align-items: center; justify-content: center; font-family: var(--font-led); font-weight: 700; font-size: 22px; color: var(--led-amber-dim); text-shadow: none; }
+.am-phones__pin-slot.is-filled { color: var(--led-amber); text-shadow: 0 0 6px rgba(255,165,32,0.55); }
+.am-phones__pin-slot.is-active { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 1px; }
+
+/* Chicklet keypad: 3 columns, 4 rows */
+.am-phones__keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.am-phones__keypad .am-key { min-height: 48px; }
+
+/* Pair form fields */
+.am-phones__pair-form { display: flex; flex-direction: column; gap: 10px; }
+.am-phones__pair-field { display: flex; flex-direction: column; gap: 4px; }
+.am-phones__pair-field-hint { font-family: var(--font-body); font-size: 10px; color: var(--ink-muted); }
+.am-phones__pair-field-hint--err { color: var(--chip-red-dk); }
+.am-phones__pair-field-hint.hidden { display: none; }
+
+/* Shared banner primitives: digits.css and dialup.css both style these, AM
+   must too or the banners on /settings, /links, /login render unstyled. */
+.banner { padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; display: flex; align-items: center; gap: 10px; border: 1px solid transparent; margin-bottom: 14px; }
+.banner--ok   { background: rgba(61,217,74,0.12); color: var(--led-green-dark); border-color: rgba(61,217,74,0.35); }
+.banner--warn { background: rgba(255,165,32,0.14); color: var(--ink); border-color: rgba(255,165,32,0.4); }
+.banner--err  { background: rgba(196,62,46,0.12); color: var(--chip-red-dk); border-color: rgba(196,62,46,0.35); }
+
+.pair-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; background: rgba(61,217,74,0.14); color: var(--led-green-dark); border: 1px solid rgba(61,217,74,0.35); margin-bottom: 14px; }
+.pair-banner__icon { font-weight: 700; font-size: 14px; }
+.pair-banner__text { flex: 1; }
+.pair-banner__close { appearance: none; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; margin-left: auto; font-size: 16px; }
+
+/* Mobile stacking */
+@media (max-width: 780px) {
+  .am-phones__body { grid-template-columns: 1fr; }
+  .am-phones__rail { padding: 16px 14px; }
+  .am-phones__row { grid-template-columns: 24px 14px 1fr; grid-template-rows: auto auto; row-gap: 6px; }
+  .am-phones__row-actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .am-phones__pin-slot { width: 26px; height: 34px; font-size: 18px; }
 }

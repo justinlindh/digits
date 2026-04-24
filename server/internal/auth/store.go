@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/device"
-	_ "github.com/lib/pq"
 )
 
 // ErrUserNotFound is returned by GetUserBy* when no matching row exists.
@@ -46,21 +45,8 @@ type Store struct {
 	CookieDomain string
 }
 
-// NewStore opens a new Postgres connection and returns a Store.
-func NewStore(databaseURL string) (*Store, error) {
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return &Store{db: db}, nil
-}
-
-// NewStoreFromDB wraps an existing *sql.DB (used when sharing a connection from db.Open).
-func NewStoreFromDB(db *sql.DB) *Store {
+// NewStore wraps an existing *sql.DB (shared with the rest of signald via db.Open).
+func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -78,13 +64,13 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *st
 	return u, nil
 }
 
-// GetUserByEmail looks up a user by email address.
-func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+const userSelectBase = `SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE `
+
+func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*User, error) {
 	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE email = $1`,
-		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	err := s.db.QueryRowContext(ctx, userSelectBase+whereClause, arg).Scan(
+		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -92,38 +78,21 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 		return nil, err
 	}
 	return u, nil
+}
+
+// GetUserByEmail looks up a user by email address.
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	return s.queryUser(ctx, `email = $1`, email)
 }
 
 // GetUserByGoogleID looks up a user by their Google OAuth subject ID.
 func (s *Store) GetUserByGoogleID(ctx context.Context, googleID string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE google_id = $1`,
-		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return s.queryUser(ctx, `google_id = $1`, googleID)
 }
 
 // GetUserByID looks up a user by their UUID.
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE id = $1`,
-		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return s.queryUser(ctx, `id = $1`, id)
 }
 
 // UpdateLastLogin sets last_login_at to now for the given user.

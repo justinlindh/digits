@@ -1,4 +1,4 @@
-{{define "title"}}Live session — {{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}{{end}}
+{{define "title"}}Live session: {{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}{{end}}
 
 {{define "content"}}
 <div class="page deck" data-started-at="{{.Call.StartedAt.UnixMilli}}">
@@ -19,7 +19,7 @@
       </div>
     {{else}}
       <button class="deck-kill" type="button" onclick="document.getElementById('deck-confirm').showModal()">
-        {{if eq .User.Theme "dialup"}}◉ Disconnect{{else}}End call{{end}}
+        {{if eq .User.Theme "answering-machine"}}&#9632; Stop{{else if eq .User.Theme "dialup"}}◉ Disconnect{{else}}End call{{end}}
       </button>
     {{end}}
   </header>
@@ -48,7 +48,7 @@
     <dialog id="deck-confirm" class="deck-confirm">
       <form method="dialog" class="deck-confirm__form">
         <h2 class="deck-confirm__title">
-          {{if eq .User.Theme "dialup"}}Disconnect call?{{else}}End this call?{{end}}
+          {{if eq .User.Theme "answering-machine"}}Stop this session?{{else if eq .User.Theme "dialup"}}Disconnect call?{{else}}End this call?{{end}}
         </h2>
         <p class="deck-confirm__body">
           The server sends a hangup signal to both handsets. The call will drop within a second or two.
@@ -60,7 +60,7 @@
                   hx-post="/api/call/{{.Call.ID}}/disconnect"
                   hx-swap="none"
                   onclick="document.getElementById('deck-confirm').close()">
-            {{if eq .User.Theme "dialup"}}Disconnect{{else}}End call{{end}}
+            {{if eq .User.Theme "answering-machine"}}&#9632; Stop{{else if eq .User.Theme "dialup"}}Disconnect{{else}}End call{{end}}
           </button>
         </div>
       </form>

@@ -9,20 +9,15 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type dashboardData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
+	chromeData
 	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
 	LinkedFamilies     []linkedFamilyRow
-	User               *auth.User
 	Now                time.Time
 	ActiveLine         string
 	ActivePeer         string
@@ -56,17 +51,18 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	active := h.tracker.Active()
-	ld := h.buildLinesData(r, "")
-	user := auth.UserFromContext(r.Context())
-	hhName, callHistoryEnabled, loc := h.householdContext(r)
+	user := auth.UserFromContext(ctx)
+	hh := h.primaryHousehold(r)
+	ld := h.buildLinesData(r, hh, "")
+	loc := householdLocation(hh)
 	now := time.Now().In(loc)
+
+	callHistoryEnabled := hh != nil && hh.CallHistoryEnabled
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
-	if h.householdStore != nil && user != nil {
-		if households, err := h.householdStore.GetForUser(r.Context(), user.ID); err == nil && len(households) > 0 {
-			householdID = households[0].ID
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 
 	// Build set of own line numbers for active-call resolution and for
@@ -170,10 +166,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := dashboardData{
-		Page:               "dashboard",
-		Version:            version.Version,
-		CallHistoryEnabled: callHistoryEnabled,
-		HouseholdName:      hhName,
+		chromeData: newChromeData("dashboard", user, hh),
 		Stats: dashStats{
 			TotalLines:  len(ld.Lines),
 			OnlineLines: countOnline(ld.Lines),
@@ -183,7 +176,6 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
-		User:               user,
 		Now:                now,
 		ActiveLine:         activeLine,
 		ActivePeer:         activePeer,
@@ -283,10 +275,7 @@ func fmtElapsed(d time.Duration) string {
 
 
 type connectingData struct {
-	Page          string
-	Version       string
-	HouseholdName string
-	User          *auth.User
+	chromeData
 }
 
 func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
@@ -296,12 +285,6 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
-		Page:          "connecting",
-		Version:       version.Version,
-		HouseholdName: h.householdNameFromContext(r),
-		User:          user,
+		chromeData: newChromeData("connecting", user, h.primaryHousehold(r)),
 	})
 }
-
-// requireLineOwnership looks up a line by number and verifies the authenticated
-// user's household owns it. Returns the line on success, or nil after writing

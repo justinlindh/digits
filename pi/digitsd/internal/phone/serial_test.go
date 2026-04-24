@@ -49,3 +49,28 @@ func TestIsUnsolicitedEvent(t *testing.T) {
 		}
 	}
 }
+
+func TestIsFireAndForgetAck(t *testing.T) {
+	acks := []string{
+		"HOOK:FLASH:ON", "HOOK:FLASH:OFF",
+		"CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED",
+	}
+	for _, msg := range acks {
+		if !isFireAndForgetAck(msg) {
+			t.Errorf("expected %q to be a fire-and-forget ack", msg)
+		}
+	}
+
+	notAcks := []string{
+		"HOOK:OFF", "HOOK:ON", "HOOK:FLASH",
+		"PONG", "STATUS:READY",
+		"RING:ACK", "RING:DONE",
+		"VERSION:1.0.0:abc1234",
+		"KEY:5", "DIAL:5551234", "FSM:IDLE",
+	}
+	for _, msg := range notAcks {
+		if isFireAndForgetAck(msg) {
+			t.Errorf("expected %q to NOT be a fire-and-forget ack", msg)
+		}
+	}
+}

@@ -90,7 +90,7 @@ func run(ctx context.Context) error {
 	}
 
 	// Auth
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	authStore.CookieDomain = cfg.CookieDomain
 
 	var emailSender email.Sender

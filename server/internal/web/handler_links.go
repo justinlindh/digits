@@ -8,23 +8,18 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type linksData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	LinkedFamilies     []linkedFamilyRow
-	PendingInvites     []linkRow
-	CreatedCode        string
-	Accepted           bool
-	Revoked            bool
-	Canceled           bool
-	Conflicts          string
-	Error              string
-	User               *auth.User
+	chromeData
+	LinkedFamilies []linkedFamilyRow
+	PendingInvites []linkRow
+	CreatedCode    string
+	Accepted       bool
+	Revoked        bool
+	Canceled       bool
+	Conflicts      string
+	Error          string
 }
 
 type linkedFamilyRow struct {
@@ -51,28 +46,22 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.primaryHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	data := linksData{
-		Page:               "links",
-		Version:            version.Version,
-		CallHistoryEnabled: h.callHistoryEnabled(r),
-		HouseholdName:      myHousehold.Name,
-		CreatedCode:        r.URL.Query().Get("created"),
-		Accepted:           r.URL.Query().Get("accepted") == "1",
-		Revoked:            r.URL.Query().Get("revoked") == "1",
-		Canceled:           r.URL.Query().Get("canceled") == "1",
-		Conflicts:          r.URL.Query().Get("conflicts"),
-		Error:              r.URL.Query().Get("error"),
-		User:               user,
+		chromeData:  newChromeData("links", user, myHousehold),
+		CreatedCode: r.URL.Query().Get("created"),
+		Accepted:    r.URL.Query().Get("accepted") == "1",
+		Revoked:     r.URL.Query().Get("revoked") == "1",
+		Canceled:    r.URL.Query().Get("canceled") == "1",
+		Conflicts:   r.URL.Query().Get("conflicts"),
+		Error:       r.URL.Query().Get("error"),
 	}
 
-	// Active links — build connected family directory
 	data.LinkedFamilies = h.buildLinkedFamilies(r.Context(), myHousehold.ID)
 
 	// Pending invites sent by this household

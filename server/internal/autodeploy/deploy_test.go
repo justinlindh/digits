@@ -53,15 +53,13 @@ func (m *mockMailer) Send(to, subject, htmlBody string) error {
 	return m.err
 }
 
-type mockHealth struct {
-	errs map[string]error // keyed by wantVersion
-}
-
-func (m *mockHealth) Poll(ctx context.Context, url, wantVersion string, interval time.Duration) error {
-	if m.errs == nil {
-		return nil
+// mockHealth returns a HealthPoller that fails with errs[wantVersion] (if set)
+// and otherwise succeeds. Keyed by version so a single poller can model distinct
+// outcomes for the forward deploy vs. the revert that follows.
+func mockHealth(errs map[string]error) HealthPoller {
+	return func(ctx context.Context, url, wantVersion string, interval time.Duration) error {
+		return errs[wantVersion]
 	}
-	return m.errs[wantVersion]
 }
 
 type memStore struct{ s State }
@@ -87,7 +85,7 @@ func TestDeployNoop_SameTag(t *testing.T) {
 	d := &Deployer{
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{TagName: "server/v1.9.0", CommitSHA: "abc"}},
-		Runner: &mockRunner{}, Health: &mockHealth{}, Mailer: &mockMailer{},
+		Runner: &mockRunner{}, Health: mockHealth(nil), Mailer: &mockMailer{},
 		Store: &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
 		Now:   func() time.Time { return time.Unix(0, 0) },
 	}
@@ -104,7 +102,7 @@ func TestDeployNoop_NotModified(t *testing.T) {
 	d := &Deployer{
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{NotModified: true}},
-		Runner: &mockRunner{}, Health: &mockHealth{}, Mailer: &mockMailer{},
+		Runner: &mockRunner{}, Health: mockHealth(nil), Mailer: &mockMailer{},
 		Store:  &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
 		Now:    func() time.Time { return time.Unix(0, 0) },
 	}
@@ -124,7 +122,7 @@ func TestDeployHappyPath_NoGHCRToken_SkipsLogin(t *testing.T) {
 	d := &Deployer{
 		Cfg:    cfg,
 		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: &mockMailer{},
+		Runner: runner, Health: mockHealth(nil), Mailer: &mockMailer{},
 		Store: &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
 		Now:   func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -158,7 +156,7 @@ func TestDeployHappyPath(t *testing.T) {
 	d := &Deployer{
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def", ETag: `W/"e"`}},
-		Runner: runner, Health: &mockHealth{}, Mailer: mailer,
+		Runner: runner, Health: mockHealth(nil), Mailer: mailer,
 		Store: store,
 		Now:   func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -215,7 +213,7 @@ func TestDeploy_ImagesNotReady_SkipsAndExitsClean(t *testing.T) {
 	d := &Deployer{
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
 	res, err := d.Run(context.Background())
@@ -257,7 +255,7 @@ func TestDeploy_LoginFails(t *testing.T) {
 	d := &Deployer{
 		Cfg: baseCfg(),
 		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
 	res, err := d.Run(context.Background())
@@ -291,7 +289,7 @@ func TestDeploy_HealthFails_RevertSucceeds(t *testing.T) {
 	runner := &mockRunner{}
 	mailer := &mockMailer{}
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
-	health := &mockHealth{errs: map[string]error{"1.9.1": errors.New("timeout")}}
+	health := mockHealth(map[string]error{"1.9.1": errors.New("timeout")})
 	d := &Deployer{
 		Cfg: baseCfg(),
 		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
@@ -328,10 +326,10 @@ func TestDeploy_HealthFails_RevertAlsoFails(t *testing.T) {
 	runner := &mockRunner{}
 	mailer := &mockMailer{}
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
-	health := &mockHealth{errs: map[string]error{
+	health := mockHealth(map[string]error{
 		"1.9.1": errors.New("timeout"),
 		"1.9.0": errors.New("still broken"),
-	}}
+	})
 	d := &Deployer{
 		Cfg: baseCfg(),
 		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1"}},
@@ -363,7 +361,7 @@ func TestDeploy_SpinProtection(t *testing.T) {
 	d := &Deployer{
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: &mockMailer{},
+		Runner: runner, Health: mockHealth(nil), Mailer: &mockMailer{},
 		Store: store,
 		Now:   func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -393,7 +391,7 @@ func TestDeploy_EmailDebounce(t *testing.T) {
 	d := &Deployer{
 		Cfg: baseCfg(),
 		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}
 	_, _ = d.Run(context.Background())
@@ -418,7 +416,7 @@ func TestDeploy_EmailAfterDebounceWindow(t *testing.T) {
 	d := &Deployer{
 		Cfg: baseCfg(),
 		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
-		Runner: runner, Health: &mockHealth{}, Mailer: mailer, Store: store,
+		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}
 	_, _ = d.Run(context.Background())

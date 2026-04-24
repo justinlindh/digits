@@ -29,7 +29,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := NewStore(database.DB)
 

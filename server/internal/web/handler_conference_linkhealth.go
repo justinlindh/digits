@@ -17,7 +17,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // ConferenceLinkHealthEdge is the per-directed-edge section of
@@ -59,8 +58,8 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 	}
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
@@ -179,8 +178,8 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	flusher.Flush()
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 
 	// Subscribe FIRST so samples arriving between the initial snapshot and
@@ -260,13 +259,9 @@ func (h *Handler) renderConferenceLinkHealthPanel(resp ConferenceLinkHealthResp)
 
 // conferenceLiveDetailData is the render payload for conference-live-detail.html.
 type conferenceLiveDetailData struct {
-	Page               string
-	Version            string
-	User               *auth.User
-	HouseholdName      string
-	CallHistoryEnabled bool
-	Resp               ConferenceLinkHealthResp
-	IsHostHousehold    bool
+	chromeData
+	Resp            ConferenceLinkHealthResp
+	IsHostHousehold bool
 }
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
@@ -284,20 +279,16 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	user := auth.UserFromContext(r.Context())
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]
 	data := conferenceLiveDetailData{
-		Page:               "conference-live",
-		Version:            version.Version,
-		User:               user,
-		HouseholdName:      h.householdNameFromContext(r),
-		CallHistoryEnabled: h.callHistoryEnabled(r),
-		Resp:               resp,
-		IsHostHousehold:    isHostHH,
+		chromeData:      newChromeData("conference-live", user, primaryHH),
+		Resp:            resp,
+		IsHostHousehold: isHostHH,
 	}
 	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }

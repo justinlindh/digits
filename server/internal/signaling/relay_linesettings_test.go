@@ -3,24 +3,35 @@ package signaling
 import (
 	"context"
 	"testing"
+
+	"github.com/justinlindh/digits/server/internal/line"
 )
 
 // fakeLineStore is an in-memory LineStore for unit tests. It returns whatever
-// LineSettings the caller wires in, keyed by phone number.
+// LineSettings the caller wires in, keyed by phone number. The OR of per-line
+// silent and household DND is the production adapter's job (and is pinned by
+// line.TestEffectiveSilent), so this fake stays a plain pass-through.
 type fakeLineStore struct {
 	settings map[string]*LineSettings
 }
 
 func newFakeLineStore() *fakeLineStore {
-	return &fakeLineStore{settings: make(map[string]*LineSettings)}
+	return &fakeLineStore{
+		settings: make(map[string]*LineSettings),
+	}
 }
 
 func (f *fakeLineStore) set(number string, s *LineSettings) {
 	f.settings[number] = s
 }
 
-func (f *fakeLineStore) LineSettingsByNumber(ctx context.Context, number string) (*LineSettings, error) {
-	return f.settings[number], nil
+func (f *fakeLineStore) EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error) {
+	s, ok := f.settings[number]
+	if !ok {
+		return nil, line.ErrNotFound
+	}
+	out := *s
+	return &out, nil
 }
 
 // TestOnRegisteredPushesSilentMode verifies that when OnRegistered is called

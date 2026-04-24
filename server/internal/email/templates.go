@@ -47,14 +47,3 @@ func MagicLinkEmail(link string) (subject, body string) {
 	body = brandedWrap(content)
 	return
 }
-
-// ContactInviteEmail returns subject and HTML body for a contact invite notification.
-func ContactInviteEmail(fromPhoneName, toPhoneName, baseURL string) (subject, body string) {
-	subject = fmt.Sprintf("Digits: Contact request for %s", toPhoneName)
-	content := fmt.Sprintf(`<h2 style="color:#e6edf3; margin:0 0 16px 0; font-size:20px;">New Contact Request</h2>
-  <p style="color:#8b949e; font-size:14px; margin:0 0 16px 0;"><strong>%s</strong> wants to add <strong>%s</strong> as a contact on Digits.</p>
-  <p style="color:#8b949e; font-size:14px; margin:0;">Review and respond at <a href="%s/contacts" style="color:#58a6ff;">%s/contacts</a>.</p>`,
-		fromPhoneName, toPhoneName, baseURL, baseURL)
-	body = brandedWrap(content)
-	return
-}

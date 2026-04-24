@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{block "title" .}}Digits{{end}} — Digits</title>
+<title>{{block "title" .}}Digits{{end}} | Digits</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preload" href="/static/fonts/fraunces-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/inter-tight-500.woff2" as="font" type="font/woff2" crossorigin>
@@ -18,6 +18,11 @@
   <div class="rail__brand">
     <span class="rail__mark">Digits</span>
     {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
+    {{if .HouseholdDND}}
+    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on">
+      <span class="chip__dot"></span>Do Not Disturb
+    </a>
+    {{end}}
   </div>
 
   <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>

@@ -33,7 +33,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	}
 	t.Cleanup(func() { _ = rawDB.Close() })
 
-	authStore := auth.NewStoreFromDB(rawDB)
+	authStore := auth.NewStore(rawDB)
 
 	// Google OAuth disabled (empty credentials)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)

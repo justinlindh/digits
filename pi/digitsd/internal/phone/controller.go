@@ -750,6 +750,12 @@ func (c *Controller) HandleConferenceConnect(confID, peer string, initiator bool
 func (c *Controller) HandleConferenceLeave(confID, peer, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.confID == "" {
+		// Local conference state already cleared (host hangup tears down before
+		// the server's broadcast lands). Benign race; not an error.
+		slog.Info("conference: leave ignored, already torn down locally", "msg_conf_id", confID, "peer", peer, "reason", reason)
+		return
+	}
 	if c.confID != confID {
 		slog.Warn("conference: leave ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "peer", peer)
 		return
@@ -766,6 +772,13 @@ func (c *Controller) HandleConferenceLeave(confID, peer, reason string) {
 func (c *Controller) HandleConferenceEnd(confID, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.confID == "" {
+		// Local conference state already cleared. Common host-hangup race:
+		// onHookOn tore down and cleared confID before the server's broadcast
+		// landed. Treat as benign; everything is already cleaned up locally.
+		slog.Info("conference: end ignored, already torn down locally", "msg_conf_id", confID, "reason", reason)
+		return
+	}
 	if c.confID != confID {
 		slog.Warn("conference: end ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "reason", reason)
 		return

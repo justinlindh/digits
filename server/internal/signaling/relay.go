@@ -273,14 +273,15 @@ func (r *Relay) handleRequestICE(ctx context.Context, from string, _ *Message) {
 }
 
 // OnRegistered is called immediately after a device successfully registers.
-// It pushes the current line settings to the device so it boots with the
-// right voice style. Best-effort: unknown lines (unpaired) or send failures
-// are logged and skipped -- the device keeps its locally-cached last setting.
+// It pushes the current effective line settings (per-line settings already
+// OR'd with the household DND flag) so the device boots with the right
+// silent state. Best-effort: unknown lines (unpaired) or send failures are
+// logged and skipped, and the device keeps its locally-cached last setting.
 func (r *Relay) OnRegistered(ctx context.Context, number string) {
 	if r.LineStore == nil {
 		return
 	}
-	settings, err := r.LineStore.LineSettingsByNumber(ctx, number)
+	settings, err := r.LineStore.EffectiveLineSettings(ctx, number)
 	if err != nil {
 		slog.Debug("line settings lookup on register skipped", "number", number, "err", err)
 		return

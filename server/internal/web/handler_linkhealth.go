@@ -74,8 +74,8 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// their call log; the underlying auth check does not grant read access to
 	// calls the user was not part of.
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedFamilies := h.buildLinkedFamilies(r.Context(), primaryHH)
+	if primaryHH != nil {
+		linkedFamilies := h.buildLinkedFamilies(r.Context(), primaryHH.ID)
 		linkedIndex = buildLinkedLineIndex(linkedFamilies)
 	}
 
