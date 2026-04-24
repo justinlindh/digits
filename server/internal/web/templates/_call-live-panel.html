@@ -27,7 +27,7 @@
         {{end}}
       {{end}}{{end}}
     </div>
-    <span class="deck-row__val num">{{if and . .LossPct}}{{printf "%.1f%%" (derefFloat32 .LossPct)}}{{else}}&mdash;{{end}}</span>
+    <span class="deck-row__val num">{{if and . .LossPct}}{{printf "%.1f%%" (derefFloat32 .LossPct)}}{{else}}&ndash;{{end}}</span>
   </div>
   <div class="deck-row">
     <span class="deck-row__lbl label">jitter</span>
@@ -38,7 +38,7 @@
         {{end}}
       {{end}}{{end}}
     </div>
-    <span class="deck-row__val num">{{if and . .JitterMs}}{{printf "%.0f ms" (derefFloat32 .JitterMs)}}{{else}}&mdash;{{end}}</span>
+    <span class="deck-row__val num">{{if and . .JitterMs}}{{printf "%.0f ms" (derefFloat32 .JitterMs)}}{{else}}&ndash;{{end}}</span>
   </div>
 </div>
 {{end}}
@@ -47,15 +47,15 @@
 <div class="deck-shared__row">
   <div class="deck-shared__item">
     <div class="label">round trip</div>
-    <div class="num">{{if and .Caller.Latest .Caller.Latest.RttMs}}{{printf "%.0f ms" (derefFloat32 .Caller.Latest.RttMs)}}{{else}}&mdash;{{end}}</div>
+    <div class="num">{{if and .Caller.Latest .Caller.Latest.RttMs}}{{printf "%.0f ms" (derefFloat32 .Caller.Latest.RttMs)}}{{else}}&ndash;{{end}}</div>
   </div>
   <div class="deck-shared__item">
     <div class="label">route</div>
-    <div class="num">{{with .Caller.Latest}}{{.ConnType}}{{else}}&mdash;{{end}}{{with .Callee.Latest}}{{with .ConnType}} · {{.}}{{end}}{{end}}</div>
+    <div class="num">{{with .Caller.Latest}}{{.ConnType}}{{else}}&ndash;{{end}}{{with .Callee.Latest}}{{with .ConnType}} · {{.}}{{end}}{{end}}</div>
   </div>
   <div class="deck-shared__item">
     <div class="label">bytes in / out</div>
-    <div class="num">{{with .Caller.Latest}}{{if .BytesIn}}{{humanBytes (derefInt64 .BytesIn)}}{{else}}&mdash;{{end}}{{else}}&mdash;{{end}} / {{with .Caller.Latest}}{{if .BytesOut}}{{humanBytes (derefInt64 .BytesOut)}}{{else}}&mdash;{{end}}{{else}}&mdash;{{end}}</div>
+    <div class="num">{{with .Caller.Latest}}{{if .BytesIn}}{{humanBytes (derefInt64 .BytesIn)}}{{else}}&ndash;{{end}}{{else}}&ndash;{{end}} / {{with .Caller.Latest}}{{if .BytesOut}}{{humanBytes (derefInt64 .BytesOut)}}{{else}}&ndash;{{end}}{{else}}&ndash;{{end}}</div>
   </div>
 </div>
 {{end}}
