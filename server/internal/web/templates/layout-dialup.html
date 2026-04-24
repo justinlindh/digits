@@ -72,6 +72,12 @@
       </button>
     </form>
     <div class="dialup-toolbar__welcome">Welcome, <b>{{if .HouseholdName}}{{.HouseholdName}}{{else}}LindhFamily{{end}}</b>!</div>
+    {{if .HouseholdDND}}
+    <a href="/settings#do-not-disturb" class="dialup-toolbar__dnd" title="Household Do Not Disturb is on">
+      <span class="dialup-toolbar__dnd-led"></span>
+      <span>DND</span>
+    </a>
+    {{end}}
   </div>
 
   <!-- Keyword bar -->
