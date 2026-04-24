@@ -773,8 +773,8 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-overview__msg-meta { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 2px; }
 
 /* Lines panel rows */
-.am-overview__line { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; text-decoration: none; color: inherit; }
-.am-overview__line--bordered { border-bottom: 1px dashed rgba(100,80,40,0.2); }
+.am-overview__line { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; text-decoration: none; color: inherit; border-bottom: 1px dashed rgba(100,80,40,0.2); }
+.am-overview__line:last-child { border-bottom: 0; }
 .am-overview__line-body { min-width: 0; }
 .am-overview__line-name { font-size: 12.5px; }
 .am-overview__line-num { font-size: 11px; }

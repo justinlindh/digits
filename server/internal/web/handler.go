@@ -190,8 +190,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			}
 			return out
 		},
-		"add":      func(a, b int) int { return a + b },
-		"lastLine": func(i int, lines []lineRow) bool { return i == len(lines)-1 },
+		"inc": func(n int) int { return n + 1 },
 		"humanBytes": func(n int64) string {
 			switch {
 			case n > 1024*1024:

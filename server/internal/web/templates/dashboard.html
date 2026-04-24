@@ -149,14 +149,11 @@
 
     {{/* LEFT column: active session (if any) + today's calls */}}
     <div class="am-plate am-overview__messages">
-      {{$activeLine := ""}}{{$activePeer := ""}}{{$activeElapsed := ""}}
-      {{range .Lines}}{{if .OnCall}}{{$activeLine = .Line.Name}}{{$activePeer = .OnCallPeerName}}{{$activeElapsed = .OnCallElapsed}}{{end}}{{end}}
-
-      {{if $activeLine}}
+      {{if .ActiveLine}}
       <div class="am-overview__session-head">
         <span class="am-led am-led--red am-overview__session-dot">&#9679;</span>
-        <span class="am-title am-overview__session-title">{{$activeLine}} is on a call with {{$activePeer}}</span>
-        {{if $activeElapsed}}<span class="am-mono am-muted am-overview__session-elapsed">{{$activeElapsed}} elapsed</span>{{end}}
+        <span class="am-title am-overview__session-title">{{.ActiveLine}} is on a call with {{.ActivePeer}}</span>
+        {{if .ActiveElapsed}}<span class="am-mono am-muted am-overview__session-elapsed">{{.ActiveElapsed}} elapsed</span>{{end}}
       </div>
       <div class="am-overview__session-tape">
         <div class="am-tape">
@@ -164,8 +161,8 @@
           <div class="am-tape__reel"></div>
           <div>
             <div class="am-overview__tape-caption">
-              <span>{{$activeLine}} &#8596; {{$activePeer}}</span>
-              <span>{{$activeElapsed}}</span>
+              <span>{{.ActiveLine}} &#8596; {{.ActivePeer}}</span>
+              <span>{{.ActiveElapsed}}</span>
             </div>
             <div class="am-tape__tape"></div>
           </div>
@@ -184,7 +181,7 @@
         <div class="am-overview__messages-list">
           {{range $i, $c := .CallsTodayRecent}}
           <div class="am-msg">
-            <span class="am-msg__num">{{printf "%02d" (add $i 1)}}</span>
+            <span class="am-msg__num">{{printf "%02d" (inc $i)}}</span>
             <div>
               <div class="am-overview__msg-row">
                 <span class="am-msg__who">{{$c.PeerName}}</span>
@@ -209,8 +206,8 @@
     <div class="am-plate am-overview__lines">
       <div class="am-plate__label">Lines</div>
       {{if .Lines}}
-        {{range $i, $l := .Lines}}
-        <a class="am-overview__line{{if not (lastLine $i $.Lines)}} am-overview__line--bordered{{end}}" href="{{if and $l.OnCall $l.OnCallID}}/call/live/{{$l.OnCallID}}{{else}}/phones/{{$l.Line.Number}}{{end}}">
+        {{range $l := .Lines}}
+        <a class="am-overview__line" href="{{if and $l.OnCall $l.OnCallID}}/call/live/{{$l.OnCallID}}{{else}}/phones/{{$l.Line.Number}}{{end}}">
           <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
           <div class="am-overview__line-body">
             <div class="am-title am-overview__line-name">{{$l.Line.Name}}</div>
