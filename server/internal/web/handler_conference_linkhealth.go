@@ -291,7 +291,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
+	hhName, callHistory, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	data := conferenceLiveDetailData{
 		Page:               "conference-live",
 		Version:            version.Version,

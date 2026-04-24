@@ -11,6 +11,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
@@ -50,6 +51,14 @@ type lineRow struct {
 }
 
 func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
+	return h.buildLinesDataFor(r, h.primaryHousehold(r), errMsg)
+}
+
+// buildLinesDataFor is buildLinesData with the primary household already
+// resolved. Use this when the caller has already fetched the household for
+// other purposes (e.g. chrome strip, household ID) to avoid a duplicate
+// GetForUser round-trip.
+func (h *Handler) buildLinesDataFor(r *http.Request, hh *household.Household, errMsg string) linesData {
 	var user *auth.User
 	if r != nil {
 		user = auth.UserFromContext(r.Context())
@@ -57,12 +66,9 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 
 	var lines []line.Line
 
-	// Scope to household if user has one and householdStore is available
-	if user != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-		if err == nil && len(households) > 0 {
-			lines, _ = h.lineStore.ListByHousehold(r.Context(), households[0].ID)
-		}
+	// Scope to household if the user has one
+	if hh != nil {
+		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	}
 
 	// If household lookup failed, show empty list rather than leaking all lines
@@ -102,7 +108,7 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		}
 		rows[i] = row
 	}
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
+	hhName, callHistory, hhDND, _ := householdChrome(hh)
 	return linesData{
 		Page:                  "phones",
 		Version:               version.Version,
@@ -137,27 +143,22 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 
 	// Get user's household to associate the new line
+	hh := h.primaryHousehold(r)
 	var householdID string
-	if h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-			if err == nil && len(households) > 0 {
-				householdID = households[0].ID
-			}
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 
 	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, err.Error())
+		data := h.buildLinesDataFor(r, hh, err.Error())
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	_, err := h.lineStore.Add(r.Context(), number, name, householdID)
-	data := h.buildLinesData(r, "")
+	data := h.buildLinesDataFor(r, hh, "")
 	if err != nil {
-		data = h.buildLinesData(r, err.Error())
+		data = h.buildLinesDataFor(r, hh, err.Error())
 	}
 
 	if isHTMX(r) {
@@ -180,41 +181,36 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
+	hh := h.primaryHousehold(r)
+
 	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesDataFor(r, hh, "")
 		data.PairError = "invalid phone number: " + err.Error()
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	if h.pairingStore == nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesDataFor(r, hh, "")
 		data.PairError = "pairing is not enabled"
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
-	// Get user's household
 	var householdID string
-	if h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-			if err == nil && len(households) > 0 {
-				householdID = households[0].ID
-			}
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 	if householdID == "" {
-		data := h.buildLinesData(r, "")
-		data.PairError = "no household found — please complete onboarding first"
+		data := h.buildLinesDataFor(r, hh, "")
+		data.PairError = "no household found. Please complete onboarding first."
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
 	if err != nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesDataFor(r, hh, "")
 		data.PairError = err.Error()
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
@@ -298,7 +294,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
-	hhName, callHistory, hhDND, loc := h.householdContext(r)
+	hhName, callHistory, hhDND, loc := householdChrome(h.primaryHousehold(r))
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)

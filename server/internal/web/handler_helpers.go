@@ -227,15 +227,11 @@ func userDisplayLabel(u *auth.User) string {
 // householdNumbers returns the set of phone numbers belonging to the
 // authenticated user's household. Returns nil if the user has no household.
 func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.householdStore == nil {
+	hh := h.primaryHousehold(r)
+	if hh == nil {
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		return nil
-	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
 		return nil
 	}
@@ -246,25 +242,38 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// householdContext returns the household name, call-history flag, do-not-disturb flag, and timezone location for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, dnd bool, loc *time.Location) {
+// primaryHousehold returns the first household the authenticated user belongs
+// to, or nil when the householdStore is unavailable, no user is on the context,
+// the lookup fails, or the user has no households.
+//
+// Handlers that need both the household fields and the household ID should
+// call this once at the top of the render and thread the *Household through
+// the helpers they invoke, instead of repeatedly calling GetForUser or
+// householdChrome.
+func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
-		return "", false, false, time.UTC
+		return nil
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false, false, time.UTC
+		return nil
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false, false, time.UTC
+		return nil
 	}
-	return households[0].Name, households[0].CallHistoryEnabled, households[0].DoNotDisturb, households[0].Location()
+	return households[0]
 }
 
-func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch, _, _ := h.householdContext(r)
-	return ch
+// householdChrome returns the chrome-bar fields (name, call-history flag,
+// do-not-disturb flag, timezone location) derived from hh. A nil hh yields
+// the empty-state defaults, so callers that resolved "no household" can
+// reuse this without a nil-check branch.
+func householdChrome(hh *household.Household) (name string, callHistory bool, dnd bool, loc *time.Location) {
+	if hh == nil {
+		return "", false, false, time.UTC
+	}
+	return hh.Name, hh.CallHistoryEnabled, hh.DoNotDisturb, hh.Location()
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

@@ -25,7 +25,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.Name != "" {
 		suggested = user.Name + "'s Family"
 	}
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
+	hhName, callHistory, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
 		Page:               "onboard",
 		Version:            version.Version,

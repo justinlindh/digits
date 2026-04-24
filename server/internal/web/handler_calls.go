@@ -22,7 +22,8 @@ type callsData struct {
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	hhName, callHistory, hhDND, loc := h.householdContext(r)
+	hh := h.primaryHousehold(r)
+	hhName, callHistory, hhDND, loc := householdChrome(hh)
 	if !callHistory {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -31,33 +32,25 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 
 	// Scope call log to the user's household lines
 	user := auth.UserFromContext(r.Context())
-	if user != nil && h.lineStore != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
+	if hh != nil && h.lineStore != nil {
+		lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
+			slog.Error("list lines for household failed", "household_id", hh.ID, "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		if len(households) > 0 {
-			lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+		if len(lines) > 0 {
+			numbers := make([]string, len(lines))
+			for i, l := range lines {
+				numbers[i] = l.Number
+			}
+			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
 			if err != nil {
-				slog.Error("list lines for household failed", "household_id", households[0].ID, "err", err)
+				slog.Error("query recent history failed", "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
-			if len(lines) > 0 {
-				numbers := make([]string, len(lines))
-				for i, l := range lines {
-					numbers[i] = l.Number
-				}
-				hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
-				if err != nil {
-					slog.Error("query recent history failed", "err", err)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
-					return
-				}
-				entries = hist
-			}
+			entries = hist
 		}
 	}
 	if entries == nil {
@@ -124,7 +117,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
+	hhName, callHistory, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	data := callLiveDetailData{
 		Page:               "call-live",
 		Version:            version.Version,

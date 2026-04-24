@@ -23,23 +23,12 @@ type settingsData struct {
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	var hh *household.Household
-	if user != nil && h.householdStore != nil {
-		households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
-		if len(households) > 0 {
-			hh = households[0]
-		}
-	}
-	hhName := ""
-	dnd := false
-	if hh != nil {
-		hhName = hh.Name
-		dnd = hh.DoNotDisturb
-	}
+	hh := h.primaryHousehold(r)
+	hhName, callHistory, dnd, _ := householdChrome(hh)
 	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
 		Page:               "settings",
 		Version:            version.Version,
-		CallHistoryEnabled: h.callHistoryEnabled(r),
+		CallHistoryEnabled: callHistory,
 		HouseholdDND:       dnd,
 		HouseholdName:      hhName,
 		User:               user,
@@ -54,8 +43,8 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
-	if len(households) == 0 {
+	hh := h.primaryHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
@@ -65,8 +54,8 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
-		if err := h.householdStore.UpdateName(r.Context(), households[0].ID, name); err != nil {
-			slog.Error("update household name failed", "household_id", households[0].ID, "err", err)
+		if err := h.householdStore.UpdateName(r.Context(), hh.ID, name); err != nil {
+			slog.Error("update household name failed", "household_id", hh.ID, "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
 		}
@@ -80,18 +69,13 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.primaryHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), households[0].ID, enabled); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), hh.ID, enabled); err != nil {
 		slog.Error("set call history failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -104,18 +88,13 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.primaryHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	householdID := households[0].ID
+	householdID := hh.ID
 	if err := h.householdStore.SetDoNotDisturb(r.Context(), householdID, enabled); err != nil {
 		slog.Error("set do not disturb failed", "err", err, "household_id", householdID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
@@ -145,8 +124,8 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.primaryHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
@@ -156,7 +135,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	}
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
-		if err := h.householdStore.SetTimezone(r.Context(), households[0].ID, tz); err != nil {
+		if err := h.householdStore.SetTimezone(r.Context(), hh.ID, tz); err != nil {
 			slog.Warn("set timezone failed", "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return

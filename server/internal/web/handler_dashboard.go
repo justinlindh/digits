@@ -57,17 +57,16 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	active := h.tracker.Active()
-	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
-	hhName, callHistoryEnabled, hhDND, loc := h.householdContext(r)
+	hh := h.primaryHousehold(r)
+	ld := h.buildLinesDataFor(r, hh, "")
+	hhName, callHistoryEnabled, hhDND, loc := householdChrome(hh)
 	now := time.Now().In(loc)
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
-	if h.householdStore != nil && user != nil {
-		if households, err := h.householdStore.GetForUser(r.Context(), user.ID); err == nil && len(households) > 0 {
-			householdID = households[0].ID
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 
 	// Build set of own line numbers for active-call resolution and for
@@ -298,7 +297,7 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	hhName, _, hhDND, _ := h.householdContext(r)
+	hhName, _, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
 		Page:          "connecting",
 		Version:       version.Version,
