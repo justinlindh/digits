@@ -55,7 +55,7 @@ func main() {
 		Cfg:    cfg,
 		GH:     gh,
 		Runner: autodeploy.NewExecRunner(),
-		Health: autodeploy.DefaultHealthPoller(),
+		Health: autodeploy.PollHealth,
 		Mailer: mailer,
 		Store:  store,
 		Logger: logger,

@@ -66,17 +66,9 @@ type Result struct {
 	Tag    string
 }
 
-type HealthPoller interface {
-	Poll(ctx context.Context, url, wantVersion string, interval time.Duration) error
-}
-
-type healthFn func(ctx context.Context, url, wantVersion string, interval time.Duration) error
-
-func (f healthFn) Poll(ctx context.Context, url, wantVersion string, interval time.Duration) error {
-	return f(ctx, url, wantVersion, interval)
-}
-
-func DefaultHealthPoller() HealthPoller { return healthFn(PollHealth) }
+// HealthPoller polls a /healthz endpoint until the reported version matches
+// wantVersion. Production wires this to PollHealth; tests substitute a stub.
+type HealthPoller func(ctx context.Context, url, wantVersion string, interval time.Duration) error
 
 type GitHubReleases interface {
 	LatestReleaseWithETag(ctx context.Context, repo, prefix, etag string) (Release, error)
@@ -256,7 +248,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 	hctx, cancel := context.WithTimeout(ctx, healthTimeout)
 	defer cancel()
 	for _, u := range d.Cfg.HealthURLs {
-		if err := d.Health.Poll(hctx, u, version, 2*time.Second); err != nil {
+		if err := d.Health(hctx, u, version, 2*time.Second); err != nil {
 			return &stepError{Step: StepHealthcheck, Err: err}
 		}
 	}
