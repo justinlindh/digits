@@ -19,6 +19,7 @@
       <a href="#timezone" class="settings-nav__item">Timezone</a>
       {{if .User}}<a href="#theme" class="settings-nav__item">Theme</a>{{end}}
       <a href="#privacy" class="settings-nav__item">Privacy</a>
+      <a href="#do-not-disturb" class="settings-nav__item">Do Not Disturb</a>
       {{end}}
       <a href="#session" class="settings-nav__item">Session</a>
     </nav>
@@ -233,6 +234,30 @@
             <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Call log</div>
             <p class="muted" style="font-size: 13px; margin: 0; line-height: 1.55;">
               Only numbers, timestamps, and duration. Never audio. Digits was built on the idea kids deserve the same phone privacy you grew up with. Most families don't need this.
+            </p>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- Do Not Disturb -->
+  <section id="do-not-disturb" class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Do Not Disturb</h2>
+      <span class="panel__title-sub">Silences every paired handset's bell.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/do-not-disturb" method="POST">
+        <div class="hstack" style="align-items: flex-start; gap: 14px;">
+          <label class="toggle" style="margin-top: 2px;">
+            <input type="checkbox" name="enabled" value="true" {{if .DoNotDisturb}}checked{{end}} onchange="this.form.submit()">
+            <span class="toggle__track"></span>
+          </label>
+          <div>
+            <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Silence all phones</div>
+            <p class="muted" style="font-size: 13px; margin: 0; line-height: 1.55;">
+              When on, no handset rings on incoming calls. LEDs still flicker; calls can still be answered and placed. Composes with each phone's own silent setting; either turns the bell off.
             </p>
           </div>
         </div>
