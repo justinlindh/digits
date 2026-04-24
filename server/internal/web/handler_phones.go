@@ -436,7 +436,10 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 		}
 		dnd := false
 		if h.householdStore != nil {
-			if hh, err := h.householdStore.GetByID(r.Context(), ln.HouseholdID); err == nil {
+			hh, err := h.householdStore.GetByID(r.Context(), ln.HouseholdID)
+			if err != nil {
+				slog.Warn("household DND lookup failed", "line_id", ln.ID, "household_id", ln.HouseholdID, "err", err)
+			} else {
 				dnd = hh.DoNotDisturb
 			}
 		}
