@@ -68,6 +68,27 @@ test.describe('Theme switcher', () => {
     await expect(page.locator('.dialup-channels a', { hasText: /welcome/i })).toBeVisible();
   });
 
+  test('theme "answering-machine" renders layout-am (shell + LED chrome)', async ({ page }) => {
+    try {
+      await setTheme(page.request, 'answering-machine');
+    } catch (e) {
+      test.skip(true, `setTheme failed: ${(e as Error).message}`);
+      return;
+    }
+
+    await page.goto('/');
+    if (isAuthOrOnboard(page.url())) {
+      test.skip(true, 'No authenticated session or needs onboarding');
+      return;
+    }
+
+    expect(await getLayout(page)).toBe('am');
+    await expect(page.locator('body.am')).toHaveCount(1);
+    await expect(page.locator('.am-shell')).toBeVisible();
+    // AM nav tabs mirror the rail nav but with am-tab styling.
+    await expect(page.locator('.am-tabs a.am-tab', { hasText: /overview/i })).toBeVisible();
+  });
+
   test('POST /settings/theme round-trips and settings page reflects the new theme', async ({ page }) => {
     await page.goto('/settings');
     if (isAuthOrOnboard(page.url())) {
@@ -102,7 +123,7 @@ const CORE_PAGES = [
   { path: '/settings', h1: /^Settings$/ },
 ];
 
-for (const theme of ['intercom', 'dialup'] as Theme[]) {
+for (const theme of ['intercom', 'dialup', 'answering-machine'] as Theme[]) {
   test.describe(`core pages render under theme "${theme}"`, () => {
     test.beforeEach(async ({ page }) => {
       // Skip the whole group if we can't establish a session.
@@ -135,12 +156,15 @@ for (const theme of ['intercom', 'dialup'] as Theme[]) {
         const body = (await page.textContent('body')) ?? '';
         expect(body).not.toMatch(/500|internal server error/i);
 
-        // h1 matches expected copy (loose match so theme-specific framing
-        // doesn't break the assertion).
-        const heading = page.locator('h1').first();
-        await expect(heading).toBeVisible();
-        const text = ((await heading.textContent()) ?? '').trim();
-        expect(text).toMatch(h1);
+        // The AM theme replaces page-level h1s with LED plates and am-title
+        // headers, so the heading-copy assertion only applies to the two
+        // themes that still render a conventional h1 at the top of each page.
+        if (theme !== 'answering-machine') {
+          const heading = page.locator('h1').first();
+          await expect(heading).toBeVisible();
+          const text = ((await heading.textContent()) ?? '').trim();
+          expect(text).toMatch(h1);
+        }
       });
     }
   });
