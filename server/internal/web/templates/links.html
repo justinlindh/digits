@@ -209,15 +209,15 @@
   {{if .Revoked}}<div class="banner banner--warn">Family disconnected.</div>{{end}}
   {{if .Canceled}}<div class="banner banner--warn">Invite canceled.</div>{{end}}
 
-  <div class="am-plate am-links__header">
-    <div class="am-links__header-info">
+  <div class="am-plate am-page-header">
+    <div class="am-page-header__info">
       <span class="am-label">Station directory</span>
       <span class="am-title">{{len .LinkedFamilies}} household{{if ne (len .LinkedFamilies) 1}}s{{end}} connected</span>
     </div>
-    <div class="am-links__header-spacer"></div>
-    <div class="am-well am-links__header-well">
-      <div class="am-led am-links__header-led">{{printf "%02d" (len .LinkedFamilies)}}</div>
-      <div class="am-led am-led--dim am-links__header-cap">Connected</div>
+    <div class="am-page-header__spacer"></div>
+    <div class="am-well am-page-header__well">
+      <div class="am-led am-page-header__led">{{printf "%02d" (len .LinkedFamilies)}}</div>
+      <div class="am-led am-led--dim am-page-header__cap">Connected</div>
     </div>
   </div>
 
@@ -257,16 +257,16 @@
 
   </div>
 
-  <div class="am-plate am-directory">
-    <div class="am-directory__head"><span class="am-label">Stations</span></div>
+  <div class="am-plate am-roster">
+    <div class="am-roster__head"><span class="am-label">Stations</span></div>
     {{if .LinkedFamilies}}
     {{range $i, $f := .LinkedFamilies}}
-    <div class="am-directory__row" id="family-{{$f.ID}}">
-      <span class="am-directory__num">{{printf "%02d" (inc $i)}}</span>
+    <div class="am-roster__row am-directory__row" id="family-{{$f.ID}}">
+      <span class="am-roster__num am-directory__num">{{printf "%02d" (inc $i)}}</span>
       <span class="am-lamp am-lamp--on-green am-directory__lamp"></span>
-      <div class="am-directory__body">
-        <div class="am-directory__name">{{$f.Name}}</div>
-        <div class="am-directory__meta">
+      <div class="am-roster__body">
+        <div class="am-roster__name am-directory__name">{{$f.Name}}</div>
+        <div class="am-roster__meta">
           {{if $f.AcceptedAt}}Since {{$f.AcceptedAt.Format "Jan 2, 2006"}} &middot; {{end}}{{len $f.Lines}} line{{if ne (len $f.Lines) 1}}s{{end}}
         </div>
         {{if $f.Lines}}
@@ -280,7 +280,7 @@
         </div>
         {{end}}
       </div>
-      <div class="am-directory__actions">
+      <div class="am-roster__actions">
         <button type="button"
           data-confirm
           data-confirm-action="/links/{{$f.ID}}/revoke"
@@ -297,10 +297,10 @@
   </div>
 
   {{if .PendingInvites}}
-  <div class="am-plate am-outbox">
-    <div class="am-outbox__head"><span class="am-label">Outbox</span></div>
+  <div class="am-plate am-roster">
+    <div class="am-roster__head"><span class="am-label">Outbox</span></div>
     {{range .PendingInvites}}
-    <div class="am-outbox__row">
+    <div class="am-roster__row am-outbox__row">
       <span class="am-outbox__code">{{.InviteCode}}</span>
       <span class="am-outbox__date">Printed {{.CreatedAt.Format "Jan 2, 2006"}}</span>
       <button type="button"

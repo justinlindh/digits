@@ -253,6 +253,7 @@ type lineDetailData struct {
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
 	User                  *auth.User
+	Theme                 auth.Theme
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -318,6 +319,10 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := auth.UserFromContext(r.Context())
+	var theme auth.Theme
+	if user != nil {
+		theme = user.Theme
+	}
 
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		Page:                  "phones",
@@ -337,6 +342,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		User:                  user,
+		Theme:                 theme,
 	})
 }
 
@@ -347,7 +353,14 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	}
 	online := h.hub.Get(number) != nil
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
+		var theme auth.Theme
+		if u := auth.UserFromContext(r.Context()); u != nil {
+			theme = u.Theme
+		}
+		renderWith(w, h.tmplPhoneDetail, "phone-status", struct {
+			Online bool
+			Theme  auth.Theme
+		}{online, theme})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
