@@ -297,40 +297,24 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   display: flex; align-items: center; justify-content: center;
   isolation: isolate;
 }
-/* Head-on view of an inserted plug: we see the flat end-face of the plug
-   sitting in the jack's hole. The cable extends toward the viewer behind
-   the plug and is not depicted at this angle. Brass disc with a slight
-   convex highlight reads as the polished plug face. */
 .am-jack__plug {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  width: 24px; height: 24px;
+  width: 18px; height: 18px;
   border-radius: 50%;
-  background: radial-gradient(circle at 42% 35%,
-    #fff1b8 0%,
-    #f0d880 12%,
-    #d6b85a 35%,
-    #a08934 65%,
-    #5a4a1a 95%,
-    #3a2a10 100%);
+  background: #b23628;
   box-shadow:
-    inset 0 2px 2px rgba(255,255,255,0.30),
-    inset 0 -2px 3px rgba(60,40,0,0.55),
-    0 1px 2px rgba(0,0,0,0.7);
+    inset 0 0 0 1px rgba(0,0,0,0.45),
+    0 0 2px rgba(0,0,0,0.5);
   z-index: 3;
 }
-.am-jack__plug::before {
-  /* Small central dimple: suggests the tip of the plug or a rivet. */
-  content: '';
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 4px; height: 4px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 40%, #5a4a1a 0%, #1a120a 100%);
-  box-shadow: inset 0 1px 0 rgba(0,0,0,0.5);
-}
+.am-jack__plug--c0 { background: #b23628; }
+.am-jack__plug--c1 { background: #c9a441; }
+.am-jack__plug--c2 { background: #4e7a3f; }
+.am-jack__plug--c3 { background: #3a5a78; }
+.am-jack__plug--c4 { background: #b8722a; }
+.am-jack__plug--c5 { background: #7a4a8a; }
 .am-jack--unpatched .am-jack__plug { display: none; }
 .am-jack__label-bot {
   font-family: var(--font-mono); font-size: 11px; color: #d8caa0; letter-spacing: 0.06em;

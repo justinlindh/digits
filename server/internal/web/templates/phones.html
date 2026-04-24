@@ -437,7 +437,7 @@
       {{if lt $i $shown}}
       <div class="am-jack">
         <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
-        <div class="am-jack__socket"><span class="am-jack__plug"></span></div>
+        <div class="am-jack__socket"><span class="am-jack__plug am-jack__plug--c{{mod $i 6}}"></span></div>
         <span class="am-jack__label-bot">{{$l.Line.Name}}</span>
         <span class="am-jack__lamp am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
       </div>
