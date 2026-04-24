@@ -44,9 +44,9 @@ type lineRow struct {
 	PiUpdateNotes       []updates.Release
 }
 
-// buildLinesData assembles the line-list page payload. Pass in hh (the user's
-// primary household, may be nil) so callers that already fetched it do not
-// round-trip again; lines are scoped to hh's household.
+// buildLinesData assembles the line-list page payload. hh may be nil; when
+// nil or lookup fails the handler shows an empty list rather than leaking
+// every line on the server.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
 	var user *auth.User
 	if r != nil {
@@ -342,7 +342,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -353,7 +353,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.buildLinesData(r, h.primaryHousehold(r), "")
+	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
@@ -589,7 +589,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -598,7 +598,7 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return
 	}
-	data := h.buildLinesData(r, h.primaryHousehold(r), "")
+	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return

@@ -58,8 +58,8 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 	}
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
@@ -178,8 +178,8 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	flusher.Flush()
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 
 	// Subscribe FIRST so samples arriving between the initial snapshot and
@@ -279,14 +279,14 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	user := auth.UserFromContext(r.Context())
 
 	var linkedIndex map[string]string
-	if primaryHH != "" {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH))
+	if primaryHH != nil {
+		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
 	}
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]
 	data := conferenceLiveDetailData{
-		chromeData:      newChromeData("conference-live", user, h.primaryHousehold(r)),
+		chromeData:      newChromeData("conference-live", user, primaryHH),
 		Resp:            resp,
 		IsHostHousehold: isHostHH,
 	}

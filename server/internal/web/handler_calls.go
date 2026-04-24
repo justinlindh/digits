@@ -87,7 +87,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	call, ownedLines, hh, ok := h.requireCallEndpointOwnership(w, r, callID)
 	if !ok {
 		return
 	}
@@ -108,7 +108,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := callLiveDetailData{
-		chromeData:   newChromeData("call-live", user, h.primaryHousehold(r)),
+		chromeData:   newChromeData("call-live", user, hh),
 		Call:         call,
 		Caller:       callerEp,
 		Callee:       calleeEp,

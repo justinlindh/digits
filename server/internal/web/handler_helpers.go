@@ -61,31 +61,31 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 }
 
 // ownedLinesForUser returns the lines owned by any household the user belongs
-// to, keyed by number, plus the primary household ID. Returns (nil, "", false)
-// if the user has no households or any lookup fails. Caller writes 404, the
-// same response shape as nonexistent.
-func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, string, bool) {
+// to, keyed by number, plus the primary household. Returns (nil, nil, false)
+// if the user has no households or any lookup fails. Caller writes 404, same
+// response shape as nonexistent.
+func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, *household.Household, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
 		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
-		return nil, "", false
+		return nil, nil, false
 	}
 	if len(households) == 0 {
-		return nil, "", false
+		return nil, nil, false
 	}
 	lines := make(map[string]*line.Line)
 	for _, hh := range households {
 		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
 			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
-			return nil, "", false
+			return nil, nil, false
 		}
 		for i := range hhLines {
 			ln := hhLines[i]
 			lines[ln.Number] = &ln
 		}
 	}
-	return lines, households[0].ID, true
+	return lines, households[0], true
 }
 
 // requireCallEndpointOwnership verifies the authenticated user owns either
@@ -98,11 +98,11 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 // regardless of auth outcome, to avoid a timing side channel on call-id
 // enumeration. Linked households do NOT grant access to telemetry; only
 // direct household ownership of a call endpoint does.
-func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, string, bool) {
+func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Request, callID int64) (calls.Call, map[string]*line.Line, *household.Household, bool) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, "", false
+		return calls.Call{}, nil, nil, false
 	}
 
 	// Always do both queries in the same order, regardless of miss reason.
@@ -112,18 +112,18 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	if callErr != nil {
 		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
 		http.NotFound(w, r)
-		return calls.Call{}, nil, "", false
+		return calls.Call{}, nil, nil, false
 	}
 	if !ok || call.ID == 0 {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, "", false
+		return calls.Call{}, nil, nil, false
 	}
 
 	_, ownsCaller := ownedLines[call.Caller]
 	_, ownsCallee := ownedLines[call.Callee]
 	if !ownsCaller && !ownsCallee {
 		http.NotFound(w, r)
-		return calls.Call{}, nil, "", false
+		return calls.Call{}, nil, nil, false
 	}
 	return call, ownedLines, primaryHH, true
 }
@@ -132,22 +132,22 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 // conference auth helpers share: snapshot the user's owned lines and fetch
 // the conference, both unconditionally, then 404 on any failure. Callers
 // layer their own ownership predicate on the returned (conf, ownedLines).
-func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, confID uuid.UUID, errLog string) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, confID uuid.UUID, errLog string) (*calls.ConferenceSummary, map[string]*line.Line, *household.Household, bool) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.NotFound(w, r)
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
 	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
 	if confErr != nil {
 		slog.Error(errLog+": get conference failed", "conf_id", confID, "err", confErr)
 		http.NotFound(w, r)
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	if !ok || conf == nil {
 		http.NotFound(w, r)
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	return conf, ownedLines, primaryHH, true
 }
@@ -162,10 +162,10 @@ func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, 
 //
 // Mirrors requireCallEndpointOwnership's constant-time query sequence to
 // avoid a timing side channel on conference-id enumeration.
-func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, *household.Household, bool) {
 	conf, ownedLines, primaryHH, ok := h.loadConferenceForUser(w, r, confID, "conference_link_health")
 	if !ok {
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	for _, member := range conf.Members {
 		if _, owns := ownedLines[member]; owns {
@@ -173,7 +173,7 @@ func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	http.NotFound(w, r)
-	return nil, nil, "", false
+	return nil, nil, nil, false
 }
 
 // requireConferenceHostOwnership verifies the authenticated user's
@@ -185,14 +185,14 @@ func (h *Handler) requireConferenceOwnership(w http.ResponseWriter, r *http.Requ
 // Query sequence matches requireCallEndpointOwnership and
 // requireConferenceOwnership to avoid a timing side channel on
 // conference-id enumeration.
-func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, string, bool) {
+func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.Request, confID uuid.UUID) (*calls.ConferenceSummary, map[string]*line.Line, *household.Household, bool) {
 	conf, ownedLines, primaryHH, ok := h.loadConferenceForUser(w, r, confID, "conference_kick")
 	if !ok {
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	if _, owns := ownedLines[conf.Host]; !owns {
 		http.NotFound(w, r)
-		return nil, nil, "", false
+		return nil, nil, nil, false
 	}
 	return conf, ownedLines, primaryHH, true
 }
@@ -249,9 +249,7 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 
 // primaryHousehold returns the first household the authenticated user belongs
 // to, or nil when the user is unauthenticated, the store is not wired, lookup
-// fails, or the user has no households. This is the canonical single-query
-// lookup; page handlers should call it once at the top and thread the result
-// through helpers rather than re-querying per chrome field.
+// fails, or the user has no households.
 func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
 		return nil
@@ -276,11 +274,10 @@ func householdLocation(hh *household.Household) *time.Location {
 	return hh.Location()
 }
 
-// chromeData is the set of fields every protected page-data struct shares for
-// rendering the layout chrome (sidebar, nav, DND chip, version pill). Embed
-// this in each page-data struct and populate via newChromeData. The
+// chromeData holds the fields every protected page-data struct shares for
+// rendering the layout chrome (sidebar, nav, DND chip, version pill). The
 // HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
-// Household pointer so there is one source of truth per request.
+// Household pointer so templates hit one source of truth per request.
 type chromeData struct {
 	Page      string
 	Version   string
@@ -288,7 +285,6 @@ type chromeData struct {
 	Household *household.Household
 }
 
-// HouseholdName returns the current user's household name, or "" when none.
 func (c chromeData) HouseholdName() string {
 	if c.Household == nil {
 		return ""
@@ -296,7 +292,6 @@ func (c chromeData) HouseholdName() string {
 	return c.Household.Name
 }
 
-// HouseholdDND returns the household-wide do-not-disturb flag.
 func (c chromeData) HouseholdDND() bool {
 	if c.Household == nil {
 		return false
@@ -304,7 +299,6 @@ func (c chromeData) HouseholdDND() bool {
 	return c.Household.DoNotDisturb
 }
 
-// CallHistoryEnabled returns whether the household has call history on.
 func (c chromeData) CallHistoryEnabled() bool {
 	if c.Household == nil {
 		return false
@@ -312,9 +306,6 @@ func (c chromeData) CallHistoryEnabled() bool {
 	return c.Household.CallHistoryEnabled
 }
 
-// newChromeData builds the shared chrome payload for a page. Pass the page
-// slug (used for nav "is-active" matching), the authenticated user (may be
-// nil), and the user's primary household (may be nil).
 func newChromeData(page string, user *auth.User, hh *household.Household) chromeData {
 	return chromeData{
 		Page:      page,

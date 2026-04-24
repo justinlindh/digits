@@ -63,7 +63,6 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		Error:       r.URL.Query().Get("error"),
 	}
 
-	// Active links: build connected family directory
 	data.LinkedFamilies = h.buildLinkedFamilies(r.Context(), myHousehold.ID)
 
 	// Pending invites sent by this household
