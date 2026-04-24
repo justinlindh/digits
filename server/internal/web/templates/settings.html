@@ -251,7 +251,7 @@
       <form action="/settings/do-not-disturb" method="POST">
         <div class="hstack" style="align-items: flex-start; gap: 14px;">
           <label class="toggle" style="margin-top: 2px;">
-            <input type="checkbox" name="enabled" value="true" {{if .DoNotDisturb}}checked{{end}} onchange="this.form.submit()">
+            <input type="checkbox" name="enabled" value="true" {{if .HouseholdDND}}checked{{end}} onchange="this.form.submit()">
             <span class="toggle__track"></span>
           </label>
           <div>

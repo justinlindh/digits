@@ -236,30 +236,25 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// householdContext returns the household name, call-history flag, and timezone location for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
+// householdContext returns the household name, call-history flag, do-not-disturb flag, and timezone location for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, dnd bool, loc *time.Location) {
 	if h.householdStore == nil {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
-	return households[0].Name, households[0].CallHistoryEnabled, households[0].Location()
+	return households[0].Name, households[0].CallHistoryEnabled, households[0].DoNotDisturb, households[0].Location()
 }
 
 func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch, _ := h.householdContext(r)
+	_, ch, _, _ := h.householdContext(r)
 	return ch
-}
-
-func (h *Handler) householdNameFromContext(r *http.Request) string {
-	name, _, _ := h.householdContext(r)
-	return name
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

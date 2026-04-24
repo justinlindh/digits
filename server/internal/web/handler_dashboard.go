@@ -17,6 +17,7 @@ type dashboardData struct {
 	Version            string
 	CallHistoryEnabled bool
 	HouseholdName      string
+	HouseholdDND       bool
 	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
@@ -54,7 +55,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	active := h.tracker.Active()
 	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
-	hhName, callHistoryEnabled, loc := h.householdContext(r)
+	hhName, callHistoryEnabled, hhDND, loc := h.householdContext(r)
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
@@ -157,6 +158,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		Version:            version.Version,
 		CallHistoryEnabled: callHistoryEnabled,
 		HouseholdName:      hhName,
+		HouseholdDND:       hhDND,
 		Stats: dashStats{
 			TotalLines:  len(ld.Lines),
 			OnlineLines: countOnline(ld.Lines),
@@ -265,6 +267,7 @@ type connectingData struct {
 	Page          string
 	Version       string
 	HouseholdName string
+	HouseholdDND  bool
 	User          *auth.User
 }
 
@@ -274,10 +277,12 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+	hhName, _, hhDND, _ := h.householdContext(r)
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
 		Page:          "connecting",
 		Version:       version.Version,
-		HouseholdName: h.householdNameFromContext(r),
+		HouseholdName: hhName,
+		HouseholdDND:  hhDND,
 		User:          user,
 	})
 }

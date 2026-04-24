@@ -14,7 +14,7 @@ type settingsData struct {
 	Page               string
 	Version            string
 	CallHistoryEnabled bool
-	DoNotDisturb       bool
+	HouseholdDND       bool
 	HouseholdName      string
 	User               *auth.User
 	Household          *household.Household
@@ -40,7 +40,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		Page:               "settings",
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
-		DoNotDisturb:       dnd,
+		HouseholdDND:       dnd,
 		HouseholdName:      hhName,
 		User:               user,
 		Household:          hh,

@@ -27,6 +27,7 @@ type linesData struct {
 	Version               string
 	CallHistoryEnabled    bool
 	HouseholdName         string
+	HouseholdDND          bool
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
@@ -101,11 +102,13 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		}
 		rows[i] = row
 	}
+	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	return linesData{
 		Page:                  "phones",
 		Version:               version.Version,
-		CallHistoryEnabled:    h.callHistoryEnabled(r),
-		HouseholdName:         h.householdNameFromContext(r),
+		CallHistoryEnabled:    callHistory,
+		HouseholdName:         hhName,
+		HouseholdDND:          hhDND,
 		Lines:                 rows,
 		Error:                 errMsg,
 		User:                  user,
@@ -237,6 +240,7 @@ type lineDetailData struct {
 	Version               string
 	CallHistoryEnabled    bool
 	HouseholdName         string
+	HouseholdDND          bool
 	Line                  line.Line
 	Online                bool
 	Devices               []device.Device
@@ -294,7 +298,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
-	hhName, callHistory, loc := h.householdContext(r)
+	hhName, callHistory, hhDND, loc := h.householdContext(r)
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)
@@ -320,6 +324,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		Version:               version.Version,
 		CallHistoryEnabled:    callHistory,
 		HouseholdName:         hhName,
+		HouseholdDND:          hhDND,
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
