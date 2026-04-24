@@ -1,7 +1,7 @@
 {{define "title"}}Connected families{{end}}
 
 {{define "content"}}
-{{if eq .User.Theme "answering-machine"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
   {{template "links-am" .}}
 {{else}}
 <div class="page" style="max-width: 900px;">
