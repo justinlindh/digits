@@ -1,6 +1,9 @@
 {{define "title"}}Welcome to Digits{{end}}
 
 {{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+  {{template "onboard-am" .}}
+{{else}}
 <div class="auth">
   <div class="auth__frame">
 
@@ -21,6 +24,39 @@
       </form>
     </div>
 
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "onboard-am"}}
+<div class="am-welcome">
+  <div class="am-plate am-plate--screws am-welcome__frame">
+    <span class="am-screw am-screw--tl"></span>
+    <span class="am-screw am-screw--tr"></span>
+    <span class="am-screw am-screw--bl"></span>
+    <span class="am-screw am-screw--br"></span>
+
+    <div class="am-plate__label">New household</div>
+
+    <h1 class="am-welcome__mark">Cue the tape.</h1>
+    <p class="am-hint am-welcome__tagline">Name your household to set up the answering machine. You can rename it later in Settings.</p>
+
+    <form action="/onboard" method="POST" class="am-welcome__form">
+      <div class="am-welcome__field">
+        <label for="name" class="am-label">Family name</label>
+        <input type="text" id="name" name="name" required
+          value="{{.SuggestedName}}"
+          placeholder="THE SMITH FAMILY"
+          class="am-accept__input"
+          autocomplete="off"
+          autofocus>
+      </div>
+      <button type="submit" class="am-key am-welcome__submit">
+        <span class="am-key__symbol">&#x25CF;</span>
+        <span class="am-key__label">Record household</span>
+      </button>
+    </form>
   </div>
 </div>
 {{end}}
