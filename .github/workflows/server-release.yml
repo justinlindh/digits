@@ -73,7 +73,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push signald
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: server
           file: server/Dockerfile
@@ -86,7 +86,7 @@ jobs:
             ghcr.io/justinlindh/digits/signald:latest
 
       - name: Build and push admind
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: server
           file: server/cmd/admind/Dockerfile
