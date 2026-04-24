@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{block "title" .}}Digits{{end}} — Digits</title>
+<title>{{block "title" .}}Digits{{end}} : Digits</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/dialup.css">
 <script src="/static/htmx.min.js"></script>
@@ -19,7 +19,7 @@
   <div class="dialup-title">
     <div class="dialup-title__app">
       <span class="dialup-title__icon" aria-hidden="true"></span>
-      <span>Digits — {{if .HouseholdName}}{{.HouseholdName}}{{else}}Phone Network{{end}}</span>
+      <span>Digits: {{if .HouseholdName}}{{.HouseholdName}}{{else}}Phone Network{{end}}</span>
     </div>
     <div class="dialup-title__controls" aria-hidden="true">
       <span class="dialup-title__btn">_</span>

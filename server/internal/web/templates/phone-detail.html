@@ -250,13 +250,13 @@
             </div>
           </details>
           {{else}}
-          <p class="muted" style="font-size: 12.5px; margin: 0;">Firmware updates require SWD wiring — flash via USB.</p>
+          <p class="muted" style="font-size: 12.5px; margin: 0;">Firmware updates require SWD wiring. Flash via USB.</p>
           {{end}}
           {{end}}
 
           {{else}}
             {{if .Online}}
-            <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report — device is online but hasn't reported version info yet.</p>
+            <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report: device is online but hasn't reported version info yet.</p>
             <form method="POST" action="/phones/{{.Line.Number}}/update">
               <button type="submit" class="btn btn--primary">Check for updates</button>
             </form>
@@ -359,7 +359,7 @@
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { showResult(prefix, 'failed', 'Failed to send: ' + data.error); return; }
-      if (progressText) progressText.textContent = 'Update triggered — waiting for device...';
+      if (progressText) progressText.textContent = 'Update triggered: waiting for device...';
       startPolling(prefix);
     })
     .catch(function(err) { showResult(prefix, 'failed', 'Network error: ' + err.message); });
