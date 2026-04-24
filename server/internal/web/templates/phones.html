@@ -395,17 +395,14 @@
 <div class="am-phones">
 
   {{if .PairError}}
-  <div class="am-banner am-banner--err">
-    <span class="am-lamp am-lamp--on-red"></span>
-    <span>{{.PairError}}</span>
-  </div>
+  <div class="banner banner--err">{{.PairError}}</div>
   {{end}}
 
   {{if .PairSuccess}}
-  <div class="am-banner am-banner--ok" role="status">
-    <span class="am-lamp am-lamp--on-green"></span>
-    <span>Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.</span>
-    <button type="button" class="am-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
+  <div class="pair-banner" role="status">
+    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
+    <span class="pair-banner__text">Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.</span>
+    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
   </div>
   {{end}}
 
@@ -474,7 +471,7 @@
           <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
           <div class="am-phones__row-meta">
             {{if $l.OnCall}}IN SESSION
-            {{else if $l.Online}}ONLINE{{if $l.DeviceInfo}}{{if $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{end}}
+            {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
             {{else}}OFFLINE
             {{end}}
             {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}

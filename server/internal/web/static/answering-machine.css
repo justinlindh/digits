@@ -295,6 +295,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
     0 1px 0 rgba(255,255,255,0.12);
   position: relative;
   display: flex; align-items: center; justify-content: center;
+  isolation: isolate;
 }
 /* Head-on view of an inserted plug: we see the flat end-face of the plug
    sitting in the jack's hole. The cable extends toward the viewer behind
@@ -813,8 +814,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 }
 
 /* =========================================================================
-   Lines page layout (phase 3). Uses patchbay + plate primitives from
-   earlier sections; adds grid and roster composition.
+   Lines page layout: patchbay rail, handset roster, pair panel.
    ========================================================================= */
 
 .am-phones { display: flex; flex-direction: column; gap: 18px; }
@@ -874,11 +874,17 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-phones__pair-field-hint--err { color: var(--chip-red-dk); }
 .am-phones__pair-field-hint.hidden { display: none; }
 
-/* Banner variants inside the AM shell */
-.am-banner { padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; display: flex; align-items: center; gap: 10px; }
-.am-banner--err { background: rgba(196,62,46,0.12); color: var(--chip-red-dk); border: 1px solid rgba(196,62,46,0.35); }
-.am-banner--ok { background: rgba(61,217,74,0.12); color: var(--led-green-dark); border: 1px solid rgba(61,217,74,0.35); }
-.am-banner__close { appearance: none; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; margin-left: auto; font-size: 16px; }
+/* Shared banner primitives: digits.css and dialup.css both style these, AM
+   must too or the banners on /settings, /links, /login render unstyled. */
+.banner { padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; display: flex; align-items: center; gap: 10px; border: 1px solid transparent; margin-bottom: 14px; }
+.banner--ok   { background: rgba(61,217,74,0.12); color: var(--led-green-dark); border-color: rgba(61,217,74,0.35); }
+.banner--warn { background: rgba(255,165,32,0.14); color: var(--ink); border-color: rgba(255,165,32,0.4); }
+.banner--err  { background: rgba(196,62,46,0.12); color: var(--chip-red-dk); border-color: rgba(196,62,46,0.35); }
+
+.pair-banner { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; background: rgba(61,217,74,0.14); color: var(--led-green-dark); border: 1px solid rgba(61,217,74,0.35); margin-bottom: 14px; }
+.pair-banner__icon { font-weight: 700; font-size: 14px; }
+.pair-banner__text { flex: 1; }
+.pair-banner__close { appearance: none; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; margin-left: auto; font-size: 16px; }
 
 /* Mobile stacking */
 @media (max-width: 780px) {
