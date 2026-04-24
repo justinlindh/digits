@@ -22,13 +22,13 @@
 <div class="deck-matrix__row">
   <span class="deck-matrix__lbl label">loss</span>
   <span class="deck-matrix__val num">
-    {{if and . .Latest .Latest.LossPct}}{{printf "%.1f%%" (derefFloat32 .Latest.LossPct)}}{{else}}&mdash;{{end}}
+    {{if and . .Latest .Latest.LossPct}}{{printf "%.1f%%" (derefFloat32 .Latest.LossPct)}}{{else}}&ndash;{{end}}
   </span>
 </div>
 <div class="deck-matrix__row">
   <span class="deck-matrix__lbl label">jitter</span>
   <span class="deck-matrix__val num">
-    {{if and . .Latest .Latest.JitterMs}}{{printf "%.0f ms" (derefFloat32 .Latest.JitterMs)}}{{else}}&mdash;{{end}}
+    {{if and . .Latest .Latest.JitterMs}}{{printf "%.0f ms" (derefFloat32 .Latest.JitterMs)}}{{else}}&ndash;{{end}}
   </span>
 </div>
 {{end}}
