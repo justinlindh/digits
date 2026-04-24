@@ -190,6 +190,8 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			}
 			return out
 		},
+		"add":      func(a, b int) int { return a + b },
+		"lastLine": func(i int, lines []lineRow) bool { return i == len(lines)-1 },
 		"humanBytes": func(n int64) string {
 			switch {
 			case n > 1024*1024:
@@ -235,8 +237,6 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			return segDesc{Lit: lit, Severity: sev}
 		},
 		"renderNotes": renderNotes,
-		"add":         func(a, b int) int { return a + b },
-		"lastLine":    func(i int, lines []lineRow) bool { return i == len(lines)-1 },
 		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
 			for i := range edges {
 				if edges[i].From == from && edges[i].Peer == peer {
