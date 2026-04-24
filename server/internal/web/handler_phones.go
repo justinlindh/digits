@@ -434,7 +434,13 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		if err := h.pushLineSettings(number, next); err != nil {
+		dnd := false
+		if h.householdStore != nil {
+			if hh, err := h.householdStore.GetByID(r.Context(), ln.HouseholdID); err == nil {
+				dnd = hh.DoNotDisturb
+			}
+		}
+		if err := h.pushLineSettings(number, next, dnd); err != nil {
 			slog.Warn("push line settings failed", "number", number, "err", err)
 		}
 		ln.Settings = next
@@ -448,17 +454,19 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
-// pushLineSettings sends the updated settings to the device currently
-// registered as the given number, if any. A missing device is not an error;
-// the next time that device reconnects it will receive the latest settings
-// via the registration push in relay.OnRegistered.
-func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
+// pushLineSettings sends the updated effective settings to the device
+// currently registered as the given number, if any. The household-DND flag
+// is OR'd into SilentMode before sending so the device sees one
+// authoritative bool. A missing device is not an error; the next time that
+// device reconnects it will receive the latest effective settings via the
+// registration push in relay.OnRegistered.
+func (h *Handler) pushLineSettings(number string, settings line.Settings, householdDND bool) error {
 	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
-			SilentMode: settings.SilentMode,
+			SilentMode: line.EffectiveSilent(settings, householdDND),
 		},
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {
