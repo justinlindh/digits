@@ -317,6 +317,7 @@ func (c *Controller) onKey(digit string) {
 		}
 	case StateADD_DIALTONE:
 		// First key during add-dial: stop the second dial tone, start collecting.
+		slog.Info("phone: ADD_DIALTONE -> ADD_DIALING", "digit", digit)
 		c.state = StateADD_DIALING
 		c.digits = digit
 		c.cb.SendTone(ToneStop)
@@ -434,6 +435,7 @@ func (c *Controller) dialThirdParty(number string) {
 		return
 	}
 
+	slog.Info("phone: ADD_DIALING -> ADD_CALLING", "adding", number)
 	c.addingPeer = number
 	c.digits = ""
 	c.state = StateADD_CALLING
@@ -474,6 +476,7 @@ func (c *Controller) onSignalAnswer(sender string) {
 			slog.Info("phone: answer from unexpected peer in ADD_CALLING", "from", sender, "adding", c.addingPeer)
 			return
 		}
+		slog.Info("phone: ADD_CALLING -> ADD_PRIVATE", "adding", c.addingPeer)
 		c.state = StateADD_PRIVATE
 		c.cb.SendTone(ToneStop)
 	default:
@@ -626,8 +629,10 @@ func (c *Controller) HandleHookFlash(activePeer string) {
 // onHookFlash dispatches the HOOK:FLASH event per 90s residential TWC semantics.
 // Called with c.mu already held.
 func (c *Controller) onHookFlash(activePeer string) {
+	slog.Info("phone: HOOK:FLASH received", "state", c.state, "conf_id", c.confID, "is_host", c.isConfHost, "active_peer", activePeer)
 	// Non-host in an active conference: flash is a no-op (historical accuracy).
 	if c.confID != "" && !c.isConfHost {
+		slog.Info("phone: HOOK:FLASH no-op (non-host in conference)", "conf_id", c.confID)
 		return
 	}
 	switch c.state {
@@ -643,12 +648,14 @@ func (c *Controller) onHookFlash(activePeer string) {
 		c.abortAdd()
 	case StateCONFERENCE_MERGED:
 		// No-op in v1 (no second add, no drop-last-party).
+		slog.Info("phone: HOOK:FLASH no-op (CONFERENCE_MERGED, v1)")
 	default:
-		// Any other state: no-op.
+		slog.Info("phone: HOOK:FLASH no-op (unhandled state)", "state", c.state)
 	}
 }
 
 func (c *Controller) enterAddDialtone(activePeer string) {
+	slog.Info("phone: CONNECTED -> ADD_DIALTONE", "held", activePeer)
 	c.heldPeer = activePeer
 	c.state = StateADD_DIALTONE
 	if c.heldPeer != "" {
@@ -659,6 +666,7 @@ func (c *Controller) enterAddDialtone(activePeer string) {
 }
 
 func (c *Controller) abortAdd() {
+	slog.Info("phone: abortAdd -> CONNECTED", "from_state", c.state, "held", c.heldPeer, "adding", c.addingPeer)
 	c.cb.SendTone(ToneStop)
 	// Tear down the added peer if one exists. Most paths into ADD_INTERCEPT
 	// already did this (busy/error/hangup handlers all call TearDownPeer
@@ -678,6 +686,7 @@ func (c *Controller) abortAdd() {
 }
 
 func (c *Controller) abortAddCalling() {
+	slog.Info("phone: abortAddCalling -> CONNECTED", "held", c.heldPeer, "adding", c.addingPeer)
 	c.cb.SendTone(ToneStop)
 	if c.addingPeer != "" {
 		c.cb.TearDownPeer(c.addingPeer)
@@ -691,6 +700,7 @@ func (c *Controller) abortAddCalling() {
 }
 
 func (c *Controller) requestMerge() {
+	slog.Info("phone: ADD_PRIVATE -> CONFERENCE_MERGED, requesting merge", "held", c.heldPeer, "adding", c.addingPeer)
 	if c.heldPeer != "" {
 		c.cb.MutePeer(c.heldPeer, false)
 	}
@@ -741,8 +751,10 @@ func (c *Controller) HandleConferenceLeave(confID, peer, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.confID != confID {
+		slog.Warn("conference: leave ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "peer", peer)
 		return
 	}
+	slog.Info("conference: member left", "conf_id", confID, "peer", peer, "reason", reason)
 	c.cb.RemoveMeshPeer(peer)
 }
 
@@ -755,8 +767,10 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.confID != confID {
+		slog.Warn("conference: end ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "reason", reason)
 		return
 	}
+	slog.Info("conference: end received", "conf_id", confID, "reason", reason, "state", c.state, "is_host", c.isConfHost)
 	c.cb.TearDownAllMeshPeers()
 	c.cb.HangupCall()
 
@@ -796,9 +810,11 @@ func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	// that case we can't cross-check IDs, which is why the mismatch guard
 	// only fires when both IDs are known and differ.
 	if c.confID != "" && confID != "" && c.confID != confID {
+		slog.Warn("conference: rejection ignored, confID mismatch", "msg_conf_id", confID, "local_conf_id", c.confID, "reason", reason)
 		return
 	}
 	if c.state != StateCONFERENCE_MERGED {
+		slog.Warn("conference: rejection ignored, not in CONFERENCE_MERGED", "state", c.state, "reason", reason)
 		return // probably stale; ignore
 	}
 	// ToneIntercept is the SIT triple-beep tone used for merge-failed intercept,

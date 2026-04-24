@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
@@ -20,6 +21,7 @@ type sigSender interface {
 // prior reporter for this peer before spawning a fresh one).
 func (d *daemonCallbacks) meshReporterOnConnected(pm *owebrtc.PeerManager, peerPhone string) func(webrtc.PeerConnectionState) {
 	return func(state webrtc.PeerConnectionState) {
+		slog.Info("conference: mesh PC state", "phone", peerPhone, "state", state.String())
 		if state != webrtc.PeerConnectionStateConnected {
 			return
 		}
