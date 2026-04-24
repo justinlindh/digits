@@ -23,7 +23,7 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 	if err != nil {
 		return nil, err
 	}
-	silent := settings.SilentMode || householdDND
+	silent := line.EffectiveSilent(settings, householdDND)
 	return &LineSettings{
 		VoiceStyle: settings.VoiceStyle,
 		SilentMode: silent,

@@ -467,13 +467,6 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 	return err
 }
 
-// effectiveSilent returns whether the device should treat the line as silent
-// at ring time. The household-wide DND flag and the per-line silent flag are
-// combined with OR: silence if either is set.
-func effectiveSilent(s line.Settings, householdDND bool) bool {
-	return householdDND || s.SilentMode
-}
-
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	if h.requireLineOwnership(w, r, number) == nil {

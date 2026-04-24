@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/line"
 )
 
 // fakeLineStore is an in-memory LineStore for unit tests. It returns whatever
@@ -34,7 +36,7 @@ func (f *fakeLineStore) setDND(number string, dnd bool) {
 func (f *fakeLineStore) EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error) {
 	s, ok := f.settings[number]
 	if !ok {
-		return nil, nil
+		return nil, line.ErrNotFound
 	}
 	out := *s
 	if f.dnd[number] {
