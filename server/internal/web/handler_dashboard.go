@@ -307,6 +307,3 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		User:          user,
 	})
 }
-
-// requireLineOwnership looks up a line by number and verifies the authenticated
-// user's household owns it. Returns the line on success, or nil after writing

@@ -72,7 +72,7 @@ make dev-seed    # re-runs the idempotent seeder only
 make dev-logs    # tails the DB container
 ```
 
-Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored). Sign in via `http://localhost:<port>/auth/dev-session?email=dev@digits.local`. The seeded user has `theme='dialup'` and is preloaded with three lines, two linked households, and one pending invite, so every surface (`/`, `/links`, `/phones`, `/calls`, `/settings`) renders with real data.
+Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored). Sign in via `http://localhost:<port>/auth/dev-session?email=dev@digits.local`. The seeded user has `theme='dialup'` and is preloaded with three lines, two linked households, and one pending invite, so every surface (`/`, `/links`, `/phones`, `/calls`, `/settings`) renders with real data. The app ships three themes: `intercom` (default), `dialup`, and `answering-machine`; switch at `/settings/theme`.
 
 When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static/`), so CSS and JS edits show on reload. Template edits still require a restart.
 
