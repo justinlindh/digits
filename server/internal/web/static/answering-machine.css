@@ -27,6 +27,7 @@
   --led-green: #3dd94a;
   --led-green-dark: #2b7d34;
   --led-red: #ff3d2e;
+  --tape-ink: #e8daa8;
 
   /* Buttons */
   --btn: #ded3b2;
@@ -729,7 +730,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 
 /* Top row: status LED plate (wide) + indicators cluster (narrow) */
 .am-overview__top { display: grid; grid-template-columns: 1fr 340px; gap: 18px; }
-.am-overview__status { padding: 18px 22px 16px; }
+.am-overview__status { padding: 18px 22px 16px; min-width: 0; }
 .am-overview__status-label { margin-bottom: 10px; }
 .am-overview__indicators { position: relative; padding: 16px 18px 14px; }
 
@@ -763,7 +764,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-overview__session-title { flex: 1; }
 .am-overview__session-elapsed { font-size: 11.5px; }
 .am-overview__session-tape { padding: 14px; }
-.am-overview__tape-caption { display: flex; justify-content: space-between; margin-bottom: 4px; color: #e8daa8; }
+.am-overview__tape-caption { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--tape-ink); }
 
 .am-overview__messages-head { padding: 8px 18px 6px; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .am-overview__messages-sub { font-size: 11px; letter-spacing: 0.04em; }
