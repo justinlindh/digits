@@ -1,4 +1,4 @@
-{{define "title"}}Live session — {{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}{{end}}
+{{define "title"}}Live session: {{.Caller.DisplayName}} &harr; {{.Callee.DisplayName}}{{end}}
 
 {{define "content"}}
 <div class="page deck" data-started-at="{{.Call.StartedAt.UnixMilli}}">

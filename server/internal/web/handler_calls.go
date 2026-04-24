@@ -8,56 +8,42 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type callsData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	HouseholdDND       bool
-	Entries            []calls.HistoryEntry
-	User               *auth.User
+	chromeData
+	Entries []calls.HistoryEntry
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	hhName, callHistory, hhDND, loc := h.householdContext(r)
-	if !callHistory {
+	user := auth.UserFromContext(r.Context())
+	hh := h.primaryHousehold(r)
+	if hh == nil || !hh.CallHistoryEnabled {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	var entries []calls.HistoryEntry
+	loc := householdLocation(hh)
 
-	// Scope call log to the user's household lines
-	user := auth.UserFromContext(r.Context())
-	if user != nil && h.lineStore != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
+	var entries []calls.HistoryEntry
+	if h.lineStore != nil {
+		lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("get households for user failed", "user_id", user.ID, "err", err)
+			slog.Error("list lines for household failed", "household_id", hh.ID, "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		if len(households) > 0 {
-			lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+		if len(lines) > 0 {
+			numbers := make([]string, len(lines))
+			for i, l := range lines {
+				numbers[i] = l.Number
+			}
+			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
 			if err != nil {
-				slog.Error("list lines for household failed", "household_id", households[0].ID, "err", err)
+				slog.Error("query recent history failed", "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
-			if len(lines) > 0 {
-				numbers := make([]string, len(lines))
-				for i, l := range lines {
-					numbers[i] = l.Number
-				}
-				hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
-				if err != nil {
-					slog.Error("query recent history failed", "err", err)
-					http.Error(w, "internal server error", http.StatusInternalServerError)
-					return
-				}
-				entries = hist
-			}
+			entries = hist
 		}
 	}
 	if entries == nil {
@@ -75,27 +61,24 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, HouseholdDND: hhDND, Entries: entries, User: user})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{
+		chromeData: newChromeData("calls", user, hh),
+		Entries:    entries,
+	})
 }
 
-
 type callLiveDetailData struct {
-	Page               string
-	Version            string
-	User               *auth.User
-	HouseholdName      string
-	HouseholdDND       bool
-	CallHistoryEnabled bool
-	Call               calls.Call
-	Caller             LinkHealthEndpointResp
-	Callee             LinkHealthEndpointResp
-	Ended              bool
-	ForceEndedBy       string
+	chromeData
+	Call         calls.Call
+	Caller       LinkHealthEndpointResp
+	Callee       LinkHealthEndpointResp
+	Ended        bool
+	ForceEndedBy string
 }
 
 // handleCallLiveDetail renders the observation-deck page for a specific call.
 // Auth uses the same ownership check as the JSON endpoint. Ended calls are
-// NOT 404'd here — they render in terminal state with the last-known samples
+// NOT 404'd here; they render in terminal state with the last-known samples
 // from DB fallback, making the URL useful as a postmortem surface.
 func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
@@ -104,7 +87,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
+	call, ownedLines, hh, ok := h.requireCallEndpointOwnership(w, r, callID)
 	if !ok {
 		return
 	}
@@ -124,19 +107,13 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	data := callLiveDetailData{
-		Page:               "call-live",
-		Version:            version.Version,
-		User:               user,
-		HouseholdName:      hhName,
-		HouseholdDND:       hhDND,
-		CallHistoryEnabled: callHistory,
-		Call:               call,
-		Caller:             callerEp,
-		Callee:             calleeEp,
-		Ended:              call.Status == "ended",
-		ForceEndedBy:       h.forceEndedLabel(r.Context(), call),
+		chromeData:   newChromeData("call-live", user, hh),
+		Call:         call,
+		Caller:       callerEp,
+		Callee:       calleeEp,
+		Ended:        call.Status == "ended",
+		ForceEndedBy: h.forceEndedLabel(r.Context(), call),
 	}
 
 	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)
