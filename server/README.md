@@ -50,7 +50,7 @@ When the server prints `server started addr=:8080`, open the URL that `dev-seed`
 http://localhost:8080/auth/dev-session?email=dev@digits.local
 ```
 
-That endpoint is only mounted when `DEV_MODE=true`. It sets a session cookie and redirects to the dialup-themed dashboard.
+That endpoint is only mounted when `DEV_MODE=true`. It sets a session cookie and redirects to the dialup-themed dashboard. The app ships three themes: `intercom` (default), `dialup`, and `answering-machine`; switch at `/settings/theme`.
 
 ### Config
 
@@ -192,7 +192,7 @@ See `.env.example` for a starter config file.
 | `/api/active-calls`     | Active calls list                        |
 | `/internal/stats`       | Internal stats (requires `ADMIN_SECRET`) |
 
-The UI uses htmx for partial updates and Tailwind CSS for styling. Dark theme throughout.
+The UI uses htmx for partial updates and Tailwind CSS for styling. Three themes ship: `intercom` (default), `dialup`, and `answering-machine`; the per-user choice lives on `users.theme`.
 
 ## WebSocket Protocol
 
