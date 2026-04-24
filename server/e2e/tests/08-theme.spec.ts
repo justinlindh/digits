@@ -152,9 +152,11 @@ for (const theme of ['intercom', 'dialup', 'answering-machine'] as Theme[]) {
         // Layout must match the theme we set.
         expect(await getLayout(page)).toBe(layoutForTheme(theme));
 
-        // Body contains no visible 500 / crash indicator.
+        // Body contains no visible 500 / crash indicator. Word-boundary on
+        // the bare "500" keeps the AM chrome brand "Digits 2500" from
+        // triggering a false positive.
         const body = (await page.textContent('body')) ?? '';
-        expect(body).not.toMatch(/500|internal server error/i);
+        expect(body).not.toMatch(/\b500\b|internal server error/i);
 
         // The AM theme replaces page-level h1s with LED plates and am-title
         // headers, so the heading-copy assertion only applies to the two
