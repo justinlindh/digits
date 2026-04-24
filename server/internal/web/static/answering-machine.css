@@ -827,7 +827,9 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 
 /* Pair panel: LED pin display + chicklet keypad + form */
 .am-phones__pair { padding: 18px 20px 16px; display: flex; flex-direction: column; gap: 14px; }
-.am-phones__pair-label { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--label); font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+.am-phones__pair-label,
+.am-phones__pair-field-label { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--label); font-weight: 600; text-transform: uppercase; }
+.am-phones__pair-label { margin-bottom: 2px; }
 .am-phones__pair-hint { font-family: var(--font-body); font-size: 10.5px; color: var(--ink-muted); line-height: 1.4; }
 
 /* LED pin display: six slots; dim by default, .is-filled lights them up. */
@@ -843,17 +845,16 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 /* Pair form fields */
 .am-phones__pair-form { display: flex; flex-direction: column; gap: 10px; }
 .am-phones__pair-field { display: flex; flex-direction: column; gap: 4px; }
-.am-phones__pair-field-label { font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--label); font-weight: 600; text-transform: uppercase; }
 .am-phones__pair-field-hint { font-family: var(--font-body); font-size: 10px; color: var(--ink-muted); }
 
 /* Banner variants inside the AM shell */
 .am-banner { padding: 10px 14px; border-radius: 6px; font-family: var(--font-body); font-size: 12px; display: flex; align-items: center; gap: 10px; }
 .am-banner--err { background: rgba(196,62,46,0.12); color: var(--chip-red-dk); border: 1px solid rgba(196,62,46,0.35); }
-.am-banner--ok { background: rgba(61,217,74,0.12); color: #1c7224; border: 1px solid rgba(61,217,74,0.35); }
+.am-banner--ok { background: rgba(61,217,74,0.12); color: var(--led-green-dark); border: 1px solid rgba(61,217,74,0.35); }
 .am-banner__close { appearance: none; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; margin-left: auto; font-size: 16px; }
 
 /* Mobile stacking */
-@media (max-width: 860px) {
+@media (max-width: 780px) {
   .am-phones__body { grid-template-columns: 1fr; }
   .am-phones__rail { padding: 16px 14px; }
   .am-phones__row { grid-template-columns: 24px 14px 1fr; grid-template-rows: auto auto; row-gap: 6px; }
