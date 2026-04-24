@@ -110,7 +110,7 @@ func main() {
 	defer func() { _ = database.Close() }()
 
 	s := &stores{
-		auth:  auth.NewStoreFromDB(database.DB),
+		auth:  auth.NewStore(database.DB),
 		house: household.NewStore(database.DB),
 		link:  household.NewLinkStore(database.DB),
 		line:  line.NewStore(database),
