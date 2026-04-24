@@ -391,6 +391,48 @@
 </tr>
 {{end}}
 
+{{define "am-phones-table"}}
+<div class="am-plate am-phones__roster" id="phones-table">
+  <div class="am-phones__roster-head"><span class="am-label">Handsets</span></div>
+  {{if .Lines}}
+  {{range $i, $l := .Lines}}
+  <div class="am-phones__row">
+    <span class="am-phones__row-num">{{printf "%02d" (inc $i)}}</span>
+    <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
+    <div class="am-phones__row-body">
+      <div class="am-phones__row-name"><a href="/phones/{{$l.Line.Number}}">{{$l.Line.Name}}</a></div>
+      <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
+      <div class="am-phones__row-meta">
+        {{if $l.OnCall}}IN SESSION
+        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
+        {{else}}OFFLINE
+        {{end}}
+        {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
+      </div>
+    </div>
+    <div class="am-phones__row-actions">
+      <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/edit" hx-target="closest .am-phones__row" hx-swap="outerHTML">Edit</button>
+      <button class="am-tab" hx-post="/phones/{{$l.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{$l.Line.Name}}?">Delete</button>
+    </div>
+  </div>
+  {{end}}
+  {{else}}
+  <div class="am-hint am-phones__empty">No lines paired. Use the pair panel on the right to patch a handset in.</div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "am-phone-edit-row"}}
+<div class="am-phones__row am-phones__row--edit">
+  <span class="am-phones__row-num">{{fmtPhone .Line.Number}}</span>
+  <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML" class="am-phones__edit-form">
+    <input type="text" name="name" value="{{.Line.Name}}" class="am-phones__edit-input" autofocus>
+    <button type="submit" class="am-tab">Save</button>
+    <a href="/phones" class="am-tab">Cancel</a>
+  </form>
+</div>
+{{end}}
+
 {{define "phones-am"}}
 <div class="am-phones">
 
@@ -459,34 +501,7 @@
 
   <div class="am-phones__body">
 
-    <div class="am-plate am-phones__roster" id="phones-table">
-      <div class="am-phones__roster-head"><span class="am-label">Handsets</span></div>
-      {{if .Lines}}
-      {{range $i, $l := .Lines}}
-      <div class="am-phones__row">
-        <span class="am-phones__row-num">{{printf "%02d" (inc $i)}}</span>
-        <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
-        <div class="am-phones__row-body">
-          <div class="am-phones__row-name"><a href="/phones/{{$l.Line.Number}}">{{$l.Line.Name}}</a></div>
-          <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
-          <div class="am-phones__row-meta">
-            {{if $l.OnCall}}IN SESSION
-            {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
-            {{else}}OFFLINE
-            {{end}}
-            {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
-          </div>
-        </div>
-        <div class="am-phones__row-actions">
-          <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/edit" hx-target="closest .am-phones__row" hx-swap="outerHTML">Edit</button>
-          <button class="am-tab" hx-post="/phones/{{$l.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{$l.Line.Name}}?">Delete</button>
-        </div>
-      </div>
-      {{end}}
-      {{else}}
-      <div class="am-hint am-phones__empty">No lines paired. Use the pair panel on the right to patch a handset in.</div>
-      {{end}}
-    </div>
+    {{template "am-phones-table" .}}
 
     <div class="am-plate am-phones__pair" id="pair-new">
       <div class="am-phones__pair-label">Pair a new handset</div>

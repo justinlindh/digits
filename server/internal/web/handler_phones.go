@@ -158,7 +158,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	if err != nil {
@@ -358,7 +358,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	online := h.hub.Get(number) != nil
-	renderWith(w, h.tmplPhones, "phone-edit-row", lineRow{Line: *ln, Online: online})
+	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
@@ -382,7 +382,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -621,7 +621,7 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	data := h.buildLinesData(r, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)

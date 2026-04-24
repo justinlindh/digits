@@ -294,3 +294,13 @@ func isHTMX(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }
 
+// partialFor picks an htmx partial template name based on the current user's
+// theme. Returns the AM partial when the user is on the AM theme, else the
+// intercom partial.
+func partialFor(r *http.Request, intercom, am string) string {
+	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeAnsweringMachine {
+		return am
+	}
+	return intercom
+}
+
