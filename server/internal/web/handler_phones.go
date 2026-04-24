@@ -253,7 +253,6 @@ type lineDetailData struct {
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
 	User                  *auth.User
-	Theme                 auth.Theme
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -319,10 +318,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := auth.UserFromContext(r.Context())
-	var theme auth.Theme
-	if user != nil {
-		theme = user.Theme
-	}
 
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		Page:                  "phones",
@@ -342,7 +337,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		User:                  user,
-		Theme:                 theme,
 	})
 }
 
@@ -353,14 +347,9 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	}
 	online := h.hub.Get(number) != nil
 	if isHTMX(r) {
-		var theme auth.Theme
-		if u := auth.UserFromContext(r.Context()); u != nil {
-			theme = u.Theme
-		}
-		renderWith(w, h.tmplPhoneDetail, "phone-status", struct {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
 			Online bool
-			Theme  auth.Theme
-		}{online, theme})
+		}{online})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -416,7 +405,7 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	h.updateLineSetting(w, r, "voice-style-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, "voice-style-section", "am-voice-style-section", func(s *line.Settings) {
 		s.VoiceStyle = raw
 	})
 }
@@ -427,17 +416,17 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
-	h.updateLineSetting(w, r, "silent-mode-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, "silent-mode-section", "am-silent-mode-section", func(s *line.Settings) {
 		s.SilentMode = silent
 	})
 }
 
 // updateLineSetting applies a mutation to the Settings of the line identified
 // by the {number} path value, persists and pushes it if anything changed, and
-// then renders the named template partial (or redirects to the phone detail
+// then renders the theme-appropriate partial (or redirects to the phone detail
 // page for non-htmx callers). Handlers are expected to have already called
 // ParseForm and extracted the field they need before invoking this helper.
-func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, partial string, mutate func(*line.Settings)) {
+func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
 	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
@@ -462,7 +451,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 		ln.Settings = next
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partial, struct {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
 			Line line.Line
 		}{Line: *ln})
 		return

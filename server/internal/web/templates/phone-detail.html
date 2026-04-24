@@ -550,6 +550,63 @@
 </div>
 {{end}}
 
+{{define "am-voice-style-section"}}
+<div id="voice-style-section">
+  <form hx-post="/phones/{{.Line.Number}}/voice-style"
+        hx-target="#voice-style-section"
+        hx-swap="outerHTML"
+        class="am-settings__form am-settings__form--stack">
+    <label class="am-cartridge {{if eq .Line.Settings.VoiceStyle "copper"}}am-cartridge--selected{{end}}">
+      <input type="radio" name="voice_style" value="copper" {{if eq .Line.Settings.VoiceStyle "copper"}}checked{{end}}>
+      <span class="am-cartridge__body">
+        <span class="am-cartridge__name">Copper wire</span>
+        <span class="am-cartridge__desc">Warm vintage POTS sound. Narrow 300 to 3400 Hz band, like the old phone network.</span>
+      </span>
+      <span class="am-cartridge__lamp" aria-hidden="true"></span>
+    </label>
+    <label class="am-cartridge {{if eq .Line.Settings.VoiceStyle "modern"}}am-cartridge--selected{{end}}">
+      <input type="radio" name="voice_style" value="modern" {{if eq .Line.Settings.VoiceStyle "modern"}}checked{{end}}>
+      <span class="am-cartridge__body">
+        <span class="am-cartridge__name">Modern HD</span>
+        <span class="am-cartridge__desc">Full-range clean audio. No coloration, maximum clarity.</span>
+      </span>
+      <span class="am-cartridge__lamp" aria-hidden="true"></span>
+    </label>
+    <button type="submit" class="am-key am-settings__submit">
+      <span class="am-key__symbol">&#x25B6;</span>
+      <span class="am-key__label">Save</span>
+    </button>
+  </form>
+</div>
+{{end}}
+
+{{define "am-silent-mode-section"}}
+<div id="silent-mode-section">
+  <form hx-post="/phones/{{.Line.Number}}/silent-mode"
+        hx-target="#silent-mode-section"
+        hx-swap="outerHTML"
+        class="am-settings__toggle-row">
+    <label class="am-settings__dip" aria-label="Silent mode">
+      <input type="checkbox" name="silent_mode" value="on"
+             {{if .Line.Settings.SilentMode}}checked{{end}}
+             onchange="this.form.requestSubmit()"
+             class="am-settings__dip-input">
+      <span class="am-settings__dip-body" aria-hidden="true">
+        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+        <span class="am-settings__dip-lever"></span>
+        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+      </span>
+    </label>
+    <div class="am-settings__toggle-info">
+      <div class="am-label am-settings__toggle-title">Silent mode</div>
+      <p class="am-hint am-settings__toggle-desc">
+        Incoming calls won't ring. The light still flashes and you can still answer.
+      </p>
+    </div>
+  </form>
+</div>
+{{end}}
+
 {{define "phone-detail-am"}}
 <div class="am-handset">
 
@@ -570,7 +627,7 @@
             hx-get="/phones/{{.Line.Number}}/online"
             hx-trigger="every 10s"
             hx-swap="innerHTML">
-        {{template "phone-status" .}}
+        {{template "am-phone-status" .}}
       </span>
     </div>
   </div>
@@ -648,12 +705,12 @@
 
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Voice style</span>
-      {{template "voice-style-section" .}}
+      {{template "am-voice-style-section" .}}
     </section>
 
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Ringer</span>
-      {{template "silent-mode-section" .}}
+      {{template "am-silent-mode-section" .}}
     </section>
 
     {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
@@ -700,23 +757,23 @@
 {{end}}
 
 {{define "phone-status"}}
-{{if eq .Theme "answering-machine"}}
-  {{if .Online}}
-  <span class="am-handset__status" data-online="true">
-    <span class="am-lamp am-lamp--on-green am-handset__status-lamp" aria-hidden="true"></span>
-    <span class="am-led am-led--green am-handset__status-cap">ONLINE</span>
-  </span>
-  {{else}}
-  <span class="am-handset__status" data-online="false">
-    <span class="am-lamp am-handset__status-lamp" aria-hidden="true"></span>
-    <span class="am-led am-led--dim am-handset__status-cap">OFFLINE</span>
-  </span>
-  {{end}}
+{{if .Online}}
+<span class="chip chip--on" data-online="true"><span class="chip__dot"></span>online</span>
 {{else}}
-  {{if .Online}}
-  <span class="chip chip--on" data-online="true"><span class="chip__dot"></span>online</span>
-  {{else}}
-  <span class="chip" data-online="false"><span class="chip__dot"></span>offline</span>
-  {{end}}
+<span class="chip" data-online="false"><span class="chip__dot"></span>offline</span>
+{{end}}
+{{end}}
+
+{{define "am-phone-status"}}
+{{if .Online}}
+<span class="am-handset__status" data-online="true">
+  <span class="am-lamp am-lamp--on-green am-handset__status-lamp" aria-hidden="true"></span>
+  <span class="am-led am-led--green am-handset__status-cap">ONLINE</span>
+</span>
+{{else}}
+<span class="am-handset__status" data-online="false">
+  <span class="am-lamp am-handset__status-lamp" aria-hidden="true"></span>
+  <span class="am-led am-led--dim am-handset__status-cap">OFFLINE</span>
+</span>
 {{end}}
 {{end}}
