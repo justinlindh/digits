@@ -150,43 +150,7 @@
     </header>
     <div class="panel__body">
       <form action="/settings/theme" method="POST" class="stack-md">
-        <label class="theme-card {{if eq .User.Theme "intercom"}}theme-card--selected{{end}}">
-          <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
-          <span class="theme-card__swatch">
-            <span class="theme-card__swatch-strip" style="background: #f5f1ea;"></span>
-            <span class="theme-card__swatch-strip" style="background: #2e231b;"></span>
-            <span class="theme-card__swatch-strip" style="background: #c48b3a;"></span>
-          </span>
-          <span class="theme-card__body">
-            <span class="theme-card__name">Home intercom</span>
-            <span class="theme-card__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
-          </span>
-          <span class="chip chip--live" style="font-size: 10px;">default</span>
-        </label>
-        <label class="theme-card {{if eq .User.Theme "dialup"}}theme-card--selected{{end}}">
-          <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
-          <span class="theme-card__swatch">
-            <span class="theme-card__swatch-strip" style="background: #ece9d8;"></span>
-            <span class="theme-card__swatch-strip" style="background: #003da7;"></span>
-            <span class="theme-card__swatch-strip" style="background: #ffcc00;"></span>
-          </span>
-          <span class="theme-card__body">
-            <span class="theme-card__name">Online service 1997</span>
-            <span class="theme-card__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
-          </span>
-        </label>
-        <label class="theme-card {{if eq .User.Theme "answering-machine"}}theme-card--selected{{end}}">
-          <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
-          <span class="theme-card__swatch">
-            <span class="theme-card__swatch-strip" style="background: #d6ccae;"></span>
-            <span class="theme-card__swatch-strip" style="background: #1a1912;"></span>
-            <span class="theme-card__swatch-strip" style="background: #ffa520;"></span>
-          </span>
-          <span class="theme-card__body">
-            <span class="theme-card__name">Answering machine</span>
-            <span class="theme-card__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
-          </span>
-        </label>
+        {{template "theme-card-trio-intercom" .}}
         <button type="submit" class="btn btn--primary">Save theme</button>
       </form>
     </div>
@@ -667,46 +631,7 @@
         <div class="am-plate__label">Theme</div>
         <p class="am-hint am-settings__hint">Swap the cartridge to change how the app looks.</p>
         <form action="/settings/theme" method="POST" class="am-settings__form am-settings__form--stack">
-          <label class="am-cartridge {{if eq .User.Theme "intercom"}}am-cartridge--selected{{end}}">
-            <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
-            <span class="am-cartridge__swatch">
-              <span class="am-cartridge__strip" style="background: #f5f1ea;"></span>
-              <span class="am-cartridge__strip" style="background: #2e231b;"></span>
-              <span class="am-cartridge__strip" style="background: #c48b3a;"></span>
-            </span>
-            <span class="am-cartridge__body">
-              <span class="am-cartridge__name">Home intercom</span>
-              <span class="am-cartridge__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
-            </span>
-            <span class="am-cartridge__tag">Default</span>
-            <span class="am-cartridge__lamp" aria-hidden="true"></span>
-          </label>
-          <label class="am-cartridge {{if eq .User.Theme "dialup"}}am-cartridge--selected{{end}}">
-            <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
-            <span class="am-cartridge__swatch">
-              <span class="am-cartridge__strip" style="background: #ece9d8;"></span>
-              <span class="am-cartridge__strip" style="background: #003da7;"></span>
-              <span class="am-cartridge__strip" style="background: #ffcc00;"></span>
-            </span>
-            <span class="am-cartridge__body">
-              <span class="am-cartridge__name">Online service 1997</span>
-              <span class="am-cartridge__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era welcome energy.</span>
-            </span>
-            <span class="am-cartridge__lamp" aria-hidden="true"></span>
-          </label>
-          <label class="am-cartridge {{if eq .User.Theme "answering-machine"}}am-cartridge--selected{{end}}">
-            <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
-            <span class="am-cartridge__swatch">
-              <span class="am-cartridge__strip" style="background: #d6ccae;"></span>
-              <span class="am-cartridge__strip" style="background: #1a1912;"></span>
-              <span class="am-cartridge__strip" style="background: #ffa520;"></span>
-            </span>
-            <span class="am-cartridge__body">
-              <span class="am-cartridge__name">Answering machine</span>
-              <span class="am-cartridge__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
-            </span>
-            <span class="am-cartridge__lamp" aria-hidden="true"></span>
-          </label>
+          {{template "theme-card-trio-am" .}}
           <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
             <span class="am-key__symbol">&#x25B6;</span>
             <span class="am-key__label">Save theme</span>
@@ -751,4 +676,94 @@
   {{template "page-footer" .}}
 
 </div>
+{{end}}
+
+{{/*
+  Theme selector trio, rendered once per variant. Both forms show the same
+  three options with the same palette and copy; only the outer wrapping
+  class set differs (theme-card vs am-cartridge). Keep the names, values,
+  swatch hex triples, and descriptions synced across both defines.
+*/}}
+
+{{define "theme-card-trio-intercom"}}
+<label class="theme-card {{if eq .User.Theme "intercom"}}theme-card--selected{{end}}">
+  <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
+  <span class="theme-card__swatch">
+    <span class="theme-card__swatch-strip" style="background: #f5f1ea;"></span>
+    <span class="theme-card__swatch-strip" style="background: #2e231b;"></span>
+    <span class="theme-card__swatch-strip" style="background: #c48b3a;"></span>
+  </span>
+  <span class="theme-card__body">
+    <span class="theme-card__name">Home intercom</span>
+    <span class="theme-card__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
+  </span>
+  <span class="chip chip--live" style="font-size: 10px;">default</span>
+</label>
+<label class="theme-card {{if eq .User.Theme "dialup"}}theme-card--selected{{end}}">
+  <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
+  <span class="theme-card__swatch">
+    <span class="theme-card__swatch-strip" style="background: #ece9d8;"></span>
+    <span class="theme-card__swatch-strip" style="background: #003da7;"></span>
+    <span class="theme-card__swatch-strip" style="background: #ffcc00;"></span>
+  </span>
+  <span class="theme-card__body">
+    <span class="theme-card__name">Online service 1997</span>
+    <span class="theme-card__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
+  </span>
+</label>
+<label class="theme-card {{if eq .User.Theme "answering-machine"}}theme-card--selected{{end}}">
+  <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
+  <span class="theme-card__swatch">
+    <span class="theme-card__swatch-strip" style="background: #d6ccae;"></span>
+    <span class="theme-card__swatch-strip" style="background: #1a1912;"></span>
+    <span class="theme-card__swatch-strip" style="background: #ffa520;"></span>
+  </span>
+  <span class="theme-card__body">
+    <span class="theme-card__name">Answering machine</span>
+    <span class="theme-card__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
+  </span>
+</label>
+{{end}}
+
+{{define "theme-card-trio-am"}}
+<label class="am-cartridge {{if eq .User.Theme "intercom"}}am-cartridge--selected{{end}}">
+  <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
+  <span class="am-cartridge__swatch">
+    <span class="am-cartridge__strip" style="background: #f5f1ea;"></span>
+    <span class="am-cartridge__strip" style="background: #2e231b;"></span>
+    <span class="am-cartridge__strip" style="background: #c48b3a;"></span>
+  </span>
+  <span class="am-cartridge__body">
+    <span class="am-cartridge__name">Home intercom</span>
+    <span class="am-cartridge__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
+  </span>
+  <span class="am-cartridge__tag">Default</span>
+  <span class="am-cartridge__lamp" aria-hidden="true"></span>
+</label>
+<label class="am-cartridge {{if eq .User.Theme "dialup"}}am-cartridge--selected{{end}}">
+  <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
+  <span class="am-cartridge__swatch">
+    <span class="am-cartridge__strip" style="background: #ece9d8;"></span>
+    <span class="am-cartridge__strip" style="background: #003da7;"></span>
+    <span class="am-cartridge__strip" style="background: #ffcc00;"></span>
+  </span>
+  <span class="am-cartridge__body">
+    <span class="am-cartridge__name">Online service 1997</span>
+    <span class="am-cartridge__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
+  </span>
+  <span class="am-cartridge__lamp" aria-hidden="true"></span>
+</label>
+<label class="am-cartridge {{if eq .User.Theme "answering-machine"}}am-cartridge--selected{{end}}">
+  <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
+  <span class="am-cartridge__swatch">
+    <span class="am-cartridge__strip" style="background: #d6ccae;"></span>
+    <span class="am-cartridge__strip" style="background: #1a1912;"></span>
+    <span class="am-cartridge__strip" style="background: #ffa520;"></span>
+  </span>
+  <span class="am-cartridge__body">
+    <span class="am-cartridge__name">Answering machine</span>
+    <span class="am-cartridge__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
+  </span>
+  <span class="am-cartridge__lamp" aria-hidden="true"></span>
+</label>
 {{end}}
