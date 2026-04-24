@@ -5,8 +5,6 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -41,26 +39,6 @@ func (g *CredentialGenerator) Generate(identifier string) Credentials {
 		Username:   username,
 		Credential: credential,
 	}
-}
-
-// Verify checks that the credential is valid for the given username and has not expired.
-func (g *CredentialGenerator) Verify(username, credential string) bool {
-	parts := strings.SplitN(username, ":", 2)
-	if len(parts) < 2 {
-		return false
-	}
-
-	expiry, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return false
-	}
-
-	if time.Now().Unix() > expiry {
-		return false
-	}
-
-	expected := g.computeHMAC(username)
-	return hmac.Equal([]byte(credential), []byte(expected))
 }
 
 func (g *CredentialGenerator) computeHMAC(data string) string {
