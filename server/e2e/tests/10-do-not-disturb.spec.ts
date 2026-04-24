@@ -123,8 +123,6 @@ function runDNDFlow(theme: Theme): void {
       for (const path of SURFACES) {
         await page.goto(path);
         if (isAuthOrOnboard(page.url())) {
-          // /calls is gated behind a feature flag; treat any redirect as fatal
-          // for this assertion only when the surface is required.
           continue;
         }
         await expect(
