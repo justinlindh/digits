@@ -415,9 +415,9 @@
       <span class="am-title">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}} paired</span>
     </div>
     <div class="am-phones__header-spacer"></div>
-    <div class="am-well" style="padding: 10px 14px;">
-      <div class="am-led" style="font-size: 22px;">{{printf "%02d" (len .Lines)}}</div>
-      <div class="am-led am-led--dim" style="font-size: 9px; letter-spacing: 0.2em; margin-top: 2px;">PAIRED</div>
+    <div class="am-well am-phones__header-well">
+      <div class="am-led am-phones__header-led">{{printf "%02d" (len .Lines)}}</div>
+      <div class="am-led am-led--dim am-phones__header-cap">PAIRED</div>
     </div>
     <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
   </div>
@@ -426,11 +426,9 @@
     <div class="am-patchbay__rail">
       {{range $i, $l := .Lines}}
       {{if lt $i 8}}
-      <div class="am-jack{{if not $l.Online}} am-jack--unpatched{{end}}">
+      <div class="am-jack">
         <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
-        <div class="am-jack__socket">
-          {{if $l.Online}}<span class="am-jack__plug"></span>{{end}}
-        </div>
+        <div class="am-jack__socket"><span class="am-jack__plug"></span></div>
         <span class="am-jack__label-bot">{{$l.Line.Name}}</span>
         <span class="am-jack__lamp am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
       </div>
@@ -460,7 +458,7 @@
         <span class="am-phones__row-num">{{printf "%02d" (inc $i)}}</span>
         <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
         <div class="am-phones__row-body">
-          <div class="am-phones__row-name"><a href="/phones/{{$l.Line.Number}}" style="color: inherit; text-decoration: none;">{{$l.Line.Name}}</a></div>
+          <div class="am-phones__row-name"><a href="/phones/{{$l.Line.Number}}">{{$l.Line.Name}}</a></div>
           <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
           <div class="am-phones__row-meta">
             {{if $l.OnCall}}IN SESSION
@@ -477,7 +475,7 @@
       </div>
       {{end}}
       {{else}}
-      <div class="am-hint" style="padding: 14px 18px;">No lines paired. Use the pair panel on the right to patch a handset in.</div>
+      <div class="am-hint am-phones__empty">No lines paired. Use the pair panel on the right to patch a handset in.</div>
       {{end}}
     </div>
 
@@ -520,7 +518,7 @@
         <div class="am-phones__pair-field">
           <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
           <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8" required>
-          <span id="number-hint" class="am-phones__pair-field-hint hidden" style="color: var(--chip-red-dk);">Line number is already in use.</span>
+          <span id="number-hint" class="am-phones__pair-field-hint am-phones__pair-field-hint--err hidden">Line number is already in use.</span>
         </div>
 
         <div class="am-phones__pair-field">
