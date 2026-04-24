@@ -540,8 +540,6 @@
       <a href="#household" class="settings-nav__item">Household</a>
       <a href="#timezone" class="settings-nav__item">Timezone</a>
       <a href="#theme" class="settings-nav__item">Theme</a>
-      {{if eq .User.Theme "intercom"}}<a href="#intercom-options" class="settings-nav__item">Intercom</a>{{end}}
-      {{if eq .User.Theme "dialup"}}<a href="#dialup-options" class="settings-nav__item">Dialup</a>{{end}}
       <a href="#privacy" class="settings-nav__item">Privacy</a>
       {{end}}
       <a href="#session" class="settings-nav__item">Session</a>
@@ -715,74 +713,6 @@
           </button>
         </form>
       </section>
-
-      {{if eq .User.Theme "intercom"}}
-      <section id="intercom-options" class="am-plate am-settings__section">
-        <div class="am-plate__label">Intercom options</div>
-        <p class="am-hint am-settings__hint">Time of day for the intercom palette.</p>
-        <form action="/settings/appearance" method="POST" class="am-settings__form am-settings__form--stack">
-          <label class="am-settings__radio {{if eq .User.Appearance "day"}}am-settings__radio--selected{{end}}">
-            <input type="radio" name="appearance" value="day" {{if eq .User.Appearance "day"}}checked{{end}}>
-            <span class="am-settings__radio-title">
-              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
-              <span class="am-settings__radio-name">Day</span>
-              <span class="am-settings__radio-meta">Default</span>
-            </span>
-            <span class="am-settings__radio-desc">Warm paper and walnut under a bright room. The standard intercom palette.</span>
-          </label>
-          <label class="am-settings__radio {{if eq .User.Appearance "night"}}am-settings__radio--selected{{end}}">
-            <input type="radio" name="appearance" value="night" {{if eq .User.Appearance "night"}}checked{{end}}>
-            <span class="am-settings__radio-title">
-              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
-              <span class="am-settings__radio-name">Night</span>
-            </span>
-            <span class="am-settings__radio-desc">Walnut charcoal with backlit brass. Easier on the eyes in low light.</span>
-          </label>
-          <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
-            <span class="am-key__symbol">&#x25B6;</span>
-            <span class="am-key__label">Save</span>
-          </button>
-        </form>
-      </section>
-      {{end}}
-
-      {{if eq .User.Theme "dialup"}}
-      <section id="dialup-options" class="am-plate am-settings__section">
-        <div class="am-plate__label">Dialup options</div>
-        <p class="am-hint am-settings__hint">Where the CRT monitor bezel appears.</p>
-        <form action="/settings/crt-mode" method="POST" class="am-settings__form am-settings__form--stack">
-          <label class="am-settings__radio {{if eq .User.CRTMode "off"}}am-settings__radio--selected{{end}}">
-            <input type="radio" name="crt_mode" value="off" {{if eq .User.CRTMode "off"}}checked{{end}}>
-            <span class="am-settings__radio-title">
-              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
-              <span class="am-settings__radio-name">Off</span>
-            </span>
-            <span class="am-settings__radio-desc">No CRT bezel anywhere. Plain windows on the desktop.</span>
-          </label>
-          <label class="am-settings__radio {{if eq .User.CRTMode "connecting"}}am-settings__radio--selected{{end}}">
-            <input type="radio" name="crt_mode" value="connecting" {{if eq .User.CRTMode "connecting"}}checked{{end}}>
-            <span class="am-settings__radio-title">
-              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
-              <span class="am-settings__radio-name">Connecting page only</span>
-              <span class="am-settings__radio-meta">Default</span>
-            </span>
-            <span class="am-settings__radio-desc">The dial-in screen wears the CRT. Every other page looks normal.</span>
-          </label>
-          <label class="am-settings__radio {{if eq .User.CRTMode "all"}}am-settings__radio--selected{{end}}">
-            <input type="radio" name="crt_mode" value="all" {{if eq .User.CRTMode "all"}}checked{{end}}>
-            <span class="am-settings__radio-title">
-              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
-              <span class="am-settings__radio-name">All pages</span>
-            </span>
-            <span class="am-settings__radio-desc">The whole app lives inside the CRT monitor. Most immersive.</span>
-          </label>
-          <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
-            <span class="am-key__symbol">&#x25B6;</span>
-            <span class="am-key__label">Save</span>
-          </button>
-        </form>
-      </section>
-      {{end}}
 
       <section id="privacy" class="am-plate am-settings__section">
         <div class="am-plate__label">Privacy</div>

@@ -856,45 +856,6 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   box-shadow: 0 0 6px rgba(255,165,32,0.6), 0 0 12px rgba(255,165,32,0.25);
 }
 
-/* Theme-specific option rows (intercom Day/Night, dialup CRT mode) */
-.am-settings__radio {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 4px;
-  padding: 12px 14px;
-  background: rgba(255,255,255,0.3);
-  border: 1px solid rgba(100,80,40,0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  position: relative;
-}
-.am-settings__radio input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
-.am-settings__radio-title { display: flex; align-items: center; gap: 10px; font-family: var(--font-body); font-size: 12px; font-weight: 600; color: var(--ink); }
-.am-settings__radio-indicator {
-  width: 9px; height: 9px; border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #40100a 0%, #1a0804 70%);
-  border: 1px solid #0a0504;
-  box-shadow: inset 0 1px 1px rgba(255,255,255,0.08);
-  flex: 0 0 auto;
-}
-.am-settings__radio-name { flex: 1; }
-.am-settings__radio-meta {
-  font-family: var(--font-body); font-size: 8.5px; font-weight: 600; letter-spacing: 0.22em;
-  text-transform: uppercase; padding: 3px 8px;
-  background: var(--case-shade); color: #f4ebcb; border-radius: 3px;
-}
-.am-settings__radio-desc { font-family: var(--font-body); font-size: 11px; color: var(--ink-muted); line-height: 1.4; padding-left: 19px; }
-.am-settings__radio:focus-within { outline: 2px solid rgba(255,165,32,0.55); outline-offset: 2px; }
-.am-settings__radio--selected {
-  border-color: rgba(255,165,32,0.55);
-  background: rgba(255,255,255,0.45);
-  box-shadow: 0 0 0 1px rgba(255,165,32,0.25);
-}
-.am-settings__radio--selected .am-settings__radio-indicator {
-  background: radial-gradient(circle at 30% 30%, #ffd080 0%, var(--led-amber) 60%, #9a5808 100%);
-  box-shadow: 0 0 5px rgba(255,165,32,0.55), 0 0 10px rgba(255,165,32,0.2);
-}
-
 /* Privacy DIP-style toggle row. The hidden checkbox drives the lever position. */
 .am-settings__toggle-row { display: flex; gap: 16px; align-items: flex-start; margin: 0; }
 .am-settings__dip {
