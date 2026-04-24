@@ -1139,6 +1139,41 @@ func TestController_ConferenceEndFromIdleReturnsIdle(t *testing.T) {
 	}
 }
 
+// TestController_ConferenceLeaveAfterLocalTeardownIsBenign verifies that a
+// ConferenceLeave arriving after the host already cleared confID locally
+// returns silently without emitting Warn or invoking RemoveMeshPeer.
+func TestController_ConferenceLeaveAfterLocalTeardownIsBenign(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	defer c.Close()
+	// confID is "" by default, simulating the post-teardown state.
+
+	c.HandleConferenceLeave("conf-abc", "5550002", "hangup")
+
+	if mock.meshPeerRemoved("5550002") {
+		t.Fatalf("RemoveMeshPeer must not fire when local conference state is already cleared")
+	}
+}
+
+// TestController_ConferenceEndAfterLocalTeardownIsBenign verifies that a
+// ConferenceEnd arriving after the host already cleared confID locally
+// returns silently without invoking TearDownAllMeshPeers or HangupCall.
+func TestController_ConferenceEndAfterLocalTeardownIsBenign(t *testing.T) {
+	mock := &mockCallbacks{}
+	c := NewController(mock, "5550001")
+	defer c.Close()
+	// confID is "" by default, simulating the post-teardown state.
+
+	c.HandleConferenceEnd("conf-abc", "host_hangup")
+
+	if mock.allPeersTorndown() {
+		t.Fatalf("TearDownAllMeshPeers must not fire when local conference state is already cleared")
+	}
+	if mock.Hangups() != 0 {
+		t.Fatalf("HangupCall must not fire when local conference state is already cleared, got %d", mock.Hangups())
+	}
+}
+
 func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := NewController(mock, "5550001")
