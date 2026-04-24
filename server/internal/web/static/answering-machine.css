@@ -534,7 +534,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
    AM /links: Families
    ========================================================================= */
 
-.am-links { display: flex; flex-direction: column; gap: 18px; max-width: 960px; }
+.am-links { display: flex; flex-direction: column; gap: 18px; }
 
 /* Header plate: directory label + LED count well */
 .am-links__header { display: flex; align-items: center; gap: 18px; padding: 16px 22px; flex-wrap: wrap; }
