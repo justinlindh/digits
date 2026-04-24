@@ -64,13 +64,13 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *st
 	return u, nil
 }
 
-// GetUserByEmail looks up a user by email address.
-func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+const userSelectBase = `SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE `
+
+func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*User, error) {
 	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE email = $1`,
-		email,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	err := s.db.QueryRowContext(ctx, userSelectBase+whereClause, arg).Scan(
+		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -78,38 +78,21 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 		return nil, err
 	}
 	return u, nil
+}
+
+// GetUserByEmail looks up a user by email address.
+func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	return s.queryUser(ctx, `email = $1`, email)
 }
 
 // GetUserByGoogleID looks up a user by their Google OAuth subject ID.
 func (s *Store) GetUserByGoogleID(ctx context.Context, googleID string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE google_id = $1`,
-		googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return s.queryUser(ctx, `google_id = $1`, googleID)
 }
 
 // GetUserByID looks up a user by their UUID.
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE id = $1`,
-		id,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrUserNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	return u, nil
+	return s.queryUser(ctx, `id = $1`, id)
 }
 
 // UpdateLastLogin sets last_login_at to now for the given user.
