@@ -56,10 +56,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	hh := h.primaryHousehold(r)
 	ld := h.buildLinesDataFor(r, hh, "")
 	chrome := chromeFor("dashboard", hh)
-	loc := time.UTC
-	if hh != nil {
-		loc = hh.Location()
-	}
+	loc := householdLocation(hh)
 	now := time.Now().In(loc)
 
 	// Determine current household ID for linked-family lookup.

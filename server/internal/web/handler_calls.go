@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -24,10 +23,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	loc := time.UTC
-	if hh != nil {
-		loc = hh.Location()
-	}
+	loc := householdLocation(hh)
 	var entries []calls.HistoryEntry
 
 	// Scope call log to the user's household lines

@@ -281,7 +281,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hh := h.primaryHousehold(r)
-	_, _, _, loc := householdChrome(hh)
+	loc := householdLocation(hh)
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)

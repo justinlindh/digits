@@ -249,8 +249,7 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 //
 // Handlers that need both the household fields and the household ID should
 // call this once at the top of the render and thread the *Household through
-// the helpers they invoke, instead of repeatedly calling GetForUser or
-// householdChrome.
+// the helpers they invoke, instead of repeatedly calling GetForUser.
 func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
 		return nil
@@ -266,15 +265,14 @@ func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	return households[0]
 }
 
-// householdChrome returns the chrome-bar fields (name, call-history flag,
-// do-not-disturb flag, timezone location) derived from hh. A nil hh yields
-// the empty-state defaults, so callers that resolved "no household" can
-// reuse this without a nil-check branch.
-func householdChrome(hh *household.Household) (name string, callHistory bool, dnd bool, loc *time.Location) {
+// householdLocation returns the household's timezone, or time.UTC when hh
+// is nil. Handlers use this to localize render-time timestamps without a
+// per-call nil check.
+func householdLocation(hh *household.Household) *time.Location {
 	if hh == nil {
-		return "", false, false, time.UTC
+		return time.UTC
 	}
-	return hh.Name, hh.CallHistoryEnabled, hh.DoNotDisturb, hh.Location()
+	return hh.Location()
 }
 
 // chromeData carries the fields every protected page exposes through the
