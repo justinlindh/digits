@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/version"
 )
@@ -111,14 +110,6 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 		slog.Error("create invite failed", "err", err)
 		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
 		return
-	}
-
-	// Send email notification to the creating user with the invite code
-	if h.emailSender != nil && user.Email != "" {
-		subj, body := email.HouseholdInviteEmail(myHousehold.Name, link.InviteCode, h.cfg.BaseURL)
-		if err := h.emailSender.Send(user.Email, subj, body); err != nil {
-			slog.Error("send invite email failed", "err", err)
-		}
 	}
 
 	http.Redirect(w, r, "/links?created="+link.InviteCode, http.StatusSeeOther)
