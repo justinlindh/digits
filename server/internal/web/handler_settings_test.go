@@ -148,6 +148,56 @@ func TestHandleSettingsDoNotDisturbPost_OffSendsFalse(t *testing.T) {
 	expectLineSettingsPush(t, conn, false)
 }
 
+func TestHandleSettingsDoNotDisturbPost_OffPreservesPerLineSilent(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create(context.Background(), "DND Off Line Silent", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	if err := h.householdStore.SetDoNotDisturb(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("seed DND=true: %v", err)
+	}
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140301", "Phone Y", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	if err := lineStore.UpdateSettings(context.Background(), ln.ID, line.Settings{SilentMode: true}); err != nil {
+		t.Fatalf("set line silent_mode=true: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register("3140301", conn)
+
+	w := postDoNotDisturb(t, h, cookie, "false")
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+
+	got, err := h.householdStore.GetByID(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("get household: %v", err)
+	}
+	if got.DoNotDisturb {
+		t.Fatalf("expected DoNotDisturb=false after POST, got true")
+	}
+
+	// Household DND is now false but the line itself has silent_mode=true,
+	// so the OR'd push should still carry SilentMode=true.
+	expectLineSettingsPush(t, conn, true)
+}
+
 func TestHandleSettingsDoNotDisturbPost_NoHouseholdRedirects(t *testing.T) {
 	h, _, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)

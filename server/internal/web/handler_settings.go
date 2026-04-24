@@ -117,7 +117,7 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 	enabled := r.FormValue("enabled") == "true"
 	householdID := households[0].ID
 	if err := h.householdStore.SetDoNotDisturb(r.Context(), householdID, enabled); err != nil {
-		slog.Error("set do not disturb failed", "err", err)
+		slog.Error("set do not disturb failed", "err", err, "household_id", householdID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
