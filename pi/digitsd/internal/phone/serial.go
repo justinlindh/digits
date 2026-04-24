@@ -220,6 +220,9 @@ func (sp *SerialPort) readLoop() {
 						sp.logger.Warn("HOOK:FLASH received but firmware is not flash-capable; ignoring")
 						continue
 					}
+					if line == "HOOK:FLASH" {
+						sp.logger.Info("HOOK:FLASH forwarded from firmware")
+					}
 					select {
 					case sp.events <- line:
 					default:
