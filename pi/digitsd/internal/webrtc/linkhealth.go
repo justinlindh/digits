@@ -34,8 +34,9 @@ type StatsGetter interface {
 }
 
 // Reporter samples WebRTC stats on a ticker and invokes send on each
-// non-empty sample. Zero-valued samples (no RR received yet AND no ICE
-// pair) are skipped entirely to avoid wire noise.
+// non-empty sample. Zero-valued samples (no InboundRTP data yet AND no ICE
+// pair) are skipped entirely to avoid wire noise. Fields owned by Run()
+// goroutine after start; sample() is not safe for concurrent use.
 type Reporter struct {
 	getter   StatsGetter
 	send     func(Sample) error
@@ -87,7 +88,7 @@ func (r *Reporter) Run(ctx context.Context) {
 }
 
 // sample walks a GetStats() report and extracts a Sample. Returns ok=false
-// if the report has no useful data to report (no RR yet AND no nominated
+// if the report has no useful data to report (no InboundRTP data yet AND no nominated
 // ICE pair).
 func (r *Reporter) sample() (Sample, bool) {
 	report := r.getter.GetStats()
@@ -108,7 +109,7 @@ func (r *Reporter) sample() (Sample, bool) {
 				recvDelta := int64(in.PacketsReceived) - int64(r.prevPacketsReceived)
 				lostDelta := int64(in.PacketsLost) - int64(r.prevPacketsLost)
 				total := recvDelta + lostDelta
-				if total > 0 && lostDelta >= 0 {
+				if total > 0 && lostDelta >= 0 && recvDelta >= 0 {
 					loss := float32(lostDelta) * 100.0 / float32(total)
 					out.LossPct = &loss
 				}

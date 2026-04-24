@@ -211,3 +211,76 @@ func TestSample_PopulatesLossFromInboundRTPDelta(t *testing.T) {
 		t.Errorf("LossPct=%v want ~4.76", got)
 	}
 }
+
+func TestSample_LossNilOnCounterReset(t *testing.T) {
+	g := &fakeStatsGetter{}
+	r := NewReporter(g, nil, time.Second)
+
+	// Baseline: 100 received, 5 lost.
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{PacketsReceived: 100, PacketsLost: 5},
+	}
+	if _, ok := r.sample(); !ok {
+		t.Fatal("baseline sample dropped")
+	}
+
+	// Counter reset: PacketsLost decreases (track replacement).
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{PacketsReceived: 110, PacketsLost: 2},
+	}
+	s, ok := r.sample()
+	if !ok {
+		t.Fatal("post-reset sample dropped")
+	}
+	if s.LossPct != nil {
+		t.Errorf("LossPct should be nil on counter reset, got %v", *s.LossPct)
+	}
+}
+
+func TestSample_LossNilOnZeroTrafficWindow(t *testing.T) {
+	g := &fakeStatsGetter{}
+	r := NewReporter(g, nil, time.Second)
+
+	// Two identical samples: no traffic moved.
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{PacketsReceived: 50, PacketsLost: 0},
+	}
+	if _, ok := r.sample(); !ok {
+		t.Fatal("baseline sample dropped")
+	}
+	s, ok := r.sample()
+	if !ok {
+		t.Fatal("zero-traffic sample dropped")
+	}
+	if s.LossPct != nil {
+		t.Errorf("LossPct should be nil on zero-traffic window, got %v", *s.LossPct)
+	}
+}
+
+func TestSample_LossOneHundredOnAllLossWindow(t *testing.T) {
+	g := &fakeStatsGetter{}
+	r := NewReporter(g, nil, time.Second)
+
+	// Baseline.
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{PacketsReceived: 100, PacketsLost: 0},
+	}
+	if _, ok := r.sample(); !ok {
+		t.Fatal("baseline sample dropped")
+	}
+
+	// All-loss window: PacketsReceived flat, PacketsLost gained 10.
+	g.report = pionwebrtc.StatsReport{
+		"id1": pionwebrtc.InboundRTPStreamStats{PacketsReceived: 100, PacketsLost: 10},
+	}
+	s, ok := r.sample()
+	if !ok {
+		t.Fatal("all-loss sample dropped")
+	}
+	if s.LossPct == nil {
+		t.Fatal("LossPct nil")
+	}
+	if got := *s.LossPct; got < 99.9 || got > 100.1 {
+		t.Errorf("LossPct=%v want 100.0", got)
+	}
+}
