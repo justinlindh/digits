@@ -68,7 +68,7 @@ async function setDoNotDisturb(page: Page, target: 'on' | 'off'): Promise<void> 
       r.url().includes('/settings/do-not-disturb') &&
       r.request().method() === 'POST',
   );
-  await checkbox.setChecked(target === 'on');
+  await checkbox.setChecked(target === 'on', { force: true });
   await wait;
   // The handler returns 303 to /settings?saved=1; wait for that landing page.
   await page.waitForURL((u) => u.toString().includes('/settings'));
