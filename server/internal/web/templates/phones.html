@@ -422,10 +422,22 @@
     <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
   </div>
 
+  {{/* Patchbay rail sizing. N=0 shows a dark rail with a pair-me-in hint.
+       N=1..4 shows a 4-jack rail. N>=5 shows an 8-jack rail. N>8 renders the
+       first 8 here; the rest are always visible in the Handsets roster below. */}}
+  {{$n := len .Lines}}
+  {{if eq $n 0}}
+  <div class="am-plate am-phones__empty-rail">
+    <span class="am-label">Patchbay idle</span>
+    <span class="am-hint">No handsets patched yet. Use the pair panel to bring one online.</span>
+  </div>
+  {{else}}
+  {{$total := 4}}{{if gt $n 4}}{{$total = 8}}{{end}}
+  {{$shown := $n}}{{if gt $shown $total}}{{$shown = $total}}{{end}}
   <div class="am-patchbay am-phones__rail">
     <div class="am-patchbay__rail">
       {{range $i, $l := .Lines}}
-      {{if lt $i 8}}
+      {{if lt $i $shown}}
       <div class="am-jack">
         <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
         <div class="am-jack__socket"><span class="am-jack__plug"></span></div>
@@ -434,9 +446,8 @@
       </div>
       {{end}}
       {{end}}
-      {{/* Pad out to 8 jacks so the rail always looks like a patchbay */}}
-      {{range $i := iter 8}}
-      {{if ge $i (len $.Lines)}}
+      {{range $i := iter $total}}
+      {{if ge $i $shown}}
       <div class="am-jack am-jack--unpatched">
         <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
         <div class="am-jack__socket"></div>
@@ -447,6 +458,7 @@
       {{end}}
     </div>
   </div>
+  {{end}}
 
   <div class="am-phones__body">
 

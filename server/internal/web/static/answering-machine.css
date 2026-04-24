@@ -296,21 +296,42 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   position: relative;
   display: flex; align-items: center; justify-content: center;
 }
+/* A patch cable emerging from the socket. The metal plug body is hidden
+   inside the jack (as it would be in a real patchbay); what is visible from
+   outside is the rubbery strain-relief boot sitting at the socket face, then
+   the colored cable rising above it. */
 .am-jack__plug {
-  position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
-  width: 14px; height: 60px; border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg,
-    #d8d4cc 0%, #d8d4cc 18%,
-    #18150f 20%, #18150f 24%,
-    #c8c4bc 26%, #c8c4bc 46%,
-    #18150f 48%, #18150f 52%,
-    #b8b4ac 54%);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.5), inset 1px 0 0 rgba(255,255,255,0.4), inset -1px 0 0 rgba(0,0,0,0.4);
+  position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+  width: 8px; height: 22px;
+  /* Red PVC cable jacket with edge shading to read as cylindrical. */
+  background:
+    linear-gradient(90deg,
+      rgba(0,0,0,0.45) 0%,
+      rgba(0,0,0,0.10) 25%,
+      rgba(255,255,255,0.22) 50%,
+      rgba(0,0,0,0.10) 75%,
+      rgba(0,0,0,0.45) 100%),
+    #c0382d;
+  border-radius: 2px 2px 0 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.4);
 }
 .am-jack__plug::before {
-  content: ''; position: absolute; top: -6px; left: -2px; right: -2px; height: 10px; border-radius: 3px 3px 0 0;
-  background: linear-gradient(180deg, #d63826 0%, #a0201a 100%);
-  box-shadow: inset 0 1px 0 rgba(255,180,160,0.4), 0 1px 2px rgba(0,0,0,0.5);
+  /* Black rubber strain-relief boot: slightly wider than the cable, tapering
+     into a rounded base where it meets the socket face. */
+  content: '';
+  position: absolute;
+  bottom: -9px; left: -4px; right: -4px;
+  height: 13px;
+  background: linear-gradient(180deg,
+    #3a2c20 0%,
+    #1a120a 40%,
+    #050301 100%);
+  border-radius: 2px 2px 7px 7px / 2px 2px 14px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 1px 0 0 rgba(255,255,255,0.04),
+    inset -1px 0 0 rgba(0,0,0,0.5),
+    0 2px 3px rgba(0,0,0,0.5);
 }
 .am-jack--unpatched .am-jack__plug { display: none; }
 .am-jack__label-bot {
@@ -812,6 +833,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 /* Patchbay rail wrapper on this page. The inner .am-patchbay__rail grid
    is defined in the patchbay primitives section. */
 .am-phones__rail { padding: 22px 24px; }
+.am-phones__empty-rail { display: flex; align-items: center; gap: 14px; padding: 18px 22px; }
 
 /* Two-column body: roster (wider) + pair panel (narrower) */
 .am-phones__body { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start; }
