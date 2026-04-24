@@ -86,11 +86,13 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
-	ld := h.buildLinesData(r, "")
-	nums := h.householdNumbers(r)
+	hh := h.primaryHousehold(r)
+	ld := h.buildLinesData(r, hh, "")
 
+	nums := make(map[string]bool, len(ld.Lines))
 	var onlineCount int
 	for _, row := range ld.Lines {
+		nums[row.Line.Number] = true
 		if row.Online {
 			onlineCount++
 		}

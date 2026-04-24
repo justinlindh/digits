@@ -14,11 +14,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // requireLineOwnership looks up a line by its number and verifies the
 // authenticated user's household owns it. Returns the line on success, or
-// nil after writing a 404 — unauthenticated, unknown, and unauthorized
+// nil after writing a 404. Unauthenticated, unknown, and unauthorized
 // responses are intentionally indistinguishable to avoid leaking whether a
 // given number exists.
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
@@ -61,8 +62,8 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 
 // ownedLinesForUser returns the lines owned by any household the user belongs
 // to, keyed by number, plus the primary household ID. Returns (nil, "", false)
-// if the user has no households or any lookup fails — caller writes 404, same
-// response shape as nonexistent.
+// if the user has no households or any lookup fails. Caller writes 404, the
+// same response shape as nonexistent.
 func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, string, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
@@ -246,25 +247,81 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// householdContext returns the household name, call-history flag, do-not-disturb flag, and timezone location for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, dnd bool, loc *time.Location) {
+// primaryHousehold returns the first household the authenticated user belongs
+// to, or nil when the user is unauthenticated, the store is not wired, lookup
+// fails, or the user has no households. This is the canonical single-query
+// lookup; page handlers should call it once at the top and thread the result
+// through helpers rather than re-querying per chrome field.
+func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
-		return "", false, false, time.UTC
+		return nil
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false, false, time.UTC
+		return nil
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false, false, time.UTC
+		return nil
 	}
-	return households[0].Name, households[0].CallHistoryEnabled, households[0].DoNotDisturb, households[0].Location()
+	return households[0]
 }
 
-func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch, _, _ := h.householdContext(r)
-	return ch
+// householdLocation returns the timezone location for a household, falling
+// back to UTC when hh is nil.
+func householdLocation(hh *household.Household) *time.Location {
+	if hh == nil {
+		return time.UTC
+	}
+	return hh.Location()
+}
+
+// chromeData is the set of fields every protected page-data struct shares for
+// rendering the layout chrome (sidebar, nav, DND chip, version pill). Embed
+// this in each page-data struct and populate via newChromeData. The
+// HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
+// Household pointer so there is one source of truth per request.
+type chromeData struct {
+	Page      string
+	Version   string
+	User      *auth.User
+	Household *household.Household
+}
+
+// HouseholdName returns the current user's household name, or "" when none.
+func (c chromeData) HouseholdName() string {
+	if c.Household == nil {
+		return ""
+	}
+	return c.Household.Name
+}
+
+// HouseholdDND returns the household-wide do-not-disturb flag.
+func (c chromeData) HouseholdDND() bool {
+	if c.Household == nil {
+		return false
+	}
+	return c.Household.DoNotDisturb
+}
+
+// CallHistoryEnabled returns whether the household has call history on.
+func (c chromeData) CallHistoryEnabled() bool {
+	if c.Household == nil {
+		return false
+	}
+	return c.Household.CallHistoryEnabled
+}
+
+// newChromeData builds the shared chrome payload for a page. Pass the page
+// slug (used for nav "is-active" matching), the authenticated user (may be
+// nil), and the user's primary household (may be nil).
+func newChromeData(page string, user *auth.User, hh *household.Household) chromeData {
+	return chromeData{
+		Page:      page,
+		Version:   version.Version,
+		User:      user,
+		Household: hh,
+	}
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

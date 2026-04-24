@@ -17,7 +17,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // ConferenceLinkHealthEdge is the per-directed-edge section of
@@ -260,14 +259,9 @@ func (h *Handler) renderConferenceLinkHealthPanel(resp ConferenceLinkHealthResp)
 
 // conferenceLiveDetailData is the render payload for conference-live-detail.html.
 type conferenceLiveDetailData struct {
-	Page               string
-	Version            string
-	User               *auth.User
-	HouseholdName      string
-	HouseholdDND       bool
-	CallHistoryEnabled bool
-	Resp               ConferenceLinkHealthResp
-	IsHostHousehold    bool
+	chromeData
+	Resp            ConferenceLinkHealthResp
+	IsHostHousehold bool
 }
 
 // handleConferenceLiveDetail renders the observation deck for a conference.
@@ -291,16 +285,10 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	data := conferenceLiveDetailData{
-		Page:               "conference-live",
-		Version:            version.Version,
-		User:               user,
-		HouseholdName:      hhName,
-		HouseholdDND:       hhDND,
-		CallHistoryEnabled: callHistory,
-		Resp:               resp,
-		IsHostHousehold:    isHostHH,
+		chromeData:      newChromeData("conference-live", user, h.primaryHousehold(r)),
+		Resp:            resp,
+		IsHostHousehold: isHostHH,
 	}
 	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }
