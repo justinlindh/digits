@@ -1,6 +1,9 @@
 {{define "title"}}Settings{{end}}
 
 {{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+{{template "settings-am" .}}
+{{else}}
 <div class="page" style="max-width: 900px;">
 
   <header class="page__head">
@@ -328,6 +331,7 @@
   {{template "page-footer" .}}
 
 </div>
+{{end}}
 <script>
 (function () {
   // Settings section scrollspy: highlights the .settings-nav item
@@ -506,4 +510,315 @@
   });
 })();
 </script>
+{{end}}
+
+{{define "settings-am"}}
+<div class="page am-settings">
+
+  {{if .Saved}}
+  <div class="banner banner--ok">Settings saved.</div>
+  {{end}}
+
+  <div class="am-plate am-settings__header">
+    <div class="am-settings__header-info">
+      <span class="am-label">Service menu</span>
+      <span class="am-title">Settings</span>
+    </div>
+    <div class="am-settings__header-spacer"></div>
+    <div class="am-well am-settings__header-well">
+      <div class="am-led am-settings__header-led">{{.User.Email}}</div>
+      <div class="am-led am-led--dim am-settings__header-cap">Signed&nbsp;in</div>
+    </div>
+  </div>
+
+  <div class="am-settings__layout">
+
+    <nav class="settings-nav am-settings__nav" aria-label="Settings sections">
+      <span class="am-label am-settings__nav-label">Index</span>
+      <a href="#account" class="settings-nav__item is-active">Account</a>
+      {{if .Household}}
+      <a href="#household" class="settings-nav__item">Household</a>
+      <a href="#timezone" class="settings-nav__item">Timezone</a>
+      <a href="#theme" class="settings-nav__item">Theme</a>
+      {{if eq .User.Theme "intercom"}}<a href="#intercom-options" class="settings-nav__item">Intercom</a>{{end}}
+      {{if eq .User.Theme "dialup"}}<a href="#dialup-options" class="settings-nav__item">Dialup</a>{{end}}
+      <a href="#privacy" class="settings-nav__item">Privacy</a>
+      {{end}}
+      <a href="#session" class="settings-nav__item">Session</a>
+    </nav>
+
+    <div class="am-settings__body">
+
+      <section id="account" class="am-plate am-settings__section">
+        <div class="am-plate__label">Account</div>
+        <dl class="am-settings__kv">
+          <div class="am-settings__kv-row">
+            <dt class="am-label am-settings__kv-key">Email</dt>
+            <dd class="am-well am-settings__kv-val"><span class="am-led am-settings__kv-led">{{.User.Email}}</span></dd>
+          </div>
+          <div class="am-settings__kv-row">
+            <dt class="am-label am-settings__kv-key">Name</dt>
+            <dd class="am-well am-settings__kv-val">
+              {{if .User.Name}}
+              <span class="am-led am-settings__kv-led">{{.User.Name}}</span>
+              {{else}}
+              <span class="am-led am-led--dim am-settings__kv-led">Not set</span>
+              {{end}}
+            </dd>
+          </div>
+          {{if .User.GoogleID}}
+          <div class="am-settings__kv-row">
+            <dt class="am-label am-settings__kv-key">Google</dt>
+            <dd class="am-well am-settings__kv-val">
+              <span class="am-lamp am-lamp--on-green am-settings__kv-lamp"></span>
+              <span class="am-led am-led--green am-settings__kv-led">Connected</span>
+            </dd>
+          </div>
+          {{end}}
+        </dl>
+      </section>
+
+      {{if .Household}}
+      <section id="household" class="am-plate am-settings__section">
+        <div class="am-plate__label">Household</div>
+        <p class="am-hint am-settings__hint">Created {{.Household.CreatedAt.Format "Jan 2, 2006"}}.</p>
+        <form action="/settings/household" method="POST" class="am-settings__form">
+          <div class="am-settings__field">
+            <label for="household-name" class="am-label am-settings__field-label">Family name</label>
+            <input type="text" id="household-name" name="name" value="{{.Household.Name}}" required
+                   class="am-settings__input" autocomplete="off">
+          </div>
+          <button type="submit" class="am-key am-settings__submit">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Save</span>
+          </button>
+        </form>
+      </section>
+
+      <section id="timezone" class="am-plate am-settings__section">
+        <div class="am-plate__label">Timezone</div>
+        <p class="am-hint am-settings__hint">Used for displayed timestamps.</p>
+        {{$tz := .Household.Timezone}}
+        <form action="/settings/timezone" method="POST" class="am-settings__form">
+          <div class="am-settings__field">
+            <label for="timezone" class="am-label am-settings__field-label">Display timezone</label>
+            <div class="am-settings__select-wrap">
+              <select id="timezone" name="timezone" class="am-settings__select">
+                <optgroup label="Americas">
+                  <option value="Pacific/Honolulu" {{if eq $tz "Pacific/Honolulu"}}selected{{end}}>Honolulu (HST)</option>
+                  <option value="America/Anchorage" {{if eq $tz "America/Anchorage"}}selected{{end}}>Anchorage (AKST)</option>
+                  <option value="America/Los_Angeles" {{if eq $tz "America/Los_Angeles"}}selected{{end}}>Los Angeles (PST)</option>
+                  <option value="America/Phoenix" {{if eq $tz "America/Phoenix"}}selected{{end}}>Phoenix (MST)</option>
+                  <option value="America/Denver" {{if eq $tz "America/Denver"}}selected{{end}}>Denver (MST)</option>
+                  <option value="America/Chicago" {{if eq $tz "America/Chicago"}}selected{{end}}>Chicago (CST)</option>
+                  <option value="America/New_York" {{if eq $tz "America/New_York"}}selected{{end}}>New York (EST)</option>
+                  <option value="America/Toronto" {{if eq $tz "America/Toronto"}}selected{{end}}>Toronto (EST)</option>
+                  <option value="America/Vancouver" {{if eq $tz "America/Vancouver"}}selected{{end}}>Vancouver (PST)</option>
+                  <option value="America/Mexico_City" {{if eq $tz "America/Mexico_City"}}selected{{end}}>Mexico City (CST)</option>
+                  <option value="America/Sao_Paulo" {{if eq $tz "America/Sao_Paulo"}}selected{{end}}>Sao Paulo (BRT)</option>
+                  <option value="America/Argentina/Buenos_Aires" {{if eq $tz "America/Argentina/Buenos_Aires"}}selected{{end}}>Buenos Aires (ART)</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="Europe/London" {{if eq $tz "Europe/London"}}selected{{end}}>London (GMT)</option>
+                  <option value="Europe/Paris" {{if eq $tz "Europe/Paris"}}selected{{end}}>Paris (CET)</option>
+                  <option value="Europe/Berlin" {{if eq $tz "Europe/Berlin"}}selected{{end}}>Berlin (CET)</option>
+                  <option value="Europe/Amsterdam" {{if eq $tz "Europe/Amsterdam"}}selected{{end}}>Amsterdam (CET)</option>
+                  <option value="Europe/Rome" {{if eq $tz "Europe/Rome"}}selected{{end}}>Rome (CET)</option>
+                  <option value="Europe/Madrid" {{if eq $tz "Europe/Madrid"}}selected{{end}}>Madrid (CET)</option>
+                  <option value="Europe/Stockholm" {{if eq $tz "Europe/Stockholm"}}selected{{end}}>Stockholm (CET)</option>
+                  <option value="Europe/Helsinki" {{if eq $tz "Europe/Helsinki"}}selected{{end}}>Helsinki (EET)</option>
+                  <option value="Europe/Moscow" {{if eq $tz "Europe/Moscow"}}selected{{end}}>Moscow (MSK)</option>
+                  <option value="Europe/Istanbul" {{if eq $tz "Europe/Istanbul"}}selected{{end}}>Istanbul (TRT)</option>
+                </optgroup>
+                <optgroup label="Asia">
+                  <option value="Asia/Dubai" {{if eq $tz "Asia/Dubai"}}selected{{end}}>Dubai (GST)</option>
+                  <option value="Asia/Kolkata" {{if eq $tz "Asia/Kolkata"}}selected{{end}}>Kolkata (IST)</option>
+                  <option value="Asia/Bangkok" {{if eq $tz "Asia/Bangkok"}}selected{{end}}>Bangkok (ICT)</option>
+                  <option value="Asia/Singapore" {{if eq $tz "Asia/Singapore"}}selected{{end}}>Singapore (SGT)</option>
+                  <option value="Asia/Shanghai" {{if eq $tz "Asia/Shanghai"}}selected{{end}}>Shanghai (CST)</option>
+                  <option value="Asia/Hong_Kong" {{if eq $tz "Asia/Hong_Kong"}}selected{{end}}>Hong Kong (HKT)</option>
+                  <option value="Asia/Tokyo" {{if eq $tz "Asia/Tokyo"}}selected{{end}}>Tokyo (JST)</option>
+                  <option value="Asia/Seoul" {{if eq $tz "Asia/Seoul"}}selected{{end}}>Seoul (KST)</option>
+                </optgroup>
+                <optgroup label="Oceania">
+                  <option value="Australia/Perth" {{if eq $tz "Australia/Perth"}}selected{{end}}>Perth (AWST)</option>
+                  <option value="Australia/Brisbane" {{if eq $tz "Australia/Brisbane"}}selected{{end}}>Brisbane (AEST)</option>
+                  <option value="Australia/Sydney" {{if eq $tz "Australia/Sydney"}}selected{{end}}>Sydney (AEST)</option>
+                  <option value="Australia/Melbourne" {{if eq $tz "Australia/Melbourne"}}selected{{end}}>Melbourne (AEST)</option>
+                  <option value="Pacific/Auckland" {{if eq $tz "Pacific/Auckland"}}selected{{end}}>Auckland (NZST)</option>
+                </optgroup>
+                <optgroup label="Africa">
+                  <option value="Africa/Cairo" {{if eq $tz "Africa/Cairo"}}selected{{end}}>Cairo (EET)</option>
+                  <option value="Africa/Lagos" {{if eq $tz "Africa/Lagos"}}selected{{end}}>Lagos (WAT)</option>
+                  <option value="Africa/Johannesburg" {{if eq $tz "Africa/Johannesburg"}}selected{{end}}>Johannesburg (SAST)</option>
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="UTC" {{if eq $tz "UTC"}}selected{{end}}>UTC</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+          <button type="submit" class="am-key am-settings__submit">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Save</span>
+          </button>
+        </form>
+      </section>
+
+      <section id="theme" class="am-plate am-settings__section">
+        <div class="am-plate__label">Theme</div>
+        <p class="am-hint am-settings__hint">Swap the cartridge to change how the app looks.</p>
+        <form action="/settings/theme" method="POST" class="am-settings__form am-settings__form--stack">
+          <label class="am-cartridge {{if eq .User.Theme "intercom"}}am-cartridge--selected{{end}}">
+            <input type="radio" name="theme" value="intercom" {{if eq .User.Theme "intercom"}}checked{{end}}>
+            <span class="am-cartridge__swatch">
+              <span class="am-cartridge__strip" style="background: #f5f1ea;"></span>
+              <span class="am-cartridge__strip" style="background: #2e231b;"></span>
+              <span class="am-cartridge__strip" style="background: #c48b3a;"></span>
+            </span>
+            <span class="am-cartridge__body">
+              <span class="am-cartridge__name">Home intercom</span>
+              <span class="am-cartridge__desc">Warm paper and walnut with brass accents. Soft, domestic, intentional.</span>
+            </span>
+            <span class="am-cartridge__tag">Default</span>
+            <span class="am-cartridge__lamp" aria-hidden="true"></span>
+          </label>
+          <label class="am-cartridge {{if eq .User.Theme "dialup"}}am-cartridge--selected{{end}}">
+            <input type="radio" name="theme" value="dialup" {{if eq .User.Theme "dialup"}}checked{{end}}>
+            <span class="am-cartridge__swatch">
+              <span class="am-cartridge__strip" style="background: #ece9d8;"></span>
+              <span class="am-cartridge__strip" style="background: #003da7;"></span>
+              <span class="am-cartridge__strip" style="background: #ffcc00;"></span>
+            </span>
+            <span class="am-cartridge__body">
+              <span class="am-cartridge__name">Online service 1997</span>
+              <span class="am-cartridge__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era welcome energy.</span>
+            </span>
+            <span class="am-cartridge__lamp" aria-hidden="true"></span>
+          </label>
+          <label class="am-cartridge {{if eq .User.Theme "answering-machine"}}am-cartridge--selected{{end}}">
+            <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
+            <span class="am-cartridge__swatch">
+              <span class="am-cartridge__strip" style="background: #d6ccae;"></span>
+              <span class="am-cartridge__strip" style="background: #1a1912;"></span>
+              <span class="am-cartridge__strip" style="background: #ffa520;"></span>
+            </span>
+            <span class="am-cartridge__body">
+              <span class="am-cartridge__name">Answering machine</span>
+              <span class="am-cartridge__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
+            </span>
+            <span class="am-cartridge__lamp" aria-hidden="true"></span>
+          </label>
+          <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Save theme</span>
+          </button>
+        </form>
+      </section>
+
+      {{if eq .User.Theme "intercom"}}
+      <section id="intercom-options" class="am-plate am-settings__section">
+        <div class="am-plate__label">Intercom options</div>
+        <p class="am-hint am-settings__hint">Time of day for the intercom palette.</p>
+        <form action="/settings/appearance" method="POST" class="am-settings__form am-settings__form--stack">
+          <label class="am-settings__radio {{if eq .User.Appearance "day"}}am-settings__radio--selected{{end}}">
+            <input type="radio" name="appearance" value="day" {{if eq .User.Appearance "day"}}checked{{end}}>
+            <span class="am-settings__radio-title">
+              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
+              <span class="am-settings__radio-name">Day</span>
+              <span class="am-settings__radio-meta">Default</span>
+            </span>
+            <span class="am-settings__radio-desc">Warm paper and walnut under a bright room. The standard intercom palette.</span>
+          </label>
+          <label class="am-settings__radio {{if eq .User.Appearance "night"}}am-settings__radio--selected{{end}}">
+            <input type="radio" name="appearance" value="night" {{if eq .User.Appearance "night"}}checked{{end}}>
+            <span class="am-settings__radio-title">
+              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
+              <span class="am-settings__radio-name">Night</span>
+            </span>
+            <span class="am-settings__radio-desc">Walnut charcoal with backlit brass. Easier on the eyes in low light.</span>
+          </label>
+          <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Save</span>
+          </button>
+        </form>
+      </section>
+      {{end}}
+
+      {{if eq .User.Theme "dialup"}}
+      <section id="dialup-options" class="am-plate am-settings__section">
+        <div class="am-plate__label">Dialup options</div>
+        <p class="am-hint am-settings__hint">Where the CRT monitor bezel appears.</p>
+        <form action="/settings/crt-mode" method="POST" class="am-settings__form am-settings__form--stack">
+          <label class="am-settings__radio {{if eq .User.CRTMode "off"}}am-settings__radio--selected{{end}}">
+            <input type="radio" name="crt_mode" value="off" {{if eq .User.CRTMode "off"}}checked{{end}}>
+            <span class="am-settings__radio-title">
+              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
+              <span class="am-settings__radio-name">Off</span>
+            </span>
+            <span class="am-settings__radio-desc">No CRT bezel anywhere. Plain windows on the desktop.</span>
+          </label>
+          <label class="am-settings__radio {{if eq .User.CRTMode "connecting"}}am-settings__radio--selected{{end}}">
+            <input type="radio" name="crt_mode" value="connecting" {{if eq .User.CRTMode "connecting"}}checked{{end}}>
+            <span class="am-settings__radio-title">
+              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
+              <span class="am-settings__radio-name">Connecting page only</span>
+              <span class="am-settings__radio-meta">Default</span>
+            </span>
+            <span class="am-settings__radio-desc">The dial-in screen wears the CRT. Every other page looks normal.</span>
+          </label>
+          <label class="am-settings__radio {{if eq .User.CRTMode "all"}}am-settings__radio--selected{{end}}">
+            <input type="radio" name="crt_mode" value="all" {{if eq .User.CRTMode "all"}}checked{{end}}>
+            <span class="am-settings__radio-title">
+              <span class="am-settings__radio-indicator" aria-hidden="true"></span>
+              <span class="am-settings__radio-name">All pages</span>
+            </span>
+            <span class="am-settings__radio-desc">The whole app lives inside the CRT monitor. Most immersive.</span>
+          </label>
+          <button type="submit" class="am-key am-settings__submit am-settings__submit--wide">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Save</span>
+          </button>
+        </form>
+      </section>
+      {{end}}
+
+      <section id="privacy" class="am-plate am-settings__section">
+        <div class="am-plate__label">Privacy</div>
+        <form action="/settings/call-history" method="POST" class="am-settings__toggle-row">
+          <label class="am-settings__dip" aria-label="Call log">
+            <input type="checkbox" name="enabled" value="true" {{if .CallHistoryEnabled}}checked{{end}} onchange="this.form.submit()" class="am-settings__dip-input">
+            <span class="am-settings__dip-body" aria-hidden="true">
+              <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+              <span class="am-settings__dip-lever"></span>
+              <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+            </span>
+          </label>
+          <div class="am-settings__toggle-info">
+            <div class="am-label am-settings__toggle-title">Call log</div>
+            <p class="am-hint am-settings__toggle-desc">
+              Only numbers, timestamps, and duration. Never audio. Digits was built on the idea kids deserve the same phone privacy you grew up with. Most families don't need this.
+            </p>
+          </div>
+        </form>
+      </section>
+      {{end}}
+
+      <section id="session" class="am-plate am-settings__section am-settings__section--danger">
+        <div class="am-plate__label">Session</div>
+        <form action="/auth/logout" method="POST" class="am-settings__form">
+          <button type="submit" class="am-key am-key--red am-settings__signout">
+            <span class="am-key__symbol">&#x23FB;</span>
+            <span class="am-key__label">Sign out</span>
+          </button>
+        </form>
+      </section>
+
+    </div>
+  </div>
+
+  {{template "page-footer" .}}
+
+</div>
 {{end}}
