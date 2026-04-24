@@ -1,6 +1,9 @@
 {{define "title"}}Overview{{end}}
 
 {{define "content"}}
+{{if eq .User.Theme "answering-machine"}}
+  {{template "dashboard-am" .}}
+{{else}}
 <div class="page">
 
   <header class="page__head">
@@ -80,5 +83,150 @@
 
   {{template "page-footer" .}}
 
+</div>
+{{end}}
+{{end}}
+
+{{define "dashboard-am"}}
+<div class="am-overview">
+
+  {{/* Top row: LED status display + indicator lamps cluster */}}
+  <div class="am-overview__top">
+
+    {{/* LED status plate */}}
+    <div class="am-plate am-plate--screws am-overview__status">
+      <div class="am-screw am-screw--tl"></div><div class="am-screw am-screw--tr"></div>
+      <div class="am-label am-overview__status-label">Status &middot; {{.Now.Format "Monday, January 2"}}</div>
+      <div class="am-well am-overview__led-well">
+        <div class="am-overview__led-group">
+          <div class="am-led am-overview__led-big">{{printf "%02d" .Stats.ActiveCalls}}</div>
+          <div class="am-led am-led--dim am-overview__led-caption">ON&middot;CALL</div>
+        </div>
+        <div class="am-overview__led-sep"></div>
+        <div class="am-overview__led-group">
+          <div class="am-led am-led--green am-overview__led-mid">{{.Stats.OnlineLines}}</div>
+          <div class="am-led am-led--dim am-overview__led-caption">LINES&middot;ONLINE</div>
+        </div>
+        <div class="am-overview__led-sep"></div>
+        <div class="am-overview__led-group">
+          <div class="am-led am-overview__led-mid">{{len .LinkedFamilies}}</div>
+          <div class="am-led am-led--dim am-overview__led-caption">FAMILIES</div>
+        </div>
+        <div class="am-overview__led-spacer"></div>
+        <div class="am-overview__led-group am-overview__led-group--right">
+          <div class="am-led am-overview__led-time">{{.Now.Format "3:04pm"}}</div>
+          <div class="am-led am-led--dim am-overview__led-caption">LOCAL&middot;TIME</div>
+        </div>
+      </div>
+    </div>
+
+    {{/* Indicator lamps + REC-off cluster */}}
+    <div class="am-plate am-overview__indicators">
+      <div class="am-plate__label">Indicators</div>
+      <div class="am-overview__lamps">
+        <div class="am-overview__lamp">
+          <span class="am-lamp{{if gt .Stats.ActiveCalls 0}} am-lamp--on-red{{end}}"></span>
+          <span class="am-overview__lamp-label">Ringing</span>
+        </div>
+        <div class="am-overview__lamp">
+          <span class="am-lamp{{if gt .Stats.OnlineLines 0}} am-lamp--on-green{{end}}"></span>
+          <span class="am-overview__lamp-label">Online</span>
+        </div>
+        <div class="am-overview__lamp">
+          <span class="am-lamp{{if .LinkedFamilies}} am-lamp--on-amber{{end}}"></span>
+          <span class="am-overview__lamp-label">Paired</span>
+        </div>
+      </div>
+      <div class="am-overview__rec">
+        <div class="am-rec"><span class="am-lamp"></span><span class="am-rec__label">REC</span></div>
+        <div class="am-hint am-overview__rec-hint">This lamp is wired to nothing. Audio never reaches this box.</div>
+      </div>
+    </div>
+  </div>
+
+  {{/* Main grid: active session + messages on the left, lines on the right */}}
+  <div class="am-overview__grid">
+
+    {{/* LEFT column: active session (if any) + today's calls */}}
+    <div class="am-plate am-overview__messages">
+      {{$activeLine := ""}}{{$activePeer := ""}}{{$activeElapsed := ""}}
+      {{range .Lines}}{{if .OnCall}}{{$activeLine = .Line.Name}}{{$activePeer = .OnCallPeerName}}{{$activeElapsed = .OnCallElapsed}}{{end}}{{end}}
+
+      {{if $activeLine}}
+      <div class="am-overview__session-head">
+        <span class="am-led am-led--red am-overview__session-dot">&#9679;</span>
+        <span class="am-title am-overview__session-title">{{$activeLine}} is on a call with {{$activePeer}}</span>
+        {{if $activeElapsed}}<span class="am-mono am-muted am-overview__session-elapsed">{{$activeElapsed}} elapsed</span>{{end}}
+      </div>
+      <div class="am-overview__session-tape">
+        <div class="am-tape">
+          <span class="am-tape__label">Session</span>
+          <div class="am-tape__reel"></div>
+          <div>
+            <div class="am-overview__tape-caption">
+              <span>{{$activeLine}} &#8596; {{$activePeer}}</span>
+              <span>{{$activeElapsed}}</span>
+            </div>
+            <div class="am-tape__tape"></div>
+          </div>
+          <div class="am-tape__reel"></div>
+        </div>
+      </div>
+      {{end}}
+
+      <div class="am-overview__messages-head">
+        <span class="am-label">Today's calls</span>
+        {{if .CallHistoryEnabled}}<span class="am-mono am-muted am-overview__messages-sub">{{len .CallsTodayRecent}} call{{if ne (len .CallsTodayRecent) 1}}s{{end}} &middot; {{.CallsTodayTotalMin}} min total</span>{{end}}
+      </div>
+
+      {{if .CallHistoryEnabled}}
+        {{if .CallsTodayRecent}}
+        <div class="am-overview__messages-list">
+          {{range $i, $c := .CallsTodayRecent}}
+          <div class="am-msg">
+            <span class="am-msg__num">{{printf "%02d" (add $i 1)}}</span>
+            <div>
+              <div class="am-overview__msg-row">
+                <span class="am-msg__who">{{$c.PeerName}}</span>
+                <span class="am-msg__room">&middot; {{$c.LineName}}</span>
+              </div>
+              <div class="am-mono am-muted am-overview__msg-meta">{{if eq $c.Direction "in"}}Answered{{else}}Placed{{end}}</div>
+            </div>
+            <span class="am-msg__time">{{$c.StartedAt.Format "3:04 pm"}}</span>
+            <span class="am-msg__dur">{{fmtDuration $c.DurationS}}</span>
+          </div>
+          {{end}}
+        </div>
+        {{else}}
+        <div class="am-overview__messages-empty am-hint">No calls yet today.</div>
+        {{end}}
+      {{else}}
+        <div class="am-overview__messages-empty am-hint">Call history is off. The dashboard only shows the active session.</div>
+      {{end}}
+    </div>
+
+    {{/* RIGHT column: Lines panel */}}
+    <div class="am-plate am-overview__lines">
+      <div class="am-plate__label">Lines</div>
+      {{if .Lines}}
+        {{range $i, $l := .Lines}}
+        <a class="am-overview__line{{if not (lastLine $i $.Lines)}} am-overview__line--bordered{{end}}" href="{{if and $l.OnCall $l.OnCallID}}/call/live/{{$l.OnCallID}}{{else}}/phones/{{$l.Line.Number}}{{end}}">
+          <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
+          <div class="am-overview__line-body">
+            <div class="am-title am-overview__line-name">{{$l.Line.Name}}</div>
+            <div class="am-mono am-muted am-overview__line-num">{{fmtPhone $l.Line.Number}}</div>
+          </div>
+          <span class="am-overview__line-status{{if $l.OnCall}} am-overview__line-status--live{{else if $l.Online}} am-overview__line-status--online{{else}} am-overview__line-status--idle{{end}}">
+            {{if $l.OnCall}}In session{{else if $l.Online}}Online{{else}}Idle{{end}}
+          </span>
+        </a>
+        {{end}}
+      {{else}}
+        <div class="am-hint">No lines paired. <a href="/phones">Pair a handset</a>.</div>
+      {{end}}
+    </div>
+  </div>
+
+  {{template "page-footer" .}}
 </div>
 {{end}}
