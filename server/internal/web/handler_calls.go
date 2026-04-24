@@ -5,28 +5,28 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type callsData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	HouseholdDND       bool
-	Entries            []calls.HistoryEntry
-	User               *auth.User
+	chromeData
+	Entries []calls.HistoryEntry
+	User    *auth.User
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	hh := h.primaryHousehold(r)
-	hhName, callHistory, hhDND, loc := householdChrome(hh)
-	if !callHistory {
+	chrome := chromeFor("calls", hh)
+	if !chrome.CallHistoryEnabled {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
+	}
+	loc := time.UTC
+	if hh != nil {
+		loc = hh.Location()
 	}
 	var entries []calls.HistoryEntry
 
@@ -68,22 +68,18 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, HouseholdDND: hhDND, Entries: entries, User: user})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{chromeData: chrome, Entries: entries, User: user})
 }
 
 
 type callLiveDetailData struct {
-	Page               string
-	Version            string
-	User               *auth.User
-	HouseholdName      string
-	HouseholdDND       bool
-	CallHistoryEnabled bool
-	Call               calls.Call
-	Caller             LinkHealthEndpointResp
-	Callee             LinkHealthEndpointResp
-	Ended              bool
-	ForceEndedBy       string
+	chromeData
+	User         *auth.User
+	Call         calls.Call
+	Caller       LinkHealthEndpointResp
+	Callee       LinkHealthEndpointResp
+	Ended        bool
+	ForceEndedBy string
 }
 
 // handleCallLiveDetail renders the observation-deck page for a specific call.
@@ -117,19 +113,14 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hhName, callHistory, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	data := callLiveDetailData{
-		Page:               "call-live",
-		Version:            version.Version,
-		User:               user,
-		HouseholdName:      hhName,
-		HouseholdDND:       hhDND,
-		CallHistoryEnabled: callHistory,
-		Call:               call,
-		Caller:             callerEp,
-		Callee:             calleeEp,
-		Ended:              call.Status == "ended",
-		ForceEndedBy:       h.forceEndedLabel(r.Context(), call),
+		chromeData:   chromeFor("call-live", h.primaryHousehold(r)),
+		User:         user,
+		Call:         call,
+		Caller:       callerEp,
+		Callee:       calleeEp,
+		Ended:        call.Status == "ended",
+		ForceEndedBy: h.forceEndedLabel(r.Context(), call),
 	}
 
 	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)

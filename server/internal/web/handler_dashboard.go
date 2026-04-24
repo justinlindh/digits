@@ -9,15 +9,10 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type dashboardData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	HouseholdDND       bool
+	chromeData
 	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
@@ -60,7 +55,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	hh := h.primaryHousehold(r)
 	ld := h.buildLinesDataFor(r, hh, "")
-	hhName, callHistoryEnabled, hhDND, loc := householdChrome(hh)
+	chrome := chromeFor("dashboard", hh)
+	loc := time.UTC
+	if hh != nil {
+		loc = hh.Location()
+	}
 	now := time.Now().In(loc)
 
 	// Determine current household ID for linked-family lookup.
@@ -139,7 +138,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// not server-UTC.
 	var callsTodayRecent []callRow
 	var callsTodayTotalSec int
-	if callHistoryEnabled && len(ownNumbers) > 0 {
+	if chrome.CallHistoryEnabled && len(ownNumbers) > 0 {
 		recent, _ := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		for _, c := range recent {
@@ -170,11 +169,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := dashboardData{
-		Page:               "dashboard",
-		Version:            version.Version,
-		CallHistoryEnabled: callHistoryEnabled,
-		HouseholdName:      hhName,
-		HouseholdDND:       hhDND,
+		chromeData: chrome,
 		Stats: dashStats{
 			TotalLines:  len(ld.Lines),
 			OnlineLines: countOnline(ld.Lines),
@@ -284,11 +279,8 @@ func fmtElapsed(d time.Duration) string {
 
 
 type connectingData struct {
-	Page          string
-	Version       string
-	HouseholdName string
-	HouseholdDND  bool
-	User          *auth.User
+	chromeData
+	User *auth.User
 }
 
 func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
@@ -297,12 +289,8 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	hhName, _, hhDND, _ := householdChrome(h.primaryHousehold(r))
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
-		Page:          "connecting",
-		Version:       version.Version,
-		HouseholdName: hhName,
-		HouseholdDND:  hhDND,
-		User:          user,
+		chromeData: chromeFor("connecting", h.primaryHousehold(r)),
+		User:       user,
 	})
 }

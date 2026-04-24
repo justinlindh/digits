@@ -15,7 +15,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type pairSuccess struct {
@@ -24,11 +23,7 @@ type pairSuccess struct {
 }
 
 type linesData struct {
-	Page                  string
-	Version               string
-	CallHistoryEnabled    bool
-	HouseholdName         string
-	HouseholdDND          bool
+	chromeData
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
@@ -108,13 +103,8 @@ func (h *Handler) buildLinesDataFor(r *http.Request, hh *household.Household, er
 		}
 		rows[i] = row
 	}
-	hhName, callHistory, hhDND, _ := householdChrome(hh)
 	return linesData{
-		Page:                  "phones",
-		Version:               version.Version,
-		CallHistoryEnabled:    callHistory,
-		HouseholdName:         hhName,
-		HouseholdDND:          hhDND,
+		chromeData:            chromeFor("phones", hh),
 		Lines:                 rows,
 		Error:                 errMsg,
 		User:                  user,
@@ -232,11 +222,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 }
 
 type lineDetailData struct {
-	Page                  string
-	Version               string
-	CallHistoryEnabled    bool
-	HouseholdName         string
-	HouseholdDND          bool
+	chromeData
 	Line                  line.Line
 	Online                bool
 	Devices               []device.Device
@@ -294,7 +280,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
-	hhName, callHistory, hhDND, loc := householdChrome(h.primaryHousehold(r))
+	hh := h.primaryHousehold(r)
+	_, _, _, loc := householdChrome(hh)
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)
@@ -316,11 +303,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		Page:                  "phones",
-		Version:               version.Version,
-		CallHistoryEnabled:    callHistory,
-		HouseholdName:         hhName,
-		HouseholdDND:          hhDND,
+		chromeData:            chromeFor("phones", hh),
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,

@@ -14,6 +14,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // requireLineOwnership looks up a line by its number and verifies the
@@ -274,6 +275,38 @@ func householdChrome(hh *household.Household) (name string, callHistory bool, dn
 		return "", false, false, time.UTC
 	}
 	return hh.Name, hh.CallHistoryEnabled, hh.DoNotDisturb, hh.Location()
+}
+
+// chromeData carries the fields every protected page exposes through the
+// layout chrome: the current page id, the build version, and household
+// flags consumed by the nav and header (household name, DND badge,
+// call-history availability). It is embedded in each page-data struct so
+// templates reach Page, Version, HouseholdName, HouseholdDND, and
+// CallHistoryEnabled by their promoted names. Adding a future chrome
+// field becomes a one-line change here rather than touching every page.
+type chromeData struct {
+	Page               string
+	Version            string
+	HouseholdName      string
+	HouseholdDND       bool
+	CallHistoryEnabled bool
+}
+
+// chromeFor builds a chromeData for the given page from the authenticated
+// user's primary household. A nil hh is fine: the chrome fields fall back
+// to their empty defaults, which the templates render as unauthenticated
+// chrome.
+func chromeFor(page string, hh *household.Household) chromeData {
+	c := chromeData{
+		Page:    page,
+		Version: version.Version,
+	}
+	if hh != nil {
+		c.HouseholdName = hh.Name
+		c.HouseholdDND = hh.DoNotDisturb
+		c.CallHistoryEnabled = hh.CallHistoryEnabled
+	}
+	return c
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

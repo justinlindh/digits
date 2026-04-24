@@ -9,24 +9,19 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/line"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type linksData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	HouseholdDND       bool
-	LinkedFamilies     []linkedFamilyRow
-	PendingInvites     []linkRow
-	CreatedCode        string
-	Accepted           bool
-	Revoked            bool
-	Canceled           bool
-	Conflicts          string
-	Error              string
-	User               *auth.User
+	chromeData
+	LinkedFamilies []linkedFamilyRow
+	PendingInvites []linkRow
+	CreatedCode    string
+	Accepted       bool
+	Revoked        bool
+	Canceled       bool
+	Conflicts      string
+	Error          string
+	User           *auth.User
 }
 
 type linkedFamilyRow struct {
@@ -60,18 +55,14 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := linksData{
-		Page:               "links",
-		Version:            version.Version,
-		CallHistoryEnabled: myHousehold.CallHistoryEnabled,
-		HouseholdName:      myHousehold.Name,
-		HouseholdDND:       myHousehold.DoNotDisturb,
-		CreatedCode:        r.URL.Query().Get("created"),
-		Accepted:           r.URL.Query().Get("accepted") == "1",
-		Revoked:            r.URL.Query().Get("revoked") == "1",
-		Canceled:           r.URL.Query().Get("canceled") == "1",
-		Conflicts:          r.URL.Query().Get("conflicts"),
-		Error:              r.URL.Query().Get("error"),
-		User:               user,
+		chromeData:  chromeFor("links", myHousehold),
+		CreatedCode: r.URL.Query().Get("created"),
+		Accepted:    r.URL.Query().Get("accepted") == "1",
+		Revoked:     r.URL.Query().Get("revoked") == "1",
+		Canceled:    r.URL.Query().Get("canceled") == "1",
+		Conflicts:   r.URL.Query().Get("conflicts"),
+		Error:       r.URL.Query().Get("error"),
+		User:        user,
 	}
 
 	// Active links — build connected family directory
