@@ -18,6 +18,11 @@
   <div class="rail__brand">
     <span class="rail__mark">Digits</span>
     {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
+    {{if .HouseholdDND}}
+    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on">
+      <span class="chip__dot"></span>Do Not Disturb
+    </a>
+    {{end}}
   </div>
 
   <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>

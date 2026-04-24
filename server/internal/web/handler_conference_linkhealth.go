@@ -264,6 +264,7 @@ type conferenceLiveDetailData struct {
 	Version            string
 	User               *auth.User
 	HouseholdName      string
+	HouseholdDND       bool
 	CallHistoryEnabled bool
 	Resp               ConferenceLinkHealthResp
 	IsHostHousehold    bool
@@ -290,12 +291,14 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]
+	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	data := conferenceLiveDetailData{
 		Page:               "conference-live",
 		Version:            version.Version,
 		User:               user,
-		HouseholdName:      h.householdNameFromContext(r),
-		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdName:      hhName,
+		HouseholdDND:       hhDND,
+		CallHistoryEnabled: callHistory,
 		Resp:               resp,
 		IsHostHousehold:    isHostHH,
 	}

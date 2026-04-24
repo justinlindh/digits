@@ -43,3 +43,10 @@ func (s Settings) Normalize() Settings {
 	}
 	return s
 }
+
+// EffectiveSilent returns whether the device should treat the line as silent
+// at ring time. The household-wide DND flag and the per-line silent flag are
+// combined with OR: silence if either is set.
+func EffectiveSilent(s Settings, householdDND bool) bool {
+	return householdDND || s.SilentMode
+}

@@ -16,12 +16,13 @@ type callsData struct {
 	Version            string
 	CallHistoryEnabled bool
 	HouseholdName      string
+	HouseholdDND       bool
 	Entries            []calls.HistoryEntry
 	User               *auth.User
 }
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	hhName, callHistory, loc := h.householdContext(r)
+	hhName, callHistory, hhDND, loc := h.householdContext(r)
 	if !callHistory {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -74,7 +75,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, Entries: entries, User: user})
+	renderWith(w, h.tmplCalls, layoutFor(r), callsData{Page: "calls", Version: version.Version, CallHistoryEnabled: callHistory, HouseholdName: hhName, HouseholdDND: hhDND, Entries: entries, User: user})
 }
 
 
@@ -83,6 +84,7 @@ type callLiveDetailData struct {
 	Version            string
 	User               *auth.User
 	HouseholdName      string
+	HouseholdDND       bool
 	CallHistoryEnabled bool
 	Call               calls.Call
 	Caller             LinkHealthEndpointResp
@@ -122,12 +124,14 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	data := callLiveDetailData{
 		Page:               "call-live",
 		Version:            version.Version,
 		User:               user,
-		HouseholdName:      h.householdNameFromContext(r),
-		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdName:      hhName,
+		HouseholdDND:       hhDND,
+		CallHistoryEnabled: callHistory,
 		Call:               call,
 		Caller:             callerEp,
 		Callee:             calleeEp,

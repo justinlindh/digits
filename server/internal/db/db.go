@@ -359,6 +359,8 @@ END $$;`,
 		// v23: per-user intercom appearance preference.
 		// 'day' (default) / 'night'. Only meaningful when theme = 'intercom'.
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS appearance TEXT NOT NULL DEFAULT 'day'`,
+		// v24: household-level do-not-disturb master switch.
+		`ALTER TABLE households ADD COLUMN IF NOT EXISTS do_not_disturb BOOLEAN NOT NULL DEFAULT FALSE`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

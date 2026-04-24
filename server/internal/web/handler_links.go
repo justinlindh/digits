@@ -17,6 +17,7 @@ type linksData struct {
 	Version            string
 	CallHistoryEnabled bool
 	HouseholdName      string
+	HouseholdDND       bool
 	LinkedFamilies     []linkedFamilyRow
 	PendingInvites     []linkRow
 	CreatedCode        string
@@ -64,6 +65,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
 		HouseholdName:      myHousehold.Name,
+		HouseholdDND:       myHousehold.DoNotDisturb,
 		CreatedCode:        r.URL.Query().Get("created"),
 		Accepted:           r.URL.Query().Get("accepted") == "1",
 		Revoked:            r.URL.Query().Get("revoked") == "1",

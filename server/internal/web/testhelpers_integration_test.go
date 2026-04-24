@@ -203,6 +203,25 @@ func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authS
 	return cookie, hh
 }
 
+// setupLineWithConn adds a phone number to the given household, registers a
+// fresh signaling.Conn for it on the handler's hub, and registers cleanup of
+// both the lines row and the hub registration. Returns the line and the conn
+// so callers can assert push payloads via conn.Send.
+func setupLineWithConn(t *testing.T, h *Handler, database *db.Database, hh *household.Household, number, name string) (*line.Line, *signaling.Conn) {
+	t.Helper()
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), number, name, hh.ID)
+	if err != nil {
+		t.Fatalf("add line %s: %v", number, err)
+	}
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.Hub().Register(number, conn)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+	return ln, conn
+}
+
 // seedE2EHousehold is the older e2e_test variant of setupAuthedHousehold;
 // kept around for tests that already depend on it.
 func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store) string {

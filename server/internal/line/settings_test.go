@@ -117,3 +117,26 @@ func TestSettingsMergeSilentModeFromPatch(t *testing.T) {
 		t.Errorf("Merge clobbered VoiceStyle: got %q", merged.VoiceStyle)
 	}
 }
+
+func TestEffectiveSilent(t *testing.T) {
+	cases := []struct {
+		name         string
+		lineSilent   bool
+		householdDND bool
+		want         bool
+	}{
+		{"both off", false, false, false},
+		{"line silent only", true, false, true},
+		{"household DND only", false, true, true},
+		{"both on", true, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := EffectiveSilent(Settings{SilentMode: tc.lineSilent}, tc.householdDND)
+			if got != tc.want {
+				t.Errorf("EffectiveSilent(silent=%v, dnd=%v) = %v, want %v",
+					tc.lineSilent, tc.householdDND, got, tc.want)
+			}
+		})
+	}
+}

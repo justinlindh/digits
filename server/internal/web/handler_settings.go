@@ -14,6 +14,7 @@ type settingsData struct {
 	Page               string
 	Version            string
 	CallHistoryEnabled bool
+	HouseholdDND       bool
 	HouseholdName      string
 	User               *auth.User
 	Household          *household.Household
@@ -30,13 +31,16 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	hhName := ""
+	dnd := false
 	if hh != nil {
 		hhName = hh.Name
+		dnd = hh.DoNotDisturb
 	}
 	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
 		Page:               "settings",
 		Version:            version.Version,
 		CallHistoryEnabled: h.callHistoryEnabled(r),
+		HouseholdDND:       dnd,
 		HouseholdName:      hhName,
 		User:               user,
 		Household:          hh,
@@ -91,6 +95,42 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 		slog.Error("set call history failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
+	if h.householdStore == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
+	if err != nil || len(households) == 0 {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	enabled := r.FormValue("enabled") == "true"
+	householdID := households[0].ID
+	if err := h.householdStore.SetDoNotDisturb(r.Context(), householdID, enabled); err != nil {
+		slog.Error("set do not disturb failed", "err", err, "household_id", householdID)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	lines, err := h.lineStore.ListByHousehold(r.Context(), householdID)
+	if err != nil {
+		slog.Error("list lines for DND fan-out failed", "err", err, "household_id", householdID)
+		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+		return
+	}
+	for _, ln := range lines {
+		if pushErr := h.pushLineSettings(ln.Number, ln.Settings, enabled); pushErr != nil {
+			slog.Warn("DND fan-out push failed", "number", ln.Number, "err", pushErr)
+		}
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }

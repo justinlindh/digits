@@ -95,7 +95,7 @@ test.describe('Settings', () => {
     // present in the DOM but typically visually hidden via CSS (the <span
     // class="toggle__track"> is the visible control). Use toBeAttached
     // instead of toBeVisible.
-    const toggle = page.locator('input[type="checkbox"][name="enabled"]');
+    const toggle = page.locator('#privacy input[type="checkbox"][name="enabled"]');
     await expect(toggle).toBeAttached();
   });
 

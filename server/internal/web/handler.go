@@ -437,6 +437,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
 	protected.HandleFunc("POST /settings/call-history", h.handleSettingsCallHistory)
+	protected.HandleFunc("POST /settings/do-not-disturb", h.handleSettingsDoNotDisturb)
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)

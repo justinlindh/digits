@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 )
 
@@ -21,32 +22,41 @@ import (
 // responses are intentionally indistinguishable to avoid leaking whether a
 // given number exists.
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
+	ln, _ := h.requireLineOwnershipWithHousehold(w, r, number)
+	return ln
+}
+
+// requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
+// household value, for callers that need the household state (e.g., DND)
+// without an extra DB round-trip. On any failure it writes 404 and returns
+// (nil, nil); the auth/lookup behavior is identical to requireLineOwnership.
+func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *http.Request, number string) (*line.Line, *household.Household) {
 	ln, err := h.lineStore.GetByNumber(r.Context(), number)
 	if err != nil {
 		http.NotFound(w, r)
-		return nil
+		return nil, nil
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.NotFound(w, r)
-		return nil
+		return nil, nil
 	}
 	if h.householdStore == nil {
 		http.NotFound(w, r)
-		return nil
+		return nil, nil
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
 		http.NotFound(w, r)
-		return nil
+		return nil, nil
 	}
 	for _, hh := range households {
 		if hh.ID == ln.HouseholdID {
-			return ln
+			return ln, hh
 		}
 	}
 	http.NotFound(w, r)
-	return nil
+	return nil, nil
 }
 
 // ownedLinesForUser returns the lines owned by any household the user belongs
@@ -236,30 +246,25 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// householdContext returns the household name, call-history flag, and timezone location for the current user.
-func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, loc *time.Location) {
+// householdContext returns the household name, call-history flag, do-not-disturb flag, and timezone location for the current user.
+func (h *Handler) householdContext(r *http.Request) (name string, callHistory bool, dnd bool, loc *time.Location) {
 	if h.householdStore == nil {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return "", false, time.UTC
+		return "", false, false, time.UTC
 	}
-	return households[0].Name, households[0].CallHistoryEnabled, households[0].Location()
+	return households[0].Name, households[0].CallHistoryEnabled, households[0].DoNotDisturb, households[0].Location()
 }
 
 func (h *Handler) callHistoryEnabled(r *http.Request) bool {
-	_, ch, _ := h.householdContext(r)
+	_, ch, _, _ := h.householdContext(r)
 	return ch
-}
-
-func (h *Handler) householdNameFromContext(r *http.Request) string {
-	name, _, _ := h.householdContext(r)
-	return name
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
