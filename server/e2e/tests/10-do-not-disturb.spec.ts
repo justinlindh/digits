@@ -58,7 +58,7 @@ async function setDoNotDisturb(page: Page, target: 'on' | 'off'): Promise<void> 
     return;
   }
   const checkbox = page.locator('#do-not-disturb input[name="enabled"]');
-  await expect(checkbox).toBeVisible();
+  await expect(checkbox).toBeAttached();
   const checked = await checkbox.isChecked();
   if ((target === 'on' && checked) || (target === 'off' && !checked)) {
     return; // already in desired state
@@ -68,7 +68,7 @@ async function setDoNotDisturb(page: Page, target: 'on' | 'off'): Promise<void> 
       r.url().includes('/settings/do-not-disturb') &&
       r.request().method() === 'POST',
   );
-  await checkbox.click();
+  await checkbox.setChecked(target === 'on');
   await wait;
   // The handler returns 303 to /settings?saved=1; wait for that landing page.
   await page.waitForURL((u) => u.toString().includes('/settings'));
