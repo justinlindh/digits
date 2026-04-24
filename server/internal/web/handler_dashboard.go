@@ -23,6 +23,7 @@ type dashboardData struct {
 	CallsTodayTotalMin int
 	LinkedFamilies     []linkedFamilyRow
 	User               *auth.User
+	Now                time.Time
 }
 
 type callRow struct {
@@ -167,6 +168,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
 		User:               user,
+		Now:                time.Now().In(loc),
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }
