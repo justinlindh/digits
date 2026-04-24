@@ -1,6 +1,9 @@
 {{define "title"}}Lines{{end}}
 
 {{define "content"}}
+{{if eq .User.Theme "answering-machine"}}
+  {{template "phones-am" .}}
+{{else}}
 <div class="page">
 
   <header class="page__head">
@@ -114,6 +117,7 @@
   {{template "phones-table" .}}
 
 </div>
+{{end}}
 
 <script>
 (function() {
@@ -385,4 +389,153 @@
   </td>
   <td></td>
 </tr>
+{{end}}
+
+{{define "phones-am"}}
+<div class="am-phones">
+
+  {{if .PairError}}
+  <div class="am-banner am-banner--err">
+    <span class="am-lamp am-lamp--on-red"></span>
+    <span>{{.PairError}}</span>
+  </div>
+  {{end}}
+
+  {{if .PairSuccess}}
+  <div class="am-banner am-banner--ok" role="status">
+    <span class="am-lamp am-lamp--on-green"></span>
+    <span>Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.</span>
+    <button type="button" class="am-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
+  </div>
+  {{end}}
+
+  <div class="am-plate am-phones__header">
+    <div class="am-phones__header-info">
+      <span class="am-label">Patchbay</span>
+      <span class="am-title">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}} paired</span>
+    </div>
+    <div class="am-phones__header-spacer"></div>
+    <div class="am-well" style="padding: 10px 14px;">
+      <div class="am-led" style="font-size: 22px;">{{printf "%02d" (len .Lines)}}</div>
+      <div class="am-led am-led--dim" style="font-size: 9px; letter-spacing: 0.2em; margin-top: 2px;">PAIRED</div>
+    </div>
+    <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
+  </div>
+
+  <div class="am-patchbay am-phones__rail">
+    <div class="am-patchbay__rail">
+      {{range $i, $l := .Lines}}
+      {{if lt $i 8}}
+      <div class="am-jack{{if not $l.Online}} am-jack--unpatched{{end}}">
+        <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
+        <div class="am-jack__socket">
+          {{if $l.Online}}<span class="am-jack__plug"></span>{{end}}
+        </div>
+        <span class="am-jack__label-bot">{{$l.Line.Name}}</span>
+        <span class="am-jack__lamp am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
+      </div>
+      {{end}}
+      {{end}}
+      {{/* Pad out to 8 jacks so the rail always looks like a patchbay */}}
+      {{range $i := iter 8}}
+      {{if ge $i (len $.Lines)}}
+      <div class="am-jack am-jack--unpatched">
+        <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
+        <div class="am-jack__socket"></div>
+        <span class="am-jack__label-bot">&mdash;</span>
+        <span class="am-jack__lamp am-lamp"></span>
+      </div>
+      {{end}}
+      {{end}}
+    </div>
+  </div>
+
+  <div class="am-phones__body">
+
+    <div class="am-plate am-phones__roster" id="phones-table">
+      <div class="am-phones__roster-head"><span class="am-label">Handsets</span></div>
+      {{if .Lines}}
+      {{range $i, $l := .Lines}}
+      <div class="am-phones__row">
+        <span class="am-phones__row-num">{{printf "%02d" (inc $i)}}</span>
+        <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
+        <div class="am-phones__row-body">
+          <div class="am-phones__row-name"><a href="/phones/{{$l.Line.Number}}" style="color: inherit; text-decoration: none;">{{$l.Line.Name}}</a></div>
+          <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
+          <div class="am-phones__row-meta">
+            {{if $l.OnCall}}IN SESSION
+            {{else if $l.Online}}ONLINE{{if $l.DeviceInfo}}{{if $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{end}}
+            {{else}}OFFLINE
+            {{end}}
+            {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
+          </div>
+        </div>
+        <div class="am-phones__row-actions">
+          <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/edit" hx-target="closest .am-phones__row" hx-swap="outerHTML">Edit</button>
+          <button class="am-tab" hx-post="/phones/{{$l.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{$l.Line.Name}}?">Delete</button>
+        </div>
+      </div>
+      {{end}}
+      {{else}}
+      <div class="am-hint" style="padding: 14px 18px;">No lines paired. Use the pair panel on the right to patch a handset in.</div>
+      {{end}}
+    </div>
+
+    <div class="am-plate am-phones__pair" id="pair-new">
+      <div class="am-phones__pair-label">Pair a new handset</div>
+      <div class="am-phones__pair-hint">Enter the 6-digit code from the handset.</div>
+
+      <div class="am-phones__pin" id="pair-pin" aria-label="Pairing code">
+        <div class="pin__slot am-phones__pin-slot is-active"></div>
+        <div class="pin__slot am-phones__pin-slot"></div>
+        <div class="pin__slot am-phones__pin-slot"></div>
+        <div class="pin__slot am-phones__pin-slot"></div>
+        <div class="pin__slot am-phones__pin-slot"></div>
+        <div class="pin__slot am-phones__pin-slot"></div>
+      </div>
+
+      <div class="am-phones__keypad" role="group" aria-label="Pairing keypad">
+        <button type="button" class="keypad__btn am-key" data-digit="1"><span class="am-key__symbol">1</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="2"><span class="am-key__symbol">2</span><span class="am-key__label">ABC</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="3"><span class="am-key__symbol">3</span><span class="am-key__label">DEF</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="4"><span class="am-key__symbol">4</span><span class="am-key__label">GHI</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="5"><span class="am-key__symbol">5</span><span class="am-key__label">JKL</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="6"><span class="am-key__symbol">6</span><span class="am-key__label">MNO</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="7"><span class="am-key__symbol">7</span><span class="am-key__label">PQRS</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="8"><span class="am-key__symbol">8</span><span class="am-key__label">TUV</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="9"><span class="am-key__symbol">9</span><span class="am-key__label">WXYZ</span></button>
+        <button type="button" class="keypad__btn am-key am-key--red" data-action="clear" aria-label="Clear"><span class="am-key__symbol">&#x2736;</span></button>
+        <button type="button" class="keypad__btn am-key" data-digit="0"><span class="am-key__symbol">0</span></button>
+        <button type="button" class="keypad__btn am-key am-key--red" data-action="backspace" aria-label="Backspace"><span class="am-key__symbol">&#x232B;</span></button>
+      </div>
+
+      <form class="am-phones__pair-form" action="/phones/pair" method="POST" id="pair-form">
+        <input type="hidden" name="code" id="pair-code-hidden" value="">
+
+        <div class="am-phones__pair-field">
+          <label class="am-phones__pair-field-label" for="pair-code-manual">Or type the code</label>
+          <input type="text" id="pair-code-manual" name="code_manual" placeholder="123456" pattern="\d{6}" maxlength="6" inputmode="numeric" autocomplete="off">
+        </div>
+
+        <div class="am-phones__pair-field">
+          <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
+          <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8" required>
+          <span id="number-hint" class="am-phones__pair-field-hint hidden" style="color: var(--chip-red-dk);">Line number is already in use.</span>
+        </div>
+
+        <div class="am-phones__pair-field">
+          <label class="am-phones__pair-field-label" for="line-name-input">Handset name</label>
+          <input type="text" id="line-name-input" name="name" placeholder="Kitchen" required>
+          <span class="am-phones__pair-field-hint">Most families name handsets by where they live.</span>
+        </div>
+
+        <button type="submit" id="pair-submit" class="am-key am-key--blue" disabled>
+          <span class="am-key__symbol">&#x25B6;</span>
+          <span class="am-key__label">Pair</span>
+        </button>
+      </form>
+    </div>
+
+  </div>
+</div>
 {{end}}
