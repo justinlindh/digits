@@ -26,7 +26,7 @@ func testDB(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
-	s := NewStoreFromDB(database.DB)
+	s := NewStore(database.DB)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM sessions")
 		_, _ = database.DB.Exec("DELETE FROM magic_links")

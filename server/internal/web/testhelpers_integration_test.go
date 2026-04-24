@@ -134,7 +134,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 	relay.HealthStore = healthStore
 
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)

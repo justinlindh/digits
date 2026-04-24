@@ -24,7 +24,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	}
 	defer func() { _ = database.Close() }()
 
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	householdStore := NewStore(database.DB)
 	linkStore := NewLinkStore(database.DB)
 

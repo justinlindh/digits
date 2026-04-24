@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/device"
-	_ "github.com/lib/pq"
 )
 
 // ErrUserNotFound is returned by GetUserBy* when no matching row exists.
@@ -46,21 +45,8 @@ type Store struct {
 	CookieDomain string
 }
 
-// NewStore opens a new Postgres connection and returns a Store.
-func NewStore(databaseURL string) (*Store, error) {
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return &Store{db: db}, nil
-}
-
-// NewStoreFromDB wraps an existing *sql.DB (used when sharing a connection from db.Open).
-func NewStoreFromDB(db *sql.DB) *Store {
+// NewStore wraps an existing *sql.DB (shared with the rest of signald via db.Open).
+func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
