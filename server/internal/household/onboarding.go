@@ -1,9 +1,6 @@
 package household
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // NeedsOnboarding returns true if the given user has no household memberships.
 func (s *Store) NeedsOnboarding(ctx context.Context, userID string) bool {
@@ -17,14 +14,4 @@ func (s *Store) NeedsOnboarding(ctx context.Context, userID string) bool {
 		return false
 	}
 	return count == 0
-}
-
-// Onboard creates a default household named "<userName>'s Family" and adds the
-// user as its admin member. It returns the new household.
-func (s *Store) Onboard(ctx context.Context, userID, userName string) (*Household, error) {
-	name := fmt.Sprintf("%s's Family", userName)
-	if userName == "" {
-		name = "My Family"
-	}
-	return s.Create(ctx, name, userID)
 }
