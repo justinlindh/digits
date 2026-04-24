@@ -540,7 +540,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-links__header { display: flex; align-items: center; gap: 18px; padding: 16px 22px; flex-wrap: wrap; }
 .am-links__header-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .am-links__header-spacer { flex: 1; }
-.am-links__header-well { padding: 10px 14px; display: inline-flex; flex-direction: column; align-items: center; }
+.am-links__header-well { padding: 10px 14px; }
 .am-links__header-led { font-size: 22px; line-height: 1; }
 .am-links__header-cap { font-size: 9px; letter-spacing: 0.2em; margin-top: 2px; }
 
