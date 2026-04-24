@@ -531,6 +531,135 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 }
 
 /* =========================================================================
+   AM /links: Families
+   ========================================================================= */
+
+.am-links { display: flex; flex-direction: column; gap: 18px; }
+
+/* Header plate: directory label + LED count well */
+.am-links__header { display: flex; align-items: center; gap: 18px; padding: 16px 22px; flex-wrap: wrap; }
+.am-links__header-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.am-links__header-spacer { flex: 1; }
+.am-links__header-well { padding: 10px 14px; }
+.am-links__header-led { font-size: 22px; line-height: 1; }
+.am-links__header-cap { font-size: 9px; letter-spacing: 0.2em; margin-top: 2px; }
+
+/* Label-maker + Accept pair: two plates side by side */
+.am-links__pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+
+.am-labelmaker { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 16px; }
+.am-labelmaker__hint { margin: 0; }
+.am-labelmaker__form { margin: 0; }
+.am-labelmaker__button { padding: 9px 18px; }
+
+/* Tape label: cassette-style cream card showing a freshly printed invite code */
+.am-tape-label {
+  background: #f4e8c4;
+  border: 1px solid #a89774;
+  border-radius: 3px;
+  padding: 12px 14px 14px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.5);
+  position: relative;
+}
+.am-tape-label::before {
+  content: ''; position: absolute; inset: 4px; border: 1px dashed rgba(60,45,20,0.25); border-radius: 2px; pointer-events: none;
+}
+.am-tape-label__stripe {
+  display: inline-block;
+  font-family: var(--font-body); font-size: 8.5px; letter-spacing: 0.22em; font-weight: 600;
+  color: #fff0e8; background: var(--chip-red); padding: 2px 8px; border-radius: 2px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.am-tape-label__code {
+  font-family: var(--font-led); font-size: 28px; font-weight: 700;
+  color: #2a2318; letter-spacing: 0.18em;
+  user-select: all;
+  line-height: 1.1;
+}
+.am-tape-label__note { font-family: var(--font-body); font-size: 10.5px; color: #5a4f30; margin-top: 6px; }
+
+/* Accept plate: code entry + brass key */
+.am-accept { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px 16px; }
+.am-accept__hint { margin: 0; }
+.am-accept__form { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.am-accept__input {
+  flex: 1; min-width: 0;
+  background: var(--slot);
+  border: 1px solid var(--slot-edge);
+  border-radius: 3px;
+  padding: 10px 12px;
+  font-family: var(--font-led); font-size: 18px; font-weight: 700;
+  color: var(--led-amber);
+  text-shadow: 0 0 6px rgba(255,165,32,0.45);
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.7), 0 1px 0 rgba(255,255,255,0.4);
+}
+.am-accept__input::placeholder { color: var(--led-amber-dim); text-shadow: none; letter-spacing: 0.18em; }
+.am-accept__input:focus { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 1px; }
+.am-accept__submit { min-width: 80px; }
+
+/* Station directory: numbered roster of linked families */
+.am-directory { padding: 0; overflow: hidden; }
+.am-directory__head { padding: 14px 18px 8px; border-bottom: 1px solid rgba(100,80,40,0.2); }
+.am-directory__row {
+  display: grid;
+  grid-template-columns: 28px 14px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 18px;
+  border-bottom: 1px dashed rgba(100,80,40,0.2);
+}
+.am-directory__row:last-child { border-bottom: 0; }
+.am-directory__num { font-family: var(--font-led); font-size: 18px; color: var(--led-amber); text-shadow: 0 0 4px rgba(255,165,32,0.4); line-height: 1.4; }
+.am-directory__lamp { margin-top: 6px; }
+.am-directory__body { min-width: 0; }
+.am-directory__name { font-family: var(--font-body); font-size: 13px; font-weight: 600; color: var(--ink); letter-spacing: 0.02em; }
+.am-directory__meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-muted); letter-spacing: 0.06em; margin-top: 2px; }
+.am-directory__lines { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.am-directory__line {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 3px 9px;
+  background: rgba(255,255,255,0.35);
+  border: 1px solid rgba(100,80,40,0.25);
+  border-radius: 3px;
+  font-size: 11px;
+}
+.am-directory__line-name { font-family: var(--font-body); color: var(--ink); font-weight: 600; }
+.am-directory__line-num { font-family: var(--font-mono); color: var(--ink-muted); letter-spacing: 0.04em; }
+.am-directory__actions { display: inline-flex; gap: 6px; }
+.am-directory__empty { padding: 14px 18px 16px; }
+
+/* Outbox: thin strip of pending invites */
+.am-outbox { padding: 0; overflow: hidden; }
+.am-outbox__head { padding: 14px 18px 8px; border-bottom: 1px solid rgba(100,80,40,0.2); }
+.am-outbox__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px dashed rgba(100,80,40,0.2);
+}
+.am-outbox__row:last-child { border-bottom: 0; }
+.am-outbox__code {
+  font-family: var(--font-mono); font-size: 14px; font-weight: 500;
+  color: var(--label); letter-spacing: 0.2em;
+}
+.am-outbox__date { font-family: var(--font-mono); font-size: 11px; color: var(--ink-muted); letter-spacing: 0.04em; }
+
+/* Mobile: stack the label-maker/accept pair */
+@media (max-width: 780px) {
+  .am-links__pair { grid-template-columns: 1fr; }
+  .am-directory__row { grid-template-columns: 24px 14px 1fr; grid-template-rows: auto auto; row-gap: 8px; }
+  .am-directory__actions { grid-column: 1 / -1; justify-content: flex-end; }
+  .am-outbox__row { grid-template-columns: 1fr auto; row-gap: 4px; }
+  .am-outbox__date { grid-column: 1 / -1; }
+}
+
+/* =========================================================================
    Shared-class shim: provides AM-palette defaults for the component classes
    used by the existing templates (dashboard.html, phones.html, etc.) so
    every page is coherent in Phase 1. Phases 2 to 5 reskin each page with
