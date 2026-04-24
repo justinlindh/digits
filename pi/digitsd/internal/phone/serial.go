@@ -180,6 +180,22 @@ func isUnsolicitedEvent(line string) bool {
 	}
 }
 
+// isFireAndForgetAck returns true for protocol acks the Pico emits in
+// response to fire-and-forget commands (HOOK:FLASH:ON/OFF, CALL:CONNECTED).
+// These have no waiting consumer on the Pi side. Without this filter they
+// fall through to the events channel and trigger spurious "unhandled event"
+// warnings for every call.
+func isFireAndForgetAck(line string) bool {
+	switch line {
+	case "HOOK:FLASH:ON", "HOOK:FLASH:OFF":
+		return true
+	case "CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED":
+		return true
+	default:
+		return false
+	}
+}
+
 func (sp *SerialPort) readLoop() {
 	buf := make([]byte, 256)
 	var lineBuf strings.Builder
@@ -220,6 +236,9 @@ func (sp *SerialPort) readLoop() {
 						sp.logger.Warn("HOOK:FLASH received but firmware is not flash-capable; ignoring")
 						continue
 					}
+					if line == "HOOK:FLASH" {
+						sp.logger.Info("HOOK:FLASH forwarded from firmware")
+					}
 					select {
 					case sp.events <- line:
 					default:
@@ -235,6 +254,13 @@ func (sp *SerialPort) readLoop() {
 						continue
 					default:
 					}
+				}
+
+				// Fire-and-forget acks have no waiting consumer; drop silently
+				// rather than routing to the events channel (which would fire
+				// "unhandled event" warnings on every call).
+				if isFireAndForgetAck(line) {
+					continue
 				}
 
 				// No pending command — deliver as event (shouldn't normally happen).

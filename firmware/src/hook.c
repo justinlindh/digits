@@ -1,5 +1,7 @@
 #include "hook.h"
 
+#include <stdio.h>
+
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
@@ -117,6 +119,7 @@ void hook_poll(void) {
                     // immediately (see comment above).
                     s_flash_pending = true;
                     s_flash_start = get_absolute_time();
+                    printf("HOOK:FLASH:WINDOW_OPEN\n");
                 } else {
                     // Flash disabled: hangup is instantaneous.
                     s_event = HOOK_EVENT_ON;
@@ -131,8 +134,10 @@ void hook_poll(void) {
                     s_flash_pending = false;
                     if (on_ms >= FLASH_MIN_MS && on_ms <= FLASH_MAX_MS) {
                         s_event = HOOK_EVENT_FLASH;
+                    } else {
+                        // Under FLASH_MIN_MS: contact bounce, suppress.
+                        printf("HOOK:FLASH:REJECT:BOUNCE on_ms=%lld\n", on_ms);
                     }
-                    // Under FLASH_MIN_MS: contact bounce, suppress.
                 } else {
                     // Normal pickup from committed on-hook state.
                     s_event = HOOK_EVENT_OFF;
@@ -149,6 +154,7 @@ void hook_poll(void) {
         if (on_ms > FLASH_MAX_MS) {
             s_flash_pending = false;
             s_event = HOOK_EVENT_ON;
+            printf("HOOK:FLASH:REJECT:TIMEOUT on_ms=%lld\n", on_ms);
         }
     }
 }

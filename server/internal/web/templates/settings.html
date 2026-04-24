@@ -172,7 +172,51 @@
             <span class="theme-card__desc">Blue gradients, chunky 3D bevels, Tahoma, dial-up-era 'Welcome!' energy.</span>
           </span>
         </label>
+        <label class="theme-card {{if eq .User.Theme "answering-machine"}}theme-card--selected{{end}}">
+          <input type="radio" name="theme" value="answering-machine" {{if eq .User.Theme "answering-machine"}}checked{{end}}>
+          <span class="theme-card__swatch">
+            <span class="theme-card__swatch-strip" style="background: #d6ccae;"></span>
+            <span class="theme-card__swatch-strip" style="background: #1a1912;"></span>
+            <span class="theme-card__swatch-strip" style="background: #ffa520;"></span>
+          </span>
+          <span class="theme-card__body">
+            <span class="theme-card__name">Answering machine</span>
+            <span class="theme-card__desc">Beige injection-molded plastic, chicklet keys, amber LED readouts. The unlit REC lamp is the point.</span>
+          </span>
+        </label>
         <button type="submit" class="btn btn--primary">Save theme</button>
+      </form>
+    </div>
+  </section>
+  {{end}}
+
+  <!-- Intercom theme options -->
+  {{if and .User (eq .User.Theme "intercom")}}
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Intercom theme options</h2>
+      <span class="panel__title-sub">Time of day for the intercom palette.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/appearance" method="POST" class="stack-md">
+        <label class="radio-card">
+          <input type="radio" name="appearance" value="day" {{if eq .User.Appearance "day"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Day
+            <span class="radio-card__meta">default</span>
+          </div>
+          <p class="radio-card__desc">Warm paper and walnut under a bright room. The standard intercom palette.</p>
+        </label>
+        <label class="radio-card">
+          <input type="radio" name="appearance" value="night" {{if eq .User.Appearance "night"}}checked{{end}}>
+          <div class="radio-card__title">
+            <span class="radio-card__indicator"></span>
+            Night
+          </div>
+          <p class="radio-card__desc">Walnut charcoal with backlit brass. Easier on the eyes in low light.</p>
+        </label>
+        <button type="submit" class="btn btn--primary">Save</button>
       </form>
     </div>
   </section>

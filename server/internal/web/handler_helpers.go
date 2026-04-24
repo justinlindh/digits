@@ -282,10 +282,15 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 }
 
 // layoutFor returns the layout template name for the current user's theme.
-// Falls back to direction C when no theme is set (unauthenticated or new user).
+// Falls back to the intercom layout when no theme is set (unauthenticated or new user).
 func layoutFor(r *http.Request) string {
-	if u := auth.UserFromContext(r.Context()); u != nil && u.Theme == auth.ThemeDialup {
-		return "layout-dialup.html"
+	if u := auth.UserFromContext(r.Context()); u != nil {
+		switch u.Theme {
+		case auth.ThemeDialup:
+			return "layout-dialup.html"
+		case auth.ThemeAnsweringMachine:
+			return "layout-answering-machine.html"
+		}
 	}
 	return "layout-v2.html"
 }

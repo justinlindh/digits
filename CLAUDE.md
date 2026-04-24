@@ -106,6 +106,16 @@ docs: update wiring notes
 
 **Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 
+## Definition of done for substantial work
+
+Substantial = plan has 4+ tasks, PR touches 3+ files of non-trivial code, or work spans multiple sessions. Every plan for substantial work MUST end with a "phase close-out" task:
+
+1. Full test suite passes.
+2. Run `/simplify`; address genuine findings as a separate commit on the same branch. YAGNI-skip borderline ones with a one-line reason.
+3. Push; open or update the PR with inline screenshots if the change has a visual surface.
+
+Small fixes, docs, dep bumps, and typo PRs do not need this pass; their plans may omit the task.
+
 ## CI
 
 GitHub Actions workflows in `.github/workflows/`:

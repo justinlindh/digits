@@ -190,6 +190,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			}
 			return out
 		},
+		"inc": func(n int) int { return n + 1 },
 		"humanBytes": func(n int64) string {
 			switch {
 			case n > 1024*1024:
@@ -251,6 +252,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			"templates/_partials.html",
 			"templates/layout-v2.html",
 			"templates/layout-dialup.html",
+			"templates/layout-answering-machine.html",
 			"templates/"+page,
 		)
 	}
@@ -439,6 +441,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/timezone", h.handleSettingsTimezone)
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
+	protected.HandleFunc("POST /settings/appearance", h.handleSettingsAppearance)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)

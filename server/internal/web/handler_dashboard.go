@@ -24,6 +24,10 @@ type dashboardData struct {
 	CallsTodayTotalMin int
 	LinkedFamilies     []linkedFamilyRow
 	User               *auth.User
+	Now                time.Time
+	ActiveLine         string
+	ActivePeer         string
+	ActiveElapsed      string
 }
 
 type callRow struct {
@@ -56,6 +60,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ld := h.buildLinesData(r, "")
 	user := auth.UserFromContext(r.Context())
 	hhName, callHistoryEnabled, hhDND, loc := h.householdContext(r)
+	now := time.Now().In(loc)
 
 	// Determine current household ID for linked-family lookup.
 	var householdID string
@@ -116,6 +121,19 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Pluck the first household-scoped active call for the AM dashboard's
+	// single session panel. Deterministic "first" by Lines order beats the
+	// silent "last" that a template-side scan would produce.
+	var activeLine, activePeer, activeElapsed string
+	for _, lr := range ld.Lines {
+		if lr.OnCall {
+			activeLine = lr.Line.Name
+			activePeer = lr.OnCallPeerName
+			activeElapsed = lr.OnCallElapsed
+			break
+		}
+	}
+
 	// Build today's call rows when history is enabled. Scoped to this
 	// household's own line numbers so one family never sees another's
 	// activity. "Today" is relative to the household's configured timezone,
@@ -124,7 +142,6 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	var callsTodayTotalSec int
 	if callHistoryEnabled && len(ownNumbers) > 0 {
 		recent, _ := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
-		now := time.Now().In(loc)
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		for _, c := range recent {
 			if !c.StartedAt.After(today) {
@@ -169,6 +186,10 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
 		User:               user,
+		Now:                now,
+		ActiveLine:         activeLine,
+		ActivePeer:         activePeer,
+		ActiveElapsed:      activeElapsed,
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }

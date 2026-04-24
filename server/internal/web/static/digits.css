@@ -1870,3 +1870,185 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   color: var(--ink);
   border-color: var(--ink-muted);
 }
+
+/* =========================================================================
+   Dark mode: "Intercom at Night"
+   Not an inversion. The walnut enclosure under a low-watt hallway lamp:
+   paper becomes warm charcoal, ink becomes parchment, brass numerals
+   catch the light a little more. Nothing is pure black or slate.
+   ========================================================================= */
+
+html[data-theme="dark"] {
+  /* Palette: v1 walnut, with brass bumped slightly to feel luminous. */
+  --paper:      #1a140e;
+  --paper-2:    #241c13;
+  --ink:        #ede3d1;
+  --ink-soft:   #b6a587;
+  --ink-muted:  #7b6c54;
+  --rule:       #332a1e;
+  --rule-soft:  #261e14;
+  --brass:      #ecb874;
+  --brass-soft: #8a6835;
+  --forest:     #8fbf9c;
+  --rust:       #de8e71;
+  --ochre:      #e0b964;
+
+  --shadow-1: 0 2px 8px rgba(0,0,0,0.45);
+  --shadow-2: 0 10px 26px rgba(0,0,0,0.55);
+}
+
+/* Plain walnut paper, no ambient bloom: all the atmosphere comes from
+   the interactive elements themselves (below). */
+html[data-theme="dark"] body { background: var(--paper); }
+
+/* V3 "Dials Lit": no ambient highlights on surfaces. Cards stay flat
+   walnut; the atmosphere comes from luminous interactive bits below. */
+html[data-theme="dark"] .rail,
+html[data-theme="dark"] .rooms__card,
+html[data-theme="dark"] .panel,
+html[data-theme="dark"] .strip,
+html[data-theme="dark"] .banner {
+  background: var(--paper);
+}
+
+/* Active nav underline radiates a little, like a warm LED strip under
+   the label. Drop the light-mode inset brass bar in dark mode and draw
+   a full-width ::after strip instead, so only one underline is visible
+   and the glow halo radiates from it. Desktop-only so the mobile layout
+   keeps its left-bar active indicator from @media (max-width: 720px). */
+@media (min-width: 721px) {
+  html[data-theme="dark"] .rail__nav a.is-active {
+    box-shadow: none;
+    position: relative;
+  }
+  html[data-theme="dark"] .rail__nav a.is-active::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: var(--brass);
+    border-radius: 2px;
+    box-shadow: 0 0 10px rgba(236,184,116,0.55),
+                0 0 22px rgba(236,184,116,0.32);
+  }
+}
+
+/* Room cards: flat until hovered, then the brass border lights up and
+   radiates outward like the edge of a lit dial. */
+html[data-theme="dark"] .rooms__card {
+  transition: border-color 0.15s ease, box-shadow 0.2s ease;
+}
+html[data-theme="dark"] .rooms__card:hover {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1px rgba(236,184,116,0.35),
+              0 0 22px rgba(236,184,116,0.18),
+              0 10px 26px rgba(0,0,0,0.55);
+}
+
+/* Live callout: the brass dashed frame should look filament-lit, not
+   printed. */
+html[data-theme="dark"] .rooms__card--live {
+  border-color: rgba(236,184,116,0.55);
+  box-shadow: 0 0 18px rgba(236,184,116,0.18);
+}
+
+/* Brass chip (the --live state, and by extension the "default" theme
+   badge in settings) glows. */
+html[data-theme="dark"] .chip--live {
+  box-shadow: 0 0 14px rgba(236,184,116,0.32);
+}
+
+/* Connected-families chips gain a warm halo on hover. */
+html[data-theme="dark"] .connected-row__chip:hover {
+  border-color: rgba(236,184,116,0.5);
+  box-shadow: 0 0 14px rgba(236,184,116,0.22);
+}
+
+/* Brass buttons (Pair, etc.) look hot. */
+html[data-theme="dark"] .btn--brass {
+  box-shadow: 0 0 14px rgba(236,184,116,0.28);
+}
+html[data-theme="dark"] .btn--brass:hover {
+  box-shadow: 0 0 18px rgba(236,184,116,0.42);
+}
+
+/* Room "offline" dot is just gray in light mode; in dials-lit dark it
+   should feel definitely-unlit so the lit states pop by contrast. Leave
+   it flat, no halo. */
+
+/* Table row hover uses a fixed cream rgba in light mode that disappears
+   on dark paper; swap to an amber tint that composites over the panel. */
+html[data-theme="dark"] .t tbody tr:hover { background: rgba(221,168,103,0.06); }
+
+/* Input surfaces: the light theme hard-codes #fbf7ef for the "paper
+   inside a field" feel; in dark that becomes a pressed-in walnut well. */
+html[data-theme="dark"] .field__input,
+html[data-theme="dark"] .field__select,
+html[data-theme="dark"] .field__textarea,
+html[data-theme="dark"] .radio-card__indicator,
+html[data-theme="dark"] .toggle__track::after,
+html[data-theme="dark"] .keypad-wrap__strip {
+  background: #120e08;
+}
+html[data-theme="dark"] .toggle__track::after {
+  box-shadow: 0 1px 2px rgba(0,0,0,0.5), inset 0 1px 0 rgba(221,168,103,0.08);
+}
+
+/* Primary button flips: ink-on-paper in light mode becomes
+   parchment-on-walnut; hover raises toward pure parchment. */
+html[data-theme="dark"] .btn--primary {
+  background: var(--ink);
+  color: #1a140e;
+  border-color: var(--ink);
+}
+html[data-theme="dark"] .btn--primary:hover {
+  background: #f6ecd8;
+  border-color: #f6ecd8;
+}
+
+/* Translucent chip backgrounds in the light palette bake in alpha values
+   calibrated against cream paper; on dark walnut those same values read
+   as near-invisible. Lift the alpha and shift hues to the dark tokens. */
+html[data-theme="dark"] .chip              { background: rgba(237,227,209,0.06); border-color: rgba(237,227,209,0.14); }
+html[data-theme="dark"] .chip__dot         { background: var(--ink-muted); }
+html[data-theme="dark"] .chip--on          { background: rgba(127,169,139,0.14); border-color: rgba(127,169,139,0.32); }
+html[data-theme="dark"] .chip--on .chip__dot { background: var(--forest); }
+html[data-theme="dark"] .chip--warn        { background: rgba(224,185,100,0.14); border-color: rgba(224,185,100,0.32); }
+html[data-theme="dark"] .chip--live        { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
+html[data-theme="dark"] .chip--err         { background: rgba(210,132,103,0.14); border-color: rgba(210,132,103,0.32); }
+html[data-theme="dark"] .chip--conf        { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
+html[data-theme="dark"] .chip--conf .chip__dot { background: #caa679; }
+html[data-theme="dark"] .badge-from3way    { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
+
+/* "On a call" callout on room cards: the dashed brass frame is the hero
+   moment of the dashboard, keep it glowing. */
+html[data-theme="dark"] .rooms__callout {
+  background: rgba(221,168,103,0.09);
+  border-color: rgba(221,168,103,0.42);
+  box-shadow: inset 0 0 14px rgba(236,184,116,0.09);
+}
+
+/* Banner tints. */
+html[data-theme="dark"] .banner--ok   { background: rgba(127,169,139,0.08); border-color: rgba(127,169,139,0.28); }
+html[data-theme="dark"] .banner--warn { background: rgba(224,185,100,0.08); border-color: rgba(224,185,100,0.28); }
+html[data-theme="dark"] .banner--err  { background: rgba(210,132,103,0.08); border-color: rgba(210,132,103,0.28); }
+
+/* Live-call pulse halo uses the light brass alpha; tune for dark. */
+html[data-theme="dark"] .chip--live .chip__dot { animation: pulse-dark 1.6s ease-in-out infinite; }
+@keyframes pulse-dark {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(221,168,103,0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(221,168,103,0); }
+}
+
+/* Online-dot ring (lines list): the light-mode ring at 0.12 alpha
+   disappears on dark; open it up. */
+html[data-theme="dark"] .lines__dot--on {
+  box-shadow: 0 0 0 3px rgba(127,169,139,0.18);
+}
+
+/* Confirm-dialog backdrop: the baked-in rgba(42,31,24,...) is the
+   light-theme ink tone. On dark, go plain deep black. */
+html[data-theme="dark"] .confirm-dialog::backdrop { background: rgba(0,0,0,0.55); }
+html[data-theme="dark"] .confirm-dialog {
+  box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
+}

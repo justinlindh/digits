@@ -583,6 +583,7 @@ func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
 	d.mu.Lock()
 	sig := d.sig
 	d.mu.Unlock()
+	slog.Info("conference: sending ConferenceMerge to server", "held", held, "active", active)
 	sendSignal(sig, &sigclient.Message{
 		Type:       sigclient.TypeConferenceMerge,
 		HeldPeer:   held,
@@ -625,13 +626,19 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	// would race against the remote track arriving.
 	webrtcCh := d.mixer.AddWebRTCSource(phone)
 	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		slog.Info("conference: remote track attached (initiator)", "phone", phone)
 		go func() {
 			defer recoverGoroutine("conf-remote-track-" + phone)
+			gotFirst := false
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
 					slog.Info("conference: remote track ended", "phone", phone)
 					return
+				}
+				if !gotFirst {
+					slog.Info("conference: first RTP packet received", "phone", phone)
+					gotFirst = true
 				}
 				// pm owns its own decoder — safe to call concurrently with other peers.
 				pcm, err := pm.Decode(pkt.Payload)
@@ -692,6 +699,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 }
 
 func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
+	slog.Info("conference: removing mesh peer", "phone", phone)
 	d.mu.Lock()
 	mesh := d.mesh
 	if cancel, ok := d.meshReporterCancels[phone]; ok {
@@ -708,15 +716,20 @@ func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
 func (d *daemonCallbacks) TearDownAllMeshPeers() {
 	d.mu.Lock()
 	mesh := d.mesh
+	var peers []string
+	if mesh != nil {
+		peers = mesh.ActivePeers()
+	}
 	for phone, cancel := range d.meshReporterCancels {
 		cancel()
 		delete(d.meshReporterCancels, phone)
 	}
 	d.mu.Unlock()
+	slog.Info("conference: tearing down all mesh peers", "count", len(peers), "peers", peers)
 	if mesh == nil {
 		return
 	}
-	for _, p := range mesh.ActivePeers() {
+	for _, p := range peers {
 		d.mixer.RemoveWebRTCSource(p)
 	}
 	mesh.CloseAll()
@@ -742,13 +755,19 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 	// Wire remote audio track BEFORE AcceptOffer so pion cannot miss it.
 	webrtcCh := d.mixer.AddWebRTCSource(peer)
 	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		slog.Info("conference: remote track attached (responder)", "phone", peer)
 		go func() {
 			defer recoverGoroutine("conf-remote-track-" + peer)
+			gotFirst := false
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
 					slog.Info("conference: remote track ended (responder)", "phone", peer)
 					return
+				}
+				if !gotFirst {
+					slog.Info("conference: first RTP packet received (responder)", "phone", peer)
+					gotFirst = true
 				}
 				// pm owns its own decoder — safe to call concurrently with other peers.
 				pcm, err := pm.Decode(pkt.Payload)
@@ -1053,7 +1072,13 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 		event := cmd[11:]
 		slog.Info("test: injecting event", "event", event)
 		if d.ctrl != nil {
-			d.ctrl.HandleEvent(event)
+			// HOOK:FLASH has a dedicated dispatch that needs the active
+			// 2-party peer, mirroring the serial reader path in main.go.
+			if event == "HOOK:FLASH" {
+				d.ctrl.HandleHookFlash(d.currentPeer())
+			} else {
+				d.ctrl.HandleEvent(event)
+			}
 		}
 		return "OK"
 	}
