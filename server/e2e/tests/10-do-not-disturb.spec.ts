@@ -29,7 +29,9 @@ function isAuthOrOnboard(url: string): boolean {
  * inside the page chrome only when the household DND flag is on.
  */
 function chipSelector(theme: Theme): string {
-  return theme === 'dialup' ? '.dialup-toolbar__dnd' : '.rail__dnd-chip';
+  return theme === 'dialup'
+    ? '.dialup-toolbar .chip--err'
+    : '.rail .chip--err';
 }
 
 /**

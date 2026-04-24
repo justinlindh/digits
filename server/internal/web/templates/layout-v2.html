@@ -19,12 +19,8 @@
     <span class="rail__mark">Digits</span>
     {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
     {{if .HouseholdDND}}
-    <a href="/settings#do-not-disturb" class="rail__dnd-chip" title="Household Do Not Disturb is on">
-      <svg class="rail__dnd-icon" viewBox="0 0 24 24" aria-hidden="true" width="14" height="14">
-        <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7v4l-2 3v1h18v-1l-2-3V9a7 7 0 0 0-7-7zm-2 18a2 2 0 0 0 4 0h-4z"/>
-        <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2"/>
-      </svg>
-      <span>Do Not Disturb</span>
+    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on">
+      <span class="chip__dot"></span>Do Not Disturb
     </a>
     {{end}}
   </div>

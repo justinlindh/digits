@@ -73,9 +73,8 @@
     </form>
     <div class="dialup-toolbar__welcome">Welcome, <b>{{if .HouseholdName}}{{.HouseholdName}}{{else}}LindhFamily{{end}}</b>!</div>
     {{if .HouseholdDND}}
-    <a href="/settings#do-not-disturb" class="dialup-toolbar__dnd" title="Household Do Not Disturb is on">
-      <span class="dialup-toolbar__dnd-led"></span>
-      <span>DND</span>
+    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on" style="margin-left: 10px;">
+      <span class="chip__dot"></span>DND
     </a>
     {{end}}
   </div>

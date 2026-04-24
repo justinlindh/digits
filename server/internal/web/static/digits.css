@@ -1870,31 +1870,3 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   color: var(--ink);
   border-color: var(--ink-muted);
 }
-
-/* Top-rail Do Not Disturb chip. Displayed inside .rail__brand when the
-   household has DND enabled. Mutes the bell visually with a strikethrough
-   icon and sits next to the household name as a quiet, persistent reminder.
-   Colors track the existing brass/rust palette already used elsewhere in
-   the rail (see .rail__nav .is-active brass underline). */
-.rail__dnd-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  margin-left: 10px;
-  border-radius: 999px;
-  background: rgba(196, 139, 58, 0.12);
-  color: var(--rust);
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: none;
-  border: 1px solid rgba(196, 139, 58, 0.35);
-  line-height: 1;
-}
-.rail__dnd-chip:hover {
-  background: rgba(196, 139, 58, 0.22);
-  text-decoration: none;
-}
-.rail__dnd-icon {
-  flex-shrink: 0;
-}
