@@ -25,6 +25,7 @@
   --led-amber: #ffa520;
   --led-amber-dim: #6b4612;
   --led-green: #3dd94a;
+  --led-green-dark: #2b7d34;
   --led-red: #ff3d2e;
 
   /* Buttons */
@@ -779,7 +780,7 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-overview__line-num { font-size: 11px; }
 .am-overview__line-status { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; }
 .am-overview__line-status--live { color: var(--led-red); }
-.am-overview__line-status--online { color: #2b7d34; }
+.am-overview__line-status--online { color: var(--led-green-dark); }
 .am-overview__line-status--idle { color: var(--ink-muted); }
 
 /* Mobile: stack the top row and the main grid */
