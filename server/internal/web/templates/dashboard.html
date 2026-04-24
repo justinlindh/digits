@@ -1,7 +1,7 @@
 {{define "title"}}Overview{{end}}
 
 {{define "content"}}
-{{if eq .User.Theme "answering-machine"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
   {{template "dashboard-am" .}}
 {{else}}
 <div class="page">

@@ -34,6 +34,13 @@
 
     {{if .HouseholdName}}<span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>{{end}}
 
+    {{if .HouseholdDND}}
+    <a href="/settings#do-not-disturb" class="am-shell__dnd" title="Household Do Not Disturb is on" aria-label="Do Not Disturb is on">
+      <span class="am-lamp am-lamp--on-red am-shell__dnd-lamp" aria-hidden="true"></span>
+      <span class="am-led am-led--red am-shell__dnd-cap">DND</span>
+    </a>
+    {{end}}
+
     <form class="am-shell__signout-form" method="POST" action="/auth/logout">
       <button class="am-key am-key--nav" type="submit">
         <span class="am-key__label">Sign out</span>
