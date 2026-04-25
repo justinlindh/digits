@@ -622,6 +622,16 @@ rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 # Make scripts executable
 chmod +x "${ROOTFS_MNT}/usr/local/bin/"* 2>/dev/null || true
 
+# Select the SWD pinout config that matches the target hardware. flash-pico.sh
+# always reads digits-swd.cfg by name, so we copy the variant in place.
+SWD_DIR="${ROOTFS_MNT}/usr/local/share/digits/swd"
+if [[ "$PCB_MODE" == true ]]; then
+    install -m 644 "${SWD_DIR}/digits-swd-v2.cfg" "${SWD_DIR}/digits-swd.cfg"
+else
+    install -m 644 "${SWD_DIR}/digits-swd-v1.cfg" "${SWD_DIR}/digits-swd.cfg"
+fi
+info "Installed digits-swd.cfg for $([[ "$PCB_MODE" == true ]] && echo V2 || echo V1) (see digits-swd-v{1,2}.cfg)"
+
 # ── step 13a: compile device-tree overlays (host-side) ──────────────────────
 # The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
 # /boot/firmware/overlays/ are ignored by the loader.
