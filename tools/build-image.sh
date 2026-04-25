@@ -1036,6 +1036,14 @@ hostside_disable_service "$ROOTFS_MNT" "dnsmasq.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.socket"
 
+# Mask packaging maintenance services that fail on a ro root: they try to
+# write to /var/cache and /var/lib paths we keep read-only. They are not
+# needed on a Digits device.
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.service"
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.timer"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.service"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.timer"
+
 # Enable Digits services
 hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
