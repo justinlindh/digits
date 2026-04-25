@@ -1,4 +1,4 @@
-.PHONY: help server server-test pi-build pi-test firmware image image-dev flash image-flash clean
+.PHONY: help server server-test pi-build pi-test firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -32,15 +32,28 @@ firmware-local: ## Build Pico firmware on host (requires arm-none-eabi-gcc + Pic
 
 # ── Pi SD Card Image ─────────────────────────────────────────────────────────
 
-image: ## Build flashable Pi SD card image (Docker)
+image: ## Build Pi SD card image for V1/prototype hardware (Codec Zero HAT)
 	./pi/image/build-docker.sh
 
-image-dev: ## Build Pi image with SSH enabled (Docker)
+image-dev: ## Build V1/prototype image with SSH enabled (Docker)
 	./pi/image/build-docker.sh --dev
 
-flash: ## Flash the most recent image to SD card (auto-detects or SD=/dev/sdX)
-	@IMAGE=$$(ls -t digits-pi-*.img.gz 2>/dev/null | head -1); \
-	if [ -z "$$IMAGE" ]; then echo "No image found -- run 'make image-dev' first"; exit 1; fi; \
+image-v2: ## Build Pi SD card image for V2 carrier board (onboard codec)
+	./pi/image/build-docker.sh --pcb
+
+image-v2-dev: ## Build V2 carrier board image with SSH enabled (Docker)
+	./pi/image/build-docker.sh --dev --pcb
+
+# Default flash glob: newest of any variant. flash-v1 / flash-v2 narrow it.
+# Override with IMAGE=<path> to flash a specific file regardless of glob.
+IMAGE_GLOB ?= digits-pi-v*-*.img.gz
+
+flash: ## Flash newest image (use flash-v1 / flash-v2 to pick, or IMAGE=<path>)
+	@IMAGE="$(IMAGE)"; \
+	if [ -z "$$IMAGE" ]; then \
+		IMAGE=$$(ls -t $(IMAGE_GLOB) 2>/dev/null | head -1); \
+	fi; \
+	if [ -z "$$IMAGE" ]; then echo "No image found matching $(IMAGE_GLOB) -- build one first"; exit 1; fi; \
 	if [ -n "$(SD)" ]; then \
 		SD_DEV="$(SD)"; \
 	else \
@@ -58,7 +71,15 @@ flash: ## Flash the most recent image to SD card (auto-detects or SD=/dev/sdX)
 	gunzip -c "$$IMAGE" | sudo dd of="$$SD_DEV" bs=4M status=progress conv=fsync && \
 	sync && echo "Flash complete. Safe to remove SD card."
 
-image-flash: image-dev flash ## Build dev image and flash in one step
+flash-v1: IMAGE_GLOB = digits-pi-v1-*.img.gz
+flash-v1: flash ## Flash newest V1/prototype image
+
+flash-v2: IMAGE_GLOB = digits-pi-v2-*.img.gz
+flash-v2: flash ## Flash newest V2 carrier board image
+
+image-flash: image-dev flash-v1 ## Build V1 dev image and flash
+
+image-v2-flash: image-v2-dev flash-v2 ## Build V2 dev image and flash
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 

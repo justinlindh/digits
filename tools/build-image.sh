@@ -18,7 +18,8 @@
 #   is done host-side to avoid qemu-aarch64 silently corrupting files
 #   like /etc/shadow and /etc/group.
 #
-# Output: digits-pi-YYYYMMDD.img.gz in the current directory
+# Output: digits-pi-v{1,2}-YYYYMMDD.img.gz in the current directory
+#         (v1 for Codec Zero HAT / prototype, v2 when --pcb is passed)
 #
 # See tools/README-image-builder.md for full documentation.
 
@@ -34,7 +35,9 @@ INIT_DATA="${REPO_DIR}/pi/image/init-data.sh"
 BUILD_DIR="${SCRIPT_DIR}/build"
 TONES_DIR="${REPO_DIR}/pi/tones"
 DATE_STAMP=$(date +%Y%m%d)
-OUTPUT_NAME="digits-pi-${DATE_STAMP}.img"
+# OUTPUT_NAME is finalized after --pcb is parsed so V1 and V2 builds land in
+# distinct files (digits-pi-v1-DATE.img vs digits-pi-v2-DATE.img).
+OUTPUT_NAME=""
 
 # Packages to install via chroot (the ONLY thing qemu chroot is used for)
 CHROOT_PACKAGES=(
@@ -46,6 +49,7 @@ CHROOT_PACKAGES=(
     libsndfile1
     openocd
     i2c-tools
+    minicom
 )
 
 # Packages to purge from the base Pi OS image (from pi-os-audit.md)
@@ -140,7 +144,9 @@ info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
-# PCB mode: pass --pcb to configure for PCB carrier board (inverted hook switch)
+# PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
+# TLV320AIC3104 codec overlay and sets hook_inverted. Without --pcb, the image
+# is built for V1/prototype hardware (Codec Zero HAT, non-inverted hook).
 DEV_MODE=false
 PCB_MODE=false
 while [[ "${1:-}" == --* ]]; do
@@ -159,6 +165,12 @@ while [[ "${1:-}" == --* ]]; do
     esac
     shift
 done
+
+if [[ "$PCB_MODE" == true ]]; then
+    OUTPUT_NAME="digits-pi-v2-${DATE_STAMP}.img"
+else
+    OUTPUT_NAME="digits-pi-v1-${DATE_STAMP}.img"
+fi
 
 require_cmd() {
     for cmd in "$@"; do
@@ -363,7 +375,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl zstd
+            qemu-aarch64-static gzip blkid rsync openssl zstd dtc
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
@@ -609,6 +621,19 @@ rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 
 # Make scripts executable
 chmod +x "${ROOTFS_MNT}/usr/local/bin/"* 2>/dev/null || true
+
+# ── step 13a: compile device-tree overlays (host-side) ──────────────────────
+# The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
+# /boot/firmware/overlays/ are ignored by the loader.
+
+info "Compiling device-tree overlays..."
+for dts in "${BOOT_MNT}/overlays/"digits-*.dts; do
+    [[ -f "$dts" ]] || continue
+    dtbo="${dts%.dts}.dtbo"
+    info "  $(basename "$dts") -> $(basename "$dtbo")"
+    dtc -@ -q -I dts -O dtb -o "$dtbo" "$dts"
+    rm -f "$dts"
+done
 
 # ── step 14: copy tone files (host-side) ────────────────────────────────────
 
@@ -891,7 +916,7 @@ if ! grep -q '^\[all\]' "$CONFIG_TXT"; then
 fi
 
 # Remove any existing Digits config after [all]
-sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
+sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtoverlay=digits-codec/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
 
 # Append Digits config
 cat >> "$CONFIG_TXT" << 'DIGITS_CONFIG'
@@ -899,6 +924,13 @@ over_voltage=2
 enable_uart=1
 dtoverlay=disable-bt
 DIGITS_CONFIG
+
+# V2 carrier board has an onboard TLV320AIC3104 codec that needs an explicit
+# overlay. V1/prototype uses the Codec Zero HAT which auto-loads via HAT EEPROM,
+# so the digits-codec overlay must stay off.
+if [[ "$PCB_MODE" == true ]]; then
+    echo "dtoverlay=digits-codec" >> "$CONFIG_TXT"
+fi
 
 # Set audio off (headless, saves resources)
 sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$CONFIG_TXT"

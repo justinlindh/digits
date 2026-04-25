@@ -16,12 +16,19 @@ BASE_IMAGE_NAME="2024-11-19-raspios-bookworm-arm64-lite.img.xz"
 BASE_IMAGE_SHA256=""
 CACHE_DIR="/cache"
 
-# Parse args: [--dev] [image-file]
-DEV_FLAG=""
-if [[ "${1:-}" == "--dev" ]]; then
-    DEV_FLAG="--dev"
+# Parse args: [--dev] [--pcb] [image-file]
+BUILD_FLAGS=()
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --dev|--pcb)
+            BUILD_FLAGS+=("$1")
+            ;;
+        *)
+            die "Unknown flag: $1"
+            ;;
+    esac
     shift
-fi
+done
 
 SOURCE_IMAGE="${1:-}"
 
@@ -98,6 +105,13 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -o /digits/tools/build/digits-setup \
     ./cmd/digits-setup/
 
+# Cross-compile digits-recovery (pure Go, no CGO needed). build-image.sh reads
+# this from pi/digits-recovery/bin/ to match the local Makefile output path.
+info "Cross-compiling digits-recovery for aarch64..."
+cd /digits/pi/digits-recovery
+mkdir -p bin
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
+
 info "Binaries ready in tools/build/"
 
 # Download latest firmware ELF from GitHub releases
@@ -126,7 +140,7 @@ fi
 BUILD_WD="/build"
 mkdir -p "$BUILD_WD"
 cd "$BUILD_WD"
-bash /digits/tools/build-image.sh $DEV_FLAG "$SOURCE_IMAGE"
+bash /digits/tools/build-image.sh ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} "$SOURCE_IMAGE"
 
 # Copy the output image to the mounted repo (accessible from host)
 cp -v "$BUILD_WD"/digits-pi-*.img.gz /digits/
