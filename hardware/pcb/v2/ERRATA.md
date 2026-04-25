@@ -41,7 +41,17 @@ The Pico SDK ships `boot2_w25q080` as the default boot stage 2 because that matc
 
 **Fix for V2.1 / V3:** pick a flash part the SDK's default boot2 already supports correctly (e.g., the genuine Pi Pico flash), or build a custom boot2 sequence verified against the W25Q16JV datasheet's quad-mode init. Until then, the firmware-side override is sufficient.
 
-### 4. Stale V1 SWD pin assignment in image rootfs-overlay
+### 4. No BOOTSEL button: first-flash and recovery require a paperclip
+
+V2 has no USB connector and no BOOTSEL button. The only way to flash a virgin RP2040 over SWD, or to recover a unit running firmware that doesn't yet support the soft-reboot REBOOT command, is to manually short the flash chip's CS pin (U4 pin 1, the QSPI_SS net) to GND while powering on. This is genuinely fiddly: the pad is sub-millimeter, U4 sits next to U3 whose pin 1 is the +3.3 V rail (so a slipped wire shorts the supply), and the bootrom samples QSPI_SS in the first ~10 ms after power-on so timing is unforgiving.
+
+During V2 bring-up (2026-04-25) one of these paperclip attempts shorted +3.3 V to GND repeatedly through the wire while the operator was trying to find U4 pin 1 in the cluster of decoupling caps near U3. The Pi USB polyswitch tripped each time and the rails recovered, but on that specific board the RP2040's SWD subsystem stopped responding afterward; the chip still booted and ran firmware, but the DAP would never enumerate again. Effectively a one-way unit, salvageable only for non-firmware-iteration tests.
+
+**Workaround for fabricated boards:** for the first flash on each board, follow the procedure with extreme caution, using C1's negative pad (the largest GND surface on the board, far from any +3.3 V neighbor) as the GND target. Once REBOOT-capable firmware is on, all subsequent flashes work over SSH via reset_usb_boot and no physical access is needed.
+
+**Fix for V2.1 / V3:** add a 6 mm momentary tact switch wired from the QSPI_SS net (U4 pin 1) to GND, located on an accessible board edge. Press during power-on to enter BOOTSEL. Standard Pi Pico practice. Eliminates an entire class of bring-up failure mode.
+
+### 5. Stale V1 SWD pin assignment in image rootfs-overlay
 
 `pi/image/rootfs-overlay/usr/local/share/digits/swd/digits-swd.cfg` shipped with `bcm2835gpio swd_nums 25 22` (V1 prototype's SWDIO=GP22, SWCLK=GP25). V2 moved SWDIO to GP24 to free GP22 for CODEC_RESET. Until this was caught, openocd bitbanged SWD on the wrong pin (GP22 = CODEC_RESET on V2) and reported "Failed to connect multidrop rp2040.dap0" / "Too long SWD WAIT" forever, presenting as a dead chip.
 
