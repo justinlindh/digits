@@ -4,8 +4,26 @@
 / {
     compatible = "brcm,bcm2835";
 
-    /* Enable I2C1 for codec control */
+    /*
+     * U7 (XC6206P182MR) is a fixed 1.8 V LDO that produces the codec's DVDD
+     * rail. It has no software control, so model it as a fixed-regulator the
+     * codec driver can read voltage from.
+     */
     fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            vdd_1v8_codec_reg: vdd-1v8-codec {
+                compatible = "regulator-fixed";
+                regulator-name = "vdd-1v8-codec";
+                regulator-min-microvolt = <1800000>;
+                regulator-max-microvolt = <1800000>;
+                regulator-always-on;
+            };
+        };
+    };
+
+    /* Enable I2C1 for codec control */
+    fragment@1 {
         target = <&i2c1>;
         __overlay__ {
             status = "okay";
@@ -19,12 +37,13 @@
                 AVDD-supply = <&vdd_3v3_reg>;
                 IOVDD-supply = <&vdd_3v3_reg>;
                 DRVDD-supply = <&vdd_3v3_reg>;
+                DVDD-supply = <&vdd_1v8_codec_reg>;
             };
         };
     };
 
     /* Enable I2S */
-    fragment@1 {
+    fragment@2 {
         target = <&i2s>;
         __overlay__ {
             status = "okay";
@@ -32,7 +51,7 @@
     };
 
     /* Sound card using simple-audio-card */
-    fragment@2 {
+    fragment@3 {
         target-path = "/";
         __overlay__ {
             digits_sound: digits-sound {
