@@ -37,7 +37,8 @@ static hook_event_t s_event = HOOK_EVENT_NONE;
 static bool s_force_mode = false;
 static bool s_forced_state = false;
 
-// Invert mode: when true, LOW = off-hook (PCB carrier board tactile switch).
+// Invert mode: when true, polarity flips (LOW = off-hook). Used for switches
+// wired with NC contacts or with reversed cradle mechanics.
 static bool s_inverted = false;
 
 // Flash-detection gate. When false, no flash window is opened on transition to

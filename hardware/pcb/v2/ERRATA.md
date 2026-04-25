@@ -56,3 +56,27 @@ During V2 bring-up (2026-04-25) one of these paperclip attempts shorted +3.3 V t
 `pi/image/rootfs-overlay/usr/local/share/digits/swd/digits-swd.cfg` shipped with `bcm2835gpio swd_nums 25 22` (V1 prototype's SWDIO=GP22, SWCLK=GP25). V2 moved SWDIO to GP24 to free GP22 for CODEC_RESET. Until this was caught, openocd bitbanged SWD on the wrong pin (GP22 = CODEC_RESET on V2) and reported "Failed to connect multidrop rp2040.dap0" / "Too long SWD WAIT" forever, presenting as a dead chip.
 
 **Status:** fixed in repo at commit 517af11 ("fix(image): correct SWD pin number for V2 carrier"). All future V2 image builds carry the corrected `swd_nums 25 24`.
+
+### 6. J3 power input connector sized at the limit, not with margin
+
+J3 is a JST ZH 2-pin (`B2B-ZR-SM4-TF`) carrying the entire +12 V input for the board. JST rates ZH contacts at 1.0 A per pin. The actual current profile through J3:
+
+- Continuous (Pi Zero 2 W typical + codec + RP2040 + flash, through the LM2596 buck): ~300 mA at 12 V.
+- Worst-case overlap (Pi peak load coinciding with ringer mid-stroke at peak coil current): ~1.07 A at 12 V.
+
+The peak sits right at the connector rating with effectively zero margin. F1 is a 1.5 A PTC, so faults downstream of the fuse are bounded above the connector rating but below the wall supply's 2 A capacity. Normal operation produces only a few °C rise at the contact (40 mW total I²R at 1 A across 20 mΩ contacts), so this is not an immediate failure mode, but it violates the customary 50% derating practice for power connectors.
+
+**Workaround for fabricated boards:** none needed. Build harnesses with quality pre-crimped 28 AWG silicone leads (avoids the dominant failure mode, bad crimps adding series resistance) and mechanically secure the cable so axial strain on the barrel jack does not transfer to the JST contacts. Inspect the connector after the first month of real use; if the housing or wire shows any discoloration, downgrade the supply or upsize the harness gauge.
+
+**Fix for V2.1 / V3:** swap J3 from JST ZH to JST PH 2-pin (`B2B-PH-SM4-TBT` or equivalent, 2.0 mm pitch, rated 2.0 A per contact). Schematic edit plus footprint swap; no other routing changes required. Optionally apply the same swap to J7 (ringer output) for consistency, since J7 carries the same coil current that contributes to the J3 peak.
+
+### 7. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
+
+V2 routes the on-board hookswitch SW1 to U3 pin 31 (GP20) per `hardware/pcb/v2/NET_TOPOLOGY.md` and the netlist export. The firmware (`firmware/src/hook.h`) hardcoded `HOOK_PIN = 10` with no `HARDWARE_REV` switch, mirroring V1's pin assignment. On V2 hardware GP10 is unconnected, so the firmware read a floating pin held HIGH by the internal pull-up and never observed any hook transitions: SW1 was electrically isolated from the FSM.
+
+A misleading comment in `hook.h` further suggested V2 needed `HOOK:INVERT:ON` "for PCB carrier boards with on-board tactile switch." It does not. V2 SW1 closes to GND when the handset is on the cradle (GP20 LOW = on-hook), which matches the firmware's non-inverted default polarity.
+
+**Status:** fixed in firmware, this branch. `hook.h` now selects `HOOK_PIN` per `HARDWARE_REV` (V1 = GP10, V2 = GP20), following the same pattern as `keypad.h` and `ringer.h`. The polarity comment in `hook.h` and `hook.c` is corrected. No `hook_inverted: true` is needed in `digitsd` config for V2 with a normally-open switch wired across SW1's pads.
+
+**Bring-up note:** for cradle-actuated switches, wire across SW1's two pads (the existing on-board tactile is in parallel and harmless). One pad is HOOK_SW (GP20), the other is GND; switch polarity does not matter for an SPST. If your switch is normally-closed instead of normally-open, set `hook_inverted: true` in the device config.
+
