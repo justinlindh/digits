@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# digits-pico-shell: open an interactive UART terminal to the RP2040.
+#
+# Stops digitsd (which holds /dev/serial0), drops you into minicom at
+# 115200 8N1, then restarts digitsd on exit. Inside minicom, type RP2040
+# firmware commands to test the chip directly:
+#
+#   PING                  -> PONG
+#   VERSION               -> version banner
+#   LED:ON / LED:OFF
+#   RING:TEST             -> single bell strike
+#   KEYTEST               -> stream KEY:N for every keypress
+#   KEYTEST:OFF           -> stop streaming
+#   STATE?                -> dump FSM state
+#
+# Exit minicom with Ctrl-A then X.
+set -euo pipefail
+
+BAUD="${BAUD:-115200}"
+DEV="${DEV:-/dev/serial0}"
+
+if ! command -v minicom >/dev/null 2>&1; then
+    echo "ERROR: minicom not installed" >&2
+    exit 1
+fi
+
+if [[ $EUID -ne 0 ]]; then
+    exec sudo -E "$0" "$@"
+fi
+
+restart_daemon=false
+if systemctl is-active --quiet digitsd.service; then
+    restart_daemon=true
+    echo "Stopping digitsd to release $DEV..."
+    systemctl stop digitsd.service
+fi
+
+trap 'if [[ "$restart_daemon" == true ]]; then echo "Restarting digitsd..."; systemctl start digitsd.service; fi' EXIT
+
+echo "Opening minicom on $DEV @ $BAUD. Exit with Ctrl-A then X."
+echo "================================================================"
+
+# -D device, -b baud, -o suppress init string, -w line wrap
+exec minicom -D "$DEV" -b "$BAUD" -o -w
