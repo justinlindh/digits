@@ -51,3 +51,20 @@ Assuming mic pair on **outer** pins (1, 4), not inner. With the stock cable plug
 Easiest form: cut the stock handset cable, strip the four conductors, crimp JST ZH pins, insert into the housing in the order above. One minor per-unit rework.
 
 **Fix for V3:** update J8 pin assignment in the schematic so `pin 1 = MIC_HOT, pin 2 = GND, pin 3 = EAR_P, pin 4 = EAR_N`, matching the stock Sangyn cable directly. Then no per-unit adapter rework is needed. Add a schematic-review checklist item: for every connector that mates to an external cable with a documented wire color code, the schematic must explicitly assert the color-to-function map, not silently adopt a convention.
+
+### 2. Components face the wrong way relative to mounting holes
+
+Boards arrived with components on the side that ends up facing *down* into the phone shell when the mounting holes are aligned to their bosses. Intended orientation is components facing *up* (away from the shell base, toward the Pi piggybacked on top).
+
+**Symptom:** with the carrier oriented so MH1/MH2/MH3 line up with the enclosure standoffs, every populated component (Pi header, JSTs, LM2596, codec, etc.) is on the underside, sandwiched between the carrier and the shell. Pi header is unreachable from above.
+
+**Root cause:** during placement, the "front" copper layer was used for the active components but the mounting hole positions were defined relative to a board orientation that flips when the assembly is dropped into the enclosure. The fix is one of:
+
+- Move every component to `B.Cu` (mirror the layout), keeping mounting holes where they are; or
+- Mirror the mounting hole positions across the board's Y-axis so they line up with the bosses with the existing component side facing up.
+
+Either approach is purely a placement/copper-side change; net topology and routing geometry are preserved.
+
+**Workaround for fabricated boards:** none clean. The board can be powered and tested on the bench with the components facing up (no enclosure), but it cannot be mounted in the phone shell as-is.
+
+**Fix for V2.1 / V3:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
