@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
-# flash-pico.sh — Flash RP2040 Pico via SWD from Pi Zero 2 W
+# flash-pico.sh: Flash RP2040 via SWD from Pi Zero 2 W (V1 Pico H or V2 carrier).
 # Usage: flash-pico.sh <firmware.elf>
 #
 # Stops digitsd (releases serial port), flashes via OpenOCD SWD,
 # verifies PING/PONG, restarts digitsd.
+#
+# Flash recipe notes (learned the hard way during V2 bring-up):
+# 1. FLASHSIZE override: OpenOCD 0.12 sometimes fails to read SFDP / JEDEC ID
+#    from the W25Q16JV (returns 0x000000), which kills the auto-probe path
+#    even when the chip is otherwise fine. Setting FLASHSIZE=0x200000 skips
+#    that detection and uses the known size directly.
+# 2. RESCUE-mode pre-pass: a virgin chip (or one that fell off SWD because
+#    its boot2 stage looped) gets the cores stuck in reset, and SWD WAITs
+#    forever. RESCUE mode uses DBGPWRUPREQ to force the bootrom to halt
+#    before jumping to flash, which gives us a clean window to reflash.
+#    We always do a RESCUE pass on flash failure, then retry.
 set -euo pipefail
 
 ELF="${1:?Usage: flash-pico.sh <firmware.elf>}"
@@ -11,6 +22,7 @@ SWD_CFG="${SWD_CFG:-/usr/local/share/digits/swd/digits-swd.cfg}"
 OPENOCD="${OPENOCD:-/usr/bin/openocd}"
 SERIAL_DEV="${SERIAL_DEV:-/dev/serial0}"
 BAUD=115200
+FLASHSIZE="${FLASHSIZE:-0x200000}"
 
 if [ ! -f "$ELF" ]; then
     echo "ERROR: firmware file not found: $ELF" >&2
@@ -38,22 +50,44 @@ if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     sleep 1
 fi
 
-# 2. Flash via OpenOCD
+flash_attempt() {
+    sudo "$OPENOCD" \
+        -c "set FLASHSIZE $FLASHSIZE" \
+        -c "set USE_CORE 0" \
+        -f "$SWD_CFG" \
+        -f target/rp2040.cfg \
+        -c "init; reset halt; program $ELF verify; reset run; exit"
+}
+
+rescue_pass() {
+    echo "Running RESCUE pass to recover stuck bootrom state..."
+    sudo "$OPENOCD" \
+        -c "set RESCUE 1" \
+        -f "$SWD_CFG" \
+        -f target/rp2040.cfg \
+        -c "init; exit" 2>&1 | tail -5 || true
+}
+
+# 2. Flash via OpenOCD with rescue-on-failure
 echo "Flashing via SWD..."
-if ! sudo "$OPENOCD" \
-    -f "$SWD_CFG" \
-    -f target/rp2040.cfg \
-    -c "program $ELF verify reset exit"; then
-    echo "ERROR: OpenOCD flash failed" >&2
-    echo "Restarting digitsd anyway..."
-    sudo systemctl start digitsd.service
-    exit 1
+if ! flash_attempt; then
+    echo "First attempt failed. Trying RESCUE recovery and retry..."
+    rescue_pass
+    sleep 1
+    if ! flash_attempt; then
+        echo "ERROR: OpenOCD flash failed even after RESCUE." >&2
+        echo "Restarting digitsd anyway..."
+        if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
+            sudo systemctl start digitsd.service
+        fi
+        exit 1
+    fi
 fi
 
 echo "Flash complete. Waiting for Pico to boot..."
 sleep 2
 
-# 3. Verify PING/PONG (skip if called from digitsd — it holds the serial port)
+# 3. Verify PING/PONG (skip if called from digitsd: it holds the serial port)
 if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     echo "Verifying UART communication..."
     stty -F "$SERIAL_DEV" "$BAUD" raw -echo
@@ -62,11 +96,11 @@ if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     if echo "$PONG" | grep -q "PONG"; then
         echo "VERIFY: PASS"
     else
-        echo "VERIFY: FAIL — got: $PONG"
+        echo "VERIFY: FAIL, got: $PONG"
     fi
 fi
 
-# 4. Restart digitsd (skip if called from digitsd — systemd will restart it)
+# 4. Restart digitsd (skip if called from digitsd; systemd will restart it)
 if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     echo "Starting digitsd..."
     sudo systemctl start digitsd.service
