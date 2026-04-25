@@ -669,9 +669,13 @@ fi
 
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
-MIXER_STATE="${REPO_DIR}/pi/digits_mixer.state"
+if [[ "$PCB_MODE" == true ]]; then
+    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v2.state"
+else
+    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v1.state"
+fi
 if [[ -f "$MIXER_STATE" ]]; then
-    info "Copying mixer state to /data..."
+    info "Copying mixer state to /data ($(basename "$MIXER_STATE"))..."
     cp "$MIXER_STATE" "${DATA_MNT}/digits_mixer.state"
 else
     warn "No mixer state file found at $MIXER_STATE — audio may not work on first boot"
@@ -1059,6 +1063,12 @@ hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
+
+# V2 only: enable GPCLK0 on GPIO4 at 12.288 MHz before audio services start.
+# V1 carrier uses the Codec Zero HAT's onboard crystal, so no GPCLK0 needed.
+if [[ "$PCB_MODE" == true ]]; then
+    hostside_enable_service "$ROOTFS_MNT" "digits-enable-gpclk0.service"
+fi
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
