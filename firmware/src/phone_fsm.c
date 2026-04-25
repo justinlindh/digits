@@ -11,6 +11,8 @@
 #include "tone.h"
 #include "uart_proto.h"
 
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
 
@@ -170,6 +172,36 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         set_state(PHONE_STATE_IDLE);
         uart_proto_send("RST:OK");
+    } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
+        // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
+        // resets and stays in bootrom waiting for a USB host connection
+        // that on V2 will never come, which means SWD has unlimited time
+        // to grab the cores and reflash. Required for headless OTA: a
+        // plain watchdog reset puts the chip back in firmware within ~10 ms
+        // (way faster than openocd's ~200 ms init), and the chip's bootrom
+        // window is too narrow to race.
+        //
+        // To exit BOOTSEL: openocd `reset run` after programming, or a
+        // power cycle.
+        uart_proto_send("REBOOT:OK");
+        // Give the UART TX FIFO time to flush before we kill the CPU.
+        sleep_ms(50);
+        // disable_interface_mask = 0 (enable both UF2 and PICOBOOT),
+        // usb_activity_gpio_pin_mask = 0 (no LED indicator).
+        reset_usb_boot(0, 0);
+        while (true) {
+            tight_loop_contents();
+        }
+    } else if (strcmp(cmd, "REBOOT:WATCHDOG") == 0) {
+        // Soft watchdog reset back into firmware (no flash window). Useful
+        // when you want to reset firmware state without dropping into
+        // bootrom. flash-pico.sh does NOT use this path.
+        uart_proto_send("REBOOT:OK");
+        sleep_ms(50);
+        watchdog_enable(1, 1);
+        while (true) {
+            tight_loop_contents();
+        }
     } else if (strcmp(cmd, "STATE?") == 0) {
         char buf[32];
         snprintf(buf, sizeof(buf), "STATE:%s", phone_fsm_state_name(s_state));
@@ -211,38 +243,45 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         uart_proto_send("MODE:NORMAL");
     } else if (strcmp(cmd, "KEYDUMP") == 0) {
-        // Raw GPIO state dump for all keypad pins
-        char buf[128];
-        static const uint8_t row_gpios[] = {
+        // Raw GPIO state dump for all keypad pins. Column count varies by
+        // hardware revision (V1 = 4, V2 = 3) so we drive the loops off
+        // KEYPAD_NUM_COLS rather than hardcoded indices.
+        char buf[160];
+        static const uint8_t row_gpios[KEYPAD_NUM_ROWS] = {
             KEYPAD_ROW0, KEYPAD_ROW1, KEYPAD_ROW2, KEYPAD_ROW3,
         };
-        static const uint8_t col_gpios[] = {
-            KEYPAD_COL0, KEYPAD_COL1, KEYPAD_COL2, KEYPAD_COL3,
+        static const uint8_t col_gpios[KEYPAD_NUM_COLS] = {
+            KEYPAD_COL0, KEYPAD_COL1, KEYPAD_COL2,
+#if KEYPAD_NUM_COLS == 4
+            KEYPAD_COL3,
+#endif
         };
-        // Read row pins (outputs -- show what we're driving)
-        snprintf(buf, sizeof(buf), "ROWS: R0/GP%d=%d R1/GP%d=%d R2/GP%d=%d R3/GP%d=%d",
-                 row_gpios[0], gpio_get(row_gpios[0]),
-                 row_gpios[1], gpio_get(row_gpios[1]),
-                 row_gpios[2], gpio_get(row_gpios[2]),
-                 row_gpios[3], gpio_get(row_gpios[3]));
+        // Read row pins (outputs: show what we're driving)
+        int n = snprintf(buf, sizeof(buf), "ROWS:");
+        for (int r = 0; r < KEYPAD_NUM_ROWS; ++r) {
+            n += snprintf(buf + n, sizeof(buf) - n, " R%d/GP%d=%d",
+                          r, row_gpios[r], gpio_get(row_gpios[r]));
+        }
         uart_proto_send(buf);
         printf("%s\n", buf);
-        // Read col pins (inputs -- show what we're sensing)
-        snprintf(buf, sizeof(buf), "COLS: C0/GP%d=%d C1/GP%d=%d C2/GP%d=%d C3/GP%d=%d",
-                 col_gpios[0], gpio_get(col_gpios[0]),
-                 col_gpios[1], gpio_get(col_gpios[1]),
-                 col_gpios[2], gpio_get(col_gpios[2]),
-                 col_gpios[3], gpio_get(col_gpios[3]));
+        // Read col pins (inputs: show what we're sensing)
+        n = snprintf(buf, sizeof(buf), "COLS:");
+        for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
+            n += snprintf(buf + n, sizeof(buf) - n, " C%d/GP%d=%d",
+                          c, col_gpios[c], gpio_get(col_gpios[c]));
+        }
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Now drive each row LOW and read columns
-        for (int row = 0; row < 4; ++row) {
+        for (int row = 0; row < KEYPAD_NUM_ROWS; ++row) {
             gpio_put(row_gpios[row], 0);
             sleep_us(50);
-            snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW: C0=%d C1=%d C2=%d C3=%d",
-                     row, row_gpios[row],
-                     gpio_get(col_gpios[0]), gpio_get(col_gpios[1]),
-                     gpio_get(col_gpios[2]), gpio_get(col_gpios[3]));
+            n = snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW:",
+                         row, row_gpios[row]);
+            for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
+                n += snprintf(buf + n, sizeof(buf) - n, " C%d=%d",
+                              c, gpio_get(col_gpios[c]));
+            }
             uart_proto_send(buf);
             printf("%s\n", buf);
             gpio_put(row_gpios[row], 1);

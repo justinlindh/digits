@@ -47,6 +47,7 @@ target_link_libraries(digits
     hardware_pwm
     hardware_uart
     hardware_timer
+    hardware_watchdog
 )
 
 # Version info — CI passes DIGITS_VERSION; fallback to git describe with fw/ tags
