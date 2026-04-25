@@ -68,8 +68,28 @@ rescue_pass() {
         -c "init; exit" 2>&1 | tail -5 || true
 }
 
-# 2. Flash via OpenOCD with rescue-on-failure
+# Try to soft-reboot the chip via the firmware's REBOOT command. When the
+# current firmware supports it, the chip enters bootrom for ~1 ms, openocd
+# can then halt the cores cleanly without needing a physical power cycle.
+# Older firmware (or no firmware at all) just ignores the bytes; we still
+# fall through to the RESCUE pre-pass below.
+firmware_reboot() {
+    if [ ! -c "$SERIAL_DEV" ]; then
+        return
+    fi
+    echo "Sending REBOOT over $SERIAL_DEV to soft-reset the chip..."
+    stty -F "$SERIAL_DEV" "$BAUD" raw -echo 2>/dev/null || true
+    # Small flush attempt so any partial output the firmware was producing
+    # doesn't get mixed in.
+    timeout 0.2 cat "$SERIAL_DEV" >/dev/null 2>&1 || true
+    printf "REBOOT\r\n" > "$SERIAL_DEV" 2>/dev/null || true
+    # Wait for the watchdog to actually kick (50 ms uart flush + reset).
+    sleep 0.3
+}
+
+# 2. Flash via OpenOCD with rebooted-chip + rescue-on-failure
 echo "Flashing via SWD..."
+firmware_reboot
 if ! flash_attempt; then
     echo "First attempt failed. Trying RESCUE recovery and retry..."
     rescue_pass

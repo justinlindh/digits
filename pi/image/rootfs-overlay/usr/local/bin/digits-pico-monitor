@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+digits-pico-monitor: full-duplex line-mode terminal to the RP2040 UART.
+
+Different from minicom in two ways:
+  - Incoming UART lines are printed cleanly as they arrive (so streaming
+    events like KEY:5 / HOOK:DOWN show up live without you typing).
+  - Outgoing commands go through Python readline, so backspace and arrow
+    keys behave normally without minicom's line-mode quirks.
+
+Stops digitsd on entry (which holds /dev/serial0) and restarts it on exit.
+
+Useful firmware commands once connected:
+  PING / VERSION / STATE?
+  LED:ON | LED:OFF | LED:BLINK
+  KEYTEST          start streaming KEY:N for every keypress
+  KEYTEST:OFF      stop the stream
+  RING:TEST        single bell strike (needs 12 V on J3 to actually ring)
+  HOOK:FORCE:OFF | HOOK:FORCE:ON | HOOK:RELEASE
+  RESET            soft-reboot the firmware
+
+Type Ctrl-C or 'quit' to exit.
+"""
+import os, sys, termios, threading, time, signal, subprocess
+
+DEV = os.environ.get("DEV", "/dev/serial0")
+BAUD_FLAG = termios.B115200
+
+def must_be_root():
+    if os.geteuid() != 0:
+        print("Re-running under sudo...", flush=True)
+        os.execvp("sudo", ["sudo", "-E", sys.executable, *sys.argv])
+
+def systemctl(action, unit):
+    return subprocess.run(["systemctl", action, unit],
+                          capture_output=True, text=True).returncode == 0
+
+def stop_digitsd():
+    if subprocess.run(["systemctl", "is-active", "--quiet", "digitsd.service"]).returncode == 0:
+        print("[stopping digitsd]", flush=True)
+        systemctl("stop", "digitsd.service")
+        time.sleep(0.3)
+        return True
+    return False
+
+def start_digitsd():
+    print("\n[restarting digitsd]", flush=True)
+    systemctl("start", "digitsd.service")
+
+def configure_tty(fd):
+    attrs = termios.tcgetattr(fd)
+    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = attrs
+    iflag = 0
+    oflag = 0
+    lflag = 0
+    cflag = (termios.CS8 | termios.CREAD | termios.CLOCAL) | BAUD_FLAG
+    cc[termios.VMIN] = 1
+    cc[termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, [iflag, oflag, cflag, lflag, BAUD_FLAG, BAUD_FLAG, cc])
+    termios.tcflush(fd, termios.TCIOFLUSH)
+
+def rx_loop(fd, stop_evt):
+    """Read raw bytes, buffer until newline, print each line with a prefix."""
+    buf = bytearray()
+    while not stop_evt.is_set():
+        try:
+            chunk = os.read(fd, 256)
+        except OSError:
+            break
+        if not chunk:
+            time.sleep(0.01)
+            continue
+        for b in chunk:
+            if b in (0x0a, 0x0d):
+                if buf:
+                    line = buf.decode("utf-8", errors="replace")
+                    sys.stdout.write(f"\r<- {line}\npico> ")
+                    sys.stdout.flush()
+                    buf.clear()
+            elif 0x20 <= b < 0x7f:
+                buf.append(b)
+            else:
+                buf.append(b)
+        # flush any partial line that's been idle for a moment
+        if buf and len(buf) > 256:
+            line = buf.decode("utf-8", errors="replace")
+            sys.stdout.write(f"\r<- {line}\npico> ")
+            sys.stdout.flush()
+            buf.clear()
+
+def main():
+    must_be_root()
+    restored_digitsd = stop_digitsd()
+    fd = None
+    try:
+        fd = os.open(DEV, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        # Switch back to blocking for the read loop's benefit
+        import fcntl
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+        configure_tty(fd)
+
+        print(f"Connected to {DEV} @ 115200 8N1. Ctrl-C to exit.\n", flush=True)
+
+        stop_evt = threading.Event()
+        rx_thread = threading.Thread(target=rx_loop, args=(fd, stop_evt), daemon=True)
+        rx_thread.start()
+
+        try:
+            while True:
+                try:
+                    line = input("pico> ")
+                except EOFError:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                if line.lower() in ("quit", "exit"):
+                    break
+                os.write(fd, (line + "\r\n").encode())
+        except KeyboardInterrupt:
+            pass
+
+        stop_evt.set()
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if restored_digitsd:
+            start_digitsd()
+
+if __name__ == "__main__":
+    main()

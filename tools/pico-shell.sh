@@ -29,8 +29,10 @@ if ! command -v sshpass >/dev/null 2>&1; then
     exit 1
 fi
 
+REMOTE_TOOL="${REMOTE_TOOL:-/usr/local/bin/digits-pico-monitor}"
+
 exec sshpass -p "$PHONE_PASS" ssh -t \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     "${PHONE_USER}@${PHONE_IP}" \
-    'sudo /usr/local/bin/digits-pico-shell'
+    "sudo $REMOTE_TOOL"
