@@ -22,8 +22,25 @@
         };
     };
 
-    /* Enable I2C1 for codec control */
+    /*
+     * Fixed-clock node representing the 12.288 MHz MCLK supplied to the codec.
+     * Pi GPIO4 sources GPCLK0 to U6 pin 1 (MCLK) per the V2 schematic. The
+     * actual clock generator is enabled by the audremap fragment below.
+     */
     fragment@1 {
+        target-path = "/";
+        __overlay__ {
+            codec_mclk: codec-mclk {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <12288000>;
+                clock-output-names = "codec-mclk";
+            };
+        };
+    };
+
+    /* Enable I2C1 for codec control */
+    fragment@2 {
         target = <&i2c1>;
         __overlay__ {
             status = "okay";
@@ -38,12 +55,14 @@
                 IOVDD-supply = <&vdd_3v3_reg>;
                 DRVDD-supply = <&vdd_3v3_reg>;
                 DVDD-supply = <&vdd_1v8_codec_reg>;
+                clocks = <&codec_mclk>;
+                clock-names = "mclk";
             };
         };
     };
 
     /* Enable I2S */
-    fragment@2 {
+    fragment@3 {
         target = <&i2s>;
         __overlay__ {
             status = "okay";
@@ -51,21 +70,24 @@
     };
 
     /* Sound card using simple-audio-card */
-    fragment@3 {
+    fragment@4 {
         target-path = "/";
         __overlay__ {
             digits_sound: digits-sound {
                 compatible = "simple-audio-card";
                 simple-audio-card,name = "digitscodec";
                 simple-audio-card,format = "i2s";
+                simple-audio-card,bitclock-master = <&dailink_cpu>;
+                simple-audio-card,frame-master = <&dailink_cpu>;
                 status = "okay";
 
-                simple-audio-card,cpu {
+                dailink_cpu: simple-audio-card,cpu {
                     sound-dai = <&i2s>;
                 };
 
                 simple-audio-card,codec {
                     sound-dai = <&codec>;
+                    system-clock-frequency = <12288000>;
                 };
             };
         };
