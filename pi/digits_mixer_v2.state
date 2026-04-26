@@ -477,8 +477,8 @@ state.digitscodec {
 	control.34 {
 		iface MIXER
 		name 'PGA Capture Volume'
-		value.0 40
-		value.1 40
+		value.0 60
+		value.1 60
 		comment {
 			access 'read write'
 			type INTEGER
@@ -486,8 +486,8 @@ state.digitscodec {
 			range '0 - 119'
 			dbmin 0
 			dbmax 5950
-			dbvalue.0 2000
-			dbvalue.1 2000
+			dbvalue.0 3000
+			dbvalue.1 3000
 		}
 	}
 	control.35 {
@@ -697,7 +697,7 @@ state.digitscodec {
 	control.51 {
 		iface MIXER
 		name 'Right PGA Mixer Line1R Switch'
-		value true
+		value false
 		comment {
 			access 'read write'
 			type BOOLEAN
