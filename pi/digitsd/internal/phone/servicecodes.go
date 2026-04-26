@@ -11,6 +11,17 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 )
 
+// ServiceCodeResult tells the caller whether a service code matched and
+// whether the daemon is shutting down afterwards (terminal) or the user
+// remains off-hook (non-terminal).
+type ServiceCodeResult int
+
+const (
+	ServiceCodeNone        ServiceCodeResult = iota
+	ServiceCodeTerminal                      // daemon going down
+	ServiceCodeNonTerminal                   // user still off-hook
+)
+
 // ServiceCodeHandler processes hidden service codes entered via the keypad.
 // Codes are detected from a rolling key buffer.
 //
@@ -87,8 +98,9 @@ func (h *ServiceCodeHandler) SetUpdateCallback(fn func()) {
 	h.onUpdate = fn
 }
 
-// AddKey processes a keypress. Returns true if a service code was triggered.
-func (h *ServiceCodeHandler) AddKey(key string) bool {
+// AddKey processes a keypress. Returns the kind of code that was triggered
+// (or ServiceCodeNone if the key extended the buffer without matching anything).
+func (h *ServiceCodeHandler) AddKey(key string) ServiceCodeResult {
 	h.buffer += key
 	if len(h.buffer) > bufferMaxLen {
 		h.buffer = h.buffer[len(h.buffer)-bufferMaxLen:]
@@ -101,7 +113,7 @@ func (h *ServiceCodeHandler) Reset() {
 	h.buffer = ""
 }
 
-func (h *ServiceCodeHandler) check() bool {
+func (h *ServiceCodeHandler) check() ServiceCodeResult {
 	// --- 9-character codes ---
 	if len(h.buffer) >= 9 {
 		last9 := h.buffer[len(h.buffer)-9:]
@@ -111,7 +123,7 @@ func (h *ServiceCodeHandler) check() bool {
 				go h.onUpdate()
 			}
 			h.buffer = ""
-			return true
+			return ServiceCodeTerminal
 		}
 	}
 
@@ -126,7 +138,7 @@ func (h *ServiceCodeHandler) check() bool {
 				go h.onFactoryReset()
 			}
 			h.buffer = ""
-			return true
+			return ServiceCodeTerminal
 		}
 		if last8 == "*#73887#" {
 			slog.Info("service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning")
@@ -136,7 +148,7 @@ func (h *ServiceCodeHandler) check() bool {
 				slog.Info("service code: *#73887# triggered but no setup callback registered -- ignoring")
 			}
 			h.buffer = ""
-			return true
+			return ServiceCodeTerminal
 		}
 	}
 
@@ -151,14 +163,14 @@ func (h *ServiceCodeHandler) check() bool {
 				go h.onAudioTest()
 			}
 			h.buffer = ""
-			return true
+			return ServiceCodeNonTerminal
 		}
 	}
 
 	// --- 4-character codes ---
 
 	if len(h.buffer) < 4 {
-		return false
+		return ServiceCodeNone
 	}
 	last4 := h.buffer[len(h.buffer)-4:]
 
@@ -169,21 +181,21 @@ func (h *ServiceCodeHandler) check() bool {
 			go h.onRepair()
 		}
 		h.buffer = ""
-		return true
+		return ServiceCodeTerminal
 	case "*#*#":
 		slog.Info("service code: *#*# -> shutdown")
 		if h.onShutdown != nil {
 			go h.onShutdown()
 		}
 		h.buffer = ""
-		return true
+		return ServiceCodeTerminal
 	case "*##*":
 		slog.Info("service code: *##* -> reboot")
 		if h.onReboot != nil {
 			go h.onReboot()
 		}
 		h.buffer = ""
-		return true
+		return ServiceCodeTerminal
 	}
 
 	// Volume codes: *#*N where N is 0-9
@@ -196,11 +208,11 @@ func (h *ServiceCodeHandler) check() bool {
 				h.onVolume(level)
 			}
 			h.buffer = ""
-			return true
+			return ServiceCodeNonTerminal
 		}
 	}
 
-	return false
+	return ServiceCodeNone
 }
 
 

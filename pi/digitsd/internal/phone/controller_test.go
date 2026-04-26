@@ -1661,3 +1661,75 @@ func TestController_SetSilentModeIdleIsSideEffectFree(t *testing.T) {
 		t.Errorf("expected no callbacks while idle, got rings=%v leds=%v", cb.Rings(), cb.LEDs())
 	}
 }
+
+// TestController_Reset verifies Reset() drops back to IDLE with no digits.
+func TestController_Reset(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	if c.State() != StateDIALING {
+		t.Fatalf("setup: expected DIALING, got %s", c.State())
+	}
+
+	c.Reset()
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE after Reset, got %s", c.State())
+	}
+	if c.digits != "" {
+		t.Errorf("expected empty digits after Reset, got %q", c.digits)
+	}
+}
+
+// TestController_ResetToDialtone_NextKeyStopsTone is the regression test for
+// the volume-code dialtone bug: after entering *#*N, the daemon callback
+// restarts the dial-tone loop, and the FSM was being forced to IDLE which
+// silently ignored every subsequent key press, leaving the resumed dial tone
+// playing forever.
+//
+// Now ResetToDialtone() puts the FSM back in DIALTONE so the next key press
+// transitions to DIALING and emits SendTone(STOP) just like the initial
+// off-hook sequence.
+func TestController_ResetToDialtone_NextKeyStopsTone(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	// Simulate user picking up and typing partial code; controller is now in
+	// DIALING with some buffered digits.
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:#")
+	c.HandleEvent("KEY:*")
+	if c.State() != StateDIALING {
+		t.Fatalf("setup: expected DIALING, got %s", c.State())
+	}
+
+	// Volume code matched in main.go: callback restarted dial tone loop, and
+	// the event loop calls ResetToDialtone() instead of Reset().
+	c.ResetToDialtone()
+	if c.State() != StateDIALTONE {
+		t.Fatalf("expected DIALTONE after ResetToDialtone, got %s", c.State())
+	}
+	if c.digits != "" {
+		t.Errorf("expected empty digits after ResetToDialtone, got %q", c.digits)
+	}
+
+	// Snapshot tone count, then press a key. The FSM must transition back to
+	// DIALING and emit STOP so the resumed dial-tone loop is silenced.
+	tonesBefore := len(cb.Tones())
+	c.HandleEvent("KEY:7")
+	if c.State() != StateDIALING {
+		t.Fatalf("expected DIALING after key press in DIALTONE, got %s", c.State())
+	}
+	tones := cb.Tones()
+	if len(tones) <= tonesBefore {
+		t.Fatal("expected SendTone(STOP) on first key after ResetToDialtone")
+	}
+	if last := tones[len(tones)-1]; last != ToneStop {
+		t.Errorf("expected last tone to be STOP, got %q", last)
+	}
+	if c.digits != "7" {
+		t.Errorf("expected digits=%q after key, got %q", "7", c.digits)
+	}
+}

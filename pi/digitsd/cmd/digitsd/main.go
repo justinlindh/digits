@@ -2008,9 +2008,13 @@ func main() {
 				}
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
-					if svcCodes.AddKey(key) {
+					switch svcCodes.AddKey(key) {
+					case phone.ServiceCodeTerminal:
 						ctrl.Reset()
 						continue // skip forwarding to controller
+					case phone.ServiceCodeNonTerminal:
+						ctrl.ResetToDialtone()
+						continue
 					}
 				}
 			}

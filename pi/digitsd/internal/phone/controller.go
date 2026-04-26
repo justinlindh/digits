@@ -171,11 +171,21 @@ func (c *Controller) IsCallActive() bool {
 }
 
 // Reset forces the controller back to IDLE with no pending digits.
-// Used after service codes to return the phone to a clean state.
+// Used after terminal service codes (shutdown, reboot, etc.) where the
+// daemon is going down and the FSM state no longer matters.
 func (c *Controller) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = StateIDLE
+	c.digits = ""
+}
+
+// ResetToDialtone forces the controller back to DIALTONE with no pending
+// digits. Only updates FSM state; the caller owns the tone.
+func (c *Controller) ResetToDialtone() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state = StateDIALTONE
 	c.digits = ""
 }
 
