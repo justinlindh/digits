@@ -100,6 +100,68 @@ test("split recognizes multi-scope", () => {
     assert.ok(bullets[0].startsWith("feat(firmware,pi): re-anchor V2 release"));
 });
 
+// Wiring tests: mock the wrapped plugins via pluginConfig._wrapped and
+// verify that analyzeCommits / generateNotes forward an expanded commit
+// list and pass through return values.
+const expander = require("./semantic-release-squash-expander.cjs");
+
+test("analyzeCommits forwards expanded commits to wrapped commit-analyzer", async () => {
+    let receivedCommits = null;
+    const mockAnalyzer = {
+        async analyzeCommits(cfg, ctx) {
+            receivedCommits = ctx.commits;
+            return "minor";
+        },
+    };
+    const ctx = {
+        commits: [
+            {
+                hash: "deadbeef",
+                message:
+                    "feat(image): squash subject (#1)\n\n* fix(firmware): real fix\n\nbody one\n\n* feat(pi): real feat\n\nbody two",
+            },
+        ],
+    };
+    const out = await expander.analyzeCommits({ _wrapped: { commitAnalyzer: mockAnalyzer } }, ctx);
+    assert.strictEqual(out, "minor");
+    assert.strictEqual(receivedCommits.length, 2);
+    assert.strictEqual(receivedCommits[0].subject, "fix(firmware): real fix");
+    assert.strictEqual(receivedCommits[1].subject, "feat(pi): real feat");
+});
+
+test("generateNotes forwards expanded commits to wrapped notes-generator", async () => {
+    let receivedCommits = null;
+    const mockNotes = {
+        async generateNotes(cfg, ctx) {
+            receivedCommits = ctx.commits;
+            return "## Release Notes\n";
+        },
+    };
+    const ctx = {
+        commits: [
+            {
+                hash: "abc",
+                message: "feat: subj\n\n* fix(server): nullguard\n\nguarded the foo",
+            },
+        ],
+    };
+    const out = await expander.generateNotes({ _wrapped: { releaseNotesGenerator: mockNotes } }, ctx);
+    assert.strictEqual(out, "## Release Notes\n");
+    assert.strictEqual(receivedCommits.length, 1);
+    assert.strictEqual(receivedCommits[0].subject, "fix(server): nullguard");
+});
+
+test("missing _wrapped throws a helpful error", async () => {
+    await assert.rejects(
+        () => expander.analyzeCommits({}, { commits: [] }),
+        /pluginConfig\._wrapped\.commitAnalyzer is required/,
+    );
+    await assert.rejects(
+        () => expander.generateNotes({}, { commits: [] }),
+        /pluginConfig\._wrapped\.releaseNotesGenerator is required/,
+    );
+});
+
 if (process.exitCode) {
     process.exit(process.exitCode);
 }
