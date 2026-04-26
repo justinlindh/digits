@@ -1,5 +1,6 @@
 #include "led.h"
 
+#include "board.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
@@ -10,12 +11,12 @@ static bool s_led_on = false;
 static absolute_time_t s_last_toggle;
 
 void led_init(void) {
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
+    gpio_init(board->led_pin);
+    gpio_set_dir(board->led_pin, GPIO_OUT);
 
     s_mode = LED_MODE_OFF;
     s_led_on = false;
-    gpio_put(LED_PIN, 0);
+    gpio_put(board->led_pin, 0);
     s_last_toggle = get_absolute_time();
 }
 
@@ -24,10 +25,10 @@ void led_set_mode(led_mode_t mode) {
 
     if (mode == LED_MODE_OFF) {
         s_led_on = false;
-        gpio_put(LED_PIN, 0);
+        gpio_put(board->led_pin, 0);
     } else if (mode == LED_MODE_ON) {
         s_led_on = true;
-        gpio_put(LED_PIN, 1);
+        gpio_put(board->led_pin, 1);
     } else {
         s_last_toggle = get_absolute_time();
     }
@@ -41,7 +42,7 @@ void led_update(void) {
     absolute_time_t now = get_absolute_time();
     if (absolute_time_diff_us(s_last_toggle, now) >= LED_BLINK_INTERVAL_US) {
         s_led_on = !s_led_on;
-        gpio_put(LED_PIN, s_led_on ? 1 : 0);
+        gpio_put(board->led_pin, s_led_on ? 1 : 0);
         s_last_toggle = now;
     }
 }
