@@ -1,7 +1,11 @@
 [Unit]
 Description=Digits Phone Daemon
-After=network-online.target sound.target
-Wants=network-online.target
+# Wait for sysinit and digits-first-boot before starting; digitsd's asset
+# extractor flips the rootfs rw/ro mid-boot, which races with first-boot's
+# own rw remount and causes first-boot's writes to fail with EROFS.
+# Wants= (soft) so a permanently-broken first-boot does not strand digitsd.
+After=network-online.target sound.target sysinit.target digits-first-boot.service
+Wants=network-online.target digits-first-boot.service
 
 [Service]
 Type=simple
