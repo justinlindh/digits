@@ -1115,6 +1115,20 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 	return resp
 }
 
+// AddSerialMonitor registers a tap on the serial port. Used by the socket
+// server's MONITOR upgrade so an interactive UART terminal can mirror live
+// TX/RX without taking the port away from digitsd.
+func (d *daemonCallbacks) AddSerialMonitor(ch chan string) func() {
+	return d.serial.AddMonitor(ch)
+}
+
+// SendRaw forwards a command line to the Pico without waiting for a response.
+// Used by the MONITOR upgrade to inject commands typed into the interactive
+// terminal; any response comes back through the monitor tap as a normal RX.
+func (d *daemonCallbacks) SendRaw(cmd string) {
+	d.serial.SendFire(cmd)
+}
+
 // Default paths for SWD flash infrastructure on the Pi.
 const (
 	defaultFirmwarePath = "/data/digits/firmware.elf"

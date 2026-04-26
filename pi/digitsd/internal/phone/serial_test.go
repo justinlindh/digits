@@ -14,6 +14,7 @@ func TestSerialPortInterface(t *testing.T) {
 		Ping() error
 		Ring(bool)
 		LED(string)
+		AddMonitor(chan string) func()
 		Close() error
 	} = (*SerialPort)(nil)
 }
