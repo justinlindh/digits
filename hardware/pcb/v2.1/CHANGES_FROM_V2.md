@@ -32,14 +32,6 @@ V2 wired pin 1 to the LED anode, but the donor phone's LED cable carries the opp
 
 Implementation: two global-label y-coordinate swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol move, no footprint change), followed by Update PCB from Schematic and a fresh route for the two affected segments at J6.
 
-### 10 kΩ pull-up on UART_TX_PI to +3V3 (optional)
-
-V2 left the UART_TX_PI net (RP2040 GP28 to Pi J1.10) without an external pull-up. RP2040 GPIOs default to input-with-weak-pull-down at reset, so the line sits near 0 V until firmware drives it high in `main()`. The Pi's PL011 saw phantom RX bytes coupled from each TX edge during the floating-line window, presenting as a hardware loopback bug.
-
-V2.1 may add a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when the RP2040 is unflashed, held in reset, or in deep sleep.
-
-**Status:** demoted to optional after the unified firmware made the firmware-side workaround permanent. `main.c` drives both candidate UART_TX pins (GP0 and GP28) high in the pre-bootstrap window before `board_init()` runs. The hardware pullup remains a clean implementation but is no longer required for V2.1 to function. See V2 ERRATA item 2 and `docs/architecture/unified-firmware.md`.
-
 ## Mechanical and BOM
 
 ### Component-side flip
