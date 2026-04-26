@@ -1138,21 +1138,28 @@ if [[ "$DEV_MODE" == true ]]; then
 PasswordAuthentication yes
 SSHDEV
 
-    # Create SSH host keys directory on /data (writable)
+    # Create SSH host keys directory on /data (writable) and pre-generate
+    # the host keys on the host (not in chroot).
     mkdir -p "${DATA_MNT}/ssh"
-
-    # Write a tmpfiles rule so SSH host keys live on /data
-    mkdir -p "${ROOTFS_MNT}/etc/tmpfiles.d"
-    cat > "${ROOTFS_MNT}/etc/tmpfiles.d/digits-ssh.conf" << 'SSHCONF'
-L /etc/ssh/ssh_host_rsa_key - - - - /data/ssh/ssh_host_rsa_key
-L /etc/ssh/ssh_host_ed25519_key - - - - /data/ssh/ssh_host_ed25519_key
-SSHCONF
-
-    # Pre-generate SSH host keys on the HOST (not in chroot)
     ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
     ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
 
-    info "DEV MODE: SSH enabled — user 'dev', password 'digits', passwordless sudo"
+    # Bake /etc/ssh/ssh_host_*_key symlinks into the rootfs so sshd can find
+    # the keys at /data/ssh/. The rootfs is mounted read-only at boot, so
+    # systemd-tmpfiles cannot create these symlinks at runtime; they must
+    # exist on disk before first boot.
+    ln -sf /data/ssh/ssh_host_rsa_key         "${ROOTFS_MNT}/etc/ssh/ssh_host_rsa_key"
+    ln -sf /data/ssh/ssh_host_rsa_key.pub     "${ROOTFS_MNT}/etc/ssh/ssh_host_rsa_key.pub"
+    ln -sf /data/ssh/ssh_host_ed25519_key     "${ROOTFS_MNT}/etc/ssh/ssh_host_ed25519_key"
+    ln -sf /data/ssh/ssh_host_ed25519_key.pub "${ROOTFS_MNT}/etc/ssh/ssh_host_ed25519_key.pub"
+
+    # Raspbian's regenerate_ssh_host_keys.service tries to ssh-keygen into
+    # the RO /etc/ssh and leaves stale zero-byte ssh_host_*_key.XXXX files
+    # behind. We supply our own keys above; mask the service so it does not
+    # race with sshd or pollute /etc/ssh.
+    hostside_mask_service "$ROOTFS_MNT" "regenerate_ssh_host_keys.service"
+
+    info "DEV MODE: SSH enabled, user 'dev', password 'digits', passwordless sudo"
 fi
 
 # ── step 23: final cleanup (host-side) ──────────────────────────────────────
