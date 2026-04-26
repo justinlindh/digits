@@ -4,6 +4,7 @@
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
+#include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
@@ -67,6 +68,8 @@ static void usb_console_poll(void) {
 
 int main(void) {
     uart_tx_idle_high();
+
+    board_init();
 
     stdio_init_all();
 

@@ -31,16 +31,15 @@ A unified firmware closes all of these failure modes at once. The mechanism (JED
 
 ### Detection mechanism
 
-Hybrid: JEDEC flash ID auto-detection at boot, with a Pi-side UART override available for future boards that share a flash chip with an existing rev.
+Pi-flashed rev byte at a reserved Pico flash offset, with a Pi-side UART override available as a runtime backstop.
 
-JEDEC IDs of currently-deployed boards:
+The Pi already knows its target hardware revision: `/etc/digits-pcb-rev` is stamped at image build time and reads `1` or `2` (or future revs). When `flash-pico.sh` writes firmware to the Pico, it also writes a single byte at flash offset `0x1FF000` (last 4 KB sector of 2 MB flash, address `XIP_BASE + 0x1FF000` = `0x101FF000`) containing the ASCII rev character. Firmware reads that byte at boot via XIP (no SSI command needed) and selects the matching profile.
 
-- W25Q080 (`0xEF4014`) on the Pi Pico module: V1 family.
-- W25Q16JV (`0xEF4015`) on the V2 carrier: V2.
+JEDEC ID auto-detection was considered and discarded: the Pi Pico modules used on V1 PCB and the bare RP2040 used on V2 both ship with W25Q16JV flash, so JEDEC ID returns `0xEF4015` on both boards and cannot distinguish them.
 
-Auto-detection covers everything in the user's possession today. The override path is dormant code today, active when a future V3 ships with the same flash chip as V2 but a different pinout.
+Bootstrap order: when an unprogrammed sector is read (fresh chip, all `0xFF`), the firmware falls back to the V2 profile. This biases new hardware toward forward progress: a brand-new board that hasn't been Pi-flashed yet gets a V2 pinout by default, which is the safe assumption for V2-line successors. A bench-only flash that bypasses `flash-pico.sh` (e.g., `openocd program`) leaves the rev sector untouched (writing the firmware ELF doesn't reach the last sector), so a previously-written rev byte persists across firmware flashes; only a full chip erase or a deliberate sector erase resets it.
 
-Unknown JEDEC IDs fall back to the most-recent profile (V2 today). This biases new hardware toward forward progress: a brand-new board that fails to match a known ID gets a V2 pinout by default, which is the safe assumption for V2-line successors.
+The UART override (`CONFIG:PCB_REV=N`) is the runtime backstop. If digitsd's `pcb_rev` disagrees with the firmware's selected profile (for example, a fresh chip with no rev byte, or a board moved between Pi units), digitsd sends the override after the first `BOARD?` round trip and the firmware re-installs the profile pointer.
 
 ### Boot2 unification
 
@@ -76,13 +75,11 @@ typedef struct {
     uint ringer_in1_pin;
     uint ringer_in2_pin;
 
-    // Per-rev quirks
-    bool needs_uart_tx_idle_workaround;
 } board_profile_t;
 
 extern const board_profile_t* board;
 
-void board_init(void);  // reads JEDEC ID, installs profile pointer
+void board_init(void);  // reads rev byte from flash sector, installs profile pointer
 ```
 
 Profiles defined as `static const` in `board.c`. New profile = new struct entry plus optional new JEDEC ID. No other firmware change.
@@ -97,7 +94,7 @@ int main(void) {
     gpio_init(0);  gpio_set_dir(0, GPIO_OUT);  gpio_put(0, 1);
     gpio_init(28); gpio_set_dir(28, GPIO_OUT); gpio_put(28, 1);
 
-    // 2. Read JEDEC ID, install board profile.
+    // 2. Read rev byte from flash sector, install board profile.
     board_init();
 
     // 3. Release the pre-bootstrap pin we don't need.
@@ -117,20 +114,30 @@ int main(void) {
 }
 ```
 
-Step 1 is the only place raw GPIO numbers appear outside profile lookup. It is intentional: the JEDEC ID read in step 2 has not happened yet, so we cannot know which UART_TX pin to drive. Driving both costs nothing and protects the bootstrap window.
+Step 1 is the only place raw GPIO numbers appear outside profile lookup. It is intentional: the rev byte read in step 2 has not happened yet, so we cannot know which UART_TX pin to drive. Driving both costs nothing and protects the bootstrap window.
 
-### Pi-side UART override
+### Pi-side flash sector write
 
-Firmware exposes a new UART command:
+`flash-pico.sh` runs on the Pi during firmware deploy. After `openocd` finishes programming the firmware ELF, the script reads `/etc/digits-pcb-rev`, builds a 1-byte payload (the ASCII rev character), and writes it to flash address `0x101FF000` via openocd. This guarantees the firmware reads the correct rev on next boot.
+
+The rev sector is the last 4 KB of the 2 MB flash, well beyond anything the firmware ELF touches. Programming the firmware ELF does not erase or overwrite this sector. A previously-written rev byte persists across firmware OTA flashes.
+
+For bench-only flashing that bypasses `flash-pico.sh` (e.g., raw `openocd program firmware.elf`), the rev sector retains whatever value it last had: a previous rev byte if Pi-flashed before, or `0xFF` (V2 fallback) if never Pi-flashed.
+
+### Pi-side UART override (runtime backstop)
+
+Firmware exposes:
 
 ```
-CONFIG:PCB_REV=N    -> ACK if N is a known profile, else NACK
-                       Re-installs the profile and re-inits affected modules.
-BOARD?              -> BOARD:<name>:<jedec_id_hex>
-                       Reports the active profile.
+BOARD?              -> BOARD:<name>:<rev_byte_hex>
+                       Reports the active profile and the rev byte read from flash.
+CONFIG:PCB_REV=N    -> CONFIG:PCB_REV=N:OK if N matches a known profile, else
+                       CONFIG:PCB_REV=N:UNKNOWN. Swaps the active profile pointer.
+                       Modules that latched their pin numbers at init() time are
+                       NOT re-initialized.
 ```
 
-digitsd reads its own `pcb_rev` at startup, queries `BOARD?`, and sends `CONFIG:PCB_REV=N` if the answers disagree. Today they always agree (auto-detection is perfect for V1 / V2). The override exists for V3+ boards that share flash with V2 but need different pinouts.
+digitsd reads its own `pcb_rev` at startup, queries `BOARD?`, and sends `CONFIG:PCB_REV=N` if the answers disagree. This recovers from a fresh chip that hasn't been Pi-flashed yet, or a board moved between Pi units with mismatched rev markers.
 
 ## CI and release plumbing
 
@@ -185,6 +192,6 @@ Each step independently verifiable on hardware. Worst-case rollback is reverting
 
 ## Risks
 
-- **`boot2_generic_03h` on the W25Q080 (V1 PCB)** is a combination not currently exercised in CI or on the bench. If it fails to set up XIP correctly the V1 chip enters the same reset loop V2 originally hit with the wrong boot2. Step 3 of the migration plan exists specifically to validate this on hardware before any further changes. Rollback: revert the CMakeLists change.
-- **Unknown JEDEC ID on a brand-new board** falls through to the V2 profile. If a future board is wired V1-style but has a non-W25Q080 flash chip (unlikely given V1 is being retired), the auto-detect would silently mis-configure. Mitigation: digitsd logs the firmware-reported board name at startup and warns on mismatch with `pcb_rev`. The Pi-side override (`CONFIG:PCB_REV=N`) corrects without a firmware re-release.
-- **JEDEC ID read timing.** The SDK exposes flash JEDEC ID through `flash_get_unique_id` and friends, but those run during XIP. Reading JEDEC ID at the very top of `main()` is supported by the SDK; if it isn't, the implementation drops to a manual SSI command. Easy to verify in step 1.
+- **`boot2_generic_03h` on the V1 PCB's W25Q16JV** is the same combination V2 already runs on, so this is low risk. Step 3 of the migration plan validates on V1 hardware to be safe.
+- **Fresh chip without a rev byte** falls through to the V2 profile. Modules init with V2 pins. If the actual board is V1, `BOARD?` returns `v2` but UART itself works (V2 UART pins happen to not collide with anything destructive on V1 in the tested cases). digitsd notices the mismatch with `pcb_rev` and sends `CONFIG:PCB_REV=v1`, which swaps the active profile pointer. Pin-latched modules continue using V2 pins until next firmware boot. **First-boot recovery is bounded:** the next reboot reads the now-Pi-written rev byte and selects the correct profile.
+- **Bench testing without `flash-pico.sh`.** Raw `openocd program firmware.elf` doesn't touch the rev sector, so the previously-written byte persists. To force a specific rev for testing, write the byte manually via `openocd -c "init; flash filld 0x101FF000 0x32 1; reset; shutdown"` (`0x32` = ASCII `'2'`).

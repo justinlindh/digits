@@ -32,6 +32,7 @@ pico_sdk_init()
 
 add_executable(digits
     src/main.c
+    src/board.c
     src/hook.c
     src/keypad.c
     src/led.c

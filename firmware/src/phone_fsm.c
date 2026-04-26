@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
@@ -190,6 +191,10 @@ static void process_pi_command(const char *cmd) {
         }
     } else if (strcmp(cmd, "PING") == 0) {
         uart_proto_send("PONG");
+    } else if (strcmp(cmd, "BOARD?") == 0) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "BOARD:%s:0x%02X", board->name, (unsigned int)board_read_rev_byte());
+        uart_proto_send(buf);
     } else if (strcmp(cmd, "VERSION") == 0) {
         char resp[64];
         snprintf(resp, sizeof(resp), "VERSION:%s:%s", FIRMWARE_VERSION, FIRMWARE_COMMIT);
