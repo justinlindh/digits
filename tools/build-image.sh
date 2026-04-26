@@ -649,7 +649,18 @@ done
 if [[ -d "$TONES_DIR" ]] && compgen -G "$TONES_DIR/*.wav" > /dev/null 2>&1; then
     info "Copying tone WAV files..."
     mkdir -p "${DATA_MNT}/digits/tones"
-    rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # --no-owner --no-group: rsync as root would otherwise preserve the host
+    # build user's uid/gid (often 1000, which collides with `pi` on the Pi).
+    # Subdirectories like pairing/ are created by rsync itself, so they pick up
+    # the host owner unless we strip it. The init-data.sh step that runs after
+    # only fixes the top-level tones/ dir, not nested ones, which is why a
+    # plain `rsync -a` previously left /data/digits/tones/pairing/ owned by
+    # pi:pi while the flat .wav files happened to get fixed up later by
+    # digitsd's first-boot asset extractor.
+    rsync -a --no-owner --no-group --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # Reassert canonical ownership across the whole tree. uid 999 / gid 992
+    # match the digits user/group baked into the rootfs (see init-data.sh).
+    chown -R 999:992 "${DATA_MNT}/digits/tones"
 else
     warn "No tone WAV files found in $TONES_DIR — skipping"
 fi
