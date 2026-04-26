@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+#include "board.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
@@ -49,14 +50,14 @@ static bool s_inverted = false;
 static bool s_flash_enabled = false;
 
 static bool read_physical_off_hook(void) {
-    bool raw = (gpio_get(HOOK_PIN) != 0);
+    bool raw = (gpio_get(board->hook_pin) != 0);
     return s_inverted ? !raw : raw;
 }
 
 void hook_init(void) {
-    gpio_init(HOOK_PIN);
-    gpio_set_dir(HOOK_PIN, GPIO_IN);
-    gpio_pull_up(HOOK_PIN);
+    gpio_init(board->hook_pin);
+    gpio_set_dir(board->hook_pin, GPIO_IN);
+    gpio_pull_up(board->hook_pin);
 
     // Read initial physical state.
     s_raw_last = read_physical_off_hook();

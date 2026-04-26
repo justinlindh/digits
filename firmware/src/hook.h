@@ -4,20 +4,6 @@
 #include <stdbool.h>
 #include "pico/stdlib.h"
 
-#ifndef HARDWARE_REV
-#error "HARDWARE_REV not defined; set -DHARDWARE_REV=1 or =2 at configure time"
-#endif
-
-// V1 ElectroCookie prototype: hookswitch on GP10.
-// V2 carrier PCB: SW1 routed to GP20 per schematic (HOOK_SW net to U3.31).
-#if HARDWARE_REV == 1
-#define HOOK_PIN 10
-#elif HARDWARE_REV == 2
-#define HOOK_PIN 20
-#else
-#error "Unsupported HARDWARE_REV; must be 1 or 2"
-#endif
-
 // Hook transition events returned by hook_get_event().
 typedef enum {
     HOOK_EVENT_NONE  = 0,

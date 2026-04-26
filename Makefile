@@ -1,4 +1,4 @@
-.PHONY: help server server-test pi-build pi-test firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
+.PHONY: help server server-test pi-build pi-test firmware firmware-local image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'

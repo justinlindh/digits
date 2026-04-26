@@ -6,10 +6,6 @@ REPO_ROOT   = $(shell git rev-parse --show-toplevel)
 # and PICO_SDK_PATH values.
 DOCKER_BUILD_DIR = build/docker
 
-# Target hardware revision. 1 = v1 ElectroCookie prototype, 2 = v2 carrier PCB.
-# Override on the command line: `make build HARDWARE_REV=2`.
-HARDWARE_REV ?= 1
-
 # Git describe runs on the host so worktrees resolve correctly. Inside the
 # Docker container, .git is a pointer file to a gitdir outside the mount,
 # and `git describe` would fail silently -- which would leave FIRMWARE_VERSION
@@ -26,14 +22,13 @@ build: builder
 	docker run --rm \
 		--user $(shell id -u):$(shell id -g) \
 		-v $(REPO_ROOT):/src -w /src/firmware \
-		-e HARDWARE_REV=$(HARDWARE_REV) \
 		-e DIGITS_VERSION=$(DIGITS_VERSION) \
 		-e DIGITS_COMMIT=$(DIGITS_COMMIT) \
 		$(BUILDER_IMG) \
-		sh -c 'mkdir -p $(DOCKER_BUILD_DIR) && cd $(DOCKER_BUILD_DIR) && cmake -DHARDWARE_REV=$$HARDWARE_REV -DDIGITS_VERSION=$$DIGITS_VERSION -DDIGITS_COMMIT=$$DIGITS_COMMIT ../.. && make -j$$(nproc)'
+		sh -c 'mkdir -p $(DOCKER_BUILD_DIR) && cd $(DOCKER_BUILD_DIR) && cmake -DDIGITS_VERSION=$$DIGITS_VERSION -DDIGITS_COMMIT=$$DIGITS_COMMIT ../.. && make -j$$(nproc)'
 
 build-local:
-	@HARDWARE_REV=$(HARDWARE_REV) $(REPO_ROOT)/scripts/build.sh
+	@$(REPO_ROOT)/scripts/build.sh
 
 clean:
 	rm -rf build

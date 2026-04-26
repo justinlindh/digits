@@ -1,25 +1,13 @@
 cmake_minimum_required(VERSION 3.13)
 
-# Hardware revision. Read BEFORE pico_sdk_import so we can pick the right
-# boot stage 2 for the target hardware.
-# 1 = ElectroCookie prototype with Pico H module (L298N ringer on GP11)
-# 2 = v2 carrier PCB with bare RP2040 + W25Q16JV (DRV8871 ringer on GP19)
-set(HARDWARE_REV 1 CACHE STRING "Target hardware revision")
-if(NOT HARDWARE_REV MATCHES "^[12]$")
-    message(FATAL_ERROR "HARDWARE_REV must be 1 or 2 (got '${HARDWARE_REV}')")
-endif()
-message(STATUS "Building for HARDWARE_REV=${HARDWARE_REV}")
+# Unified firmware: a single ELF runs on all supported boards. The runtime
+# board profile is selected from a flash rev byte at boot; see firmware/src/board.h.
 
-# V2 carrier uses Winbond W25Q16JVSSIQ. The SDK default boot2_w25q080
-# initializes the flash for QSPI quad-mode XIP using continuation commands
-# the JV part rejects, after which the chip cannot run XIP, watchdog resets
-# in a tight loop, and SWD goes silent because the cores are held in reset
-# every iteration. boot2_generic_03h drops to slow single-bit 0x03 reads
-# (~5 MB/s vs ~24 MB/s) but works on every compliant SPI flash. V1's Pico H
-# module ships a Pi-matched flash so it keeps the SDK default.
-if(HARDWARE_REV STREQUAL "2")
-    set(PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h)
-endif()
+# All target boards use boot2_generic_03h. It uses bare 0x03 single-bit
+# reads, which work on every SPI flash chip (W25Q080, W25Q16JV, etc.).
+# XIP throughput is ~5 MB/s instead of ~24 MB/s for a quad-mode boot2;
+# the firmware is small and not bandwidth-bound.
+set(PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h)
 
 include(pico_sdk_import.cmake)
 
@@ -32,6 +20,7 @@ pico_sdk_init()
 
 add_executable(digits
     src/main.c
+    src/board.c
     src/hook.c
     src/keypad.c
     src/led.c
@@ -83,7 +72,6 @@ endif()
 target_compile_definitions(digits PRIVATE
     FIRMWARE_VERSION="${DIGITS_VERSION}"
     FIRMWARE_COMMIT="${DIGITS_COMMIT}"
-    HARDWARE_REV=${HARDWARE_REV}
 )
 
 # USB serial for debug console; UART0 reserved for Pi comms

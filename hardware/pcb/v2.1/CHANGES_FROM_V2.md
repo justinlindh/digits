@@ -1,14 +1,8 @@
 # Changes from V2 to V2.1
 
-V2.1 is a minor revision. V2 fabricated boards remain usable with a per-unit cable adapter rework (see `hardware/pcb/v2/ERRATA.md` section 1).
+V2.1 is a minor revision that addresses bring-up issues found in V2. V2 fabricated boards remain usable with per-unit cable adapter rework and firmware-side workarounds documented in `hardware/pcb/v2/ERRATA.md`.
 
 ## Electrical
-
-### SW2 BOOTSEL button
-
-A 6 mm momentary tact switch (`SW2`, footprint `Button_Switch_THT:SW_PUSH_6mm`) is wired between the `QSPI_SS` net (U3 pin 56 / U4 pin 1) and `GND`. Holding it while powering up the carrier drags QSPI_SS low during the RP2040 bootrom's flash-CS sample window, putting the chip into BOOTSEL (USB MSC + PICOBOOT) until reset. This eliminates the paperclip-on-U4-pin-1 procedure that V2 required for first flash and recovery, and that removes the failure mode documented in `hardware/pcb/v2/ERRATA.md` item 4 (a slipped paperclip shorting +3.3 V to GND killed one V2 RP2040's SWD interface during bring-up).
-
-PCB placement of SW2 is handled in a separate change.
 
 ### J8 handset connector pin assignment
 
@@ -38,10 +32,30 @@ V2 wired pin 1 to the LED anode, but the donor phone's LED cable carries the opp
 
 Implementation: two global-label y-coordinate swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol move, no footprint change), followed by Update PCB from Schematic and a fresh route for the two affected segments at J6.
 
+### 10 kΩ pull-up on UART_TX_PI to +3V3 (optional)
+
+V2 left the UART_TX_PI net (RP2040 GP28 to Pi J1.10) without an external pull-up. RP2040 GPIOs default to input-with-weak-pull-down at reset, so the line sits near 0 V until firmware drives it high in `main()`. The Pi's PL011 saw phantom RX bytes coupled from each TX edge during the floating-line window, presenting as a hardware loopback bug.
+
+V2.1 may add a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when the RP2040 is unflashed, held in reset, or in deep sleep.
+
+**Status:** demoted to optional after the unified firmware made the firmware-side workaround permanent. `main.c` drives both candidate UART_TX pins (GP0 and GP28) high in the pre-bootstrap window before `board_init()` runs. The hardware pullup remains a clean implementation but is no longer required for V2.1 to function. See V2 ERRATA item 2 and `docs/architecture/unified-firmware.md`.
+
 ## Mechanical and BOM
 
-V2.1 is pin-compatible with the V2 enclosure, mounting holes, SW1 hookswitch position, and JST ZH cable assemblies. BOM gains one line: `SW2`, the 6 mm BOOTSEL tact switch (same part as SW1).
+### Component-side flip
+
+V2 boards arrived with components on the side that ends up facing *down* into the phone shell when mounting holes align to the enclosure standoffs. Pi header is unreachable from above; populated parts are sandwiched between the carrier and the shell.
+
+V2.1 flips components to the opposite copper side (or mirrors the mounting hole positions across the board's Y-axis, whichever requires fewer route changes). Net topology and routing geometry are preserved.
+
+Implementation work is non-trivial KiCad surgery. Tracked in #313 alongside the other V2.1 schematic edits.
+
+See V2 ERRATA item 1.
+
+### BOM
+
+V2.1 BOM is identical to V2. The flash chip swap is no longer needed (unified firmware uses `boot2_generic_03h` which works on the existing W25Q16JV). The 10 kΩ UART pullup resistor is optional; not strictly required.
 
 ## Carried forward from V2
 
-Everything else — rail architecture, codec subsystem, RP2040 firmware interface, ringer subsystem, connector footprints, silkscreen layout, layer stack, design rules — is unchanged from V2.
+Everything else (rail architecture, codec subsystem, RP2040 firmware interface, ringer subsystem, connector footprints, layer stack, design rules, the rest of the BOM) is unchanged from V2.

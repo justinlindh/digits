@@ -1479,6 +1479,40 @@ func main() {
 		}
 	}
 
+	// Cross-check the firmware's runtime-detected board against the Pi's
+	// /etc/digits-pcb-rev marker. flash-pico.sh writes the rev byte during
+	// deploy so they normally agree; the override path covers fresh chips
+	// that have not been Pi-flashed yet, or boards moved between Pi units.
+	firmwareBoard := ""
+	if postOk {
+		name, raw, err := sp.QueryBoard()
+		if err != nil {
+			slog.Warn("firmware board query failed", "error", err, "raw", raw)
+		} else {
+			firmwareBoard = name
+			slog.Info("firmware board", "name", firmwareBoard, "raw", raw)
+		}
+	}
+
+	if firmwareBoard != "" && pcbRev != "" {
+		expectedFw := "v" + pcbRev
+		if firmwareBoard != expectedFw {
+			slog.Warn("firmware board / pcb_rev mismatch",
+				"firmware", firmwareBoard,
+				"pcb_rev", pcbRev,
+				"action", "sending CONFIG:PCB_REV override")
+
+			cmd := "CONFIG:PCB_REV=" + expectedFw
+			if resp, err := sp.SendCommand(cmd, 1*time.Second); err != nil {
+				slog.Error("hardware: CONFIG:PCB_REV send failed",
+					"cmd", cmd, "error", err)
+			} else {
+				slog.Info("hardware: CONFIG:PCB_REV applied",
+					"cmd", cmd, "resp", resp)
+			}
+		}
+	}
+
 	// Gate HOOK:FLASH forwarding on firmware version.
 	// Only v1.5.0+ emits HOOK:FLASH; older firmware must not forward stray events.
 	hookFlash := hookFlashCapable(fwVersion)

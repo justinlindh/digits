@@ -6,13 +6,15 @@
 
 #include "hardware/gpio.h"
 
+#include "board.h"
+
 static char inject_buf[PROTO_MAX_LINE];
 static bool inject_pending = false;
 
 void uart_proto_init(void) {
     uart_init(PROTO_UART_ID, PROTO_UART_BAUD);
-    gpio_set_function(PROTO_UART_TX_PIN, GPIO_FUNC_UART);
-    gpio_set_function(PROTO_UART_RX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(board->uart_tx_pin, GPIO_FUNC_UART);
+    gpio_set_function(board->uart_rx_pin, GPIO_FUNC_UART);
 
     uart_set_hw_flow(PROTO_UART_ID, false, false);
     uart_set_format(PROTO_UART_ID, 8, 1, UART_PARITY_NONE);
