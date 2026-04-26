@@ -25,6 +25,19 @@ V2 assumed the mic pair sat on the outer pins (1, 4). The stock cable actually p
 
 Implementation: three global-label text changes at J8 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves), followed by Update PCB from Schematic and a fresh route for the three affected nets (`GND`, `EAR_P`, `EAR_N`). `MIC_HOT` routing at J8.1 is unchanged.
 
+### J6 LED connector polarity
+
+J6 pin 1 and pin 2 net assignments were swapped so the stock phone LED cable plugs in directly without per-unit rework.
+
+| J6 pin | V2 net | V2.1 net |
+|---|---|---|
+| 1 | `LED_A` | `GND` |
+| 2 | `GND` | `LED_A` |
+
+V2 wired pin 1 to the LED anode, but the donor phone's LED cable carries the opposite polarity, leaving the LED reverse-biased on every V2 unit (see `hardware/pcb/v2/ERRATA.md` section 8).
+
+Implementation: two global-label y-coordinate swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol move, no footprint change), followed by Update PCB from Schematic and a fresh route for the two affected segments at J6.
+
 ## Mechanical and BOM
 
 V2.1 is pin-compatible with the V2 enclosure, mounting holes, SW1 hookswitch position, and JST ZH cable assemblies. BOM gains one line: `SW2`, the 6 mm BOOTSEL tact switch (same part as SW1).

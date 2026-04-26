@@ -403,8 +403,8 @@ The Pi programs the RP2040 via bit-banged SWD over two GPIO pins using openocd's
    SW1.2 GND      →  closes hookswitch to ground when pressed
 
  Status LED
-   U3.27 GPIO16 →  LED_OUT  →  R1 220 Ω  →  J6.1 (LED anode)
-                                             J6.2 → GND (LED cathode)
+   U3.27 GPIO16 →  LED_OUT  →  R1 220 Ω  →  J6.2 (LED anode)
+                                             J6.1 → GND (LED cathode)
 ```
 
 J4 is rotated 180° on the schematic; keep the pin-to-row/column mapping fixed when updating so the keypad cable wiring stays consistent. Pin numbering on the connector is independent of rotation — the table above refers to connector pin numbers.

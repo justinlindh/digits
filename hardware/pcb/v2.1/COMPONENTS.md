@@ -171,7 +171,7 @@ Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric** -- the name de
 | KP_COL0..2 | J4.1..3 | U3 pins 36/35/34 (GPIO24/23/22) | Keypad column reads. Active row pulls these low when a button is pressed. |
 | KP_ROW0..3 | U3 pins 39/38/32/37 (GPIO27/26/21/25) | J4.7/6/5/4 | Keypad row scan outputs. |
 | HOOK_SW | SW1.1 | U3 pin 31 (GPIO20) | Hook switch state. Low when the handset is on the cradle. High via RP2040 internal pull-up when lifted. |
-| LED_OUT | U3 pin 27 (GPIO16) | R1 -> J6.1 | Indicator LED drive. High = LED on. |
+| LED_OUT | U3 pin 27 (GPIO16) | R1 -> J6.2 | Indicator LED drive. High = LED on. |
 | RINGER_IN1 | U3 pin 30 (GPIO19) | U2 IN1 | Motor driver control line 1. |
 | RINGER_IN2 | U3 pin 18 (GPIO15) | U2 IN2 | Motor driver control line 2. Square wave on IN1/IN2 alternates bell hammer. |
 | BELL_A / BELL_B | U2 OUT1 / OUT2 | J7.1 / J7.2 | Ringer mechanism drive. |
