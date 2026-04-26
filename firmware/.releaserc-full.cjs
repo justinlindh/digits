@@ -8,12 +8,20 @@
 // squash body contained "fix(firmware): ..." bullets.
 const path = require('path');
 const squashExpander = path.resolve(__dirname, '..', 'tools', 'semantic-release-squash-expander.cjs');
+// The expander lives outside any project's node_modules and would fail to
+// resolve these otherwise; load them here where they're installed and pass
+// them through plugin options.
+const wrapped = {
+  commitAnalyzer: require('@semantic-release/commit-analyzer'),
+  releaseNotesGenerator: require('@semantic-release/release-notes-generator'),
+};
 
 module.exports = {
   branches: ['main'],
   tagFormat: 'fw/v${version}',
   plugins: [
     [squashExpander, {
+      _wrapped: wrapped,
       // Wrapped commit-analyzer options.
       releaseRules: [
         // Scope globs use micromatch substring patterns so multi-scope commits

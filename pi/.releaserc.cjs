@@ -6,12 +6,17 @@
 // matching. See firmware/.releaserc-full.cjs for the rationale.
 const path = require('path');
 const squashExpander = path.resolve(__dirname, '..', 'tools', 'semantic-release-squash-expander.cjs');
+const wrapped = {
+  commitAnalyzer: require('@semantic-release/commit-analyzer'),
+  releaseNotesGenerator: require('@semantic-release/release-notes-generator'),
+};
 
 module.exports = {
   branches: ['main'],
   tagFormat: 'pi/v${version}',
   plugins: [
     [squashExpander, {
+      _wrapped: wrapped,
       releaseRules: [
         // Scope globs use micromatch substring patterns so multi-scope commits
         // like fix(digitsd,firmware,server) trigger this release too.

@@ -65,18 +65,34 @@ function expandCommits(commits) {
     });
 }
 
-// The two real semantic-release plugins are required lazily so this file
-// can be unit-tested in environments where they are not installed.
+// The wrapped plugins are passed in via pluginConfig._wrapped because this
+// file lives outside any project's node_modules: a bare require() from
+// here walks up only as far as repo-root, which is empty (semantic-release
+// installs into firmware/node_modules or pi/node_modules depending on the
+// release being run). The .releaserc that loads us is in the right place
+// to do the resolution and forwards the loaded modules through.
+function unwrap(pluginConfig, key) {
+    if (!pluginConfig._wrapped || !pluginConfig._wrapped[key]) {
+        throw new Error(
+            `semantic-release-squash-expander: pluginConfig._wrapped.${key} is required. ` +
+                "Have the calling .releaserc.cjs require('@semantic-release/" +
+                (key === "commitAnalyzer" ? "commit-analyzer" : "release-notes-generator") +
+                "') and pass it through plugin options.",
+        );
+    }
+    return pluginConfig._wrapped[key];
+}
+
 module.exports = {
     async analyzeCommits(pluginConfig, context) {
-        const commitAnalyzer = require("@semantic-release/commit-analyzer");
+        const commitAnalyzer = unwrap(pluginConfig, "commitAnalyzer");
         return commitAnalyzer.analyzeCommits(pluginConfig, {
             ...context,
             commits: expandCommits(context.commits),
         });
     },
     async generateNotes(pluginConfig, context) {
-        const releaseNotesGenerator = require("@semantic-release/release-notes-generator");
+        const releaseNotesGenerator = unwrap(pluginConfig, "releaseNotesGenerator");
         return releaseNotesGenerator.generateNotes(pluginConfig, {
             ...context,
             commits: expandCommits(context.commits),
