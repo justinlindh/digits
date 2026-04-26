@@ -475,21 +475,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		slog.Info("update trigger sent", "number", number, "target_pi", targetPi, "target_fw", targetFW)
 	}
 
-	if r.Header.Get("Accept") == "application/json" {
-		w.Header().Set("Content-Type", "application/json")
-		if sendErr != "" {
-			w.WriteHeader(http.StatusBadGateway)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": sendErr}); err != nil {
-				slog.Error("phone update: json encode failed", "err", err)
-			}
-		} else {
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "triggered"}); err != nil {
-				slog.Error("phone update: json encode failed", "err", err)
-			}
-		}
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -530,17 +516,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 		slog.Info("factory reset triggered", "number", number)
 	}
 
-	if r.Header.Get("Accept") == "application/json" {
-		w.Header().Set("Content-Type", "application/json")
-		if sendErr != "" {
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
-		} else {
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
-		}
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
@@ -574,13 +550,23 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		slog.Info("restart command sent", "number", number, "mode", mode)
 	}
 
+	h.respondPhoneCommandResult(w, r, number, sendErr)
+}
+
+// respondPhoneCommandResult writes the response for a phone-command handler
+// (update, factory reset, restart). JSON-accept callers get a structured
+// status/error body; everyone else is redirected to the phone detail page.
+// sendErr is the empty string on success or the hub send error string.
+func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Request, number, sendErr string) {
 	if r.Header.Get("Accept") == "application/json" {
 		w.Header().Set("Content-Type", "application/json")
+		payload := map[string]string{"status": "triggered"}
 		if sendErr != "" {
 			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
-		} else {
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+			payload = map[string]string{"error": sendErr}
+		}
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			slog.Error("phone command response: json encode failed", "number", number, "err", err)
 		}
 		return
 	}
