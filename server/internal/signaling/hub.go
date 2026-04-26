@@ -40,8 +40,9 @@ type Hub struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		conns:   make(map[string]*Conn),
-		hwConns: make(map[string]*Conn),
+		conns:        make(map[string]*Conn),
+		hwConns:      make(map[string]*Conn),
+		updateStatus: make(map[string]*UpdateStatusSnapshot),
 	}
 }
 
@@ -163,9 +164,6 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.updateStatus == nil {
-		h.updateStatus = make(map[string]*UpdateStatusSnapshot)
-	}
 	h.updateStatus[number] = &UpdateStatusSnapshot{
 		Status:    status,
 		Detail:    detail,
@@ -177,9 +175,6 @@ func (h *Hub) SetUpdateStatus(number, status, detail string) {
 func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.updateStatus == nil {
-		return nil
-	}
 	return h.updateStatus[number]
 }
 
@@ -187,9 +182,7 @@ func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 func (h *Hub) ClearUpdateStatus(number string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.updateStatus != nil {
-		delete(h.updateStatus, number)
-	}
+	delete(h.updateStatus, number)
 }
 
 // UpdateDeviceInfo sets version info for a connected phone under the write lock.

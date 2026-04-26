@@ -250,6 +250,11 @@ func TestHouseholdLocation(t *testing.T) {
 	if loc3 != time.UTC {
 		t.Errorf("Location() for invalid timezone = %q, want UTC", loc3.String())
 	}
+
+	var nilHH *Household
+	if loc4 := nilHH.Location(); loc4 != time.UTC {
+		t.Errorf("Location() on nil receiver = %q, want UTC", loc4.String())
+	}
 }
 
 func TestUpdateName(t *testing.T) {

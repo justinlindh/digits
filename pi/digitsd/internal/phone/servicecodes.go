@@ -208,7 +208,6 @@ func (h *ServiceCodeHandler) check() bool {
 const (
 	volumeFile     = "/data/digits/volume"
 	mixerStateFile = "/data/digits_mixer.state"
-	defaultVolume  = 5
 )
 
 // volumeToALSA converts a 0-9 volume level to ALSA value for the detected codec.
@@ -248,9 +247,12 @@ func SetVolume(level int) error {
 }
 
 // RestoreVolume loads the persisted volume level and applies it.
-// If no persisted level exists, applies defaultVolume (5).
+// If no persisted level exists, applies the codec-specific default returned
+// by audio.CodecDefaultVolumeLevel(). The default is calibrated per codec
+// because the same level step on the V2 TLV320AIC3104's PCM mixer produces
+// a noticeably quieter handset output than on V1's DA7212 Lineout.
 func RestoreVolume() {
-	level := defaultVolume
+	level := audio.CodecDefaultVolumeLevel()
 	data, err := os.ReadFile(volumeFile)
 	if err == nil {
 		var v int

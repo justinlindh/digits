@@ -6,17 +6,11 @@ import (
 	"strings"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type onboardData struct {
-	Page               string
-	CallHistoryEnabled bool
-	HouseholdName      string
-	HouseholdDND       bool
-	SuggestedName      string
-	Version            string
-	User               *auth.User
+	chromeData
+	SuggestedName string
 }
 
 func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
@@ -25,15 +19,9 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.Name != "" {
 		suggested = user.Name + "'s Family"
 	}
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
-		Page:               "onboard",
-		Version:            version.Version,
-		CallHistoryEnabled: callHistory,
-		HouseholdName:      hhName,
-		HouseholdDND:       hhDND,
-		SuggestedName:      suggested,
-		User:               user,
+		chromeData:    newChromeData("onboard", user, h.primaryHousehold(r)),
+		SuggestedName: suggested,
 	})
 }
 

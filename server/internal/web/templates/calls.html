@@ -48,7 +48,7 @@
               <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
             </td>
             <td class="num">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</td>
-            <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&mdash;{{end}}</td>
+            <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&ndash;{{end}}</td>
             <td class="r"><a href="/conference/live/{{.Conference.ID}}" aria-label="View conference details">Details &rarr;</a></td>
           </tr>
           {{else}}
@@ -74,7 +74,7 @@
               {{end}}
             </td>
             <td class="num">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</td>
-            <td class="num">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&mdash;{{end}}</td>
+            <td class="num">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&ndash;{{end}}</td>
             <td class="r"><a href="/call/live/{{.Call.ID}}" aria-label="View call details">Details &rarr;</a></td>
           </tr>
           {{end}}
@@ -169,7 +169,7 @@
         <div class="am-calls__meta">{{.Conference.CreatedAt.Format "Jan 2"}}</div>
       </div>
       <span class="am-calls__status am-calls__status--conf">3-WAY</span>
-      <span class="am-calls__duration">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&mdash;{{end}}</span>
+      <span class="am-calls__duration">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&ndash;{{end}}</span>
       <a class="am-calls__details" href="/conference/live/{{.Conference.ID}}" aria-label="View conference details">Details &rarr;</a>
     </div>
     {{else}}
@@ -188,7 +188,7 @@
         </div>
       </div>
       <span class="am-calls__status am-calls__status--reg">REG</span>
-      <span class="am-calls__duration">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&mdash;{{end}}</span>
+      <span class="am-calls__duration">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&ndash;{{end}}</span>
       <a class="am-calls__details" href="/call/live/{{.Call.ID}}" aria-label="View call details">Details &rarr;</a>
     </div>
     {{end}}

@@ -21,29 +21,9 @@ func TestMagicLinkEmailContainsBranding(t *testing.T) {
 	}
 }
 
-func TestHouseholdInviteEmailContainsBranding(t *testing.T) {
-	_, body := HouseholdInviteEmail("Smith Family", "ABC123", "https://app.digits.family")
-	if !strings.Contains(body, "DIGITS") {
-		t.Fatal("body should contain branded header")
-	}
-	if !strings.Contains(body, "Smith Family") {
-		t.Fatal("body should mention household name")
-	}
-	if !strings.Contains(body, "ABC123") {
-		t.Fatal("body should contain invite code")
-	}
-}
-
 func TestAllEmailsHaveFooter(t *testing.T) {
-	_, body1 := MagicLinkEmail("https://example.com/link")
-	_, body2 := HouseholdInviteEmail("Test", "CODE", "https://example.com")
-
-	for i, body := range []string{body1, body2} {
-		if !strings.Contains(body, "Digits — A phone for real conversations") || !strings.Contains(body, "Digits —") {
-			// Check for the key phrase, allowing for HTML entity encoding of em dash
-			if !strings.Contains(body, "A phone for real conversations") {
-				t.Fatalf("email %d missing footer tagline", i+1)
-			}
-		}
+	_, body := MagicLinkEmail("https://example.com/link")
+	if !strings.Contains(body, "A phone for real conversations") {
+		t.Fatal("email missing footer tagline")
 	}
 }

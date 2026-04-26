@@ -145,8 +145,11 @@ warn() { echo "WARNING: $*" >&2; }
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
 # PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
-# TLV320AIC3104 codec overlay and sets hook_inverted. Without --pcb, the image
-# is built for V1/prototype hardware (Codec Zero HAT, non-inverted hook).
+# TLV320AIC3104 codec overlay, the GPCLK0 MCLK service, and the V2 mixer
+# state. Without --pcb, the image is built for V1/prototype hardware
+# (Codec Zero HAT). Both V1 and V2 use the firmware's non-inverted hook
+# polarity; the previous --pcb flip of hook_inverted was a workaround for
+# a since-fixed firmware pin mismatch.
 DEV_MODE=false
 PCB_MODE=false
 while [[ "${1:-}" == --* ]]; do
@@ -157,7 +160,7 @@ while [[ "${1:-}" == --* ]]; do
             ;;
         --pcb)
             PCB_MODE=true
-            info "PCB MODE: hook_inverted will be set in config.json"
+            info "PCB MODE: V2 carrier board (codec overlay, GPCLK0, V2 mixer state)"
             ;;
         *)
             die "Unknown flag: $1"

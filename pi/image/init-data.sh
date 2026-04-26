@@ -88,20 +88,15 @@ install -d -m 755 -o root -g root "${MOUNT_POINT}/ssh"
 
 CONFIG_JSON="${MOUNT_POINT}/digits/config.json"
 if [[ ! -f "$CONFIG_JSON" ]]; then
+    # Both V1 and V2 use the firmware's non-inverted hook polarity. V2 used
+    # to ship hook_inverted=true here as a workaround for the GP10/GP20 pin
+    # mismatch (firmware was reading a floating GP10 pulled HIGH and the
+    # invert flipped that to look like the right state). The firmware fix
+    # in fc3f4b62 routes V2 to GP20 and SW1 closes to GND on cradle, so
+    # non-inverted is correct for both boards. Setting hook_inverted here
+    # would reverse it.
     info "Creating placeholder config.json..."
-    if [[ "$PCB_MODE" == true ]]; then
-        info "  PCB mode: setting hook_inverted=true"
-        cat > "$CONFIG_JSON" << 'EOF'
-{
-  "server_url": "wss://app.digits.family/ws",
-  "pairing_code": "",
-  "wifi_ssid": "",
-  "wifi_configured": false,
-  "hook_inverted": true
-}
-EOF
-    else
-        cat > "$CONFIG_JSON" << 'EOF'
+    cat > "$CONFIG_JSON" << 'EOF'
 {
   "server_url": "wss://app.digits.family/ws",
   "pairing_code": "",
@@ -109,7 +104,6 @@ EOF
   "wifi_configured": false
 }
 EOF
-    fi
     chmod 644 "$CONFIG_JSON"
 fi
 
