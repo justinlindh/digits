@@ -22,7 +22,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	loc := householdLocation(hh)
+	loc := hh.Location()
 
 	var entries []calls.HistoryEntry
 	if h.lineStore != nil {

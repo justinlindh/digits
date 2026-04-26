@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -263,15 +262,6 @@ func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 		return nil
 	}
 	return households[0]
-}
-
-// householdLocation returns the timezone location for a household, falling
-// back to UTC when hh is nil.
-func householdLocation(hh *household.Household) *time.Location {
-	if hh == nil {
-		return time.UTC
-	}
-	return hh.Location()
 }
 
 // chromeData holds the fields every protected page-data struct shares for
