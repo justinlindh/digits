@@ -23,8 +23,8 @@ func TestDefaultCaptureConfig(t *testing.T) {
 
 func TestDefaultPlaybackConfig(t *testing.T) {
 	cfg := DefaultPlaybackConfig()
-	if cfg.Device != "default" {
-		t.Errorf("Device = %q, want %q", cfg.Device, "default")
+	if cfg.Device != CodecPlaybackDevice() {
+		t.Errorf("Device = %q, want %q", cfg.Device, CodecPlaybackDevice())
 	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)

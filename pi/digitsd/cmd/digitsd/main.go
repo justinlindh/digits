@@ -1497,10 +1497,13 @@ func main() {
 		resetPicoHardware(sp)
 	}
 
-	// 2. Open ALSA playback (direct hardware, no dmix)
+	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
+	// through a /etc/asound.conf plug device that pins hardware to 44.1 kHz
+	// and resamples 48 kHz application audio for the chip's PLL-friendly
+	// rate.
 	pbDev := *alsaDevice
 	if pbDev == "" {
-		pbDev = audio.CodecDeviceName()
+		pbDev = audio.CodecPlaybackDevice()
 		slog.Info("alsa playback: using codec", "device", pbDev)
 	}
 	pbCfg := audio.Config{
