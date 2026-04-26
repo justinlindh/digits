@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"math"
@@ -1118,7 +1119,24 @@ const (
 	defaultFirmwarePath = "/data/digits/firmware.elf"
 	defaultSWDConfig    = "/usr/local/share/digits/swd/digits-swd.cfg"
 	defaultOpenOCD      = "/usr/bin/openocd"
+	pcbRevPath          = "/etc/digits-pcb-rev"
 )
+
+// readPCBRev returns the fab revision of the carrier board ("1", "2", ...)
+// stamped at image-build time. Defaults to "1" if the marker is missing or
+// unreadable so that older images (and dev hosts) keep their original V1
+// behavior.
+func readPCBRev() string {
+	data, err := os.ReadFile(pcbRevPath)
+	if err != nil {
+		return "1"
+	}
+	rev := strings.TrimSpace(string(data))
+	if rev == "" {
+		return "1"
+	}
+	return rev
+}
 
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
@@ -1325,6 +1343,32 @@ func main() {
 	}
 	if err := extractor.Extract(version.Version); err != nil {
 		slog.Warn("asset extraction failed", "err", err)
+	}
+
+	// Render the active SWD config from the per-variant file matching this
+	// hardware. /etc/digits-pcb-rev is stamped by build-image.sh (defaults to
+	// "1"; --pcb overwrites with "2") and is the single source of truth for
+	// which fab revision this image targets. Source bytes come from the
+	// embedded FS so we reuse the staged-temp + sudo-cp path that the
+	// extractor's sudoers rule already permits, no new sudo grants needed.
+	// Re-rendered on every startup so editing the marker self-heals without
+	// needing an asset-version bump.
+	pcbRev := readPCBRev()
+	embedSrc := fmt.Sprintf("rootfs/usr/local/share/digits/swd/digits-swd-v%s.cfg", pcbRev)
+	data, err := fs.ReadFile(assets.SubFS(), embedSrc)
+	if err != nil {
+		slog.Warn("swd render: read embed failed", "src", embedSrc, "err", err)
+	} else if err := extractor.Remount(true); err != nil {
+		slog.Warn("swd render: remount rw failed", "err", err)
+	} else {
+		if err := extractor.RootfsWriteFile(data, defaultSWDConfig, 0644); err != nil {
+			slog.Warn("swd render: write failed", "dest", defaultSWDConfig, "err", err)
+		} else {
+			slog.Info("swd render: installed config", "pcb_rev", pcbRev)
+		}
+		if err := extractor.Remount(false); err != nil {
+			slog.Warn("swd render: remount ro failed", "err", err)
+		}
 	}
 
 	// 1. Open serial port directly (log to both stdout and uart.log file)
