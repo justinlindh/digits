@@ -1,9 +1,17 @@
-// Firmware semantic-release config — tag-only (no build toolchain available)
+// Firmware semantic-release config: tag-only (no build toolchain available).
+//
+// Uses tools/semantic-release-squash-expander instead of the standard
+// commit-analyzer / release-notes-generator pair so GitHub squash-merge
+// commits get expanded into their per-bullet virtual commits before scope
+// matching. See ./.releaserc-full.cjs for the rationale.
+const path = require('path');
+const squashExpander = path.resolve(__dirname, '..', 'tools', 'semantic-release-squash-expander.cjs');
+
 module.exports = {
   branches: ['main'],
   tagFormat: 'fw/v${version}',
   plugins: [
-    ['@semantic-release/commit-analyzer', {
+    [squashExpander, {
       releaseRules: [
         // Scope globs use micromatch substring patterns so multi-scope commits
         // like fix(digitsd,firmware,server) trigger this release too.
@@ -13,8 +21,6 @@ module.exports = {
         { scope: '*firmware*', breaking: true, release: 'major' },
         { scope: '!*firmware*', release: false },
       ],
-    }],
-    ['@semantic-release/release-notes-generator', {
       preset: 'conventionalcommits',
       parserOpts: {
         noteKeywords: ['BREAKING CHANGE', 'BREAKING CHANGES'],
