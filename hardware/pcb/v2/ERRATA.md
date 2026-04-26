@@ -21,7 +21,7 @@ Either approach is purely a placement/copper-side change; net topology and routi
 
 **Workaround for fabricated boards:** none clean. The board can be powered and tested on the bench with the components facing up (no enclosure), but it cannot be mounted in the phone shell as-is.
 
-**Fix for V2.1 / V3:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
+**Fix for V2.1:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
 
 ### 2. Missing pull-up on RP2040 UART TX (GPIO28) net
 
@@ -31,7 +31,7 @@ The RP2040's UART_TX_PI net (RP2040 GP28 to Pi J1.10 / GPIO15) has no external p
 
 **Workaround for fabricated boards:** firmware-side, drive PROTO_UART_TX_PIN HIGH at the very top of `main()` before any other init (done in `firmware/src/main.c::uart_tx_idle_high()`). Eliminates the floating-line window after firmware reaches the chip.
 
-**Fix for V2.1 / V3:** add a 10 kohm pull-up from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when RP2040 is unflashed, held in reset, or in deep sleep. Documents intent in the schematic, so anyone bringing up a board without firmware loaded does not see this confusing symptom.
+**Fix for V2.1:** add a 10 kohm pull-up from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when RP2040 is unflashed, held in reset, or in deep sleep. Documents intent in the schematic, so anyone bringing up a board without firmware loaded does not see this confusing symptom.
 
 ### 3. PICO_DEFAULT_BOOT_STAGE2 must be boot2_generic_03h, not the SDK default
 
@@ -39,7 +39,7 @@ The Pico SDK ships `boot2_w25q080` as the default boot stage 2 because that matc
 
 **Workaround for fabricated boards:** firmware-side, set `PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h` for `HARDWARE_REV=2` (done in `firmware/CMakeLists.txt`). XIP throughput drops from ~24 MB/s to ~5 MB/s, but the firmware still fits comfortably in flash and our app is not bandwidth-bound.
 
-**Fix for V2.1 / V3:** pick a flash part the SDK's default boot2 already supports correctly (e.g., the genuine Pi Pico flash), or build a custom boot2 sequence verified against the W25Q16JV datasheet's quad-mode init. Until then, the firmware-side override is sufficient.
+**Fix for V2.1:** pick a flash part the SDK's default boot2 already supports correctly (e.g., the genuine Pi Pico flash), or build a custom boot2 sequence verified against the W25Q16JV datasheet's quad-mode init. Until then, the firmware-side override is sufficient.
 
 ### 4. No BOOTSEL button: first-flash and recovery require a paperclip
 
@@ -49,7 +49,7 @@ During V2 bring-up (2026-04-25) one of these paperclip attempts shorted +3.3 V t
 
 **Workaround for fabricated boards:** for the first flash on each board, follow the procedure with extreme caution, using C1's negative pad (the largest GND surface on the board, far from any +3.3 V neighbor) as the GND target. Once REBOOT-capable firmware is on, all subsequent flashes work over SSH via reset_usb_boot and no physical access is needed.
 
-**Fix for V2.1 / V3:** add a 6 mm momentary tact switch wired from the QSPI_SS net (U4 pin 1) to GND, located on an accessible board edge. Press during power-on to enter BOOTSEL. Standard Pi Pico practice. Eliminates an entire class of bring-up failure mode.
+**Fix for V3:** add a 6 mm momentary tact switch wired from the QSPI_SS net (U4 pin 1) to GND, located on an accessible board edge. Press during power-on to enter BOOTSEL. Standard Pi Pico practice. Eliminates an entire class of bring-up failure mode.
 
 ### 5. Stale V1 SWD pin assignment in image rootfs-overlay
 
@@ -68,9 +68,34 @@ The peak sits right at the connector rating with effectively zero margin. F1 is 
 
 **Workaround for fabricated boards:** none needed. Build harnesses with quality pre-crimped 28 AWG silicone leads (avoids the dominant failure mode, bad crimps adding series resistance) and mechanically secure the cable so axial strain on the barrel jack does not transfer to the JST contacts. Inspect the connector after the first month of real use; if the housing or wire shows any discoloration, downgrade the supply or upsize the harness gauge.
 
-**Fix for V2.1 / V3:** swap J3 from JST ZH to JST PH 2-pin (`B2B-PH-SM4-TBT` or equivalent, 2.0 mm pitch, rated 2.0 A per contact). Schematic edit plus footprint swap; no other routing changes required. Optionally apply the same swap to J7 (ringer output) for consistency, since J7 carries the same coil current that contributes to the J3 peak.
+**Fix for V3:** swap J3 from JST ZH to JST PH 2-pin (`B2B-PH-SM4-TBT` or equivalent, 2.0 mm pitch, rated 2.0 A per contact). Schematic edit plus footprint swap; no other routing changes required. Optionally apply the same swap to J7 (ringer output) for consistency, since J7 carries the same coil current that contributes to the J3 peak.
 
-### 7. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
+### 7. J8 pin-to-net assignment collides with stock Sangyn handset cable
+
+The stock Sangyn Retro 2500 handset RJ9 ribbon cable (when terminated into a 4-pin JST ZH) delivers:
+
+| JST pin | Wire color | Handset function |
+|---|---|---|
+| 1 | Black | Mic + |
+| 2 | Yellow | Mic − |
+| 3 | Red | Earpiece |
+| 4 | Green | Earpiece |
+
+Mic pair on inner-left pins (1, 2); earpiece pair on inner-right pins (3, 4).
+
+V2's J8 assigns: pin 1 = `MIC_HOT`, pin 2 = `EAR_P`, pin 3 = `EAR_N`, pin 4 = `GND`. This assumes mic pair on outer pins (1, 4), not inner. With a stock cable plugged in unmodified:
+
+- **J8.2** (Yellow / Mic−) lands on `EAR_P`, tying the mic capsule's return wire to the codec's HPLOUT driven output. Playback signal injects directly into the mic capsule ground reference. Full-duplex breaks: the mic captures whatever the earpiece is playing.
+- **J8.3** (Red / Earpiece) lands on `EAR_N`. Earpiece becomes single-ended drive at roughly half the BTL amplitude.
+- **J8.4** (Green / Earpiece) lands on GND. Completes the single-ended earpiece path.
+
+**Symptom:** earpiece-only tests sound fine (reduced volume, hard to notice). Mic-only capture works. Full-duplex calls put playback into the mic, audible as echo or feedback.
+
+**Workaround for fabricated boards:** rebuild the J8 adapter with pins 2 and 4 swapped relative to the stock cable, giving JST pin 1=Black, 2=Green, 3=Red, 4=Yellow.
+
+**Fix for V2.1:** update J8 pin assignment so pin 1 = `MIC_HOT`, pin 2 = `GND`, pin 3 = `EAR_P`, pin 4 = `EAR_N`. Stock Sangyn cable then plugs in directly with no per-unit adapter rework.
+
+### 8. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
 
 V2 routes the on-board hookswitch SW1 to U3 pin 31 (GP20) per `hardware/pcb/v2/NET_TOPOLOGY.md` and the netlist export. The firmware (`firmware/src/hook.h`) hardcoded `HOOK_PIN = 10` with no `HARDWARE_REV` switch, mirroring V1's pin assignment. On V2 hardware GP10 is unconnected, so the firmware read a floating pin held HIGH by the internal pull-up and never observed any hook transitions: SW1 was electrically isolated from the FSM.
 
