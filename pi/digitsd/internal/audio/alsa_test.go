@@ -7,8 +7,8 @@ import (
 
 func TestDefaultCaptureConfig(t *testing.T) {
 	cfg := DefaultCaptureConfig()
-	if cfg.Device != CodecDeviceName() {
-		t.Errorf("Device = %q, want %q", cfg.Device, CodecDeviceName())
+	if cfg.Device != CodecCaptureDevice() {
+		t.Errorf("Device = %q, want %q", cfg.Device, CodecCaptureDevice())
 	}
 	if cfg.SampleRate != 48000 {
 		t.Errorf("SampleRate = %d, want 48000", cfg.SampleRate)

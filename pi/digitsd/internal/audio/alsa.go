@@ -65,8 +65,7 @@ func detectCodec() *codecConfig {
 		}
 
 		// Fall back to Codec Zero HAT (DA7212): runs cleanly at 48 kHz so we
-		// can talk to the hardware directly via plughw for both directions,
-		// matching the prior single-device V1 behavior exactly.
+		// can talk to the hardware directly via plughw for both directions.
 		slog.Info("audio: using Codec Zero HAT (DA7212)")
 		detectedCodec = &codecConfig{
 			CardName:       "Zero",
@@ -82,11 +81,6 @@ func detectCodec() *codecConfig {
 
 // CodecCardName returns the ALSA card name for the detected codec.
 func CodecCardName() string { return detectCodec().CardName }
-
-// CodecDeviceName returns the ALSA capture device identifier for the detected
-// codec. Retained for backward compatibility; new code should use the more
-// specific CodecCaptureDevice / CodecPlaybackDevice helpers.
-func CodecDeviceName() string { return detectCodec().CaptureDevice }
 
 // CodecCaptureDevice returns the ALSA device the capture pipeline should open.
 func CodecCaptureDevice() string { return detectCodec().CaptureDevice }
