@@ -23,23 +23,21 @@ Either approach is purely a placement/copper-side change; net topology and routi
 
 **Fix for V2.1:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
 
-### 2. Missing pull-up on RP2040 UART TX (GPIO28) net
+### 2. Missing pull-up on RP2040 UART TX (GPIO28) net (optional fix)
 
 The RP2040's UART_TX_PI net (RP2040 GP28 to Pi J1.10 / GPIO15) has no external pull-up. Per RP2040 datasheet section 5.2.3.4, every GPIO defaults to input-with-weak-pull-down at reset (50-80 kohm to GND). Until firmware drives GP28 high in `main()`, the line sits near 0 V via that pull-down, and the Pi's RX line is therefore not at UART idle (which is high).
 
 **Symptom on V2 with empty flash:** the Pi's PL011 picks up phantom RX bytes that look like real UART traffic, paced 1:1 with TX bytes, because each TX edge capacitively couples onto the floating RX trace. We initially mis-diagnosed this as a hardware loopback bug; it is not.
 
-**Workaround for fabricated boards:** firmware-side, drive PROTO_UART_TX_PIN HIGH at the very top of `main()` before any other init (done in `firmware/src/main.c::uart_tx_idle_high()`). Eliminates the floating-line window after firmware reaches the chip.
+**Workaround for fabricated boards:** firmware-side, drive both candidate UART_TX pins HIGH at the very top of `main()` before any other init (done in `firmware/src/main.c::uart_tx_idle_high()`). Eliminates the floating-line window after firmware reaches the chip.
 
-**Fix for V2.1:** add a 10 kohm pull-up from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when RP2040 is unflashed, held in reset, or in deep sleep. Documents intent in the schematic, so anyone bringing up a board without firmware loaded does not see this confusing symptom.
+**Status:** firmware-side workaround is permanent in the unified firmware. `main.c` drives both candidate UART_TX pins (GP0 for V1, GP28 for V2) high in the pre-bootstrap window before `board_init()` reads the rev byte. The hardware pullup remains a "nice to have" so the line stays at UART idle even when the RP2040 is unflashed, held in reset, or before the firmware reaches `main()`. Optional for V2.1.
 
 ### 3. PICO_DEFAULT_BOOT_STAGE2 must be boot2_generic_03h, not the SDK default
 
 The Pico SDK ships `boot2_w25q080` as the default boot stage 2 because that matches the Winbond W25Q16/W25Q080 fitted on a genuine Pi Pico. The V2 carrier uses `W25Q16JVSSIQ` (a similar but not identical Winbond part). The w25q080 boot2 issues QSPI-quad continuation commands the JV variant rejects; the chip then fails to enter XIP, watchdog reset fires, and the chip enters a tight reset loop that also keeps SWD silent (cores held in reset every iteration).
 
-**Workaround for fabricated boards:** firmware-side, set `PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h` for `HARDWARE_REV=2` (done in `firmware/CMakeLists.txt`). XIP throughput drops from ~24 MB/s to ~5 MB/s, but the firmware still fits comfortably in flash and our app is not bandwidth-bound.
-
-**Fix for V2.1:** pick a flash part the SDK's default boot2 already supports correctly (e.g., the genuine Pi Pico flash), or build a custom boot2 sequence verified against the W25Q16JV datasheet's quad-mode init. Until then, the firmware-side override is sufficient.
+**Status:** closed by unified firmware. The Pico firmware now uses `boot2_generic_03h` unconditionally for all boards (V1, V2, future). The W25Q16JV flash on V2 carriers (and on the Pi Pico module that V1 PCB uses, as bench-verified during the unified firmware migration) is fully supported. No flash chip swap is needed for V2.1 or V3. See `docs/architecture/unified-firmware.md`.
 
 ### 4. No BOOTSEL button: first-flash and recovery require a paperclip
 
@@ -111,11 +109,9 @@ The stock LED cable that ships in the donor phone is wired with the opposite pol
 
 ### 9. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
 
-V2 routes the on-board hookswitch SW1 to U3 pin 31 (GP20) per `hardware/pcb/v2/NET_TOPOLOGY.md` and the netlist export. The firmware (`firmware/src/hook.h`) hardcoded `HOOK_PIN = 10` with no `HARDWARE_REV` switch, mirroring V1's pin assignment. On V2 hardware GP10 is unconnected, so the firmware read a floating pin held HIGH by the internal pull-up and never observed any hook transitions: SW1 was electrically isolated from the FSM.
+V2 routes the on-board hookswitch SW1 to U3 pin 31 (GP20). The earlier firmware hardcoded `HOOK_PIN = 10` (V1's pin), so on V2 hardware the FSM read a floating pin and never observed any hook transitions.
 
-A misleading comment in `hook.h` further suggested V2 needed `HOOK:INVERT:ON` "for PCB carrier boards with on-board tactile switch." It does not. V2 SW1 closes to GND when the handset is on the cradle (GP20 LOW = on-hook), which matches the firmware's non-inverted default polarity.
-
-**Status:** fixed in firmware, this branch. `hook.h` now selects `HOOK_PIN` per `HARDWARE_REV` (V1 = GP10, V2 = GP20), following the same pattern as `keypad.h` and `ringer.h`. The polarity comment in `hook.h` and `hook.c` is corrected. No `hook_inverted: true` is needed in `digitsd` config for V2 with a normally-open switch wired across SW1's pads.
+**Status:** closed by unified firmware. The Pico firmware now reads `hook_pin` from a runtime board profile populated by `board_init()` from the rev byte at flash 0x101FF000. V1 boards get GP10; V2 boards get GP20. No `HARDWARE_REV` fork. See `docs/architecture/unified-firmware.md`.
 
 **Bring-up note:** for cradle-actuated switches, wire across SW1's two pads (the existing on-board tactile is in parallel and harmless). One pad is HOOK_SW (GP20), the other is GND; switch polarity does not matter for an SPST. If your switch is normally-closed instead of normally-open, set `hook_inverted: true` in the device config.
 

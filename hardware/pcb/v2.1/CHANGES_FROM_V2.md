@@ -19,27 +19,19 @@ V2 assumed the mic pair sat on the outer pins (1, 4). The stock cable actually p
 
 Implementation: three global-label text changes at J8 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves), followed by Update PCB from Schematic and a fresh route for the three affected nets (`GND`, `EAR_P`, `EAR_N`). `MIC_HOT` routing at J8.1 is unchanged.
 
-### 10 kΩ pull-up on UART_TX_PI to +3V3
+### 10 kΩ pull-up on UART_TX_PI to +3V3 (optional)
 
 V2 left the UART_TX_PI net (RP2040 GP28 to Pi J1.10) without an external pull-up. RP2040 GPIOs default to input-with-weak-pull-down at reset, so the line sits near 0 V until firmware drives it high in `main()`. The Pi's PL011 saw phantom RX bytes coupled from each TX edge during the floating-line window, presenting as a hardware loopback bug.
 
-V2.1 adds a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when the RP2040 is unflashed, held in reset, or in deep sleep. Firmware-side workaround in V2 (driving the line high at the top of `main()`) becomes redundant.
+V2.1 may add a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the line at UART idle even when the RP2040 is unflashed, held in reset, or in deep sleep.
 
-See V2 ERRATA item 2.
+**Status:** demoted to optional after the unified firmware made the firmware-side workaround permanent. `main.c` drives both candidate UART_TX pins (GP0 and GP28) high in the pre-bootstrap window before `board_init()` runs. The hardware pullup remains a clean implementation but is no longer required for V2.1 to function. See V2 ERRATA item 2 and `docs/architecture/unified-firmware.md`.
 
 ### J6 LED connector polarity swap
 
 The V2 J6 net assignment (`J6.1` = anode, `J6.2` = GND) is the inverse of the stock phone LED cable polarity. V2.1 swaps the assignment to `J6.1` = GND, `J6.2` = LED_A so the stock cable plugs in directly without per-unit rework.
 
 See V2 ERRATA item 8.
-
-### W25Q16JV flash chip swap to SDK-default-compatible part
-
-V2 fitted Winbond `W25Q16JVSSIQ`, a similar but not identical part to the genuine Pi Pico's `W25Q16/W25Q080`. The SDK's default `boot2_w25q080` issues QSPI-quad continuation commands the JV variant rejects, causing a tight reset loop on power-on. V2 firmware works around this by setting `PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h` for HARDWARE_REV=2, at the cost of XIP throughput dropping from ~24 MB/s to ~5 MB/s.
-
-V2.1 swaps U4 to a flash part the SDK's default boot2 already supports correctly (e.g., the genuine Pi Pico flash). The firmware-side `boot2_generic_03h` override can then be removed from `firmware/CMakeLists.txt` for HARDWARE_REV=2.1+.
-
-See V2 ERRATA item 3.
 
 ## Mechanical
 
@@ -55,7 +47,7 @@ See V2 ERRATA item 1.
 
 ## BOM
 
-V2.1 BOM differs from V2 only in the U4 flash chip line and adds one resistor (10 kΩ 0402) for the UART pull-up. Otherwise unchanged.
+V2.1 BOM is identical to V2. The flash chip swap is no longer needed (unified firmware uses `boot2_generic_03h` which works on the existing W25Q16JV). The 10 kΩ UART pullup resistor is optional; not strictly required.
 
 ## Carried forward from V2
 
