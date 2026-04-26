@@ -59,6 +59,23 @@ make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
 ./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
 
+Pi OS image and SD card flash (from repo root):
+```
+make image            # build V1 (Codec Zero HAT) image via Docker
+make image-dev        # V1 image with SSH enabled
+make image-v2         # build V2 (carrier board) image
+make image-v2-dev     # V2 image with SSH enabled
+
+make flash            # flash newest image to auto-detected SD (override SD=/dev/sdX)
+make flash-v1         # flash newest V1 image
+make flash-v2         # flash newest V2 image
+
+make image-flash      # build V1 dev image AND flash in one shot
+make image-v2-flash   # build V2 dev image AND flash
+```
+
+The flash targets refuse to write to anything that isn't a block device. Override SD detection with `make flash-v2 SD=/dev/sdX`. `make help` lists every target with a one-line description.
+
 Test tiers, build tag syntax, env vars, and CI workflow names live in `server/TESTING.md`.
 
 ## Local dev server
