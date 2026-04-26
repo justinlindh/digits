@@ -196,11 +196,15 @@ static void process_pi_command(const char *cmd) {
         snprintf(buf, sizeof(buf), "BOARD:%s:0x%02X", board->name, (unsigned int)board_read_rev_byte());
         uart_proto_send(buf);
     } else if (strncmp(cmd, "CONFIG:PCB_REV=", 15) == 0) {
-        // Swaps the active board profile pointer only. Modules that captured
-        // pin numbers during init() (hook, led, keypad, ringer, uart_proto)
-        // continue using their original pins; this works because digitsd is
-        // expected to send the override before any pin-using subsystem is
-        // exercised on hardware with the wrong default profile.
+        // Swaps the active board profile pointer only. Modules read pins
+        // live from `board->...` on every access, so subsequent reads target
+        // the new profile's pins. Those pins were never gpio_init'd,
+        // gpio_set_dir'd, or gpio_pull_up'd: only the original profile's
+        // pins were configured at boot. The override is therefore reliable
+        // only across a firmware reboot, which the Pi-side flow already
+        // guarantees: digitsd sends this on a mismatch, then flash-pico.sh
+        // writes the rev byte and the next reset picks the right profile
+        // from the start.
         const char* name = cmd + 15;
         char buf[64];
         if (board_set_profile(name)) {
@@ -296,7 +300,7 @@ static void process_pi_command(const char *cmd) {
         size_t n = 0;
         buf_appendf(buf, sizeof(buf), &n, "ROWS:");
         for (int r = 0; r < 4; ++r) {
-            buf_appendf(buf, sizeof(buf), &n, " R%d/GP%d=%d",
+            buf_appendf(buf, sizeof(buf), &n, " R%d/GP%u=%d",
                         r, board->keypad_rows[r], gpio_get(board->keypad_rows[r]));
         }
         uart_proto_send(buf);
@@ -305,7 +309,7 @@ static void process_pi_command(const char *cmd) {
         n = 0;
         buf_appendf(buf, sizeof(buf), &n, "COLS:");
         for (uint c = 0; c < num_cols; ++c) {
-            buf_appendf(buf, sizeof(buf), &n, " C%u/GP%d=%d",
+            buf_appendf(buf, sizeof(buf), &n, " C%u/GP%u=%d",
                         c, board->keypad_cols[c], gpio_get(board->keypad_cols[c]));
         }
         uart_proto_send(buf);
@@ -315,7 +319,7 @@ static void process_pi_command(const char *cmd) {
             gpio_put(board->keypad_rows[row], 0);
             sleep_us(50);
             n = 0;
-            buf_appendf(buf, sizeof(buf), &n, "SCAN R%d/GP%d=LOW:",
+            buf_appendf(buf, sizeof(buf), &n, "SCAN R%d/GP%u=LOW:",
                         row, board->keypad_rows[row]);
             for (uint c = 0; c < num_cols; ++c) {
                 buf_appendf(buf, sizeof(buf), &n, " C%u=%d",

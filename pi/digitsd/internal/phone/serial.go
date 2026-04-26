@@ -156,7 +156,7 @@ func (sp *SerialPort) QueryVersion() (string, string, error) {
 // (e.g. "v1", "v2"). `raw` is the full response line, retained for logging
 // since it also carries the rev byte the firmware read from flash.
 func (sp *SerialPort) QueryBoard() (string, string, error) {
-	resp, err := sp.SendCommand("BOARD?", 200*time.Millisecond)
+	resp, err := sp.SendCommand("BOARD?", 1*time.Second)
 	if err != nil {
 		return "", "", err
 	}

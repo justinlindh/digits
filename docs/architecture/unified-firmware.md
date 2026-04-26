@@ -19,7 +19,7 @@ The fork has caused several bugs already:
 - The CI release pipeline builds with default `HARDWARE_REV=1` and publishes a single ELF as `firmware-${VERSION}.elf`. Every release ships V1 firmware, the server hands the same URL to every Pi, and any V2 unit auto-flashing this OTA gets V1 firmware on V2 hardware (UART pin mismatch alone breaks all communication).
 - The local build script reads `HARDWARE_REV` from environment only; passing `-DHARDWARE_REV=2` as a positional argument silently builds V1. This footgun has already cost a bench session chasing a phantom UART loopback bug.
 
-A unified firmware closes all of these failure modes at once. The mechanism (JEDEC ID auto-detection plus a Pi-side override path) extends naturally to future board revisions without another fork.
+A unified firmware closes all of these failure modes at once. The mechanism (a Pi-flashed rev byte at a reserved flash sector plus a Pi-side UART override backstop) extends naturally to future board revisions without another firmware fork.
 
 ## Non-goals
 
@@ -54,7 +54,7 @@ A single `board_profile_t` struct holds every per-rev value. All pin numbers and
 
 typedef struct {
     const char* name;          // "v1" / "v2"
-    uint32_t jedec_id;         // expected JEDEC ID, 0 = wildcard fallback
+    uint8_t rev_byte;          // ASCII rev character expected in the flash marker
 
     // UART (Pi to Pico)
     uint uart_tx_pin;
@@ -70,11 +70,11 @@ typedef struct {
     uint keypad_rows[4];
     uint keypad_cols[4];
     uint keypad_num_cols;      // V1=4, V2=3
+    const char* keychars;      // flat (row, col) -> ASCII lookup, length 4 * num_cols
 
     // Ringer (DRV8871 H-bridge inputs)
     uint ringer_in1_pin;
     uint ringer_in2_pin;
-
 } board_profile_t;
 
 extern const board_profile_t* board;
@@ -82,7 +82,7 @@ extern const board_profile_t* board;
 void board_init(void);  // reads rev byte from flash sector, installs profile pointer
 ```
 
-Profiles defined as `static const` in `board.c`. New profile = new struct entry plus optional new JEDEC ID. No other firmware change.
+Profiles defined as `static const` in `board.c`. New profile = new struct entry plus a new ASCII rev byte. No other firmware change.
 
 ### Init sequence
 
@@ -176,7 +176,7 @@ Items 1, 4, 6, 7, 8 still need their respective V2.1 or V3 PCB work.
 
 Each step independently verifiable on hardware. Worst-case rollback is reverting one commit.
 
-1. **Add `board.h` / `board.c` with both profiles, but keep `HARDWARE_REV` working.** New module that nothing depends on. JEDEC ID detection is implemented and exercised, but the existing constants still drive the build. Verify on bench: `BOARD?` returns "v1" on V1 PCB and "v2" on V2 carrier.
+1. **Add `board.h` / `board.c` with both profiles, but keep `HARDWARE_REV` working.** New module that nothing depends on. Rev byte read at flash 0x101FF000 is implemented and exercised; bench tests pre-write the byte via openocd. The existing constants still drive the build. Verify: `BOARD?` returns "v1" on V1 PCB and "v2" on V2 carrier.
 
 2. **Migrate one module at a time to read from `board->...`.** Start with `led.c`. Then `hook.c`, `keypad.c`, `ringer.c`, `uart_proto.c`. After each module: build, flash, verify both boards still work.
 

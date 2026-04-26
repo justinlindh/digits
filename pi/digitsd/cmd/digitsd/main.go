@@ -1503,7 +1503,7 @@ func main() {
 				"action", "sending CONFIG:PCB_REV override")
 
 			cmd := "CONFIG:PCB_REV=" + expectedFw
-			if resp, err := sp.SendCommand(cmd, 200*time.Millisecond); err != nil {
+			if resp, err := sp.SendCommand(cmd, 1*time.Second); err != nil {
 				slog.Error("hardware: CONFIG:PCB_REV send failed",
 					"cmd", cmd, "error", err)
 			} else {
