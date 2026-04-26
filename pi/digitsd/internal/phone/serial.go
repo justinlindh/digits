@@ -151,6 +151,23 @@ func (sp *SerialPort) QueryVersion() (string, string, error) {
 	return parts[1], parts[2], nil
 }
 
+// QueryBoard sends BOARD? and parses the response.
+// Returns (name, raw, error). `name` is the firmware-active profile name
+// (e.g. "v1", "v2"). `raw` is the full response line, retained for logging
+// since it also carries the rev byte the firmware read from flash.
+func (sp *SerialPort) QueryBoard() (string, string, error) {
+	resp, err := sp.SendCommand("BOARD?", 200*time.Millisecond)
+	if err != nil {
+		return "", "", err
+	}
+	// Response format: BOARD:<name>:0x<rev_byte_hex>
+	parts := strings.SplitN(resp, ":", 3)
+	if len(parts) < 2 || parts[0] != "BOARD" {
+		return "", resp, fmt.Errorf("unexpected board response: %q", resp)
+	}
+	return parts[1], resp, nil
+}
+
 // SetFlashEnabled toggles whether HOOK:FLASH events emitted by the Pico should
 // be forwarded through to the controller. When disabled (pre-v1.5.0 firmware),
 // any stray HOOK:FLASH is dropped with a warning log.

@@ -1479,26 +1479,18 @@ func main() {
 		}
 	}
 
-	// Query firmware's runtime-detected board (rev byte read at boot from
-	// flash 0x101FF000). Cross-check against /etc/digits-pcb-rev. If they
-	// disagree, send CONFIG:PCB_REV=<rev> over UART to override the
-	// firmware's profile. Today they always agree because flash-pico.sh
-	// writes the rev byte during deploy. The mismatch path covers fresh
-	// chips that haven't been Pi-flashed yet, or boards moved between
-	// Pi units.
+	// Cross-check the firmware's runtime-detected board against the Pi's
+	// /etc/digits-pcb-rev marker. flash-pico.sh writes the rev byte during
+	// deploy so they normally agree; the override path covers fresh chips
+	// that have not been Pi-flashed yet, or boards moved between Pi units.
 	firmwareBoard := ""
 	if postOk {
-		if resp, err := sp.SendCommand("BOARD?", 2*time.Second); err != nil {
-			slog.Warn("firmware board query failed", "error", err)
+		name, raw, err := sp.QueryBoard()
+		if err != nil {
+			slog.Warn("firmware board query failed", "error", err, "raw", raw)
 		} else {
-			// Response shape: BOARD:<name>:0x<rev_byte_hex>
-			if strings.HasPrefix(resp, "BOARD:") {
-				parts := strings.SplitN(resp, ":", 3)
-				if len(parts) >= 2 {
-					firmwareBoard = parts[1]
-				}
-			}
-			slog.Info("firmware board", "name", firmwareBoard, "raw", resp)
+			firmwareBoard = name
+			slog.Info("firmware board", "name", firmwareBoard, "raw", raw)
 		}
 	}
 
@@ -1511,7 +1503,7 @@ func main() {
 				"action", "sending CONFIG:PCB_REV override")
 
 			cmd := "CONFIG:PCB_REV=" + expectedFw
-			if resp, err := sp.SendCommand(cmd, 2*time.Second); err != nil {
+			if resp, err := sp.SendCommand(cmd, 200*time.Millisecond); err != nil {
 				slog.Error("hardware: CONFIG:PCB_REV send failed",
 					"cmd", cmd, "error", err)
 			} else {

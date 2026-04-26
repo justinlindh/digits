@@ -15,8 +15,8 @@
 
 // Drive both candidate UART_TX pins high so the Pi sees a clean idle line
 // during the boot window. We don't know which is the real one until
-// board_init() reads the JEDEC ID, so cover both. The unused pin is
-// released after board_init().
+// board_init() reads the rev byte from flash, so cover both. The unused
+// pin is released after board_init().
 static void uart_tx_idle_high(void) {
     gpio_init(0);
     gpio_set_dir(0, GPIO_OUT);

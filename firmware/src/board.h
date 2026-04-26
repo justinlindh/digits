@@ -6,6 +6,11 @@
 
 // Flash address (XIP-mapped) where the Pi writes a 1-byte ASCII rev marker.
 // Last 4 KB sector of 2 MB flash. Reading is a plain XIP load.
+//
+// This address is also hard-coded in two non-firmware sites:
+//   pi/image/rootfs-overlay/usr/local/bin/flash-pico.sh (writes the byte)
+//   pi/digitsd/cmd/digitsd/main.go                       (cross-references it)
+// Update all three together if the offset ever moves.
 #define BOARD_REV_FLASH_OFFSET 0x1FF000u
 #define BOARD_REV_FLASH_ADDR   (XIP_BASE + BOARD_REV_FLASH_OFFSET)
 
