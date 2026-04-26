@@ -54,7 +54,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(ctx)
 	hh := h.primaryHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
-	loc := householdLocation(hh)
+	loc := hh.Location()
 	now := time.Now().In(loc)
 
 	callHistoryEnabled := hh != nil && hh.CallHistoryEnabled

@@ -180,8 +180,12 @@ func (s *Store) UpdateName(ctx context.Context, householdID, name string) error 
 }
 
 // Location returns the parsed *time.Location for this household's timezone.
-// Falls back to time.UTC if the timezone string is invalid.
+// Falls back to time.UTC if h is nil or the timezone string is invalid, so
+// callers without a household can still format timestamps without a guard.
 func (h *Household) Location() *time.Location {
+	if h == nil {
+		return time.UTC
+	}
 	loc, err := time.LoadLocation(h.Timezone)
 	if err != nil {
 		return time.UTC

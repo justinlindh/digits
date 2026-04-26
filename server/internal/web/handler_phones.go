@@ -269,7 +269,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
-	loc := householdLocation(hh)
+	loc := hh.Location()
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)
