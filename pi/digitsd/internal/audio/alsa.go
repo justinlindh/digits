@@ -30,6 +30,7 @@ type codecConfig struct {
 	MixerName       string // Volume mixer control name (PCM vs Lineout)
 	ALSAMin         int    // Volume range minimum
 	ALSAMax         int    // Volume range maximum
+	DefaultLevel    int    // First-boot volume level (0-9) when no /data/digits/volume exists
 }
 
 var (
@@ -60,6 +61,15 @@ func detectCodec() *codecConfig {
 				MixerName:      "PCM",
 				ALSAMin:        40,
 				ALSAMax:        115,
+				// V2 codec is noticeably quieter than V1 at the same level
+				// step. The TLV320AIC3104 PCM mixer drives the headphone amp
+				// through several attenuated stages (HP DAC at -19 dB, HP at
+				// +5 dB) so PCM needs to sit near the top of its range to
+				// reach a comfortable handset earpiece level. Level 8 maps
+				// to roughly -8 dB at PCM, which puts the earpiece at a
+				// telephone-normal SPL on first boot. Users can drop it
+				// later via *#*N service codes.
+				DefaultLevel: 8,
 			}
 			return
 		}
@@ -74,6 +84,8 @@ func detectCodec() *codecConfig {
 			MixerName:      "Lineout",
 			ALSAMin:        20,
 			ALSAMax:        58,
+			// V1 default unchanged from the historical hardcoded value.
+			DefaultLevel: 5,
 		}
 	})
 	return detectedCodec
@@ -93,6 +105,12 @@ func CodecMixerName() string { return detectCodec().MixerName }
 
 // CodecALSARange returns the min/max ALSA values for volume mapping.
 func CodecALSARange() (int, int) { c := detectCodec(); return c.ALSAMin, c.ALSAMax }
+
+// CodecDefaultVolumeLevel returns the volume level (0-9) to apply on first
+// boot when no persisted level exists. Calibrated per codec because the same
+// step on the V2 PCM mixer produces a much quieter handset output than on
+// V1 Lineout.
+func CodecDefaultVolumeLevel() int { return detectCodec().DefaultLevel }
 
 // Config holds ALSA device parameters.
 type Config struct {
