@@ -1,5 +1,6 @@
 #include "phone_fsm.h"
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -30,6 +31,31 @@ static bool s_keytest_mode = false;
 
 static uint32_t now_ms(void) {
     return to_ms_since_boot(get_absolute_time());
+}
+
+// Saturating snprintf accumulator. Appends a formatted string into buf at
+// position *pos and updates *pos. If the buffer is already full, returns
+// without writing. If the formatted output would overflow, truncates and
+// pins *pos at buf_size - 1 so subsequent calls become no-ops without
+// underflowing the size_t arithmetic that a naive `n += snprintf(buf + n,
+// sizeof(buf) - n, ...)` pattern is prone to.
+static void buf_appendf(char *buf, size_t buf_size, size_t *pos,
+                        const char *fmt, ...) {
+    if (buf_size == 0 || *pos >= buf_size) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int written = vsnprintf(buf + *pos, buf_size - *pos, fmt, ap);
+    va_end(ap);
+    if (written <= 0) {
+        return;
+    }
+    if ((size_t)written >= buf_size - *pos) {
+        *pos = buf_size - 1;
+    } else {
+        *pos += (size_t)written;
+    }
 }
 
 static void clear_dialing_buffer(void) {
@@ -257,18 +283,20 @@ static void process_pi_command(const char *cmd) {
 #endif
         };
         // Read row pins (outputs: show what we're driving)
-        int n = snprintf(buf, sizeof(buf), "ROWS:");
+        size_t n = 0;
+        buf_appendf(buf, sizeof(buf), &n, "ROWS:");
         for (int r = 0; r < KEYPAD_NUM_ROWS; ++r) {
-            n += snprintf(buf + n, sizeof(buf) - n, " R%d/GP%d=%d",
-                          r, row_gpios[r], gpio_get(row_gpios[r]));
+            buf_appendf(buf, sizeof(buf), &n, " R%d/GP%d=%d",
+                        r, row_gpios[r], gpio_get(row_gpios[r]));
         }
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Read col pins (inputs: show what we're sensing)
-        n = snprintf(buf, sizeof(buf), "COLS:");
+        n = 0;
+        buf_appendf(buf, sizeof(buf), &n, "COLS:");
         for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
-            n += snprintf(buf + n, sizeof(buf) - n, " C%d/GP%d=%d",
-                          c, col_gpios[c], gpio_get(col_gpios[c]));
+            buf_appendf(buf, sizeof(buf), &n, " C%d/GP%d=%d",
+                        c, col_gpios[c], gpio_get(col_gpios[c]));
         }
         uart_proto_send(buf);
         printf("%s\n", buf);
@@ -276,11 +304,12 @@ static void process_pi_command(const char *cmd) {
         for (int row = 0; row < KEYPAD_NUM_ROWS; ++row) {
             gpio_put(row_gpios[row], 0);
             sleep_us(50);
-            n = snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW:",
-                         row, row_gpios[row]);
+            n = 0;
+            buf_appendf(buf, sizeof(buf), &n, "SCAN R%d/GP%d=LOW:",
+                        row, row_gpios[row]);
             for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
-                n += snprintf(buf + n, sizeof(buf) - n, " C%d=%d",
-                              c, gpio_get(col_gpios[c]));
+                buf_appendf(buf, sizeof(buf), &n, " C%d=%d",
+                            c, gpio_get(col_gpios[c]));
             }
             uart_proto_send(buf);
             printf("%s\n", buf);
