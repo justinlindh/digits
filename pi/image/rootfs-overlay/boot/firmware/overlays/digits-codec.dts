@@ -57,6 +57,18 @@
                 DVDD-supply = <&vdd_1v8_codec_reg>;
                 clocks = <&codec_mclk>;
                 clock-names = "mclk";
+
+                /* CODEC_RESET on Pi GP22 (active-low). Without this the
+                 * driver never asserts a clean POR and the chip can latch
+                 * indeterminate analog-front-end state at first boot. */
+                reset-gpios = <&gpio 22 1>;
+
+                /* MICBIAS level: 3 = AVDD (~3.3 V on the V2 carrier). The
+                 * driver writes R25 bits[7:6] from this; without the
+                 * property MICBIAS stays powered down and the electret
+                 * never sees bias. Capture path is dead-silent without
+                 * this even when machine routing is correct. */
+                ai3x-micbias-vg = <3>;
             };
         };
     };
@@ -80,6 +92,26 @@
                 simple-audio-card,bitclock-master = <&dailink_cpu>;
                 simple-audio-card,frame-master = <&dailink_cpu>;
                 status = "okay";
+
+                /* External widgets connected to the codec's input/output
+                 * pins. simple-audio-card needs these declared so DAPM
+                 * builds a complete graph through the codec; without the
+                 * routing block below DAPM power-gates the entire input
+                 * chain (Mic Bias supply, LINE1L pin, Left PGA Mixer,
+                 * Left ADC) and arecord captures only chip self-noise. */
+                simple-audio-card,widgets =
+                    "Microphone", "Handset Mic",
+                    "Speaker",    "Earpiece";
+
+                /* Routing format is {sink, source}. The kernel driver knows
+                 * the codec datasheet's MIC1LP pin as LINE1L (and MIC1RP as
+                 * LINE1R). On V2 the handset mic AC-couples into MIC1LP
+                 * single-ended, so only the Left side is wired. */
+                simple-audio-card,routing =
+                    "LINE1L",      "Handset Mic",
+                    "Handset Mic", "Mic Bias",
+                    "Earpiece",    "HPLOUT",
+                    "Earpiece",    "HPLCOM";
 
                 dailink_cpu: simple-audio-card,cpu {
                     sound-dai = <&i2s>;
