@@ -70,8 +70,11 @@ async function setDoNotDisturb(page: Page, target: 'on' | 'off'): Promise<void> 
   );
   await checkbox.setChecked(target === 'on', { force: true });
   await wait;
-  // The handler returns 303 to /settings?saved=1; wait for that landing page.
-  await page.waitForURL((u) => u.toString().includes('/settings'));
+  // The handler returns 303 to /settings?saved=1. The page started at
+  // /settings#do-not-disturb, so a plain "/settings" check resolves
+  // immediately against the current URL and lets the next goto race the
+  // in-flight redirect; require the ?saved=1 query the handler appends.
+  await page.waitForURL((u) => u.toString().includes('/settings?saved=1'));
 }
 
 const SURFACES = ['/', '/phones', '/links', '/settings'];
