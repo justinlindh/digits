@@ -1,6 +1,7 @@
 package web
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -49,6 +50,28 @@ func TestStaticFileServer_DevServesFromDisk(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "dev-mode disk-serve smoke test") {
 		t.Errorf("dev-mode handler did not serve the on-disk probe content; got body: %q", rec.Body.String())
+	}
+}
+
+// DTMF tone wavs must ship in the embedded FS so the keypad on /phones can
+// fetch /static/audio/dtmf/dtmf_<n>.wav without a side-channel asset deploy.
+func TestStaticFileServer_DTMFWavsEmbedded(t *testing.T) {
+	h := staticFileServer(false, "")
+
+	for d := 0; d < 10; d++ {
+		path := fmt.Sprintf("/static/audio/dtmf/dtmf_%d.wav", d)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s: got %d, want 200", path, rec.Code)
+			continue
+		}
+		body := rec.Body.Bytes()
+		if len(body) < 12 || string(body[0:4]) != "RIFF" || string(body[8:12]) != "WAVE" {
+			t.Errorf("GET %s: response did not start with WAV magic", path)
+		}
 	}
 }
 

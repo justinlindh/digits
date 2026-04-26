@@ -133,6 +133,18 @@
   var code = '';
   var checkTimer = null;
 
+  var tones = [];
+  function playTone(d) {
+    var a = tones[d];
+    if (!a) {
+      a = new Audio('/static/audio/dtmf/dtmf_' + d + '.wav');
+      a.volume = 0.5;
+      tones[d] = a;
+    }
+    a.currentTime = 0;
+    a.play().catch(function() {});
+  }
+
   function render() {
     slots.forEach(function(s, i) {
       s.textContent = code[i] || '';
@@ -162,7 +174,7 @@
   buttons.forEach(function(b) {
     b.addEventListener('click', function() {
       press(b);
-      if (b.dataset.digit) push(b.dataset.digit);
+      if (b.dataset.digit) { playTone(b.dataset.digit); push(b.dataset.digit); }
       else if (b.dataset.action === 'backspace') pop();
       else if (b.dataset.action === 'clear') { code = ''; render(); }
     });
@@ -178,7 +190,7 @@
   document.addEventListener('keydown', function(e) {
     if (document.activeElement === numberInput || document.activeElement === nameInput) return;
     if (e.key === 'Backspace') { e.preventDefault(); pop(); }
-    else if (/^\d$/.test(e.key)) { push(e.key); }
+    else if (/^\d$/.test(e.key)) { playTone(e.key); push(e.key); }
   });
 
   function setNumberError() {
