@@ -1,0 +1,58 @@
+{{define "dashboard-am-status"}}
+{{/* Top row: LED status display + indicator lamps cluster. Rendered once on
+     page load and re-rendered by GET /api/dashboard/stream on every state
+     change (call start/end, line online/offline) and at least once per
+     stream tick so the LOCAL TIME LED keeps up. */}}
+<div class="am-overview__top">
+
+  {{/* LED status plate */}}
+  <div class="am-plate am-plate--screws am-overview__status">
+    <div class="am-screw am-screw--tl"></div><div class="am-screw am-screw--tr"></div>
+    <div class="am-label am-overview__status-label">Status &middot; {{.Now.Format "Monday, January 2"}}</div>
+    <div class="am-well am-overview__led-well">
+      <div class="am-overview__led-group">
+        <div class="am-led am-overview__led-big">{{printf "%02d" .ActiveCalls}}</div>
+        <div class="am-led am-led--dim am-overview__led-caption">ON&middot;CALL</div>
+      </div>
+      <div class="am-overview__led-sep"></div>
+      <div class="am-overview__led-group">
+        <div class="am-led am-led--green am-overview__led-mid">{{.OnlineLines}}</div>
+        <div class="am-led am-led--dim am-overview__led-caption">LINES&middot;ONLINE</div>
+      </div>
+      <div class="am-overview__led-sep"></div>
+      <div class="am-overview__led-group">
+        <div class="am-led am-overview__led-mid">{{.LinkedFamilies}}</div>
+        <div class="am-led am-led--dim am-overview__led-caption">FAMILIES</div>
+      </div>
+      <div class="am-overview__led-spacer"></div>
+      <div class="am-overview__led-group am-overview__led-group--right">
+        <div class="am-led am-overview__led-time">{{.Now.Format "3:04pm"}}</div>
+        <div class="am-led am-led--dim am-overview__led-caption">LOCAL&middot;TIME</div>
+      </div>
+    </div>
+  </div>
+
+  {{/* Indicator lamps + REC-off cluster */}}
+  <div class="am-plate am-overview__indicators">
+    <div class="am-plate__label">Indicators</div>
+    <div class="am-overview__lamps">
+      <div class="am-overview__lamp">
+        <span class="am-lamp{{if gt .ActiveCalls 0}} am-lamp--on-red{{end}}"></span>
+        <span class="am-overview__lamp-label">Ringing</span>
+      </div>
+      <div class="am-overview__lamp">
+        <span class="am-lamp{{if gt .OnlineLines 0}} am-lamp--on-green{{end}}"></span>
+        <span class="am-overview__lamp-label">Online</span>
+      </div>
+      <div class="am-overview__lamp">
+        <span class="am-lamp{{if gt .LinkedFamilies 0}} am-lamp--on-amber{{end}}"></span>
+        <span class="am-overview__lamp-label">Paired</span>
+      </div>
+    </div>
+    <div class="am-overview__rec">
+      <div class="am-rec"><span class="am-lamp"></span><span class="am-rec__label">REC</span></div>
+      <div class="am-hint am-overview__rec-hint">This lamp is wired to nothing. Audio never reaches this box.</div>
+    </div>
+  </div>
+</div>
+{{end}}

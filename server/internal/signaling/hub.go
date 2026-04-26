@@ -31,11 +31,19 @@ type Conn struct {
 	FlashCapable    bool
 }
 
+// dashNotifier is the subset of *dashboard/events.Broadcaster the Hub uses
+// to wake dashboard SSE subscribers when the set of online lines changes.
+// Optional; nil disables notifications.
+type dashNotifier interface {
+	Notify()
+}
+
 type Hub struct {
 	mu           sync.RWMutex
 	conns        map[string]*Conn                 // phone number → connection
 	hwConns      map[string]*Conn                 // hardware ID → connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number → last update status
+	dashEvents   dashNotifier
 }
 
 func NewHub() *Hub {
@@ -46,9 +54,17 @@ func NewHub() *Hub {
 	}
 }
 
+// SetDashboardEvents registers an optional broadcaster that is signalled
+// whenever the set of online lines changes. Wakes dashboard SSE subscribers.
+// Safe to call once at startup; subsequent calls overwrite.
+func (h *Hub) SetDashboardEvents(b dashNotifier) {
+	h.mu.Lock()
+	h.dashEvents = b
+	h.mu.Unlock()
+}
+
 func (h *Hub) Register(number string, conn *Conn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	// Close existing connection for this number if any
 	if old, ok := h.conns[number]; ok {
 		if old.WS != nil {
@@ -69,19 +85,34 @@ func (h *Hub) Register(number string, conn *Conn) {
 	if conn.HardwareID != "" {
 		h.hwConns[conn.HardwareID] = conn
 	}
+	d := h.dashEvents
+	h.mu.Unlock()
 	slog.Debug("hub registered", "number", number)
+
+	if d != nil {
+		d.Notify()
+	}
 }
 
 func (h *Hub) Unregister(number string, conn *Conn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	var changed bool
 	if existing, ok := h.conns[number]; ok && existing == conn {
 		close(conn.Send)
 		delete(h.conns, number)
 		if conn.HardwareID != "" {
 			delete(h.hwConns, conn.HardwareID)
 		}
+		changed = true
+	}
+	d := h.dashEvents
+	h.mu.Unlock()
+
+	if changed {
 		slog.Debug("hub unregistered", "number", number)
+		if d != nil {
+			d.Notify()
+		}
 	}
 }
 

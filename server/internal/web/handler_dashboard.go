@@ -22,6 +22,20 @@ type dashboardData struct {
 	ActiveLine         string
 	ActivePeer         string
 	ActiveElapsed      string
+	// Status is the subset rendered by the dashboard-am-status partial. The
+	// partial is also rendered by the /api/dashboard/stream SSE handler, so
+	// this struct is the contract between the page render and stream render.
+	Status dashStatusVM
+}
+
+// dashStatusVM is what the dashboard-am-status partial reads. Both the page
+// handler and the SSE handler populate it the same way so the partial output
+// is identical at render time and at every subsequent SSE swap.
+type dashStatusVM struct {
+	ActiveCalls    int
+	OnlineLines    int
+	LinkedFamilies int
+	Now            time.Time
 }
 
 type callRow struct {
@@ -165,13 +179,14 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	stats := dashStats{
+		TotalLines:  len(ld.Lines),
+		OnlineLines: countOnline(ld.Lines),
+		ActiveCalls: activeCount,
+	}
 	data := dashboardData{
-		chromeData: newChromeData("dashboard", user, hh),
-		Stats: dashStats{
-			TotalLines:  len(ld.Lines),
-			OnlineLines: countOnline(ld.Lines),
-			ActiveCalls: activeCount,
-		},
+		chromeData:         newChromeData("dashboard", user, hh),
+		Stats:              stats,
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
@@ -180,6 +195,12 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ActiveLine:         activeLine,
 		ActivePeer:         activePeer,
 		ActiveElapsed:      activeElapsed,
+		Status: dashStatusVM{
+			ActiveCalls:    stats.ActiveCalls,
+			OnlineLines:    stats.OnlineLines,
+			LinkedFamilies: len(linkedFamilies),
+			Now:            now,
+		},
 	}
 	renderWith(w, h.tmplDashboard, layoutFor(r), data)
 }

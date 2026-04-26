@@ -15,6 +15,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
@@ -77,6 +78,7 @@ type Handler struct {
 	tracker     *calls.Tracker
 	relay       *signaling.Relay
 	healthStore *calls.HealthStore
+	dashEvents  *events.Broadcaster
 	// Per-page template sets to avoid {{define}} name conflicts
 	tmplDashboard      *template.Template
 	tmplPhones         *template.Template
@@ -90,6 +92,7 @@ type Handler struct {
 	tmplCallLiveDetail         *template.Template
 	tmplConferenceLivePanel    *template.Template
 	tmplConferenceLiveDetail   *template.Template
+	tmplDashboardAMStatus      *template.Template
 	cfg                HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -153,6 +156,7 @@ type Deps struct {
 	Tracker        *calls.Tracker
 	Relay          *signaling.Relay
 	HealthStore    *calls.HealthStore
+	DashEvents     *events.Broadcaster
 	AuthStore      *auth.Store
 	AuthHandlers   *auth.Handlers
 	GoogleAuth     *auth.GoogleAuth
@@ -267,6 +271,15 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Merge the AM status partial so {{template "dashboard-am-status"}} resolves
+	// inside the dashboard page.
+	if _, err := tmplDashboard.ParseFS(templateFS, "templates/_dashboard-am-status.html"); err != nil {
+		return nil, fmt.Errorf("parse dashboard-am-status partial into dashboard: %w", err)
+	}
+	tmplDashboardAMStatus, err := template.New("dashboard-am-status").Funcs(funcMap).ParseFS(templateFS, "templates/_dashboard-am-status.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse dashboard-am-status: %w", err)
+	}
 	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
 		return nil, err
@@ -339,6 +352,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tracker:            deps.Tracker,
 		relay:              deps.Relay,
 		healthStore:        deps.HealthStore,
+		dashEvents:         deps.DashEvents,
 		tmplDashboard:      tmplDashboard,
 		tmplPhones:         tmplPhones,
 		tmplCalls:          tmplCalls,
@@ -351,6 +365,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplCallLiveDetail:         tmplCallLiveDetail,
 		tmplConferenceLivePanel:    tmplConferenceLivePanel,
 		tmplConferenceLiveDetail:   tmplConferenceLiveDetail,
+		tmplDashboardAMStatus:      tmplDashboardAMStatus,
 		cfg:                cfg,
 		authStore:          deps.AuthStore,
 		authHandlers:       deps.AuthHandlers,
@@ -456,6 +471,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
 	protected.HandleFunc("GET /call/live/{id}", h.handleCallLiveDetail)
 	protected.HandleFunc("GET /conference/live/{uuid}", h.handleConferenceLiveDetail)
+	protected.HandleFunc("GET /api/dashboard/stream", h.handleDashboardStream)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("GET /api/conference/{uuid}/link-health", h.handleConferenceLinkHealth)
