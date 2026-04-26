@@ -19,6 +19,19 @@ V2 assumed the mic pair sat on the outer pins (1, 4). The stock cable actually p
 
 Implementation: three global-label text changes at J8 in `kicad/digits-pcb.kicad_sch` (no symbol or wire moves), followed by Update PCB from Schematic and a fresh route for the three affected nets (`GND`, `EAR_P`, `EAR_N`). `MIC_HOT` routing at J8.1 is unchanged.
 
+### J6 LED connector polarity
+
+J6 pin 1 and pin 2 net assignments were swapped so the stock phone LED cable plugs in directly without per-unit rework.
+
+| J6 pin | V2 net | V2.1 net |
+|---|---|---|
+| 1 | `LED_A` | `GND` |
+| 2 | `GND` | `LED_A` |
+
+V2 wired pin 1 to the LED anode, but the donor phone's LED cable carries the opposite polarity, leaving the LED reverse-biased on every V2 unit (see `hardware/pcb/v2/ERRATA.md` section 8).
+
+Implementation: two global-label y-coordinate swaps at J6 in `kicad/digits-pcb.kicad_sch` (no symbol move, no footprint change), followed by Update PCB from Schematic and a fresh route for the two affected segments at J6.
+
 ### 10 kΩ pull-up on UART_TX_PI to +3V3 (optional)
 
 V2 left the UART_TX_PI net (RP2040 GP28 to Pi J1.10) without an external pull-up. RP2040 GPIOs default to input-with-weak-pull-down at reset, so the line sits near 0 V until firmware drives it high in `main()`. The Pi's PL011 saw phantom RX bytes coupled from each TX edge during the floating-line window, presenting as a hardware loopback bug.
@@ -27,13 +40,7 @@ V2.1 may add a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the
 
 **Status:** demoted to optional after the unified firmware made the firmware-side workaround permanent. `main.c` drives both candidate UART_TX pins (GP0 and GP28) high in the pre-bootstrap window before `board_init()` runs. The hardware pullup remains a clean implementation but is no longer required for V2.1 to function. See V2 ERRATA item 2 and `docs/architecture/unified-firmware.md`.
 
-### J6 LED connector polarity swap
-
-The V2 J6 net assignment (`J6.1` = anode, `J6.2` = GND) is the inverse of the stock phone LED cable polarity. V2.1 swaps the assignment to `J6.1` = GND, `J6.2` = LED_A so the stock cable plugs in directly without per-unit rework.
-
-See V2 ERRATA item 8.
-
-## Mechanical
+## Mechanical and BOM
 
 ### Component-side flip
 
@@ -45,7 +52,7 @@ Implementation work is non-trivial KiCad surgery. Tracked in #313 alongside the 
 
 See V2 ERRATA item 1.
 
-## BOM
+### BOM
 
 V2.1 BOM is identical to V2. The flash chip swap is no longer needed (unified firmware uses `boot2_generic_03h` which works on the existing W25Q16JV). The 10 kΩ UART pullup resistor is optional; not strictly required.
 
