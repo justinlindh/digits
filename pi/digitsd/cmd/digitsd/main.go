@@ -1415,10 +1415,22 @@ func main() {
 	// isn't quite awake yet at the instant the chip finishes booting). The
 	// goroutine sends the result on fwVersionCh so the main loop can update
 	// fwVersion/fwCommit without any shared-state synchronization.
+	//
+	// requeryInFlight dedupes overlapping calls. After an auto-update flash
+	// both afterFirmwareUpdated and the Pico's STATUS:READY message want to
+	// trigger a requery within the same second; the second call becomes a
+	// no-op and avoids a "channel full, dropping" warning. The flag clears
+	// when the goroutine returns, so a later genuine reboot starts fresh.
 	type fwVersionResult struct{ version, commit string }
 	fwVersionCh := make(chan fwVersionResult, 1)
+	var requeryInFlight atomic.Bool
 	requeryFirmware := func() {
+		if !requeryInFlight.CompareAndSwap(false, true) {
+			slog.Debug("pico: requery already in flight, skipping duplicate trigger")
+			return
+		}
 		go func() {
+			defer requeryInFlight.Store(false)
 			const attempts = 5
 			for attempt := 1; attempt <= attempts; attempt++ {
 				v, c, err := sp.QueryVersion()
