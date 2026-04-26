@@ -11,25 +11,15 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 )
 
-// ServiceCodeResult is the outcome of feeding a key into ServiceCodeHandler.AddKey.
-// It tells the caller whether a code matched and, if so, whether the user is
-// still expected to be off-hook and using the phone afterwards (non-terminal
-// codes like volume) or whether the daemon is shutting down / rebooting
-// (terminal codes).
+// ServiceCodeResult tells the caller whether a service code matched and
+// whether the daemon is shutting down afterwards (terminal) or the user
+// remains off-hook (non-terminal).
 type ServiceCodeResult int
 
 const (
-	// ServiceCodeNone means no code matched on this key.
-	ServiceCodeNone ServiceCodeResult = iota
-	// ServiceCodeTerminal means a code matched and the daemon is going down
-	// (shutdown, reboot, setup, repair, factory reset, update). The caller
-	// should put the FSM in IDLE since state no longer matters.
-	ServiceCodeTerminal
-	// ServiceCodeNonTerminal means a code matched but the user is still
-	// off-hook and expected to keep using the phone (volume, audio test).
-	// The caller should put the FSM back in DIALTONE so the next key press
-	// stops the resumed dial tone and starts dialing.
-	ServiceCodeNonTerminal
+	ServiceCodeNone        ServiceCodeResult = iota
+	ServiceCodeTerminal                      // daemon going down
+	ServiceCodeNonTerminal                   // user still off-hook
 )
 
 // ServiceCodeHandler processes hidden service codes entered via the keypad.

@@ -2010,17 +2010,11 @@ func main() {
 				if !easterEggs.AddKey(key) {
 					switch svcCodes.AddKey(key) {
 					case phone.ServiceCodeTerminal:
-						// Daemon is going down (shutdown, reboot, etc.); FSM
-						// state no longer matters. Reset to IDLE.
 						ctrl.Reset()
 						continue // skip forwarding to controller
 					case phone.ServiceCodeNonTerminal:
-						// User is still off-hook (volume, audio test) and the
-						// callback has restarted the dial-tone loop. Put the
-						// FSM back in DIALTONE so the next key press stops the
-						// resumed tone and starts dialing.
 						ctrl.ResetToDialtone()
-						continue // skip forwarding to controller
+						continue
 					}
 				}
 			}

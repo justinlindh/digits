@@ -181,11 +181,7 @@ func (c *Controller) Reset() {
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
-// digits. Used after non-terminal service codes (volume, audio test) where
-// the user is still off-hook and the callback has restarted the dial-tone
-// loop. The caller owns the tone; this method only updates FSM state, so
-// the next key press will correctly transition DIALTONE -> DIALING and
-// stop the tone.
+// digits. Only updates FSM state; the caller owns the tone.
 func (c *Controller) ResetToDialtone() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
