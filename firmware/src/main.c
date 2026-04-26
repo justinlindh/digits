@@ -24,8 +24,6 @@
 // idle), this is a no-op-equivalent. On V2 it eliminates a confusing class
 // of bring-up symptoms.
 static void uart_tx_idle_high(void) {
-    gpio_put(PROTO_UART_TX_PIN, 1);
-    gpio_set_dir(PROTO_UART_TX_PIN, GPIO_OUT);
     gpio_init(PROTO_UART_TX_PIN);
     gpio_put(PROTO_UART_TX_PIN, 1);
     gpio_set_dir(PROTO_UART_TX_PIN, GPIO_OUT);

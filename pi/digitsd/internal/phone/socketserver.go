@@ -164,11 +164,14 @@ func (s *SocketServer) handleMonitor(conn net.Conn, reader *bufio.Reader) {
 	done := make(chan struct{})
 
 	// Writer: drain tap, push to client. Exits when tap is closed (we
-	// close it from the reader goroutine on shutdown).
+	// close it from the reader goroutine on shutdown). On a write error
+	// the conn is also closed here so the reader's blocking ReadString
+	// returns instead of hanging on a half-open socket.
 	go func() {
 		defer close(done)
 		for line := range tap {
 			if _, err := conn.Write([]byte(line + "\n")); err != nil {
+				_ = conn.Close()
 				return
 			}
 		}
