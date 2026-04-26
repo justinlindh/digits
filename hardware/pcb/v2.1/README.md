@@ -4,7 +4,12 @@ Carrier board that sits under a Raspberry Pi Zero 2 W inside a gutted vintage de
 
 This directory is the source of truth for PCB v2.1. Schematic, footprint placement, and design notes all live here.
 
-V2.1 is a minor revision of V2. The only electrical change is the J8 handset connector pin assignment, which now matches the stock Sangyn Retro 2500 cable directly (no per-unit adapter rework). See `CHANGES_FROM_V2.md` and `hardware/pcb/v2/ERRATA.md` for background.
+V2.1 is a minor revision of V2. Electrical changes versus V2:
+
+- J8 handset connector pin assignment matches the stock Sangyn Retro 2500 cable directly (no per-unit adapter rework).
+- `SW2` BOOTSEL tact switch added across `QSPI_SS` to `GND`, retiring the paperclip bootstrap and the +3.3 V/GND short hazard that destroyed a V2 RP2040's SWD interface during bring-up.
+
+See `CHANGES_FROM_V2.md` and `hardware/pcb/v2/ERRATA.md` for background.
 
 ---
 

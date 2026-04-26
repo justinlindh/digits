@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""
+digits-pico-monitor: full-duplex line-mode terminal to the RP2040 UART.
+
+Different from minicom in two ways:
+  - Incoming UART lines are printed cleanly as they arrive (so streaming
+    events like KEY:5 / HOOK:DOWN show up live without you typing).
+  - Outgoing commands go through Python readline, so backspace and arrow
+    keys behave normally without minicom's line-mode quirks.
+
+Two transport modes, tried in order:
+
+  1. digitsd MONITOR socket (default).
+     Connects to /data/digits/uart.sock and sends "MONITOR\\n". digitsd
+     mirrors every TX command and every RX line on the wire to this
+     socket (prefixed "> " and "< " respectively) and forwards anything
+     written back to the socket out to the Pico via the existing serial
+     port. digitsd keeps running, calls keep working, you just see the
+     traffic. This is the right mode for any phone where digitsd is
+     already up.
+
+  2. Direct /dev/serial0 (fallback).
+     If the socket doesn't exist, isn't accepting connections, or the
+     server doesn't speak MONITOR, the script falls back to the legacy
+     behavior: stop digitsd (which holds /dev/serial0), open the port
+     directly, then restart digitsd on exit. Use this on a brand-new
+     image or when digitsd itself is broken.
+
+Useful firmware commands once connected:
+  PING / VERSION / STATE?
+  LED:ON | LED:OFF | LED:BLINK
+  KEYTEST          start streaming KEY:N for every keypress
+  KEYTEST:OFF      stop the stream
+  RING:TEST        single bell strike (needs 12 V on J3 to actually ring)
+  HOOK:FORCE:OFF | HOOK:FORCE:ON | HOOK:RELEASE
+  RESET            soft-reboot the firmware
+
+Type Ctrl-C or 'quit' to exit.
+"""
+import os, sys, termios, threading, time, signal, subprocess, socket, errno
+
+DEV = os.environ.get("DEV", "/dev/serial0")
+SOCK_PATH = os.environ.get("DIGITS_UART_SOCK", "/data/digits/uart.sock")
+BAUD_FLAG = termios.B115200
+
+def must_be_root():
+    if os.geteuid() != 0:
+        print("Re-running under sudo...", flush=True)
+        os.execvp("sudo", ["sudo", "-E", sys.executable, *sys.argv])
+
+def systemctl(action, unit):
+    return subprocess.run(["systemctl", action, unit],
+                          capture_output=True, text=True).returncode == 0
+
+def stop_digitsd():
+    if subprocess.run(["systemctl", "is-active", "--quiet", "digitsd.service"]).returncode == 0:
+        print("[stopping digitsd]", flush=True)
+        systemctl("stop", "digitsd.service")
+        time.sleep(0.3)
+        return True
+    return False
+
+def start_digitsd():
+    print("\n[restarting digitsd]", flush=True)
+    systemctl("start", "digitsd.service")
+
+# ---------------------------------------------------------------------------
+# Mode 1: MONITOR socket via digitsd
+# ---------------------------------------------------------------------------
+
+def try_monitor_socket(path):
+    """Try to open path and upgrade to MONITOR mode.
+
+    Returns a connected socket on success, or None on any failure
+    (missing socket, permission denied, server doesn't speak MONITOR).
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2)
+        s.connect(path)
+        s.sendall(b"MONITOR\n")
+        # First line of the response is either MONITOR:READY (success) or
+        # an ERROR: ... line we should treat as a fall-back trigger.
+        buf = bytearray()
+        while True:
+            ch = s.recv(1)
+            if not ch:
+                s.close()
+                return None
+            buf.extend(ch)
+            if ch == b"\n":
+                break
+            if len(buf) > 256:
+                # Defensive: server is sending us junk, bail out.
+                s.close()
+                return None
+        ack = buf.decode("utf-8", errors="replace").strip()
+        if ack != "MONITOR:READY":
+            s.close()
+            return None
+        s.settimeout(None)
+        return s
+    except (OSError, socket.timeout):
+        return None
+
+def run_monitor_mode(sock):
+    """Bidirectional pump on the MONITOR socket. Lines arrive prefixed with
+    '> ' (TX) or '< ' (RX) from digitsd's serial port; we forward stdin
+    lines to the socket which digitsd ships out to the Pico."""
+    print(f"Connected via digitsd MONITOR socket ({SOCK_PATH}).", flush=True)
+    print("digitsd is still running; calls and pairing are unaffected.", flush=True)
+    print("Ctrl-C or 'quit' to exit.\n", flush=True)
+
+    stop_evt = threading.Event()
+
+    def rx_loop():
+        buf = bytearray()
+        try:
+            while not stop_evt.is_set():
+                try:
+                    chunk = sock.recv(1024)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                for b in chunk:
+                    if b == 0x0a:
+                        if buf:
+                            line = buf.decode("utf-8", errors="replace")
+                            sys.stdout.write(f"\r{line}\npico> ")
+                            sys.stdout.flush()
+                            buf.clear()
+                    elif b == 0x0d:
+                        continue
+                    else:
+                        buf.append(b)
+        finally:
+            stop_evt.set()
+            sys.stdout.write("\n[socket closed]\n")
+            sys.stdout.flush()
+
+    rx = threading.Thread(target=rx_loop, daemon=True)
+    rx.start()
+
+    try:
+        while not stop_evt.is_set():
+            try:
+                line = input("pico> ")
+            except EOFError:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            if line.lower() in ("quit", "exit"):
+                break
+            try:
+                sock.sendall((line + "\n").encode())
+            except OSError as e:
+                print(f"send failed: {e}", flush=True)
+                break
+    except KeyboardInterrupt:
+        pass
+
+    stop_evt.set()
+    try:
+        sock.sendall(b"QUIT\n")
+    except OSError:
+        pass
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    try:
+        sock.close()
+    except OSError:
+        pass
+
+# ---------------------------------------------------------------------------
+# Mode 2: direct /dev/serial0 (fallback)
+# ---------------------------------------------------------------------------
+
+def configure_tty(fd):
+    attrs = termios.tcgetattr(fd)
+    iflag, oflag, cflag, lflag, ispeed, ospeed, cc = attrs
+    iflag = 0
+    oflag = 0
+    lflag = 0
+    cflag = (termios.CS8 | termios.CREAD | termios.CLOCAL) | BAUD_FLAG
+    cc[termios.VMIN] = 1
+    cc[termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSANOW, [iflag, oflag, cflag, lflag, BAUD_FLAG, BAUD_FLAG, cc])
+    termios.tcflush(fd, termios.TCIOFLUSH)
+
+def rx_loop_direct(fd, stop_evt):
+    """Read raw bytes, buffer until newline, print each line with a prefix."""
+    buf = bytearray()
+    while not stop_evt.is_set():
+        try:
+            chunk = os.read(fd, 256)
+        except OSError:
+            break
+        if not chunk:
+            time.sleep(0.01)
+            continue
+        for b in chunk:
+            if b in (0x0a, 0x0d):
+                if buf:
+                    line = buf.decode("utf-8", errors="replace")
+                    sys.stdout.write(f"\r< {line}\npico> ")
+                    sys.stdout.flush()
+                    buf.clear()
+            elif 0x20 <= b < 0x7f:
+                buf.append(b)
+            else:
+                buf.append(b)
+        # flush any partial line that's been idle for a moment
+        if buf and len(buf) > 256:
+            line = buf.decode("utf-8", errors="replace")
+            sys.stdout.write(f"\r< {line}\npico> ")
+            sys.stdout.flush()
+            buf.clear()
+
+def run_direct_mode():
+    print("WARNING: digitsd UART socket unavailable.", flush=True)
+    print("Falling back to direct /dev/serial0 (will stop digitsd).", flush=True)
+    print("Calls in progress will drop. digitsd will be restarted on exit.\n",
+          flush=True)
+    restored_digitsd = stop_digitsd()
+    fd = None
+    try:
+        fd = os.open(DEV, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        # Switch back to blocking for the read loop's benefit
+        import fcntl
+        flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+        fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+        configure_tty(fd)
+
+        print(f"Connected to {DEV} @ 115200 8N1. Ctrl-C to exit.\n", flush=True)
+
+        stop_evt = threading.Event()
+        rx_thread = threading.Thread(target=rx_loop_direct, args=(fd, stop_evt),
+                                     daemon=True)
+        rx_thread.start()
+
+        try:
+            while True:
+                try:
+                    line = input("pico> ")
+                except EOFError:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                if line.lower() in ("quit", "exit"):
+                    break
+                os.write(fd, (line + "\r\n").encode())
+        except KeyboardInterrupt:
+            pass
+
+        stop_evt.set()
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if restored_digitsd:
+            start_digitsd()
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+def main():
+    must_be_root()
+    sock = try_monitor_socket(SOCK_PATH)
+    if sock is not None:
+        run_monitor_mode(sock)
+        return
+    run_direct_mode()
+
+if __name__ == "__main__":
+    main()

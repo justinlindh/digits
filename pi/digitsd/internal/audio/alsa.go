@@ -24,11 +24,12 @@ var ErrUnderrun = errors.New("alsa: buffer underrun recovered")
 
 // codecConfig holds the detected codec's ALSA identifiers and mixer control names.
 type codecConfig struct {
-	CardName   string // ALSA card name for amixer/alsactl -c
-	DeviceName string // ALSA device for plughw
-	MixerName  string // Volume mixer control name (PCM vs Lineout)
-	ALSAMin    int    // Volume range minimum
-	ALSAMax    int    // Volume range maximum
+	CardName        string // ALSA card name for amixer/alsactl -c
+	CaptureDevice   string // ALSA device for capture
+	PlaybackDevice  string // ALSA device for playback
+	MixerName       string // Volume mixer control name (PCM vs Lineout)
+	ALSAMin         int    // Volume range minimum
+	ALSAMax         int    // Volume range maximum
 }
 
 var (
@@ -44,24 +45,35 @@ func detectCodec() *codecConfig {
 		out, err := exec.Command("amixer", "-c", "digitscodec", "info").CombinedOutput()
 		if err == nil && strings.Contains(string(out), "digitscodec") {
 			slog.Info("audio: detected onboard TLV320AIC3104 codec")
+			// V2 codec is fed a 12.288 MHz MCLK from Pi GPCLK0. At 48 kHz the
+			// chip uses PLL-bypass mode and passes MCLK jitter through to the
+			// audio stage; at 44.1 kHz it uses PLL-multiplication, whose loop
+			// filter rejects the same jitter. The "digits_capture" and
+			// "digits_playback" PCMs in /etc/asound.conf pin the hardware to
+			// 44.1 kHz and expose any rate to apps via libasound's plug
+			// resampler, so the rest of the pipeline (RNNoise, Opus framing)
+			// can keep operating at 48 kHz unchanged.
 			detectedCodec = &codecConfig{
-				CardName:   "digitscodec",
-				DeviceName: "plughw:CARD=digitscodec,DEV=0",
-				MixerName:  "PCM",
-				ALSAMin:    40,
-				ALSAMax:    115,
+				CardName:       "digitscodec",
+				CaptureDevice:  "digits_capture",
+				PlaybackDevice: "digits_playback",
+				MixerName:      "PCM",
+				ALSAMin:        40,
+				ALSAMax:        115,
 			}
 			return
 		}
 
-		// Fall back to Codec Zero HAT (DA7212)
+		// Fall back to Codec Zero HAT (DA7212): runs cleanly at 48 kHz so we
+		// can talk to the hardware directly via plughw for both directions.
 		slog.Info("audio: using Codec Zero HAT (DA7212)")
 		detectedCodec = &codecConfig{
-			CardName:   "Zero",
-			DeviceName: "plughw:CARD=Zero,DEV=0",
-			MixerName:  "Lineout",
-			ALSAMin:    20,
-			ALSAMax:    58,
+			CardName:       "Zero",
+			CaptureDevice:  "plughw:CARD=Zero,DEV=0",
+			PlaybackDevice: "plughw:CARD=Zero,DEV=0",
+			MixerName:      "Lineout",
+			ALSAMin:        20,
+			ALSAMax:        58,
 		}
 	})
 	return detectedCodec
@@ -70,8 +82,11 @@ func detectCodec() *codecConfig {
 // CodecCardName returns the ALSA card name for the detected codec.
 func CodecCardName() string { return detectCodec().CardName }
 
-// CodecDeviceName returns the ALSA device identifier for the detected codec.
-func CodecDeviceName() string { return detectCodec().DeviceName }
+// CodecCaptureDevice returns the ALSA device the capture pipeline should open.
+func CodecCaptureDevice() string { return detectCodec().CaptureDevice }
+
+// CodecPlaybackDevice returns the ALSA device the playback pipeline should open.
+func CodecPlaybackDevice() string { return detectCodec().PlaybackDevice }
 
 // CodecMixerName returns the mixer control name for volume adjustment.
 func CodecMixerName() string { return detectCodec().MixerName }
@@ -88,21 +103,25 @@ type Config struct {
 }
 
 // DefaultCaptureConfig returns config for the detected codec: stereo capture at 48kHz.
-// Uses plughw to bypass dmix (which is playback-only).
+// V1 codec runs cleanly at 48 kHz natively; V2 capture goes through a
+// /etc/asound.conf-defined plug device that resamples 44.1 kHz hardware up to
+// the requested rate, so the pipeline downstream sees 48 kHz either way.
 func DefaultCaptureConfig() Config {
 	return Config{
-		Device:     CodecDeviceName(),
+		Device:     CodecCaptureDevice(),
 		SampleRate: 48000,
 		Channels:   2,
 		FrameSize:  960,
 	}
 }
 
-// DefaultPlaybackConfig returns config for mono playback via dmix at 48kHz.
-// Uses "default" ALSA device for playback (dmix software mixing).
+// DefaultPlaybackConfig returns config for mono playback at 48kHz.
+// V1 uses the system "default" device (dmix) which auto-resamples and shares;
+// V2 uses a /etc/asound.conf-defined plug device that pins hardware to
+// 44.1 kHz for the same MCLK/PLL reasons that affect capture.
 func DefaultPlaybackConfig() Config {
 	return Config{
-		Device:     "default",
+		Device:     CodecPlaybackDevice(),
 		SampleRate: 48000,
 		Channels:   1,
 		FrameSize:  960,

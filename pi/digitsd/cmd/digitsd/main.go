@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"math"
@@ -1113,12 +1115,43 @@ func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
 	return resp
 }
 
+// AddSerialMonitor registers a tap on the serial port. Used by the socket
+// server's MONITOR upgrade so an interactive UART terminal can mirror live
+// TX/RX without taking the port away from digitsd.
+func (d *daemonCallbacks) AddSerialMonitor(ch chan string) func() {
+	return d.serial.AddMonitor(ch)
+}
+
+// SendRaw forwards a command line to the Pico without waiting for a response.
+// Used by the MONITOR upgrade to inject commands typed into the interactive
+// terminal; any response comes back through the monitor tap as a normal RX.
+func (d *daemonCallbacks) SendRaw(cmd string) {
+	d.serial.SendFire(cmd)
+}
+
 // Default paths for SWD flash infrastructure on the Pi.
 const (
 	defaultFirmwarePath = "/data/digits/firmware.elf"
 	defaultSWDConfig    = "/usr/local/share/digits/swd/digits-swd.cfg"
 	defaultOpenOCD      = "/usr/bin/openocd"
+	pcbRevPath          = "/etc/digits-pcb-rev"
 )
+
+// readPCBRev returns the fab revision of the carrier board ("1", "2", ...)
+// stamped at image-build time. Defaults to "1" if the marker is missing or
+// unreadable so that older images (and dev hosts) keep their original V1
+// behavior.
+func readPCBRev() string {
+	data, err := os.ReadFile(pcbRevPath)
+	if err != nil {
+		return "1"
+	}
+	rev := strings.TrimSpace(string(data))
+	if rev == "" {
+		return "1"
+	}
+	return rev
+}
 
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
@@ -1327,6 +1360,31 @@ func main() {
 		slog.Warn("asset extraction failed", "err", err)
 	}
 
+	// Render the active SWD config from the per-variant file matching this
+	// hardware. /etc/digits-pcb-rev is stamped by build-image.sh and is the
+	// single source of truth for which fab revision this image targets.
+	// Re-evaluated on every startup so editing the marker self-heals without
+	// needing an asset-version bump; skip the rootfs remount + write when
+	// the on-disk file already matches, which is the steady-state case.
+	pcbRev := readPCBRev()
+	embedSrc := fmt.Sprintf("rootfs/usr/local/share/digits/swd/digits-swd-v%s.cfg", pcbRev)
+	if data, err := fs.ReadFile(assets.SubFS(), embedSrc); err != nil {
+		slog.Warn("swd render: read embed failed", "src", embedSrc, "err", err)
+	} else if existing, _ := os.ReadFile(defaultSWDConfig); bytes.Equal(existing, data) {
+		slog.Info("swd render: already current", "pcb_rev", pcbRev)
+	} else if err := extractor.Remount(true); err != nil {
+		slog.Warn("swd render: remount rw failed", "err", err)
+	} else {
+		if err := extractor.RootfsWriteFile(data, defaultSWDConfig, 0644); err != nil {
+			slog.Warn("swd render: write failed", "dest", defaultSWDConfig, "err", err)
+		} else {
+			slog.Info("swd render: installed config", "pcb_rev", pcbRev)
+		}
+		if err := extractor.Remount(false); err != nil {
+			slog.Warn("swd render: remount ro failed", "err", err)
+		}
+	}
+
 	// 1. Open serial port directly (log to both stdout and uart.log file)
 	uartLogPath := filepath.Join(filepath.Dir(*socketPath), "uart.log")
 	uartLogFile, err := os.OpenFile(uartLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -1453,10 +1511,13 @@ func main() {
 		resetPicoHardware(sp)
 	}
 
-	// 2. Open ALSA playback (direct hardware, no dmix)
+	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
+	// through a /etc/asound.conf plug device that pins hardware to 44.1 kHz
+	// and resamples 48 kHz application audio for the chip's PLL-friendly
+	// rate.
 	pbDev := *alsaDevice
 	if pbDev == "" {
-		pbDev = audio.CodecDeviceName()
+		pbDev = audio.CodecPlaybackDevice()
 		slog.Info("alsa playback: using codec", "device", pbDev)
 	}
 	pbCfg := audio.Config{

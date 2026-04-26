@@ -18,9 +18,10 @@ DIGITS_SETUP_BIN  = $(EMBED_DIR)/rootfs/usr/local/bin/digits-setup
 # Paths in rootfs-overlay that are only consumed at image-build time (kernel
 # boot config and device tree fragments live on the FAT firmware partition;
 # the *.fragment files are appended into existing system files by the image
-# builder; ro-root/rw-root are toggled manually on-device). None of these
-# should be extracted at runtime by digitsd.
-OVERLAY_EXCLUDE = boot etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater
+# builder; ro-root/rw-root are toggled manually on-device; digits-pcb-rev is
+# stamped per-image by build-image.sh and must NEVER be overwritten at
+# runtime). None of these should be extracted at runtime by digitsd.
+OVERLAY_EXCLUDE = boot etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater etc/digits-pcb-rev
 
 .PHONY: build build-local builder deploy run test clean embed clean-embed
 

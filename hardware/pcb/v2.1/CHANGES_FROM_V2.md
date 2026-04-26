@@ -4,6 +4,12 @@ V2.1 is a minor revision. V2 fabricated boards remain usable with a per-unit cab
 
 ## Electrical
 
+### SW2 BOOTSEL button
+
+A 6 mm momentary tact switch (`SW2`, footprint `Button_Switch_THT:SW_PUSH_6mm`) is wired between the `QSPI_SS` net (U3 pin 56 / U4 pin 1) and `GND`. Holding it while powering up the carrier drags QSPI_SS low during the RP2040 bootrom's flash-CS sample window, putting the chip into BOOTSEL (USB MSC + PICOBOOT) until reset. This eliminates the paperclip-on-U4-pin-1 procedure that V2 required for first flash and recovery, and that removes the failure mode documented in `hardware/pcb/v2/ERRATA.md` item 4 (a slipped paperclip shorting +3.3 V to GND killed one V2 RP2040's SWD interface during bring-up).
+
+PCB placement of SW2 is handled in a separate change.
+
 ### J8 handset connector pin assignment
 
 The J8 pin-to-net mapping was reassigned to match the stock Sangyn Retro 2500 RJ9 handset cable directly. No per-unit adapter wire swap is needed for V2.1 boards.
@@ -21,7 +27,7 @@ Implementation: three global-label text changes at J8 in `kicad/digits-pcb.kicad
 
 ## Mechanical and BOM
 
-No changes. V2.1 is pin-compatible with the V2 enclosure, mounting holes, SW1 hookswitch position, and JST ZH cable assemblies. BOM is identical.
+V2.1 is pin-compatible with the V2 enclosure, mounting holes, SW1 hookswitch position, and JST ZH cable assemblies. BOM gains one line: `SW2`, the 6 mm BOOTSEL tact switch (same part as SW1).
 
 ## Carried forward from V2
 

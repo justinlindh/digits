@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
 #include "hook.h"
@@ -10,6 +11,23 @@
 #include "ringer.h"
 #include "tone.h"
 #include "uart_proto.h"
+
+// Drive PROTO_UART_TX_PIN high before any other init so the Pi's RX line is
+// held at UART idle (high) from the very first instruction of main(). RP2040
+// GPIOs default to input-with-weak-pull-down at reset (datasheet section
+// 5.2.3.4), which means without this the Pi RX line floats near 0 V via 60k
+// during the entire bootrom + early-init window. With Pi TX adjacent on the
+// header / carrier traces, capacitive coupling produces phantom RX bytes on
+// the Pi side that look like real UART traffic.
+//
+// On V1 (uart_proto_init runs immediately and there is no Pi peer expecting
+// idle), this is a no-op-equivalent. On V2 it eliminates a confusing class
+// of bring-up symptoms.
+static void uart_tx_idle_high(void) {
+    gpio_init(PROTO_UART_TX_PIN);
+    gpio_put(PROTO_UART_TX_PIN, 1);
+    gpio_set_dir(PROTO_UART_TX_PIN, GPIO_OUT);
+}
 
 // USB console line buffer
 static char usb_line[64];
@@ -48,6 +66,8 @@ static void usb_console_poll(void) {
 }
 
 int main(void) {
+    uart_tx_idle_high();
+
     stdio_init_all();
 
     hook_init();

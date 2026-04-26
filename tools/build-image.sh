@@ -18,7 +18,8 @@
 #   is done host-side to avoid qemu-aarch64 silently corrupting files
 #   like /etc/shadow and /etc/group.
 #
-# Output: digits-pi-YYYYMMDD.img.gz in the current directory
+# Output: digits-pi-v{1,2}-YYYYMMDD.img.gz in the current directory
+#         (v1 for Codec Zero HAT / prototype, v2 when --pcb is passed)
 #
 # See tools/README-image-builder.md for full documentation.
 
@@ -34,7 +35,9 @@ INIT_DATA="${REPO_DIR}/pi/image/init-data.sh"
 BUILD_DIR="${SCRIPT_DIR}/build"
 TONES_DIR="${REPO_DIR}/pi/tones"
 DATE_STAMP=$(date +%Y%m%d)
-OUTPUT_NAME="digits-pi-${DATE_STAMP}.img"
+# OUTPUT_NAME is finalized after --pcb is parsed so V1 and V2 builds land in
+# distinct files (digits-pi-v1-DATE.img vs digits-pi-v2-DATE.img).
+OUTPUT_NAME=""
 
 # Packages to install via chroot (the ONLY thing qemu chroot is used for)
 CHROOT_PACKAGES=(
@@ -46,6 +49,7 @@ CHROOT_PACKAGES=(
     libsndfile1
     openocd
     i2c-tools
+    minicom
 )
 
 # Packages to purge from the base Pi OS image (from pi-os-audit.md)
@@ -140,7 +144,9 @@ info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
-# PCB mode: pass --pcb to configure for PCB carrier board (inverted hook switch)
+# PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
+# TLV320AIC3104 codec overlay and sets hook_inverted. Without --pcb, the image
+# is built for V1/prototype hardware (Codec Zero HAT, non-inverted hook).
 DEV_MODE=false
 PCB_MODE=false
 while [[ "${1:-}" == --* ]]; do
@@ -159,6 +165,12 @@ while [[ "${1:-}" == --* ]]; do
     esac
     shift
 done
+
+if [[ "$PCB_MODE" == true ]]; then
+    OUTPUT_NAME="digits-pi-v2-${DATE_STAMP}.img"
+else
+    OUTPUT_NAME="digits-pi-v1-${DATE_STAMP}.img"
+fi
 
 require_cmd() {
     for cmd in "$@"; do
@@ -363,7 +375,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl zstd
+            qemu-aarch64-static gzip blkid rsync openssl zstd dtc
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
@@ -610,12 +622,45 @@ rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 # Make scripts executable
 chmod +x "${ROOTFS_MNT}/usr/local/bin/"* 2>/dev/null || true
 
+# Stamp the PCB-revision marker. /etc/digits-pcb-rev defaults to "1" via the
+# rootfs overlay; --pcb means the V2 carrier, so overwrite. Anything that needs
+# variant-specific behavior at runtime (digitsd's SWD config selection, future
+# users) reads this file rather than guessing from unrelated config flags.
+if [[ "$PCB_MODE" == true ]]; then
+    echo "2" > "${ROOTFS_MNT}/etc/digits-pcb-rev"
+fi
+info "PCB rev marker: $(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")"
+
+# ── step 13a: compile device-tree overlays (host-side) ──────────────────────
+# The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
+# /boot/firmware/overlays/ are ignored by the loader.
+
+info "Compiling device-tree overlays..."
+for dts in "${BOOT_MNT}/overlays/"digits-*.dts; do
+    [[ -f "$dts" ]] || continue
+    dtbo="${dts%.dts}.dtbo"
+    info "  $(basename "$dts") -> $(basename "$dtbo")"
+    dtc -@ -q -I dts -O dtb -o "$dtbo" "$dts"
+    rm -f "$dts"
+done
+
 # ── step 14: copy tone files (host-side) ────────────────────────────────────
 
 if [[ -d "$TONES_DIR" ]] && compgen -G "$TONES_DIR/*.wav" > /dev/null 2>&1; then
     info "Copying tone WAV files..."
     mkdir -p "${DATA_MNT}/digits/tones"
-    rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # --no-owner --no-group: rsync as root would otherwise preserve the host
+    # build user's uid/gid (often 1000, which collides with `pi` on the Pi).
+    # Subdirectories like pairing/ are created by rsync itself, so they pick up
+    # the host owner unless we strip it. The init-data.sh step that runs after
+    # only fixes the top-level tones/ dir, not nested ones, which is why a
+    # plain `rsync -a` previously left /data/digits/tones/pairing/ owned by
+    # pi:pi while the flat .wav files happened to get fixed up later by
+    # digitsd's first-boot asset extractor.
+    rsync -a --no-owner --no-group --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # Reassert canonical ownership across the whole tree. uid 999 / gid 992
+    # match the digits user/group baked into the rootfs (see init-data.sh).
+    chown -R 999:992 "${DATA_MNT}/digits/tones"
 else
     warn "No tone WAV files found in $TONES_DIR — skipping"
 fi
@@ -634,9 +679,13 @@ fi
 
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
-MIXER_STATE="${REPO_DIR}/pi/digits_mixer.state"
+if [[ "$PCB_MODE" == true ]]; then
+    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v2.state"
+else
+    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v1.state"
+fi
 if [[ -f "$MIXER_STATE" ]]; then
-    info "Copying mixer state to /data..."
+    info "Copying mixer state to /data ($(basename "$MIXER_STATE"))..."
     cp "$MIXER_STATE" "${DATA_MNT}/digits_mixer.state"
 else
     warn "No mixer state file found at $MIXER_STATE — audio may not work on first boot"
@@ -891,7 +940,7 @@ if ! grep -q '^\[all\]' "$CONFIG_TXT"; then
 fi
 
 # Remove any existing Digits config after [all]
-sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
+sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtoverlay=digits-codec/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
 
 # Append Digits config
 cat >> "$CONFIG_TXT" << 'DIGITS_CONFIG'
@@ -899,6 +948,13 @@ over_voltage=2
 enable_uart=1
 dtoverlay=disable-bt
 DIGITS_CONFIG
+
+# V2 carrier board has an onboard TLV320AIC3104 codec that needs an explicit
+# overlay. V1/prototype uses the Codec Zero HAT which auto-loads via HAT EEPROM,
+# so the digits-codec overlay must stay off.
+if [[ "$PCB_MODE" == true ]]; then
+    echo "dtoverlay=digits-codec" >> "$CONFIG_TXT"
+fi
 
 # Set audio off (headless, saves resources)
 sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$CONFIG_TXT"
@@ -1004,11 +1060,25 @@ hostside_disable_service "$ROOTFS_MNT" "dnsmasq.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.socket"
 
+# Mask packaging maintenance services that fail on a ro root: they try to
+# write to /var/cache and /var/lib paths we keep read-only. They are not
+# needed on a Digits device.
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.service"
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.timer"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.service"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.timer"
+
 # Enable Digits services
 hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
+
+# V2 only: enable GPCLK0 on GPIO4 at 12.288 MHz before audio services start.
+# V1 carrier uses the Codec Zero HAT's onboard crystal, so no GPCLK0 needed.
+if [[ "$PCB_MODE" == true ]]; then
+    hostside_enable_service "$ROOTFS_MNT" "digits-enable-gpclk0.service"
+fi
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 

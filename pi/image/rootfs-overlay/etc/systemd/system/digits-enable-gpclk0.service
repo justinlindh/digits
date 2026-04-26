@@ -1,0 +1,13 @@
+[Unit]
+Description=Enable Pi GPCLK0 on GPIO4 (V2 codec MCLK source)
+DefaultDependencies=no
+After=local-fs.target
+Before=sound.target digits-mixer.service digitsd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/bin/digits-enable-gpclk0
+
+[Install]
+WantedBy=sysinit.target
