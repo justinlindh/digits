@@ -32,6 +32,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
@@ -131,6 +132,9 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	tracker := calls.New(database)
 	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(true))
 	tracker.SetHealthStore(healthStore)
+	dashEvents := events.New()
+	hub.SetDashboardEvents(dashEvents)
+	tracker.SetDashboardEvents(dashEvents)
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 	relay.HealthStore = healthStore
 
@@ -153,6 +157,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		Tracker:        tracker,
 		Relay:          relay,
 		HealthStore:    healthStore,
+		DashEvents:     dashEvents,
 		AuthStore:      authStore,
 		AuthHandlers:   authHandlers,
 		GoogleAuth:     googleAuth,
