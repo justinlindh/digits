@@ -27,6 +27,12 @@ V2.1 adds a 10 kΩ resistor from UART_TX_PI to +3V3 on the carrier. Holds the li
 
 See V2 ERRATA item 2.
 
+### J6 LED connector polarity swap
+
+The V2 J6 net assignment (`J6.1` = anode, `J6.2` = GND) is the inverse of the stock phone LED cable polarity. V2.1 swaps the assignment to `J6.1` = GND, `J6.2` = LED_A so the stock cable plugs in directly without per-unit rework.
+
+See V2 ERRATA item 8.
+
 ### W25Q16JV flash chip swap to SDK-default-compatible part
 
 V2 fitted Winbond `W25Q16JVSSIQ`, a similar but not identical part to the genuine Pi Pico's `W25Q16/W25Q080`. The SDK's default `boot2_w25q080` issues QSPI-quad continuation commands the JV variant rejects, causing a tight reset loop on power-on. V2 firmware works around this by setting `PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h` for HARDWARE_REV=2, at the cost of XIP throughput dropping from ~24 MB/s to ~5 MB/s.

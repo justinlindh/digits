@@ -95,7 +95,21 @@ V2's J8 assigns: pin 1 = `MIC_HOT`, pin 2 = `EAR_P`, pin 3 = `EAR_N`, pin 4 = `G
 
 **Fix for V2.1:** update J8 pin assignment so pin 1 = `MIC_HOT`, pin 2 = `GND`, pin 3 = `EAR_P`, pin 4 = `EAR_N`. Stock Sangyn cable then plugs in directly with no per-unit adapter rework.
 
-### 8. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
+### 8. J6 LED connector polarity is reversed relative to the stock phone LED cable
+
+J6 (2-pin JST ZH) drives the indicator LED in the phone housing. V2 wires:
+- `J6.1` → `LED_A` (anode side, GP16 → R1 220Ω → J6.1)
+- `J6.2` → `GND` (cathode return)
+
+The stock LED cable that ships in the donor phone is wired with the opposite polarity for these two positions. Plugging it into J6 unmodified leaves the LED reverse-biased, which never lights regardless of firmware state.
+
+**Symptom:** firmware drives the LED net (correctly, after the GP14→GP16 firmware fix in commit fc3f4b62 and the LED_PIN HARDWARE_REV switch from this branch), but the indicator never illuminates with the stock cable installed.
+
+**Workaround for fabricated boards:** rework the J6 cable end so the two crimps are swapped in the JST housing. Pin 1 receives the cathode wire, pin 2 receives the anode wire. Verified working on the bench unit (192.168.2.229).
+
+**Fix for V2.1:** swap J6.1 and J6.2 net assignments in the schematic so pin 1 = `GND` and pin 2 = `LED_A`. Stock cable then plugs in directly with no per-unit rework. Single-row 2-pin, no other routing changes.
+
+### 9. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
 
 V2 routes the on-board hookswitch SW1 to U3 pin 31 (GP20) per `hardware/pcb/v2/NET_TOPOLOGY.md` and the netlist export. The firmware (`firmware/src/hook.h`) hardcoded `HOOK_PIN = 10` with no `HARDWARE_REV` switch, mirroring V1's pin assignment. On V2 hardware GP10 is unconnected, so the firmware read a floating pin held HIGH by the internal pull-up and never observed any hook transitions: SW1 was electrically isolated from the FSM.
 
