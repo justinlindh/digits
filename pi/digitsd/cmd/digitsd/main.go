@@ -1485,9 +1485,16 @@ func main() {
 	slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
 	sp.SetFlashEnabled(hookFlash)
 
-	// Configure hook inversion for PCB carrier boards
-	if postOk && cfg.HookInverted {
-		const hookInvertCmd = "HOOK:INVERT:ON"
+	// Reconcile hook polarity with the firmware on every startup. The Pico
+	// retains whichever invert state was last set across a Pi reboot (only
+	// loses it on Pico power loss), so removing hook_inverted from config
+	// would otherwise leave a stale HOOK:INVERT:ON in effect. Send the
+	// matching command for either direction every time.
+	if postOk {
+		hookInvertCmd := "HOOK:INVERT:OFF"
+		if cfg.HookInverted {
+			hookInvertCmd = "HOOK:INVERT:ON"
+		}
 		var hookOk bool
 		for i := 1; i <= 3; i++ {
 			resp, err := sp.SendCommand(hookInvertCmd, 2*time.Second)
@@ -1500,7 +1507,7 @@ func main() {
 			time.Sleep(500 * time.Millisecond)
 		}
 		if !hookOk {
-			log.Fatal("hook invert: failed after 3 attempts — refusing to run with wrong hook polarity")
+			log.Fatalf("hook invert: failed after 3 attempts, refusing to run with possibly wrong hook polarity")
 		}
 	}
 
