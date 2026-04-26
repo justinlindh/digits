@@ -124,6 +124,8 @@ func (h *Handler) computeDashStatus(r *http.Request, hh *household.Household) da
 	}
 	families := len(h.buildLinkedFamilies(r.Context(), householdID))
 
+	// Household.Location() is nil-safe and falls back to UTC, so we deliberately
+	// skip an explicit hh != nil guard here even though hh.ID above takes one.
 	return dashStatusVM{
 		ActiveCalls:    activeCount,
 		OnlineLines:    onlineCount,
