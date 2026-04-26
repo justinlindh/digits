@@ -10,16 +10,11 @@ if(NOT HARDWARE_REV MATCHES "^[12]$")
 endif()
 message(STATUS "Building for HARDWARE_REV=${HARDWARE_REV}")
 
-# V2 carrier uses Winbond W25Q16JVSSIQ. The SDK default boot2_w25q080
-# initializes the flash for QSPI quad-mode XIP using continuation commands
-# the JV part rejects, after which the chip cannot run XIP, watchdog resets
-# in a tight loop, and SWD goes silent because the cores are held in reset
-# every iteration. boot2_generic_03h drops to slow single-bit 0x03 reads
-# (~5 MB/s vs ~24 MB/s) but works on every compliant SPI flash. V1's Pico H
-# module ships a Pi-matched flash so it keeps the SDK default.
-if(HARDWARE_REV STREQUAL "2")
-    set(PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h)
-endif()
+# All target boards use boot2_generic_03h. It uses bare 0x03 single-bit
+# reads, which work on every SPI flash chip (W25Q080, W25Q16JV, etc.).
+# XIP throughput is ~5 MB/s instead of ~24 MB/s for a quad-mode boot2;
+# the firmware is small and not bandwidth-bound.
+set(PICO_DEFAULT_BOOT_STAGE2 boot2_generic_03h)
 
 include(pico_sdk_import.cmake)
 
