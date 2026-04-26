@@ -195,6 +195,22 @@ static void process_pi_command(const char *cmd) {
         char buf[64];
         snprintf(buf, sizeof(buf), "BOARD:%s:0x%02X", board->name, (unsigned int)board_read_rev_byte());
         uart_proto_send(buf);
+    } else if (strncmp(cmd, "CONFIG:PCB_REV=", 15) == 0) {
+        // CONFIG:PCB_REV=N swaps the active board profile pointer. Modules
+        // that captured pin numbers during init() (hook, led, keypad, ringer,
+        // uart_proto) continue using their original pins. The override is
+        // intended for boards not yet in the field, where digitsd sends the
+        // correct rev to the firmware before the firmware ever talks to the
+        // wrong pins. Future work: re-init affected modules here if a runtime
+        // swap on already-initialized hardware becomes useful.
+        const char* name = cmd + 15;
+        char buf[64];
+        if (board_set_profile(name)) {
+            snprintf(buf, sizeof(buf), "CONFIG:PCB_REV=%s:OK", name);
+        } else {
+            snprintf(buf, sizeof(buf), "CONFIG:PCB_REV=%s:UNKNOWN", name);
+        }
+        uart_proto_send(buf);
     } else if (strcmp(cmd, "VERSION") == 0) {
         char resp[64];
         snprintf(resp, sizeof(resp), "VERSION:%s:%s", FIRMWARE_VERSION, FIRMWARE_COMMIT);
