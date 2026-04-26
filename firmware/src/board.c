@@ -2,6 +2,22 @@
 
 #include <string.h>
 
+// V1 ElectroCookie prototype: 4x4 matrix (12 phone keys plus A-D column).
+static const char keychars_v1[16] = {
+    '1', '2', '3', 'A',
+    '4', '5', '6', 'B',
+    '7', '8', '9', 'C',
+    '*', '0', '#', 'D',
+};
+
+// V2 carrier 4x3 telephone matrix (no A-D column).
+static const char keychars_v2[12] = {
+    '1', '2', '3',
+    '4', '5', '6',
+    '7', '8', '9',
+    '*', '0', '#',
+};
+
 static const board_profile_t profile_v1 = {
     .name = "v1",
     .rev_byte = '1',
@@ -12,6 +28,7 @@ static const board_profile_t profile_v1 = {
     .keypad_rows = {2, 3, 4, 5},
     .keypad_cols = {6, 7, 8, 9},
     .keypad_num_cols = 4,
+    .keychars = keychars_v1,
     .ringer_in1_pin = 11,
     .ringer_in2_pin = 15,
 };
@@ -26,6 +43,7 @@ static const board_profile_t profile_v2 = {
     .keypad_rows = {27, 26, 21, 25},
     .keypad_cols = {24, 23, 22, 0},
     .keypad_num_cols = 3,
+    .keychars = keychars_v2,
     .ringer_in1_pin = 19,
     .ringer_in2_pin = 15,
 };

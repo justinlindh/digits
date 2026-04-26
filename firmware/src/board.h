@@ -27,6 +27,9 @@ typedef struct {
     uint keypad_rows[4];
     uint keypad_cols[4];
     uint keypad_num_cols;      // V1=4, V2=3
+    // Flat (row, col) -> ASCII character lookup, length
+    // 4 * keypad_num_cols. Indexed as keychars[row * keypad_num_cols + col].
+    const char* keychars;
 
     // Ringer (DRV8871 H-bridge inputs)
     uint ringer_in1_pin;

@@ -274,51 +274,42 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         uart_proto_send("MODE:NORMAL");
     } else if (strcmp(cmd, "KEYDUMP") == 0) {
-        // Raw GPIO state dump for all keypad pins. Column count varies by
-        // hardware revision (V1 = 4, V2 = 3) so we drive the loops off
-        // KEYPAD_NUM_COLS rather than hardcoded indices.
+        // Raw GPIO state dump for all keypad pins. Pin assignments and column
+        // count come from the active board profile (V1 = 4 cols, V2 = 3).
         char buf[160];
-        static const uint8_t row_gpios[KEYPAD_NUM_ROWS] = {
-            KEYPAD_ROW0, KEYPAD_ROW1, KEYPAD_ROW2, KEYPAD_ROW3,
-        };
-        static const uint8_t col_gpios[KEYPAD_NUM_COLS] = {
-            KEYPAD_COL0, KEYPAD_COL1, KEYPAD_COL2,
-#if KEYPAD_NUM_COLS == 4
-            KEYPAD_COL3,
-#endif
-        };
+        const uint num_cols = board->keypad_num_cols;
         // Read row pins (outputs: show what we're driving)
         size_t n = 0;
         buf_appendf(buf, sizeof(buf), &n, "ROWS:");
-        for (int r = 0; r < KEYPAD_NUM_ROWS; ++r) {
+        for (int r = 0; r < 4; ++r) {
             buf_appendf(buf, sizeof(buf), &n, " R%d/GP%d=%d",
-                        r, row_gpios[r], gpio_get(row_gpios[r]));
+                        r, board->keypad_rows[r], gpio_get(board->keypad_rows[r]));
         }
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Read col pins (inputs: show what we're sensing)
         n = 0;
         buf_appendf(buf, sizeof(buf), &n, "COLS:");
-        for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
-            buf_appendf(buf, sizeof(buf), &n, " C%d/GP%d=%d",
-                        c, col_gpios[c], gpio_get(col_gpios[c]));
+        for (uint c = 0; c < num_cols; ++c) {
+            buf_appendf(buf, sizeof(buf), &n, " C%u/GP%d=%d",
+                        c, board->keypad_cols[c], gpio_get(board->keypad_cols[c]));
         }
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Now drive each row LOW and read columns
-        for (int row = 0; row < KEYPAD_NUM_ROWS; ++row) {
-            gpio_put(row_gpios[row], 0);
+        for (int row = 0; row < 4; ++row) {
+            gpio_put(board->keypad_rows[row], 0);
             sleep_us(50);
             n = 0;
             buf_appendf(buf, sizeof(buf), &n, "SCAN R%d/GP%d=LOW:",
-                        row, row_gpios[row]);
-            for (int c = 0; c < KEYPAD_NUM_COLS; ++c) {
-                buf_appendf(buf, sizeof(buf), &n, " C%d=%d",
-                            c, gpio_get(col_gpios[c]));
+                        row, board->keypad_rows[row]);
+            for (uint c = 0; c < num_cols; ++c) {
+                buf_appendf(buf, sizeof(buf), &n, " C%u=%d",
+                            c, gpio_get(board->keypad_cols[c]));
             }
             uart_proto_send(buf);
             printf("%s\n", buf);
-            gpio_put(row_gpios[row], 1);
+            gpio_put(board->keypad_rows[row], 1);
             sleep_us(50);
         }
         stdio_flush();
