@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#define LED_PIN 14  // GP14 (physical pin 19)
-
 typedef enum {
     LED_MODE_OFF = 0,
     LED_MODE_ON,

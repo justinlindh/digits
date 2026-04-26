@@ -9,12 +9,12 @@ func TestServiceCodeShutdown(t *testing.T) {
 	// Don't set callbacks — we're just testing detection, not actual shutdown
 	h := NewServiceCodeHandler()
 	for _, k := range "*#*" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Fatal("triggered too early")
 		}
 	}
-	if !h.AddKey("#") {
-		t.Error("*#*# should trigger")
+	if got := h.AddKey("#"); got != ServiceCodeTerminal {
+		t.Errorf("*#*# should trigger as terminal, got %v", got)
 	}
 }
 
@@ -23,8 +23,8 @@ func TestServiceCodeReboot(t *testing.T) {
 	for _, k := range "*##" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("*") {
-		t.Error("*##* should trigger")
+	if got := h.AddKey("*"); got != ServiceCodeTerminal {
+		t.Errorf("*##* should trigger as terminal, got %v", got)
 	}
 }
 
@@ -36,8 +36,8 @@ func TestServiceCodeVolume(t *testing.T) {
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("5") {
-		t.Error("*#*5 should trigger")
+	if got := h.AddKey("5"); got != ServiceCodeNonTerminal {
+		t.Errorf("*#*5 should trigger as non-terminal, got %v", got)
 	}
 	if gotLevel != 5 {
 		t.Errorf("expected level 5, got %d", gotLevel)
@@ -52,10 +52,13 @@ func TestServiceCodeAudioTest(t *testing.T) {
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i < len(code)-1 {
+		if result != ServiceCodeNone && i < len(code)-1 {
 			t.Fatalf("triggered too early at index %d", i)
 		}
-		if result {
+		if result != ServiceCodeNone {
+			if result != ServiceCodeNonTerminal {
+				t.Errorf("audio test should be non-terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -72,8 +75,8 @@ func TestServiceCodeVolume8Works(t *testing.T) {
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("8") {
-		t.Error("*#*8 should trigger volume")
+	if got := h.AddKey("8"); got != ServiceCodeNonTerminal {
+		t.Errorf("*#*8 should trigger volume as non-terminal, got %v", got)
 	}
 	if gotLevel != 8 {
 		t.Errorf("expected level 8, got %d", gotLevel)
@@ -83,7 +86,7 @@ func TestServiceCodeVolume8Works(t *testing.T) {
 func TestServiceCodeNoMatch(t *testing.T) {
 	h := NewServiceCodeHandler()
 	for _, k := range "1234" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("1234 should not trigger")
 		}
 	}
@@ -92,7 +95,7 @@ func TestServiceCodeNoMatch(t *testing.T) {
 func TestServiceCodeIncomplete(t *testing.T) {
 	h := NewServiceCodeHandler()
 	for _, k := range "*#*" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("incomplete code should not trigger")
 		}
 	}
@@ -107,8 +110,8 @@ func TestServiceCodeAtEnd(t *testing.T) {
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("#") {
-		t.Error("*#*# at end of buffer should trigger")
+	if got := h.AddKey("#"); got != ServiceCodeTerminal {
+		t.Errorf("*#*# at end of buffer should trigger as terminal, got %v", got)
 	}
 }
 
@@ -119,7 +122,7 @@ func TestServiceCodeReset(t *testing.T) {
 	h.AddKey("*")
 	h.Reset()
 	// After reset, adding "#" should NOT complete *#*#
-	if h.AddKey("#") {
+	if h.AddKey("#") != ServiceCodeNone {
 		t.Error("should not trigger after reset")
 	}
 }
@@ -134,10 +137,13 @@ func TestServiceCodeSetup(t *testing.T) {
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i < len(code)-1 {
+		if result != ServiceCodeNone && i < len(code)-1 {
 			t.Fatalf("triggered too early at index %d", i)
 		}
-		if result {
+		if result != ServiceCodeNone {
+			if result != ServiceCodeTerminal {
+				t.Errorf("setup should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -159,7 +165,7 @@ func TestServiceCodeSetupNotTriggeredByPrefix(t *testing.T) {
 
 	// Type all but the last character
 	for _, k := range "*#73887" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("should not trigger before final #")
 		}
 	}
@@ -180,7 +186,7 @@ func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 	code := "*#73887#"
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
 			triggered = true
 		}
 	}
@@ -211,7 +217,10 @@ func TestServiceCodeRepair(t *testing.T) {
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
+			if result != ServiceCodeTerminal {
+				t.Errorf("repair should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -234,7 +243,10 @@ func TestServiceCodeFactoryReset(t *testing.T) {
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
+			if result != ServiceCodeTerminal {
+				t.Errorf("factory reset should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}

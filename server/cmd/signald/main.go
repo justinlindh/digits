@@ -16,6 +16,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
@@ -62,6 +63,13 @@ func run(ctx context.Context) error {
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
+
+	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
+	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
+	// counters without polling.
+	dashEvents := events.New()
+	hub.SetDashboardEvents(dashEvents)
+	tracker.SetDashboardEvents(dashEvents)
 
 	// Link-health store with its own lifecycle; flusher runs until ctx is cancelled.
 	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(cfg.LinkHealthFlushDisabled))
@@ -129,6 +137,7 @@ func run(ctx context.Context) error {
 		Tracker:        tracker,
 		Relay:          relay,
 		HealthStore:    healthStore,
+		DashEvents:     dashEvents,
 		AuthStore:      authStore,
 		AuthHandlers:   authHandlers,
 		GoogleAuth:     googleAuth,

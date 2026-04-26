@@ -1171,7 +1171,7 @@ func triggerFactoryReset() {
 var updateInProgress atomic.Bool
 
 
-func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc) {
+func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
 	if !updateInProgress.CompareAndSwap(false, true) {
 		slog.Info("updater: skipping -- another update is already in progress")
 		return
@@ -1238,6 +1238,9 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 				slog.Error("updater: firmware apply failed", "error", err)
 				reportStatus("failed", fmt.Sprintf("Firmware flash failed: %v", err))
 				return
+			}
+			if afterFirmwareUpdated != nil {
+				afterFirmwareUpdated()
 			}
 		}
 	}
@@ -1406,6 +1409,48 @@ func main() {
 	}
 	defer func() { _ = sp.Close() }()
 
+	// Post-reboot firmware version results. STATUS:READY (external SWD flash
+	// or power cycle) and our own auto-update flow both invoke
+	// requeryFirmware to retry QueryVersion (the Pico's UART command loop
+	// isn't quite awake yet at the instant the chip finishes booting). The
+	// goroutine sends the result on fwVersionCh so the main loop can update
+	// fwVersion/fwCommit without any shared-state synchronization.
+	//
+	// requeryInFlight dedupes overlapping calls. After an auto-update flash
+	// both afterFirmwareUpdated and the Pico's STATUS:READY message want to
+	// trigger a requery within the same second; the second call becomes a
+	// no-op and avoids a "channel full, dropping" warning. The flag clears
+	// when the goroutine returns, so a later genuine reboot starts fresh.
+	type fwVersionResult struct{ version, commit string }
+	fwVersionCh := make(chan fwVersionResult, 1)
+	var requeryInFlight atomic.Bool
+	requeryFirmware := func() {
+		if !requeryInFlight.CompareAndSwap(false, true) {
+			slog.Debug("pico: requery already in flight, skipping duplicate trigger")
+			return
+		}
+		go func() {
+			defer requeryInFlight.Store(false)
+			const attempts = 5
+			for attempt := 1; attempt <= attempts; attempt++ {
+				v, c, err := sp.QueryVersion()
+				if err == nil {
+					select {
+					case fwVersionCh <- fwVersionResult{version: v, commit: c}:
+					default:
+						slog.Warn("pico: version result channel full, dropping")
+					}
+					return
+				}
+				slog.Warn("pico: version query attempt failed", "attempt", attempt, "error", err)
+				if attempt < attempts {
+					time.Sleep(500 * time.Millisecond)
+				}
+			}
+			slog.Warn("pico: version query after reboot gave up")
+		}()
+	}
+
 	// POST: verify Pico is alive
 	postRetries := 3
 	postOk := false
@@ -1476,6 +1521,40 @@ func main() {
 		} else {
 			fwVersion, fwCommit = v, c
 			slog.Info("firmware version", "version", fwVersion, "commit", fwCommit)
+		}
+	}
+
+	// Cross-check the firmware's runtime-detected board against the Pi's
+	// /etc/digits-pcb-rev marker. flash-pico.sh writes the rev byte during
+	// deploy so they normally agree; the override path covers fresh chips
+	// that have not been Pi-flashed yet, or boards moved between Pi units.
+	firmwareBoard := ""
+	if postOk {
+		name, raw, err := sp.QueryBoard()
+		if err != nil {
+			slog.Warn("firmware board query failed", "error", err, "raw", raw)
+		} else {
+			firmwareBoard = name
+			slog.Info("firmware board", "name", firmwareBoard, "raw", raw)
+		}
+	}
+
+	if firmwareBoard != "" && pcbRev != "" {
+		expectedFw := "v" + pcbRev
+		if firmwareBoard != expectedFw {
+			slog.Warn("firmware board / pcb_rev mismatch",
+				"firmware", firmwareBoard,
+				"pcb_rev", pcbRev,
+				"action", "sending CONFIG:PCB_REV override")
+
+			cmd := "CONFIG:PCB_REV=" + expectedFw
+			if resp, err := sp.SendCommand(cmd, 1*time.Second); err != nil {
+				slog.Error("hardware: CONFIG:PCB_REV send failed",
+					"cmd", cmd, "error", err)
+			} else {
+				slog.Info("hardware: CONFIG:PCB_REV applied",
+					"cmd", cmd, "resp", resp)
+			}
 		}
 	}
 
@@ -1730,7 +1809,7 @@ func main() {
 
 	svcCodes.SetUpdateCallback(func() {
 		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
-		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil)
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil, requeryFirmware)
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
@@ -1867,14 +1946,6 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// Post-reboot firmware version results. STATUS:READY spawns a goroutine
-	// that retries QueryVersion (the Pico's UART command loop isn't quite
-	// awake yet at the instant it emits STATUS:READY). The goroutine sends
-	// the result here so the main loop can update fwVersion/fwCommit without
-	// any shared-state synchronization.
-	type fwVersionResult struct{ version, commit string }
-	fwVersionCh := make(chan fwVersionResult, 1)
-
 	// Main select loop
 	for {
 		select {
@@ -1937,9 +2008,13 @@ func main() {
 				}
 				// Check easter eggs, then service codes
 				if !easterEggs.AddKey(key) {
-					if svcCodes.AddKey(key) {
+					switch svcCodes.AddKey(key) {
+					case phone.ServiceCodeTerminal:
 						ctrl.Reset()
 						continue // skip forwarding to controller
+					case phone.ServiceCodeNonTerminal:
+						ctrl.ResetToDialtone()
+						continue
 					}
 				}
 			}
@@ -1963,25 +2038,7 @@ func main() {
 			// HOOK/KEY events would queue up or be dropped.
 			if event == "STATUS:READY" {
 				slog.Info("pico: detected reboot, re-querying firmware version")
-				go func() {
-					const attempts = 5
-					for attempt := 1; attempt <= attempts; attempt++ {
-						v, c, err := sp.QueryVersion()
-						if err == nil {
-							select {
-							case fwVersionCh <- fwVersionResult{version: v, commit: c}:
-							default:
-								slog.Warn("pico: version result channel full, dropping")
-							}
-							return
-						}
-						slog.Warn("pico: version query attempt failed", "attempt", attempt, "error", err)
-						if attempt < attempts {
-							time.Sleep(500 * time.Millisecond)
-						}
-					}
-					slog.Warn("pico: version query after reboot gave up")
-				}()
+				requeryFirmware()
 				continue
 			}
 
@@ -2203,7 +2260,7 @@ func main() {
 					})
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter)
+					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
 
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")

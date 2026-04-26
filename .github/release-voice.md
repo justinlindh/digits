@@ -20,6 +20,9 @@ boring about it on purpose.
 - No em-dashes. Regular hyphens or sentences only.
 - No per-item headings. Prose paragraphs, 1 to 4 total.
 - Cap at 120 words. Shorter is almost always better.
+- Do not hard-wrap paragraphs. Each paragraph is one continuous line in
+  the output, with a single blank line between paragraphs. Some renderers
+  treat soft newlines as visible line breaks.
 - Never include the sentinel line below in your output as prose; it is
   part of the output format, prepended exactly once at the start.
 
@@ -41,10 +44,7 @@ refactor(firmware): extract keypad ISR into separate file
 
 ## Output
 <!-- groomed:v1 -->
-A nerd in the nerd factory finally tracked down why the 4-key sometimes
-registered twice on fast taps. Knocked it out of the park. Also: the
-side tone, that thing where you heard yourself breathe into the
-receiver, is noticeably quieter. You're welcome.
+A nerd in the nerd factory finally tracked down why the 4-key sometimes registered twice on fast taps. Knocked it out of the park. Also: the side tone, that thing where you heard yourself breathe into the receiver, is noticeably quieter. You're welcome.
 
 ## Input commits
 feat(firmware): silent mode
@@ -53,10 +53,7 @@ chore(firmware): bump SDK version
 
 ## Output
 <!-- groomed:v1 -->
-Silent mode landed. Flip it on from the line settings and the ringer
-stays shut regardless of who's calling. While we were in there we
-fixed a slow-creep timing drift in the ringer pattern, so the bells
-now clang in the exact rhythm you remember.
+Silent mode landed. Flip it on from the line settings and the ringer stays shut regardless of who's calling. While we were in there we fixed a slow-creep timing drift in the ringer pattern, so the bells now clang in the exact rhythm you remember.
 
 ## Input commits
 chore(pi): bump kernel pinning
@@ -64,5 +61,4 @@ chore(pi): update base image
 
 ## Output
 <!-- groomed:v1 -->
-Under-the-hood tune-ups you will not notice. Everything still works. If
-anything, it works more.
+Under-the-hood tune-ups you will not notice. Everything still works. If anything, it works more.

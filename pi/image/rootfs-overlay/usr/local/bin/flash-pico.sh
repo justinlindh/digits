@@ -107,7 +107,34 @@ fi
 echo "Flash complete. Waiting for Pico to boot..."
 sleep 2
 
-# 3. Verify PING/PONG (skip if called from digitsd: it holds the serial port)
+# 3. Write PCB rev marker to flash so firmware can pick the right board profile.
+# The byte at 0x101FF000 is read by the firmware at boot to choose V1 or V2.
+# /etc/digits-pcb-rev is stamped at image build time. If it's missing or empty
+# (older image, dev host), default to V1 (matches digitsd's readPCBRev fallback).
+PCB_REV_FILE=/etc/digits-pcb-rev
+PCB_REV_ADDR=0x101FF000
+PCB_REV="1"
+if [ -f "$PCB_REV_FILE" ]; then
+    file_rev=$(tr -d '[:space:]' < "$PCB_REV_FILE")
+    if [ -n "$file_rev" ]; then
+        PCB_REV="$file_rev"
+    fi
+fi
+# Map ASCII char to hex value for openocd flash filld.
+# shellcheck disable=SC2016,SC2027,SC2086
+PCB_REV_HEX=$(printf "0x%02X" "'$PCB_REV")
+echo "Writing PCB rev marker: '$PCB_REV' ($PCB_REV_HEX) at $PCB_REV_ADDR"
+sudo "$OPENOCD" \
+    -c "set FLASHSIZE $FLASHSIZE" \
+    -c "set USE_CORE 0" \
+    -f "$SWD_CFG" \
+    -f target/rp2040.cfg \
+    -c "init; reset halt; flash erase_address $PCB_REV_ADDR 0x1000; flash filld $PCB_REV_ADDR $PCB_REV_HEX 1; reset run; shutdown" \
+    2>&1 | tail -5
+echo "Rev marker written. Waiting for Pico to boot..."
+sleep 2
+
+# 4. Verify PING/PONG (skip if called from digitsd: it holds the serial port)
 if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     echo "Verifying UART communication..."
     stty -F "$SERIAL_DEV" "$BAUD" raw -echo
@@ -120,7 +147,7 @@ if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     fi
 fi
 
-# 4. Restart digitsd (skip if called from digitsd; systemd will restart it)
+# 5. Restart digitsd (skip if called from digitsd; systemd will restart it)
 if [ "${SKIP_SERVICE_CONTROL:-}" != "1" ]; then
     echo "Starting digitsd..."
     sudo systemctl start digitsd.service

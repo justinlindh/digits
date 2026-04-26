@@ -85,7 +85,7 @@ jobs:
       - name: Groom notes with Claude
         if: steps.body.outputs.already_groomed != 'true'
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action/base-action@v1
         continue-on-error: true
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

@@ -78,12 +78,20 @@ type healthLifecycle interface {
 	EvictConference(confID uuid.UUID)
 }
 
+// dashNotifier is the subset of *dashboard/events.Broadcaster the Tracker
+// uses to wake dashboard SSE subscribers when active-call count changes.
+// Optional; nil disables notifications.
+type dashNotifier interface {
+	Notify()
+}
+
 type Tracker struct {
 	db          *db.Database
 	mu          sync.Mutex
 	active      map[string]*activeCall // "caller→callee" → call
 	conferences *ConferenceTracker
 	health      healthLifecycle
+	dashEvents  dashNotifier
 }
 
 func New(d *db.Database) *Tracker {
@@ -104,6 +112,15 @@ func (t *Tracker) Conferences() *ConferenceTracker {
 func (t *Tracker) SetHealthStore(h healthLifecycle) {
 	t.mu.Lock()
 	t.health = h
+	t.mu.Unlock()
+}
+
+// SetDashboardEvents registers an optional broadcaster that is signalled
+// whenever the active-call count changes. Wakes dashboard SSE subscribers.
+// Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetDashboardEvents(b dashNotifier) {
+	t.mu.Lock()
+	t.dashEvents = b
 	t.mu.Unlock()
 }
 
@@ -128,10 +145,14 @@ func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, 
 		StartedAt: time.Now(),
 	}
 	h := t.health
+	d := t.dashEvents
 	t.mu.Unlock()
 
 	if h != nil {
 		h.Init(id)
+	}
+	if d != nil {
+		d.Notify()
 	}
 	return id, nil
 }
@@ -161,13 +182,18 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	} else if c, ok := t.active[key2]; ok {
 		id = c.ID
 	}
+	removed := id != 0
 	delete(t.active, key1)
 	delete(t.active, key2)
 	h := t.health
+	d := t.dashEvents
 	t.mu.Unlock()
 
 	if h != nil && id != 0 {
 		h.Evict(id)
+	}
+	if d != nil && removed {
+		d.Notify()
 	}
 
 	_, err := t.db.DB.ExecContext(ctx,
@@ -200,6 +226,8 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		delete(t.active, key)
 	}
 	h := t.health
+	d := t.dashEvents
+	removedAny := len(toDelete) > 0
 	t.mu.Unlock()
 
 	if h != nil {
@@ -208,6 +236,9 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 				h.Evict(id)
 			}
 		}
+	}
+	if d != nil && removedAny {
+		d.Notify()
 	}
 
 	// End any open calls in the database
