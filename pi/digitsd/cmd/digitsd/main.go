@@ -1186,12 +1186,37 @@ func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logg
 	if err != nil {
 		log.Fatalf("reflash: serial re-open failed: %v", err)
 	}
-	if err := newSp.Ping(); err != nil {
-		slog.Warn("reflash: PING failed after flash", "error", err, "reason", reason)
+	// A virgin Pico needs to cold-boot the freshly written firmware before
+	// it can answer PING; flash-pico.sh's own sleeps don't always cover
+	// it. Poll Ping() until deadline so the first POST after reflash
+	// reads PASS instead of "Phone will not function." Ping itself has a
+	// 2 s timeout, so a 10 s ceiling allows ~4 attempts.
+	if pingErr := pollPing(newSp.Ping, 10*time.Second, 500*time.Millisecond); pingErr != nil {
+		slog.Warn("reflash: PING failed after flash", "error", pingErr, "reason", reason)
 		return newSp, false
 	}
 	slog.Info("reflash: PING PASS", "reason", reason)
 	return newSp, true
+}
+
+// pollPing retries ping() until it succeeds or deadline elapses, returning
+// the last error on timeout. interval is the gap between attempts; the
+// caller's ping function carries its own timeout. Decoupled from
+// *phone.SerialPort so it can be unit-tested with a fake.
+func pollPing(ping func() error, deadline, interval time.Duration) error {
+	end := time.Now().Add(deadline)
+	var lastErr error
+	for {
+		if err := ping(); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(end) {
+			return lastErr
+		}
+		time.Sleep(interval)
+	}
 }
 
 // readPCBRev returns the fab revision of the carrier board ("1", "2", ...)
