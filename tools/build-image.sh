@@ -10,7 +10,7 @@
 #   - x86_64 Linux host
 #   - qemu-user-static (for arm64 chroot — apt-get ONLY)
 #   - losetup, parted, e2fsck, resize2fs, mkfs.ext4
-#   - Cross-compiled binaries in tools/build/ (digitsd, digits-setup)
+#   - Cross-compiled digitsd in tools/build/ and embed dir populated via 'make -C pi/digitsd embed'
 #
 # Design principle:
 #   qemu-user chroot is ONLY used for apt-get operations. All other
@@ -30,6 +30,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OVERLAY_DIR="${REPO_DIR}/pi/image/rootfs-overlay"
+EMBED_DIR="${REPO_DIR}/pi/digitsd/internal/assets/embed"
+ASSET_MARKER_TOOL="${SCRIPT_DIR}/compute-asset-marker.py"
 PARTITION_SETUP="${REPO_DIR}/pi/image/partition-setup.sh"
 INIT_DATA="${REPO_DIR}/pi/image/init-data.sh"
 BUILD_DIR="${SCRIPT_DIR}/build"
@@ -378,7 +380,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl zstd dtc
+            qemu-aarch64-static gzip blkid rsync openssl zstd dtc python3
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
@@ -388,8 +390,7 @@ INPUT_IMG="${1:-}"
 [[ -f "$INPUT_IMG" ]] || die "Input image not found: $INPUT_IMG"
 
 # Verify pre-built binaries exist
-[[ -f "${BUILD_DIR}/digitsd" ]]      || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
-[[ -f "${BUILD_DIR}/digits-setup" ]] || die "Missing ${BUILD_DIR}/digits-setup -- run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
 [[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
 
 # Verify overlay directory exists
@@ -614,13 +615,20 @@ hostside_add_to_groups "$ROOTFS_MNT" "digits" audio i2c
 info "Copying Digits binaries..."
 
 install -m 755 "${BUILD_DIR}/digitsd" "${ROOTFS_MNT}/usr/local/bin/digitsd"
-install -m 755 "${BUILD_DIR}/digits-setup" "${ROOTFS_MNT}/usr/local/bin/digits-setup"
 
 
 # ── step 13: copy rootfs overlay (host-side) ────────────────────────────────
 
 info "Copying rootfs overlay..."
 rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
+
+# Layer the digitsd embed tree on top: same content as the overlay for shared
+# files (embed/rootfs/ is generated from rootfs-overlay/ by `make embed`,
+# minus a few build-time-only paths) plus digits-setup, which is cross-
+# compiled into embed only and would otherwise reach the rootfs only via
+# digitsd's runtime asset extractor on first boot.
+[[ -d "${EMBED_DIR}/rootfs" ]] || die "Embed dir not populated: ${EMBED_DIR}/rootfs (run 'make -C pi/digitsd embed')"
+rsync -a --no-owner --no-group "${EMBED_DIR}/rootfs/" "$ROOTFS_MNT/"
 
 # Make scripts executable
 chmod +x "${ROOTFS_MNT}/usr/local/bin/"* 2>/dev/null || true
@@ -702,6 +710,21 @@ if [[ "$PCB_MODE" == true ]]; then
 else
     bash "$INIT_DATA" "$DATA_MNT"
 fi
+
+# Pre-write the asset-version marker so digitsd's first-boot Extract sees
+# matching marker and skips the rw/ro remount + asset-rewrite pass entirely.
+# The marker format must match Extractor.Extract's `currentVersion + ":" +
+# contentHash` (see pi/digitsd/internal/assets/assets.go); the helper script
+# mirrors the Go hashEmbeddedFS algorithm exactly. Image builds do not pass
+# a -ldflags override, so version.Version stays "dev" and we hardcode it.
+# OTA digitsd updates land with a different version string and a fresh hash,
+# so the runtime extractor takes over from there.
+info "Pre-writing asset-version marker..."
+ASSET_MARKER=$(python3 "$ASSET_MARKER_TOOL" "$EMBED_DIR" dev)
+echo "$ASSET_MARKER" > "${DATA_MNT}/digits/asset-version"
+chown 999:992 "${DATA_MNT}/digits/asset-version"
+chmod 644 "${DATA_MNT}/digits/asset-version"
+info "  marker: $ASSET_MARKER"
 
 # ── step 15b: populate recovery partition (host-side) ───────────────────────
 
