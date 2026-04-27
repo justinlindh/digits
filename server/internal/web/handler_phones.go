@@ -365,10 +365,12 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-		slog.Error("line update failed", "err", err, "line_id", ln.ID)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+	if name != ln.Name {
+		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	data := h.buildLinesData(r, hh, "")
