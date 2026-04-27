@@ -134,7 +134,7 @@ for r in json.load(sys.stdin):
     if [[ -z "$FW_TAG" ]]; then
         die "Could not determine latest fw/v* release tag from GitHub. Run 'make stage-firmware' first or check network."
     fi
-    FW_VERSION="${FW_TAG#fw/}"
+    FW_VERSION="${FW_TAG#fw/v}"
     FW_DOWNLOAD_URL="https://github.com/justinlindh/digits/releases/download/${FW_TAG}/firmware-${FW_VERSION}.elf"
     info "  Downloading firmware ${FW_VERSION}..."
     if ! curl -sfL -o "$FW_ELF" "$FW_DOWNLOAD_URL"; then

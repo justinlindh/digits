@@ -1523,8 +1523,12 @@ func main() {
 		slog.Info("POST: PASS -- Pico UART healthy")
 	} else {
 		slog.Warn("POST: FAIL -- Pico not responding")
-		if newSp, ok := reflashPico(sp, *serialDev, serialLogger, "post-fail"); ok {
-			sp = newSp
+		// reflashPico closes the original sp before flashing and returns a
+		// freshly-opened port regardless of whether post-flash PING passed.
+		// Always take newSp; only the postOk flag is gated on success.
+		newSp, ok := reflashPico(sp, *serialDev, serialLogger, "post-fail")
+		sp = newSp
+		if ok {
 			postOk = true
 		}
 		if !postOk {
@@ -1551,8 +1555,9 @@ func main() {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
-			if newSp, ok := reflashPico(sp, *serialDev, serialLogger, "version-mismatch"); ok {
-				sp = newSp
+			newSp, ok := reflashPico(sp, *serialDev, serialLogger, "version-mismatch")
+			sp = newSp
+			if ok {
 				if v, c, err := sp.QueryVersion(); err == nil {
 					fwVersion, fwCommit = v, c
 					slog.Info("firmware version after reflash", "version", fwVersion, "commit", fwCommit)
