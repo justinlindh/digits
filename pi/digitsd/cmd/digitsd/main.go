@@ -1133,16 +1133,14 @@ func (d *daemonCallbacks) SendRaw(cmd string) {
 const (
 	defaultFirmwarePath        = "/data/digits/firmware.elf"
 	defaultFirmwareVersionPath = "/data/digits/firmware.elf.version"
+	defaultFlashScript         = "/usr/local/bin/flash-pico.sh"
 	defaultSWDConfig           = "/usr/local/share/digits/swd/digits-swd.cfg"
 	defaultOpenOCD             = "/usr/bin/openocd"
 	pcbRevPath                 = "/etc/digits-pcb-rev"
 )
 
-// firmwareNeedsReflash decides whether the Pico's running firmware version
-// differs from what's bundled in the image at /data/digits/firmware.elf.
-// Both empty strings, or either side empty, return false: we only reflash
-// when we have a confident mismatch. The PING-fail path handles the
-// "Pico unresponsive" case separately.
+// firmwareNeedsReflash reports a confident version mismatch; either side
+// empty returns false (treated as "unknown, skip").
 func firmwareNeedsReflash(picoVersion, bundledVersion string) bool {
 	if picoVersion == "" || bundledVersion == "" {
 		return false
@@ -1150,9 +1148,6 @@ func firmwareNeedsReflash(picoVersion, bundledVersion string) bool {
 	return picoVersion != bundledVersion
 }
 
-// readBundledFirmwareVersion reads the version string written next to the
-// bundled firmware ELF at image-build time. Missing or unreadable file
-// returns "", which firmwareNeedsReflash treats as "skip the check."
 func readBundledFirmwareVersion() string {
 	data, err := os.ReadFile(defaultFirmwareVersionPath)
 	if err != nil {
@@ -1161,38 +1156,30 @@ func readBundledFirmwareVersion() string {
 	return strings.TrimSpace(string(data))
 }
 
-// reflashPico runs openocd to flash defaultFirmwarePath onto the Pico,
-// then closes & reopens the serial port and verifies PING. Returns the
-// reopened *phone.SerialPort and a bool indicating whether PING passed after
-// flash. Skips silently when the firmware ELF or openocd binary is
-// missing (returns the original sp, false). If the serial port can't be
-// reopened the process aborts -- there is no path forward without UART.
+// reflashPico delegates to flash-pico.sh (RESCUE retry, FLASHSIZE override,
+// PCB-rev marker write at 0x101FF000) and re-establishes the serial port.
+// Aborts on serial-reopen failure: nothing else digitsd does works without
+// UART. Returns the reopened port and whether the post-flash PING passed.
 func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logger, reason string) (*phone.SerialPort, bool) {
 	if _, err := os.Stat(defaultFirmwarePath); err != nil {
 		slog.Info("reflash: no firmware at path, skipping", "path", defaultFirmwarePath, "reason", reason)
-		return sp, false
-	}
-	if _, err := os.Stat(defaultOpenOCD); err != nil {
-		slog.Warn("reflash: openocd not found", "path", defaultOpenOCD, "reason", reason)
 		return sp, false
 	}
 	slog.Info("reflash: starting", "path", defaultFirmwarePath, "reason", reason)
 	if err := sp.Close(); err != nil {
 		slog.Warn("reflash: close serial failed", "error", err)
 	}
-	cmd := exec.Command("sudo", defaultOpenOCD,
-		"-f", defaultSWDConfig,
-		"-f", "target/rp2040.cfg",
-		"-c", "rp2040.core0 configure -event reset-init {}",
-		"-c", fmt.Sprintf("program %s verify", defaultFirmwarePath),
-		"-c", "reset run",
-		"-c", "exit")
+	// SKIP_SERVICE_CONTROL=1 stops the script from systemctl-stopping us
+	// (we ARE digitsd) and from doing its own post-flash PING (we hold
+	// the serial port; we'll PING ourselves below).
+	cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+	cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		slog.Error("reflash: openocd failed", "error", err, "reason", reason)
+		slog.Error("reflash: flash script failed", "error", err, "reason", reason)
 	} else {
-		slog.Info("reflash: openocd succeeded", "reason", reason)
+		slog.Info("reflash: flash script succeeded", "reason", reason)
 	}
 	time.Sleep(2 * time.Second)
 	newSp, err := phone.OpenSerial(serialDev, 115200, serialLogger)
@@ -1556,12 +1543,9 @@ func main() {
 		}
 	}
 
-	// If the Pico is healthy but running an older firmware than the one
-	// bundled in this image, reflash so a re-flashed SD card actually
-	// updates the Pico instead of leaving stale firmware in place. The
-	// PING-fail path above only triggers when the Pico is silent; this
-	// covers the "responsive but out of date" case.
-	if postOk {
+	// A re-flashed SD card must overwrite stale Pico firmware; the PING-fail
+	// path doesn't fire when the Pico responds.
+	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
 		if firmwareNeedsReflash(fwVersion, bundled) {
 			slog.Warn("firmware version mismatch with bundled image",

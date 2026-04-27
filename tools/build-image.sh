@@ -699,10 +699,8 @@ info "Copying Pico firmware to /data/digits/firmware.elf..."
 cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
 chown 999:992 "${DATA_MNT}/digits/firmware.elf"
 chmod 644 "${DATA_MNT}/digits/firmware.elf"
-# Sidecar version lets digitsd compare the bundled firmware to what the
-# Pico reports over UART and reflash on mismatch. Both stage-firmware and
-# entrypoint.sh's GitHub fallback always write one; digitsd treats an
-# absent file as "skip the check" rather than failing.
+# Sidecar version lets digitsd reflash on Pico/image mismatch; absent
+# file = skip the check (no failure).
 if [[ -f "$FW_VER" ]]; then
     cp "$FW_VER" "${DATA_MNT}/digits/firmware.elf.version"
     chown 999:992 "${DATA_MNT}/digits/firmware.elf.version"

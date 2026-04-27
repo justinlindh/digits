@@ -111,11 +111,9 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
 
 info "Binaries ready in tools/build/"
 
-# Pico firmware: prefer host-staged ELF (Makefile's stage-firmware target
-# rebuilds firmware/build/docker/digits.elf and copies it here). Fall back
-# to the latest fw/v* GitHub release only when the host didn't stage one,
-# e.g. someone calling build-docker.sh directly. Either way, an image
-# without firmware is a regression we don't ship.
+# An image without firmware is a regression we don't ship: prefer the
+# host-staged ELF (make stage-firmware), fall back to GitHub release,
+# die if neither is available.
 FW_ELF=/digits/tools/build/firmware.elf
 FW_VER_FILE=/digits/tools/build/firmware.elf.version
 if [[ -f "$FW_ELF" ]]; then
