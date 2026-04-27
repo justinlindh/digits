@@ -12,8 +12,12 @@ import (
 
 type callsData struct {
 	chromeData
-	Entries []calls.HistoryEntry
+	Entries     []calls.HistoryEntry
+	OlderCursor string // empty when no older page exists
+	IsPaged     bool   // true when ?before= was present in the request
 }
+
+const callsPageSize = 50
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
@@ -23,6 +27,12 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loc := hh.Location()
+
+	cursor, err := calls.DecodeHistoryCursor(r.URL.Query().Get("before"))
+	if err != nil {
+		http.Error(w, "bad cursor", http.StatusBadRequest)
+		return
+	}
 
 	var entries []calls.HistoryEntry
 	if h.lineStore != nil {
@@ -37,7 +47,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 			for i, l := range lines {
 				numbers[i] = l.Number
 			}
-			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, nil, 100)
+			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, cursor, callsPageSize)
 			if err != nil {
 				slog.Error("query recent history failed", "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -48,6 +58,12 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if entries == nil {
 		entries = []calls.HistoryEntry{}
+	}
+
+	var olderCursor string
+	if len(entries) > callsPageSize {
+		olderCursor = calls.CursorForEntry(entries[callsPageSize-1]).Encode()
+		entries = entries[:callsPageSize]
 	}
 
 	// Localize timestamps for display.
@@ -62,8 +78,10 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderWith(w, h.tmplCalls, layoutFor(r), callsData{
-		chromeData: newChromeData("calls", user, hh),
-		Entries:    entries,
+		chromeData:  newChromeData("calls", user, hh),
+		Entries:     entries,
+		OlderCursor: olderCursor,
+		IsPaged:     cursor != nil,
 	})
 }
 

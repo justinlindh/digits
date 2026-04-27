@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -176,6 +177,104 @@ func TestCallsPageReturns200(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
+}
+
+func TestHandleCalls_BadCursor_Returns400(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/calls?before=!!!not-base64!!!", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("bad cursor: got %d, want 400", w.Code)
+	}
+}
+
+func TestHandleCalls_ValidCursor_Returns200(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Seed a small number of calls so we have at least one entry to build a cursor from.
+	seedEndedCallsForCursorTest(t, h, database, hh, 3)
+
+	// Build a cursor directly from the most recent entry, bypassing template rendering.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("valid cursor: got %d, want 200", w.Code)
+	}
+}
+
+// seedEndedCallsForCursorTest inserts n plain ended calls between two phone
+// numbers on hh's line list, with monotonically increasing timestamps. If hh
+// has fewer than 2 lines, two lines are seeded first. Used by handler tests
+// that need real call history.
+func seedEndedCallsForCursorTest(t *testing.T, h *Handler, database *db.Database, hh *household.Household, n int) {
+	t.Helper()
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	if len(lines) < 2 {
+		seedNumbers := []string{"3149001", "3149002"}
+		for _, num := range seedNumbers {
+			ln, err := h.lineStore.Add(context.Background(), num, "Cursor Test "+num, hh.ID)
+			if err != nil {
+				t.Fatalf("seed line %s: %v", num, err)
+			}
+			id := ln.ID
+			t.Cleanup(func() {
+				_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", id)
+			})
+		}
+		lines, err = h.lineStore.ListByHousehold(context.Background(), hh.ID)
+		if err != nil {
+			t.Fatalf("list lines after seed: %v", err)
+		}
+	}
+	if len(lines) < 2 {
+		t.Fatalf("seed needs at least 2 lines on the household, got %d", len(lines))
+	}
+	a, b := lines[0].Number, lines[1].Number
+	for i := 0; i < n; i++ {
+		if _, err := h.tracker.OnCallInitiated(context.Background(), a, b); err != nil {
+			t.Fatalf("OnCallInitiated[%d]: %v", i, err)
+		}
+		if err := h.tracker.OnCallEnded(context.Background(), a, b); err != nil {
+			t.Fatalf("OnCallEnded[%d]: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller = $1 OR callee = $1 OR caller = $2 OR callee = $2", a, b)
+	})
 }
 
 func TestSettingsPageReturns200(t *testing.T) {
