@@ -3,7 +3,14 @@
 {{define "content"}}
 {{if and .User (eq .User.Theme "answering-machine")}}
   {{template "calls-am" .}}
+{{else if and .User (eq .User.Theme "dialup")}}
+  {{template "calls-dialup" .}}
 {{else}}
+  {{template "calls-intercom" .}}
+{{end}}
+{{end}}
+
+{{define "calls-intercom"}}
 <div class="page">
 
   <header class="page__head">
@@ -134,6 +141,137 @@
 
 </div>
 {{end}}
+
+{{define "calls-dialup"}}
+<div class="page">
+
+  <header class="page__head">
+    <h1 class="page__title">Call log</h1>
+    <div class="muted hstack" style="font-size: 12px;">
+      <span class="chip chip--live"><span class="chip__dot"></span>Auto-refreshing</span>
+    </div>
+  </header>
+
+  <section class="panel"
+           hx-get="/calls"
+           hx-trigger="every 10s"
+           hx-swap="outerHTML"
+           hx-select=".panel">
+    <header class="panel__head">
+      <h2 class="panel__title">All calls</h2>
+      <span class="panel__title-sub">{{len .Entries}} records</span>
+    </header>
+
+    {{if .Entries}}
+    <!-- Desktop table -->
+    <div class="hide-sm">
+      <table class="t">
+        <thead>
+          <tr>
+            <th>Caller</th>
+            <th>Callee</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th class="r"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Entries}}
+          {{if .IsConference}}
+          <tr class="row-conf">
+            <td class="num conf-participants" colspan="2" style="color: var(--ink);">
+              {{range $i, $m := .Conference.Members}}{{if $i}} <span class="muted">·</span> {{end}}{{fmtPhone $m}}{{end}}
+            </td>
+            <td>
+              <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
+            </td>
+            <td class="num">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="num">{{if gt .Conference.DurationS 0}}{{.Conference.DurationS}}s{{else}}&ndash;{{end}}</td>
+            <td class="r"><a href="/conference/live/{{.Conference.ID}}" aria-label="View conference details">Details &rarr;</a></td>
+          </tr>
+          {{else}}
+          <tr>
+            <td class="num" style="color: var(--ink);">{{fmtPhone .Call.Caller}}</td>
+            <td class="num" style="color: var(--ink);">
+              {{fmtPhone .Call.Callee}}
+              {{if .Call.OriginatingConferenceID}}<span class="badge-from3way">from 3-way</span>{{end}}
+            </td>
+            <td>
+              {{if eq .Call.Status "ended"}}
+                <span class="chip"><span class="chip__dot"></span>ended</span>
+              {{else if eq .Call.Status "connected"}}
+                <span class="chip chip--on"><span class="chip__dot"></span>connected</span>
+              {{else if eq .Call.Status "missed"}}
+                <span class="chip chip--err"><span class="chip__dot"></span>missed</span>
+              {{else if eq .Call.Status "initiated"}}
+                <span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
+              {{else if eq .Call.Status "ringing"}}
+                <span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
+              {{else}}
+                <span class="chip"><span class="chip__dot"></span>{{.Call.Status}}</span>
+              {{end}}
+            </td>
+            <td class="num">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</td>
+            <td class="num">{{if gt .Call.DurationS 0}}{{.Call.DurationS}}s{{else}}&ndash;{{end}}</td>
+            <td class="r"><a href="/call/live/{{.Call.ID}}" aria-label="View call details">Details &rarr;</a></td>
+          </tr>
+          {{end}}
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mobile card list -->
+    <ul class="show-sm" style="list-style: none; margin: 0; padding: 0;">
+      {{range .Entries}}
+      <li style="padding: 10px 16px; border-bottom: 1px solid var(--rule-soft);">
+        {{if .IsConference}}
+        <div class="num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
+          3-way:
+          {{range $i, $m := .Conference.Members}}{{if $i}}, {{end}}{{fmtPhone $m}}{{end}}
+        </div>
+        <div class="hstack hstack--wrap" style="font-size: 12px;">
+          <span class="chip chip--conf"><span class="chip__dot"></span>3-way</span>
+          <span class="num muted">{{.Conference.CreatedAt.Format "Jan 2 15:04:05"}}</span>
+          {{if gt .Conference.DurationS 0}}<span class="num muted">· {{.Conference.DurationS}}s</span>{{end}}
+          <a href="/conference/live/{{.Conference.ID}}" style="margin-left: auto;" aria-label="View conference details">Details &rarr;</a>
+        </div>
+        {{else}}
+        <div class="hstack num" style="font-size: 13px; color: var(--ink); margin-bottom: 6px;">
+          <span>{{fmtPhone .Call.Caller}}</span>
+          <span class="muted">→</span>
+          <span>{{fmtPhone .Call.Callee}}</span>
+          {{if .Call.OriginatingConferenceID}}<span class="badge-from3way">from 3-way</span>{{end}}
+        </div>
+        <div class="hstack hstack--wrap" style="font-size: 12px;">
+          {{if eq .Call.Status "ended"}}<span class="chip"><span class="chip__dot"></span>ended</span>
+          {{else if eq .Call.Status "connected"}}<span class="chip chip--on"><span class="chip__dot"></span>connected</span>
+          {{else if eq .Call.Status "missed"}}<span class="chip chip--err"><span class="chip__dot"></span>missed</span>
+          {{else if eq .Call.Status "initiated"}}<span class="chip chip--live"><span class="chip__dot"></span>initiated</span>
+          {{else if eq .Call.Status "ringing"}}<span class="chip chip--warn"><span class="chip__dot"></span>ringing</span>
+          {{else}}<span class="chip"><span class="chip__dot"></span>{{.Call.Status}}</span>{{end}}
+          <span class="num muted">{{.Call.StartedAt.Format "Jan 2 15:04:05"}}</span>
+          {{if gt .Call.DurationS 0}}<span class="num muted">· {{.Call.DurationS}}s</span>{{end}}
+          <a href="/call/live/{{.Call.ID}}" style="margin-left: auto;" aria-label="View call details">Details &rarr;</a>
+        </div>
+        {{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="empty">
+      <svg class="empty__icon" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      <div>No calls yet.</div>
+    </div>
+    {{end}}
+  </section>
+
+  {{template "page-footer" .}}
+
+</div>
 {{end}}
 
 {{define "calls-am"}}
