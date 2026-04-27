@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -316,5 +318,78 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected exactly 1 entry (the conference), got %d", len(entries))
+	}
+}
+
+// TestRecentHistoryForPhones_CursorTieBreak verifies that a call and a
+// conference created in the same transaction (and therefore at the same
+// timestamp) are ordered call-before-conference, and a Call cursor advances
+// past the call so the next page starts with the conference.
+func TestRecentHistoryForPhones_CursorTieBreak(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	// 3-way merge yields a Call (the originating leg, marked merged) plus a
+	// Conference. The originating call is excluded from history (filtered
+	// by end_reason='merged_to_conference'), so we set up a tie differently:
+	// create a plain ended call and a conference at the same instant via
+	// raw inserts.
+	now := time.Now().UTC().Round(time.Microsecond)
+
+	var callID int64
+	if err := d.DB.QueryRow(`
+		INSERT INTO calls (caller, callee, status, started_at, ended_at, duration_s)
+		VALUES ('7790001', '7790002', 'ended', $1, $1, 0) RETURNING id`, now).Scan(&callID); err != nil {
+		t.Fatalf("insert call: %v", err)
+	}
+	confID := uuid.New()
+	if _, err := d.DB.Exec(`
+		INSERT INTO conferences (id, host_phone, originating_call_id, state, created_at, ended_at, end_reason)
+		VALUES ($1, '7790001', $2, 'ended', $3, $3, 'host_hangup')`, confID, callID, now); err != nil {
+		t.Fatalf("insert conference: %v", err)
+	}
+	if _, err := d.DB.Exec(`
+		INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, '7790001', 'host'), ($1, '7790002', 'added'), ($1, '7790003', 'added')`, confID); err != nil {
+		t.Fatalf("insert conference_members: %v", err)
+	}
+
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, nil, 1)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) < 1 {
+		t.Fatalf("page1: expected at least 1 entry, got %d", len(page1))
+	}
+	// Tie-break rule: Call comes before Conference on equal timestamp.
+	if page1[0].Kind != calls.HistoryEntryCall {
+		t.Fatalf("page1[0] expected Call, got %v", page1[0].Kind)
+	}
+
+	cursor := calls.CursorForEntry(page1[0])
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, &cursor, 5)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2) < 1 {
+		t.Fatalf("page2: expected at least 1 entry, got %d", len(page2))
+	}
+	if page2[0].Kind != calls.HistoryEntryConference {
+		t.Errorf("page2[0] expected Conference (post-call cursor advance), got %v", page2[0].Kind)
+	}
+	if page2[0].Conference == nil || page2[0].Conference.ID != confID {
+		t.Errorf("page2[0] conference ID mismatch")
+	}
+
+	// Advance past the conference: page3 should be empty. Without the
+	// conferences-subquery cursor filter the conference would re-appear.
+	cursor2 := calls.CursorForEntry(page2[0])
+	page3, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, &cursor2, 5)
+	if err != nil {
+		t.Fatalf("page3: %v", err)
+	}
+	for _, e := range page3 {
+		if e.Kind == calls.HistoryEntryConference && e.Conference != nil && e.Conference.ID == confID {
+			t.Errorf("page3 leaked the cursor conference (cursor filter missing on conferences subquery)")
+		}
 	}
 }

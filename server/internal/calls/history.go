@@ -174,12 +174,35 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 // recentConferencesForHistory returns conferences where any of the phones is
 // a member, including the ordered member list for each conference.
 func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]ConferenceSummary, error) {
-	_ = cursor // applied in Task 4
-	// One query: join conferences + conference_members, aggregate member list.
-	// host_phone always sorts first via CASE, remaining members sort alphabetically
-	// so ordering is stable across queries.
-	// $1 = phone array, $2 = limit
-	const query = `
+	args := []interface{}{pq.Array(phones)}
+
+	// Cursor predicate, mirroring the calls subquery rules.
+	// Tie-break in the in-memory sort: Call before Conference on equal time.
+	//   Call cursor:       conferences at the same time sort AFTER the call
+	//                      (older in the merged DESC order) and have not been
+	//                      shown yet, so include them: use <=.
+	//   Conference cursor: strict lex compare on (created_at, id::text) skips
+	//                      the cursor itself and conferences with same time
+	//                      but earlier secondary sort.
+	cursorSQL := ""
+	if cursor != nil {
+		switch cursor.Kind {
+		case HistoryEntryCall:
+			args = append(args, cursor.Time)
+			cursorSQL = fmt.Sprintf(" AND c.created_at <= $%d", len(args))
+		case HistoryEntryConference:
+			args = append(args, cursor.Time)
+			tIdx := len(args)
+			args = append(args, cursor.ID)
+			idIdx := len(args)
+			cursorSQL = fmt.Sprintf(" AND (c.created_at < $%d OR (c.created_at = $%d AND c.id::text < $%d))", tIdx, tIdx, idIdx)
+		}
+	}
+
+	args = append(args, limit)
+	limitIdx := len(args)
+
+	query := fmt.Sprintf(`
 		SELECT c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at,
 		       c.end_reason,
 		       COALESCE(EXTRACT(EPOCH FROM (c.ended_at - c.created_at))::INT, 0) AS duration_s,
@@ -189,11 +212,10 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 		WHERE EXISTS (
 		  SELECT 1 FROM conference_members cm
 		  WHERE cm.conference_id = c.id AND cm.phone = ANY($1)
-		)
+		)%s
 		GROUP BY c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason
-		ORDER BY c.created_at DESC
-		LIMIT $2`
-	args := []interface{}{pq.Array(phones), limit}
+		ORDER BY c.created_at DESC, c.id DESC
+		LIMIT $%d`, cursorSQL, limitIdx)
 
 	rows, err := t.db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
