@@ -1131,11 +1131,81 @@ func (d *daemonCallbacks) SendRaw(cmd string) {
 
 // Default paths for SWD flash infrastructure on the Pi.
 const (
-	defaultFirmwarePath = "/data/digits/firmware.elf"
-	defaultSWDConfig    = "/usr/local/share/digits/swd/digits-swd.cfg"
-	defaultOpenOCD      = "/usr/bin/openocd"
-	pcbRevPath          = "/etc/digits-pcb-rev"
+	defaultFirmwarePath        = "/data/digits/firmware.elf"
+	defaultFirmwareVersionPath = "/data/digits/firmware.elf.version"
+	defaultSWDConfig           = "/usr/local/share/digits/swd/digits-swd.cfg"
+	defaultOpenOCD             = "/usr/bin/openocd"
+	pcbRevPath                 = "/etc/digits-pcb-rev"
 )
+
+// firmwareNeedsReflash decides whether the Pico's running firmware version
+// differs from what's bundled in the image at /data/digits/firmware.elf.
+// Both empty strings, or either side empty, return false: we only reflash
+// when we have a confident mismatch. The PING-fail path handles the
+// "Pico unresponsive" case separately.
+func firmwareNeedsReflash(picoVersion, bundledVersion string) bool {
+	if picoVersion == "" || bundledVersion == "" {
+		return false
+	}
+	return picoVersion != bundledVersion
+}
+
+// readBundledFirmwareVersion reads the version string written next to the
+// bundled firmware ELF at image-build time. Missing or unreadable file
+// returns "", which firmwareNeedsReflash treats as "skip the check."
+func readBundledFirmwareVersion() string {
+	data, err := os.ReadFile(defaultFirmwareVersionPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// reflashPico runs openocd to flash defaultFirmwarePath onto the Pico,
+// then closes & reopens the serial port and verifies PING. Returns the
+// reopened *phone.SerialPort and a bool indicating whether PING passed after
+// flash. Skips silently when the firmware ELF or openocd binary is
+// missing (returns the original sp, false). If the serial port can't be
+// reopened the process aborts -- there is no path forward without UART.
+func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logger, reason string) (*phone.SerialPort, bool) {
+	if _, err := os.Stat(defaultFirmwarePath); err != nil {
+		slog.Info("reflash: no firmware at path, skipping", "path", defaultFirmwarePath, "reason", reason)
+		return sp, false
+	}
+	if _, err := os.Stat(defaultOpenOCD); err != nil {
+		slog.Warn("reflash: openocd not found", "path", defaultOpenOCD, "reason", reason)
+		return sp, false
+	}
+	slog.Info("reflash: starting", "path", defaultFirmwarePath, "reason", reason)
+	if err := sp.Close(); err != nil {
+		slog.Warn("reflash: close serial failed", "error", err)
+	}
+	cmd := exec.Command("sudo", defaultOpenOCD,
+		"-f", defaultSWDConfig,
+		"-f", "target/rp2040.cfg",
+		"-c", "rp2040.core0 configure -event reset-init {}",
+		"-c", fmt.Sprintf("program %s verify", defaultFirmwarePath),
+		"-c", "reset run",
+		"-c", "exit")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		slog.Error("reflash: openocd failed", "error", err, "reason", reason)
+	} else {
+		slog.Info("reflash: openocd succeeded", "reason", reason)
+	}
+	time.Sleep(2 * time.Second)
+	newSp, err := phone.OpenSerial(serialDev, 115200, serialLogger)
+	if err != nil {
+		log.Fatalf("reflash: serial re-open failed: %v", err)
+	}
+	if err := newSp.Ping(); err != nil {
+		slog.Warn("reflash: PING failed after flash", "error", err, "reason", reason)
+		return newSp, false
+	}
+	slog.Info("reflash: PING PASS", "reason", reason)
+	return newSp, true
+}
 
 // readPCBRev returns the fab revision of the carrier board ("1", "2", ...)
 // stamped at image-build time. Defaults to "1" if the marker is missing or
@@ -1466,47 +1536,9 @@ func main() {
 		slog.Info("POST: PASS -- Pico UART healthy")
 	} else {
 		slog.Warn("POST: FAIL -- Pico not responding")
-		elfPath := defaultFirmwarePath
-		swdCfg := defaultSWDConfig
-		openocd := defaultOpenOCD
-		if _, errElf := os.Stat(elfPath); errElf == nil {
-			if _, errOcd := os.Stat(openocd); errOcd == nil {
-				slog.Info("POST: attempting auto-flash", "path", elfPath)
-				// Close serial port before SWD flash
-				if err := sp.Close(); err != nil {
-					slog.Warn("POST: close serial failed", "error", err)
-				}
-				cmd := exec.Command("sudo", openocd,
-					"-f", swdCfg,
-					"-f", "target/rp2040.cfg",
-					"-c", "rp2040.core0 configure -event reset-init {}",
-					"-c", fmt.Sprintf("program %s verify", elfPath),
-					"-c", "reset run",
-					"-c", "exit")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					slog.Error("POST: auto-flash failed", "error", err)
-				} else {
-					slog.Info("POST: auto-flash succeeded")
-				}
-				// Re-open serial port
-				time.Sleep(2 * time.Second)
-				sp, err = phone.OpenSerial(*serialDev, 115200, serialLogger)
-				if err != nil {
-					log.Fatalf("serial re-open after flash: %v", err)
-				}
-				if err := sp.Ping(); err == nil {
-					slog.Info("POST: PASS after auto-flash")
-					postOk = true
-				} else {
-					slog.Warn("POST: FAIL after auto-flash", "error", err)
-				}
-			} else {
-				slog.Warn("POST: openocd not found", "path", openocd)
-			}
-		} else {
-			slog.Info("POST: no firmware at path, skipping auto-flash", "path", elfPath)
+		if newSp, ok := reflashPico(sp, *serialDev, serialLogger, "post-fail"); ok {
+			sp = newSp
+			postOk = true
 		}
 		if !postOk {
 			slog.Warn("POST: Continuing without Pico. Phone will not function.")
@@ -1521,6 +1553,30 @@ func main() {
 		} else {
 			fwVersion, fwCommit = v, c
 			slog.Info("firmware version", "version", fwVersion, "commit", fwCommit)
+		}
+	}
+
+	// If the Pico is healthy but running an older firmware than the one
+	// bundled in this image, reflash so a re-flashed SD card actually
+	// updates the Pico instead of leaving stale firmware in place. The
+	// PING-fail path above only triggers when the Pico is silent; this
+	// covers the "responsive but out of date" case.
+	if postOk {
+		bundled := readBundledFirmwareVersion()
+		if firmwareNeedsReflash(fwVersion, bundled) {
+			slog.Warn("firmware version mismatch with bundled image",
+				"pico", fwVersion, "bundled", bundled,
+				"action", "auto-reflash")
+			if newSp, ok := reflashPico(sp, *serialDev, serialLogger, "version-mismatch"); ok {
+				sp = newSp
+				if v, c, err := sp.QueryVersion(); err == nil {
+					fwVersion, fwCommit = v, c
+					slog.Info("firmware version after reflash", "version", fwVersion, "commit", fwCommit)
+				} else {
+					slog.Warn("firmware version query after reflash failed", "error", err)
+					fwVersion, fwCommit = "", ""
+				}
+			}
 		}
 	}
 
