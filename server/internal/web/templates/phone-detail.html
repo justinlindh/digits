@@ -139,9 +139,6 @@
                   {{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="muted italic">unknown</span>{{end}}
                 </span>
                 {{if .DeviceInfo.FirmwareCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.FirmwareCommit}}</span>{{end}}
-                {{if .DeviceInfo.FlashCapable}}
-                  <span class="chip"><span class="chip__dot"></span>SWD</span>
-                {{end}}
                 {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
                   {{if .FirmwareUpdateNotes}}
                   <details class="update-details" style="display: inline-block;">
@@ -210,7 +207,6 @@
           </details>
 
           <!-- Firmware update -->
-          {{if .DeviceInfo.FlashCapable}}
           <details class="disclosure">
             <summary>Update firmware</summary>
             <div class="panel__body">
@@ -246,9 +242,6 @@
               {{end}}
             </div>
           </details>
-          {{else}}
-          <p class="muted" style="font-size: 12.5px; margin: 0;">Firmware updates require SWD wiring: flash via USB.</p>
-          {{end}}
           {{end}}
 
           {{else}}
@@ -752,7 +745,7 @@
           {{if .DeviceInfo.FirmwareVersion}}
           <div class="am-settings__kv-row">
             <dt class="am-settings__kv-key am-label">Firmware</dt>
-            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.FirmwareVersion}}{{if .DeviceInfo.FirmwareCommit}} &middot; {{.DeviceInfo.FirmwareCommit}}{{end}}{{if .DeviceInfo.FlashCapable}} &middot; SWD{{end}}</span></dd>
+            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.FirmwareVersion}}{{if .DeviceInfo.FirmwareCommit}} &middot; {{.DeviceInfo.FirmwareCommit}}{{end}}</span></dd>
           </div>
           {{end}}
         {{end}}
