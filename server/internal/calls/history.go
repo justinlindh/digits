@@ -191,7 +191,7 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 			tIdx := len(args)
 			args = append(args, cursor.ID)
 			idIdx := len(args)
-			cursorSQL = fmt.Sprintf(" AND (c.created_at < $%d OR (c.created_at = $%d AND c.id::text < $%d))", tIdx, tIdx, idIdx)
+			cursorSQL = fmt.Sprintf(" AND (c.created_at < $%d OR (c.created_at = $%d AND c.id < $%d::uuid))", tIdx, tIdx, idIdx)
 		}
 	}
 
