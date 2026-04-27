@@ -51,10 +51,7 @@
             <dt class="kv__key">Number</dt>
             <dd class="kv__val kv__val--mono">{{fmtPhone .Line.Number}}</dd>
           </div>
-          <div class="kv__row">
-            <dt class="kv__key">Name</dt>
-            <dd class="kv__val">{{.Line.Name}}</dd>
-          </div>
+          {{template "name-section" .}}
           <div class="kv__row">
             <dt class="kv__key">Added</dt>
             <dd class="kv__val">{{.Line.CreatedAt.Format "January 2, 2006"}}</dd>
@@ -607,6 +604,74 @@
 </div>
 {{end}}
 
+{{define "name-section"}}
+<div class="kv__row" id="name-section">
+  <dt class="kv__key">Name</dt>
+  <dd class="kv__val spread">
+    <span style="overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
+    <button type="button" class="btn btn--quiet btn--sm"
+            hx-get="/phones/{{.Line.Number}}/name/edit"
+            hx-target="#name-section"
+            hx-swap="outerHTML">Edit</button>
+  </dd>
+</div>
+{{end}}
+
+{{define "name-section-edit"}}
+<div class="kv__row" id="name-section">
+  <dt class="kv__key">Name</dt>
+  <dd class="kv__val">
+    <form hx-post="/phones/{{.Line.Number}}/name"
+          hx-target="#name-section"
+          hx-swap="outerHTML"
+          class="hstack hstack--wrap">
+      <input type="text" name="name" value="{{.Value}}" required maxlength="50" autofocus
+             class="field__input" style="flex: 1; min-width: 0;">
+      <button type="submit" class="btn btn--primary btn--sm">Save</button>
+      <button type="button" class="btn btn--quiet btn--sm"
+              hx-get="/phones/{{.Line.Number}}/name"
+              hx-target="#name-section"
+              hx-swap="outerHTML">Cancel</button>
+    </form>
+    {{if .Error}}<p style="color: var(--rust); font-size: 12px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
+  </dd>
+</div>
+{{end}}
+
+{{define "am-name-section"}}
+<div class="am-settings__kv-row" id="name-section">
+  <dt class="am-settings__kv-key am-label">Name</dt>
+  <dd class="am-settings__kv-val">
+    <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
+    <button type="button" class="am-tab"
+            hx-get="/phones/{{.Line.Number}}/name/edit"
+            hx-target="#name-section"
+            hx-swap="outerHTML">Edit</button>
+  </dd>
+</div>
+{{end}}
+
+{{define "am-name-section-edit"}}
+<div class="am-settings__kv-row" id="name-section">
+  <dt class="am-settings__kv-key am-label">Name</dt>
+  <dd class="am-settings__kv-val" style="flex-wrap: wrap;">
+    <form hx-post="/phones/{{.Line.Number}}/name"
+          hx-target="#name-section"
+          hx-swap="outerHTML"
+          style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1;">
+      <input type="text" name="name" value="{{.Value}}" required maxlength="50" autofocus
+             class="am-phones__edit-input" style="flex: 1; min-width: 0;">
+      <button type="submit" class="am-tab">Save</button>
+      <button type="button" class="am-tab"
+              hx-get="/phones/{{.Line.Number}}/name"
+              hx-target="#name-section"
+              hx-swap="outerHTML">Cancel</button>
+    </form>
+    {{if .Error}}<span class="am-hint" style="color: var(--rust); flex-basis: 100%; margin-top: 4px;">{{.Error}}</span>{{end}}
+  </dd>
+</div>
+{{end}}
+
 {{define "phone-detail-am"}}
 <div class="am-handset">
 
@@ -666,10 +731,7 @@
           <dt class="am-settings__kv-key am-label">Number</dt>
           <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{fmtPhone .Line.Number}}</span></dd>
         </div>
-        <div class="am-settings__kv-row">
-          <dt class="am-settings__kv-key am-label">Name</dt>
-          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.Line.Name}}</span></dd>
-        </div>
+        {{template "am-name-section" .}}
         <div class="am-settings__kv-row">
           <dt class="am-settings__kv-key am-label">Added</dt>
           <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</span></dd>

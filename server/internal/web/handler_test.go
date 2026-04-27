@@ -1660,3 +1660,152 @@ func TestPairBannerRendersOnQueryParam(t *testing.T) {
 		t.Errorf("body missing fw version")
 	}
 }
+
+func readLineName(t *testing.T, database *db.Database) string {
+	t.Helper()
+	var name string
+	if err := database.DB.QueryRow(`SELECT name FROM lines WHERE number = '3140001'`).Scan(&name); err != nil {
+		t.Fatalf("read line name: %v", err)
+	}
+	return name
+}
+
+func postLineName(t *testing.T, h *Handler, cookie *http.Cookie, value string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"name": {value}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/name", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestPhoneNamePostUpdatesAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "Garage", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	if got := readLineName(t, database); got != "Garage" {
+		t.Fatalf("expected name=Garage in db, got %q", got)
+	}
+}
+
+func TestPhoneNamePostHTMXReturnsDisplayPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "  Garage  ", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="name-section"`) {
+		t.Fatalf("htmx response missing name-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, ">Garage<") {
+		t.Fatalf("htmx response missing trimmed name display:\n%s", body)
+	}
+	if strings.Contains(body, `name="name"`) {
+		t.Fatalf("htmx response should be display partial, but contains form input:\n%s", body)
+	}
+	if got := readLineName(t, database); got != "Garage" {
+		t.Fatalf("expected trimmed name=Garage in db, got %q", got)
+	}
+}
+
+func TestPhoneNamePostEmptyReturnsEditWithError(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "   ", true)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty name, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `name="name"`) {
+		t.Fatalf("expected edit form re-rendered on error:\n%s", body)
+	}
+	if !strings.Contains(body, "name is required") {
+		t.Fatalf("expected validation message in body:\n%s", body)
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
+	}
+}
+
+func TestPhoneNamePostTooLongReturnsEditWithError(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	overlong := strings.Repeat("a", 51)
+	w := postLineName(t, h, cookie, overlong, true)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for too-long name, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "name too long") {
+		t.Fatalf("expected length error in body:\n%s", w.Body.String())
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged, got %q", got)
+	}
+}
+
+func TestPhoneNameEditGetReturnsForm(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140001/name/edit", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `name="name"`) {
+		t.Fatalf("expected name input in edit form:\n%s", body)
+	}
+	if !strings.Contains(body, `value="Test Phone"`) {
+		t.Fatalf("expected current name prefilled:\n%s", body)
+	}
+	if !strings.Contains(body, `maxlength="50"`) {
+		t.Fatalf("expected maxlength attribute:\n%s", body)
+	}
+}
+
+func TestPhoneEditPostEmptyNameReturns400(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	form := url.Values{"name": {"   "}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/edit", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty name on list-view edit, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
+	}
+}
