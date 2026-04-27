@@ -41,14 +41,10 @@ type releaseJSON struct {
 	Prerelease      bool   `json:"prerelease"`
 }
 
-// LatestRelease returns the newest non-draft, non-prerelease release whose
-// tag_name starts with tagPrefix.
-func (c *GitHubClient) LatestRelease(ctx context.Context, repo, tagPrefix string) (Release, error) {
-	return c.LatestReleaseWithETag(ctx, repo, tagPrefix, "")
-}
-
-// LatestReleaseWithETag is like LatestRelease but sends If-None-Match so an
-// unchanged release list returns 304 and does not consume rate-limit budget.
+// LatestReleaseWithETag returns the newest non-draft, non-prerelease release
+// whose tag_name starts with tagPrefix. When priorETag is non-empty it is
+// sent as If-None-Match so an unchanged release list returns 304 and does
+// not consume rate-limit budget.
 func (c *GitHubClient) LatestReleaseWithETag(ctx context.Context, repo, tagPrefix, priorETag string) (Release, error) {
 	url := fmt.Sprintf("%s/repos/%s/releases", c.base, repo)
 

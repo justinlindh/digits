@@ -24,7 +24,7 @@ func TestLatestReleaseHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	c := NewGitHubClient(srv.URL, "")
-	rel, err := c.LatestRelease(context.Background(), "owner/repo", "server/v")
+	rel, err := c.LatestReleaseWithETag(context.Background(), "owner/repo", "server/v", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestLatestReleaseSkipsDraftsAndPrereleases(t *testing.T) {
 	defer srv.Close()
 
 	c := NewGitHubClient(srv.URL, "")
-	rel, err := c.LatestRelease(context.Background(), "owner/repo", "server/v")
+	rel, err := c.LatestReleaseWithETag(context.Background(), "owner/repo", "server/v", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestLatestReleaseNoMatch(t *testing.T) {
 	defer srv.Close()
 
 	c := NewGitHubClient(srv.URL, "")
-	rel, err := c.LatestRelease(context.Background(), "owner/repo", "server/v")
+	rel, err := c.LatestReleaseWithETag(context.Background(), "owner/repo", "server/v", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestLatestReleaseHTTPErrors(t *testing.T) {
 			}))
 			defer srv.Close()
 			c := NewGitHubClient(srv.URL, "")
-			_, err := c.LatestRelease(context.Background(), "owner/repo", "server/v")
+			_, err := c.LatestReleaseWithETag(context.Background(), "owner/repo", "server/v", "")
 			if err == nil {
 				t.Fatal("expected error")
 			}
