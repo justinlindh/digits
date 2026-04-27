@@ -121,8 +121,10 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 
 	// Build cursor predicate. Without a cursor the predicate is empty.
 	// With a Call cursor, strict lex compare on (started_at, id).
-	// With a Conference cursor, calls at the same time are already past
-	// (Call sorts before Conference on tie), so use <=.
+	// With a Conference cursor, calls at the same time as the cursor sort
+	// BEFORE the conference cursor in the merged DESC order (Call newer at
+	// equal time), so they were already shown on the prior page and must be
+	// excluded: use strict <.
 	cursorSQL := ""
 	if cursor != nil {
 		switch cursor.Kind {
@@ -134,7 +136,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 			cursorSQL = fmt.Sprintf(" AND (started_at < $%d OR (started_at = $%d AND id < $%d))", n+1, n+1, n+2)
 			args = append(args, cursor.Time, cid)
 		case HistoryEntryConference:
-			cursorSQL = fmt.Sprintf(" AND started_at <= $%d", n+1)
+			cursorSQL = fmt.Sprintf(" AND started_at < $%d", n+1)
 			args = append(args, cursor.Time)
 		}
 	}

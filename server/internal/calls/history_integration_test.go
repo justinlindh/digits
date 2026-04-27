@@ -393,3 +393,65 @@ func TestRecentHistoryForPhones_CursorTieBreak(t *testing.T) {
 		}
 	}
 }
+
+// TestRecentHistoryForPhones_ConfCursorExcludesSameTimeCall verifies that
+// when paginating with a Conference cursor, calls at the same instant as
+// the cursor are NOT included on the older page (they were already on the
+// prior page, since Call sorts before Conference at equal time in the
+// merged DESC order).
+func TestRecentHistoryForPhones_ConfCursorExcludesSameTimeCall(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	now := time.Now().UTC().Round(time.Microsecond)
+
+	// Insert a plain ended call at T and a conference at T (same instant).
+	var callID int64
+	if err := d.DB.QueryRow(`
+		INSERT INTO calls (caller, callee, status, started_at, ended_at, duration_s)
+		VALUES ('7791001', '7791002', 'ended', $1, $1, 0)
+		RETURNING id`, now).Scan(&callID); err != nil {
+		t.Fatalf("insert call: %v", err)
+	}
+	confID := uuid.New()
+	if _, err := d.DB.Exec(`
+		INSERT INTO conferences (id, host_phone, originating_call_id, state, created_at, ended_at, end_reason)
+		VALUES ($1, '7791001', $2, 'ended', $3, $3, 'host_hangup')`, confID, callID, now); err != nil {
+		t.Fatalf("insert conference: %v", err)
+	}
+	if _, err := d.DB.Exec(`
+		INSERT INTO conference_members (conference_id, phone, role) VALUES
+		  ($1, '7791001', 'host'),
+		  ($1, '7791002', 'added'),
+		  ($1, '7791003', 'added')`, confID); err != nil {
+		t.Fatalf("insert conference_members: %v", err)
+	}
+
+	// Page 1: get both entries; Call must come first (newer on tie).
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7791001", "7791002", "7791003"}, nil, 5)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) < 2 {
+		t.Fatalf("page1: expected at least 2 entries, got %d", len(page1))
+	}
+	if page1[0].Kind != calls.HistoryEntryCall {
+		t.Fatalf("page1[0] expected Call, got %v", page1[0].Kind)
+	}
+	if page1[1].Kind != calls.HistoryEntryConference {
+		t.Fatalf("page1[1] expected Conference, got %v", page1[1].Kind)
+	}
+
+	// Cursor at the conference (page1[1]). Older page must NOT contain the
+	// same-time call: that call was already on page 1.
+	cursor := calls.CursorForEntry(page1[1])
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7791001", "7791002", "7791003"}, &cursor, 5)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	for _, e := range page2 {
+		if e.Kind == calls.HistoryEntryCall && e.Call.ID == callID {
+			t.Errorf("page2 unexpectedly contains the same-time call (would be a duplicate from page 1)")
+		}
+	}
+}
