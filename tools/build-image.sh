@@ -761,6 +761,22 @@ rm -rf "${DATA_MNT}/wifi/"*
 rm -rf "${DATA_MNT}/log/journal/"*
 rm -rf "${DATA_MNT}/ssh/"*
 
+# Re-populate /data/ssh with dev SSH host keys after the cleanup, so the
+# skeleton tar below captures them and factory reset still leaves SSH
+# working on dev images. The rootfs symlinks /etc/ssh/ssh_host_*_key
+# point at /data/ssh/* (created later in the dev block); a factory reset
+# wipes /data, restores it from this skeleton, then reboots into the
+# (unchanged) rootfs snapshot. Without these keys in the skeleton, the
+# symlinks resolve to nothing post-reset and sshd refuses to start.
+# Production images skip this entirely; they have no dev user, no
+# password auth, and no symlinks pointing at /data/ssh.
+if [[ "$DEV_MODE" == true ]]; then
+    info "  DEV MODE: pre-generating SSH host keys for skeleton..."
+    mkdir -p "${DATA_MNT}/ssh"
+    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
+    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+fi
+
 # Create compressed data skeleton archive
 info "  Creating data skeleton archive..."
 tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"
@@ -1175,11 +1191,9 @@ if [[ "$DEV_MODE" == true ]]; then
 PasswordAuthentication yes
 SSHDEV
 
-    # Create SSH host keys directory on /data (writable) and pre-generate
-    # the host keys on the host (not in chroot).
-    mkdir -p "${DATA_MNT}/ssh"
-    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
-    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+    # SSH host keys on /data/ssh/ were pre-generated earlier (right before
+    # the data-skeleton tar) so they get captured by the skeleton and
+    # survive factory reset. Just bake the symlinks here.
 
     # Bake /etc/ssh/ssh_host_*_key symlinks into the rootfs so sshd can find
     # the keys at /data/ssh/. The rootfs is mounted read-only at boot, so
