@@ -3,7 +3,8 @@ PI_HOST    ?= digits@<pi-ip>
 PI_DIR      = ~/digits/digitsd
 BUILDER_IMG = digitsd-builder
 
-VERSION ?= dev
+PI_VERSION_RAW := $(shell git describe --tags --dirty --match 'pi/v*' 2>/dev/null)
+VERSION ?= $(if $(PI_VERSION_RAW),$(PI_VERSION_RAW:pi/v%=%),dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet 2>/dev/null || echo -dirty)
 LDFLAGS  = -X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$(VERSION) \
            -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$(COMMIT)

@@ -48,12 +48,17 @@ make -C "$REPO_DIR/pi/digitsd" embed
 info "Building digits-image-builder Docker image..."
 docker build -t digits-image-builder "$SCRIPT_DIR"
 
-# Set up volume mounts
+# Set up volume mounts. Pass the host UID/GID so entrypoint.sh can chown
+# the artifacts it writes back to the bind-mounted repo (tools/build/,
+# pi/digits-recovery/bin/, the output .img.gz). Without this, subsequent
+# host-side builds hit Permission denied when overwriting them.
 DOCKER_ARGS=(
     --rm --privileged
     -v "$REPO_DIR":/digits
     -v "$CACHE_VOLUME":/cache
     -w /digits
+    -e "HOST_UID=$(id -u)"
+    -e "HOST_GID=$(id -g)"
 )
 
 # If this is a git worktree, .git is a file pointing to the main repo's

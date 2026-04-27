@@ -693,13 +693,18 @@ fi
 # ── step 14a: copy Pico firmware to /data (host-side) ────────────────────────
 
 FW_ELF="${BUILD_DIR}/firmware.elf"
-if [[ -f "$FW_ELF" ]]; then
-    info "Copying Pico firmware to /data/digits/firmware.elf..."
-    cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
-    chown 999:992 "${DATA_MNT}/digits/firmware.elf"
-    chmod 644 "${DATA_MNT}/digits/firmware.elf"
-else
-    warn "No firmware.elf found in tools/build/ -- Pico will need OTA flash after first boot"
+FW_VER="${BUILD_DIR}/firmware.elf.version"
+[[ -f "$FW_ELF" ]] || die "Missing ${FW_ELF} -- entrypoint.sh should have staged it. Run 'make stage-firmware' on the host or rebuild via 'make image-v2-flash'."
+info "Copying Pico firmware to /data/digits/firmware.elf..."
+cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
+chown 999:992 "${DATA_MNT}/digits/firmware.elf"
+chmod 644 "${DATA_MNT}/digits/firmware.elf"
+# Sidecar version lets digitsd reflash on Pico/image mismatch; absent
+# file = skip the check (no failure).
+if [[ -f "$FW_VER" ]]; then
+    cp "$FW_VER" "${DATA_MNT}/digits/firmware.elf.version"
+    chown 999:992 "${DATA_MNT}/digits/firmware.elf.version"
+    chmod 644 "${DATA_MNT}/digits/firmware.elf.version"
 fi
 
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────

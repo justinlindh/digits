@@ -94,7 +94,17 @@ export CC=aarch64-linux-gnu-gcc
 export CGO_ENABLED=1
 export CGO_CFLAGS="-I/usr/aarch64-linux-gnu/include -I/usr/include"
 export CGO_LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
+
+# Stamp pi_version / pi_commit so devices report a real version instead
+# of "dev". Tags were refreshed host-side by make fetch-tags before this
+# container ran; if no pi/v* tag exists, fall back to "dev".
+DIGITSD_VERSION=$(git -C /digits describe --tags --dirty --match 'pi/v*' 2>/dev/null | sed 's|^pi/v||')
+DIGITSD_VERSION=${DIGITSD_VERSION:-dev}
+DIGITSD_COMMIT=$(git -C /digits rev-parse --short HEAD 2>/dev/null || echo unknown)
+info "Stamping digitsd: version=$DIGITSD_VERSION commit=$DIGITSD_COMMIT"
 GOOS=linux GOARCH=arm64 go build \
+    -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$DIGITSD_VERSION \
+              -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$DIGITSD_COMMIT" \
     -o /digits/tools/build/digitsd \
     ./cmd/digitsd/
 
@@ -111,27 +121,39 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
 
 info "Binaries ready in tools/build/"
 
-# Download latest firmware ELF from GitHub releases
-info "Downloading latest Pico firmware from GitHub releases..."
-FW_API_URL="https://api.github.com/repos/justinlindh/digits/releases"
-FW_TAG=$(curl -sf "$FW_API_URL" | python3 -c "
+# An image without firmware is a regression we don't ship: prefer the
+# host-staged ELF (make stage-firmware), fall back to GitHub release,
+# die if neither is available.
+FW_ELF=/digits/tools/build/firmware.elf
+FW_VER_FILE=/digits/tools/build/firmware.elf.version
+if [[ -f "$FW_ELF" ]]; then
+    if [[ -f "$FW_VER_FILE" ]]; then
+        info "Using host-staged Pico firmware ($(tr -d '[:space:]' < "$FW_VER_FILE"))"
+    else
+        info "Using host-staged Pico firmware (no version file)"
+    fi
+else
+    info "Downloading latest Pico firmware from GitHub releases..."
+    FW_API_URL="https://api.github.com/repos/justinlindh/digits/releases"
+    FW_TAG=$(curl -sf "$FW_API_URL" | python3 -c "
 import json, sys
 for r in json.load(sys.stdin):
     if r['tag_name'].startswith('fw/'):
         print(r['tag_name']); break
 " 2>/dev/null || true)
-if [[ -n "$FW_TAG" ]]; then
-    FW_VERSION="${FW_TAG#fw/}"
+    if [[ -z "$FW_TAG" ]]; then
+        die "Could not determine latest fw/v* release tag from GitHub. Run 'make stage-firmware' first or check network."
+    fi
+    FW_VERSION="${FW_TAG#fw/v}"
     FW_DOWNLOAD_URL="https://github.com/justinlindh/digits/releases/download/${FW_TAG}/firmware-${FW_VERSION}.elf"
     info "  Downloading firmware ${FW_VERSION}..."
-    if curl -sfL -o /digits/tools/build/firmware.elf "$FW_DOWNLOAD_URL"; then
-        info "  Firmware downloaded: tools/build/firmware.elf"
-    else
-        echo "WARN: Failed to download firmware from $FW_DOWNLOAD_URL -- image will not include firmware" >&2
+    if ! curl -sfL -o "$FW_ELF" "$FW_DOWNLOAD_URL"; then
+        die "Failed to download firmware from $FW_DOWNLOAD_URL"
     fi
-else
-    echo "WARN: Could not determine latest firmware release tag -- image will not include firmware" >&2
+    printf '%s\n' "$FW_VERSION" > "$FW_VER_FILE"
+    info "  Firmware downloaded: tools/build/firmware.elf ($FW_VERSION)"
 fi
+[[ -f "$FW_ELF" ]] || die "Firmware ELF still missing at $FW_ELF after fetch"
 
 # Run the image builder in a working directory, then copy output back
 BUILD_WD="/build"
@@ -141,3 +163,17 @@ bash /digits/tools/build-image.sh ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} "$SOURCE
 
 # Copy the output image to the mounted repo (accessible from host)
 cp -v "$BUILD_WD"/digits-pi-*.img.gz /digits/
+
+# Hand artifacts back to the host UID. The container runs as root for
+# loop mounts and parted, so anything written under the bind-mounted
+# /digits ends up root-owned. That breaks the next host-side make run
+# (e.g. stage-firmware's cp into tools/build/). build-docker.sh passes
+# HOST_UID/HOST_GID so we can fix it here.
+if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then
+    info "Restoring host ownership of build artifacts (${HOST_UID}:${HOST_GID})..."
+    chown -R "${HOST_UID}:${HOST_GID}" \
+        /digits/tools/build \
+        /digits/pi/digits-recovery/bin \
+        2>/dev/null || true
+    chown "${HOST_UID}:${HOST_GID}" /digits/digits-pi-*.img.gz 2>/dev/null || true
+fi
