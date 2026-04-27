@@ -642,6 +642,20 @@ if [[ "$PCB_MODE" == true ]]; then
 fi
 info "PCB rev marker: $(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")"
 
+# Pre-render the active SWD config from the per-rev source. digitsd's startup
+# code at cmd/digitsd/main.go does the same byte-compare-and-write at runtime
+# as a self-heal path (so editing /etc/digits-pcb-rev or shipping a new rev
+# config via OTA still works without an asset-version bump), but on a fresh
+# flash that path triggers a rw/ro remount cycle to write a file we already
+# know the content of. Doing it here keeps digitsd's startup write-free.
+PCB_REV=$(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")
+SWD_SRC="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd-v${PCB_REV}.cfg"
+SWD_DST="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd.cfg"
+[[ -f "$SWD_SRC" ]] || die "SWD config source not found: $SWD_SRC"
+cp "$SWD_SRC" "$SWD_DST"
+chmod 644 "$SWD_DST"
+info "SWD config: pre-rendered $(basename "$SWD_SRC") -> $(basename "$SWD_DST")"
+
 # ── step 13a: compile device-tree overlays (host-side) ──────────────────────
 # The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
 # /boot/firmware/overlays/ are ignored by the loader.
@@ -746,6 +760,22 @@ rm -f "${DATA_MNT}/wifi-configured"
 rm -rf "${DATA_MNT}/wifi/"*
 rm -rf "${DATA_MNT}/log/journal/"*
 rm -rf "${DATA_MNT}/ssh/"*
+
+# Re-populate /data/ssh with dev SSH host keys after the cleanup, so the
+# skeleton tar below captures them and factory reset still leaves SSH
+# working on dev images. The rootfs symlinks /etc/ssh/ssh_host_*_key
+# point at /data/ssh/* (created later in the dev block); a factory reset
+# wipes /data, restores it from this skeleton, then reboots into the
+# (unchanged) rootfs snapshot. Without these keys in the skeleton, the
+# symlinks resolve to nothing post-reset and sshd refuses to start.
+# Production images skip this entirely; they have no dev user, no
+# password auth, and no symlinks pointing at /data/ssh.
+if [[ "$DEV_MODE" == true ]]; then
+    info "  DEV MODE: pre-generating SSH host keys for skeleton..."
+    mkdir -p "${DATA_MNT}/ssh"
+    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
+    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+fi
 
 # Create compressed data skeleton archive
 info "  Creating data skeleton archive..."
@@ -1161,11 +1191,9 @@ if [[ "$DEV_MODE" == true ]]; then
 PasswordAuthentication yes
 SSHDEV
 
-    # Create SSH host keys directory on /data (writable) and pre-generate
-    # the host keys on the host (not in chroot).
-    mkdir -p "${DATA_MNT}/ssh"
-    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
-    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+    # SSH host keys on /data/ssh/ were pre-generated earlier (right before
+    # the data-skeleton tar) so they get captured by the skeleton and
+    # survive factory reset. Just bake the symlinks here.
 
     # Bake /etc/ssh/ssh_host_*_key symlinks into the rootfs so sshd can find
     # the keys at /data/ssh/. The rootfs is mounted read-only at boot, so
