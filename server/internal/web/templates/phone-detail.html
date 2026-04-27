@@ -641,13 +641,12 @@
 {{define "am-name-section"}}
 <div class="am-settings__kv-row" id="name-section">
   <dt class="am-settings__kv-key am-label">Name</dt>
-  <dd class="am-settings__kv-val am-well" style="justify-content: space-between;">
-    <span class="am-led am-settings__kv-led" style="overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
+  <dd class="am-settings__kv-val">
+    <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
     <button type="button" class="am-tab"
             hx-get="/phones/{{.Line.Number}}/name/edit"
             hx-target="#name-section"
-            hx-swap="outerHTML"
-            style="font-size: 11px; padding: 2px 8px;">Edit</button>
+            hx-swap="outerHTML">Edit</button>
   </dd>
 </div>
 {{end}}
