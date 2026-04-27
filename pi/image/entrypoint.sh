@@ -163,3 +163,17 @@ bash /digits/tools/build-image.sh ${BUILD_FLAGS[@]+"${BUILD_FLAGS[@]}"} "$SOURCE
 
 # Copy the output image to the mounted repo (accessible from host)
 cp -v "$BUILD_WD"/digits-pi-*.img.gz /digits/
+
+# Hand artifacts back to the host UID. The container runs as root for
+# loop mounts and parted, so anything written under the bind-mounted
+# /digits ends up root-owned. That breaks the next host-side make run
+# (e.g. stage-firmware's cp into tools/build/). build-docker.sh passes
+# HOST_UID/HOST_GID so we can fix it here.
+if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then
+    info "Restoring host ownership of build artifacts (${HOST_UID}:${HOST_GID})..."
+    chown -R "${HOST_UID}:${HOST_GID}" \
+        /digits/tools/build \
+        /digits/pi/digits-recovery/bin \
+        2>/dev/null || true
+    chown "${HOST_UID}:${HOST_GID}" /digits/digits-pi-*.img.gz 2>/dev/null || true
+fi
