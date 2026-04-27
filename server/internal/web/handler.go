@@ -381,11 +381,6 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	}, nil
 }
 
-// Hub returns the signaling hub (used in tests).
-func (h *Handler) Hub() *signaling.Hub {
-	return h.hub
-}
-
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 

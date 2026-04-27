@@ -84,7 +84,7 @@ func TestDashboardStream_HubRegisterTriggersFrame(t *testing.T) {
 	_, _ = setupLineWithConn(t, h, database, hh, number, "Kitchen")
 	// setupLineWithConn already registers a conn. Unregister so the test
 	// drives a fresh Register below and observes the resulting Notify.
-	h.Hub().Unregister(number, h.Hub().Get(number))
+	h.hub.Unregister(number, h.hub.Get(number))
 
 	req, _ := http.NewRequest("GET", dashStreamURL(srv), nil)
 	req.AddCookie(cookie)
@@ -107,8 +107,8 @@ func TestDashboardStream_HubRegisterTriggersFrame(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 1)}
-	h.Hub().Register(number, conn)
-	t.Cleanup(func() { h.Hub().Unregister(number, conn) })
+	h.hub.Register(number, conn)
+	t.Cleanup(func() { h.hub.Unregister(number, conn) })
 
 	ev, _, err := readSSEFrame(t, ctx, sr)
 	if err != nil {
