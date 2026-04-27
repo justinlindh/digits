@@ -8,9 +8,17 @@ import (
 	"time"
 )
 
+// Kind codes used in the encoded cursor token. Single characters keep the
+// token short; the values are part of the URL contract and must not change
+// once tokens are in the wild.
+const (
+	kindCodeCall = "c"
+	kindCodeConf = "f"
+)
+
 // HistoryCursor identifies a position in the merged call+conference timeline.
-// SortTime + Kind + ID together break ties when a call and a conference share
-// a microsecond timestamp.
+// Time + Kind + ID together break ties when a call and a conference share a
+// microsecond timestamp.
 type HistoryCursor struct {
 	Time time.Time
 	Kind HistoryEntryKind
@@ -70,18 +78,20 @@ func CursorForEntry(e HistoryEntry) HistoryCursor {
 
 func kindCode(k HistoryEntryKind) string {
 	switch k {
+	case HistoryEntryCall:
+		return kindCodeCall
 	case HistoryEntryConference:
-		return "f"
+		return kindCodeConf
 	default:
-		return "c"
+		panic(fmt.Sprintf("calls: unknown HistoryEntryKind %v", k))
 	}
 }
 
 func parseKindCode(s string) (HistoryEntryKind, error) {
 	switch s {
-	case "c":
+	case kindCodeCall:
 		return HistoryEntryCall, nil
-	case "f":
+	case kindCodeConf:
 		return HistoryEntryConference, nil
 	default:
 		return 0, fmt.Errorf("cursor: unknown kind %q", s)

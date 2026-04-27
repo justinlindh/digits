@@ -87,11 +87,10 @@ func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, c
 			SortTime:   confs[i].CreatedAt,
 		})
 	}
+	// Tie-break must mirror the SQL ORDER BY in each subquery so an OlderCursor
+	// built from this slice paginates without gaps or duplicates.
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].SortTime.Equal(entries[j].SortTime) {
-			// Stable secondary sort: calls before conferences on tie, then by ID desc.
-			// Numeric compare for calls (matches SQL `ORDER BY id DESC`); string compare
-			// for conferences (matches SQL `ORDER BY c.id::text DESC` in the conferences subquery).
 			if entries[i].Kind != entries[j].Kind {
 				return entries[i].Kind == HistoryEntryCall
 			}
@@ -119,12 +118,9 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 		args = append(args, p)
 	}
 
-	// Build cursor predicate. Without a cursor the predicate is empty.
-	// With a Call cursor, strict lex compare on (started_at, id).
-	// With a Conference cursor, calls at the same time as the cursor sort
-	// BEFORE the conference cursor in the merged DESC order (Call newer at
-	// equal time), so they were already shown on the prior page and must be
-	// excluded: use strict <.
+	// Conference cursor uses strict < because Call sorts before Conference at
+	// equal time in the in-memory merge, so the same-time call is already on
+	// the prior page and must not be emitted again.
 	cursorSQL := ""
 	if cursor != nil {
 		switch cursor.Kind {
@@ -133,16 +129,19 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 			if err != nil {
 				return nil, fmt.Errorf("calls cursor id: %w", err)
 			}
-			cursorSQL = fmt.Sprintf(" AND (started_at < $%d OR (started_at = $%d AND id < $%d))", n+1, n+1, n+2)
-			args = append(args, cursor.Time, cid)
-		case HistoryEntryConference:
-			cursorSQL = fmt.Sprintf(" AND started_at < $%d", n+1)
 			args = append(args, cursor.Time)
+			tIdx := len(args)
+			args = append(args, cid)
+			idIdx := len(args)
+			cursorSQL = fmt.Sprintf(" AND (started_at < $%d OR (started_at = $%d AND id < $%d))", tIdx, tIdx, idIdx)
+		case HistoryEntryConference:
+			args = append(args, cursor.Time)
+			cursorSQL = fmt.Sprintf(" AND started_at < $%d", len(args))
 		}
 	}
 
-	limitIdx := len(args) + 1
 	args = append(args, limit)
+	limitIdx := len(args)
 
 	query := fmt.Sprintf(
 		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
@@ -178,14 +177,9 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]ConferenceSummary, error) {
 	args := []interface{}{pq.Array(phones)}
 
-	// Cursor predicate, mirroring the calls subquery rules.
-	// Tie-break in the in-memory sort: Call before Conference on equal time.
-	//   Call cursor:       conferences at the same time sort AFTER the call
-	//                      (older in the merged DESC order) and have not been
-	//                      shown yet, so include them: use <=.
-	//   Conference cursor: strict lex compare on (created_at, id::text) skips
-	//                      the cursor itself and conferences with same time
-	//                      but earlier secondary sort.
+	// Call cursor uses <= because Conference sorts after Call at equal time in
+	// the in-memory merge, so the same-time conference is the next entry on the
+	// older page and must be included.
 	cursorSQL := ""
 	if cursor != nil {
 		switch cursor.Kind {
