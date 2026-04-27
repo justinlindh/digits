@@ -381,7 +381,7 @@ func TestPhoneRestartOnline(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"service"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -460,7 +460,7 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"explode"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -498,7 +498,7 @@ func TestPhoneOnlineStatus(t *testing.T) {
 	}
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	req = httptest.NewRequest("GET", "/phones/3140001/online", nil)
 	req.Header.Set("Accept", "application/json")
@@ -784,7 +784,7 @@ func TestPhoneSilentModePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -813,7 +813,7 @@ func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	// Line defaults to silent_mode=false on insert. Saving false again must be a no-op.
 	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
@@ -855,7 +855,7 @@ func TestPhoneVoiceStylePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	if w := postVoiceStyle(t, h, cookie, "modern", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -884,7 +884,7 @@ func TestPhoneVoiceStyleNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	// Line defaults to copper on insert — saving copper again must be a no-op.
 	if w := postVoiceStyle(t, h, cookie, "copper", false); w.Code != http.StatusSeeOther {
@@ -1490,8 +1490,8 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register(number, conn)
-	h.Hub().UpdateDeviceInfo(number, "", "", fwVersion, "", false)
+	h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", false)
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
