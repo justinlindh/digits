@@ -37,7 +37,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 			for i, l := range lines {
 				numbers[i] = l.Number
 			}
-			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, 100)
+			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, nil, 100)
 			if err != nil {
 				slog.Error("query recent history failed", "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)

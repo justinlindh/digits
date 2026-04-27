@@ -24,7 +24,7 @@ func TestRecentHistoryForPhones_PureCall(t *testing.T) {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7770001", "7770002"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7770001", "7770002"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestRecentHistoryForPhones_ThreeWayHappy(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7771001", "7771002", "7771003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7771001", "7771002", "7771003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 		t.Fatalf("OnCallEnded continuation: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7772001", "7772002", "7772003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7772001", "7772002", "7772003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	// Suppress "declared and not used" — id1 is referenced only for clarity.
 	_ = id1
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7774001", "7774002", "7774003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7774001", "7774002", "7774003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}

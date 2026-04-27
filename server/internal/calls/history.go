@@ -50,27 +50,27 @@ type ConferenceSummary struct {
 	OriginatingCallID int64
 }
 
-// RecentHistoryForPhones returns a unified history of 2-party calls and
-// conferences involving any of the given phone numbers, most recent first,
-// capped at limit total entries. Calls that were merged into a conference
-// (end_reason = 'merged_to_conference') are excluded — they are represented
-// by the conference entry instead.
-func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, limit int) ([]HistoryEntry, error) {
+// RecentHistoryForPhones returns a unified history page of 2-party calls and
+// conferences involving any of the given phone numbers, most recent first.
+// When cursor is non-nil, only entries strictly older than the cursor (in the
+// merged timeline order) are returned. The function fetches limit+1 rows from
+// each underlying subquery and returns up to limit+1 entries. Callers use the
+// extra entry to detect whether an older page exists.
+func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]HistoryEntry, error) {
 	if len(phones) == 0 {
 		return nil, nil
 	}
 
-	calls, err := t.recentCallsForHistory(ctx, phones, limit)
+	calls, err := t.recentCallsForHistory(ctx, phones, cursor, limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("recent calls: %w", err)
 	}
 
-	confs, err := t.recentConferencesForHistory(ctx, phones, limit)
+	confs, err := t.recentConferencesForHistory(ctx, phones, cursor, limit+1)
 	if err != nil {
 		return nil, fmt.Errorf("recent conferences: %w", err)
 	}
 
-	// Merge into a single slice sorted by SortTime descending.
 	entries := make([]HistoryEntry, 0, len(calls)+len(confs))
 	for i := range calls {
 		entries = append(entries, HistoryEntry{
@@ -87,17 +87,25 @@ func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, l
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].SortTime.Equal(entries[j].SortTime) {
+			// Stable secondary sort: calls before conferences on tie, then by ID desc.
+			if entries[i].Kind != entries[j].Kind {
+				return entries[i].Kind == HistoryEntryCall
+			}
+			return CursorForEntry(entries[i]).ID > CursorForEntry(entries[j]).ID
+		}
 		return entries[i].SortTime.After(entries[j].SortTime)
 	})
-	if len(entries) > limit {
-		entries = entries[:limit]
+	if len(entries) > limit+1 {
+		entries = entries[:limit+1]
 	}
 	return entries, nil
 }
 
 // recentCallsForHistory returns calls for the given phones, excluding rows
 // that were merged into a conference.
-func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, limit int) ([]Call, error) {
+func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]Call, error) {
+	_ = cursor // applied in Task 3
 	n := len(phones)
 	ph := dbutil.Placeholders(n, 0)
 	query := fmt.Sprintf(
@@ -136,7 +144,8 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, li
 
 // recentConferencesForHistory returns conferences where any of the phones is
 // a member, including the ordered member list for each conference.
-func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, limit int) ([]ConferenceSummary, error) {
+func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]ConferenceSummary, error) {
+	_ = cursor // applied in Task 4
 	// One query: join conferences + conference_members, aggregate member list.
 	// host_phone always sorts first via CASE, remaining members sort alphabetically
 	// so ordering is stable across queries.
