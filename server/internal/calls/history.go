@@ -89,10 +89,15 @@ func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, c
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].SortTime.Equal(entries[j].SortTime) {
 			// Stable secondary sort: calls before conferences on tie, then by ID desc.
+			// Numeric compare for calls (matches SQL `ORDER BY id DESC`); string compare
+			// for conferences (matches SQL `ORDER BY c.id::text DESC` in the conferences subquery).
 			if entries[i].Kind != entries[j].Kind {
 				return entries[i].Kind == HistoryEntryCall
 			}
-			return CursorForEntry(entries[i]).ID > CursorForEntry(entries[j]).ID
+			if entries[i].Kind == HistoryEntryCall {
+				return entries[i].Call.ID > entries[j].Call.ID
+			}
+			return entries[i].Conference.ID.String() > entries[j].Conference.ID.String()
 		}
 		return entries[i].SortTime.After(entries[j].SortTime)
 	})
