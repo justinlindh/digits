@@ -2110,3 +2110,118 @@ func TestHandleCalls_Dialup_PaginationControls(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleCalls_AM_PaginationControls covers the answering-machine theme's
+// behavior around pagination controls and auto-refresh attributes:
+//   - Page 1 with no older entries: no transport bar, hx-trigger present.
+//   - Page 1 with an older page available: transport bar rendered, Older link
+//     with cursor, hx-trigger present.
+//   - Page 2 (paged via ?before=cursor): transport bar rendered, Newer link
+//     to /calls, hx-trigger absent (snapshot mode, REW LED in header).
+func TestHandleCalls_AM_PaginationControls(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Switch the test user to the AM theme so the calls-am template renders.
+	// Reset on cleanup so subsequent tests sharing the user (via
+	// setupAuthedHousehold) see the default value.
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeAnsweringMachine); err != nil {
+		t.Fatalf("set AM theme: %v", err)
+	}
+	t.Cleanup(func() { _ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom) })
+
+	// Sub-case 1: empty dataset, page 1. No transport bar, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (empty): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 1 (empty): transport bar should be absent")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (empty): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Seed enough ended calls to force OlderCursor on page 1.
+	// The page size is 50, so seed 51 to guarantee a next page.
+	seedEndedCallsForCursorTest(t, h, database, hh, 51)
+
+	// Sub-case 2: page 1 with older page available. Bar rendered, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (with older): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 1 (with older): expected AM transport bar")
+		}
+		if !strings.Contains(body, `am-transport--rew`) {
+			t.Errorf("page 1 (with older): expected enabled REW (older) button")
+		}
+		if !strings.Contains(body, `href="/calls?before=`) {
+			t.Errorf("page 1 (with older): expected Older link with cursor")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (with older): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Build a cursor from the most recent entry to exercise the IsPaged path.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	// Sub-case 3: page 2 via ?before=cursor. Bar rendered, polling off.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 2: got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 2: expected AM transport bar")
+		}
+		if !strings.Contains(body, `am-transport--ff`) {
+			t.Errorf("page 2: expected enabled FF (newer) button")
+		}
+		if !strings.Contains(body, `href="/calls"`) {
+			t.Errorf("page 2: expected Newer link to /calls")
+		}
+		if strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 2: hx-trigger must be absent on paged view")
+		}
+	}
+}

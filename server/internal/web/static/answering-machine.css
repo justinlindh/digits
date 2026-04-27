@@ -1726,3 +1726,87 @@ body.am .deck-kick-confirm .deck-confirm__go {
   .am-phones__row-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .am-phones__pin-slot { width: 26px; height: 34px; font-size: 18px; }
 }
+
+/* === AM /calls: transport pagination === */
+
+/* Tape transport row: chrome plate strip riding the bottom of the tape plate.
+   Houses REW (older) and FF (newer) cassette-deck buttons. Renders only when
+   pagination is active so a single-page view stays uncluttered. */
+.am-calls__transport {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 12px 18px 14px;
+  border-top: 1px solid rgba(100,80,40,0.2);
+  background: linear-gradient(180deg, rgba(200,188,151,0.0) 0%, rgba(200,188,151,0.18) 100%);
+}
+
+/* Transport button: beveled chrome chicklet with an LED-amber glyph cap on
+   the left and an embossed label on the right. Borrows .am-key dimensions
+   for tactile parity with the rest of the deck. */
+.am-transport {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 10px;
+  background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 55%, var(--btn-bot) 100%);
+  border: 1px solid var(--btn-press);
+  border-radius: 5px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.75),
+    inset 0 -1px 0 rgba(100,85,45,0.4),
+    0 2px 0 var(--btn-press),
+    0 3px 4px rgba(40,30,15,0.3);
+  color: var(--btn-label);
+  font-family: var(--font-body);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 60ms;
+}
+.am-transport:hover { background: linear-gradient(180deg, var(--btn-top) 0%, var(--btn) 40%, var(--btn-bot) 100%); color: var(--btn-label); }
+.am-transport:active { transform: translateY(2px); box-shadow: inset 0 1px 2px rgba(60,45,20,0.3), 0 0 0 rgba(0,0,0,0); }
+
+/* LED-amber glyph (REW / FF) inside the transport button: short word, bright
+   cap on a dark substrate. Width holds steady whether label is REW or FF so
+   the two buttons line up. */
+.am-transport__led {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px;
+  padding: 3px 5px;
+  background: var(--led-bg);
+  border-radius: 3px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.7);
+  font-family: var(--font-led);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* Embossed Newer/Older label sits to the right of the LED glyph in case-toned
+   small caps. Matches .am-key__label tone so transport reads as an extension
+   of the deck control row, not a hyperlink. */
+.am-transport__label {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* Disabled (boundary) transport button: stays in flow so the bar's geometry
+   is constant, but loses gloss, lift, and cursor. Pairs with .am-led--dim
+   on the LED glyph to read as "no tape that direction." */
+.am-transport--disabled {
+  background: linear-gradient(180deg, var(--btn) 0%, var(--btn-bot) 100%);
+  border-color: rgba(100,85,45,0.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 0 rgba(255,255,255,0.2);
+  cursor: default;
+  opacity: 0.6;
+}
+.am-transport--disabled .am-transport__label { color: var(--ink-muted); }
+
+/* Mobile: keep the bar full-width but allow buttons to shrink. */
+@media (max-width: 780px) {
+  .am-calls__transport { padding: 10px 14px 12px; gap: 8px; }
+  .am-transport { padding: 5px 10px 5px 8px; gap: 6px; }
+}
