@@ -319,6 +319,17 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 	}
 }
 
+// renderWithStatus is renderWith with an explicit non-200 status. Headers must
+// be set before WriteHeader, so we can't reuse renderWith after the caller has
+// already written the status line.
+func renderWithStatus(w http.ResponseWriter, t *template.Template, name string, data any, status int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	if err := t.ExecuteTemplate(w, name, data); err != nil {
+		slog.Error("template render failed", "template", name, "err", err)
+	}
+}
+
 // layoutFor returns the layout template name for the current user's theme.
 // Falls back to the intercom layout when no theme is set (unauthenticated or new user).
 func layoutFor(r *http.Request) string {

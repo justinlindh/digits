@@ -20,8 +20,6 @@ import (
 
 const maxLineNameRunes = 50
 
-// validateLineName trims whitespace and rejects empty or over-length names.
-// Callers should treat a non-nil error as a 400-class user input problem.
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
@@ -381,9 +379,9 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
-// nameSectionData is the payload rendered into the detail-page name partials.
-// Error and Value are populated when re-rendering the edit partial after a
-// failed POST so the form keeps the user's draft and shows what went wrong.
+// nameSectionData carries the prefilled input value and any validation error
+// when re-rendering the edit partial after a failed POST, so the user's draft
+// and the reason for rejection survive the round-trip.
 type nameSectionData struct {
 	Line  line.Line
 	Error string
@@ -421,16 +419,17 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	}
 	name, verr := validateLineName(raw)
 	if verr != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()})
+		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
 		return
 	}
-	if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-		slog.Error("line update failed", "err", err, "line_id", ln.ID)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+	if name != ln.Name {
+		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		ln.Name = name
 	}
-	ln.Name = name
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
 		return

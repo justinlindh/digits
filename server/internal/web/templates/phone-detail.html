@@ -607,7 +607,7 @@
 {{define "name-section"}}
 <div class="kv__row" id="name-section">
   <dt class="kv__key">Name</dt>
-  <dd class="kv__val" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+  <dd class="kv__val spread">
     <span style="overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
     <button type="button" class="btn btn--quiet btn--sm"
             hx-get="/phones/{{.Line.Number}}/name/edit"
@@ -624,7 +624,7 @@
     <form hx-post="/phones/{{.Line.Number}}/name"
           hx-target="#name-section"
           hx-swap="outerHTML"
-          style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          class="hstack hstack--wrap">
       <input type="text" name="name" value="{{.Value}}" required maxlength="50" autofocus
              class="field__input" style="flex: 1; min-width: 0;">
       <button type="submit" class="btn btn--primary btn--sm">Save</button>
@@ -641,7 +641,7 @@
 {{define "am-name-section"}}
 <div class="am-settings__kv-row" id="name-section">
   <dt class="am-settings__kv-key am-label">Name</dt>
-  <dd class="am-settings__kv-val am-well" style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+  <dd class="am-settings__kv-val am-well" style="justify-content: space-between;">
     <span class="am-led am-settings__kv-led" style="overflow: hidden; text-overflow: ellipsis;">{{.Line.Name}}</span>
     <button type="button" class="am-tab"
             hx-get="/phones/{{.Line.Number}}/name/edit"
@@ -655,11 +655,11 @@
 {{define "am-name-section-edit"}}
 <div class="am-settings__kv-row" id="name-section">
   <dt class="am-settings__kv-key am-label">Name</dt>
-  <dd class="am-settings__kv-val">
+  <dd class="am-settings__kv-val" style="flex-wrap: wrap;">
     <form hx-post="/phones/{{.Line.Number}}/name"
           hx-target="#name-section"
           hx-swap="outerHTML"
-          style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1;">
       <input type="text" name="name" value="{{.Value}}" required maxlength="50" autofocus
              class="am-phones__edit-input" style="flex: 1; min-width: 0;">
       <button type="submit" class="am-tab">Save</button>
@@ -668,7 +668,7 @@
               hx-target="#name-section"
               hx-swap="outerHTML">Cancel</button>
     </form>
-    {{if .Error}}<span class="am-hint" style="color: var(--rust); display: block; margin-top: 4px;">{{.Error}}</span>{{end}}
+    {{if .Error}}<span class="am-hint" style="color: var(--rust); flex-basis: 100%; margin-top: 4px;">{{.Error}}</span>{{end}}
   </dd>
 </div>
 {{end}}

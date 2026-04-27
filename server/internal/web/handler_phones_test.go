@@ -17,7 +17,6 @@ func TestValidateLineName(t *testing.T) {
 		{in: "   ", wantErr: "name is required"},
 		{in: strings.Repeat("a", 50), want: strings.Repeat("a", 50)},
 		{in: strings.Repeat("a", 51), wantErr: "name too long"},
-		// 50 multibyte runes (each ä is 2 bytes in UTF-8 but counts as one rune).
 		{in: strings.Repeat("ä", 50), want: strings.Repeat("ä", 50)},
 		{in: strings.Repeat("ä", 51), wantErr: "name too long"},
 	}

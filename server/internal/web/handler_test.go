@@ -1661,7 +1661,6 @@ func TestPairBannerRendersOnQueryParam(t *testing.T) {
 	}
 }
 
-// readLineName returns the current name column for the test line "3140001".
 func readLineName(t *testing.T, database *db.Database) string {
 	t.Helper()
 	var name string
