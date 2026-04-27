@@ -111,27 +111,41 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
 
 info "Binaries ready in tools/build/"
 
-# Download latest firmware ELF from GitHub releases
-info "Downloading latest Pico firmware from GitHub releases..."
-FW_API_URL="https://api.github.com/repos/justinlindh/digits/releases"
-FW_TAG=$(curl -sf "$FW_API_URL" | python3 -c "
+# Pico firmware: prefer host-staged ELF (Makefile's stage-firmware target
+# rebuilds firmware/build/docker/digits.elf and copies it here). Fall back
+# to the latest fw/v* GitHub release only when the host didn't stage one,
+# e.g. someone calling build-docker.sh directly. Either way, an image
+# without firmware is a regression we don't ship.
+FW_ELF=/digits/tools/build/firmware.elf
+FW_VER_FILE=/digits/tools/build/firmware.elf.version
+if [[ -f "$FW_ELF" ]]; then
+    if [[ -f "$FW_VER_FILE" ]]; then
+        info "Using host-staged Pico firmware ($(tr -d '[:space:]' < "$FW_VER_FILE"))"
+    else
+        info "Using host-staged Pico firmware (no version file)"
+    fi
+else
+    info "Downloading latest Pico firmware from GitHub releases..."
+    FW_API_URL="https://api.github.com/repos/justinlindh/digits/releases"
+    FW_TAG=$(curl -sf "$FW_API_URL" | python3 -c "
 import json, sys
 for r in json.load(sys.stdin):
     if r['tag_name'].startswith('fw/'):
         print(r['tag_name']); break
 " 2>/dev/null || true)
-if [[ -n "$FW_TAG" ]]; then
+    if [[ -z "$FW_TAG" ]]; then
+        die "Could not determine latest fw/v* release tag from GitHub. Run 'make stage-firmware' first or check network."
+    fi
     FW_VERSION="${FW_TAG#fw/}"
     FW_DOWNLOAD_URL="https://github.com/justinlindh/digits/releases/download/${FW_TAG}/firmware-${FW_VERSION}.elf"
     info "  Downloading firmware ${FW_VERSION}..."
-    if curl -sfL -o /digits/tools/build/firmware.elf "$FW_DOWNLOAD_URL"; then
-        info "  Firmware downloaded: tools/build/firmware.elf"
-    else
-        echo "WARN: Failed to download firmware from $FW_DOWNLOAD_URL -- image will not include firmware" >&2
+    if ! curl -sfL -o "$FW_ELF" "$FW_DOWNLOAD_URL"; then
+        die "Failed to download firmware from $FW_DOWNLOAD_URL"
     fi
-else
-    echo "WARN: Could not determine latest firmware release tag -- image will not include firmware" >&2
+    printf '%s\n' "$FW_VERSION" > "$FW_VER_FILE"
+    info "  Firmware downloaded: tools/build/firmware.elf ($FW_VERSION)"
 fi
+[[ -f "$FW_ELF" ]] || die "Firmware ELF still missing at $FW_ELF after fetch"
 
 # Run the image builder in a working directory, then copy output back
 BUILD_WD="/build"
