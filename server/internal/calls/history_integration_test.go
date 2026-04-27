@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -24,7 +26,7 @@ func TestRecentHistoryForPhones_PureCall(t *testing.T) {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7770001", "7770002"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7770001", "7770002"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestRecentHistoryForPhones_ThreeWayHappy(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7771001", "7771002", "7771003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7771001", "7771002", "7771003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -139,7 +141,7 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 		t.Fatalf("OnCallEnded continuation: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7772001", "7772002", "7772003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7772001", "7772002", "7772003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -212,7 +214,7 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	// Suppress "declared and not used" — id1 is referenced only for clarity.
 	_ = id1
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -234,6 +236,51 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	}
 	if !entries[1].SortTime.After(entries[2].SortTime) {
 		t.Error("entries not sorted descending: entry 1 should be after entry 2")
+	}
+}
+
+// TestRecentHistoryForPhones_CursorPagination_CallsOnly verifies that a
+// cursor pointing at the Nth call returns only entries strictly older than
+// the cursor in the merged timeline order.
+func TestRecentHistoryForPhones_CursorPagination_CallsOnly(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	// Insert 5 plain calls between phones A and B, ended in order so
+	// started_at increases monotonically.
+	for i := 0; i < 5; i++ {
+		if _, err := tr.OnCallInitiated(context.Background(), "7780001", "7780002"); err != nil {
+			t.Fatalf("OnCallInitiated[%d]: %v", i, err)
+		}
+		if err := tr.OnCallEnded(context.Background(), "7780001", "7780002"); err != nil {
+			t.Fatalf("OnCallEnded[%d]: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7780001", "7780002"}, nil, 2)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	// Expect 3 (limit+1) entries returned by the underlying probe.
+	if len(page1) != 3 {
+		t.Fatalf("page1: expected 3 entries, got %d", len(page1))
+	}
+
+	// Build cursor at entry index 1 (the 2nd entry on a 2-page).
+	cursor := calls.CursorForEntry(page1[1])
+
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7780001", "7780002"}, &cursor, 2)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	// 5 calls total, 2 returned on page1, page2 should hold the remaining 3.
+	if len(page2) != 3 {
+		t.Fatalf("page2: expected 3 remaining entries, got %d", len(page2))
+	}
+	// Continuity: page2[0] is strictly older than the cursor.
+	if !page2[0].SortTime.Before(cursor.Time) && page2[0].Call.ID >= page1[1].Call.ID {
+		t.Errorf("page2[0] is not older than cursor: page2[0]=%v cursor=%v", page2[0].SortTime, cursor.Time)
 	}
 }
 
@@ -259,7 +306,7 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7774001", "7774002", "7774003"}, 10)
+	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7774001", "7774002", "7774003"}, nil, 10)
 	if err != nil {
 		t.Fatalf("RecentHistoryForPhones: %v", err)
 	}
@@ -271,5 +318,140 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected exactly 1 entry (the conference), got %d", len(entries))
+	}
+}
+
+// TestRecentHistoryForPhones_CursorTieBreak verifies that a call and a
+// conference created in the same transaction (and therefore at the same
+// timestamp) are ordered call-before-conference, and a Call cursor advances
+// past the call so the next page starts with the conference.
+func TestRecentHistoryForPhones_CursorTieBreak(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	// 3-way merge yields a Call (the originating leg, marked merged) plus a
+	// Conference. The originating call is excluded from history (filtered
+	// by end_reason='merged_to_conference'), so we set up a tie differently:
+	// create a plain ended call and a conference at the same instant via
+	// raw inserts.
+	now := time.Now().UTC().Round(time.Microsecond)
+
+	var callID int64
+	if err := d.DB.QueryRow(`
+		INSERT INTO calls (caller, callee, status, started_at, ended_at, duration_s)
+		VALUES ('7790001', '7790002', 'ended', $1, $1, 0) RETURNING id`, now).Scan(&callID); err != nil {
+		t.Fatalf("insert call: %v", err)
+	}
+	confID := uuid.New()
+	if _, err := d.DB.Exec(`
+		INSERT INTO conferences (id, host_phone, originating_call_id, state, created_at, ended_at, end_reason)
+		VALUES ($1, '7790001', $2, 'ended', $3, $3, 'host_hangup')`, confID, callID, now); err != nil {
+		t.Fatalf("insert conference: %v", err)
+	}
+	if _, err := d.DB.Exec(`
+		INSERT INTO conference_members (conference_id, phone, role) VALUES ($1, '7790001', 'host'), ($1, '7790002', 'added'), ($1, '7790003', 'added')`, confID); err != nil {
+		t.Fatalf("insert conference_members: %v", err)
+	}
+
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, nil, 1)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) < 1 {
+		t.Fatalf("page1: expected at least 1 entry, got %d", len(page1))
+	}
+	// Tie-break rule: Call comes before Conference on equal timestamp.
+	if page1[0].Kind != calls.HistoryEntryCall {
+		t.Fatalf("page1[0] expected Call, got %v", page1[0].Kind)
+	}
+
+	cursor := calls.CursorForEntry(page1[0])
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, &cursor, 5)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2) < 1 {
+		t.Fatalf("page2: expected at least 1 entry, got %d", len(page2))
+	}
+	if page2[0].Kind != calls.HistoryEntryConference {
+		t.Errorf("page2[0] expected Conference (post-call cursor advance), got %v", page2[0].Kind)
+	}
+	if page2[0].Conference == nil || page2[0].Conference.ID != confID {
+		t.Errorf("page2[0] conference ID mismatch")
+	}
+
+	// Advance past the conference: page3 should be empty. Without the
+	// conferences-subquery cursor filter the conference would re-appear.
+	cursor2 := calls.CursorForEntry(page2[0])
+	page3, err := tr.RecentHistoryForPhones(context.Background(), []string{"7790001", "7790002", "7790003"}, &cursor2, 5)
+	if err != nil {
+		t.Fatalf("page3: %v", err)
+	}
+	for _, e := range page3 {
+		if e.Kind == calls.HistoryEntryConference && e.Conference != nil && e.Conference.ID == confID {
+			t.Errorf("page3 leaked the cursor conference (cursor filter missing on conferences subquery)")
+		}
+	}
+}
+
+// TestRecentHistoryForPhones_ConfCursorExcludesSameTimeCall verifies that
+// when paginating with a Conference cursor, calls at the same instant as
+// the cursor are NOT included on the older page (they were already on the
+// prior page, since Call sorts before Conference at equal time in the
+// merged DESC order).
+func TestRecentHistoryForPhones_ConfCursorExcludesSameTimeCall(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	now := time.Now().UTC().Round(time.Microsecond)
+
+	// Insert a plain ended call at T and a conference at T (same instant).
+	var callID int64
+	if err := d.DB.QueryRow(`
+		INSERT INTO calls (caller, callee, status, started_at, ended_at, duration_s)
+		VALUES ('7791001', '7791002', 'ended', $1, $1, 0)
+		RETURNING id`, now).Scan(&callID); err != nil {
+		t.Fatalf("insert call: %v", err)
+	}
+	confID := uuid.New()
+	if _, err := d.DB.Exec(`
+		INSERT INTO conferences (id, host_phone, originating_call_id, state, created_at, ended_at, end_reason)
+		VALUES ($1, '7791001', $2, 'ended', $3, $3, 'host_hangup')`, confID, callID, now); err != nil {
+		t.Fatalf("insert conference: %v", err)
+	}
+	if _, err := d.DB.Exec(`
+		INSERT INTO conference_members (conference_id, phone, role) VALUES
+		  ($1, '7791001', 'host'),
+		  ($1, '7791002', 'added'),
+		  ($1, '7791003', 'added')`, confID); err != nil {
+		t.Fatalf("insert conference_members: %v", err)
+	}
+
+	// Page 1: get both entries; Call must come first (newer on tie).
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7791001", "7791002", "7791003"}, nil, 5)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) < 2 {
+		t.Fatalf("page1: expected at least 2 entries, got %d", len(page1))
+	}
+	if page1[0].Kind != calls.HistoryEntryCall {
+		t.Fatalf("page1[0] expected Call, got %v", page1[0].Kind)
+	}
+	if page1[1].Kind != calls.HistoryEntryConference {
+		t.Fatalf("page1[1] expected Conference, got %v", page1[1].Kind)
+	}
+
+	// Cursor at the conference (page1[1]). Older page must NOT contain the
+	// same-time call: that call was already on page 1.
+	cursor := calls.CursorForEntry(page1[1])
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7791001", "7791002", "7791003"}, &cursor, 5)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	for _, e := range page2 {
+		if e.Kind == calls.HistoryEntryCall && e.Call.ID == callID {
+			t.Errorf("page2 unexpectedly contains the same-time call (would be a duplicate from page 1)")
+		}
 	}
 }

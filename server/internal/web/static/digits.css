@@ -2052,3 +2052,35 @@ html[data-theme="dark"] .confirm-dialog::backdrop { background: rgba(0,0,0,0.55)
 html[data-theme="dark"] .confirm-dialog {
   box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
 }
+
+/* --------- Panel pagination (intercom theme) ---------
+   Understated text-link controls that ride inside .panel so the htmx
+   poll on page 1 refreshes them along with the list body. */
+
+.panel__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 12.5px;
+}
+.panel__pagination-link {
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.01em;
+}
+.panel__pagination-link:hover {
+  color: var(--brass);
+  background: var(--paper-2);
+  text-decoration: none;
+}
+.panel__pagination-link--disabled {
+  color: var(--ink-muted);
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
