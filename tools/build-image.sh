@@ -642,6 +642,20 @@ if [[ "$PCB_MODE" == true ]]; then
 fi
 info "PCB rev marker: $(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")"
 
+# Pre-render the active SWD config from the per-rev source. digitsd's startup
+# code at cmd/digitsd/main.go does the same byte-compare-and-write at runtime
+# as a self-heal path (so editing /etc/digits-pcb-rev or shipping a new rev
+# config via OTA still works without an asset-version bump), but on a fresh
+# flash that path triggers a rw/ro remount cycle to write a file we already
+# know the content of. Doing it here keeps digitsd's startup write-free.
+PCB_REV=$(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")
+SWD_SRC="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd-v${PCB_REV}.cfg"
+SWD_DST="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd.cfg"
+[[ -f "$SWD_SRC" ]] || die "SWD config source not found: $SWD_SRC"
+cp "$SWD_SRC" "$SWD_DST"
+chmod 644 "$SWD_DST"
+info "SWD config: pre-rendered $(basename "$SWD_SRC") -> $(basename "$SWD_DST")"
+
 # ── step 13a: compile device-tree overlays (host-side) ──────────────────────
 # The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
 # /boot/firmware/overlays/ are ignored by the loader.
