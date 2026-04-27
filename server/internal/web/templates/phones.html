@@ -394,7 +394,7 @@
   <td colspan="5">
     <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML"
           class="hstack hstack--wrap">
-      <input type="text" name="name" value="{{.Line.Name}}" class="field__input" style="width: 240px;">
+      <input type="text" name="name" value="{{.Line.Name}}" required maxlength="50" class="field__input" style="width: 240px;">
       <button type="submit" class="btn btn--primary btn--sm">Save</button>
       <a href="/phones" class="btn btn--quiet btn--sm">Cancel</a>
     </form>
@@ -438,7 +438,7 @@
 <div class="am-roster__row am-phones__row am-phones__row--edit">
   <span class="am-roster__num">{{fmtPhone .Line.Number}}</span>
   <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML" class="am-phones__edit-form">
-    <input type="text" name="name" value="{{.Line.Name}}" class="am-phones__edit-input" autofocus>
+    <input type="text" name="name" value="{{.Line.Name}}" required maxlength="50" class="am-phones__edit-input" autofocus>
     <button type="submit" class="am-tab">Save</button>
     <a href="/phones" class="am-tab">Cancel</a>
   </form>

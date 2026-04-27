@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
@@ -16,6 +17,21 @@ import (
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
 )
+
+const maxLineNameRunes = 50
+
+// validateLineName trims whitespace and rejects empty or over-length names.
+// Callers should treat a non-nil error as a 400-class user input problem.
+func validateLineName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", errors.New("name is required")
+	}
+	if utf8.RuneCountInString(name) > maxLineNameRunes {
+		return "", errors.New("name too long")
+	}
+	return name, nil
+}
 
 type pairSuccess struct {
 	Name            string
@@ -340,7 +356,11 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("name"))
+	name, err := validateLineName(r.FormValue("name"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
@@ -359,6 +379,63 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+// nameSectionData is the payload rendered into the detail-page name partials.
+// Error and Value are populated when re-rendering the edit partial after a
+// failed POST so the form keeps the user's draft and shows what went wrong.
+type nameSectionData struct {
+	Line  line.Line
+	Error string
+	Value string
+}
+
+func (h *Handler) handlePhoneNameGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+}
+
+func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
+}
+
+func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	raw := r.FormValue("name")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	name, verr := validateLineName(raw)
+	if verr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()})
+		return
+	}
+	if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+		slog.Error("line update failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	ln.Name = name
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
