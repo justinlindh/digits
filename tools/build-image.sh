@@ -380,7 +380,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl zstd dtc
+            qemu-aarch64-static gzip blkid rsync openssl zstd dtc python3
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
