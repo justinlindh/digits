@@ -2,10 +2,57 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestPollPing_Immediate(t *testing.T) {
+	calls := 0
+	err := pollPing(func() error { calls++; return nil }, 5*time.Second, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("pollPing returned error on immediate success: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 ping, got %d", calls)
+	}
+}
+
+func TestPollPing_SucceedsOnRetry(t *testing.T) {
+	calls := 0
+	err := pollPing(func() error {
+		calls++
+		if calls < 3 {
+			return errors.New("not ready")
+		}
+		return nil
+	}, 5*time.Second, 1*time.Millisecond)
+	if err != nil {
+		t.Fatalf("pollPing returned error after retry success: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 pings, got %d", calls)
+	}
+}
+
+func TestPollPing_Deadline(t *testing.T) {
+	calls := 0
+	want := errors.New("never ready")
+	start := time.Now()
+	err := pollPing(func() error { calls++; return want }, 50*time.Millisecond, 10*time.Millisecond)
+	elapsed := time.Since(start)
+	if !errors.Is(err, want) {
+		t.Errorf("pollPing returned %v, want last error %v", err, want)
+	}
+	if calls < 2 {
+		t.Errorf("expected at least 2 attempts before deadline, got %d", calls)
+	}
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("pollPing returned before deadline: %v elapsed", elapsed)
+	}
+}
 
 func TestFirmwareNeedsReflash(t *testing.T) {
 	cases := []struct {
