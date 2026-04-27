@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -110,23 +111,46 @@ func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, c
 // recentCallsForHistory returns calls for the given phones, excluding rows
 // that were merged into a conference.
 func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]Call, error) {
-	_ = cursor // applied in Task 3
 	n := len(phones)
 	ph := dbutil.Placeholders(n, 0)
+
+	args := make([]interface{}, 0, n+3)
+	for _, p := range phones {
+		args = append(args, p)
+	}
+
+	// Build cursor predicate. Without a cursor the predicate is empty.
+	// With a Call cursor, strict lex compare on (started_at, id).
+	// With a Conference cursor, calls at the same time are already past
+	// (Call sorts before Conference on tie), so use <=.
+	cursorSQL := ""
+	if cursor != nil {
+		switch cursor.Kind {
+		case HistoryEntryCall:
+			cid, err := strconv.ParseInt(cursor.ID, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("calls cursor id: %w", err)
+			}
+			cursorSQL = fmt.Sprintf(" AND (started_at < $%d OR (started_at = $%d AND id < $%d))", n+1, n+1, n+2)
+			args = append(args, cursor.Time, cid)
+		case HistoryEntryConference:
+			cursorSQL = fmt.Sprintf(" AND started_at <= $%d", n+1)
+			args = append(args, cursor.Time)
+		}
+	}
+
+	limitIdx := len(args) + 1
+	args = append(args, limit)
+
 	query := fmt.Sprintf(
 		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
 		        end_reason, originating_conference_id
 		 FROM calls
 		 WHERE (caller IN (%s) OR callee IN (%s))
-		   AND (end_reason IS NULL OR end_reason != 'merged_to_conference')
-		 ORDER BY started_at DESC LIMIT $%d`,
-		ph, ph, n+1,
+		   AND (end_reason IS NULL OR end_reason != 'merged_to_conference')%s
+		 ORDER BY started_at DESC, id DESC LIMIT $%d`,
+		ph, ph, cursorSQL, limitIdx,
 	)
-	args := make([]interface{}, 0, n+1)
-	for _, p := range phones {
-		args = append(args, p)
-	}
-	args = append(args, limit)
 
 	rows, err := t.db.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -134,7 +158,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 	}
 	defer func() { _ = rows.Close() }()
 
-	var calls []Call
+	var out []Call
 	for rows.Next() {
 		var c Call
 		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
@@ -142,9 +166,9 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 			&c.EndReason, &c.OriginatingConferenceID); err != nil {
 			return nil, err
 		}
-		calls = append(calls, c)
+		out = append(out, c)
 	}
-	return calls, rows.Err()
+	return out, rows.Err()
 }
 
 // recentConferencesForHistory returns conferences where any of the phones is

@@ -237,6 +237,51 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	}
 }
 
+// TestRecentHistoryForPhones_CursorPagination_CallsOnly verifies that a
+// cursor pointing at the Nth call returns only entries strictly older than
+// the cursor in the merged timeline order.
+func TestRecentHistoryForPhones_CursorPagination_CallsOnly(t *testing.T) {
+	d := openTestDB(t)
+	tr := calls.New(d)
+
+	// Insert 5 plain calls between phones A and B, ended in order so
+	// started_at increases monotonically.
+	for i := 0; i < 5; i++ {
+		if _, err := tr.OnCallInitiated(context.Background(), "7780001", "7780002"); err != nil {
+			t.Fatalf("OnCallInitiated[%d]: %v", i, err)
+		}
+		if err := tr.OnCallEnded(context.Background(), "7780001", "7780002"); err != nil {
+			t.Fatalf("OnCallEnded[%d]: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	page1, err := tr.RecentHistoryForPhones(context.Background(), []string{"7780001", "7780002"}, nil, 2)
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	// Expect 3 (limit+1) entries returned by the underlying probe.
+	if len(page1) != 3 {
+		t.Fatalf("page1: expected 3 entries, got %d", len(page1))
+	}
+
+	// Build cursor at entry index 1 (the 2nd entry on a 2-page).
+	cursor := calls.CursorForEntry(page1[1])
+
+	page2, err := tr.RecentHistoryForPhones(context.Background(), []string{"7780001", "7780002"}, &cursor, 2)
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	// 5 calls total, 2 returned on page1, page2 should hold the remaining 3.
+	if len(page2) != 3 {
+		t.Fatalf("page2: expected 3 remaining entries, got %d", len(page2))
+	}
+	// Continuity: page2[0] is strictly older than the cursor.
+	if !page2[0].SortTime.Before(cursor.Time) && page2[0].Call.ID >= page1[1].Call.ID {
+		t.Errorf("page2[0] is not older than cursor: page2[0]=%v cursor=%v", page2[0].SortTime, cursor.Time)
+	}
+}
+
 // TestRecentHistoryForPhones_MergedLegsExcluded verifies that the pre-merge
 // call legs do not appear in the results.
 func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
