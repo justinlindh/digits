@@ -10,7 +10,7 @@
 #   - x86_64 Linux host
 #   - qemu-user-static (for arm64 chroot — apt-get ONLY)
 #   - losetup, parted, e2fsck, resize2fs, mkfs.ext4
-#   - Cross-compiled binaries in tools/build/ (digitsd, digits-setup)
+#   - Cross-compiled digitsd in tools/build/ and embed dir populated via 'make -C pi/digitsd embed'
 #
 # Design principle:
 #   qemu-user chroot is ONLY used for apt-get operations. All other
@@ -390,8 +390,7 @@ INPUT_IMG="${1:-}"
 [[ -f "$INPUT_IMG" ]] || die "Input image not found: $INPUT_IMG"
 
 # Verify pre-built binaries exist
-[[ -f "${BUILD_DIR}/digitsd" ]]      || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
-[[ -f "${BUILD_DIR}/digits-setup" ]] || die "Missing ${BUILD_DIR}/digits-setup -- run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
 [[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
 
 # Verify overlay directory exists
@@ -616,7 +615,6 @@ hostside_add_to_groups "$ROOTFS_MNT" "digits" audio i2c
 info "Copying Digits binaries..."
 
 install -m 755 "${BUILD_DIR}/digitsd" "${ROOTFS_MNT}/usr/local/bin/digitsd"
-install -m 755 "${BUILD_DIR}/digits-setup" "${ROOTFS_MNT}/usr/local/bin/digits-setup"
 
 
 # ── step 13: copy rootfs overlay (host-side) ────────────────────────────────

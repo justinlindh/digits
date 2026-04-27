@@ -98,12 +98,9 @@ GOOS=linux GOARCH=arm64 go build \
     -o /digits/tools/build/digitsd \
     ./cmd/digitsd/
 
-# Cross-compile digits-setup (pure Go, no CGO needed)
-info "Cross-compiling digits-setup for aarch64..."
-cd /digits/pi/digits-setup
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-    -o /digits/tools/build/digits-setup \
-    ./cmd/digits-setup/
+# digits-setup is cross-compiled by `make embed` on the host (see
+# pi/digitsd/Makefile) and lands on the rootfs via build-image.sh's
+# embed/rootfs/ rsync. Nothing to do here.
 
 # Cross-compile digits-recovery (pure Go, no CGO needed). build-image.sh reads
 # this from pi/digits-recovery/bin/ to match the local Makefile output path.
