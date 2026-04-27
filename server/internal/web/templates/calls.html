@@ -16,18 +16,22 @@
   <header class="page__head">
     <h1 class="page__title">Call log</h1>
     <div class="muted hstack" style="font-size: 12px;">
+      {{if .IsPaged}}
+      <span class="chip"><span class="chip__dot"></span>Older entries</span>
+      {{else}}
       <span class="chip chip--live"><span class="chip__dot"></span>Auto-refreshing</span>
+      {{end}}
     </div>
   </header>
 
   <section class="panel"
-           hx-get="/calls"
+           {{if not .IsPaged}}hx-get="/calls"
            hx-trigger="every 10s"
            hx-swap="outerHTML"
-           hx-select=".panel">
+           hx-select=".panel"{{end}}>
     <header class="panel__head">
       <h2 class="panel__title">All calls</h2>
-      <span class="panel__title-sub">{{len .Entries}} records</span>
+      <span class="panel__title-sub">{{if .IsPaged}}Older entries{{else}}Recent calls{{end}}</span>
     </header>
 
     {{if .Entries}}
@@ -134,6 +138,21 @@
       </svg>
       <div>No calls yet.</div>
     </div>
+    {{end}}
+
+    {{if or .OlderCursor .IsPaged}}
+    <nav class="panel__pagination" aria-label="Call log pagination">
+      {{if .IsPaged}}
+      <a class="panel__pagination-link" href="/calls" aria-label="Newer calls">&larr; Newer</a>
+      {{else}}
+      <span class="panel__pagination-link panel__pagination-link--disabled" aria-hidden="true">&larr; Newer</span>
+      {{end}}
+      {{if .OlderCursor}}
+      <a class="panel__pagination-link" href="/calls?before={{.OlderCursor}}" aria-label="Older calls">Older &rarr;</a>
+      {{else}}
+      <span class="panel__pagination-link panel__pagination-link--disabled" aria-hidden="true">Older &rarr;</span>
+      {{end}}
+    </nav>
     {{end}}
   </section>
 

@@ -1908,3 +1908,98 @@ func TestPhoneEditPostEmptyNameReturns400(t *testing.T) {
 		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
 	}
 }
+
+// TestHandleCalls_Intercom_PaginationControls covers the intercom theme's
+// behavior around pagination controls and auto-refresh attributes:
+//   - Page 1 with no older entries: no pagination nav, hx-trigger present.
+//   - Page 1 with an older page available: nav rendered, hx-trigger present.
+//   - Page 2 (paged via ?before=cursor): nav rendered, hx-trigger absent.
+func TestHandleCalls_Intercom_PaginationControls(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Sub-case 1: empty dataset, page 1. No pagination, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (empty): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 1 (empty): pagination nav should be absent")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (empty): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Seed enough ended calls to force OlderCursor on page 1.
+	// The page size is 50, so seed 51 to guarantee a next page.
+	seedEndedCallsForCursorTest(t, h, database, hh, 51)
+
+	// Sub-case 2: page 1 with older page available. Nav rendered, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (with older): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 1 (with older): expected pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls?before=`) {
+			t.Errorf("page 1 (with older): expected Older link with cursor")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (with older): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Build a cursor from the most recent entry to exercise the IsPaged path.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	// Sub-case 3: page 2 via ?before=cursor. Nav rendered, polling off.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 2: got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 2: expected pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls"`) {
+			t.Errorf("page 2: expected Newer link to /calls")
+		}
+		if strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 2: hx-trigger must be absent on paged view")
+		}
+	}
+}
