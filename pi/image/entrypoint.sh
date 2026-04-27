@@ -94,7 +94,17 @@ export CC=aarch64-linux-gnu-gcc
 export CGO_ENABLED=1
 export CGO_CFLAGS="-I/usr/aarch64-linux-gnu/include -I/usr/include"
 export CGO_LDFLAGS="-L/usr/lib/aarch64-linux-gnu"
+
+# Stamp pi_version / pi_commit so devices report a real version instead
+# of "dev". Tags were refreshed host-side by make fetch-tags before this
+# container ran; if no pi/v* tag exists, fall back to "dev".
+DIGITSD_VERSION=$(git -C /digits describe --tags --dirty --match 'pi/v*' 2>/dev/null | sed 's|^pi/v||')
+DIGITSD_VERSION=${DIGITSD_VERSION:-dev}
+DIGITSD_COMMIT=$(git -C /digits rev-parse --short HEAD 2>/dev/null || echo unknown)
+info "Stamping digitsd: version=$DIGITSD_VERSION commit=$DIGITSD_COMMIT"
 GOOS=linux GOARCH=arm64 go build \
+    -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$DIGITSD_VERSION \
+              -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$DIGITSD_COMMIT" \
     -o /digits/tools/build/digitsd \
     ./cmd/digitsd/
 

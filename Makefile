@@ -1,4 +1,11 @@
-.PHONY: help server server-test pi-build pi-test firmware firmware-local stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
+.PHONY: help server server-test pi-build pi-test firmware firmware-local fetch-tags stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
+
+# Refresh tags from origin so version derivation in firmware and pi-build
+# resolves to the latest published release, not whatever the local clone
+# last fetched. Offline-tolerant: a failed fetch is silent and the build
+# falls back to whatever's already in .git.
+fetch-tags:
+	@git fetch --tags --quiet 2>/dev/null || true
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -16,7 +23,7 @@ server-run: ## Build and run the signaling server
 
 # ── Pi Daemon ────────────────────────────────────────────────────────────────
 
-pi-build: ## Cross-compile digitsd for aarch64
+pi-build: fetch-tags ## Cross-compile digitsd for aarch64
 	$(MAKE) -C pi/digitsd build
 
 pi-test: ## Run digitsd tests (host architecture)
@@ -24,7 +31,7 @@ pi-test: ## Run digitsd tests (host architecture)
 
 # ── Firmware ─────────────────────────────────────────────────────────────────
 
-firmware: ## Build Pico firmware (Docker, no host toolchain needed)
+firmware: fetch-tags ## Build Pico firmware (Docker, no host toolchain needed)
 	$(MAKE) -C firmware build
 
 firmware-local: ## Build Pico firmware on host (requires arm-none-eabi-gcc + Pico SDK)
