@@ -371,17 +371,12 @@ func (t *Tracker) Active() []activeCall {
 	return calls
 }
 
-func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
-	rows, err := t.db.DB.QueryContext(ctx,
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
+// callColumns is the SELECT list for queries that scan into a Call via
+// scanCallRows. Keep the order in sync with the scan there.
+const callColumns = `id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
+	end_reason, originating_conference_id, force_ended_by`
 
+func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	var calls []Call
 	for rows.Next() {
 		var c Call
@@ -398,6 +393,17 @@ func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
+	rows, err := t.db.DB.QueryContext(ctx,
+		`SELECT `+callColumns+` FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanCallRows(rows)
 }
 
 // MarkForceEnded records which user force-ended a call. Returns nil error
@@ -705,9 +711,8 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 	n := len(phoneNumbers)
 	ph := dbutil.Placeholders(n, 0)
 	query := fmt.Sprintf(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
+		`SELECT `+callColumns+
+			` FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
 	args := make([]interface{}, 0, n+1)
 	for _, num := range phoneNumbers {
@@ -720,21 +725,5 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-
-	var calls []Call
-	for rows.Next() {
-		var c Call
-		var feb sql.NullString
-		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
-			return nil, err
-		}
-		if feb.Valid {
-			s := feb.String
-			c.ForceEndedBy = &s
-		}
-		calls = append(calls, c)
-	}
-	return calls, rows.Err()
+	return scanCallRows(rows)
 }
