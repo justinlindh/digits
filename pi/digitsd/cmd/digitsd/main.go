@@ -122,6 +122,7 @@ func (d *daemonCallbacks) SendTone(name string) {
 	switch strings.ToUpper(name) {
 	case phone.ToneDial:
 		d.mixer.PlayLoop("tone_dial")
+		slog.Info("dialtone playing")
 	case phone.ToneRingback:
 		d.mixer.PlayLoop("tone_ringback")
 	case phone.ToneBusy:
@@ -180,8 +181,9 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	d.isCaller = true
 	d.isRestartingICE = false
 
+	callerPM := d.peerMgr
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		d.handleConnectionStateChange(state)
+		d.handleConnectionStateChange(callerPM, state)
 	}
 
 	// Handle remote audio track
@@ -305,13 +307,13 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
+	answerPM := d.peerMgr
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		d.handleConnectionStateChange(state)
+		d.handleConnectionStateChange(answerPM, state)
 	}
 
 	// Handle remote audio track — decode and feed into mixer.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	answerPM := d.peerMgr // capture for goroutine; each PM owns its decoder
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("answer-remote-track")
@@ -819,8 +821,8 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 }
 
 func (d *daemonCallbacks) HangupCall() {
+	t0 := time.Now()
 	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.
@@ -840,42 +842,58 @@ func (d *daemonCallbacks) HangupCall() {
 
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
 
-	if d.pipeline != nil {
-		d.pipeline.Stop()
-		d.pipeline = nil
-	}
-	// Cancel link-health reporter before closing the PeerConnection so
-	// GetStats() is never called on a closed peer.
+	// Snapshot the slow-to-close resources and null them out so a fresh
+	// call setup (next pickup) doesn't have to wait for pion's DTLS / ICE
+	// shutdown. Pion's pc.Close blocks for hundreds of ms to seconds, and
+	// previously held the daemon's serial event loop the entire time,
+	// gating dialtone on the next HOOK:OFF.
+	pipeline := d.pipeline
+	peerMgr := d.peerMgr
+	mesh := d.mesh
+	d.pipeline = nil
+	d.peerMgr = nil
+	d.mesh = nil
+
+	// Cancel link-health reporters before releasing the lock so the
+	// background goroutine never calls GetStats on a closed peer.
 	if d.reporterCancel != nil {
 		d.reporterCancel()
 		d.reporterCancel = nil
 	}
-
-	if d.peerMgr != nil {
-		if err := d.peerMgr.Close(); err != nil {
-			slog.Warn("peerMgr close failed", "error", err)
-		}
-		d.peerMgr = nil
-	}
-	// Drain any active mesh reporter goroutines before closing their
-	// PeerConnections so GetStats() is never called on a closed peer.
 	for phone, cancel := range d.meshReporterCancels {
 		cancel()
 		delete(d.meshReporterCancels, phone)
 	}
-	// Tear down any mesh peers as well. The mesh may still hold a peer adopted
-	// from an earlier flash (ADD_DIALTONE MigrateToMesh) that was aborted
-	// before a conference merge; leaving it behind causes the next Adopt to
-	// close the live peer instead of the stale one.
-	if d.mesh != nil {
-		d.mesh.CloseAll()
-		d.mesh = nil
-	}
+
 	if peer != "" {
 		d.mixer.RemoveWebRTCSource(peer)
 	}
 
-	slog.Info("call ended")
+	d.mu.Unlock()
+	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+
+	go func() {
+		defer recoverGoroutine("hangup-teardown")
+		teardownStart := time.Now()
+		if pipeline != nil {
+			t := time.Now()
+			pipeline.Stop()
+			slog.Info("hangup teardown: pipeline stopped", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if peerMgr != nil {
+			t := time.Now()
+			if err := peerMgr.Close(); err != nil {
+				slog.Warn("hangup teardown: peerMgr close failed", "error", err)
+			}
+			slog.Info("hangup teardown: peerMgr closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if mesh != nil {
+			t := time.Now()
+			mesh.CloseAll()
+			slog.Info("hangup teardown: mesh closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		slog.Info("hangup teardown complete", "peer", peer, "async_elapsed", time.Since(teardownStart).Round(time.Millisecond))
+	}()
 }
 
 // newPipeline constructs a fresh capture pipeline with per-line config
@@ -951,10 +969,21 @@ func (d *daemonCallbacks) triggerHangup() {
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
-func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectionState) {
+//
+// pm is the PeerManager captured at callback-setup time. Because HangupCall
+// detaches teardown into a goroutine, pion may fire a state change on a
+// pre-hangup peer after the daemon has already moved on to a new call. Every
+// branch that reads d.peerMgr / d.isCaller therefore checks d.peerMgr == pm
+// under d.mu and bails on mismatch, so a stale Failed event can't trigger an
+// ICE restart against the new call's peer.
+func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, state webrtc.PeerConnectionState) {
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
 		wasRestarting := d.isRestartingICE
 		d.isRestartingICE = false
 		if d.restartTimer != nil {
@@ -965,7 +994,6 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
 			rctx, cancel := context.WithCancel(context.Background())
 			d.reporterCancel = cancel
-			pm := d.peerMgr
 			sig := d.sig
 			interval := d.linkHealthInterval
 			d.mu.Unlock()
@@ -992,6 +1020,10 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 
 	case webrtc.PeerConnectionStateFailed:
 		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
 		alreadyRestarting := d.isRestartingICE
 		isCaller := d.isCaller
 		d.mu.Unlock()
