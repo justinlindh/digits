@@ -46,6 +46,8 @@ BUTTON_GAP = 1.0
 KEYPAD_W = 3 * BUTTON_SIZE + 2 * BUTTON_GAP
 KEYPAD_H = 4 * BUTTON_SIZE + 3 * BUTTON_GAP
 
+LOCKUP_TOP_PADDING = 4.0
+
 
 def keypad_sketch(cx: float = 0.0, cy: float = 0.0) -> Sketch:
     """3x4 grid of rounded squares, the keypad's bounding-box center at (cx, cy)."""
@@ -96,7 +98,7 @@ def _wordmark_lockup(text_str: str, font_path: str, font_size: float,
                      width: float, height: float, corner: float,
                      wordmark_cy: float) -> Part:
     bg = RectangleRounded(width, height, corner)
-    keypad_cy = (height / 2) - 5 - KEYPAD_H / 2
+    keypad_cy = (height / 2) - LOCKUP_TOP_PADDING - KEYPAD_H / 2
     fg_keypad = keypad_sketch(0, keypad_cy)
     text = Text(
         text_str,
@@ -156,7 +158,7 @@ def _glyph_paths_d(text_str: str, ttf_path: str, font_size_mm: float,
     )
 
 
-def _keypad_rects_svg(viewBox_w: float, y_top: float = 4.0) -> str:
+def _keypad_rects_svg(viewBox_w: float, y_top: float) -> str:
     keypad_x_offset = (viewBox_w - KEYPAD_W) / 2
     out = ""
     for row in range(4):
@@ -164,13 +166,32 @@ def _keypad_rects_svg(viewBox_w: float, y_top: float = 4.0) -> str:
             x = keypad_x_offset + col * (BUTTON_SIZE + BUTTON_GAP)
             y = y_top + row * (BUTTON_SIZE + BUTTON_GAP)
             out += (
-                f'    <rect x="{x}" y="{y}" width="{BUTTON_SIZE}" '
-                f'height="{BUTTON_SIZE}" rx="{BUTTON_RADIUS}"/>\n'
+                f'    <rect x="{x:g}" y="{y:g}" width="{BUTTON_SIZE:g}" '
+                f'height="{BUTTON_SIZE:g}" rx="{BUTTON_RADIUS:g}"/>\n'
             )
     return out
 
 
+def _svg_open_close(width: float, height: float, body_shape: str,
+                    fg_inner: str, bg_fill: str, fg_fill: str) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'width="{width:g}mm" height="{height:g}mm" '
+        f'viewBox="0 0 {width:g} {height:g}">\n'
+        f'  <g id="badge-bg" fill="{bg_fill}">\n'
+        f'{body_shape}'
+        '  </g>\n'
+        f'  <g id="badge-fg" fill="{fg_fill}">\n'
+        f'{fg_inner}'
+        '  </g>\n'
+        '</svg>\n'
+    )
+
+
 def write_lockup_svg(ttf_path: str, out_path: Path, *,
+                     width: float = 30.0,
+                     height: float = 50.0,
+                     corner: float = 4.0,
                      text_str: str = "Digits",
                      font_size_mm: float = 7.5,
                      baseline_y: float = 41.0,
@@ -178,24 +199,43 @@ def write_lockup_svg(ttf_path: str, out_path: Path, *,
                      fg_fill: str = "#ede3d1") -> None:
     """Write a lockup SVG with the wordmark embedded as paths.
 
-    Coordinates in mm; viewBox 0 0 30 50 to match lockup-*.stl.
+    Coordinates in mm; viewBox is `0 0 width height`. Keypad sits at
+    `LOCKUP_TOP_PADDING` from the top edge so SVG and STL agree.
     """
     glyph_paths = _glyph_paths_d(text_str, ttf_path, font_size_mm,
-                                 x_center=15.0, baseline_y=baseline_y)
-    keypad_rects = _keypad_rects_svg(viewBox_w=30.0)
+                                 x_center=width / 2, baseline_y=baseline_y)
+    keypad_rects = _keypad_rects_svg(viewBox_w=width, y_top=LOCKUP_TOP_PADDING)
+    body = f'    <rect width="{width:g}" height="{height:g}" rx="{corner:g}"/>\n'
+    out_path.write_text(_svg_open_close(
+        width, height, body, keypad_rects + glyph_paths, bg_fill, fg_fill,
+    ))
 
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="30mm" height="50mm" '
-        'viewBox="0 0 30 50">\n'
-        f'  <g id="badge-bg" fill="{bg_fill}">\n'
-        '    <rect width="30" height="50" rx="4"/>\n'
-        '  </g>\n'
-        f'  <g id="badge-fg" fill="{fg_fill}">\n'
-        f'{keypad_rects}{glyph_paths}'
-        '  </g>\n'
-        '</svg>\n'
-    )
-    out_path.write_text(svg)
+
+def write_icon_svg(out_path: Path, *,
+                   shape: str,
+                   width: float,
+                   height: float,
+                   corner: float = 0.0,
+                   bg_fill: str,
+                   fg_fill: str) -> None:
+    """Write an icon-only badge SVG with a vertically-centered keypad.
+
+    `shape` is one of "rounded_rect", "pill", "circle".
+    """
+    if shape == "rounded_rect":
+        body = f'    <rect width="{width:g}" height="{height:g}" rx="{corner:g}"/>\n'
+    elif shape == "pill":
+        body = f'    <rect width="{width:g}" height="{height:g}" rx="{width / 2:g}"/>\n'
+    elif shape == "circle":
+        body = f'    <circle cx="{width / 2:g}" cy="{height / 2:g}" r="{width / 2:g}"/>\n'
+    else:
+        raise ValueError(f"unknown shape: {shape!r}")
+
+    keypad_y_top = (height - KEYPAD_H) / 2
+    keypad_rects = _keypad_rects_svg(viewBox_w=width, y_top=keypad_y_top)
+    out_path.write_text(_svg_open_close(
+        width, height, body, keypad_rects, bg_fill, fg_fill,
+    ))
 
 
 PRESS_START_TTF = HERE / "fonts/PressStart2P-Regular.ttf"
@@ -228,14 +268,30 @@ def main():
             export_stl(part, str(out))
             print(f"wrote {name} ({out.stat().st_size:,} bytes)")
 
+        write_icon_svg(
+            HERE / "tile-30mm.svg", shape="rounded_rect",
+            width=30, height=30, corner=4,
+            bg_fill="#fff7e6", fg_fill="#c1410c",
+        )
+        write_icon_svg(
+            HERE / "pill-25x40mm.svg", shape="pill",
+            width=25, height=40,
+            bg_fill="#1a140e", fg_fill="#ede3d1",
+        )
+        write_icon_svg(
+            HERE / "round-32mm.svg", shape="circle",
+            width=32, height=32,
+            bg_fill="#626f47", fg_fill="#fff7e6",
+        )
         write_lockup_svg(fraunces_ttf, HERE / "lockup-30x50mm.svg")
-        print("wrote lockup-30x50mm.svg")
         write_lockup_svg(
             press_start_ttf, HERE / "lockup-arcade-30x50mm.svg",
             text_str="DIGITS", font_size_mm=4.0, baseline_y=39.5,
             bg_fill="#1a140e", fg_fill="#ff7a59",
         )
-        print("wrote lockup-arcade-30x50mm.svg")
+        for name in ("tile-30mm.svg", "pill-25x40mm.svg", "round-32mm.svg",
+                     "lockup-30x50mm.svg", "lockup-arcade-30x50mm.svg"):
+            print(f"wrote {name}")
 
 
 if __name__ == "__main__":
