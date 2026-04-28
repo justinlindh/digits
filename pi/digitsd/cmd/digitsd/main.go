@@ -1792,10 +1792,20 @@ func main() {
 		} else {
 			slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
 		}
-		// The Pi takes ~30s to come back; without an audible cue the silence
-		// reads as a freeze and tempts a hard power-cut mid-boot.
-		doubleBeep()
-		time.Sleep(1500 * time.Millisecond)
+		// Play the spoken "rebooting into access point mode" confirmation in
+		// full before issuing the reboot. Without a cue the line goes silent
+		// for ~30s and reads as a freeze; with a half-played clip the user
+		// hears the message cut off mid-word as systemd tears down ALSA.
+		// Drop the dial-tone loop first so the spoken clip is intelligible.
+		mixer.StopAll()
+		mixer.PlayOnce("rebooting_into_access_point_mode")
+		for mixer.OncePlaying() {
+			time.Sleep(50 * time.Millisecond)
+		}
+		// OncePlaying flips false when the render loop dequeues the final
+		// samples, but ALSA still has ~one period in its DMA buffer. Pad
+		// 200ms so systemd's ALSA teardown doesn't clip the tail of "...mode".
+		time.Sleep(200 * time.Millisecond)
 		_ = exec.Command("sudo", "reboot").Run()
 	})
 
