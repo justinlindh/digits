@@ -2076,8 +2076,12 @@ func main() {
 						})
 					}
 				}
-				// Check easter eggs, then service codes
-				if !easterEggs.AddKey(key) {
+				// Mid-service-code: route the key only to svcCodes so easter
+				// eggs (e.g., "0000" Rick Roll) cannot eat digits belonging
+				// to a code like "*#00000#" (factory reset). Otherwise: try
+				// easter eggs first, then fall through to service codes.
+				inCode := svcCodes.InCode()
+				if inCode || !easterEggs.AddKey(key) {
 					switch svcCodes.AddKey(key) {
 					case phone.ServiceCodeTerminal:
 						ctrl.Reset()

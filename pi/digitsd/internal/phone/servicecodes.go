@@ -113,6 +113,14 @@ func (h *ServiceCodeHandler) Reset() {
 	h.buffer = ""
 }
 
+// InCode reports whether the user is mid-entry of a service code. All service
+// codes begin with '*', so a buffer starting with '*' means a code is in
+// progress. Callers use this to suppress competing key consumers (e.g., the
+// easter-egg detector) that would otherwise eat keys belonging to the code.
+func (h *ServiceCodeHandler) InCode() bool {
+	return len(h.buffer) > 0 && h.buffer[0] == '*'
+}
+
 func (h *ServiceCodeHandler) check() ServiceCodeResult {
 	// --- 9-character codes ---
 	if len(h.buffer) >= 9 {
