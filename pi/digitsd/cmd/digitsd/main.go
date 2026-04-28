@@ -1277,7 +1277,7 @@ func readPCBRev() string {
 // statusFunc is a callback to report update progress back to the server.
 type statusFunc func(status, detail string)
 
-func triggerFactoryReset() {
+func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 	if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
 		slog.Error("factory reset: failed to set boot counter", "err", err)
 		return
@@ -1289,6 +1289,18 @@ func triggerFactoryReset() {
 	// recovery menu still appears, just with a misleading header.
 	if err := os.WriteFile(bootcount.AutoFactoryResetFlag, []byte("1\n"), 0644); err != nil {
 		slog.Warn("factory reset: write auto-reset flag failed", "path", bootcount.AutoFactoryResetFlag, "err", err)
+	}
+	// Tell the server to invalidate its copy of paired_at + device_token
+	// over the still-authenticated WS, BEFORE we reboot. Factory reset
+	// wipes /data (and with it the local DeviceToken), so the device comes
+	// back unpaired. Without this, the server still has paired_at set and
+	// rejects the post-reset register-without-token as "device_token
+	// required", looping every 3 seconds. Same trap as the *#0* repair
+	// callback, fixed there in PRs #346/#347. Brief sleep so the message
+	// lands (writes are async on the WS Send channel).
+	if sig != nil && deviceID != "" {
+		sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRepair, HardwareID: deviceID})
+		time.Sleep(500 * time.Millisecond)
 	}
 	slog.Info("factory reset: boot counter set to 3, auto-reset flag written, rebooting")
 	_ = exec.Command("sudo", "reboot").Run()
@@ -2009,7 +2021,7 @@ func main() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
 		confirm("confirm_factory_reset", func() {
 			slog.Info("service code factory reset confirmed")
-			triggerFactoryReset()
+			triggerFactoryReset(sig, deviceID)
 		})
 	})
 
@@ -2550,7 +2562,7 @@ func main() {
 
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
-				go triggerFactoryReset()
+				go triggerFactoryReset(sig, deviceID)
 
 			case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
 				entries := make([]contacts.Entry, 0, len(msg.Contacts))
