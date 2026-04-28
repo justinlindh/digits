@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const inviteCodeLength = 8
 
 // HouseholdLink represents a link (invitation or active connection) between two households.
