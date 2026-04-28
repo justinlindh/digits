@@ -16,6 +16,7 @@
 {{if ne .Page "login"}}
 <header class="rail">
   <div class="rail__brand">
+    <svg class="rail__brand-icon" viewBox="0 0 36 48" fill="currentColor" aria-hidden="true">{{template "keypad-icon"}}</svg>
     <span class="rail__mark">Digits</span>
     {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
     {{if .HouseholdDND}}

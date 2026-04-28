@@ -135,9 +135,15 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 
 .rail__brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
+}
+.rail__brand-icon {
+  width: 21px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--ink);
 }
 .rail__mark {
   font-family: var(--font-display);
