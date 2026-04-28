@@ -135,9 +135,6 @@ type Message struct {
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
 	UpdateDetail string `json:"update_detail,omitempty"` // human-readable detail
 
-	// Flash capability (device_info messages)
-	FlashCapable bool `json:"flash_capable,omitempty"`
-
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
 

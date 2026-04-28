@@ -28,7 +28,6 @@ type Conn struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
-	FlashCapable    bool
 }
 
 // dashNotifier is the subset of *dashboard/events.Broadcaster the Hub uses
@@ -171,7 +170,6 @@ type DeviceInfoSnapshot struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
-	FlashCapable    bool
 }
 
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
@@ -187,7 +185,6 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 		PiCommit:        conn.PiCommit,
 		FirmwareVersion: conn.FirmwareVersion,
 		FirmwareCommit:  conn.FirmwareCommit,
-		FlashCapable:    conn.FlashCapable,
 	}
 }
 
@@ -217,7 +214,7 @@ func (h *Hub) ClearUpdateStatus(number string) {
 }
 
 // UpdateDeviceInfo sets version info for a connected phone under the write lock.
-func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, flashCapable bool) bool {
+func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
@@ -228,7 +225,6 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, 
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
-	conn.FlashCapable = flashCapable
 	return true
 }
 

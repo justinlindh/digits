@@ -272,7 +272,7 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		}
 	}()
 	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
+	h.hub.UpdateDeviceInfo(number, "", "", fw, "")
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
 }
