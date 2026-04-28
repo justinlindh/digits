@@ -4,22 +4,30 @@ Small adhesive-mounted badges carrying the Digits keypad mark, sized for FDM pri
 
 ## Files
 
-- `tile-30mm.svg`: 30 mm rounded square. Most compact, prints fastest.
-- `pill-25x40mm.svg`: 25 mm wide, 40 mm tall vertical pill. Has the most quiet space around the mark.
-- `round-32mm.svg`: 32 mm circle. Most "logo medallion."
-- `preview.html`: open in a browser to compare all three shapes across the palette options below.
+Each shape ships as both an SVG (geometry source, useful for slicer SVG-import or as a flat preview) and an STL (pre-built 3D mesh, drop straight into Bambu Studio).
 
-Each SVG declares two filled groups: `#badge-bg` (the silhouette) and `#badge-fg` (the 12 keypad buttons). The colors written into the file are visual cues only. The actual print color is whatever filament you load.
+- `tile-30mm.svg` / `.stl`: 30 mm rounded square. Most compact, prints fastest.
+- `pill-25x40mm.svg` / `.stl`: 25 mm wide, 40 mm tall vertical pill. Quietest framing.
+- `round-32mm.svg` / `.stl`: 32 mm circle. Most "logo medallion."
+- `lockup-30x50mm.svg` / `.stl`: 30 mm wide, 50 mm tall rounded rectangle. Keypad above + "Digits" wordmark in Fraunces below. Use this when you want the full lockup as a name plate.
+- `make_badges.py`: source of truth for badge geometry. Re-run after editing constants to regenerate STLs and the lockup SVG. Requires `build123d` (pip), `woff2_decompress` (pacman -S woff2), and the Fraunces TTF, which is decompressed from `server/internal/web/static/fonts/fraunces-variable.woff2` at runtime.
+- `*-top.png`: top-down render of each STL for visual reference.
+- `preview.html`: open in a browser to compare the three icon-only shapes across the palette options below.
+
+Each SVG declares two filled groups: `#badge-bg` (the silhouette) and `#badge-fg` (everything raised). The fill colors written into the file are visual cues only. The actual print color is whatever filament you load.
 
 ## Printing on Bambu X1C
 
-1. Bambu Studio: **File > Import > Import SVG**, select one of the three shape files.
-2. When asked for height, set **base = 1.6 mm** (the silhouette) and **emboss = 0.4 mm** (the keypad buttons). Total badge thickness 2.0 mm.
-3. The slicer will detect the two color regions in the SVG. Assign filament A to the silhouette, filament B to the buttons.
-4. Print orientation: flat on the build plate, badge face up. No supports.
-5. Recommended layer height: 0.16 mm (gives the keypad buttons 2-3 layers of color B; tactile but not catchy).
+The fastest path is the STL. Two parts are baked in (the silhouette and the raised features), stacked in Z, no slicer assembly needed.
 
-For a thinner badge (e.g. mounting on a phone where 2 mm is too thick), reduce the base to 1.0 mm. The 0.4 mm emboss stays the same.
+1. Bambu Studio: **File > Import > Import STL**, select one of the four shape files.
+2. The mesh arrives at correct mm dimensions. Lay flat on the build plate, badge face up, no supports.
+3. Two-color via filament swap at z = 1.6 mm: in the slicer's "Filament" panel, add a swap at that height. Filament A prints layers 0 to 1.6 mm (the silhouette). Filament B prints 1.6 to 2.0 mm (the raised keypad and, on the lockup, the wordmark).
+4. Recommended layer height: 0.16 mm (gives the raised features 2-3 layers of color B; tactile but not catchy).
+
+For a thinner badge, edit `BADGE_THICKNESS` in `make_badges.py` (default 1.6 mm) and re-run. The 0.4 mm emboss stays the same.
+
+If you prefer SVG import, the same files in their `.svg` form work in Bambu Studio too: import, set the same heights manually (`base = 1.6 mm`, `emboss = 0.4 mm`), and the slicer will split the two colored groups for you.
 
 ## Adhesive
 
@@ -44,4 +52,6 @@ The SVG defaults ship a different palette per shape so you can see the range wit
 
 ## Geometry
 
-All three shapes use the same keypad geometry: 12 rounded squares in a 3x4 grid, each button 4 mm with 1 mm gaps, total mark footprint 14 mm wide x 19 mm tall. The mark is centered on each silhouette. If you want to scale, scale the whole SVG uniformly. The keypad never falls outside the silhouette.
+All four shapes use the same keypad geometry: 12 rounded squares in a 3x4 grid, each button 4 mm with 1 mm gaps, total mark footprint 14 mm wide x 19 mm tall. On the icon-only shapes the mark is centered on the silhouette. On the lockup, the keypad sits in the upper half and the "Digits" wordmark (Fraunces 500, 7.5 mm cap-to-baseline) sits in the lower half.
+
+If you want to scale, scale the SVG uniformly or pass new dimensions to the matching function in `make_badges.py` and rerun.
