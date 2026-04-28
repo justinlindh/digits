@@ -33,6 +33,24 @@ func scanSettings(raw []byte) (Settings, error) {
 	return DefaultSettings().Merge(patch).Normalize(), nil
 }
 
+// lineColumns is the SELECT list shared by queries that scan rows into a
+// Line via scanLineRow. Keep the order in sync with the scan there.
+const lineColumns = `id, number, name, household_id, settings, created_at, updated_at`
+
+func scanLineRow(rows *sql.Rows) (Line, error) {
+	var l Line
+	var settingsRaw []byte
+	if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		return Line{}, fmt.Errorf("scan line: %w", err)
+	}
+	settings, err := scanSettings(settingsRaw)
+	if err != nil {
+		return Line{}, err
+	}
+	l.Settings = settings
+	return l, nil
+}
+
 // ValidateNumber checks that num is exactly 7 digits, optionally formatted as NNN-NNNN.
 func ValidateNumber(num string) error {
 	if !numberRegex.MatchString(num) {
@@ -166,8 +184,7 @@ func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (S
 // List returns all lines ordered by number.
 func (s *Store) List(ctx context.Context) ([]Line, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, number, name, household_id, settings, created_at, updated_at
-		 FROM lines ORDER BY number`,
+		`SELECT `+lineColumns+` FROM lines ORDER BY number`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list lines: %w", err)
@@ -176,12 +193,8 @@ func (s *Store) List(ctx context.Context) ([]Line, error) {
 
 	var lines []Line
 	for rows.Next() {
-		var l Line
-		var settingsRaw []byte
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan line: %w", err)
-		}
-		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		l, err := scanLineRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		lines = append(lines, l)
@@ -192,8 +205,7 @@ func (s *Store) List(ctx context.Context) ([]Line, error) {
 // ListByHousehold returns all lines belonging to the given household, ordered by number.
 func (s *Store) ListByHousehold(ctx context.Context, householdID string) ([]Line, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, number, name, household_id, settings, created_at, updated_at
-		 FROM lines WHERE household_id = $1 ORDER BY number`,
+		`SELECT `+lineColumns+` FROM lines WHERE household_id = $1 ORDER BY number`,
 		householdID,
 	)
 	if err != nil {
@@ -203,12 +215,8 @@ func (s *Store) ListByHousehold(ctx context.Context, householdID string) ([]Line
 
 	var lines []Line
 	for rows.Next() {
-		var l Line
-		var settingsRaw []byte
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan line: %w", err)
-		}
-		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		l, err := scanLineRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		lines = append(lines, l)
@@ -223,8 +231,7 @@ func (s *Store) ListByHouseholds(ctx context.Context, householdIDs []string) (ma
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, number, name, household_id, settings, created_at, updated_at
-		 FROM lines WHERE household_id = ANY($1) ORDER BY number`,
+		`SELECT `+lineColumns+` FROM lines WHERE household_id = ANY($1) ORDER BY number`,
 		pq.Array(householdIDs),
 	)
 	if err != nil {
@@ -234,12 +241,8 @@ func (s *Store) ListByHouseholds(ctx context.Context, householdIDs []string) (ma
 
 	result := make(map[string][]Line, len(householdIDs))
 	for rows.Next() {
-		var l Line
-		var settingsRaw []byte
-		if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan line: %w", err)
-		}
-		if l.Settings, err = scanSettings(settingsRaw); err != nil {
+		l, err := scanLineRow(rows)
+		if err != nil {
 			return nil, err
 		}
 		result[l.HouseholdID] = append(result[l.HouseholdID], l)
