@@ -760,6 +760,11 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   padding: 3px 8px; border-radius: 2px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
 }
+/* The rail renders a fixed 5-socket patchbay regardless of family count: the
+   skeuomorphic panel is the metaphor, not a per-family indicator. The dynamic
+   trunk count lives in the .am-hub__center-count LED below. Don't range-derive
+   these jacks from .LinkedFamilies; with 6+ families the LED reads e.g. "06"
+   while the panel stays at 5 plugs, by design. */
 .am-hub__rail-jacks {
   display: flex; align-items: center; justify-content: space-around;
   gap: 8px;
