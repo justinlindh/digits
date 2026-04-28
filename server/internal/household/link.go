@@ -12,6 +12,12 @@ import (
 const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const inviteCodeLength = 8
 
+// linkColumns is the SELECT/RETURNING list for queries that scan into a
+// HouseholdLink. Field order must stay aligned with the destination order in
+// every .Scan call (and inside scanLinks) below.
+const linkColumns = `id, household_a_id, household_b_id, status, invite_code, invited_by,
+	accepted_by, created_at, accepted_at, revoked_at, revoked_by`
+
 // HouseholdLink represents a link (invitation or active connection) between two households.
 type HouseholdLink struct {
 	ID           string
@@ -63,8 +69,7 @@ func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedBy
 	err = s.db.QueryRowContext(ctx, `
 		INSERT INTO household_links (household_a_id, invited_by, invite_code, status)
 		VALUES ($1, $2, $3, 'pending')
-		RETURNING id, household_a_id, household_b_id, status, invite_code, invited_by,
-		          accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		RETURNING `+linkColumns+`
 	`, fromHouseholdID, invitedByUserID, code).Scan(
 		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
 		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
@@ -82,8 +87,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 	// Fetch the pending invite
 	link := &HouseholdLink{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
-		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		SELECT `+linkColumns+`
 		FROM household_links
 		WHERE invite_code = $1 AND status = 'pending'
 	`, code).Scan(
@@ -128,8 +132,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 		    accepted_by = $3,
 		    accepted_at = $4
 		WHERE id = $5
-		RETURNING id, household_a_id, household_b_id, status, invite_code, invited_by,
-		          accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		RETURNING `+linkColumns+`
 	`, aID, bID, acceptingUserID, now, link.ID).Scan(
 		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
 		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
@@ -144,8 +147,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 // GetLinkedHouseholds returns all active links where householdID is either a or b.
 func (s *LinkStore) GetLinkedHouseholds(ctx context.Context, householdID string) ([]HouseholdLink, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
-		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		SELECT `+linkColumns+`
 		FROM household_links
 		WHERE status = 'active'
 		  AND (household_a_id = $1 OR household_b_id = $1)
@@ -198,8 +200,7 @@ func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID stri
 func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, error) {
 	link := &HouseholdLink{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
-		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		SELECT `+linkColumns+`
 		FROM household_links WHERE id = $1
 	`, id).Scan(
 		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
@@ -218,8 +219,7 @@ func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, err
 // GetPendingForHousehold returns all pending invites where householdID is the inviting household.
 func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]HouseholdLink, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, household_a_id, household_b_id, status, invite_code, invited_by,
-		       accepted_by, created_at, accepted_at, revoked_at, revoked_by
+		SELECT `+linkColumns+`
 		FROM household_links
 		WHERE status = 'pending' AND household_a_id = $1
 	`, householdID)
