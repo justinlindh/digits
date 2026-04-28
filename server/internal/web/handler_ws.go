@@ -157,6 +157,22 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("bad websocket message", "number", number, "err", err)
 			continue
 		}
+		// TypeRepair is intercepted here (not in relay) because we have the
+		// authenticated connection's HardwareID in scope and don't need to
+		// thread the device store into the Relay. The phone calls this from
+		// its *#0* callback before reboot to invalidate server-side pairing,
+		// so the next register-without-token is treated as a fresh pair-up
+		// rather than rejected as "device_token required".
+		if msg.Type == signaling.TypeRepair {
+			if h.deviceStore != nil && msg.HardwareID != "" {
+				if err := h.deviceStore.Unpair(r.Context(), msg.HardwareID); err != nil {
+					slog.Warn("repair: unpair failed", "hardware_id", msg.HardwareID, "err", err)
+				} else {
+					slog.Info("repair: device unpaired by client request", "hardware_id", msg.HardwareID, "number", number)
+				}
+			}
+			continue
+		}
 		h.relay.HandleMessage(r.Context(), number, msg)
 	}
 }

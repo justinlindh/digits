@@ -185,6 +185,24 @@ func (s *Store) CompletePairing(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Unpair invalidates the device's paired_at and device_token so the next
+// register-without-token from this hardware ID will be issued a fresh
+// pairing code instead of being rejected. Used by the Phone -> Server
+// repair flow (the *#0* service code) so digitsd can tell the server
+// "I'm intentionally clearing my local token, please drop yours too."
+// No-op (returns nil) if the device row doesn't exist.
+func (s *Store) Unpair(ctx context.Context, hardwareID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE devices
+		SET paired_at = NULL, device_token = NULL
+		WHERE hardware_id = $1
+	`, hardwareID)
+	if err != nil {
+		return fmt.Errorf("unpair: %w", err)
+	}
+	return nil
+}
+
 // TouchLastSeen updates last_seen_at to NOW() for the device with the given hardware ID.
 func (s *Store) TouchLastSeen(ctx context.Context, hardwareID string) error {
 	_, err := s.db.ExecContext(ctx,

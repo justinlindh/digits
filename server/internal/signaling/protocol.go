@@ -26,6 +26,7 @@ const (
 	TypeRestart       = "restart"        // Server → Phone: restart service or reboot
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
+	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
 )
 
 // Conference message types (three-way calling)
