@@ -80,6 +80,37 @@ var (
 			},
 			LinkToPrimary: true,
 		},
+		{
+			Email:         "whitfields@digits.local",
+			DisplayName:   "Whitfield",
+			HouseholdName: "Whitfield Cabin",
+			Theme:         auth.ThemeDialup,
+			Lines: []seededLine{
+				{"7070001", "Cabin"},
+			},
+			LinkToPrimary: true,
+		},
+		{
+			Email:         "hayashis@digits.local",
+			DisplayName:   "Hayashi",
+			HouseholdName: "Hayashi family",
+			Theme:         auth.ThemeAnsweringMachine,
+			Lines: []seededLine{
+				{"4150001", "Living room"},
+				{"4150002", "Kitchen"},
+			},
+			LinkToPrimary: true,
+		},
+		{
+			Email:         "marquezes@digits.local",
+			DisplayName:   "Marquez",
+			HouseholdName: "Marquez household",
+			Theme:         auth.ThemeIntercom,
+			Lines: []seededLine{
+				{"6190001", "Garage"},
+			},
+			LinkToPrimary: true,
+		},
 	}
 )
 
