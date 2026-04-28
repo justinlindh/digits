@@ -228,7 +228,7 @@ After SDP/ICE exchange, audio flows peer-to-peer via WebRTC DTLS-SRTP.
 | Type              | Direction      | Key Fields                            | Purpose                              |
 |-------------------|----------------|---------------------------------------|--------------------------------------|
 | `register`        | Phone -> Server | `number`                             | Register phone number on connect     |
-| `device_info`     | Phone -> Server | version fields, `flash_capable`      | Report device version info           |
+| `device_info`     | Phone -> Server | version fields                       | Report device version info           |
 | `call`            | Phone -> Server | `to`                                 | Initiate call to another number      |
 | `ring`            | Server -> Phone | `from`                               | Notify callee of incoming call       |
 | `sdp`             | Bidirectional  | `to`, `from`, `sdp`                  | Relay SDP offer/answer               |
