@@ -16,6 +16,12 @@ import (
 // ErrNotFound is returned when a device cannot be found.
 var ErrNotFound = errors.New("device not found")
 
+// deviceColumns is the SELECT/RETURNING list for queries that scan into a
+// Device. Field order must stay aligned with the destination order in every
+// .Scan call below.
+const deviceColumns = `id, line_id, hardware_id, device_id, device_token,
+	pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at`
+
 // Device represents a physical handset paired to a line.
 type Device struct {
 	ID                   int64
@@ -46,8 +52,7 @@ func (s *Store) Create(ctx context.Context, lineID int64, hardwareID string) (*D
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO devices (line_id, hardware_id)
 		VALUES ($1, $2)
-		RETURNING id, line_id, hardware_id, device_id, device_token,
-		          pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		RETURNING `+deviceColumns+`
 	`, lineID, hardwareID).Scan(
 		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
 		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
@@ -62,8 +67,7 @@ func (s *Store) Create(ctx context.Context, lineID int64, hardwareID string) (*D
 func (s *Store) GetByID(ctx context.Context, id int64) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE id = $1
 	`, id).Scan(
@@ -83,8 +87,7 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Device, error) {
 func (s *Store) GetByHardwareID(ctx context.Context, hwID string) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE hardware_id = $1
 	`, hwID).Scan(
@@ -103,8 +106,7 @@ func (s *Store) GetByHardwareID(ctx context.Context, hwID string) (*Device, erro
 // ListByLine returns all devices associated with a given line.
 func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE line_id = $1
 		ORDER BY created_at
@@ -220,8 +222,7 @@ func (s *Store) TouchLastSeen(ctx context.Context, hardwareID string) error {
 func (s *Store) GetByPairingCode(ctx context.Context, code string) (*Device, error) {
 	d := &Device{}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, line_id, hardware_id, device_id, device_token,
-		       pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE pairing_code = $1
 		  AND pairing_code_expires_at > NOW()
