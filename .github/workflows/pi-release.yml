@@ -15,6 +15,13 @@ on:
       - ".github/workflows/pi-release.yml"
       - "pi/.releaserc.cjs"
 
+# See server-release.yml for why this exists. Serializes release runs
+# so back-to-back merges don't race semantic-release into silently
+# skipping a tag.
+concurrency:
+  group: pi-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
