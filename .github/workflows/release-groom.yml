@@ -90,10 +90,21 @@ jobs:
           if [ -z "$current_date" ] || [ "$current_date" = "null" ]; then
             current_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           fi
-          # Most recent prior release whose body contains the literal "Silly Goose Award".
-          # Past tense matters: only releases strictly before this one count.
-          last_goose_date=$(gh release list --limit 200 --json tagName,publishedAt,body \
-            --jq "[.[] | select(.publishedAt < \"$current_date\") | select(.body | contains(\"Silly Goose Award\"))] | sort_by(.publishedAt) | last | .publishedAt // \"\"")
+          # gh release list --json does not expose body, so do a two-step lookup:
+          # get the 50 most-recent prior tags, then view each in order until we find
+          # one whose body contains the literal phrase "Silly Goose Award".
+          mapfile -t prior_entries < <(gh release list --limit 200 --json tagName,publishedAt \
+            --jq "[.[] | select(.publishedAt < \"$current_date\")] | sort_by(.publishedAt) | reverse | .[0:50] | .[] | \"\(.tagName)|\(.publishedAt)\"")
+          last_goose_date=""
+          for entry in "${prior_entries[@]}"; do
+            prior_tag="${entry%%|*}"
+            prior_date="${entry##*|}"
+            body=$(gh release view "$prior_tag" --json body -q .body 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q "Silly Goose Award"; then
+              last_goose_date="$prior_date"
+              break
+            fi
+          done
           if [ -n "$last_goose_date" ]; then
             current_epoch=$(date -d "$current_date" +%s)
             last_epoch=$(date -d "$last_goose_date" +%s)
