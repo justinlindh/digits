@@ -1781,15 +1781,21 @@ func main() {
 	})
 	svcCodes.SetSetupCallback(func() {
 		slog.Info("service code: *#SETUP# (*#73887#) -> removing wifi-configured flag, rebooting")
-		err := os.Remove(phone.WifiConfiguredFlag)
-		switch {
-		case err == nil:
+		// /data/wifi-configured is owned by root (digits-setup writes it as
+		// root); /data itself is mode 755 root:root. digitsd runs as the
+		// 'digits' user, which lacks write access to /data and so cannot
+		// unlink the flag directly. The digits-updater sudoers entry grants
+		// NOPASSWD on rm -f for this exact path.
+		out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
+		if err != nil {
+			slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
+		} else {
 			slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
-		case os.IsNotExist(err):
-			slog.Info("service code setup: wifi flag already absent -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
-		default:
-			slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err)
 		}
+		// The Pi takes ~30s to come back; without an audible cue the silence
+		// reads as a freeze and tempts a hard power-cut mid-boot.
+		doubleBeep()
+		time.Sleep(1500 * time.Millisecond)
 		_ = exec.Command("sudo", "reboot").Run()
 	})
 
