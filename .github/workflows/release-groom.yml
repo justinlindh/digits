@@ -82,6 +82,31 @@ jobs:
             echo 'GROOM_EOF_COMMITS'
           } >> "$GITHUB_ENV"
 
+      - name: Compute Silly Goose gap
+        if: steps.body.outputs.already_groomed != 'true'
+        id: goose
+        run: |
+          current_date=$(gh release view "$TAG" --json publishedAt -q .publishedAt)
+          if [ -z "$current_date" ] || [ "$current_date" = "null" ]; then
+            current_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          fi
+          # Most recent prior release whose body contains the literal "Silly Goose Award".
+          # Past tense matters: only releases strictly before this one count.
+          last_goose_date=$(gh release list --limit 200 --json tagName,publishedAt,body \
+            --jq "[.[] | select(.publishedAt < \"$current_date\") | select(.body | contains(\"Silly Goose Award\"))] | sort_by(.publishedAt) | last | .publishedAt // \"\"")
+          if [ -n "$last_goose_date" ]; then
+            current_epoch=$(date -d "$current_date" +%s)
+            last_epoch=$(date -d "$last_goose_date" +%s)
+            days=$(( (current_epoch - last_epoch) / 86400 ))
+            CONTEXT="It has been $days days since Justin last won the Silly Goose Award."
+          else
+            CONTEXT="Justin has never won the Silly Goose Award before. This release would be his inaugural."
+          fi
+          echo "Silly Goose context: $CONTEXT"
+          echo "GOOSE_CONTEXT=$CONTEXT" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Groom notes with Claude
         if: steps.body.outputs.already_groomed != 'true'
         id: claude
@@ -105,6 +130,9 @@ jobs:
 
             Commits in this release:
             ${{ env.COMMITS }}
+
+            Silly Goose context:
+            ${{ env.GOOSE_CONTEXT }}
 
       - name: Update release body
         if: steps.body.outputs.already_groomed != 'true' && steps.claude.outcome == 'success'
