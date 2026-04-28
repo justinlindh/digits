@@ -3,17 +3,17 @@
     <rect width="25" height="40" rx="12.5"/>
   </g>
   <g id="badge-fg" fill="#ede3d1">
-    <rect x="5.5"  y="10.5" width="4" height="4" rx="1"/>
-    <rect x="10.5" y="10.5" width="4" height="4" rx="1"/>
-    <rect x="15.5" y="10.5" width="4" height="4" rx="1"/>
-    <rect x="5.5"  y="15.5" width="4" height="4" rx="1"/>
-    <rect x="10.5" y="15.5" width="4" height="4" rx="1"/>
-    <rect x="15.5" y="15.5" width="4" height="4" rx="1"/>
-    <rect x="5.5"  y="20.5" width="4" height="4" rx="1"/>
-    <rect x="10.5" y="20.5" width="4" height="4" rx="1"/>
-    <rect x="15.5" y="20.5" width="4" height="4" rx="1"/>
-    <rect x="5.5"  y="25.5" width="4" height="4" rx="1"/>
-    <rect x="10.5" y="25.5" width="4" height="4" rx="1"/>
-    <rect x="15.5" y="25.5" width="4" height="4" rx="1"/>
+    <rect x="5.5" y="10.5" width="4" height="4" rx="0.6"/>
+    <rect x="10.5" y="10.5" width="4" height="4" rx="0.6"/>
+    <rect x="15.5" y="10.5" width="4" height="4" rx="0.6"/>
+    <rect x="5.5" y="15.5" width="4" height="4" rx="0.6"/>
+    <rect x="10.5" y="15.5" width="4" height="4" rx="0.6"/>
+    <rect x="15.5" y="15.5" width="4" height="4" rx="0.6"/>
+    <rect x="5.5" y="20.5" width="4" height="4" rx="0.6"/>
+    <rect x="10.5" y="20.5" width="4" height="4" rx="0.6"/>
+    <rect x="15.5" y="20.5" width="4" height="4" rx="0.6"/>
+    <rect x="5.5" y="25.5" width="4" height="4" rx="0.6"/>
+    <rect x="10.5" y="25.5" width="4" height="4" rx="0.6"/>
+    <rect x="15.5" y="25.5" width="4" height="4" rx="0.6"/>
   </g>
 </svg>

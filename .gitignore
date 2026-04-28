@@ -62,3 +62,6 @@ __pycache__/
 *.png
 # Webapp ships a small PNG under static/images/; keep it tracked
 !server/internal/web/static/images/*.png
+# STL preview renders for the keypad badges: kept so the GitHub file
+# browser shows what each printable mesh looks like.
+!hardware/badges/*.png
