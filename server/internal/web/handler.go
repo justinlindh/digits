@@ -497,10 +497,9 @@ func (h *Handler) Router() http.Handler {
 	// Order matters: welcome runs first so the household onboarding screens
 	// render in the user's chosen theme, not the intercom default.
 	protectedHandler := h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Welcome gate. Skip for the welcome route itself (so the picker can
-		// render and submit), /auth/* (logout etc. must always work), and
-		// /api/* + /ws (JSON/SSE/WS clients can't follow HTML page redirects;
-		// they get their natural 4xx from the route handler instead).
+		// Welcome gate. Exempts /welcome itself plus the universal set
+		// (/auth/*, /api/*, /ws) so JSON/SSE/WS clients get their natural
+		// 4xx instead of an HTML redirect.
 		if !isGateExempt(r.URL.Path, "/welcome") {
 			user := auth.UserFromContext(r.Context())
 			if user != nil && !user.ThemeChosen {
@@ -508,11 +507,10 @@ func (h *Handler) Router() http.Handler {
 				return
 			}
 		}
-		// Onboarding gate. Same exemption set as welcome, plus /onboard
-		// itself and /welcome (welcome runs before household exists).
-		if h.householdStore != nil &&
-			!isGateExempt(r.URL.Path, "/welcome") &&
-			r.URL.Path != "/onboard" {
+		// Onboarding gate. Adds /onboard (its redirect target) and
+		// /welcome (the picker runs before a household exists) to the
+		// universal exempt set.
+		if h.householdStore != nil && !isGateExempt(r.URL.Path, "/welcome", "/onboard") {
 			user := auth.UserFromContext(r.Context())
 			if user != nil && h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
 				http.Redirect(w, r, "/onboard", http.StatusSeeOther)
@@ -528,15 +526,17 @@ func (h *Handler) Router() http.Handler {
 }
 
 // isGateExempt reports whether a request path should bypass the welcome and
-// onboarding redirect gates. API, WebSocket, and auth paths are exempt
+// onboarding redirect gates. /auth/*, /api/*, and /ws[/*] are always exempt
 // because their consumers can't (or shouldn't) follow an HTML page redirect:
 // SSE/fetch clients would parse the HTML as JSON, WS upgrades would fail,
-// and the auth flow itself must reach /auth/login regardless of state. The
-// caller's own redirect target (e.g. "/welcome") is exempt for the same
-// reason a redirect to itself would loop.
-func isGateExempt(path, selfTarget string) bool {
-	if path == selfTarget {
-		return true
+// and the auth flow itself must reach /auth/login regardless of state. Each
+// gate also passes its own redirect target (and any other gate's target it
+// needs to defer to) as `extra` so a redirect-to-self can't loop.
+func isGateExempt(path string, extra ...string) bool {
+	for _, p := range extra {
+		if path == p {
+			return true
+		}
 	}
 	if strings.HasPrefix(path, "/auth/") {
 		return true

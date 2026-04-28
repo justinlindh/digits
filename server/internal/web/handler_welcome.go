@@ -47,21 +47,11 @@ func (h *Handler) handleWelcomePost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/welcome", http.StatusSeeOther)
 		return
 	}
-	if err := h.authStore.SetTheme(r.Context(), user.ID, theme); err != nil {
-		slog.Error("welcome: set theme failed", "err", err, "theme", theme, "user_id", user.ID)
+	updated, err := h.authStore.SetThemeAndMarkChosen(r.Context(), user.ID, theme)
+	if err != nil {
+		slog.Error("welcome: set theme and mark chosen failed", "err", err, "theme", theme, "user_id", user.ID)
 		http.Error(w, "failed to save theme", http.StatusInternalServerError)
 		return
 	}
-	if err := h.authStore.MarkThemeChosen(r.Context(), user.ID); err != nil {
-		slog.Error("welcome: mark theme chosen failed", "err", err, "user_id", user.ID)
-		http.Error(w, "failed to save theme", http.StatusInternalServerError)
-		return
-	}
-	// Mutate the request-scoped User snapshot so LoginRedirectFor sees the
-	// theme we just persisted; UserFromContext otherwise still holds the
-	// pre-pick value and would mis-route dialup picks to / instead of
-	// /connecting. Cheaper than a re-fetch for a once-per-account flow.
-	user.Theme = theme
-	user.ThemeChosen = true
-	http.Redirect(w, r, auth.LoginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, auth.LoginRedirectFor(updated), http.StatusSeeOther)
 }

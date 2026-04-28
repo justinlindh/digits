@@ -125,6 +125,26 @@ func (s *Store) MarkThemeChosen(ctx context.Context, userID string) error {
 	return err
 }
 
+// SetThemeAndMarkChosen flips both theme and theme_chosen in one UPDATE and
+// returns the refreshed user. Used by the welcome handler so a partial write
+// can't leave a user with their picked theme but theme_chosen=false (which
+// would loop them back to /welcome until the next submit).
+func (s *Store) SetThemeAndMarkChosen(ctx context.Context, userID string, theme Theme) (*User, error) {
+	if !theme.Valid() {
+		return nil, fmt.Errorf("invalid theme: %q", theme)
+	}
+	u := &User{}
+	err := s.db.QueryRowContext(ctx,
+		`UPDATE users SET theme = $1, theme_chosen = TRUE WHERE id = $2
+		 RETURNING id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`,
+		theme, userID,
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	if err != nil {
+		return nil, fmt.Errorf("set theme and mark chosen: %w", err)
+	}
+	return u, nil
+}
+
 // SetCRTMode updates the user's selected CRT bezel mode.
 func (s *Store) SetCRTMode(ctx context.Context, userID string, mode CRTMode) error {
 	if !mode.Valid() {
