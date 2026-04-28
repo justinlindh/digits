@@ -122,6 +122,7 @@ func (d *daemonCallbacks) SendTone(name string) {
 	switch strings.ToUpper(name) {
 	case phone.ToneDial:
 		d.mixer.PlayLoop("tone_dial")
+		slog.Info("dialtone playing")
 	case phone.ToneRingback:
 		d.mixer.PlayLoop("tone_ringback")
 	case phone.ToneBusy:
@@ -819,8 +820,8 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 }
 
 func (d *daemonCallbacks) HangupCall() {
+	t0 := time.Now()
 	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.
@@ -840,42 +841,58 @@ func (d *daemonCallbacks) HangupCall() {
 
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
 
-	if d.pipeline != nil {
-		d.pipeline.Stop()
-		d.pipeline = nil
-	}
-	// Cancel link-health reporter before closing the PeerConnection so
-	// GetStats() is never called on a closed peer.
+	// Snapshot the slow-to-close resources and null them out so a fresh
+	// call setup (next pickup) doesn't have to wait for pion's DTLS / ICE
+	// shutdown. Pion's pc.Close blocks for hundreds of ms to seconds, and
+	// previously held the daemon's serial event loop the entire time,
+	// gating dialtone on the next HOOK:OFF.
+	pipeline := d.pipeline
+	peerMgr := d.peerMgr
+	mesh := d.mesh
+	d.pipeline = nil
+	d.peerMgr = nil
+	d.mesh = nil
+
+	// Cancel link-health reporters before releasing the lock so the
+	// background goroutine never calls GetStats on a closed peer.
 	if d.reporterCancel != nil {
 		d.reporterCancel()
 		d.reporterCancel = nil
 	}
-
-	if d.peerMgr != nil {
-		if err := d.peerMgr.Close(); err != nil {
-			slog.Warn("peerMgr close failed", "error", err)
-		}
-		d.peerMgr = nil
-	}
-	// Drain any active mesh reporter goroutines before closing their
-	// PeerConnections so GetStats() is never called on a closed peer.
 	for phone, cancel := range d.meshReporterCancels {
 		cancel()
 		delete(d.meshReporterCancels, phone)
 	}
-	// Tear down any mesh peers as well. The mesh may still hold a peer adopted
-	// from an earlier flash (ADD_DIALTONE MigrateToMesh) that was aborted
-	// before a conference merge; leaving it behind causes the next Adopt to
-	// close the live peer instead of the stale one.
-	if d.mesh != nil {
-		d.mesh.CloseAll()
-		d.mesh = nil
-	}
+
 	if peer != "" {
 		d.mixer.RemoveWebRTCSource(peer)
 	}
 
-	slog.Info("call ended")
+	d.mu.Unlock()
+	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+
+	go func() {
+		defer recoverGoroutine("hangup-teardown")
+		teardownStart := time.Now()
+		if pipeline != nil {
+			t := time.Now()
+			pipeline.Stop()
+			slog.Info("hangup teardown: pipeline stopped", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if peerMgr != nil {
+			t := time.Now()
+			if err := peerMgr.Close(); err != nil {
+				slog.Warn("hangup teardown: peerMgr close failed", "error", err)
+			}
+			slog.Info("hangup teardown: peerMgr closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if mesh != nil {
+			t := time.Now()
+			mesh.CloseAll()
+			slog.Info("hangup teardown: mesh closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		slog.Info("hangup teardown complete", "peer", peer, "async_elapsed", time.Since(teardownStart).Round(time.Millisecond))
+	}()
 }
 
 // newPipeline constructs a fresh capture pipeline with per-line config
