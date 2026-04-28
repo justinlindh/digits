@@ -162,6 +162,13 @@ func ensureUser(ctx context.Context, s *stores, spec seededUser, minimal bool) (
 	if err := s.auth.SetTheme(ctx, u.ID, spec.Theme); err != nil {
 		return nil, nil, fmt.Errorf("set theme: %w", err)
 	}
+	// Seeded users have a deterministic theme already, so flip the flag so
+	// they don't bounce through /welcome on every dev-up. To exercise the
+	// picker locally, run:
+	//   psql $DATABASE_URL -c "UPDATE users SET theme_chosen = FALSE WHERE email = 'dev@digits.local'"
+	if err := s.auth.MarkThemeChosen(ctx, u.ID); err != nil {
+		return nil, nil, fmt.Errorf("mark theme chosen: %w", err)
+	}
 	hh, err := ensureHousehold(ctx, s.house, u.ID, spec.HouseholdName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ensure household: %w", err)

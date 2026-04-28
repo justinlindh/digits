@@ -361,6 +361,21 @@ END $$;`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS appearance TEXT NOT NULL DEFAULT 'day'`,
 		// v24: household-level do-not-disturb master switch.
 		`ALTER TABLE households ADD COLUMN IF NOT EXISTS do_not_disturb BOOLEAN NOT NULL DEFAULT FALSE`,
+		// v25: per-user "has picked a theme" flag for the first-time-login
+		// theme picker. Pre-existing users are backfilled to TRUE so the
+		// welcome wizard only fires for new accounts; the schema_version
+		// guard (mirroring v22) ensures the backfill runs exactly once even
+		// if a QA workflow has since flipped some rows back to FALSE.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 25) THEN
+
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_chosen BOOLEAN NOT NULL DEFAULT FALSE;
+        UPDATE users SET theme_chosen = TRUE;
+
+        INSERT INTO schema_version (version) VALUES (25);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

@@ -129,7 +129,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, loginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
 }
 
 // HandleDevSession creates an authenticated session in one round-trip for e2e testing.
@@ -183,14 +183,15 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, loginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
 }
 
-// loginRedirectFor returns the URL to redirect a newly-authenticated user to.
+// LoginRedirectFor returns the URL to redirect a newly-authenticated user to.
 // For dial-up theme users, /connecting renders a modem-dialing intro whose
 // Connect button provides the user gesture needed for post-auth audio.
-// All other themes go straight to the dashboard.
-func loginRedirectFor(u *User) string {
+// All other themes go straight to the dashboard. Exported so the welcome
+// handler and onboarding handler can use the same theme-aware landing rule.
+func LoginRedirectFor(u *User) string {
 	if u != nil && u.Theme == ThemeDialup {
 		return "/connecting"
 	}

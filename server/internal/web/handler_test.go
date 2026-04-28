@@ -443,6 +443,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 			t.Fatalf("create user: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, user.ID)
 	hh, err := householdStore.Create(context.Background(), "Test Household", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
@@ -1200,6 +1201,7 @@ func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore
 	if err != nil {
 		t.Fatalf("create other user: %v", err)
 	}
+	markUserOnboarded(t, authStore, otherUser.ID)
 	otherHH, err := h.householdStore.Create(context.Background(), otherName, otherUser.ID)
 	if err != nil {
 		t.Fatalf("create other household: %v", err)

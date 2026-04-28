@@ -25,6 +25,7 @@ type User struct {
 	Name        string
 	GoogleID    *string
 	Theme       Theme
+	ThemeChosen bool
 	CRTMode     CRTMode
 	Appearance  Appearance
 	CreatedAt   time.Time
@@ -55,21 +56,21 @@ func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *st
 	u := &User{}
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at`,
+		 RETURNING id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 	return u, nil
 }
 
-const userSelectBase = `SELECT id, email, name, google_id, theme, crt_mode, appearance, created_at, last_login_at FROM users WHERE `
+const userSelectBase = `SELECT id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at FROM users WHERE `
 
 func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*User, error) {
 	u := &User{}
 	err := s.db.QueryRowContext(ctx, userSelectBase+whereClause, arg).Scan(
-		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt,
+		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
@@ -113,6 +114,14 @@ func (s *Store) SetTheme(ctx context.Context, userID string, theme Theme) error 
 		return fmt.Errorf("invalid theme: %q", theme)
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
+	return err
+}
+
+// MarkThemeChosen marks the welcome theme picker as completed. One-shot:
+// once true, the welcome gate releases and later /settings/theme changes
+// don't toggle it back.
+func (s *Store) MarkThemeChosen(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE users SET theme_chosen = TRUE WHERE id = $1`, userID)
 	return err
 }
 

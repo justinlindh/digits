@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pick your vibe - Digits</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/welcome.css">
+</head>
+<body class="welcome-body">
+
+<main class="welcome">
+  <header class="welcome__head">
+    <p class="welcome__eyebrow">One last thing</p>
+    <h1 class="welcome__title">Pick your vibe.</h1>
+    <p class="welcome__sub">Three ways to wear your phone network. You can change it anytime in Settings.</p>
+  </header>
+
+  <div class="welcome__cards" role="radiogroup" aria-label="Theme">
+
+    <form action="/welcome" method="POST" class="welcome__cardform">
+      <input type="hidden" name="theme" value="{{.ThemeIntercom}}">
+      <button type="submit" class="welcome-card welcome-card--intercom" aria-label="Pick the Home Intercom theme">
+        <span class="welcome-card__chip">DEFAULT</span>
+        <span class="ic-preview" aria-hidden="true">
+          <span class="ic-preview__plate">
+            <span class="ic-preview__grille">
+              <span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span>
+            </span>
+            <span class="ic-preview__btn"></span>
+          </span>
+        </span>
+        <span class="welcome-card__name welcome-card__name--intercom">Home Intercom</span>
+        <span class="welcome-card__tag">Quiet, modern. Like a doorbell.</span>
+        <span class="welcome-card__cta welcome-card__cta--intercom">Use this theme &rarr;</span>
+      </button>
+    </form>
+
+    <form action="/welcome" method="POST" class="welcome__cardform">
+      <input type="hidden" name="theme" value="{{.ThemeDialup}}">
+      <button type="submit" class="welcome-card welcome-card--dialup" aria-label="Pick the Retro 1997 dial-up theme">
+        <span class="welcome-card__chip welcome-card__chip--dialup">RETRO 1997</span>
+        <span class="du-preview" aria-hidden="true">
+          <span class="du-preview__bar">
+            <span class="du-preview__bar-icon"></span>
+            <span class="du-preview__bar-title">Dial-Up</span>
+            <span class="du-preview__bar-btns"><b>_</b><b>&#9634;</b><b>&#10005;</b></span>
+          </span>
+          <span class="du-preview__body">
+            <span class="du-preview__leds">
+              <i></i><i></i><i></i><i></i><i></i><i></i>
+            </span>
+            <span class="du-preview__line">CONNECTING&hellip;</span>
+            <span class="du-preview__line du-preview__line--small">v.90 &middot; 56 000 bps</span>
+          </span>
+        </span>
+        <span class="welcome-card__name welcome-card__name--dialup">Retro 1997</span>
+        <span class="welcome-card__tag">You&rsquo;ve got phones. Modem and all.</span>
+        <span class="welcome-card__cta welcome-card__cta--dialup">Connect &rarr;</span>
+      </button>
+    </form>
+
+    <form action="/welcome" method="POST" class="welcome__cardform">
+      <input type="hidden" name="theme" value="{{.ThemeAM}}">
+      <button type="submit" class="welcome-card welcome-card--am" aria-label="Pick the Answering Machine theme">
+        <span class="welcome-card__chip welcome-card__chip--am">MID-90s</span>
+        <span class="am-preview" aria-hidden="true">
+          <span class="am-preview__screw am-preview__screw--tl"></span>
+          <span class="am-preview__screw am-preview__screw--tr"></span>
+          <span class="am-preview__screw am-preview__screw--bl"></span>
+          <span class="am-preview__screw am-preview__screw--br"></span>
+          <span class="am-preview__display">
+            <span class="am-preview__count">01</span>
+            <span class="am-preview__label">NEW</span>
+          </span>
+          <span class="am-preview__keys">
+            <span class="am-preview__key am-preview__key--rec"></span>
+            <span class="am-preview__key"></span>
+            <span class="am-preview__key"></span>
+          </span>
+        </span>
+        <span class="welcome-card__name welcome-card__name--am">Answering Machine</span>
+        <span class="welcome-card__tag">Beige plastic. Tape sold separately.</span>
+        <span class="welcome-card__cta welcome-card__cta--am">Press play &rarr;</span>
+      </button>
+    </form>
+
+  </div>
+
+  <footer class="welcome__foot">
+    <span>Signed in as <b>{{if .User}}{{.User.Email}}{{end}}</b></span>
+    <span class="welcome__foot-sep">&middot;</span>
+    <span class="welcome__version">{{.Version}}</span>
+  </footer>
+</main>
+
+</body>
+</html>

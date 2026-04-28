@@ -168,6 +168,16 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	}, authStore
 }
 
+// markUserOnboarded flips the welcome-gate flag on a freshly-created test
+// user so requests to protected routes don't get bounced to /welcome. Real
+// users hit this state by submitting the picker; tests skip the picker.
+func markUserOnboarded(t *testing.T, store *auth.Store, userID string) {
+	t.Helper()
+	if err := store.MarkThemeChosen(context.Background(), userID); err != nil {
+		t.Fatalf("mark theme chosen for %s: %v", userID, err)
+	}
+}
+
 // addSessionCookie creates test@example.com on demand, opens a session, and
 // returns a cookie suitable for attaching to authenticated requests.
 func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
@@ -179,6 +189,7 @@ func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
 			t.Fatalf("create test user: %v", err)
 		}
 	}
+	markUserOnboarded(t, store, user.ID)
 	token, _, err := store.CreateSession(context.Background(), user.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
@@ -238,6 +249,7 @@ func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store
 			t.Fatalf("create test user: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, user.ID)
 	store := household.NewStore(database.DB)
 	hh, err := store.Create(context.Background(), "E2E Test Household", user.ID)
 	if err != nil {
@@ -312,6 +324,7 @@ func seedUnrelatedUser(t *testing.T, env callsTestEnv, label string) *auth.User 
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: CreateUser: %v", label, err)
 	}
+	markUserOnboarded(t, env.authStore, u.ID)
 	hh, err := env.householdStore.Create(context.Background(), hhName, u.ID)
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: Create household: %v", label, err)
