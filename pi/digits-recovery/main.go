@@ -96,19 +96,9 @@ func (s *recoveryServer) handleTryAgain(w http.ResponseWriter, _ *http.Request) 
 	}
 }
 
-func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
-	s.reset.mu.Lock()
-	if s.reset.inProgress {
-		s.reset.mu.Unlock()
-		http.Error(w, "factory reset already in progress", http.StatusConflict)
-		return
-	}
-	s.reset.inProgress = true
-	s.reset.status = "Restoring rootfs..."
-	s.reset.mu.Unlock()
-
-	log.Println("recovery: factory reset requested")
-
+// doFactoryReset runs the wipe + restore sequence and returns nil on success.
+// Caller is responsible for the inProgress lock and for triggering the reboot.
+func (s *recoveryServer) doFactoryReset() error {
 	// Non-fatal: data partition may be corrupt (that's why we're here).
 	// mkfs.ext4 below will wipe it anyway.
 	if err := os.WriteFile(s.counterPath, []byte("0"), 0644); err != nil {
@@ -122,9 +112,7 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
 		exec.Command(filepath.Join(bin, "dd"), "of="+s.rootfsDev, "bs=4M", "conv=fsync"),
 	); err != nil {
-		log.Printf("recovery: rootfs restore failed: %v", err)
-		http.Error(w, "rootfs restore failed", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("rootfs restore: %w", err)
 	}
 	log.Println("recovery: rootfs restore complete, syncing")
 	syscall.Sync()
@@ -141,21 +129,15 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 
 	log.Printf("recovery: formatting %s", s.dataDev)
 	if err := exec.Command(filepath.Join(bin, "mkfs.ext4"), "-L", "data", "-F", s.dataDev).Run(); err != nil {
-		log.Printf("recovery: data format failed: %v", err)
-		http.Error(w, "data format failed", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("data format: %w", err)
 	}
 
 	dataMnt := "/tmp/data-restore"
 	if err := os.MkdirAll(dataMnt, 0755); err != nil {
-		log.Printf("recovery: failed to create mount point: %v", err)
-		http.Error(w, "failed to create mount point", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("create mount point: %w", err)
 	}
 	if err := exec.Command(filepath.Join(bin, "mount"), s.dataDev, dataMnt).Run(); err != nil {
-		log.Printf("recovery: data mount failed: %v", err)
-		http.Error(w, "data mount failed", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("data mount: %w", err)
 	}
 
 	s.setResetStatus("Restoring data...")
@@ -165,15 +147,35 @@ func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Reque
 		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
 		exec.Command(filepath.Join(bin, "tar"), "xf", "-", "-C", dataMnt),
 	); err != nil {
-		log.Printf("recovery: data skeleton restore failed: %v", err)
 		exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
-		http.Error(w, "data restore failed", http.StatusInternalServerError)
-		return
+		return fmt.Errorf("data skeleton restore: %w", err)
 	}
 	exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
 
 	s.setResetStatus("Rebooting...")
-	log.Println("recovery: factory reset complete, rebooting")
+	log.Println("recovery: factory reset complete")
+	return nil
+}
+
+func (s *recoveryServer) handleFactoryReset(w http.ResponseWriter, _ *http.Request) {
+	s.reset.mu.Lock()
+	if s.reset.inProgress {
+		s.reset.mu.Unlock()
+		http.Error(w, "factory reset already in progress", http.StatusConflict)
+		return
+	}
+	s.reset.inProgress = true
+	s.reset.status = "Restoring rootfs..."
+	s.reset.mu.Unlock()
+
+	log.Println("recovery: factory reset requested via web UI")
+
+	if err := s.doFactoryReset(); err != nil {
+		log.Printf("recovery: factory reset failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Factory reset complete. Rebooting...")
 	if f, ok := w.(http.Flusher); ok {
@@ -376,6 +378,51 @@ func main() {
 		dataDev:     envOr("DATA_DEV", "/dev/mmcblk0p4"),
 		hostname:    hostname,
 		rebootFunc:  rebootFn,
+	}
+
+	// autoFactoryResetFlag duplicates pi/digitsd/internal/bootcount.AutoFactoryResetFlag
+	// (separate Go modules; Go's internal-package rule prevents direct import).
+	// Both must agree on the path. When digitsd's confirmed *#00000# path
+	// writes this sentinel before reboot, recovery skips its Try Again /
+	// Factory Reset menu and runs the wipe directly. The wipe runs in a
+	// goroutine so the HTTP server can start immediately and serve the
+	// existing in-progress UI (status polling already supports it). Doing
+	// the wipe synchronously here would block ListenAndServe and leave the
+	// AP up with nothing on :80, indistinguishable from a wedged recovery.
+	autoFactoryResetFlag := envOr("AUTO_FACTORY_RESET_FLAG", "/data/digits/auto-factory-reset")
+	if _, err := os.Stat(autoFactoryResetFlag); err == nil {
+		log.Printf("recovery: %s present, auto-running factory reset (skipping menu)", autoFactoryResetFlag)
+		srv.reset.mu.Lock()
+		srv.reset.inProgress = true
+		srv.reset.status = "Auto-confirmed factory reset, restoring rootfs..."
+		srv.reset.mu.Unlock()
+		go func() {
+			if err := srv.doFactoryReset(); err != nil {
+				log.Printf("recovery: auto factory reset failed: %v", err)
+				srv.reset.mu.Lock()
+				srv.reset.inProgress = false
+				srv.reset.status = ""
+				srv.reset.mu.Unlock()
+				return
+			}
+			log.Println("recovery: auto factory reset complete, rebooting")
+			// Brief settle so the final "Rebooting..." status reaches any
+			// poller still on the recovery web UI before the kernel goes down.
+			time.Sleep(500 * time.Millisecond)
+			if rebootFn == nil {
+				return
+			}
+			if err := rebootFn(); err != nil {
+				// rebootDirect doesn't return on success; systemctl reboot
+				// usually doesn't either. A returning error means the reboot
+				// path itself failed and the device is wedged. Surface it on
+				// the status endpoint so the user has SOMETHING to read.
+				log.Printf("recovery: reboot failed after auto-reset: %v", err)
+				srv.reset.mu.Lock()
+				srv.reset.status = fmt.Sprintf("Reboot failed: %v", err)
+				srv.reset.mu.Unlock()
+			}
+		}()
 	}
 
 	staticSub, _ := fs.Sub(staticFS, "static")
