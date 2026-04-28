@@ -269,3 +269,64 @@ func TestServiceCodeRepairDoesNotTriggerShutdown(t *testing.T) {
 		h.AddKey(string(k))
 	}
 }
+
+func TestServiceCodeInCode(t *testing.T) {
+	h := NewServiceCodeHandler()
+	if h.InCode() {
+		t.Error("empty buffer should not be InCode")
+	}
+	h.AddKey("0")
+	if h.InCode() {
+		t.Error("buffer starting with digit should not be InCode")
+	}
+	h.Reset()
+	h.AddKey("*")
+	if !h.InCode() {
+		t.Error("buffer starting with '*' should be InCode")
+	}
+	for _, k := range "#000" {
+		h.AddKey(string(k))
+	}
+	if !h.InCode() {
+		t.Error("mid-code buffer (*#000) should be InCode")
+	}
+}
+
+// TestFactoryResetVsRickRollEasterEgg exercises the dispatcher pattern from
+// cmd/digitsd/main.go that gates easter eggs on InCode(). It guards against
+// the regression where the "0000" easter egg ate the 4th zero of *#00000#
+// before the service code handler could see the full sequence.
+func TestFactoryResetVsRickRollEasterEgg(t *testing.T) {
+	resetFired := make(chan struct{}, 1)
+	svc := NewServiceCodeHandler()
+	svc.SetFactoryResetCallback(func() { resetFired <- struct{}{} })
+
+	rickRoll := make(chan string, 1)
+	eggs := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { rickRoll <- clip })
+	eggs.MinGap = 0
+
+	for _, k := range "*#00000#" {
+		key := string(k)
+		// Mirrors main.go dispatch: suppress easter eggs while mid-code.
+		if !svc.InCode() {
+			if eggs.AddKey(key) {
+				continue
+			}
+		}
+		svc.AddKey(key)
+	}
+
+	select {
+	case <-resetFired:
+	case <-time.After(time.Second):
+		t.Fatal("factory reset never fired for *#00000#")
+	}
+	select {
+	case clip := <-rickRoll:
+		t.Errorf("Rick Roll should not fire during *#00000#, got clip %q", clip)
+	case <-time.After(50 * time.Millisecond):
+		// expected: no easter egg
+	}
+}
