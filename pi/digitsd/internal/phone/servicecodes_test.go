@@ -281,10 +281,21 @@ func TestServiceCodeInCode(t *testing.T) {
 	}
 	h.Reset()
 	h.AddKey("*")
-	if !h.InCode() {
-		t.Error("buffer starting with '*' should be InCode")
+	if h.InCode() {
+		t.Error("lone '*' should not be InCode (a code requires the '*#' prefix)")
 	}
-	for _, k := range "#000" {
+	h.AddKey("0")
+	if h.InCode() {
+		t.Error("'*' followed by digit should not be InCode (not a code prefix)")
+	}
+	h.Reset()
+	for _, k := range "*#" {
+		h.AddKey(string(k))
+	}
+	if !h.InCode() {
+		t.Error("'*#' prefix should be InCode")
+	}
+	for _, k := range "000" {
 		h.AddKey(string(k))
 	}
 	if !h.InCode() {
@@ -328,5 +339,36 @@ func TestFactoryResetVsRickRollEasterEgg(t *testing.T) {
 		t.Errorf("Rick Roll should not fire during *#00000#, got clip %q", clip)
 	case <-time.After(50 * time.Millisecond):
 		// expected: no easter egg
+	}
+}
+
+// TestEasterEggFiresAfterLoneStar guards the suppression-window scope: a
+// stray '*' followed by digits is normal-dial input, not a service code, and
+// must not block easter eggs (which require the full '*#' prefix to suppress).
+func TestEasterEggFiresAfterLoneStar(t *testing.T) {
+	svc := NewServiceCodeHandler()
+	rickRoll := make(chan string, 1)
+	eggs := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { rickRoll <- clip })
+	eggs.MinGap = 0
+
+	for _, k := range "*0000" {
+		key := string(k)
+		if !svc.InCode() {
+			if eggs.AddKey(key) {
+				continue
+			}
+		}
+		svc.AddKey(key)
+	}
+
+	select {
+	case clip := <-rickRoll:
+		if clip != "rickroll" {
+			t.Errorf("expected rickroll, got %q", clip)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Rick Roll should fire for *0000 (lone '*' is not a service code)")
 	}
 }
