@@ -624,6 +624,243 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-accept__input:focus { outline: 1px solid rgba(255,165,32,0.55); outline-offset: 1px; }
 .am-accept__submit { min-width: 80px; }
 
+/* Party-line trunk hero on /links: row of mini cassette-deck units (one per
+   linked family) wired by curly cords through a recessed patchbay rail into
+   the user's larger primary deck. Composes the AM theme's existing .am-tape,
+   .am-jack__socket, .am-key, and .am-unit__tag primitives at smaller scale. */
+
+.am-hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 26px 22px 22px;
+}
+.am-hub__decks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 22px 30px;
+  width: 100%;
+  max-width: 760px;
+}
+.am-hub__spoke {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 92px;
+  max-width: 140px;
+}
+
+.am-hub__deck {
+  position: relative;
+  width: 96px;
+  height: 60px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 55%, var(--case-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    inset 0 -2px 0 rgba(100,80,40,0.18),
+    0 1px 0 rgba(255,255,255,0.5),
+    0 2px 4px rgba(40,30,15,0.22);
+  padding: 7px 8px 6px;
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 4px 6px;
+  align-items: center;
+}
+.am-hub__deck::after {
+  content: '';
+  position: absolute; top: 4px; left: 18px; right: 18px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, transparent 0 2px, rgba(60,50,30,0.22) 2px 4px);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.am-hub__deck-led {
+  width: 8px; height: 8px; align-self: start; margin-top: 3px;
+}
+.am-hub__deck > .am-tape { grid-column: 2 / span 1; }
+.am-hub__deck-grille {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
+  padding: 0 2px;
+  height: 8px;
+}
+.am-hub__deck-grille span {
+  background: var(--slot);
+  border-radius: 1px;
+  box-shadow: inset 0 1px 0 rgba(0,0,0,0.7), inset 0 -1px 0 rgba(255,255,255,0.18);
+}
+
+/* Compact .am-tape variant for the spoke decks. Pair with .am-tape--idle to
+   keep the reels still; only the user's primary deck shows live motion. */
+.am-tape--mini {
+  grid-template-columns: 14px 1fr 14px;
+  padding: 4px 6px;
+  gap: 4px;
+}
+.am-tape--mini .am-tape__reel { width: 14px; height: 14px; box-shadow: inset 0 0 3px rgba(0,0,0,0.75); }
+.am-tape--mini .am-tape__reel::before { inset: 5px; }
+.am-tape--mini .am-tape__reel::after { inset: 6px; }
+.am-tape--mini .am-tape__tape { height: 2.5px; }
+
+.am-hub__cord {
+  display: block;
+  overflow: visible;
+}
+.am-hub__cord--spoke {
+  width: 14px; height: 26px;
+  margin: -2px 0;
+}
+.am-hub__cord--center {
+  width: 24px; height: 36px;
+  margin: -3px 0;
+  filter: drop-shadow(0 2px 2px rgba(40,25,10,0.4));
+}
+
+.am-hub__deck-name {
+  font-family: var(--font-body); font-size: 12px; font-weight: 600;
+  color: var(--ink); text-align: center; line-height: 1.2;
+  letter-spacing: 0.01em;
+  max-width: 130px;
+  overflow-wrap: break-word;
+}
+.am-hub__deck-since {
+  font-family: var(--font-mono); font-size: 9.5px;
+  color: var(--ink-muted); letter-spacing: 0.08em;
+  text-transform: uppercase; margin-top: 1px;
+}
+
+.am-hub__rail {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  background: linear-gradient(180deg, #1a1812 0%, #24201a 100%);
+  border-radius: 6px;
+  padding: 10px 14px;
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,0.7),
+    inset 0 -1px 0 rgba(255,255,255,0.06),
+    0 1px 0 rgba(255,255,255,0.35);
+  position: relative;
+}
+.am-hub__rail-cap {
+  width: 6px; height: 20px; border-radius: 1.5px; flex: 0 0 auto;
+  background: linear-gradient(180deg, #b8ac88 0%, #7a6f4a 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), inset 0 -1px 0 rgba(0,0,0,0.45);
+}
+.am-hub__rail-trunk-label {
+  font-family: var(--font-body); font-size: 8.5px; letter-spacing: 0.22em;
+  font-weight: 600; text-transform: uppercase;
+  color: #f0e5c5;
+  background: rgba(10,8,4,0.55);
+  padding: 3px 8px; border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.am-hub__rail-jacks {
+  display: flex; align-items: center; justify-content: space-around;
+  gap: 8px;
+  flex: 1;
+}
+
+/* Compact .am-jack__socket variant: same gradient and shadow stack at
+   half scale. Pair with .am-jack__plug--cN for the colored plug tip. */
+.am-jack__socket--mini { width: 26px; height: 26px; }
+.am-jack__socket--mini .am-jack__plug { width: 10px; height: 10px; }
+
+.am-hub__center {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.am-hub__center-deck {
+  width: 260px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 45%, var(--case-2) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.75),
+    inset 0 -2px 0 rgba(100,80,40,0.2),
+    0 2px 0 rgba(255,255,255,0.5),
+    0 4px 8px rgba(40,30,15,0.25);
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 10px;
+  position: relative;
+}
+.am-hub__center-deck::after {
+  content: '';
+  position: absolute; top: 5px; left: 36%; right: 36%;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, transparent 0 3px, rgba(60,50,30,0.32) 3px 6px);
+  border-radius: 2px;
+}
+.am-hub__center-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.am-hub__center-rec {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px 3px 6px;
+  background: linear-gradient(180deg, var(--case) 0%, var(--case-2) 100%);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 0 rgba(100,80,40,0.18);
+}
+.am-hub__center-rec-cap {
+  font-family: var(--font-body); font-size: 8.5px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.am-hub__center-tape { padding: 8px 14px; }
+.am-hub__center-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.am-hub__center-led-well {
+  background: var(--slot);
+  border-radius: 4px;
+  padding: 5px 10px 4px;
+  box-shadow:
+    inset 0 1px 3px rgba(0,0,0,0.75),
+    inset 0 -1px 0 rgba(255,255,255,0.05),
+    0 1px 0 rgba(255,255,255,0.4);
+  display: inline-flex; align-items: baseline; gap: 8px;
+}
+.am-hub__center-count { font-size: 18px; line-height: 1; }
+.am-hub__center-cap { font-size: 8.5px; letter-spacing: 0.2em; text-transform: uppercase; }
+.am-hub__center-keys { display: inline-flex; gap: 4px; }
+
+/* Compact .am-key variant for the play/rec controls on the primary deck. */
+.am-key--mini {
+  min-width: 28px; min-height: 24px;
+  padding: 4px 6px;
+  font-family: var(--font-led);
+  font-size: 11px;
+  letter-spacing: 0;
+  border-radius: 4px;
+}
+
+.am-hub__center-name {
+  font-family: var(--font-body); font-size: 15px; font-weight: 600;
+  color: var(--ink); letter-spacing: 0.02em; text-align: center;
+  line-height: 1.2;
+}
+.am-hub__center-sub {
+  font-family: var(--font-body); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-top: -2px;
+}
+
+@media (max-width: 600px) {
+  .am-hub { padding: 22px 14px 18px; }
+  .am-hub__decks { gap: 16px 22px; max-width: 100%; }
+  .am-hub__deck { width: 84px; height: 54px; padding: 6px 7px 5px; }
+  .am-hub__rail { padding: 9px 10px; gap: 8px; }
+  .am-hub__rail-jacks { gap: 4px; }
+  .am-jack__socket--mini { width: 22px; height: 22px; }
+  .am-jack__socket--mini .am-jack__plug { width: 8px; height: 8px; }
+  .am-hub__center-deck { width: 240px; padding: 10px 12px; }
+  .am-hub__center-tape { padding: 6px 10px; }
+}
+
 /* Station directory: numbered roster of linked families. Shared .am-roster
    primitives supply the wrapper, head, row, num, body, name, meta, and
    actions; page-scoped rules below cover the per-page overrides and the

@@ -257,6 +257,83 @@
 
   </div>
 
+  {{if .LinkedFamilies}}
+  <div class="am-plate am-hub" aria-label="Connected families">
+    <div class="am-plate__label">Party line</div>
+
+    <div class="am-hub__decks">
+      {{range .LinkedFamilies}}
+      <div class="am-hub__spoke">
+        <div class="am-hub__deck" aria-hidden="true">
+          <span class="am-hub__deck-led am-lamp am-lamp--on-green"></span>
+          <div class="am-tape am-tape--mini am-tape--idle">
+            <div class="am-tape__reel"></div>
+            <div class="am-tape__tape"></div>
+            <div class="am-tape__reel"></div>
+          </div>
+          <div class="am-hub__deck-grille">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <svg class="am-hub__cord am-hub__cord--spoke" viewBox="0 0 14 28" aria-hidden="true">
+          <path d="M 7 0 q 3.5 3 0 6 q -3.5 3 0 6 q 3.5 3 0 6 q -3.5 3 0 6 L 7 28"
+                stroke="#3a2016" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div class="am-hub__deck-name">{{.Name}}</div>
+        {{if .AcceptedAt}}<div class="am-hub__deck-since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</div>{{end}}
+      </div>
+      {{end}}
+    </div>
+
+    <div class="am-hub__rail">
+      <span class="am-hub__rail-cap"></span>
+      <span class="am-hub__rail-trunk-label">Trunk</span>
+      <div class="am-hub__rail-jacks" aria-hidden="true">
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c0"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c1"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c2"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c3"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c4"></span></span>
+      </div>
+      <span class="am-hub__rail-cap"></span>
+    </div>
+
+    <svg class="am-hub__cord am-hub__cord--center" viewBox="0 0 24 36" aria-hidden="true">
+      <path d="M 12 0 q 5 4 0 8 q -5 4 0 8 q 5 4 0 8 q -5 4 0 8 L 12 36"
+            stroke="#3a2016" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+    </svg>
+
+    <div class="am-hub__center">
+      <div class="am-hub__center-deck" aria-hidden="true">
+        <div class="am-hub__center-head">
+          <span class="am-unit__tag">Primary</span>
+          <span class="am-hub__center-rec">
+            <span class="am-lamp am-lamp--on-amber"></span>
+            <span class="am-hub__center-rec-cap">On air</span>
+          </span>
+        </div>
+        <div class="am-tape am-hub__center-tape">
+          <div class="am-tape__reel"></div>
+          <div class="am-tape__tape"></div>
+          <div class="am-tape__reel"></div>
+        </div>
+        <div class="am-hub__center-foot">
+          <span class="am-hub__center-led-well">
+            <span class="am-led am-hub__center-count">{{printf "%02d" (len .LinkedFamilies)}}</span>
+            <span class="am-led am-led--dim am-hub__center-cap">Trunks</span>
+          </span>
+          <div class="am-hub__center-keys">
+            <span class="am-key am-key--mini">&#x25B6;</span>
+            <span class="am-key am-key--mini am-key--red">&#x25CF;</span>
+          </div>
+        </div>
+      </div>
+      <div class="am-hub__center-name">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
+      <div class="am-hub__center-sub">You</div>
+    </div>
+  </div>
+  {{end}}
+
   <div class="am-plate am-roster">
     <div class="am-roster__head"><span class="am-label">Stations</span></div>
     {{if .LinkedFamilies}}
