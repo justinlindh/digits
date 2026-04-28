@@ -16,6 +16,13 @@ on:
       - "firmware/.releaserc-full.cjs"
       - "firmware/.releaserc-tagonly.cjs"
 
+# See server-release.yml for why this exists. Serializes release runs
+# so back-to-back merges don't race semantic-release into silently
+# skipping a tag.
+concurrency:
+  group: fw-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
