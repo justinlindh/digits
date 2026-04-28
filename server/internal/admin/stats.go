@@ -32,7 +32,7 @@ func NewStatsClient(url, secret string) *StatsClient {
 }
 
 func (c *StatsClient) Fetch(ctx context.Context) (*Stats, error) {
-	req, err := http.NewRequest("GET", c.url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
