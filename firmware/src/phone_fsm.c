@@ -221,6 +221,15 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         set_state(PHONE_STATE_IDLE);
         uart_proto_send("RST:OK");
+    } else if (strcmp(cmd, "DIAL:RESET") == 0) {
+        // Drop accumulated digits without changing state. digitsd uses this
+        // after a service-code completion or confirmer cancel: the user
+        // typed e.g. "*#73887#" while off-hook, the firmware accumulated
+        // "73887" in its dialing buffer, and after the service code matches
+        // we don't want the next 2 dialed digits to surprise-fire DIAL on
+        // a stale prefix.
+        clear_dialing_buffer();
+        uart_proto_send("DIAL:RESET:OK");
     } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
         // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
         // resets and stays in bootrom waiting for a USB host connection

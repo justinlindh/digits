@@ -48,6 +48,13 @@ const iceRestartTimeout = 15 * time.Second
 // CodeTTL (10 min) so the code is refreshed before it expires.
 const pairingRefreshInterval = 9 * time.Minute
 
+// pairingAnnouncementInterval is how long to wait between repeats of the
+// spoken pairing-code sequence while the phone is unpaired and off-hook.
+// Short enough that a user who missed the digits can re-hear them without
+// hanging up; long enough to avoid talking over a listener who got it the
+// first time.
+const pairingAnnouncementInterval = 15 * time.Second
+
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 }
@@ -1275,7 +1282,15 @@ func triggerFactoryReset() {
 		slog.Error("factory reset: failed to set boot counter", "err", err)
 		return
 	}
-	slog.Info("factory reset: boot counter set to 3, rebooting")
+	// AutoFactoryResetFlag tells the recovery server to skip its menu and
+	// run Factory Reset directly. Without it, the user lands in a
+	// "X failed boot attempts detected" web UI even though the device
+	// didn't actually fail to boot. Best-effort: if the write fails the
+	// recovery menu still appears, just with a misleading header.
+	if err := os.WriteFile(bootcount.AutoFactoryResetFlag, []byte("1\n"), 0644); err != nil {
+		slog.Warn("factory reset: write auto-reset flag failed", "path", bootcount.AutoFactoryResetFlag, "err", err)
+	}
+	slog.Info("factory reset: boot counter set to 3, auto-reset flag written, rebooting")
 	_ = exec.Command("sudo", "reboot").Run()
 }
 
@@ -1391,6 +1406,35 @@ func resetPicoHardware(sp *phone.SerialPort) {
 	slog.Info("pico: clearing residual hardware state on startup")
 	sp.Ring(false)
 	sp.LED("OFF")
+}
+
+// playPairingAnnouncement queues one full pairing-voice sequence on mixer:
+// silence pad, welcome, the code digits, and the "expires in N minute(s)"
+// tail. code and receivedAt are passed explicitly (not read from cb) so the
+// caller controls the cross-goroutine read: the announcement runs from a
+// goroutine spawned on HOOK:OFF and reading cb.pairingCode there would race
+// the dispatcher's TypePairingCode handler. minutesLeft is computed from
+// receivedAt on each call so a long-listening user hears an accurate
+// countdown.
+func playPairingAnnouncement(mixer *audio.Mixer, code string, receivedAt time.Time) {
+	mixer.PlayOnce("pairing_silence")
+	mixer.PlayOnce("pairing_welcome")
+	for _, ch := range code {
+		mixer.PlayOnce("spoken_" + string(ch))
+	}
+	minutesLeft := int(math.Ceil(pairingRefreshInterval.Minutes() - time.Since(receivedAt).Minutes()))
+	if minutesLeft < 1 {
+		minutesLeft = 1
+	} else if minutesLeft > 10 {
+		minutesLeft = 10
+	}
+	unitClip := "pairing_expires_minutes"
+	if minutesLeft == 1 {
+		unitClip = "pairing_expires_minute"
+	}
+	mixer.PlayOnce("pairing_expires_prefix")
+	mixer.PlayOnce(fmt.Sprintf("spoken_%d", minutesLeft))
+	mixer.PlayOnce(unitClip)
 }
 
 func main() {
@@ -1762,6 +1806,30 @@ func main() {
 	}
 
 	svcCodes := phone.NewServiceCodeHandler()
+	confirmer := phone.NewConfirmer()
+	// resetToDialtone is filled in once ctrl is created (lower in main).
+	// Captured by the confirm helper's onTimeout so the FSM state matches
+	// the audio state we restore: without ResetToDialtone the FSM stays
+	// in IDLE (where ctrl.Reset left it after the original Terminal
+	// dispatch) and the next keypress fails to trigger SendTone(ToneStop),
+	// so the dial tone loops under the user's DTMF beeps. Same regression
+	// covered by controller_test.go:1694.
+	var resetToDialtone func()
+	confirm := func(promptName string, action func()) {
+		mixer.StopTone()
+		mixer.PlayOnce(promptName)
+		armed := confirmer.Arm(action, func() {
+			slog.Info("confirmer: timed out")
+			mixer.StopAll()
+			mixer.PlayLoop("tone_dial")
+			if resetToDialtone != nil {
+				resetToDialtone()
+			}
+		}, 10*time.Second)
+		if !armed {
+			slog.Warn("confirm: another confirmation already pending, ignoring", "prompt", promptName)
+		}
+	}
 	svcCodes.SetVolumeCallback(func(level int) {
 		if err := phone.SetVolume(level); err != nil {
 			slog.Warn("volume set failed", "error", err)
@@ -1780,33 +1848,30 @@ func main() {
 		_ = exec.Command("sudo", "reboot").Run()
 	})
 	svcCodes.SetSetupCallback(func() {
-		slog.Info("service code: *#SETUP# (*#73887#) -> removing wifi-configured flag, rebooting")
-		// /data/wifi-configured is owned by root (digits-setup writes it as
-		// root); /data itself is mode 755 root:root. digitsd runs as the
-		// 'digits' user, which lacks write access to /data and so cannot
-		// unlink the flag directly. The digits-updater sudoers entry grants
-		// NOPASSWD on rm -f for this exact path.
-		out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
-		if err != nil {
-			slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
-		} else {
-			slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
-		}
-		// Play the spoken "rebooting into access point mode" confirmation in
-		// full before issuing the reboot. Without a cue the line goes silent
-		// for ~30s and reads as a freeze; with a half-played clip the user
-		// hears the message cut off mid-word as systemd tears down ALSA.
-		// Drop the dial-tone loop first so the spoken clip is intelligible.
-		mixer.StopAll()
-		mixer.PlayOnce("rebooting_into_access_point_mode")
-		for mixer.OncePlaying() {
-			time.Sleep(50 * time.Millisecond)
-		}
-		// OncePlaying flips false when the render loop dequeues the final
-		// samples, but ALSA still has ~one period in its DMA buffer. Pad
-		// 200ms so systemd's ALSA teardown doesn't clip the tail of "...mode".
-		time.Sleep(200 * time.Millisecond)
-		_ = exec.Command("sudo", "reboot").Run()
+		slog.Info("service code: *#SETUP# (*#73887#) -> awaiting confirmation")
+		confirm("confirm_wifi_setup", func() {
+			slog.Info("service code setup confirmed: removing wifi-configured flag, rebooting")
+			// /data/wifi-configured is owned by root (digits-setup writes it
+			// as root); /data itself is mode 755 root:root. digitsd runs as
+			// the 'digits' user, which lacks write access to /data and so
+			// cannot unlink the flag directly. The digits-updater sudoers
+			// entry grants NOPASSWD on rm -f for this exact path.
+			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
+			if err != nil {
+				slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
+			} else {
+				slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
+			}
+			// Spoken cue + 200ms ALSA-teardown pad so the tail of "...mode"
+			// isn't clipped by systemd shutdown.
+			mixer.StopAll()
+			mixer.PlayOnce("rebooting_into_access_point_mode")
+			for mixer.OncePlaying() {
+				time.Sleep(50 * time.Millisecond)
+			}
+			time.Sleep(200 * time.Millisecond)
+			_ = exec.Command("sudo", "reboot").Run()
+		})
 	})
 
 	svcCodes.SetAudioTestCallback(func() {
@@ -1913,16 +1978,26 @@ func main() {
 	}
 
 	svcCodes.SetRepairCallback(func() {
-		slog.Info("service code: *#0* -> clearing device token, rebooting into pairing mode")
-		if cfg != nil {
-			cfg.DeviceToken = ""
-			cfg.PairingCode = ""
-			if err := cfg.Save(); err != nil {
-				slog.Warn("service code repair: save config failed", "error", err)
+		slog.Info("service code: *#0* -> awaiting confirmation")
+		confirm("confirm_re_pair", func() {
+			slog.Info("service code repair confirmed: clearing device token, rebooting into pairing mode")
+			// Tell the server to invalidate its copy of paired_at + device_token
+			// over the still-authenticated WS, BEFORE we clear the local token
+			// or reboot. Without this the server keeps thinking we're paired
+			// and rejects our next register-without-token as "device_token
+			// required", looping forever. Brief sleep so the message lands
+			// (writes are async on the WS Send channel).
+			sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRepair, HardwareID: deviceID})
+			time.Sleep(500 * time.Millisecond)
+			if cfg != nil {
+				cfg.DeviceToken = ""
+				cfg.PairingCode = ""
+				if err := cfg.Save(); err != nil {
+					slog.Warn("service code repair: save config failed", "error", err)
+				}
 			}
-		}
-		slog.Info("service code repair: rebooting")
-		_ = exec.Command("sudo", "reboot").Run()
+			_ = exec.Command("sudo", "reboot").Run()
+		})
 	})
 
 	svcCodes.SetUpdateCallback(func() {
@@ -1931,8 +2006,11 @@ func main() {
 	})
 
 	svcCodes.SetFactoryResetCallback(func() {
-		slog.Info("service code: *#00000# -> FACTORY RESET")
-		triggerFactoryReset()
+		slog.Info("service code: *#00000# -> awaiting confirmation")
+		confirm("confirm_factory_reset", func() {
+			slog.Info("service code factory reset confirmed")
+			triggerFactoryReset()
+		})
 	})
 
 	// 6b. Create easter egg detector
@@ -1979,8 +2057,15 @@ func main() {
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
 	ctrl.SetSilentMode(cfg.SilentMode)
+	// Wire the confirmer's onTimeout FSM-reset hook now that ctrl exists.
+	// Also drop any digits the firmware accumulated while the user typed the
+	// service code; same Pico-buffer concern as the confirmer wrong-key path.
+	resetToDialtone = func() {
+		ctrl.ResetToDialtone()
+		sp.SendFire("DIAL:RESET")
+	}
 
-	// 8b. Contacts cache — optional dial safelist, persisted to disk.
+	// 8b. Contacts cache: optional dial safelist, persisted to disk.
 	// An empty cache leaves the checker nil so no-contacts phones allow
 	// every call (matching the pre-wiring behavior).
 	contactsPath := filepath.Join(filepath.Dir(*configPath), "contacts.json")
@@ -2060,6 +2145,12 @@ func main() {
 		<-pairingRefresh.C
 	}
 
+	// pairingAnnouncementCancel cancels the in-flight pairing-announcement
+	// repeat goroutine spawned on HOOK:OFF (unpaired). nil when no goroutine
+	// is running. Only the dispatcher select case touches this var, so no
+	// mutex is needed.
+	var pairingAnnouncementCancel context.CancelFunc
+
 	// OS signal handling
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -2077,29 +2168,92 @@ func main() {
 			return
 
 		case event := <-sp.Events():
-			// Unpaired phone: play pairing voice sequence instead of dial tone
+			// Confirmer intercept: when a sensitive op is awaiting "press *
+			// to confirm", KEY:* fires the action and any other key cancels
+			// (with dial-tone restored). HOOK:ON cancels and falls through
+			// so the existing HOOK:ON handler wipes audio + resets state.
+			// Auto-cancel happens via the timer's onTimeout (also restores
+			// dial tone). Service-code dispatch and FSM forwarding both run
+			// AFTER this block, so the intercepted * is never re-interpreted.
+			if confirmer.Active() {
+				if strings.HasPrefix(event, "KEY:") && len(event) > 4 {
+					key := string(event[4])
+					if key == "*" {
+						slog.Info("confirmer: * pressed, firing pending action")
+						// StopAll BEFORE Fire so the prompt audio is silent
+						// before the action goroutine runs. Otherwise the
+						// action's own mixer.StopAll + PlayOnce can race
+						// with this StopAll and have its queued clip wiped.
+						mixer.StopAll()
+						confirmer.Fire()
+						continue
+					}
+					slog.Info("confirmer: cancelled by other key", "key", key)
+					confirmer.Cancel()
+					mixer.StopAll()
+					mixer.PlayLoop("tone_dial")
+					// Pair the audio reset with an FSM reset (same regression
+					// covered by resetToDialtone above).
+					ctrl.ResetToDialtone()
+					// Pico keeps its own digit buffer; the cancel key + the
+					// digits the user already typed for the service code are
+					// still in it. Without this clear, the next ~2 dialed
+					// digits push past 7-total and the firmware fires a
+					// stale DIAL with the leftovers as the prefix.
+					sp.SendFire("DIAL:RESET")
+					continue
+				}
+				if event == "HOOK:ON" {
+					slog.Info("confirmer: cancelled by hang-up")
+					confirmer.Cancel()
+					// fall through: existing HOOK:ON handler wipes audio
+				}
+			}
+
+			// Unpaired phone: play pairing voice sequence instead of dial tone,
+			// then re-play it on a timer so a user who keeps the handset off
+			// the cradle can hear the code again without hanging up. The loop
+			// goroutine exits cleanly on HOOK:ON (cancel below), on pairing
+			// completion, or when the code is cleared.
 			if event == "HOOK:OFF" && !cb.paired.Load() && cb.pairingCode != "" {
 				mixer.StopAll()
-				mixer.PlayOnce("pairing_silence")
-				mixer.PlayOnce("pairing_welcome")
-				for _, ch := range cb.pairingCode {
-					mixer.PlayOnce("spoken_" + string(ch))
+				if pairingAnnouncementCancel != nil {
+					pairingAnnouncementCancel()
 				}
-				minutesLeft := int(math.Ceil(pairingRefreshInterval.Minutes() - time.Since(cb.pairingCodeReceivedAt).Minutes()))
-				if minutesLeft < 1 {
-					minutesLeft = 1
-				} else if minutesLeft > 10 {
-					minutesLeft = 10
-				}
-				unitClip := "pairing_expires_minutes"
-				if minutesLeft == 1 {
-					unitClip = "pairing_expires_minute"
-				}
-				mixer.PlayOnce("pairing_expires_prefix")
-				mixer.PlayOnce(fmt.Sprintf("spoken_%d", minutesLeft))
-				mixer.PlayOnce(unitClip)
-				slog.Info("phone: playing pairing code via voice", "code", cb.pairingCode)
+				ctx, cancel := context.WithCancel(context.Background())
+				pairingAnnouncementCancel = cancel
+				// Snapshot the pairing-code state on the dispatcher goroutine
+				// (the same one TypePairingCode writes from) and pass into the
+				// announcement goroutine. Avoids cross-goroutine reads of
+				// cb.pairingCode + cb.pairingCodeReceivedAt. The code/receivedAt
+				// won't change for this off-hook session: a new code only lands
+				// after pairingRefreshInterval, by which point HOOK:ON has
+				// cancelled this goroutine. cb.paired is atomic, so the
+				// post-pair exit check stays accurate without a snapshot.
+				code := cb.pairingCode
+				receivedAt := cb.pairingCodeReceivedAt
+				slog.Info("phone: playing pairing code via voice", "code", code)
 				sp.LED("ON")
+				go func() {
+					for {
+						if cb.paired.Load() || code == "" {
+							return
+						}
+						playPairingAnnouncement(mixer, code, receivedAt)
+						for mixer.OncePlaying() {
+							select {
+							case <-ctx.Done():
+								return
+							case <-time.After(50 * time.Millisecond):
+							}
+						}
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(pairingAnnouncementInterval):
+						}
+					}
+				}()
 				continue // skip normal controller handling
 			}
 
@@ -2133,9 +2287,15 @@ func main() {
 					switch svcCodes.AddKey(key) {
 					case phone.ServiceCodeTerminal:
 						ctrl.Reset()
+						// Drop the digits the firmware accumulated while the
+						// user was typing the service code (see comment near
+						// the confirmer cancel above). Otherwise post-code
+						// dialing fires DIAL on a stale prefix.
+						sp.SendFire("DIAL:RESET")
 						continue // skip forwarding to controller
 					case phone.ServiceCodeNonTerminal:
 						ctrl.ResetToDialtone()
+						sp.SendFire("DIAL:RESET")
 						continue
 					}
 				}
@@ -2178,6 +2338,10 @@ func main() {
 				mixer.StopAll()
 				easterEggs.Reset()
 				svcCodes.Reset()
+				if pairingAnnouncementCancel != nil {
+					pairingAnnouncementCancel()
+					pairingAnnouncementCancel = nil
+				}
 			}
 
 		case r := <-fwVersionCh:

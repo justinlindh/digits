@@ -55,6 +55,13 @@ const (
 	// TypeLinkHealth is sent by the phone to the server with a per-call
 	// quality telemetry snapshot. Phone → Server only.
 	TypeLinkHealth = "link_health"
+
+	// TypeRepair is sent by the phone over the authenticated WS to invalidate
+	// its server-side pairing (paired_at, device_token) before *#0* reboots
+	// digitsd. Without this, the next register-without-token from the same
+	// hardware ID is rejected as "device_token required" because the server
+	// still thinks the device is paired. Phone → Server only.
+	TypeRepair = "repair"
 )
 
 // Conference message types (three-way calling)
