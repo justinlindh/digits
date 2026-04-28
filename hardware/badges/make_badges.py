@@ -1,16 +1,17 @@
-"""Generate STL files for the keypad badges.
+"""Generate STL files and lockup SVGs for the keypad badges.
 
 Source of truth for badge geometry. Re-run after editing constants:
 
     python3 make_badges.py
 
-Requires build123d (pip install build123d). The Fraunces TTF for the
-lockup variant is decompressed from the webapp's woff2 at runtime.
+Requires `build123d` (pip), `woff2_decompress` (pacman -S woff2), and
+`fontTools` (pip; pulled in by build123d). The Fraunces TTF is
+decompressed from the webapp's woff2 at runtime; the Press Start 2P
+TTF used by the arcade lockup is vendored at fonts/.
 """
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -40,10 +41,10 @@ BADGE_THICKNESS = 1.6
 EMBOSS_THICKNESS = 0.4
 
 BUTTON_SIZE = 4.0
-BUTTON_RADIUS = 0.6  # crisp keys: tightened from 1.0 to reduce the pillow look
+BUTTON_RADIUS = 0.6
 BUTTON_GAP = 1.0
-KEYPAD_W = 3 * BUTTON_SIZE + 2 * BUTTON_GAP  # 14
-KEYPAD_H = 4 * BUTTON_SIZE + 3 * BUTTON_GAP  # 19
+KEYPAD_W = 3 * BUTTON_SIZE + 2 * BUTTON_GAP
+KEYPAD_H = 4 * BUTTON_SIZE + 3 * BUTTON_GAP
 
 
 def keypad_sketch(cx: float = 0.0, cy: float = 0.0) -> Sketch:
