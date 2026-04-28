@@ -175,40 +175,23 @@ func (s *LinkStore) AreLinked(ctx context.Context, householdAID, householdBID st
 	return count > 0, nil
 }
 
-// RevokeLink sets a link's status to 'revoked' and cascade-deletes all contacts
-// between phones in the two linked households.
+// RevokeLink sets a link's status to 'revoked'. Returns an error if the link
+// does not exist or is already revoked.
 func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("revoke link begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Fetch the link's household IDs before revoking
-	var householdAID, householdBID sql.NullString
-	err = tx.QueryRowContext(ctx, `
-		SELECT household_a_id, household_b_id FROM household_links
-		WHERE id = $1 AND status != 'revoked'
-	`, linkID).Scan(&householdAID, &householdBID)
+	var id string
+	err := s.db.QueryRowContext(ctx, `
+		UPDATE household_links
+		SET status = 'revoked', revoked_at = $1, revoked_by = $2
+		WHERE id = $3 AND status != 'revoked'
+		RETURNING id
+	`, time.Now(), revokedByUserID, linkID).Scan(&id)
 	if err == sql.ErrNoRows {
 		return errors.New("link not found or already revoked")
 	}
 	if err != nil {
-		return fmt.Errorf("fetch link for revoke: %w", err)
-	}
-
-	// Revoke the link
-	now := time.Now()
-	_, err = tx.ExecContext(ctx, `
-		UPDATE household_links
-		SET status = 'revoked', revoked_at = $1, revoked_by = $2
-		WHERE id = $3
-	`, now, revokedByUserID, linkID)
-	if err != nil {
 		return fmt.Errorf("revoke link: %w", err)
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 // GetByID returns a link by its ID.
