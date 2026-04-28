@@ -181,8 +181,9 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	d.isCaller = true
 	d.isRestartingICE = false
 
+	callerPM := d.peerMgr
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		d.handleConnectionStateChange(state)
+		d.handleConnectionStateChange(callerPM, state)
 	}
 
 	// Handle remote audio track
@@ -306,13 +307,13 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
+	answerPM := d.peerMgr
 	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
-		d.handleConnectionStateChange(state)
+		d.handleConnectionStateChange(answerPM, state)
 	}
 
 	// Handle remote audio track — decode and feed into mixer.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	answerPM := d.peerMgr // capture for goroutine; each PM owns its decoder
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("answer-remote-track")
@@ -968,10 +969,21 @@ func (d *daemonCallbacks) triggerHangup() {
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
-func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectionState) {
+//
+// pm is the PeerManager captured at callback-setup time. Because HangupCall
+// detaches teardown into a goroutine, pion may fire a state change on a
+// pre-hangup peer after the daemon has already moved on to a new call. Every
+// branch that reads d.peerMgr / d.isCaller therefore checks d.peerMgr == pm
+// under d.mu and bails on mismatch, so a stale Failed event can't trigger an
+// ICE restart against the new call's peer.
+func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, state webrtc.PeerConnectionState) {
 	switch state {
 	case webrtc.PeerConnectionStateConnected:
 		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
 		wasRestarting := d.isRestartingICE
 		d.isRestartingICE = false
 		if d.restartTimer != nil {
@@ -982,7 +994,6 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
 			rctx, cancel := context.WithCancel(context.Background())
 			d.reporterCancel = cancel
-			pm := d.peerMgr
 			sig := d.sig
 			interval := d.linkHealthInterval
 			d.mu.Unlock()
@@ -1009,6 +1020,10 @@ func (d *daemonCallbacks) handleConnectionStateChange(state webrtc.PeerConnectio
 
 	case webrtc.PeerConnectionStateFailed:
 		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
 		alreadyRestarting := d.isRestartingICE
 		isCaller := d.isCaller
 		d.mu.Unlock()
