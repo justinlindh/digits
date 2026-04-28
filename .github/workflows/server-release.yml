@@ -14,6 +14,17 @@ on:
       - "server/**"
       - ".github/workflows/server-release.yml"
 
+# Serialize release runs so two PRs merging back-to-back don't race
+# semantic-release. Without this, the second run's checkout is "behind"
+# the now-advanced remote main and semantic-release bails with
+# "The local branch main is behind the remote one, therefore a new
+# version won't be published" -- silently skipping the tag for that
+# PR's commits. cancel-in-progress=false queues the second run instead
+# of cancelling, so each merge eventually gets analyzed.
+concurrency:
+  group: server-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
