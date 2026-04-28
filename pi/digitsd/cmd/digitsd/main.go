@@ -1295,8 +1295,7 @@ func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 	// wipes /data (and with it the local DeviceToken), so the device comes
 	// back unpaired. Without this, the server still has paired_at set and
 	// rejects the post-reset register-without-token as "device_token
-	// required", looping every 3 seconds. Same trap as the *#0* repair
-	// callback, fixed there in PRs #346/#347. Brief sleep so the message
+	// required", looping every 3 seconds. Brief sleep so the message
 	// lands (writes are async on the WS Send channel).
 	if sig != nil && deviceID != "" {
 		sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRepair, HardwareID: deviceID})
