@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="30mm" height="50mm" viewBox="0 0 30 50">
+  <g id="badge-bg" fill="#1a140e">
+    <rect width="30" height="50" rx="4"/>
+  </g>
+  <g id="badge-fg" fill="#ff7a59">
+    <rect x="8.0" y="4.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="13.0" y="4.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="18.0" y="4.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="8.0" y="9.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="13.0" y="9.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="18.0" y="9.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="8.0" y="14.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="13.0" y="14.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="18.0" y="14.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="8.0" y="19.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="13.0" y="19.0" width="4.0" height="4.0" rx="0.6"/>
+    <rect x="18.0" y="19.0" width="4.0" height="4.0" rx="0.6"/>
+    <path d="M0 125V1000H625V875H750V750H875V375H750V250H625V125ZM250 250H500V375H625V750H500V875H250Z" transform="translate(3.000 39.5) scale(0.004000 -0.004000)"/>
+    <path d="M125 125V250H375V875H125V1000H875V875H625V250H875V125Z" transform="translate(7.000 39.5) scale(0.004000 -0.004000)"/>
+    <path d="M250 125V250H125V375H0V750H125V875H250V1000H875V875H375V750H250V375H375V250H625V500H500V625H875V125Z" transform="translate(11.000 39.5) scale(0.004000 -0.004000)"/>
+    <path d="M125 125V250H375V875H125V1000H875V875H625V250H875V125Z" transform="translate(15.000 39.5) scale(0.004000 -0.004000)"/>
+    <path d="M375 125V875H125V1000H875V875H625V125Z" transform="translate(19.000 39.5) scale(0.004000 -0.004000)"/>
+    <path d="M125 125V250H0V375H250V250H625V500H125V625H0V875H125V1000H750V875H875V750H625V875H250V625H750V500H875V250H750V125Z" transform="translate(23.000 39.5) scale(0.004000 -0.004000)"/>
+  </g>
+</svg>
