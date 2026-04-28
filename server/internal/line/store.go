@@ -33,8 +33,6 @@ func scanSettings(raw []byte) (Settings, error) {
 	return DefaultSettings().Merge(patch).Normalize(), nil
 }
 
-// lineColumns is the SELECT list shared by queries that scan rows into a
-// Line via scanLineRow. Keep the order in sync with the scan there.
 const lineColumns = `id, number, name, household_id, settings, created_at, updated_at`
 
 func scanLineRow(rows *sql.Rows) (Line, error) {
