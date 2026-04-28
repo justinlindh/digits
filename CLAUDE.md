@@ -121,6 +121,8 @@ docs: update wiring notes
 
 **Git.** Remote: `github` (`git@github.com:justinlindh/digits.git`). PRs required to merge into main; no direct pushes. PR template at `.github/pull_request_template.md`.
 
+**`gh` PR/issue bodies.** With a single-quoted heredoc (`<<'EOF'`), the shell does no interpretation, so write backticks and quotes literally. Escaping them as `\`` or `\"` ships the backslashes to GitHub verbatim and breaks the rendered formatting (symptom: published body shows `\`foo\`` everywhere instead of `foo` in inline code).
+
 **Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 
 ## Definition of done for substantial work
