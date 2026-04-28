@@ -152,5 +152,5 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, loginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
 }

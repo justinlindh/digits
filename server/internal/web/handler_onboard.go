@@ -49,6 +49,9 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create household", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// Route through LoginRedirectFor so a fresh dialup user lands on the
+	// modem connect screen on first session, matching the post-pick behavior
+	// from /welcome and the post-login behavior on subsequent visits.
+	http.Redirect(w, r, auth.LoginRedirectFor(user), http.StatusSeeOther)
 }
 

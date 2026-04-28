@@ -1,0 +1,500 @@
+/* Welcome (first-time theme picker)
+ *
+ * Standalone page. The user has not chosen a theme yet, so this CSS does not
+ * inherit the layout-v2 / dialup / answering-machine variables. It brings
+ * its own neutral chrome and renders three in-card mini-previews of the
+ * actual themes so the choice is visual.
+ */
+
+:root {
+  --welcome-bg-1: #1a1714;
+  --welcome-bg-2: #2a221b;
+  --welcome-fg: #f3eadb;
+  --welcome-mute: #b6a991;
+  --welcome-card-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --welcome-card-shadow-hover: 0 28px 60px -18px rgba(0, 0, 0, 0.65), 0 4px 10px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+.welcome-body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--welcome-fg);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(220, 170, 90, 0.16), transparent 40%),
+    radial-gradient(circle at 80% 100%, rgba(110, 90, 200, 0.18), transparent 45%),
+    linear-gradient(160deg, var(--welcome-bg-1), var(--welcome-bg-2));
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+.welcome {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 56px 28px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  min-height: 100vh;
+}
+
+/* Header */
+.welcome__head {
+  text-align: center;
+  max-width: 640px;
+}
+
+.welcome__eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--welcome-mute);
+}
+
+.welcome__title {
+  margin: 0 0 12px;
+  font-size: clamp(34px, 5vw, 52px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.welcome__sub {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--welcome-mute);
+}
+
+/* Cards row */
+.welcome__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  width: 100%;
+}
+
+@media (max-width: 880px) {
+  .welcome__cards {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+    margin: 0 auto;
+  }
+}
+
+.welcome__cardform {
+  margin: 0;
+  display: flex;
+}
+
+.welcome-card {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 26px 22px 22px;
+  border-radius: 18px;
+  width: 100%;
+  min-height: 360px;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+  box-shadow: var(--welcome-card-shadow);
+}
+
+.welcome-card:hover,
+.welcome-card:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: var(--welcome-card-shadow-hover);
+  outline: none;
+}
+
+.welcome-card:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 4px;
+}
+
+.welcome-card__chip {
+  align-self: flex-start;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(0, 0, 0, 0.7);
+}
+
+.welcome-card__name {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: auto;
+}
+
+.welcome-card__tag {
+  font-size: 13.5px;
+  line-height: 1.4;
+  opacity: 0.78;
+}
+
+.welcome-card__cta {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.95;
+}
+
+/* ============================================================
+   Intercom card (modern home intercom: cream + brass)
+   ============================================================ */
+.welcome-card--intercom {
+  background: linear-gradient(180deg, #f4ead7 0%, #ebdfc6 100%);
+  color: #2a221b;
+  border: 1px solid rgba(120, 90, 40, 0.22);
+}
+
+.welcome-card__chip--intercom {
+  background: rgba(120, 90, 40, 0.16);
+  color: #5a4421;
+}
+
+.welcome-card__name--intercom {
+  color: #2a221b;
+}
+
+.welcome-card__cta--intercom {
+  color: #8a6418;
+}
+
+.ic-preview {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #faf3e3;
+  border-radius: 12px;
+  border: 1px solid rgba(120, 90, 40, 0.14);
+  padding: 22px;
+  min-height: 140px;
+}
+
+.ic-preview__plate {
+  position: relative;
+  width: 110px;
+  height: 130px;
+  background: linear-gradient(180deg, #d8c089 0%, #b8965a 100%);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.18),
+              0 4px 8px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.ic-preview__grille {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  width: 70px;
+}
+
+.ic-preview__grille span {
+  width: 100%;
+  height: 6px;
+  background: #3a2c14;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.ic-preview__btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #f0d99a, #a37b2e 70%);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55),
+              inset 0 -2px 2px rgba(0, 0, 0, 0.3),
+              0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   Dialup card (Win95 + AOL: bevels + Times)
+   ============================================================ */
+.welcome-card--dialup {
+  background: #c0c0c0;
+  color: #000080;
+  font-family: "Times New Roman", Times, Georgia, serif;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+  border-radius: 0;
+  box-shadow: 0 0 0 2px #808080,
+              var(--welcome-card-shadow);
+}
+
+.welcome-card--dialup:hover,
+.welcome-card--dialup:focus-visible {
+  box-shadow: 0 0 0 2px #808080,
+              var(--welcome-card-shadow-hover);
+}
+
+.welcome-card__chip--dialup {
+  background: #000080;
+  color: #ffffff;
+  border-radius: 0;
+  letter-spacing: 0.22em;
+  font-family: "Tahoma", "MS Sans Serif", sans-serif;
+  font-size: 10px;
+}
+
+.welcome-card__name--dialup {
+  color: #000080;
+  font-weight: 700;
+  font-family: "Times New Roman", Times, serif;
+  letter-spacing: 0;
+}
+
+.welcome-card__cta--dialup {
+  color: #800000;
+  font-family: "Times New Roman", Times, serif;
+}
+
+.du-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #404040 #ffffff #ffffff #404040;
+  min-height: 140px;
+  font-family: "Tahoma", "MS Sans Serif", sans-serif;
+}
+
+.du-preview__bar {
+  background: linear-gradient(90deg, #000080 0%, #1084d0 100%);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.du-preview__bar-icon {
+  width: 12px;
+  height: 12px;
+  background: #ffff00;
+  border: 1px solid #000;
+}
+
+.du-preview__bar-title {
+  flex: 1;
+}
+
+.du-preview__bar-btns {
+  display: flex;
+  gap: 2px;
+}
+
+.du-preview__bar-btns b {
+  display: inline-block;
+  width: 14px;
+  height: 12px;
+  text-align: center;
+  font-weight: 400;
+  font-size: 10px;
+  line-height: 12px;
+  background: #c0c0c0;
+  color: #000;
+  border: 1px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
+}
+
+.du-preview__body {
+  flex: 1;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: #000;
+  font-size: 12px;
+}
+
+.du-preview__leds {
+  display: flex;
+  gap: 5px;
+}
+
+.du-preview__leds i {
+  width: 10px;
+  height: 5px;
+  border-radius: 1px;
+  background: #2a0000;
+  box-shadow: inset 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.du-preview__leds i:nth-child(1) { background: #ff3030; box-shadow: 0 0 6px #ff5050; }
+.du-preview__leds i:nth-child(2) { background: #2ad84a; box-shadow: 0 0 5px #5fff7a; }
+.du-preview__leds i:nth-child(4) { background: #ffb84a; box-shadow: 0 0 5px #ffd070; }
+
+.du-preview__line {
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.du-preview__line--small {
+  font-size: 10.5px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+/* ============================================================
+   Answering machine card (beige plastic + LED counter)
+   ============================================================ */
+.welcome-card--am {
+  background: linear-gradient(180deg, #d8c8a4 0%, #c2b08a 100%);
+  color: #3a2e1a;
+  border: 1px solid rgba(58, 46, 26, 0.3);
+  border-radius: 14px;
+  position: relative;
+}
+
+.welcome-card__chip--am {
+  background: rgba(58, 46, 26, 0.18);
+  color: #3a2e1a;
+}
+
+.welcome-card__name--am {
+  color: #3a2e1a;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 19px;
+}
+
+.welcome-card__cta--am {
+  color: #7a3a18;
+  font-family: "Courier New", Courier, monospace;
+  text-transform: uppercase;
+}
+
+.am-preview {
+  flex: 1;
+  position: relative;
+  background: linear-gradient(180deg, #c4b288 0%, #a89878 100%);
+  border-radius: 8px;
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 140px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.am-preview__screw {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #6a5a3a, #2e2616 70%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+.am-preview__screw--tl { top: 8px;    left: 8px; }
+.am-preview__screw--tr { top: 8px;    right: 8px; }
+.am-preview__screw--bl { bottom: 8px; left: 8px; }
+.am-preview__screw--br { bottom: 8px; right: 8px; }
+
+.am-preview__display {
+  align-self: center;
+  background: #1a1408;
+  color: #ff4f22;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  box-shadow: inset 0 0 6px rgba(255, 79, 34, 0.4),
+              inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.am-preview__count {
+  font-size: 28px;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 6px rgba(255, 79, 34, 0.65);
+}
+
+.am-preview__label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  opacity: 0.85;
+}
+
+.am-preview__keys {
+  display: flex;
+  gap: 8px;
+  align-self: center;
+}
+
+.am-preview__key {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #6a5a3a, #4a3e26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+              0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.am-preview__key--rec {
+  background: linear-gradient(180deg, #c44a28, #821c08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.4),
+              0 0 8px rgba(255, 60, 30, 0.45);
+}
+
+/* Footer */
+.welcome__foot {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--welcome-mute);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.welcome__foot-sep {
+  opacity: 0.5;
+}
+
+.welcome__version {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  opacity: 0.7;
+}

@@ -89,6 +89,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 			t.Fatalf("create/get user A: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, userA.ID)
 	userB, err := authStore.CreateUser(context.Background(), "e2e-calls-b@example.com", "Calls User B", nil)
 	if err != nil {
 		userB, err = authStore.GetUserByEmail(context.Background(), "e2e-calls-b@example.com")
@@ -96,6 +97,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 			t.Fatalf("create/get user B: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, userB.ID)
 
 	hhA, err := householdStore.Create(context.Background(), "Calls Family A", userA.ID)
 	if err != nil {
@@ -229,6 +231,7 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 			t.Fatalf("create/get user: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, user.ID)
 
 	hh, err := householdStore.Create(context.Background(), "Conf Family", user.ID)
 	if err != nil {

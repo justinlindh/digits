@@ -88,6 +88,7 @@ type Handler struct {
 	tmplPhoneDetail    *template.Template
 	tmplLinks          *template.Template
 	tmplConnecting     *template.Template
+	tmplWelcome        *template.Template
 	tmplCallLivePanel          *template.Template
 	tmplCallLiveDetail         *template.Template
 	tmplConferenceLivePanel    *template.Template
@@ -308,6 +309,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	tmplWelcome, err := parsePage("welcome.html")
+	if err != nil {
+		return nil, err
+	}
 	tmplCallLivePanel, err := template.New("call-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_call-live-panel.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-panel: %w", err)
@@ -361,6 +366,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplPhoneDetail:    tmplPhoneDetail,
 		tmplLinks:          tmplLinks,
 		tmplConnecting:     tmplConnecting,
+		tmplWelcome:        tmplWelcome,
 		tmplCallLivePanel:          tmplCallLivePanel,
 		tmplCallLiveDetail:         tmplCallLiveDetail,
 		tmplConferenceLivePanel:    tmplConferenceLivePanel,
@@ -433,6 +439,8 @@ func (h *Handler) Router() http.Handler {
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
 	protected.HandleFunc("GET /connecting", h.handleConnecting)
+	protected.HandleFunc("GET /welcome", h.handleWelcomeGet)
+	protected.HandleFunc("POST /welcome", h.handleWelcomePost)
 	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
 	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
@@ -478,30 +486,68 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
-	// Onboarding gate: redirect users without a household to /onboard
-	// Only active when householdStore is set (nil means feature disabled)
-	protectedHandler := h.authStore.RequireAuth(protected)
-	if h.householdStore != nil {
-		protectedHandler = h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Don't gate the onboard routes themselves
-			if r.URL.Path == "/onboard" || strings.HasPrefix(r.URL.Path, "/auth/") {
-				protected.ServeHTTP(w, r)
+	// Two gates compose in front of protected routes, both behind RequireAuth:
+	//
+	//   1. Welcome gate: until theme_chosen=true, send the user to /welcome
+	//      so they pick a theme. Always active (the column has a backfill so
+	//      pre-existing users skip it).
+	//   2. Onboarding gate: until the user has a household, send them to
+	//      /onboard. Only active when householdStore is wired.
+	//
+	// Order matters: welcome runs first so the household onboarding screens
+	// render in the user's chosen theme, not the intercom default.
+	protectedHandler := h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Welcome gate. Exempts /welcome itself plus the universal set
+		// (/auth/*, /api/*, /ws) so JSON/SSE/WS clients get their natural
+		// 4xx instead of an HTML redirect.
+		if !isGateExempt(r.URL.Path, "/welcome") {
+			user := auth.UserFromContext(r.Context())
+			if user != nil && !user.ThemeChosen {
+				http.Redirect(w, r, "/welcome", http.StatusSeeOther)
 				return
 			}
+		}
+		// Onboarding gate. Adds /onboard (its redirect target) and
+		// /welcome (the picker runs before a household exists) to the
+		// universal exempt set.
+		if h.householdStore != nil && !isGateExempt(r.URL.Path, "/welcome", "/onboard") {
 			user := auth.UserFromContext(r.Context())
-			if user != nil {
-				if h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
-					http.Redirect(w, r, "/onboard", http.StatusSeeOther)
-					return
-				}
+			if user != nil && h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
+				http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+				return
 			}
-			protected.ServeHTTP(w, r)
-		}))
-	}
+		}
+		protected.ServeHTTP(w, r)
+	}))
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
 	return rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+}
+
+// isGateExempt reports whether a request path should bypass the welcome and
+// onboarding redirect gates. /auth/*, /api/*, and /ws[/*] are always exempt
+// because their consumers can't (or shouldn't) follow an HTML page redirect:
+// SSE/fetch clients would parse the HTML as JSON, WS upgrades would fail,
+// and the auth flow itself must reach /auth/login regardless of state. Each
+// gate also passes its own redirect target (and any other gate's target it
+// needs to defer to) as `extra` so a redirect-to-self can't loop.
+func isGateExempt(path string, extra ...string) bool {
+	for _, p := range extra {
+		if path == p {
+			return true
+		}
+	}
+	if strings.HasPrefix(path, "/auth/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	if path == "/ws" || strings.HasPrefix(path, "/ws/") {
+		return true
+	}
+	return false
 }
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {
