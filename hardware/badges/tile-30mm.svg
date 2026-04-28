@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="30mm" height="30mm" viewBox="0 0 30 30">
+  <g id="badge-bg" fill="#fff7e6">
+    <rect width="30" height="30" rx="4"/>
+  </g>
+  <g id="badge-fg" fill="#c1410c">
+    <rect x="8"  y="5.5"  width="4" height="4" rx="1"/>
+    <rect x="13" y="5.5"  width="4" height="4" rx="1"/>
+    <rect x="18" y="5.5"  width="4" height="4" rx="1"/>
+    <rect x="8"  y="10.5" width="4" height="4" rx="1"/>
+    <rect x="13" y="10.5" width="4" height="4" rx="1"/>
+    <rect x="18" y="10.5" width="4" height="4" rx="1"/>
+    <rect x="8"  y="15.5" width="4" height="4" rx="1"/>
+    <rect x="13" y="15.5" width="4" height="4" rx="1"/>
+    <rect x="18" y="15.5" width="4" height="4" rx="1"/>
+    <rect x="8"  y="20.5" width="4" height="4" rx="1"/>
+    <rect x="13" y="20.5" width="4" height="4" rx="1"/>
+    <rect x="18" y="20.5" width="4" height="4" rx="1"/>
+  </g>
+</svg>
