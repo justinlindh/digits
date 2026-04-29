@@ -23,6 +23,20 @@ Diagnostic tools: `alsatest`, `latbench`, `latclient`, `memprofile`, `pipetest`,
 - `digits-recovery` and `digits-setup` are simple cross-compiles, no Docker needed.
 - `digits-setup` output binary is named `digits-setup-arm64`, not `digits-setup`.
 
+## Deployable Config Files
+
+`/data` is its own writable partition (`/dev/mmcblk0p4`, mounted `rw,noatime`), so anything that lives under `/data/...` does **not** need the rootfs remount cycle: scp, `sudo cp`, done.
+
+| File | Source path in repo | Install destination | Apply step |
+|------|---------------------|---------------------|------------|
+| ALSA mixer state | `pi/digits_mixer_v{1,2}.state` (pick by PCB version of the target phone) | `/data/digits_mixer.state` | `sudo alsactl restore <card> -f /data/digits_mixer.state` |
+
+`<card>` is `digitscodec` for V2 (TLV320AIC3104 onboard) and `Zero` for V1 (Codec Zero HAT). Confirm before applying with `amixer -c digitscodec info` (V2) or `amixer -c Zero info` (V1). Image build (`tools/build-image.sh`) picks the right `_v1`/`_v2` source by PCB mode and copies it on first flash; for an in-place update you have to pick the matching source file yourself.
+
+`alsactl restore` may print `alsa-lib main.c:...(snd_use_case_mgr_open) error: failed to import hw:N use case configuration -2` -- harmless. The numid-keyed control values still apply.
+
+After the restore, **verify control values with `amixer cget name='<control>'`, not `sget`.** TLV320AIC3104 has no UCM mapping, so simple-control lookups (`sget`) fail with "Unable to find simple control" even when the underlying kcontrol exists and is correct.
+
 ## Device Info
 
 Phone IPs, SSH credentials, and device details are in `CLAUDE.local.md`. Read it before deploying.
@@ -60,6 +74,14 @@ The `mount` output must show `ro` -- if it shows `rw`, remount immediately:
 ```bash
 sshpass -p <password> ssh <user>@<ip> 'sudo mount -o remount,ro /'
 ```
+
+If `remount,ro` returns `mount: /: mount point is busy.` even though `lsof` shows no writeable handles, flush systemd-journald first and retry:
+
+```bash
+sshpass -p <password> ssh <user>@<ip> 'sudo journalctl --flush --sync && sync && sudo mount -o remount,ro /'
+```
+
+journald keeps `/var/log/journal/.../*.journal` open `O_RDWR` and intermittently has dirty in-memory state that the kernel counts as a write reference. `--flush --sync` collapses it back to a clean state and the remount succeeds.
 
 ## Multi-Phone Deploy
 
