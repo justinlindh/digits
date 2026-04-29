@@ -86,6 +86,16 @@ func detectCodec() *codecConfig {
 // CodecCardName returns the ALSA card name for the detected codec.
 func CodecCardName() string { return detectCodec().CardName }
 
+// CodecPCBVariant returns "1" for V1 hardware (Codec Zero HAT) or "2" for V2
+// hardware (onboard TLV320AIC3104). Used to pick the per-variant embedded
+// mixer state file at digitsd startup.
+func CodecPCBVariant() string {
+	if detectCodec().CardName == "digitscodec" {
+		return "2"
+	}
+	return "1"
+}
+
 // CodecCaptureDevice returns the ALSA device the capture pipeline should open.
 func CodecCaptureDevice() string { return detectCodec().CaptureDevice }
 

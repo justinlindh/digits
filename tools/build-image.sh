@@ -710,9 +710,9 @@ fi
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
 if [[ "$PCB_MODE" == true ]]; then
-    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v2.state"
+    MIXER_STATE="${REPO_DIR}/pi/mixer-state/v2.state"
 else
-    MIXER_STATE="${REPO_DIR}/pi/digits_mixer_v1.state"
+    MIXER_STATE="${REPO_DIR}/pi/mixer-state/v1.state"
 fi
 if [[ -f "$MIXER_STATE" ]]; then
     info "Copying mixer state to /data ($(basename "$MIXER_STATE"))..."

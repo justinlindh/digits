@@ -227,10 +227,7 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 
 
 
-const (
-	volumeFile     = "/data/digits/volume"
-	mixerStateFile = "/data/digits_mixer.state"
-)
+const volumeFile = "/data/digits/volume"
 
 // volumeToALSA converts a 0-9 volume level to ALSA value for the detected codec.
 func volumeToALSA(level int) int {
@@ -245,7 +242,10 @@ func volumeToALSA(level int) int {
 }
 
 // SetVolume sets volume on the detected codec. Level 0-9.
-// Persists the level to /data/digits/volume and saves full mixer state.
+// Persists the user-facing level to /data/digits/volume; the rest of the
+// mixer state (gain stages, routing) is the canonical embedded copy that
+// digitsd renders to /data/digits_mixer.state at startup, so we no longer
+// snapshot live mixer state on every volume change.
 func SetVolume(level int) error {
 	alsaVal := volumeToALSA(level)
 	card := audio.CodecCardName()
@@ -254,16 +254,12 @@ func SetVolume(level int) error {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
 	}
-	// Persist volume level
 	if err := os.MkdirAll(filepath.Dir(volumeFile), 0755); err != nil {
 		slog.Warn("volume: mkdir failed", "error", err)
 	}
 	if err := os.WriteFile(volumeFile, []byte(fmt.Sprintf("%d\n", level)), 0644); err != nil {
 		slog.Warn("volume: persist failed", "error", err)
 	}
-	// Save full mixer state
-	cmd = exec.Command("sudo", "alsactl", "store", card, "-f", mixerStateFile)
-	_ = cmd.Run() // best-effort
 	slog.Info("volume set", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal, "persisted", true)
 	return nil
 }
