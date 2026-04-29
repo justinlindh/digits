@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Connecting - Digits</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="stylesheet" href="/static/dialup.css">
-<link rel="stylesheet" href="/static/connecting.css">
+<link rel="icon" type="image/svg+xml" href="{{static "favicon.svg"}}">
+<link rel="stylesheet" href="{{static "dialup.css"}}">
+<link rel="stylesheet" href="{{static "connecting.css"}}">
 </head>
 <body class="dialup{{if and .User (ne .User.CRTMode "off")}} crt-page{{end}}"
       data-household="{{.HouseholdName}}"
@@ -95,6 +95,6 @@
 </div>
 
 <audio id="dialup-audio" preload="auto" src="/static/audio/dialup.m4a"></audio>
-<script src="/static/connecting.js"></script>
+<script src="{{static "connecting.js"}}"></script>
 </body>
 </html>

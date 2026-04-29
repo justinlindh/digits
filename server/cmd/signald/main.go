@@ -115,7 +115,7 @@ func run(ctx context.Context) error {
 		slog.Info("Google OAuth enabled")
 	}
 
-	loginTmpl, err := template.ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(web.TemplateFuncs()).ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		return fmt.Errorf("parse login template: %w", err)
 	}
