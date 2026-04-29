@@ -280,18 +280,6 @@ func (c *Config) SetDeviceToken(token string) error {
 	return c.Save()
 }
 
-// NeedsPairing returns true when a pairing code is present but no device
-// token has been issued yet.
-func (c *Config) NeedsPairing() bool {
-	return c.PairingCode != "" && c.DeviceToken == ""
-}
-
-// IsConfigured returns true when the minimum required fields (server URL and
-// either a device token or a pairing code) are present.
-func (c *Config) IsConfigured() bool {
-	return c.ServerURL != "" && (c.DeviceToken != "" || c.PairingCode != "")
-}
-
 // Path returns the file path this config was loaded from.
 func (c *Config) Path() string {
 	return c.path
