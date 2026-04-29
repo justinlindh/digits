@@ -550,6 +550,10 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
   flex-wrap: wrap;
 }
 .am-shell__brand-slot { display: inline-flex; align-items: center; gap: 12px; padding-right: 8px; }
+/* Drawer wraps tabs + identity (household, DND, signout). On desktop it just
+   absorbs the remaining width; on mobile the whole thing collapses behind
+   the MENU toggle so the topbar stays brand+MENU. */
+.am-shell__drawer { display: flex; align-items: center; gap: 14px; flex: 1 1 auto; min-width: 0; }
 .am-shell__household { margin-left: auto; font-family: var(--font-body); font-size: 9px; letter-spacing: 0.22em; color: var(--ink-muted); font-weight: 600; text-transform: uppercase; }
 .am-shell__dnd { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 4px 8px; border-radius: 4px; }
 .am-shell__dnd:hover, .am-shell__dnd:focus-visible { background: rgba(255,61,46,0.08); outline: none; }
@@ -562,19 +566,28 @@ html, body { margin: 0; padding: 0; font-family: var(--font-body); color: var(--
 .am-shell__toggle { display: none; }
 
 @media (max-width: 720px) {
-  .am-shell__nav { padding: 18px 20px 14px; gap: 10px; }
+  .am-shell__nav { padding: 18px 20px 14px; gap: 10px; flex-wrap: wrap; }
+  .am-shell__brand-slot { flex: 1 1 auto; min-width: 0; padding-right: 0; }
   .am-shell__main { padding: 4px 20px 24px; }
   .am-shell__toggle {
-    display: inline-flex;
+    display: inline-flex; flex: 0 0 auto;
     padding: 8px 14px;
     font-family: var(--font-body); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
     color: var(--ink); background: var(--case);
     border: 1px solid var(--btn-press); border-radius: 4px;
     box-shadow: 0 1px 0 var(--btn-press), 0 2px 3px rgba(40,30,15,0.2);
   }
-  .am-tabs { flex-wrap: wrap; width: 100%; order: 99; }
-  .am-tabs:not(.is-open) { display: none; }
-  .am-shell__household { font-size: 8px; }
+  .am-shell__drawer:not(.is-open) { display: none; }
+  .am-shell__drawer.is-open {
+    flex-direction: column; align-items: stretch;
+    width: 100%; order: 99;
+    gap: 12px;
+    padding-top: 10px; margin-top: 4px;
+    border-top: 1px dashed rgba(100,80,40,0.25);
+  }
+  .am-shell__drawer.is-open .am-tabs { flex-wrap: wrap; }
+  .am-shell__drawer.is-open .am-shell__household { margin-left: 0; font-size: 9px; }
+  .am-shell__drawer.is-open .am-shell__signout-form { align-self: flex-start; }
 }
 
 /* =========================================================================
