@@ -234,8 +234,8 @@ state.digitscodec {
 	control.17 {
 		iface MIXER
 		name 'HP DAC Playback Volume'
-		value.0 80
-		value.1 80
+		value.0 100
+		value.1 100
 		comment {
 			access 'read write'
 			type INTEGER
@@ -243,8 +243,8 @@ state.digitscodec {
 			range '0 - 118'
 			dbmin -9999999
 			dbmax 0
-			dbvalue.0 -1900
-			dbvalue.1 -1900
+			dbvalue.0 -900
+			dbvalue.1 -900
 		}
 	}
 	control.18 {

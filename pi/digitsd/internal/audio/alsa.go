@@ -61,15 +61,7 @@ func detectCodec() *codecConfig {
 				MixerName:      "PCM",
 				ALSAMin:        40,
 				ALSAMax:        115,
-				// V2 codec is noticeably quieter than V1 at the same level
-				// step. The TLV320AIC3104 PCM mixer drives the headphone amp
-				// through several attenuated stages (HP DAC at -19 dB, HP at
-				// +5 dB) so PCM needs to sit near the top of its range to
-				// reach a comfortable handset earpiece level. Level 8 maps
-				// to roughly -8 dB at PCM, which puts the earpiece at a
-				// telephone-normal SPL on first boot. Users can drop it
-				// later via *#*N service codes.
-				DefaultLevel: 8,
+				DefaultLevel:   5,
 			}
 			return
 		}
