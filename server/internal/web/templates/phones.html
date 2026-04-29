@@ -421,6 +421,12 @@
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
+        {{if or $l.PiUpdateNotes $l.FirmwareUpdateNotes}}
+        <span class="am-phones__update-flag" title="Software update available">
+          <span class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span class="am-led am-phones__update-cap">UPDATE</span>
+        </span>
+        {{end}}
       </div>
     </div>
     <div class="am-roster__actions">

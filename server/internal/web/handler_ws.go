@@ -252,14 +252,15 @@ func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Reque
 }
 
 // handleDevSeedFirmware registers a fake hub entry for a line number with the
-// given firmware version. It is only reachable when DevMode is true and lets
-// the Playwright e2e suite exercise the firmware update chip without a real
-// device connection.
+// given firmware (and optional pi) version. It is only reachable when DevMode
+// is true and lets the Playwright e2e suite (and interactive dev sessions)
+// exercise the update chip without a real device connection.
 //
-// POST /dev/seed-firmware?number=<line-number>&fw=<semver>
+// POST /dev/seed-firmware?number=<line-number>&fw=<semver>[&pi=<semver>]
 func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) {
 	number := r.URL.Query().Get("number")
 	fw := r.URL.Query().Get("fw")
+	pi := r.URL.Query().Get("pi")
 	if number == "" || fw == "" {
 		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
 		return
@@ -272,7 +273,7 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		}
 	}()
 	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fw, "")
+	h.hub.UpdateDeviceInfo(number, pi, "", fw, "")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
+	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)
 }
