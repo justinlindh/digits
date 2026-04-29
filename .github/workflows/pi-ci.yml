@@ -33,6 +33,9 @@ jobs:
           cache-dependency-path: pi/digitsd/go.sum
       - name: Install C dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev libopus-dev libopusfile-dev
+      - name: Populate embed tree
+        working-directory: pi/digitsd
+        run: make embed
       - name: Build digitsd
         working-directory: pi/digitsd
         run: go build ./...

@@ -8,12 +8,13 @@ import (
 
 // TestEmbedHasMixerStateVariants ensures the per-PCB-variant mixer state files
 // are present in the embedded FS at the paths the digitsd mixer-render step
-// reads from. Skipped when the embed directory is empty (i.e. `make embed`
-// has not run); CI runs `make build` before `make test` so files are present.
+// reads from. Skipped when `make embed` has not populated the embed tree
+// (committed `.gitkeep` is the only thing left at rest, so a presence-of-rootfs
+// probe is the right "embed was populated" signal).
 func TestEmbedHasMixerStateVariants(t *testing.T) {
 	embedded := SubFS()
-	if entries, _ := fs.ReadDir(embedded, "."); len(entries) == 0 {
-		t.Skip("embed/ is empty; run `make embed` to populate")
+	if _, err := fs.Stat(embedded, "rootfs"); err != nil {
+		t.Skip("embed/ not populated; run `make embed`")
 	}
 	want := []string{"mixer/v1.state", "mixer/v2.state"}
 	for _, p := range want {
