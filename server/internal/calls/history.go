@@ -111,7 +111,7 @@ func (t *Tracker) RecentHistoryForPhones(ctx context.Context, phones []string, c
 // that were merged into a conference.
 func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]Call, error) {
 	n := len(phones)
-	ph := dbutil.Placeholders(n, 0)
+	ph := dbutil.Placeholders(n)
 
 	args := make([]interface{}, 0, n+3)
 	for _, p := range phones {

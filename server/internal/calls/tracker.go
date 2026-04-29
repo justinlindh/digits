@@ -709,7 +709,7 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 
 	// Build IN clause — reuse same $1..$N placeholders for both caller and callee
 	n := len(phoneNumbers)
-	ph := dbutil.Placeholders(n, 0)
+	ph := dbutil.Placeholders(n)
 	query := fmt.Sprintf(
 		`SELECT `+callColumns+
 			` FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
