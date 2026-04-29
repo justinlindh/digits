@@ -39,6 +39,115 @@ func TemplateFS() embed.FS {
 	return templateFS
 }
 
+// TemplateFuncs returns the html/template FuncMap that page templates expect.
+// Exposed so test helpers that parse templates directly (without going through
+// NewHandler) get the same {{static}}, {{fmtPhone}}, etc. helpers as prod.
+func TemplateFuncs() template.FuncMap {
+	return baseTemplateFuncs()
+}
+
+func baseTemplateFuncs() template.FuncMap {
+	return template.FuncMap{
+		"fmtPhone": line.FormatNumber,
+		"fmtDuration": func(seconds int) string {
+			if seconds < 60 {
+				return fmt.Sprintf("%ds", seconds)
+			}
+			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
+		"derefFloat32": func(p *float32) float32 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"derefInt64": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"iter": func(n int) []int {
+			out := make([]int, n)
+			for i := range out {
+				out[i] = i
+			}
+			return out
+		},
+		"inc": func(n int) int { return n + 1 },
+		"mod": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a % b
+		},
+		"humanBytes": func(n int64) string {
+			switch {
+			case n > 1024*1024:
+				return fmt.Sprintf("%.1fM", float64(n)/(1024*1024))
+			case n > 1024:
+				return fmt.Sprintf("%.1fK", float64(n)/1024)
+			default:
+				return fmt.Sprintf("%dB", n)
+			}
+		},
+		"pctToSegments": func(pct float32) segDesc {
+			lit := int(pct / 10.0)
+			if pct > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case pct >= 2.0:
+				sev = "bad"
+			case pct >= 0.5:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
+		},
+		"msToSegments": func(ms float32) segDesc {
+			lit := int(ms / 6.0)
+			if ms > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case ms >= 40.0:
+				sev = "bad"
+			case ms >= 20.0:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
+		},
+		"renderNotes": renderNotes,
+		// staticURL returns a cache-bust-suffixed /static/ URL. Cloudflare and
+		// other CDNs key on the full URL including query, so each release's
+		// commit-suffixed URL bypasses the prior release's cached entry. In
+		// dev (commit unset) we fall back to the bare path so the disk-served
+		// edits still revalidate per request.
+		"static": func(path string) string {
+			if version.Commit == "" || version.Commit == "unknown" {
+				return "/static/" + path
+			}
+			return "/static/" + path + "?v=" + version.Commit
+		},
+		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
+			for i := range edges {
+				if edges[i].From == from && edges[i].Peer == peer {
+					return &edges[i]
+				}
+			}
+			return nil
+		},
+	}
+}
+
 // devStaticDirDefault is the disk path (relative to the process CWD) used
 // for /static/ when DevMode is on and no explicit override is supplied.
 // It matches the Makefile's dev-up target, which runs signald with CWD
@@ -51,23 +160,36 @@ const devStaticDirDefault = "internal/web/static"
 // production mode it serves the embedded FS, keeping the binary
 // self-contained. Both code paths route /static/dialup.css to the same
 // file content for a given checkout.
+//
+// Requests carrying a query string (e.g. /static/foo.css?v=<commit>) are
+// served with a 1-year immutable cache header; templates use the {{static}}
+// helper to produce those versioned URLs so a new release writes a new URL
+// that bypasses any CDN cache of the prior one.
 func staticFileServer(devMode bool, diskDir string) http.Handler {
+	var base http.Handler
 	if devMode {
 		if diskDir == "" {
 			diskDir = devStaticDirDefault
 		}
-		return http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+		base = http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+	} else {
+		// fs.Sub strips the "static" prefix from the embedded FS so request
+		// paths align with the disk-mode handler's StripPrefix treatment.
+		sub, err := fs.Sub(staticFS, "static")
+		if err != nil {
+			// embed declares the "static" directory above; sub-rooting to it
+			// cannot fail at runtime. A panic here would indicate a programmer
+			// error in the embed declaration.
+			panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
+		}
+		base = http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 	}
-	// fs.Sub strips the "static" prefix from the embedded FS so request
-	// paths align with the disk-mode handler's StripPrefix treatment.
-	sub, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		// embed declares the "static" directory above; sub-rooting to it
-		// cannot fail at runtime. A panic here would indicate a programmer
-		// error in the embed declaration.
-		panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
-	}
-	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		base.ServeHTTP(w, r)
+	})
 }
 
 type Handler struct {
@@ -168,94 +290,7 @@ type Deps struct {
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
-	funcMap := template.FuncMap{
-		"fmtPhone": line.FormatNumber,
-		"fmtDuration": func(seconds int) string {
-			if seconds < 60 {
-				return fmt.Sprintf("%ds", seconds)
-			}
-			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
-		},
-		"derefFloat32": func(p *float32) float32 {
-			if p == nil {
-				return 0
-			}
-			return *p
-		},
-		"derefInt64": func(p *int64) int64 {
-			if p == nil {
-				return 0
-			}
-			return *p
-		},
-		"iter": func(n int) []int {
-			out := make([]int, n)
-			for i := range out {
-				out[i] = i
-			}
-			return out
-		},
-		"inc": func(n int) int { return n + 1 },
-		"mod": func(a, b int) int {
-			if b == 0 {
-				return 0
-			}
-			return a % b
-		},
-		"humanBytes": func(n int64) string {
-			switch {
-			case n > 1024*1024:
-				return fmt.Sprintf("%.1fM", float64(n)/(1024*1024))
-			case n > 1024:
-				return fmt.Sprintf("%.1fK", float64(n)/1024)
-			default:
-				return fmt.Sprintf("%dB", n)
-			}
-		},
-		"pctToSegments": func(pct float32) segDesc {
-			lit := int(pct / 10.0)
-			if pct > 0 && lit == 0 {
-				lit = 1
-			}
-			if lit > 10 {
-				lit = 10
-			}
-			sev := ""
-			switch {
-			case pct >= 2.0:
-				sev = "bad"
-			case pct >= 0.5:
-				sev = "warn"
-			}
-			return segDesc{Lit: lit, Severity: sev}
-		},
-		"msToSegments": func(ms float32) segDesc {
-			lit := int(ms / 6.0)
-			if ms > 0 && lit == 0 {
-				lit = 1
-			}
-			if lit > 10 {
-				lit = 10
-			}
-			sev := ""
-			switch {
-			case ms >= 40.0:
-				sev = "bad"
-			case ms >= 20.0:
-				sev = "warn"
-			}
-			return segDesc{Lit: lit, Severity: sev}
-		},
-		"renderNotes": renderNotes,
-		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
-			for i := range edges {
-				if edges[i].From == from && edges[i].Peer == peer {
-					return &edges[i]
-				}
-			}
-			return nil
-		},
-	}
+	funcMap := baseTemplateFuncs()
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
 	parsePage := func(page string) (*template.Template, error) {

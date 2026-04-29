@@ -144,7 +144,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
