@@ -24,11 +24,6 @@ type ConfigRequest struct {
 	Hidden   bool   `json:"hidden"`
 }
 
-// Configurator writes Wi-Fi config.
-type Configurator interface {
-	Configure(req ConfigRequest) error
-}
-
 // FileSystem abstracts file operations for testing.
 type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
@@ -115,10 +110,9 @@ func (SystemAPController) Down() error {
 	return nil
 }
 
-// SystemConfigurator is the production configurator.
-type SystemConfigurator struct{}
-
-func (c *SystemConfigurator) Configure(req ConfigRequest) error {
+// Configure writes Wi-Fi config using production filesystem and mount
+// implementations. Tests should call ConfigureWithDeps directly with mocks.
+func Configure(req ConfigRequest) error {
 	return ConfigureWithDeps(req, OSFileSystem{}, SystemMounter{})
 }
 

@@ -22,8 +22,9 @@ var staticFiles embed.FS
 // losing AP association.
 const apTeardownDelay = 2 * time.Second
 
-// NewHandler returns the HTTP mux for the captive portal.
-func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.APController) http.Handler {
+// NewHandler returns the HTTP mux for the captive portal. The configure
+// argument is invoked for each POST /api/configure with the request body.
+func NewHandler(scanner wifi.Scanner, configure func(wifi.ConfigRequest) error, ap wifi.APController) http.Handler {
 	mux := http.NewServeMux()
 
 	// teardownScheduled gates the deferred AP teardown so a duplicate or
@@ -71,7 +72,7 @@ func NewHandler(scanner wifi.Scanner, configurator wifi.Configurator, ap wifi.AP
 			return
 		}
 
-		if err := configurator.Configure(req); err != nil {
+		if err := configure(req); err != nil {
 			log.Printf("configure error: %v", err)
 			status := http.StatusInternalServerError
 			if errors.Is(err, wifi.ErrInvalidRequest) {

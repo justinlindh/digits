@@ -16,10 +16,9 @@ func main() {
 	}
 
 	scanner := &wifi.SystemScanner{}
-	configurator := &wifi.SystemConfigurator{}
 	ap := wifi.SystemAPController{}
 
-	mux := portal.NewHandler(scanner, configurator, ap)
+	mux := portal.NewHandler(scanner, wifi.Configure, ap)
 
 	log.Printf("digits-setup listening on %s", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
