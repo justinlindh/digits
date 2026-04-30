@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/justinlindh/digits/server/internal/version"
 )
 
 // Production path: /static/* must be served from the embedded FS so the
@@ -85,4 +87,89 @@ func TestStaticFileServer_DevDefaultDirResolves(t *testing.T) {
 	// We don't assert on response content here because CWD may not host
 	// the default directory; the presence of a non-nil handler is enough
 	// to confirm the fallback branch doesn't blow up at construction.
+}
+
+// A request carrying a query string (the {{static}} helper's commit-suffixed
+// shape) must come back with the long-lived immutable header so Cloudflare
+// caches each release's asset URLs aggressively. Regressing this
+// re-creates the AM-theme staleness bug that motivated the cache-bust
+// scheme: see PR #370.
+func TestStaticFileServer_VersionedAssetSetsImmutableCacheControl(t *testing.T) {
+	h := staticFileServer(false, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/static/dialup.css?v=abc123", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET versioned asset: got %d, want 200", rec.Code)
+	}
+	got := rec.Header().Get("Cache-Control")
+	want := "public, max-age=31536000, immutable"
+	if got != want {
+		t.Errorf("Cache-Control on versioned asset: got %q, want %q", got, want)
+	}
+}
+
+// A request without a query string is the unversioned fallback (dev mode,
+// templates that intentionally point at stable assets). It must NOT carry
+// the immutable header; if it did, a stale CSS URL would never refresh
+// even after the bug's fix shipped.
+func TestStaticFileServer_BareAssetHasNoImmutableCacheControl(t *testing.T) {
+	h := staticFileServer(false, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/static/dialup.css", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET bare asset: got %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "" {
+		t.Errorf("Cache-Control on bare asset: got %q, want empty", got)
+	}
+}
+
+// The {{static}} template helper must produce commit-suffixed URLs when a
+// build commit is wired in via -ldflags. Without this, the cache-bust
+// scheme silently no-ops in production and the AM-theme staleness bug
+// returns on the next CSS-class rename.
+func TestStaticTemplateHelper_AppendsCommitSuffix(t *testing.T) {
+	prev := version.Commit
+	t.Cleanup(func() { version.Commit = prev })
+	version.Commit = "abc123"
+
+	staticFn, ok := TemplateFuncs()["static"].(func(string) string)
+	if !ok {
+		t.Fatal("TemplateFuncs()[\"static\"] is not func(string) string")
+	}
+
+	got := staticFn("answering-machine.css")
+	want := "/static/answering-machine.css?v=abc123"
+	if got != want {
+		t.Errorf("static helper: got %q, want %q", got, want)
+	}
+}
+
+// In dev (and any build that did not wire -ldflags) version.Commit defaults
+// to "unknown"; an empty string is also valid in test contexts. Either
+// shape must collapse to a bare /static/ URL so the dev disk-serve path
+// continues to revalidate per request rather than locking in stale bytes.
+func TestStaticTemplateHelper_BareURLWhenCommitMissing(t *testing.T) {
+	prev := version.Commit
+	t.Cleanup(func() { version.Commit = prev })
+
+	staticFn, ok := TemplateFuncs()["static"].(func(string) string)
+	if !ok {
+		t.Fatal("TemplateFuncs()[\"static\"] is not func(string) string")
+	}
+
+	for _, sentinel := range []string{"", "unknown"} {
+		version.Commit = sentinel
+		got := staticFn("answering-machine.css")
+		want := "/static/answering-machine.css"
+		if got != want {
+			t.Errorf("static helper with Commit=%q: got %q, want %q", sentinel, got, want)
+		}
+	}
 }
