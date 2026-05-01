@@ -7,6 +7,10 @@ typedef enum {
     LED_MODE_OFF = 0,
     LED_MODE_ON,
     LED_MODE_BLINK,
+    // LED_MODE_SLOW_BLINK is a longer-period blink (~2s) used for advisory
+    // indications such as a waiting voicemail message. Visually distinct
+    // from LED_MODE_BLINK so a glance can tell ringing from message-waiting.
+    LED_MODE_SLOW_BLINK,
 } led_mode_t;
 
 void led_init(void);

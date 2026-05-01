@@ -173,6 +173,8 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_OFF);
     } else if (strcmp(cmd, "LED:BLINK") == 0) {
         led_set_mode(LED_MODE_BLINK);
+    } else if (strcmp(cmd, "LED:SLOW_BLINK") == 0) {
+        led_set_mode(LED_MODE_SLOW_BLINK);
     } else if (strcmp(cmd, "TONE:DIAL") == 0) {
         tone_play(TONE_DIAL);
     } else if (strcmp(cmd, "TONE:RINGBACK") == 0) {
