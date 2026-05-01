@@ -78,7 +78,7 @@ func TestConfigureSuccess(t *testing.T) {
 	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "MyNetwork", Password: "secret123"}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
+	if err := configureWithDeps(req, fs, mounter); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -125,7 +125,7 @@ func TestConfigureMissingSSID(t *testing.T) {
 	fs := newMockFS()
 	mounter := &mockMounter{}
 
-	err := ConfigureWithDeps(ConfigRequest{Password: "secret"}, fs, mounter)
+	err := configureWithDeps(ConfigRequest{Password: "secret"}, fs, mounter)
 	if err == nil {
 		t.Fatal("expected error for missing SSID")
 	}
@@ -145,7 +145,7 @@ func TestConfigureHiddenNetwork(t *testing.T) {
 	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "SecretNet", Password: "pass123", Hidden: true}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
+	if err := configureWithDeps(req, fs, mounter); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestConfigureVisibleNetworkNoScanSSID(t *testing.T) {
 	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "VisibleNet", Password: "pass123"}
-	if err := ConfigureWithDeps(req, fs, mounter); err != nil {
+	if err := configureWithDeps(req, fs, mounter); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -186,7 +186,7 @@ func TestConfigureFilenameCollisionPrevention(t *testing.T) {
 	req1 := ConfigRequest{SSID: "Network 1", Password: "pass1"}
 	req2 := ConfigRequest{SSID: "Network-1", Password: "pass2"}
 
-	if err := ConfigureWithDeps(req1, fs, &mockMounter{}); err != nil {
+	if err := configureWithDeps(req1, fs, &mockMounter{}); err != nil {
 		t.Fatalf("first configure failed: %v", err)
 	}
 	path1 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network 1")[:6]+".nmconnection")
@@ -194,7 +194,7 @@ func TestConfigureFilenameCollisionPrevention(t *testing.T) {
 		t.Fatalf("first network file not written to %s", path1)
 	}
 
-	if err := ConfigureWithDeps(req2, fs, &mockMounter{}); err != nil {
+	if err := configureWithDeps(req2, fs, &mockMounter{}); err != nil {
 		t.Fatalf("second configure failed: %v", err)
 	}
 	path2 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network-1")[:6]+".nmconnection")
@@ -215,7 +215,7 @@ func TestConfigureRemountRWFailureAbortsWithoutFlag(t *testing.T) {
 	mounter := &mockMounter{failRW: true}
 
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	err := ConfigureWithDeps(req, fs, mounter)
+	err := configureWithDeps(req, fs, mounter)
 	if err == nil {
 		t.Fatal("expected error from failing remount rw")
 	}
@@ -235,7 +235,7 @@ func TestConfigureRemountRWFailureAbortsWithoutFlag(t *testing.T) {
 // failOpWriteFS fails WriteFile once, for the operational path only. Used to
 // verify that a failed operational write leaves the backup present and does
 // NOT set the wifi-configured flag (the "half-written config never promotes
-// to station" invariant from ConfigureWithDeps' doc comment).
+// to station" invariant from configureWithDeps' doc comment).
 type failOpWriteFS struct {
 	*mockFS
 }
@@ -248,7 +248,7 @@ func (f *failOpWriteFS) WriteFile(name string, data []byte, perm os.FileMode) er
 }
 
 func TestConfigureMissingSSIDIsInvalidRequest(t *testing.T) {
-	err := ConfigureWithDeps(ConfigRequest{Password: "pw"}, newMockFS(), &mockMounter{})
+	err := configureWithDeps(ConfigRequest{Password: "pw"}, newMockFS(), &mockMounter{})
 	if !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("err = %v, want ErrInvalidRequest", err)
 	}
@@ -260,7 +260,7 @@ func TestConfigureOperationalWriteFailureKeepsBackupOmitsFlag(t *testing.T) {
 	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	err := ConfigureWithDeps(req, fs, mounter)
+	err := configureWithDeps(req, fs, mounter)
 	if err == nil {
 		t.Fatal("expected error from failing operational write")
 	}
@@ -284,7 +284,7 @@ func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
 	fs.files["/etc/NetworkManager/system-connections/digits-wifi.nmconnection"] = mockFile{data: []byte("old"), perm: 0600}
 
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := ConfigureWithDeps(req, fs, &mockMounter{}); err != nil {
+	if err := configureWithDeps(req, fs, &mockMounter{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, ok := fs.files["/data/wifi/digits-wifi.nmconnection"]; ok {
@@ -298,7 +298,7 @@ func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
 func TestConfigureLegacyCleanupMissingIsOK(t *testing.T) {
 	fs := newMockFS()
 	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := ConfigureWithDeps(req, fs, &mockMounter{}); err != nil {
+	if err := configureWithDeps(req, fs, &mockMounter{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
