@@ -24,8 +24,8 @@ type Conn struct {
 	LastSeen   time.Time
 
 	// RemoteAddr is the resolved LAN address of the connected device, or
-	// "" when the resolved client address is not in a private range. Set
-	// once at WS upgrade time by handleWS and not mutated thereafter.
+	// "" when the resolved client address is not in a private range. The
+	// WS handler assigns it when the Conn is created; see handler_ws.go.
 	RemoteAddr string
 
 	// Device info (reported on connect via device_info message)

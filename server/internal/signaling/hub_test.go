@@ -85,7 +85,7 @@ func TestDeviceInfoIncludesRemoteAddr(t *testing.T) {
 	}
 }
 
-func TestDeviceInfoRemoteAddrEmptyWhenOffline(t *testing.T) {
+func TestDeviceInfoNilWhenOffline(t *testing.T) {
 	hub := NewHub()
 	if got := hub.DeviceInfo("3140002"); got != nil {
 		t.Errorf("DeviceInfo for unregistered number = %+v, want nil", got)
