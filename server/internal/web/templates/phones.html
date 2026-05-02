@@ -422,7 +422,7 @@
       <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
       <div class="am-roster__meta">
         {{if $l.OnCall}}IN SESSION
-        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
+        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{if and $l.DeviceInfo $l.DeviceInfo.RemoteAddr}} &middot; {{$l.DeviceInfo.RemoteAddr}}{{end}}
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
