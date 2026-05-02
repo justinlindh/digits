@@ -164,7 +164,6 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
 	}, authStore
 }
 
