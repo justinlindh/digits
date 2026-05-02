@@ -160,6 +160,14 @@
                 {{end}}
               </div>
             </div>
+            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
+            <div>
+              <div class="field__label" style="margin-bottom: 4px;">LAN IP</div>
+              <div class="hstack hstack--wrap" style="gap: 8px;">
+                <span class="num" style="font-size: 13.5px; color: var(--ink);">{{.DeviceInfo.RemoteAddr}}</span>
+              </div>
+            </div>
+            {{end}}
             {{if $.LastSeenAt}}
             <div>
               <div class="field__label" style="margin-bottom: 4px;">Last check-in</div>
