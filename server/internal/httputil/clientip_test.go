@@ -18,7 +18,6 @@ func TestClientIP(t *testing.T) {
 		{name: "no_xff_uses_remoteaddr", remoteAddr: "192.168.1.42:34567", xff: "", want: "192.168.1.42"},
 		{name: "no_xff_ipv6_brackets", remoteAddr: "[fe80::1]:34567", xff: "", want: "fe80::1"},
 		{name: "no_xff_no_port_returns_raw", remoteAddr: "192.168.1.42", xff: "", want: "192.168.1.42"},
-		{name: "empty_xff_falls_through", remoteAddr: "192.168.1.42:34567", xff: "", want: "192.168.1.42"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
