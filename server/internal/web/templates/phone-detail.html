@@ -756,6 +756,12 @@
             <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.FirmwareVersion}}{{if .DeviceInfo.FirmwareCommit}} &middot; {{.DeviceInfo.FirmwareCommit}}{{end}}</span></dd>
           </div>
           {{end}}
+          {{if and .Online .DeviceInfo.RemoteAddr}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">LAN IP</dt>
+            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.RemoteAddr}}</span></dd>
+          </div>
+          {{end}}
         {{end}}
         {{if .LastSeenAt}}
         <div class="am-settings__kv-row">
