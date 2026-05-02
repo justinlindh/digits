@@ -31,7 +31,7 @@ func TestServiceCodeReboot(t *testing.T) {
 func TestServiceCodeVolume(t *testing.T) {
 	var gotLevel int
 	h := NewServiceCodeHandler()
-	h.SetVolumeCallback(func(level int) { gotLevel = level })
+	h.OnVolume = func(level int) { gotLevel = level }
 
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
@@ -46,7 +46,7 @@ func TestServiceCodeVolume(t *testing.T) {
 
 func TestServiceCodeAudioTest(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetAudioTestCallback(func() {})
+	h.OnAudioTest = func() {}
 
 	code := "*#8378#"
 	var triggered bool
@@ -70,7 +70,7 @@ func TestServiceCodeAudioTest(t *testing.T) {
 func TestServiceCodeVolume8Works(t *testing.T) {
 	var gotLevel int
 	h := NewServiceCodeHandler()
-	h.SetVolumeCallback(func(level int) { gotLevel = level })
+	h.OnVolume = func(level int) { gotLevel = level }
 
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
@@ -131,7 +131,7 @@ func TestServiceCodeReset(t *testing.T) {
 func TestServiceCodeSetup(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() { called <- struct{}{} })
+	h.OnSetup = func() { called <- struct{}{} }
 
 	code := "*#73887#"
 	var triggered bool
@@ -161,7 +161,7 @@ func TestServiceCodeSetup(t *testing.T) {
 // don't fire.
 func TestServiceCodeSetupNotTriggeredByPrefix(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() { t.Error("setup should not trigger on partial sequence") })
+	h.OnSetup = func() { t.Error("setup should not trigger on partial sequence") }
 
 	// Type all but the last character
 	for _, k := range "*#73887" {
@@ -175,7 +175,7 @@ func TestServiceCodeSetupNotTriggeredByPrefix(t *testing.T) {
 // when preceded by other keypresses (rolling buffer behavior).
 func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() {}) // register to prevent defaultSetupAction (which reboots)
+	h.OnSetup = func() {} // register to prevent defaultSetupAction (which reboots)
 
 	// Type some digits first
 	for _, k := range "555" {
@@ -199,19 +199,19 @@ func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 // TestServiceCodeSetupRegistered verifies the setup callback is stored.
 func TestServiceCodeSetupRegistered(t *testing.T) {
 	h := NewServiceCodeHandler()
-	if h.onSetup != nil {
-		t.Error("onSetup should be nil before registration")
+	if h.OnSetup != nil {
+		t.Error("OnSetup should be nil before registration")
 	}
-	h.SetSetupCallback(func() {})
-	if h.onSetup == nil {
-		t.Error("onSetup should be non-nil after registration")
+	h.OnSetup = func() {}
+	if h.OnSetup == nil {
+		t.Error("OnSetup should be non-nil after registration")
 	}
 }
 
 func TestServiceCodeRepair(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetRepairCallback(func() { called <- struct{}{} })
+	h.OnRepair = func() { called <- struct{}{} }
 
 	code := "*#0*"
 	var triggered bool
@@ -237,7 +237,7 @@ func TestServiceCodeRepair(t *testing.T) {
 func TestServiceCodeFactoryReset(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetFactoryResetCallback(func() { called <- struct{}{} })
+	h.OnFactoryReset = func() { called <- struct{}{} }
 
 	code := "*#00000#"
 	var triggered bool
@@ -262,8 +262,8 @@ func TestServiceCodeFactoryReset(t *testing.T) {
 
 func TestServiceCodeRepairDoesNotTriggerShutdown(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetShutdownCallback(func() { t.Error("shutdown should not trigger on *#0*") })
-	h.SetRepairCallback(func() {})
+	h.OnShutdown = func() { t.Error("shutdown should not trigger on *#0*") }
+	h.OnRepair = func() {}
 
 	for _, k := range "*#0*" {
 		h.AddKey(string(k))
@@ -310,7 +310,7 @@ func TestServiceCodeInCode(t *testing.T) {
 func TestFactoryResetVsRickRollEasterEgg(t *testing.T) {
 	resetFired := make(chan struct{}, 1)
 	svc := NewServiceCodeHandler()
-	svc.SetFactoryResetCallback(func() { resetFired <- struct{}{} })
+	svc.OnFactoryReset = func() { resetFired <- struct{}{} }
 
 	rickRoll := make(chan string, 1)
 	eggs := NewEasterEggDetector([]EasterEgg{

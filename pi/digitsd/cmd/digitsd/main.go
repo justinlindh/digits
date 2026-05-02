@@ -1865,7 +1865,7 @@ func main() {
 			slog.Warn("confirm: another confirmation already pending, ignoring", "prompt", promptName)
 		}
 	}
-	svcCodes.SetVolumeCallback(func(level int) {
+	svcCodes.OnVolume = func(level int) {
 		if err := phone.SetVolume(level); err != nil {
 			slog.Warn("volume set failed", "error", err)
 		}
@@ -1873,16 +1873,16 @@ func main() {
 		time.Sleep(250 * time.Millisecond)
 		doubleBeep()
 		mixer.PlayLoop("tone_dial")
-	})
-	svcCodes.SetShutdownCallback(func() {
+	}
+	svcCodes.OnShutdown = func() {
 		slog.Info("service code: executing shutdown")
 		_ = exec.Command("sudo", "shutdown", "-h", "now").Run()
-	})
-	svcCodes.SetRebootCallback(func() {
+	}
+	svcCodes.OnReboot = func() {
 		slog.Info("service code: executing reboot")
 		_ = exec.Command("sudo", "reboot").Run()
-	})
-	svcCodes.SetSetupCallback(func() {
+	}
+	svcCodes.OnSetup = func() {
 		slog.Info("service code: *#SETUP# (*#73887#) -> awaiting confirmation")
 		confirm("confirm_wifi_setup", func() {
 			slog.Info("service code setup confirmed: removing wifi-configured flag, rebooting")
@@ -1907,9 +1907,9 @@ func main() {
 			time.Sleep(200 * time.Millisecond)
 			_ = exec.Command("sudo", "reboot").Run()
 		})
-	})
+	}
 
-	svcCodes.SetAudioTestCallback(func() {
+	svcCodes.OnAudioTest = func() {
 		slog.Info("service code: *#TEST# -> audio test (record 5s, playback)")
 		mixer.StopAll()
 
@@ -1983,7 +1983,7 @@ func main() {
 
 		// Resume dial tone
 		mixer.PlayLoop("tone_dial")
-	})
+	}
 
 	// Detect SWD flash capability. Start with file existence checks; if the
 	// required binaries are present, probe the SWD bus in the background to
@@ -2012,7 +2012,7 @@ func main() {
 		}()
 	}
 
-	svcCodes.SetRepairCallback(func() {
+	svcCodes.OnRepair = func() {
 		slog.Info("service code: *#0* -> awaiting confirmation")
 		confirm("confirm_re_pair", func() {
 			slog.Info("service code repair confirmed: clearing device token, rebooting into pairing mode")
@@ -2033,20 +2033,20 @@ func main() {
 			}
 			_ = exec.Command("sudo", "reboot").Run()
 		})
-	})
+	}
 
-	svcCodes.SetUpdateCallback(func() {
+	svcCodes.OnUpdate = func() {
 		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
 		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil, requeryFirmware)
-	})
+	}
 
-	svcCodes.SetFactoryResetCallback(func() {
+	svcCodes.OnFactoryReset = func() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
 		confirm("confirm_factory_reset", func() {
 			slog.Info("service code factory reset confirmed")
 			triggerFactoryReset(sig, deviceID)
 		})
-	})
+	}
 
 	// 6b. Create easter egg detector
 	easterEggs := phone.NewEasterEggDetector([]phone.EasterEgg{
