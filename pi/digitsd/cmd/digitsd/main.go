@@ -2121,9 +2121,30 @@ func main() {
 	}
 	defer sockSrv.Close()
 
-	// 10. Connect signaling client
-	if err := sig.Connect(); err != nil {
-		log.Fatalf("signald connect: %v", err)
+	// 10. WiFi auto-fallback supervisor. Must start before the signaling
+	// connect attempt: if the network is wedged (wrong WiFi password, DNS
+	// failure), the supervisor is the only path back to AP/setup mode.
+	wifiSupervisor := wififallback.NewSupervisor(
+		cfg.WiFiFallback,
+		wififallback.NewNMCLIChecker(),
+		wififallback.NewScriptAPController(),
+		ctrl.IsCallActive,
+		slog.Default().With("subsystem", "wifi-fallback"),
+	)
+	wifiCtx, wifiCancel := context.WithCancel(context.Background())
+	defer wifiCancel()
+	go wifiSupervisor.Run(wifiCtx)
+
+	// Clear boot counter: digitsd reached its main daemon phase with the
+	// wifi-fallback supervisor running. Even if the network is down, the
+	// supervisor will eventually bring the device into AP mode, so the
+	// device is not wedged. The initramfs boot-check increments this
+	// counter on every boot; clearing it here prevents threshold-based
+	// recovery from triggering on a device that is functioning normally.
+	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
+		slog.Warn("failed to clear boot counter", "err", err)
+	} else {
+		slog.Info("boot counter: cleared (healthy boot)")
 	}
 
 	// 11. Ready
@@ -2139,39 +2160,28 @@ func main() {
 		slog.Debug("watchdog: not available", "err", err)
 	}
 
-	// Clear boot counter (we're healthy)
-	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
-		slog.Warn("failed to clear boot counter", "err", err)
+	// 12. Connect signaling client (non-fatal: the main loop reconnects)
+	if err := sig.Connect(); err != nil {
+		slog.Warn("signald connect failed, will retry", "error", err)
 	} else {
-		slog.Info("boot counter: cleared (healthy boot)")
+		sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+		requestICEServers(sig)
 	}
 
-	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-	requestICEServers(sig)
-
-	// Refresh ICE credentials periodically (TURN creds are time-limited)
+	// Refresh ICE credentials periodically (TURN creds are time-limited).
+	// Read cb.sig under cb.mu so we use the current client after reconnects.
 	go func() {
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			requestICEServers(sig)
+			cb.mu.Lock()
+			s := cb.sig
+			cb.mu.Unlock()
+			if s != nil {
+				requestICEServers(s)
+			}
 		}
 	}()
-
-	// WiFi auto-fallback supervisor. Watches NM connectivity and flips the
-	// device into setup-AP mode if the configured network is unreachable for
-	// longer than the grace window. Held during active calls. Disabled when
-	// cfg.WiFiFallback.Enabled is false.
-	wifiSupervisor := wififallback.NewSupervisor(
-		cfg.WiFiFallback,
-		wififallback.NewNMCLIChecker(),
-		wififallback.NewScriptAPController(),
-		ctrl.IsCallActive,
-		slog.Default().With("subsystem", "wifi-fallback"),
-	)
-	wifiCtx, wifiCancel := context.WithCancel(context.Background())
-	defer wifiCancel()
-	go wifiSupervisor.Run(wifiCtx)
 
 	// Pairing code refresh: reconnect before the code expires so the
 	// server issues a fresh one. Timer starts when we receive a code.

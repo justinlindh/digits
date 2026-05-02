@@ -112,6 +112,20 @@ func TestClient_ReceiveMessages(t *testing.T) {
 	}
 }
 
+// TestClient_ConnectFailureClosesDone verifies that a failed Connect() closes
+// the Done() channel so callers can detect the failure and retry.
+func TestClient_ConnectFailureClosesDone(t *testing.T) {
+	c := NewClient("ws://127.0.0.1:1/ws", "+15550001111", "test-hw-id", "")
+	if err := c.Connect(); err == nil {
+		t.Fatal("expected Connect to fail on unreachable host")
+	}
+	select {
+	case <-c.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Done() channel not closed after Connect failure")
+	}
+}
+
 // TestClient_SendMessage verifies that Send() delivers a message to the server.
 func TestClient_SendMessage(t *testing.T) {
 	received := make(chan *Message, 1)
