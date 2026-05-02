@@ -1,6 +1,10 @@
 package signaling
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
 
 func TestUnregisterOnlyRemovesMatchingConnection(t *testing.T) {
 	hub := NewHub()
@@ -56,5 +60,69 @@ func TestRegisterHandlesAlreadyClosedSendChannel(t *testing.T) {
 
 	if got := hub.Get(number); got != newConn {
 		t.Fatalf("expected new connection to be registered")
+	}
+}
+
+func TestDeviceInfoIncludesRemoteAddr(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{
+		Send:            make(chan []byte, 1),
+		PiVersion:       "1.2.3",
+		FirmwareVersion: "0.4.0",
+		RemoteAddr:      "192.168.1.42",
+	}
+	hub.Register("3140001", conn)
+
+	info := hub.DeviceInfo("3140001")
+	if info == nil {
+		t.Fatal("DeviceInfo returned nil for registered conn")
+	}
+	if info.RemoteAddr != "192.168.1.42" {
+		t.Errorf("DeviceInfo.RemoteAddr = %q, want %q", info.RemoteAddr, "192.168.1.42")
+	}
+	if info.PiVersion != "1.2.3" {
+		t.Errorf("DeviceInfo.PiVersion = %q, want %q", info.PiVersion, "1.2.3")
+	}
+}
+
+func TestDeviceInfoRemoteAddrEmptyWhenOffline(t *testing.T) {
+	hub := NewHub()
+	if got := hub.DeviceInfo("3140002"); got != nil {
+		t.Errorf("DeviceInfo for unregistered number = %+v, want nil", got)
+	}
+}
+
+func TestRegisterOverwritesRemoteAddrOnReconnect(t *testing.T) {
+	hub := NewHub()
+	first := &Conn{Send: make(chan []byte, 1), RemoteAddr: "192.168.1.42"}
+	hub.Register("3140003", first)
+
+	second := &Conn{Send: make(chan []byte, 1), RemoteAddr: "192.168.1.99"}
+	hub.Register("3140003", second)
+
+	info := hub.DeviceInfo("3140003")
+	if info == nil {
+		t.Fatal("expected DeviceInfo after reconnect")
+	}
+	if info.RemoteAddr != "192.168.1.99" {
+		t.Errorf("RemoteAddr after reconnect = %q, want %q", info.RemoteAddr, "192.168.1.99")
+	}
+}
+
+func TestDeviceInfoSnapshotJSONOmitsRemoteAddr(t *testing.T) {
+	snap := DeviceInfoSnapshot{
+		PiVersion:       "1.2.3",
+		FirmwareVersion: "0.4.0",
+		RemoteAddr:      "192.168.1.42",
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(data, []byte("192.168.1.42")) {
+		t.Errorf("RemoteAddr value leaked into JSON: %s", data)
+	}
+	if bytes.Contains(data, []byte("RemoteAddr")) {
+		t.Errorf("RemoteAddr field name appeared in JSON: %s", data)
 	}
 }

@@ -23,6 +23,11 @@ type Conn struct {
 	Send       chan []byte
 	LastSeen   time.Time
 
+	// RemoteAddr is the resolved LAN address of the connected device, or
+	// "" when the resolved client address is not in a private range. Set
+	// once at WS upgrade time by handleWS and not mutated thereafter.
+	RemoteAddr string
+
 	// Device info (reported on connect via device_info message)
 	PiVersion       string
 	PiCommit        string
@@ -170,6 +175,14 @@ type DeviceInfoSnapshot struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
+
+	// RemoteAddr is the resolved LAN address of the connected device.
+	// Owner-scope HTML only: rendered on /phones and /phones/{number} for
+	// the device owner, never serialized to JSON, SSE, or any other
+	// external surface. The json:"-" tag enforces that for this type;
+	// downstream code that copies the field into another type must apply
+	// the same care.
+	RemoteAddr string `json:"-"`
 }
 
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
@@ -185,6 +198,7 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 		PiCommit:        conn.PiCommit,
 		FirmwareVersion: conn.FirmwareVersion,
 		FirmwareCommit:  conn.FirmwareCommit,
+		RemoteAddr:      conn.RemoteAddr,
 	}
 }
 
