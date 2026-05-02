@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
@@ -87,9 +88,14 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		wsWriteTimeout = 10 * time.Second
 	)
 
+	remoteAddr := httputil.ClientIP(r)
+	if !httputil.IsPrivateAddr(remoteAddr) {
+		remoteAddr = ""
+	}
 	conn := &signaling.Conn{
 		WS:         ws,
 		HardwareID: msg.HardwareID,
+		RemoteAddr: remoteAddr,
 		Send:       make(chan []byte, 32),
 		LastSeen:   time.Now(),
 	}
