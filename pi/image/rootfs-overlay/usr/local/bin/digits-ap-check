@@ -94,11 +94,12 @@ reset_wifi_config() {
 do_station_up() {
     log "Wi-Fi configured -- starting normal boot"
 
-    # Clear boot counter -- we reached userspace successfully. digitsd
-    # will clear it again later, but doing it here covers the window
-    # between boot and digitsd startup.
-    BOOT_COUNTER="/data/digits/boot-counter"
-    echo "0" > "$BOOT_COUNTER" 2>/dev/null || true
+    # Boot counter is NOT cleared here. The initramfs boot-check
+    # increments it on every boot; only digitsd clears it once it
+    # reaches a healthy main loop with the wifi-fallback supervisor
+    # running. Clearing it here defeats the boot-counter recovery
+    # path: a device with a wrong WiFi password would reset the
+    # counter every boot and never reach the threshold.
 
     # Stop AP services
     systemctl stop digits-ap.service digits-dnsmasq-ap.service digits-setup.service 2>/dev/null || true

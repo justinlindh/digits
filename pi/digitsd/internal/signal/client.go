@@ -49,7 +49,8 @@ func (c *Client) SetInsecureSkipTLS(skip bool) {
 }
 
 // Connect dials the WebSocket URL, sends a register message, and starts
-// the readPump goroutine.
+// the readPump goroutine. On failure, the done channel is closed so that
+// callers selecting on Done() can detect the failure and retry.
 func (c *Client) Connect() error {
 	dialer := websocket.DefaultDialer
 	if c.insecureSkipTLS {
@@ -59,29 +60,35 @@ func (c *Client) Connect() error {
 	}
 	conn, _, err := dialer.Dial(c.url, http.Header{})
 	if err != nil {
+		close(c.done)
 		return fmt.Errorf("signal: dial %s: %w", c.url, err)
 	}
 	c.conn = conn
+
+	ok := false
+	defer func() {
+		if !ok {
+			_ = conn.Close()
+			close(c.done)
+		}
+	}()
 
 	// Send registration
 	reg := &Message{Type: TypeRegister, Number: c.number, HardwareID: c.hardwareID, DeviceToken: c.deviceToken}
 	data, err := reg.Marshal()
 	if err != nil {
-		_ = conn.Close()
 		return fmt.Errorf("signal: marshal register: %w", err)
 	}
 	c.mu.Lock()
 	err = conn.WriteMessage(websocket.TextMessage, data)
 	c.mu.Unlock()
 	if err != nil {
-		_ = conn.Close()
 		return fmt.Errorf("signal: send register: %w", err)
 	}
 
 	// Reset read deadline on each server ping so Cloudflare/proxy
 	// idle timeouts don't kill the connection.
 	if err := c.conn.SetReadDeadline(time.Now().Add(pingTimeout)); err != nil {
-		_ = conn.Close()
 		return fmt.Errorf("signal: set read deadline: %w", err)
 	}
 	c.conn.SetPingHandler(func(appData string) error {
@@ -92,6 +99,7 @@ func (c *Client) Connect() error {
 	})
 
 	go c.readPump()
+	ok = true
 	return nil
 }
 
