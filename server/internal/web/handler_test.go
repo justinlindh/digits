@@ -2314,11 +2314,11 @@ func runWSConnectAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signali
 		t.Fatalf("write register: %v", err)
 	}
 	waitForRegister(t, hub, number)
-	c := hub.Get(number)
-	if c == nil {
-		t.Fatal("hub.Get returned nil after register")
+	info := hub.DeviceInfo(number)
+	if info == nil {
+		t.Fatal("hub.DeviceInfo returned nil after register")
 	}
-	return c.RemoteAddr
+	return info.RemoteAddr
 }
 
 func TestHandleWS_RemoteAddrFromXFFWhenPrivate(t *testing.T) {

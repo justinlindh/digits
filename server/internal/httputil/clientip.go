@@ -1,6 +1,6 @@
 // Package httputil provides small request-scoped helpers shared across
-// signald handlers. Today it carries client-IP resolution and a
-// private-address predicate.
+// signald handlers, such as client-IP resolution and a private-address
+// predicate.
 package httputil
 
 import (
