@@ -34,12 +34,17 @@ type StatsGetter interface {
 }
 
 // Reporter samples WebRTC stats on a ticker and invokes send on each
-// non-empty sample. Zero-valued samples (no RR received yet AND no ICE
-// pair) are skipped entirely to avoid wire noise.
+// non-empty sample. Zero-valued samples (no InboundRTP data yet AND no ICE
+// pair) are skipped entirely to avoid wire noise. Fields owned by Run()
+// goroutine after start; sample() is not safe for concurrent use.
 type Reporter struct {
 	getter   StatsGetter
 	send     func(Sample) error
 	interval time.Duration
+
+	prevPacketsReceived uint32
+	prevPacketsLost     int32
+	havePrev            bool
 }
 
 const defaultInterval = 2 * time.Second
@@ -83,20 +88,35 @@ func (r *Reporter) Run(ctx context.Context) {
 }
 
 // sample walks a GetStats() report and extracts a Sample. Returns ok=false
-// if the report has no useful data to report (no RR yet AND no nominated
+// if the report has no useful data to report (no InboundRTP data yet AND no nominated
 // ICE pair).
 func (r *Reporter) sample() (Sample, bool) {
 	report := r.getter.GetStats()
 	out := Sample{TS: time.Now()}
 
-	// RemoteInboundRTP: the remote's latest Receiver Report ABOUT our
-	// outbound stream. Gives loss and jitter as reported by the peer.
+	// InboundRTPStreamStats: pion's local view of the inbound stream. Includes
+	// jitter directly (in seconds; convert to ms) and lifetime PacketsReceived /
+	// PacketsLost counters that we delta against the previous sample to get a
+	// per-window loss percentage.
+	//
+	// pion v4.2.11 does NOT emit RemoteInboundRTPStreamStats in this codec
+	// configuration, so we cannot use the remote's RR. Confirmed empirically.
 	for _, st := range report {
-		if rr, ok := st.(pionwebrtc.RemoteInboundRTPStreamStats); ok {
-			loss := float32(rr.FractionLost * 100.0)
-			out.LossPct = &loss
-			jitter := float32(rr.Jitter * 1000.0)
+		if in, ok := st.(pionwebrtc.InboundRTPStreamStats); ok {
+			jitter := float32(in.Jitter * 1000.0)
 			out.JitterMs = &jitter
+			if r.havePrev {
+				recvDelta := int64(in.PacketsReceived) - int64(r.prevPacketsReceived)
+				lostDelta := int64(in.PacketsLost) - int64(r.prevPacketsLost)
+				total := recvDelta + lostDelta
+				if total > 0 && lostDelta >= 0 && recvDelta >= 0 {
+					loss := float32(lostDelta) * 100.0 / float32(total)
+					out.LossPct = &loss
+				}
+			}
+			r.prevPacketsReceived = in.PacketsReceived
+			r.prevPacketsLost = in.PacketsLost
+			r.havePrev = true
 			break // typical voice call: one audio track
 		}
 	}
@@ -126,7 +146,7 @@ func (r *Reporter) sample() (Sample, bool) {
 		}
 	}
 
-	// Drop if neither RR nor ICE pair produced anything useful.
+	// Drop if neither InboundRTP nor ICE pair produced anything useful.
 	if out.LossPct == nil && out.JitterMs == nil && out.RttMs == nil &&
 		out.BytesIn == nil && out.BytesOut == nil && out.ConnType == "" {
 		return Sample{}, false
