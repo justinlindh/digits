@@ -144,7 +144,6 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
 	}, web.HandlerConfig{
 		Addr:        cfg.Addr,
 		BaseURL:     cfg.BaseURL,

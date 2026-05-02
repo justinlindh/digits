@@ -17,7 +17,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -227,8 +226,6 @@ type Handler struct {
 	pairingStore *pairing.Store
 	// Household links
 	linkStore *household.LinkStore
-	// Email
-	emailSender email.Sender
 	// Rate limiters. All four are Handler fields so Router() has a single
 	// construction pattern; previously the magic-link verify and Google
 	// login limiters were instantiated inline inside Router(), which made
@@ -286,7 +283,6 @@ type Deps struct {
 	HouseholdStore *household.Store
 	PairingStore   *pairing.Store
 	LinkStore      *household.LinkStore
-	EmailSender    email.Sender
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
@@ -414,7 +410,6 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		householdStore:     deps.HouseholdStore,
 		pairingStore:       deps.PairingStore,
 		linkStore:          deps.LinkStore,
-		emailSender:        deps.EmailSender,
 		authLimiter:        ratelimit.New(5, time.Minute),
 		magicVerifyLimiter: ratelimit.New(10, time.Minute),
 		googleLoginLimiter: ratelimit.New(10, time.Minute),
