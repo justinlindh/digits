@@ -119,6 +119,11 @@ cd /digits/pi/digits-recovery
 mkdir -p bin
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
 
+# Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
+info "Cross-compiling digits-panic-check for aarch64..."
+cd /digits/pi/digits-panic-check
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /digits/tools/build/digits-panic-check .
+
 info "Binaries ready in tools/build/"
 
 # An image without firmware is a regression we don't ship: prefer the
