@@ -2227,3 +2227,64 @@ func TestHandleCalls_AM_PaginationControls(t *testing.T) {
 		}
 	}
 }
+
+func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
+	conn.RemoteAddr = "192.168.1.42"
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "192.168.1.42") {
+		t.Errorf("phones page missing LAN IP %q in body", "192.168.1.42")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenEmpty(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
+	conn.RemoteAddr = ""
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup despite empty RemoteAddr")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Add a line WITHOUT registering a Conn: phone is offline.
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140044", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup for offline phone")
+	}
+}
