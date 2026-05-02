@@ -266,7 +266,12 @@
       <tbody>
         {{range .Lines}}
         <tr>
-          <td class="num"><a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a></td>
+          <td class="num">
+            <a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a>
+            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
+              <span class="num muted" style="display: block; font-size: 11px; margin-top: 2px;">{{.DeviceInfo.RemoteAddr}}</span>
+            {{end}}
+          </td>
           <td>
             <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
             {{if .Line.Settings.SilentMode}}
@@ -352,7 +357,7 @@
       <a class="lines__row" href="/phones/{{.Line.Number}}">
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
         <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
-        <span class="lines__num">{{fmtPhone .Line.Number}}</span>
+        <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
         <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
       </a>
       {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
@@ -417,7 +422,7 @@
       <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
       <div class="am-roster__meta">
         {{if $l.OnCall}}IN SESSION
-        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
+        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{if and $l.DeviceInfo $l.DeviceInfo.RemoteAddr}} &middot; {{$l.DeviceInfo.RemoteAddr}}{{end}}
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}

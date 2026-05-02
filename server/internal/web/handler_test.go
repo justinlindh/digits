@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
@@ -428,12 +429,12 @@ func TestNotFound(t *testing.T) {
 }
 
 // setupPairedDevice creates a paired device via the pairing flow and returns
-// the hardware ID and plaintext device token.
-func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, token string) {
+// the hardware ID, phone number, and plaintext device token.
+func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, number, token string) {
 	t.Helper()
 
 	hardwareID = fmt.Sprintf("test-hw-%d", time.Now().UnixNano())
-	number := fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
+	number = fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
 
 	// Create a household for the line
 	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
@@ -468,7 +469,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
-	return hardwareID, token
+	return hardwareID, number, token
 }
 
 func TestPhoneRestartOnline(t *testing.T) {
@@ -1023,7 +1024,7 @@ func TestWSRegister_PairedDevice_MissingToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -1046,7 +1047,7 @@ func TestWSRegister_PairedDevice_WrongToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -1070,7 +1071,7 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -2225,5 +2226,158 @@ func TestHandleCalls_AM_PaginationControls(t *testing.T) {
 		if strings.Contains(body, `hx-trigger="every 10s"`) {
 			t.Errorf("page 2: hx-trigger must be absent on paged view")
 		}
+	}
+}
+
+func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
+	conn.RemoteAddr = "192.168.1.42"
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "192.168.1.42") {
+		t.Errorf("phones page missing LAN IP %q in body", "192.168.1.42")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenEmpty(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
+	conn.RemoteAddr = ""
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup despite empty RemoteAddr")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Add a line WITHOUT registering a Conn: phone is offline.
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140044", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup for offline phone")
+	}
+}
+
+// runWSConnectAndCaptureAddr dials srv's /ws with the given header set,
+// sends a register message for the paired device, waits for hub registration,
+// and returns the RemoteAddr the hub stored for that connection.
+func runWSConnectAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signaling.Hub, hardwareID, number, token, xff string) string {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	headers := http.Header{}
+	if xff != "" {
+		headers.Set("X-Forwarded-For", xff)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	if err != nil {
+		t.Fatalf("dial ws: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.WriteJSON(signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      number,
+		HardwareID:  hardwareID,
+		DeviceToken: token,
+	}); err != nil {
+		t.Fatalf("write register: %v", err)
+	}
+	waitForRegister(t, hub, number)
+	info := hub.DeviceInfo(number)
+	if info == nil {
+		t.Fatal("hub.DeviceInfo returned nil after register")
+	}
+	return info.RemoteAddr
+}
+
+func TestHandleWS_RemoteAddrFromXFFWhenPrivate(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "192.168.1.7")
+	if got != "192.168.1.7" {
+		t.Errorf("RemoteAddr = %q, want %q", got, "192.168.1.7")
+	}
+}
+
+func TestHandleWS_RemoteAddrEmptyWhenPublicXFF(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "8.8.8.8")
+	if got != "" {
+		t.Errorf("RemoteAddr = %q, want empty for public XFF", got)
+	}
+}
+
+func TestHandleWS_RemoteAddrFallsBackToRemoteAddr(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	// httptest.Server listens on 127.0.0.1, which is in IsPrivateAddr's
+	// loopback range; with no XFF the resolved RemoteAddr should be
+	// "127.0.0.1".
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "")
+	if got != "127.0.0.1" {
+		t.Errorf("RemoteAddr = %q, want %q", got, "127.0.0.1")
+	}
+}
+
+func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140055", "Living Room")
+	conn.RemoteAddr = "192.168.77.77"
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "192.168.77.77") {
+		t.Errorf("dashboard rendered LAN IP %q in body; this surface must not surface device IPs", "192.168.77.77")
 	}
 }
