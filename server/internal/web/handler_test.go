@@ -2362,3 +2362,22 @@ func TestHandleWS_RemoteAddrFallsBackToRemoteAddr(t *testing.T) {
 		t.Errorf("RemoteAddr = %q, want %q", got, "127.0.0.1")
 	}
 }
+
+func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140055", "Living Room")
+	conn.RemoteAddr = "192.168.77.77"
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "192.168.77.77") {
+		t.Errorf("dashboard rendered LAN IP %q in body; this surface must not surface device IPs", "192.168.77.77")
+	}
+}
