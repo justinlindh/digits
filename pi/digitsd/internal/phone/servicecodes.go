@@ -241,18 +241,29 @@ func volumeToALSA(level int) int {
 	return min + (level * (max - min) / 9)
 }
 
+// applyVolumeLevel maps level (0-9) to the codec's ALSA range and pushes it
+// to the mixer via amixer. Returns the alsa value applied so the caller can
+// log it. amixer stderr is wrapped into the returned error.
+func applyVolumeLevel(level int) (alsaVal int, mixer string, err error) {
+	alsaVal = volumeToALSA(level)
+	card := audio.CodecCardName()
+	mixer = audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
+	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		return alsaVal, mixer, fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), runErr)
+	}
+	return alsaVal, mixer, nil
+}
+
 // SetVolume sets volume on the detected codec. Level 0-9.
 // Persists the user-facing level to /data/digits/volume; the rest of the
 // mixer state (gain stages, routing) is the canonical embedded copy that
 // digitsd renders to /data/digits_mixer.state at startup, so we no longer
 // snapshot live mixer state on every volume change.
 func SetVolume(level int) error {
-	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName()
-	mixer := audio.CodecMixerName()
-	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
+	alsaVal, mixer, err := applyVolumeLevel(level)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(volumeFile), 0755); err != nil {
 		slog.Warn("volume: mkdir failed", "error", err)
@@ -271,19 +282,15 @@ func SetVolume(level int) error {
 // a noticeably quieter handset output than on V1's DA7212 Lineout.
 func RestoreVolume() {
 	level := audio.CodecDefaultVolumeLevel()
-	data, err := os.ReadFile(volumeFile)
-	if err == nil {
+	if data, err := os.ReadFile(volumeFile); err == nil {
 		var v int
 		if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &v); err == nil && v >= 0 && v <= 9 {
 			level = v
 		}
 	}
-	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName()
-	mixer := audio.CodecMixerName()
-	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		slog.Warn("volume restore: amixer failed", "output", strings.TrimSpace(string(out)), "error", err)
+	alsaVal, mixer, err := applyVolumeLevel(level)
+	if err != nil {
+		slog.Warn("volume restore: amixer failed", "error", err)
 		return
 	}
 	slog.Info("volume restored", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal)
