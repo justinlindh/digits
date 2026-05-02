@@ -146,7 +146,7 @@ func (r *Reporter) sample() (Sample, bool) {
 		}
 	}
 
-	// Drop if neither RR nor ICE pair produced anything useful.
+	// Drop if neither InboundRTP nor ICE pair produced anything useful.
 	if out.LossPct == nil && out.JitterMs == nil && out.RttMs == nil &&
 		out.BytesIn == nil && out.BytesOut == nil && out.ConnType == "" {
 		return Sample{}, false
