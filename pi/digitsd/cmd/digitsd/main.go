@@ -2168,12 +2168,18 @@ func main() {
 		requestICEServers(sig)
 	}
 
-	// Refresh ICE credentials periodically (TURN creds are time-limited)
+	// Refresh ICE credentials periodically (TURN creds are time-limited).
+	// Read cb.sig under cb.mu so we use the current client after reconnects.
 	go func() {
 		ticker := time.NewTicker(30 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			requestICEServers(sig)
+			cb.mu.Lock()
+			s := cb.sig
+			cb.mu.Unlock()
+			if s != nil {
+				requestICEServers(s)
+			}
 		}
 	}()
 
