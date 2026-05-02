@@ -118,7 +118,10 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, hou
 		return "", "", fmt.Errorf("create line: %w", err)
 	}
 
-	token := randomHex(32)
+	token, err := randomHex(32)
+	if err != nil {
+		return "", "", fmt.Errorf("generate device token: %w", err)
+	}
 	tokenHash := device.HashToken(token)
 
 	// Update device: set line_id, device_token (hashed), mark as paired, clear pairing code
@@ -196,10 +199,12 @@ func (s *Store) RegenerateCode(ctx context.Context, hardwareID string) (string, 
 	return code, nil
 }
 
-func randomHex(n int) string {
+func randomHex(n int) (string, error) {
 	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // randomCode generates a cryptographically random numeric code of the given length.
