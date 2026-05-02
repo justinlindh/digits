@@ -23,7 +23,9 @@ const (
 )
 
 // ServiceCodeHandler processes hidden service codes entered via the keypad.
-// Codes are detected from a rolling key buffer.
+// Codes are detected from a rolling key buffer. Callers assign the OnXxx
+// callbacks directly after construction; nil entries make the matching code
+// a no-op (the code is still consumed and the buffer cleared).
 //
 // Fixed codes:
 //
@@ -31,71 +33,35 @@ const (
 //	*##*     → reboot
 //	*#8378#  → *#TEST# — audio test (records clip, plays back)
 //	*#73887# → *#SETUP# — Wi-Fi re-provisioning (removes /data/wifi-configured, reboots)
+//	*#0*     → force re-pair
+//	*#00000# → factory reset
+//	*#873283# → *#UPDATE# — check for updates
 //
 // Volume codes: *#*N where N=0-9
 type ServiceCodeHandler struct {
-	buffer      string
-	onVolume    func(level int)
-	onAudioTest func()
-	onShutdown  func()
-	onReboot    func()
-	onSetup        func()
-	onRepair       func()
-	onFactoryReset func()
-	onUpdate       func()
+	OnVolume       func(level int)
+	OnAudioTest    func()
+	OnShutdown     func()
+	OnReboot       func()
+	OnSetup        func()
+	OnRepair       func()
+	OnFactoryReset func()
+	OnUpdate       func()
+
+	buffer string
 }
 
 // bufferMaxLen is the maximum number of keys kept in the rolling buffer.
 // Must be >= the longest service code (currently *#873283# = 9 chars).
 const bufferMaxLen = 9
 
-// NewServiceCodeHandler creates a new handler with no callbacks set.
-func NewServiceCodeHandler() *ServiceCodeHandler {
-	return &ServiceCodeHandler{}
-}
-
-// SetVolumeCallback sets the function called when a volume code (*#*N) is entered.
-func (h *ServiceCodeHandler) SetVolumeCallback(fn func(level int)) {
-	h.onVolume = fn
-}
-
-// SetAudioTestCallback sets the function called for *#8378# (*#TEST#).
-func (h *ServiceCodeHandler) SetAudioTestCallback(fn func()) {
-	h.onAudioTest = fn
-}
-
-// SetShutdownCallback sets the function called for *#*# (shutdown).
-func (h *ServiceCodeHandler) SetShutdownCallback(fn func()) {
-	h.onShutdown = fn
-}
-
-// SetRebootCallback sets the function called for *##* (reboot).
-func (h *ServiceCodeHandler) SetRebootCallback(fn func()) {
-	h.onReboot = fn
-}
-
 // WifiConfiguredFlag is the sentinel file that indicates Wi-Fi has been
 // provisioned. Its absence triggers AP mode on next boot.
 const WifiConfiguredFlag = "/data/wifi-configured"
 
-// SetSetupCallback sets the function called for *#73887# (*#SETUP#).
-func (h *ServiceCodeHandler) SetSetupCallback(fn func()) {
-	h.onSetup = fn
-}
-
-// SetRepairCallback sets the function called for *#0* (force re-pairing).
-func (h *ServiceCodeHandler) SetRepairCallback(fn func()) {
-	h.onRepair = fn
-}
-
-// SetFactoryResetCallback sets the function called for *#00000# (factory reset).
-func (h *ServiceCodeHandler) SetFactoryResetCallback(fn func()) {
-	h.onFactoryReset = fn
-}
-
-// SetUpdateCallback sets the function called for *#873283# (*#UPDATE#).
-func (h *ServiceCodeHandler) SetUpdateCallback(fn func()) {
-	h.onUpdate = fn
+// NewServiceCodeHandler creates a new handler with no callbacks set.
+func NewServiceCodeHandler() *ServiceCodeHandler {
+	return &ServiceCodeHandler{}
 }
 
 // AddKey processes a keypress. Returns the kind of code that was triggered
@@ -129,8 +95,8 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 		last9 := h.buffer[len(h.buffer)-9:]
 		if last9 == "*#873283#" {
 			slog.Info("service code: *#873283# (*#UPDATE#) -> check for updates")
-			if h.onUpdate != nil {
-				go h.onUpdate()
+			if h.OnUpdate != nil {
+				go h.OnUpdate()
 			}
 			h.buffer = ""
 			return ServiceCodeTerminal
@@ -144,16 +110,16 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 		switch last8 {
 		case "*#00000#":
 			slog.Info("service code: *#00000# -> factory reset")
-			if h.onFactoryReset != nil {
-				go h.onFactoryReset()
+			if h.OnFactoryReset != nil {
+				go h.OnFactoryReset()
 			}
 			h.buffer = ""
 			return ServiceCodeTerminal
 		}
 		if last8 == "*#73887#" {
 			slog.Info("service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning")
-			if h.onSetup != nil {
-				go h.onSetup()
+			if h.OnSetup != nil {
+				go h.OnSetup()
 			} else {
 				slog.Info("service code: *#73887# triggered but no setup callback registered -- ignoring")
 			}
@@ -169,8 +135,8 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 		last7 := h.buffer[len(h.buffer)-7:]
 		if last7 == "*#8378#" {
 			slog.Info("service code: *#8378# (*#TEST#) -> audio test")
-			if h.onAudioTest != nil {
-				go h.onAudioTest()
+			if h.OnAudioTest != nil {
+				go h.OnAudioTest()
 			}
 			h.buffer = ""
 			return ServiceCodeNonTerminal
@@ -187,22 +153,22 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 	switch last4 {
 	case "*#0*":
 		slog.Info("service code: *#0* -> force re-pair")
-		if h.onRepair != nil {
-			go h.onRepair()
+		if h.OnRepair != nil {
+			go h.OnRepair()
 		}
 		h.buffer = ""
 		return ServiceCodeTerminal
 	case "*#*#":
 		slog.Info("service code: *#*# -> shutdown")
-		if h.onShutdown != nil {
-			go h.onShutdown()
+		if h.OnShutdown != nil {
+			go h.OnShutdown()
 		}
 		h.buffer = ""
 		return ServiceCodeTerminal
 	case "*##*":
 		slog.Info("service code: *##* -> reboot")
-		if h.onReboot != nil {
-			go h.onReboot()
+		if h.OnReboot != nil {
+			go h.OnReboot()
 		}
 		h.buffer = ""
 		return ServiceCodeTerminal
@@ -213,9 +179,9 @@ func (h *ServiceCodeHandler) check() ServiceCodeResult {
 		ch := last4[3]
 		if ch >= '0' && ch <= '9' {
 			level := int(ch - '0')
-			if h.onVolume != nil {
+			if h.OnVolume != nil {
 				slog.Info("service code: volume", "level", level)
-				h.onVolume(level)
+				h.OnVolume(level)
 			}
 			h.buffer = ""
 			return ServiceCodeNonTerminal
