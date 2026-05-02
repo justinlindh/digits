@@ -16,15 +16,11 @@ type mockSerial struct {
 	rx       *bytes.Buffer // data the "Pico" sends back
 	tx       bytes.Buffer  // data written by the binary
 	closed   bool
-	readErr  error       // injected read error
-	writeErr error       // injected write error
-	readDelay time.Duration // artificial delay per read
+	readErr  error // injected read error
+	writeErr error // injected write error
 }
 
 func (m *mockSerial) Read(p []byte) (int, error) {
-	if m.readDelay > 0 {
-		time.Sleep(m.readDelay)
-	}
 	if m.readErr != nil {
 		return 0, m.readErr
 	}

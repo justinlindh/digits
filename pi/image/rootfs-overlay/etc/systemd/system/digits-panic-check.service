@@ -10,6 +10,7 @@ Before=digits-ap-check.service network-pre.target
 
 [Service]
 Type=oneshot
+SuccessExitStatus=1
 ExecStart=/usr/local/bin/digits-panic-check
 
 [Install]

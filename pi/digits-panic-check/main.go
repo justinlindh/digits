@@ -178,16 +178,20 @@ func parseStarHeld(lines []string) (bool, error) {
 // parseScanLine checks whether the given column reads 0 (pressed) in a
 // SCAN line like "SCAN R3/GP25=LOW: C0=0 C1=1 C2=1".
 func parseScanLine(line string, col int) (bool, error) {
+	colData := line
+	if i := strings.Index(line, ": "); i >= 0 {
+		colData = line[i+2:]
+	}
 	target := fmt.Sprintf("C%d=", col)
-	idx := strings.Index(line, target)
+	idx := strings.Index(colData, target)
 	if idx < 0 {
 		return false, fmt.Errorf("column C%d not found in %q", col, line)
 	}
 	valPos := idx + len(target)
-	if valPos >= len(line) {
+	if valPos >= len(colData) {
 		return false, fmt.Errorf("no value after C%d= in %q", col, line)
 	}
-	return line[valPos] == '0', nil
+	return colData[valPos] == '0', nil
 }
 
 func main() {
