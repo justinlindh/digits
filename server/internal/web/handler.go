@@ -500,6 +500,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
 	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
 	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
+	protected.HandleFunc("POST /phones/{number}/ring-test", h.handlePhoneRingTest)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)

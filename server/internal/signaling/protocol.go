@@ -24,6 +24,7 @@ const (
 	TypeICERestart    = "ice_restart"    // Bidirectional: ICE restart offer with new credentials
 	TypeFactoryReset  = "factory_reset"  // Server → Phone: trigger factory reset
 	TypeRestart       = "restart"        // Server → Phone: restart service or reboot
+	TypeRingTest      = "ring_test"      // Server → Phone: brief ring for hardware verification
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
 	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
