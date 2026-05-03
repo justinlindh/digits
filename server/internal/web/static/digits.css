@@ -595,6 +595,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 .toggle input:focus-visible ~ .toggle__track {
   box-shadow: 0 0 0 3px rgba(196,139,58,0.25);
 }
+.dnd-toggle__label { font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
 
 /* --------- Chip / state badge (used sparingly — prefer dot) --------- */
 

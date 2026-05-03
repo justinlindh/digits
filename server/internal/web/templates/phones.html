@@ -486,13 +486,13 @@
       <span class="am-label">Patchbay</span>
       <span class="am-title">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}} paired</span>
     </div>
-    {{template "dnd-toggle-am" .}}
     <div class="am-page-header__spacer"></div>
     <div class="am-well am-page-header__well">
       <div class="am-led am-page-header__led">{{printf "%02d" (len .Lines)}}</div>
       <div class="am-led am-led--dim am-page-header__cap">PAIRED</div>
     </div>
     <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
+    {{template "dnd-toggle-am" .}}
   </div>
 
   {{/* Patchbay rail sizing. N=0 shows a dark rail with a pair-me-in hint.

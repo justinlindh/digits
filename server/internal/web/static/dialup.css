@@ -385,7 +385,7 @@ body.dialup:not(.crt-all) .dialup-window {
   margin: 0 0 10px;
   padding: 4px 8px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   border-top: 1px solid var(--dialup-bevel-hi);
@@ -395,6 +395,7 @@ body.dialup:not(.crt-all) .dialup-window {
   flex-wrap: wrap;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
+.page__head .dnd-toggle__label { color: #fff; }
 .page__title {
   font-family: inherit;
   font-weight: bold;
