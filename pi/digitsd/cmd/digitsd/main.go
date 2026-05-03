@@ -2934,8 +2934,11 @@ func main() {
 					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
 						slog.Warn("webrtc: add ICE candidate failed", "error", err)
 					}
+				} else if cb.preAnswer.peerMgr != nil {
+					if err := cb.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
+						slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
+					}
 				} else {
-					// Queue ICE candidates until peerMgr is ready (e.g. during RINGING before answer)
 					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
 					slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
 				}
