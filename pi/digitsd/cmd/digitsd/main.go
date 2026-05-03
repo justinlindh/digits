@@ -973,6 +973,156 @@ func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
 	return audio.NewPipeline(cfg)
 }
 
+// prepareAnswer pre-creates the WebRTC PeerConnection during the ring phase.
+// This moves expensive ECDSA cert generation, SDP processing, and ICE gathering
+// off the critical path between handset pickup and first audio.
+//
+// Security invariant: no audio pipeline is started, no encode loop is spawned,
+// and no ICE candidates are sent to the caller. The caller cannot establish ICE
+// connectivity without our answer SDP (which contains our ufrag/pwd), so no
+// media can flow until AnswerCall sends it after pickup.
+//
+// Must be called with d.mu held. On any failure, logs and returns without
+// setting preAnswer state; AnswerCall falls back to the full creation path.
+func (d *daemonCallbacks) prepareAnswer() {
+	if d.preAnswer.peerMgr != nil {
+		return // already prepared
+	}
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	if offerSDP == "" {
+		return // no offer to work with yet
+	}
+
+	t0 := time.Now()
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	pm, err := owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("prepareAnswer: new peer manager failed", "error", err)
+		return
+	}
+
+	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(pm, state)
+	}
+
+	// Collect local ICE candidates into the preAnswer slice (NOT sent to caller).
+	pm.OnICECandidate = func(candidate string) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.preAnswer.peerMgr == pm {
+			d.preAnswer.candidates = append(d.preAnswer.candidates, candidate)
+		}
+	}
+
+	// Register remote track handler (Phase 1/2/3). OnRemoteTrack cannot fire
+	// during ring because ICE+DTLS require the caller to have our answer SDP.
+	webrtcCh := d.mixer.AddWebRTCSource(caller)
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("answer-remote-track")
+			var frameCount int
+
+			// Phase 1: Wait for pipeline.
+			slog.Info("remote track active, waiting for answer")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					slog.Info("pipeline ready", "discarded_packets", discarded)
+					break
+				}
+
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			// Phase 2: Drain stale packets until caught up to real-time.
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					slog.Info("remote track ended during drain")
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+
+				if readTime > 5*time.Millisecond {
+					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					break
+				}
+			}
+
+			// Phase 3: Live playback.
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended", "frames", frameCount)
+					return
+				}
+				recvTime := time.Now()
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
+					continue
+				}
+				if pm.InboundMuted() {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+
+				if frameCount <= 10 || frameCount%50 == 0 {
+					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
+				}
+			}
+		}()
+	}
+
+	answerSDP, err := pm.AcceptOffer(offerSDP)
+	if err != nil {
+		slog.Error("prepareAnswer: accept offer failed", "error", err)
+		d.mixer.RemoveWebRTCSource(caller)
+		_ = pm.Close()
+		return
+	}
+
+	// Add any ICE candidates that arrived before we were ready.
+	for _, candidate := range d.pendingICE {
+		if err := pm.AddICECandidate(candidate); err != nil {
+			slog.Warn("prepareAnswer: add queued ICE candidate failed", "error", err)
+		}
+	}
+	d.pendingICE = nil
+
+	d.preAnswer.peerMgr = pm
+	d.preAnswer.answerSDP = answerSDP
+	d.preAnswer.webrtcCh = webrtcCh
+	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
+	d.preAnswer.caller = caller
+
+	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+}
+
 // applyVoiceStyleLive forwards a voice style change to the active pipeline
 // if one is running. Safe to call with no active pipeline: it becomes a
 // no-op, and the config cache save in setVoiceStyleConfig still persists
