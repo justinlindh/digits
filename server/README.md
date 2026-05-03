@@ -152,6 +152,32 @@ no per-user or per-call data, no caller/callee identifiers). See
 [`docs/metrics.md`](docs/metrics.md) for the full list and the rules
 around what is and is not collected.
 
+### Tracing and Profiling
+
+| Variable                       | Description                                |
+|--------------------------------|--------------------------------------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT`  | OTLP collector host:port. Empty disables the trace exporter. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL`  | `grpc` (default) or `http`.                |
+| `OTEL_EXPORTER_OTLP_INSECURE`  | `false` to require TLS. Defaults to `true` for in-cluster collectors. |
+| `OTEL_TRACES_SAMPLER_ARG`      | Head-based sample ratio, 0..1. Default `1.0`. |
+| `OTEL_RESOURCE_ATTRIBUTES`     | `k=v[,k=v...]` resource attributes.        |
+| `OTEL_SERVICE_NAME`            | Override service name; the binary supplies `signald` / `admind` by default. |
+| `PYROSCOPE_SERVER_ADDRESS`     | Pyroscope HTTP ingest URL. Empty disables the profiler. |
+| `PYROSCOPE_AUTH_TOKEN`         | Bearer token for hosted Pyroscope. Empty for in-cluster.  |
+| `PYROSCOPE_TENANT_ID`          | `X-Scope-OrgID` for multi-tenant Pyroscope. |
+| `DEPLOYMENT_ENV`               | Operator-supplied environment tag (e.g. `k8s`, `docker`). |
+
+OpenTelemetry traces and Pyroscope continuous profiles share the
+privacy posture documented in `docs/metrics.md`: span attributes,
+events, and profile labels are a closed set, with HTTP routes bucketed
+through the same `metrics.RouteOf` helper so phone numbers, call IDs,
+magic-link tokens, and household IDs never reach a span. The W3C Trace
+Context propagator is installed unconditionally, so leaving the
+exporter off still propagates inbound `traceparent` headers; turning
+exporters on later requires no code change. See
+[`docs/tracing.md`](docs/tracing.md) for the full attribute list and
+the rules around what is and is not collected.
+
 ### Development
 
 | Variable     | Description                                      |
