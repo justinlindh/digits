@@ -164,6 +164,14 @@ func run(ctx context.Context) error {
 		if len(parts) == 2 {
 			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, 300) // 5 min cache
 			slog.Info("updates: release index from GitHub", "repo", cfg.GitHubRepo)
+			handler.Releases.OnChange = func(piLatest, fwLatest string) {
+				slog.Info("updates: new release detected, broadcasting", "pi", piLatest, "fw", fwLatest)
+				handler.Hub().Broadcast(&signaling.Message{
+					Type:            signaling.TypeReleaseAvailable,
+					LatestPiVersion: piLatest,
+					LatestFWVersion: fwLatest,
+				})
+			}
 		} else {
 			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", cfg.GitHubRepo)
 		}

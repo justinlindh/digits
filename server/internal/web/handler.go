@@ -417,6 +417,12 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	}, nil
 }
 
+// Hub returns the signaling Hub. Used by callers (e.g. main) that wire
+// external callbacks and need to broadcast messages to connected devices.
+func (h *Handler) Hub() *signaling.Hub {
+	return h.hub
+}
+
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
