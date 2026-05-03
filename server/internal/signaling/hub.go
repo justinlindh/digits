@@ -131,28 +131,23 @@ func (h *Hub) Get(number string) *Conn {
 }
 
 func (h *Hub) SendTo(number string, msg *Message) error {
-	conn := h.Get(number)
-	if conn == nil {
-		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
-	}
-	data, err := msg.Marshal()
-	if err != nil {
-		return err
-	}
-	select {
-	case conn.Send <- data:
-		return nil
-	default:
-		return fmt.Errorf("send buffer full for %s", number)
-	}
+	return sendToConn(h.Get(number), msg, "phone", number)
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	h.mu.RLock()
 	conn := h.hwConns[hardwareID]
 	h.mu.RUnlock()
+	return sendToConn(conn, msg, "hardware", hardwareID)
+}
+
+// sendToConn marshals msg and pushes it onto conn.Send without blocking.
+// label/id are only used to label the resulting error: "<label> <id>: <reason>".
+// Returns ErrNotConnected when conn is nil so callers can errors.Is past
+// expected offline cases.
+func sendToConn(conn *Conn, msg *Message, label, id string) error {
 	if conn == nil {
-		return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
+		return fmt.Errorf("%s %s: %w", label, id, ErrNotConnected)
 	}
 	data, err := msg.Marshal()
 	if err != nil {
@@ -162,7 +157,7 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	case conn.Send <- data:
 		return nil
 	default:
-		return fmt.Errorf("send buffer full for hardware %s", hardwareID)
+		return fmt.Errorf("send buffer full for %s %s", label, id)
 	}
 }
 
