@@ -892,6 +892,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 	d.pendingICE = nil
+	d.cleanupPreAnswer()
 	peer := d.callPeer
 	d.callPeer = ""
 	d.isCaller = false
@@ -1121,6 +1122,31 @@ func (d *daemonCallbacks) prepareAnswer() {
 	d.preAnswer.caller = caller
 
 	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+}
+
+// cleanupPreAnswer tears down any pre-created PeerConnection (e.g. caller
+// hung up during ring). Must be called with d.mu held.
+func (d *daemonCallbacks) cleanupPreAnswer() {
+	if d.preAnswer.peerMgr == nil {
+		return
+	}
+	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", d.preAnswer.caller)
+	pm := d.preAnswer.peerMgr
+	caller := d.preAnswer.caller
+	d.preAnswer.peerMgr = nil
+	d.preAnswer.answerSDP = ""
+	d.preAnswer.webrtcCh = nil
+	d.preAnswer.candidates = nil
+	d.preAnswer.caller = ""
+	if caller != "" {
+		d.mixer.RemoveWebRTCSource(caller)
+	}
+	go func() {
+		defer recoverGoroutine("cleanupPreAnswer")
+		if err := pm.Close(); err != nil {
+			slog.Warn("cleanupPreAnswer: close failed", "error", err)
+		}
+	}()
 }
 
 // applyVoiceStyleLive forwards a voice style change to the active pipeline
