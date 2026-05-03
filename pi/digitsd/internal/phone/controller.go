@@ -56,7 +56,7 @@ type Callbacks interface {
 	SendRing(start bool)        // Send RING:START or RING:STOP
 	SendLED(mode string)        // Send LED:<mode>
 	SetFlashEnabled(enabled bool) // Enable/disable Pico hook-flash detection (off = instant hangup)
-	InitiateCall(number string) // Start outgoing WebRTC call
+	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
@@ -373,56 +373,65 @@ func (c *Controller) onDial(number string) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone(ToneRingback)
-		// Rejection sequence runs async (same as server-side "not connected" error)
-		go func() {
-			checkState := func() bool {
-				c.mu.Lock()
-				defer c.mu.Unlock()
-				return c.state == StateCALLING
-			}
-
-			time.Sleep(3 * time.Second)
-			if !checkState() {
-				return
-			}
-
-			// SIT + disconnected announcement
-			c.cb.SendTone(ToneStop)
-			c.cb.SendTone(ToneIntercept)
-			deadline := time.Now().Add(15 * time.Second)
-			for c.cb.OncePlaying() {
-				time.Sleep(200 * time.Millisecond)
-				if !checkState() {
-					return
-				}
-				if time.Now().After(deadline) {
-					slog.Error("phone: intercept tone timeout — aborting rejection flow")
-					return
-				}
-			}
-
-			time.Sleep(500 * time.Millisecond)
-			if !checkState() {
-				return
-			}
-			c.cb.SendTone(ToneBusy)
-		}()
+		go c.playRejectSequence(StateCALLING)
 		return
 	}
-
 	c.state = StateCALLING
 	// Brief silence before ringback — simulates PSTN call setup delay.
 	// Old rotary phones had a variable pause between last digit and first ring.
 	go func() {
 		time.Sleep(800 * time.Millisecond)
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		if c.state != StateCALLING {
+			c.mu.Unlock()
 			return
 		}
 		c.cb.SendTone(ToneRingback)
-		c.cb.InitiateCall(number)
+		err := c.cb.InitiateCall(number)
+		c.mu.Unlock()
+
+		if err != nil {
+			slog.Info("phone: call failed, server unreachable", "number", number, "error", err)
+			c.playRejectSequence(StateCALLING)
+		}
 	}()
+}
+
+// playRejectSequence plays the POTS intercept sequence: ringback is already
+// playing from the caller, so wait 3s (simulates connection attempt), then
+// SIT tones + busy. Runs without holding the controller lock and checks
+// expectedState before each step so a hang-up aborts cleanly.
+func (c *Controller) playRejectSequence(expectedState State) {
+	checkState := func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.state == expectedState
+	}
+
+	time.Sleep(3 * time.Second)
+	if !checkState() {
+		return
+	}
+
+	c.cb.SendTone(ToneStop)
+	c.cb.SendTone(ToneIntercept)
+	deadline := time.Now().Add(15 * time.Second)
+	for c.cb.OncePlaying() {
+		time.Sleep(200 * time.Millisecond)
+		if !checkState() {
+			return
+		}
+		if time.Now().After(deadline) {
+			slog.Error("phone: intercept tone timeout, aborting rejection")
+			return
+		}
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	if !checkState() {
+		return
+	}
+	c.cb.SendTone(ToneBusy)
 }
 
 // dialThirdParty initiates an outgoing call to C from ADD_DIALING state.
@@ -453,12 +462,26 @@ func (c *Controller) dialThirdParty(number string) {
 	go func() {
 		time.Sleep(800 * time.Millisecond)
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		if c.state != StateADD_CALLING {
+			c.mu.Unlock()
 			return
 		}
 		c.cb.SendTone(ToneRingback)
-		c.cb.InitiateCall(number)
+		err := c.cb.InitiateCall(number)
+		c.mu.Unlock()
+
+		if err != nil {
+			slog.Info("phone: add-call failed, server unreachable", "number", number, "error", err)
+			c.mu.Lock()
+			if c.state != StateADD_CALLING {
+				c.mu.Unlock()
+				return
+			}
+			c.state = StateADD_INTERCEPT
+			c.mu.Unlock()
+			c.cb.SendTone(ToneStop)
+			c.cb.SendTone(ToneIntercept)
+		}
 	}()
 }
 

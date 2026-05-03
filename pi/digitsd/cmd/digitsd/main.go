@@ -172,16 +172,29 @@ func (d *daemonCallbacks) SetFlashEnabled(enabled bool) {
 	d.serial.FlashEnabled(enabled)
 }
 
-func (d *daemonCallbacks) InitiateCall(targetNumber string) {
+func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	// Check if the signaling server is reachable before setting up WebRTC.
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}); err != nil {
+		return fmt.Errorf("server unreachable: %w", err)
+	}
+	// TypeCall was sent. If any later step fails, send a hangup so the
+	// callee does not ring until timeout.
+	callSent := true
+	defer func() {
+		if callSent {
+			sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: targetNumber})
+		}
+	}()
 
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
 		slog.Error("webrtc: new peer manager failed", "error", err)
-		return
+		return fmt.Errorf("webrtc setup: %w", err)
 	}
 
 	d.callPeer = targetNumber
@@ -244,11 +257,10 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	if err != nil {
 		slog.Error("webrtc: create offer failed", "error", err)
 		close(sdpSent)
-		return
+		return fmt.Errorf("webrtc offer: %w", err)
 	}
 
 	// Send call + SDP, then ungate ICE candidates
-	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeCall, To: targetNumber})
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer})
 	close(sdpSent)
 
@@ -260,7 +272,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("audio pipeline start failed", "error", err)
-			return
+			return fmt.Errorf("audio pipeline: %w", err)
 		}
 
 		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
@@ -283,6 +295,8 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	}
 
 	slog.Info("call initiated", "target", targetNumber)
+	callSent = false
+	return nil
 }
 
 func (d *daemonCallbacks) AnswerCall() {
