@@ -266,6 +266,61 @@ func TestFetchPopulatesNotes(t *testing.T) {
 	}
 }
 
+func TestOnChangeCalledWhenVersionChanges(t *testing.T) {
+	idx1 := &ReleaseIndex{
+		Pi:       ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+		Firmware: ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+	}
+	g := NewGitHubReleasesWithIndex(idx1)
+
+	var called bool
+	var gotPi, gotFW string
+	g.OnChange = func(piLatest, fwLatest string) {
+		called = true
+		gotPi = piLatest
+		gotFW = fwLatest
+	}
+
+	idx2 := &ReleaseIndex{
+		Pi:       ComponentIndex{Latest: "2.0.0", Releases: map[string]*Release{"2.0.0": {Version: "2.0.0"}}},
+		Firmware: ComponentIndex{Latest: "1.5.0", Releases: map[string]*Release{"1.5.0": {Version: "1.5.0"}}},
+	}
+	g.SetIndex(idx2)
+
+	if !called {
+		t.Fatal("OnChange was not called")
+	}
+	if gotPi != "2.0.0" {
+		t.Errorf("pi version: got %q, want %q", gotPi, "2.0.0")
+	}
+	if gotFW != "1.5.0" {
+		t.Errorf("fw version: got %q, want %q", gotFW, "1.5.0")
+	}
+}
+
+func TestOnChangeNotCalledWhenVersionsSame(t *testing.T) {
+	idx := &ReleaseIndex{
+		Pi:       ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+		Firmware: ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+	}
+	g := NewGitHubReleasesWithIndex(idx)
+
+	called := false
+	g.OnChange = func(piLatest, fwLatest string) {
+		called = true
+	}
+
+	same := &ReleaseIndex{
+		Pi:       ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+		Firmware: ComponentIndex{Latest: "1.0.0", Releases: map[string]*Release{"1.0.0": {Version: "1.0.0"}}},
+	}
+	g.SetIndex(same)
+
+	if called {
+		t.Error("OnChange should not be called when versions are unchanged")
+	}
+}
+
 func TestStripGroomedSentinel(t *testing.T) {
 	tests := []struct {
 		name string

@@ -109,6 +109,68 @@ func TestRegisterOverwritesRemoteAddrOnReconnect(t *testing.T) {
 	}
 }
 
+func TestBroadcastSendsToAllConnected(t *testing.T) {
+	hub := NewHub()
+
+	c1 := &Conn{Send: make(chan []byte, 10)}
+	c2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", c1)
+	hub.Register("3140002", c2)
+
+	msg := &Message{
+		Type:            TypeReleaseAvailable,
+		LatestPiVersion: "2.0.0",
+		LatestFWVersion: "1.5.0",
+	}
+	hub.Broadcast(msg)
+
+	for _, tc := range []struct {
+		name string
+		conn *Conn
+	}{
+		{"device 1", c1},
+		{"device 2", c2},
+	} {
+		select {
+		case data := <-tc.conn.Send:
+			got, err := ParseMessage(data)
+			if err != nil {
+				t.Fatalf("%s: parse: %v", tc.name, err)
+			}
+			if got.Type != TypeReleaseAvailable {
+				t.Errorf("%s: Type = %q, want %q", tc.name, got.Type, TypeReleaseAvailable)
+			}
+			if got.LatestPiVersion != "2.0.0" {
+				t.Errorf("%s: LatestPiVersion = %q, want %q", tc.name, got.LatestPiVersion, "2.0.0")
+			}
+			if got.LatestFWVersion != "1.5.0" {
+				t.Errorf("%s: LatestFWVersion = %q, want %q", tc.name, got.LatestFWVersion, "1.5.0")
+			}
+		default:
+			t.Errorf("%s: did not receive broadcast", tc.name)
+		}
+	}
+}
+
+func TestBroadcastSkipsFullBuffers(t *testing.T) {
+	hub := NewHub()
+
+	full := &Conn{Send: make(chan []byte)} // unbuffered, will be full
+	ok := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", full)
+	hub.Register("3140002", ok)
+
+	msg := &Message{Type: TypeReleaseAvailable, LatestPiVersion: "2.0.0"}
+	hub.Broadcast(msg)
+
+	select {
+	case <-ok.Send:
+		// good
+	default:
+		t.Error("buffered conn should have received broadcast")
+	}
+}
+
 func TestDeviceInfoSnapshotJSONOmitsRemoteAddr(t *testing.T) {
 	snap := DeviceInfoSnapshot{
 		PiVersion:       "1.2.3",

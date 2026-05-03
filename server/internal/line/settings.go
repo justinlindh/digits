@@ -12,6 +12,7 @@ const (
 type Settings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+	AutoUpdate bool   `json:"auto_update,omitempty"`
 }
 
 // DefaultSettings returns the settings a newly created line starts with.
@@ -29,6 +30,7 @@ func (s Settings) Merge(patch Settings) Settings {
 		s.VoiceStyle = patch.VoiceStyle
 	}
 	s.SilentMode = patch.SilentMode
+	s.AutoUpdate = patch.AutoUpdate
 	return s
 }
 

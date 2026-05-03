@@ -55,6 +55,10 @@ const (
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
 
+	// TypeReleaseAvailable is sent by the server to notify the device that a
+	// new release is available. Carries LatestPiVersion and LatestFWVersion.
+	TypeReleaseAvailable = "release_available"
+
 	// TypeLinkHealth is sent by the phone to the server with a per-call
 	// quality telemetry snapshot. Phone → Server only.
 	TypeLinkHealth = "link_health"
@@ -119,6 +123,7 @@ type ContactEntry struct {
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+	AutoUpdate bool   `json:"auto_update,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.
@@ -165,6 +170,10 @@ type Message struct {
 	// Update trigger fields (update_trigger messages)
 	TargetPiVersion string `json:"target_pi_version,omitempty"`
 	TargetFWVersion string `json:"target_fw_version,omitempty"`
+
+	// Release notification fields (release_available messages)
+	LatestPiVersion string `json:"latest_pi_version,omitempty"`
+	LatestFWVersion string `json:"latest_fw_version,omitempty"`
 
 	// Update status fields (update_status messages)
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed

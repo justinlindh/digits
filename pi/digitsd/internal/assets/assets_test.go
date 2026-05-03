@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,6 +231,125 @@ func TestExtract_SkipsReloadWhenNoRootfsFiles(t *testing.T) {
 	}
 	if reloadCalls != 0 {
 		t.Errorf("ReloadSystemd called %d times, want 0 (no rootfs writes)", reloadCalls)
+	}
+}
+
+func init() {
+	// Speed up retry tests: zero delay so they don't sleep for 900ms in CI.
+	defaultRemountRORetryDelay = 0
+}
+
+// TestRemountReadOnly_RetriesOnFailure verifies that RemountReadOnly retries
+// up to maxAttempts times and returns an error only after all attempts fail.
+func TestRemountReadOnly_RetriesOnFailure(t *testing.T) {
+	calls := 0
+	e := &Extractor{
+		Remount: func(rw bool) error {
+			if rw {
+				return nil
+			}
+			calls++
+			return fmt.Errorf("mount point is busy")
+		},
+	}
+	err := e.RemountReadOnly()
+	if err == nil {
+		t.Fatal("expected error from RemountReadOnly, got nil")
+	}
+	if calls != 4 {
+		t.Errorf("expected 4 remount attempts, got %d", calls)
+	}
+	if !strings.Contains(err.Error(), "mount point is busy") {
+		t.Errorf("error should include underlying cause: %v", err)
+	}
+}
+
+// TestRemountReadOnly_SucceedsOnSecondAttempt verifies that RemountReadOnly
+// returns nil as soon as one attempt succeeds, without exhausting all retries.
+func TestRemountReadOnly_SucceedsOnSecondAttempt(t *testing.T) {
+	calls := 0
+	e := &Extractor{
+		Remount: func(rw bool) error {
+			if rw {
+				return nil
+			}
+			calls++
+			if calls < 2 {
+				return fmt.Errorf("mount point is busy")
+			}
+			return nil
+		},
+	}
+	if err := e.RemountReadOnly(); err != nil {
+		t.Fatalf("expected success on second attempt, got: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 remount attempts, got %d", calls)
+	}
+}
+
+// TestRemountReadOnly_CallsSyncBeforeEachAttempt verifies that Sync is called
+// before each remount-ro attempt.
+func TestRemountReadOnly_CallsSyncBeforeEachAttempt(t *testing.T) {
+	syncCalls := 0
+	remountCalls := 0
+	e := &Extractor{
+		Sync: func() error {
+			syncCalls++
+			return nil
+		},
+		Remount: func(rw bool) error {
+			if rw {
+				return nil
+			}
+			remountCalls++
+			if remountCalls < 3 {
+				return fmt.Errorf("busy")
+			}
+			return nil
+		},
+	}
+	if err := e.RemountReadOnly(); err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if syncCalls != remountCalls {
+		t.Errorf("sync called %d times, remount called %d times; want equal", syncCalls, remountCalls)
+	}
+}
+
+// TestExtract_FailsWhenRemountROFails verifies that Extract returns an error
+// when all remount-ro attempts fail, and withholds the marker so the next
+// boot will retry extraction.
+func TestExtract_FailsWhenRemountROFails(t *testing.T) {
+	root := t.TempDir()
+	dataDir := t.TempDir()
+	markerPath := filepath.Join(dataDir, "asset-version")
+
+	e := &Extractor{
+		FS: fstest.MapFS{
+			"rootfs/etc/systemd/system/x.service": &fstest.MapFile{Data: []byte("unit")},
+		},
+		RootDir:    root,
+		DataDir:    dataDir,
+		MarkerPath: markerPath,
+		Remount: func(rw bool) error {
+			if rw {
+				return nil // remount rw succeeds
+			}
+			return fmt.Errorf("mount point is busy")
+		},
+	}
+
+	err := e.Extract("1.0.0")
+	if err == nil {
+		t.Fatal("expected error when remount ro fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "remount ro") {
+		t.Errorf("error should mention remount ro: %v", err)
+	}
+	// Marker must not be written so the next boot retries.
+	if _, err := os.Stat(markerPath); !os.IsNotExist(err) {
+		t.Errorf("marker should not exist when remount ro failed, stat err=%v", err)
 	}
 }
 

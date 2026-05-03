@@ -47,18 +47,24 @@ type GitHubReleases struct {
 
 	mu     sync.RWMutex
 	cached *ReleaseIndex
+
+	// OnChange is called when refresh detects a new latest version for
+	// either component. Called synchronously from SetIndex; the callback
+	// should not block. Nil means no notification.
+	OnChange func(piLatest, fwLatest string)
 }
 
 // NewGitHubReleases creates a GitHubReleases that polls the given repo.
 // It fetches immediately in the background and refreshes every ttlSeconds.
-func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int) *GitHubReleases {
+func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int, onChange func(piLatest, fwLatest string)) *GitHubReleases {
 	g := &GitHubReleases{
-		owner:   owner,
-		repo:    repo,
-		apiBase: "https://api.github.com",
-		token:   token,
-		client:  &http.Client{Timeout: 15 * time.Second},
-		ttl:     time.Duration(ttlSeconds) * time.Second,
+		owner:    owner,
+		repo:     repo,
+		apiBase:  "https://api.github.com",
+		token:    token,
+		client:   &http.Client{Timeout: 15 * time.Second},
+		ttl:      time.Duration(ttlSeconds) * time.Second,
+		OnChange: onChange,
 	}
 	go g.poll(ctx)
 	return g
@@ -89,15 +95,28 @@ func (g *GitHubReleases) poll(ctx context.Context) {
 	}
 }
 
+// SetIndex replaces the cached release index. If OnChange is set and either
+// component's latest version differs from the previous index, the callback is
+// fired synchronously after the lock is released.
+func (g *GitHubReleases) SetIndex(idx *ReleaseIndex) {
+	g.mu.Lock()
+	old := g.cached
+	g.cached = idx
+	cb := g.OnChange
+	g.mu.Unlock()
+
+	if cb != nil && old != nil && (old.Pi.Latest != idx.Pi.Latest || old.Firmware.Latest != idx.Firmware.Latest) {
+		cb(idx.Pi.Latest, idx.Firmware.Latest)
+	}
+}
+
 func (g *GitHubReleases) refresh(ctx context.Context) {
 	idx, err := g.fetch(ctx)
 	if err != nil {
 		slog.Error("failed to fetch GitHub releases", "error", err)
 		return
 	}
-	g.mu.Lock()
-	g.cached = idx
-	g.mu.Unlock()
+	g.SetIndex(idx)
 }
 
 // ServeReleases returns an HTTP handler that serves the release index as JSON.

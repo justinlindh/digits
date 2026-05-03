@@ -413,3 +413,32 @@ func TestConfigSaveRoundTripSilentMode(t *testing.T) {
 		t.Errorf("round trip did not preserve silent_mode")
 	}
 }
+
+func TestAutoUpdateRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	data := `{"auto_update": true}`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !loaded.AutoUpdate {
+		t.Error("AutoUpdate: got false after load, want true")
+	}
+
+	if err := loaded.Save(); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+	if !reloaded.AutoUpdate {
+		t.Error("AutoUpdate: got false after save round-trip, want true")
+	}
+}

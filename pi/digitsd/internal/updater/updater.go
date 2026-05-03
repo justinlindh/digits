@@ -247,9 +247,14 @@ func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 		}
 	}
 
-	// Restore read-only rootfs.
+	// Restore read-only rootfs. This remount may fail: the running process has
+	// the old binary's inode mmap'd (link count 0 after the mv), and the
+	// kernel rejects remount,ro while a deleted inode is still open. That is
+	// expected here -- os.Exit(0) follows immediately, which releases the
+	// mmap. Systemd then starts the new binary, whose Extract() call will
+	// remount ro once it is safely running from the replacement inode.
 	if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
-		slog.Warn("updater: failed to remount ro", "error", err)
+		slog.Warn("updater: remount ro failed (expected when replacing running binary; next startup will fix)", "error", err)
 	}
 
 	slog.Info("updater: Pi binary updated -- exiting for restart")

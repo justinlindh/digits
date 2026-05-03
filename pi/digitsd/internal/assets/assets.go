@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 var permOverrides = []struct {
@@ -35,6 +36,46 @@ type Extractor struct {
 	// that systemd picks up rewritten unit files without requiring a reboot.
 	// Typically wired to `sudo systemctl daemon-reload`.
 	ReloadSystemd func() error
+	// Sync, if set, is called before each remount-ro attempt. Intended to
+	// flush dirty pages so the kernel accepts the read-only transition.
+	// Typically wired to syscall.Sync or `sudo sync`.
+	Sync func() error
+}
+
+// defaultRemountRORetryDelay is the wait between remount-ro retry attempts.
+// It is a package-level variable so tests can set it to zero.
+var defaultRemountRORetryDelay = 300 * time.Millisecond
+
+// RemountReadOnly calls Sync (if set) then Remount(false), retrying a small
+// number of times with a short delay. The retry handles the window where a
+// just-replaced binary's deleted inode is still held by the outgoing process;
+// that inode is released once the process exits and the kernel will then
+// accept the ro transition.
+//
+// Callers outside Extract (e.g. one-off rootfs writes in main) should use
+// this instead of calling Remount(false) directly so they get the same
+// sync-and-retry semantics.
+func (e *Extractor) RemountReadOnly() error {
+	const maxAttempts = 4
+	retryDelay := defaultRemountRORetryDelay
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if e.Sync != nil {
+			if err := e.Sync(); err != nil {
+				log.Printf("assets: WARNING: sync before remount ro failed (attempt %d): %v", attempt, err)
+			}
+		}
+		if err := e.Remount(false); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			if attempt < maxAttempts {
+				log.Printf("assets: remount ro failed (attempt %d/%d): %v -- retrying in %v", attempt, maxAttempts, err, retryDelay)
+				time.Sleep(retryDelay)
+			}
+		}
+	}
+	return fmt.Errorf("remount ro failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
 func (e *Extractor) Extract(currentVersion string) error {
@@ -76,8 +117,8 @@ func (e *Extractor) Extract(currentVersion string) error {
 			}
 			rootfsWritten++
 		}
-		if err := e.Remount(false); err != nil {
-			log.Printf("assets: WARNING: remount ro failed: %v", err)
+		if err := e.RemountReadOnly(); err != nil {
+			return fmt.Errorf("remount ro after rootfs writes: %w", err)
 		}
 		// Rewritten systemd units won't take effect until systemd re-reads
 		// its unit files, so tell it to reload if we touched anything on
