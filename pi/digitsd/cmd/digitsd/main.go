@@ -1353,7 +1353,7 @@ var updateInProgress atomic.Bool
 // delegates to runTargetedUpdate with empty targets (install whatever is
 // latest). When a call is in progress the update is deferred: pendingAutoUpdate
 // is set so HangupCall can retry once the call ends.
-func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
+func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, afterFirmwareUpdated func()) {
 	d.mu.Lock()
 	inCall := d.callPeer != ""
 	d.mu.Unlock()
@@ -1365,7 +1365,7 @@ func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, f
 	}
 
 	slog.Info("auto-update: device is idle, checking for updates")
-	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus, afterFirmwareUpdated)
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, nil, afterFirmwareUpdated)
 }
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
@@ -2149,7 +2149,7 @@ func main() {
 	// without needing direct access to those locals.
 	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
 	cb.triggerAutoUpdate = func() {
-		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil, requeryFirmware)
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), requeryFirmware)
 	}
 	if cb.autoUpdateEnabled.Load() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
