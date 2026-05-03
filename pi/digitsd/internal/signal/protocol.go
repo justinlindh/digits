@@ -153,6 +153,12 @@ type Message struct {
 	FirmwareVersion string `json:"firmware_version,omitempty"`
 	FirmwareCommit  string `json:"firmware_commit,omitempty"`
 
+	// LocalAddr is the device's primary LAN address as the device sees
+	// itself, reported in device_info so the server can display it on the
+	// owner's /phones page. The path through CF or NPM strips the source
+	// IP, so the device is the authoritative source.
+	LocalAddr string `json:"local_addr,omitempty"`
+
 	// Update trigger fields (update_trigger messages)
 	TargetPiVersion string `json:"target_pi_version,omitempty"`
 	TargetFWVersion string `json:"target_fw_version,omitempty"`

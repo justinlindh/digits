@@ -1593,7 +1593,7 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "")
+	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", "")
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
@@ -2290,17 +2290,15 @@ func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
 	}
 }
 
-// runWSConnectAndCaptureAddr dials srv's /ws with the given header set,
-// sends a register message for the paired device, waits for hub registration,
-// and returns the RemoteAddr the hub stored for that connection.
-func runWSConnectAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signaling.Hub, hardwareID, number, token, xff string) string {
+// runDeviceInfoAndCaptureAddr dials srv's /ws, registers the paired device,
+// sends a device_info with the given local_addr, polls until the hub's
+// snapshot has settled to a non-zero or filtered value, then returns the
+// RemoteAddr the hub stored. localAddr "" sends an omitted local_addr so
+// older-firmware behavior (no field) can be tested.
+func runDeviceInfoAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signaling.Hub, hardwareID, number, token, localAddr string) string {
 	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
-	headers := http.Header{}
-	if xff != "" {
-		headers.Set("X-Forwarded-For", xff)
-	}
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
 		t.Fatalf("dial ws: %v", err)
 	}
@@ -2314,52 +2312,64 @@ func runWSConnectAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signali
 		t.Fatalf("write register: %v", err)
 	}
 	waitForRegister(t, hub, number)
-	info := hub.DeviceInfo(number)
-	if info == nil {
-		t.Fatal("hub.DeviceInfo returned nil after register")
+
+	if err := conn.WriteJSON(signaling.Message{
+		Type:            signaling.TypeDeviceInfo,
+		PiVersion:       "1.0.0",
+		FirmwareVersion: "0.1.0",
+		LocalAddr:       localAddr,
+	}); err != nil {
+		t.Fatalf("write device_info: %v", err)
 	}
-	return info.RemoteAddr
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		info := hub.DeviceInfo(number)
+		if info != nil && info.PiVersion == "1.0.0" {
+			return info.RemoteAddr
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for device_info to land in the hub")
+	return ""
 }
 
-func TestHandleWS_RemoteAddrFromXFFWhenPrivate(t *testing.T) {
+func TestDeviceInfo_StoresPrivateLocalAddr(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
 	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
-	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "192.168.1.7")
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "192.168.1.7")
 	if got != "192.168.1.7" {
 		t.Errorf("RemoteAddr = %q, want %q", got, "192.168.1.7")
 	}
 }
 
-func TestHandleWS_RemoteAddrEmptyWhenPublicXFF(t *testing.T) {
+func TestDeviceInfo_DropsPublicLocalAddr(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
 	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
-	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "8.8.8.8")
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "8.8.8.8")
 	if got != "" {
-		t.Errorf("RemoteAddr = %q, want empty for public XFF", got)
+		t.Errorf("RemoteAddr = %q, want empty for public local_addr", got)
 	}
 }
 
-func TestHandleWS_RemoteAddrFallsBackToRemoteAddr(t *testing.T) {
+func TestDeviceInfo_EmptyWhenLocalAddrOmitted(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
 	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
-	// httptest.Server listens on 127.0.0.1, which is in IsPrivateAddr's
-	// loopback range; with no XFF the resolved RemoteAddr should be
-	// "127.0.0.1".
-	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "")
-	if got != "127.0.0.1" {
-		t.Errorf("RemoteAddr = %q, want %q", got, "127.0.0.1")
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "")
+	if got != "" {
+		t.Errorf("RemoteAddr = %q, want empty when local_addr is omitted", got)
 	}
 }
 

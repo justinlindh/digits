@@ -127,6 +127,12 @@ type Message struct {
 	FirmwareVersion string `json:"firmware_version,omitempty"`
 	FirmwareCommit  string `json:"firmware_commit,omitempty"`
 
+	// LocalAddr is the device's primary LAN address as it sees itself,
+	// reported in device_info. The server filters non-private values
+	// before storing so a compromised client cannot push a public IP into
+	// the operator UI.
+	LocalAddr string `json:"local_addr,omitempty"`
+
 	// Update trigger fields (update_trigger messages)
 	TargetPiVersion string `json:"target_pi_version,omitempty"`
 	TargetFWVersion string `json:"target_fw_version,omitempty"`
