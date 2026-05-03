@@ -17,6 +17,18 @@
 {{end}}
 {{end}}
 
+{{/* htmx response wrappers: toggle partial + OOB swap for the navbar
+     indicator so both update in a single response. */}}
+{{define "dnd-response"}}
+{{template "dnd-toggle" .}}
+<span id="dnd-indicator" hx-swap-oob="true">{{template "dnd-indicator-content" .}}</span>
+{{end}}
+
+{{define "dnd-response-am"}}
+{{template "dnd-toggle-am" .}}
+<span id="dnd-indicator" hx-swap-oob="true">{{template "dnd-indicator-content" .}}</span>
+{{end}}
+
 {{/* DND toggle partial for the phones page header (answering-machine theme).
      Uses the AM dip-switch visual for consistency with settings. */}}
 {{define "dnd-toggle-am"}}

@@ -1,5 +1,27 @@
 {{/* Shared template partials parsed alongside every page set. */}}
 
+{{/* dnd-indicator-content renders the navbar DND chip/lamp appropriate for
+     the user's theme. Empty when DND is off. Used by layout wrappers and
+     htmx OOB swaps so a single define controls the indicator everywhere. */}}
+{{define "dnd-indicator-content"}}
+{{if .HouseholdDND}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+<a href="/phones" class="am-shell__dnd" title="Do Not Disturb is on" aria-label="Do Not Disturb is on">
+  <span class="am-lamp am-lamp--on-red am-shell__dnd-lamp" aria-hidden="true"></span>
+  <span class="am-led am-led--red am-shell__dnd-cap">DND</span>
+</a>
+{{else if and .User (eq .User.Theme "dialup")}}
+<a href="/phones" class="chip chip--err" title="Do Not Disturb is on" style="margin-left: 10px;">
+  <span class="chip__dot"></span>DND
+</a>
+{{else}}
+<a href="/phones" class="chip chip--err" title="Do Not Disturb is on">
+  <span class="chip__dot"></span>Do Not Disturb
+</a>
+{{end}}
+{{end}}
+{{end}}
+
 {{define "page-footer"}}
 {{if .Version}}
 <footer class="page__foot">
