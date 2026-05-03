@@ -1555,6 +1555,10 @@ func main() {
 			}
 			return exec.Command("sudo", "mount", "-o", "remount,"+mode, "/").Run()
 		},
+		Sync: func() error {
+			syscall.Sync()
+			return nil
+		},
 		RootfsWriteFile: func(data []byte, dest string, perm os.FileMode) error {
 			// Write to a temp file, then sudo cp + chmod to the rootfs destination.
 			// This matches the pattern used by the existing updater for binary replacement.
@@ -1609,7 +1613,7 @@ func main() {
 		} else {
 			slog.Info("swd render: installed config", "pcb_rev", pcbRev)
 		}
-		if err := extractor.Remount(false); err != nil {
+		if err := extractor.RemountReadOnly(); err != nil {
 			slog.Warn("swd render: remount ro failed", "err", err)
 		}
 	}

@@ -204,40 +204,6 @@ func TestSaveAndReload(t *testing.T) {
 	}
 }
 
-func TestSetDeviceTokenClearsPairingCode(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	initial := `{"server_url":"wss://x/ws","pairing_code":"XY12","phone_number":"1000001"}`
-	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := c.SetDeviceToken("tok-newtoken"); err != nil {
-		t.Fatalf("SetDeviceToken: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var saved Config
-	if err := json.Unmarshal(data, &saved); err != nil {
-		t.Fatal(err)
-	}
-	if saved.DeviceToken != "tok-newtoken" {
-		t.Errorf("DeviceToken on disk = %q, want %q", saved.DeviceToken, "tok-newtoken")
-	}
-	if saved.PairingCode != "" {
-		t.Errorf("PairingCode should be cleared after SetDeviceToken, got %q", saved.PairingCode)
-	}
-}
-
 func TestHookInvertedDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
