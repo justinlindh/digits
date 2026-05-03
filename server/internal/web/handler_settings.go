@@ -113,7 +113,7 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 	if isHTMX(r) {
 		households[0].DoNotDisturb = enabled
 		data := h.buildLinesData(r, households[0], "")
-		renderWith(w, h.tmplPhones, partialFor(r, "dnd-toggle", "dnd-toggle-am"), data)
+		renderWith(w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)

@@ -19,11 +19,7 @@
     <svg class="rail__brand-icon" viewBox="0 0 36 48" fill="currentColor" aria-hidden="true">{{template "keypad-icon"}}</svg>
     <span class="rail__mark">Digits</span>
     {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
-    {{if .HouseholdDND}}
-    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on">
-      <span class="chip__dot"></span>Do Not Disturb
-    </a>
-    {{end}}
+    <span id="dnd-indicator">{{template "dnd-indicator-content" .}}</span>
   </div>
 
   <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>
