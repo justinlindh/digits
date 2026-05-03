@@ -112,7 +112,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
 			}
-			if id, ok := h.tracker.CallIDFor(ctx, callerRow.Line.Number); ok {
+			if id, ok := h.tracker.CallIDFor(callerRow.Line.Number); ok {
 				callerRow.OnCallID = id
 			}
 		}
@@ -124,7 +124,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
 			}
-			if id, ok := h.tracker.CallIDFor(ctx, calleeRow.Line.Number); ok {
+			if id, ok := h.tracker.CallIDFor(calleeRow.Line.Number); ok {
 				calleeRow.OnCallID = id
 			}
 		}

@@ -237,7 +237,7 @@ func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	originatingCallID := h.tracker.CallIDForPair(ctx, body.Host, body.Added[0])
+	originatingCallID := h.tracker.CallIDForPair(body.Host, body.Added[0])
 	if originatingCallID == 0 {
 		http.Error(w, "originating call not found", http.StatusInternalServerError)
 		return
