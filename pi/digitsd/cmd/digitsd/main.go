@@ -348,6 +348,72 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
+	// Fast path: use pre-created PeerConnection from ring phase.
+	if d.preAnswer.peerMgr != nil {
+		t0 := time.Now()
+		caller := d.preAnswer.caller
+		pm := d.preAnswer.peerMgr
+		answerSDP := d.preAnswer.answerSDP
+		candidates := d.preAnswer.candidates
+		// webrtcCh already registered in mixer during prepareAnswer
+
+		// Promote into active call state.
+		d.peerMgr = pm
+		d.callPeer = caller
+		d.isCaller = false
+		d.isRestartingICE = false
+		d.preAnswer.peerMgr = nil
+		d.preAnswer.answerSDP = ""
+		d.preAnswer.webrtcCh = nil
+		d.preAnswer.candidates = nil
+		d.preAnswer.caller = ""
+		d.pendingOffer = ""
+		d.pendingCaller = ""
+
+		// Send answer SDP to caller.
+		sendSignal(d.sig, &sigclient.Message{
+			Type: sigclient.TypeAnswer,
+			To:   caller,
+			SDP:  answerSDP,
+		})
+
+		// Send all gathered ICE candidates to caller.
+		for _, candidate := range candidates {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		// Start audio pipeline.
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline (answer fast-path) start failed", "error", err)
+			return
+		}
+
+		// Spawn encode loop.
+		go func() {
+			defer recoverGoroutine("answer-encode-loop")
+			for frame := range d.pipeline.OutFrames() {
+				d.mu.Lock()
+				pm := d.peerMgr
+				mesh := d.mesh
+				d.mu.Unlock()
+				if pm != nil {
+					pm.SendPCMFrame(frame)
+				}
+				if mesh != nil {
+					mesh.SendPCMFrameToAll(frame)
+				}
+			}
+		}()
+
+		slog.Info("answered call (fast path)", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+		return
+	}
+
 	// Stop tones — mixer continues writing silence (DAC keepalive)
 	d.mixer.StopTone()
 
