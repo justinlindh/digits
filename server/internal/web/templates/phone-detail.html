@@ -177,6 +177,12 @@
           </div>
 
           {{if .Online}}
+          <div id="auto-update-section">
+            {{template "auto-update-section" .}}
+          </div>
+          {{end}}
+
+          {{if .Online}}
           <!-- Pi Software update -->
           <details class="disclosure" style="margin-bottom: 10px;">
             <summary>Update Pi software</summary>
@@ -548,6 +554,26 @@
 </div>
 {{end}}
 
+{{define "auto-update-section"}}
+<div id="auto-update-section">
+  <form hx-post="/phones/{{.Line.Number}}/auto-update"
+        hx-target="#auto-update-section"
+        hx-swap="outerHTML"
+        class="stack-sm">
+    <label class="checkbox-row">
+      <input type="checkbox" name="auto_update" value="on"
+             {{if .Line.Settings.AutoUpdate}}checked{{end}}
+             onchange="this.form.requestSubmit()">
+      <span class="checkbox-row__label">Automatic updates</span>
+    </label>
+    <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
+      Install new software and firmware automatically when this
+      phone is idle. Updates wait until any active call ends.
+    </p>
+  </form>
+</div>
+{{end}}
+
 {{define "am-voice-style-section"}}
 <div id="voice-style-section">
   <form hx-post="/phones/{{.Line.Number}}/voice-style"
@@ -599,6 +625,34 @@
       <div class="am-label am-settings__toggle-title">Silent mode</div>
       <p class="am-hint am-settings__toggle-desc">
         Incoming calls won't ring. The light still flashes and you can still answer.
+      </p>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "am-auto-update-section"}}
+<div id="auto-update-section">
+  <form hx-post="/phones/{{.Line.Number}}/auto-update"
+        hx-target="#auto-update-section"
+        hx-swap="outerHTML"
+        class="am-settings__toggle-row">
+    <label class="am-settings__dip" aria-label="Automatic updates">
+      <input type="checkbox" name="auto_update" value="on"
+             {{if .Line.Settings.AutoUpdate}}checked{{end}}
+             onchange="this.form.requestSubmit()"
+             class="am-settings__dip-input">
+      <span class="am-settings__dip-body" aria-hidden="true">
+        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+        <span class="am-settings__dip-lever"></span>
+        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+      </span>
+    </label>
+    <div class="am-settings__toggle-info">
+      <div class="am-label am-settings__toggle-title">Automatic updates</div>
+      <p class="am-hint am-settings__toggle-desc">
+        Install new software and firmware automatically when this
+        phone is idle. Updates wait until any active call ends.
       </p>
     </div>
   </form>
@@ -926,6 +980,9 @@
       </button>
     </form>
   {{else}}
+    <div id="auto-update-section" style="margin-bottom: 12px;">
+      {{template "am-auto-update-section" .}}
+    </div>
     <div class="am-update__components">
 
       <div class="am-update__component">
