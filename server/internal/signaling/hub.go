@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
 // ErrNotConnected is returned by SendTo and SendToHardware when the target
@@ -23,9 +25,11 @@ type Conn struct {
 	Send       chan []byte
 	LastSeen   time.Time
 
-	// RemoteAddr is the resolved LAN address of the connected device, or
-	// "" when the resolved client address is not in a private range. The
-	// WS handler assigns it when the Conn is created; see handler_ws.go.
+	// RemoteAddr is the device's primary LAN address as it sees itself,
+	// reported by the device in the device_info message after register.
+	// Hub.UpdateDeviceInfo assigns it; non-private values are filtered to
+	// "" before storage. Empty until device_info arrives, or when the
+	// device reports a non-private address.
 	RemoteAddr string
 
 	// Device info (reported on connect via device_info message)
@@ -227,8 +231,15 @@ func (h *Hub) ClearUpdateStatus(number string) {
 	delete(h.updateStatus, number)
 }
 
-// UpdateDeviceInfo sets version info for a connected phone under the write lock.
-func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) bool {
+// UpdateDeviceInfo sets version info and the device-reported LAN address for
+// a connected phone under the write lock. localAddr is filtered through
+// httputil.IsPrivateAddr; non-private values (or unparseable input) are
+// stored as "" so a compromised client cannot push a public IP into the
+// owner UI.
+func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAddr string) bool {
+	if !httputil.IsPrivateAddr(localAddr) {
+		localAddr = ""
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
@@ -239,6 +250,7 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) 
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
+	conn.RemoteAddr = localAddr
 	return true
 }
 
