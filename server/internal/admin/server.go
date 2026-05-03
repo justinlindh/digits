@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/httputil"
+	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	db        *AdminDB
 	auth      *AuthStore
 	stats     *StatsClient
+	metrics   *metrics.Registry
 	tmplLogin *template.Template
 	tmplDash  *template.Template
 	tmplUsers *template.Template
@@ -47,6 +49,7 @@ func NewServer(cfg *Config, db *AdminDB, auth *AuthStore) *Server {
 		db:        db,
 		auth:      auth,
 		stats:     NewStatsClient(cfg.StatsURL, cfg.StatsSecret),
+		metrics:   metrics.New(metrics.ServiceAdmind, version.Version, version.Commit),
 		tmplLogin: parse("templates/layout.html", "templates/login.html"),
 		tmplDash:  parse("templates/layout.html", "templates/dashboard.html"),
 		tmplUsers: parse("templates/layout.html", "templates/users.html"),
@@ -55,9 +58,16 @@ func NewServer(cfg *Config, db *AdminDB, auth *AuthStore) *Server {
 	}
 	s.httpSrv = &http.Server{
 		Addr:    cfg.Addr,
-		Handler: s.router(),
+		Handler: s.metrics.Middleware(s.router()),
 	}
 	return s
+}
+
+// Metrics returns the registry so cmd/admind can expose /metrics on a
+// separate listener. Avoids leaking an internal http.Handler through Server
+// for the same purpose.
+func (s *Server) Metrics() *metrics.Registry {
+	return s.metrics
 }
 
 func (s *Server) ListenAndServe() error {

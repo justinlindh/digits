@@ -1044,3 +1044,74 @@ func TestHandleLinkHealth_2WayPath_UnchangedBehavior(t *testing.T) {
 		t.Fatalf("sample LossPct not preserved: %+v", rec.sample)
 	}
 }
+
+// fakeErrorObserver records every category passed to ObserveSignalingError-
+// Category. Tests assert against the slice rather than a counter so the
+// order of observations is also verifiable; ordering matters when we want
+// to confirm the relay's first error wins instead of doubling up.
+type fakeErrorObserver struct {
+	seen []string
+}
+
+func (f *fakeErrorObserver) ObserveSignalingErrorCategory(category string) {
+	f.seen = append(f.seen, category)
+}
+
+func TestRelayObservesPeerUnreachableOnOfflineCall(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	relay := NewRelay(hub, nil, nil, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "peer_unreachable" {
+		t.Fatalf("expected peer_unreachable, got %v", obs.seen)
+	}
+}
+
+func TestRelayObservesAuthFailedWhenAuthorizerDenies(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	authorizer := &mockCallAuthorizer{allowed: map[[2]string]bool{}}
+	relay := NewRelay(hub, newMockTracker(), authorizer, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	hub.Register("3140002", conn2)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "auth_failed" {
+		t.Fatalf("expected auth_failed, got %v", obs.seen)
+	}
+}
+
+func TestRelayObservesInvalidMessageOnICERestartWithoutCall(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	relay := NewRelay(hub, newMockTracker(), nil, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeICERestart, To: "3140002"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "invalid_message" {
+		t.Fatalf("expected invalid_message, got %v", obs.seen)
+	}
+}
+
+func TestRelayNilObserverIsSafe(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil, nil)
+	// Errors is nil; the relay must not panic when it tries to observe.
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
+	// No assertion: the test passes if it didn't panic.
+}

@@ -139,6 +139,19 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `ADMIN_STATS_URL`      | Stats API URL (points to signald)          |
 | `ADMIN_STATS_SECRET`   | Must match `ADMIN_SECRET`                  |
 
+### Metrics
+
+| Variable               | Description                                |
+|------------------------|--------------------------------------------|
+| `SIGNALD_METRICS_ADDR` | Prometheus metrics listener (default `:9091`, empty disables) |
+| `ADMIN_METRICS_ADDR`   | Prometheus metrics listener for admind (default `:9092`, empty disables) |
+
+The `/metrics` endpoint runs on a separate listener from public traffic.
+The metric set is deliberately privacy-respecting (aggregate counters,
+no per-user or per-call data, no caller/callee identifiers). See
+[`docs/metrics.md`](docs/metrics.md) for the full list and the rules
+around what is and is not collected.
+
 ### Development
 
 | Variable     | Description                                      |

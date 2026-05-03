@@ -40,6 +40,15 @@ type HealthRecorder interface {
 	RecordEdge(confID uuid.UUID, from, peer string, sample calls.Sample)
 }
 
+// SignalingErrorObserver counts signaling errors by category. Implemented
+// by *metrics.Registry; the interface lives here so internal/signaling does
+// not import internal/metrics directly. Categories are defined as untyped
+// strings on this surface so the relay package stays independent; the
+// metrics package validates them by exposing only a fixed set of constants.
+type SignalingErrorObserver interface {
+	ObserveSignalingErrorCategory(category string)
+}
+
 type Relay struct {
 	Hub            *Hub
 	Tracker        CallTracker
@@ -48,6 +57,20 @@ type Relay struct {
 	CallAuthorizer CallAuthorizer
 	LineStore      LineStore
 	HealthStore    HealthRecorder
+	// Errors is optional. When set, signaling-error counters are emitted
+	// for the cases the relay can categorize cleanly (auth failed, peer
+	// unreachable, etc). nil disables instrumentation; production wires it
+	// in cmd/signald/main.go.
+	Errors SignalingErrorObserver
+}
+
+// observeError is a nil-safe pass-through to the SignalingErrorObserver.
+// Centralizing it here means a missing observer never panics, and there is
+// only one place to look when reviewing what categories the relay emits.
+func (r *Relay) observeError(category string) {
+	if r.Errors != nil {
+		r.Errors.ObserveSignalingErrorCategory(category)
+	}
 }
 
 func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
@@ -114,6 +137,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 	target := r.Hub.Get(msg.To)
 	if target == nil {
+		// peer_unreachable: caller asked for a phone that isn't connected.
+		// Counted as an aggregate; no caller, callee, or call ID is recorded.
+		r.observeError("peer_unreachable")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
 	}
@@ -125,6 +151,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			if err != nil {
 				slog.Error("call authorization failed", "from", from, "to", msg.To, "err", err)
 			}
+			r.observeError("auth_failed")
 			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
 			return
 		}
@@ -145,6 +172,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 		}
 		if _, err := r.Tracker.OnCallInitiated(ctx, from, msg.To); err != nil {
 			slog.Error("failed to track call initiation", "err", err)
+			r.observeError("call_setup_failed")
 		}
 	}
 
@@ -157,6 +185,8 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
+		// invalid_message: ICE restart received outside a call.
+		r.observeError("invalid_message")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
@@ -317,10 +347,12 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string) {
 func (r *Relay) forward(msg *Message) {
 	if msg.To == "" {
 		slog.Warn("no destination for message", "type", msg.Type, "from", msg.From)
+		r.observeError("invalid_message")
 		return
 	}
 	if err := r.Hub.SendTo(msg.To, msg); err != nil {
 		slog.Error("forward failed", "to", msg.To, "err", err)
+		r.observeError("relay_delivery")
 	}
 }
 

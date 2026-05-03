@@ -3,7 +3,8 @@ package admin
 import "github.com/justinlindh/digits/server/internal/config"
 
 type Config struct {
-	Addr          string // Listen address
+	Addr          string // Listen address (admin web UI)
+	MetricsAddr   string // Prometheus metrics listen address (separate listener; empty disables)
 	AdminDBURL    string // Admin database URL
 	StatsURL      string // digits-server internal stats URL
 	StatsSecret   string // Shared secret for stats API
@@ -13,9 +14,11 @@ type Config struct {
 
 func LoadConfig() *Config {
 	c := &Config{
-		Addr: ":9090",
+		Addr:        ":9090",
+		MetricsAddr: ":9092",
 	}
 	config.StringEnv("ADMIN_ADDR", &c.Addr)
+	config.StringEnv("ADMIN_METRICS_ADDR", &c.MetricsAddr)
 	config.StringEnv("ADMIN_DATABASE_URL", &c.AdminDBURL)
 	config.StringEnv("ADMIN_STATS_URL", &c.StatsURL)
 	config.StringEnv("ADMIN_STATS_SECRET", &c.StatsSecret)
