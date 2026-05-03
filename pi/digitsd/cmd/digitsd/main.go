@@ -2895,6 +2895,7 @@ func main() {
 						slog.Info("set pendingCaller from SDP", "from", msg.From)
 					}
 					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
+					cb.prepareAnswer()
 				case cb.isRestartingICE:
 					// Mid-call: the only legitimate reason to receive an SDP
 					// with an active peerMgr is the restart-answer we asked
