@@ -49,11 +49,19 @@ For each target phone:
 # 1. Copy binary to /tmp (writable without remount)
 sshpass -p <password> scp <local-binary> <user>@<ip>:/tmp/<binary-name>
 
-# 2. Remount rw, install, remount ro, restart (single SSH session)
-sshpass -p <password> ssh <user>@<ip> 'sudo mount -o remount,rw / && sudo mv /tmp/<binary-name> <install-destination> && sudo chmod 755 <install-destination> && sudo mount -o remount,ro / && sudo systemctl restart <service>'
+# 2. Remount rw, install binary, restart service, then remount ro
+#    Restart BEFORE remount ro -- the running service holds the old binary's
+#    inode via mmap and the kernel rejects remount,ro until that inode is
+#    released. Restarting the service drops the old mmap; remount ro then
+#    succeeds. digitsd's Extract() also re-attempts remount ro on startup.
+sshpass -p <password> ssh <user>@<ip> 'sudo mount -o remount,rw / && sudo mv /tmp/<binary-name> <install-destination> && sudo chmod 755 <install-destination> && sudo systemctl restart <service> && sleep 2 && sudo mount -o remount,ro /'
 ```
 
-If no service restart is needed, omit the `systemctl restart` but **always remount back to ro**.
+If no service restart is needed (e.g. digits-recovery, digits-setup), just remount ro directly after the install:
+
+```bash
+sshpass -p <password> ssh <user>@<ip> 'sudo mount -o remount,rw / && sudo mv /tmp/<binary-name> <install-destination> && sudo chmod 755 <install-destination> && sudo mount -o remount,ro /'
+```
 
 For diagnostic tools going to `/tmp/`, skip the remount cycle entirely -- just scp and run.
 
@@ -69,19 +77,13 @@ sshpass -p <password> ssh <user>@<ip> 'sudo systemctl status <service>'
 sshpass -p <password> ssh <user>@<ip> 'mount | grep "on / "'
 ```
 
-The `mount` output must show `ro` -- if it shows `rw`, remount immediately:
+The `mount` output must show `ro` -- if it shows `rw`, the old service process likely still holds the old binary open. Restart the service and retry:
 
 ```bash
-sshpass -p <password> ssh <user>@<ip> 'sudo mount -o remount,ro /'
+sshpass -p <password> ssh <user>@<ip> 'sudo systemctl restart <service> && sleep 2 && sudo sync && sudo mount -o remount,ro /'
 ```
 
-If `remount,ro` returns `mount: /: mount point is busy.` even though `lsof` shows no writeable handles, flush systemd-journald first and retry:
-
-```bash
-sshpass -p <password> ssh <user>@<ip> 'sudo journalctl --flush --sync && sync && sudo mount -o remount,ro /'
-```
-
-journald keeps `/var/log/journal/.../*.journal` open `O_RDWR` and intermittently has dirty in-memory state that the kernel counts as a write reference. `--flush --sync` collapses it back to a clean state and the remount succeeds.
+The kernel rejects `remount,ro` on ext4 when any process has a deleted inode mmap'd on that filesystem. Replacing a running binary creates a deleted inode (link count 0) held by the running process. Once the process restarts and the old mmap is released, the remount succeeds.
 
 ## Multi-Phone Deploy
 
