@@ -6,6 +6,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
 type Database struct {
@@ -13,7 +15,11 @@ type Database struct {
 }
 
 func Open(databaseURL string) (*Database, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	// tracing.OpenSQLDB wraps lib/pq through otelsql so query spans flow
+	// into the active HTTP request span. otelsql's DisableQuery option is
+	// set there to prevent SQL text from reaching span attributes; see
+	// internal/tracing/db.go for the privacy rationale.
+	db, err := tracing.OpenSQLDB("postgres", databaseURL, "digits")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}

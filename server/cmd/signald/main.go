@@ -27,7 +27,9 @@ import (
 	"github.com/justinlindh/digits/server/internal/logging"
 	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/pairing"
+	"github.com/justinlindh/digits/server/internal/profiling"
 	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/tracing"
 	"github.com/justinlindh/digits/server/internal/turn"
 	"github.com/justinlindh/digits/server/internal/updates"
 	"github.com/justinlindh/digits/server/internal/version"
@@ -51,6 +53,44 @@ func run(ctx context.Context) error {
 	cfg := config.Load()
 	if cfg.DatabaseURL == "" {
 		return errors.New("DATABASE_URL must be set")
+	}
+
+	// OpenTelemetry tracing. Endpoint is read from
+	// OTEL_EXPORTER_OTLP_ENDPOINT; empty disables the exporter while
+	// leaving in-process propagation on, so a future enable does not
+	// require a code change. The shutdown closure flushes buffered spans
+	// on a clean SIGTERM; deferred so a panic during run() still flushes.
+	traceCfg := tracing.NewConfig(string(metrics.ServiceSignald), version.Version, version.Commit)
+	traceShutdown, err := tracing.Init(ctx, traceCfg)
+	if err != nil {
+		return fmt.Errorf("init tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := traceShutdown(shutdownCtx); err != nil {
+			slog.Warn("tracing shutdown", "err", err)
+		}
+	}()
+	if traceCfg.Endpoint != "" {
+		slog.Info("OpenTelemetry tracing enabled", "endpoint", traceCfg.Endpoint, "protocol", traceCfg.Protocol)
+	}
+
+	// Pyroscope continuous profiling. Server address is read from
+	// PYROSCOPE_SERVER_ADDRESS; empty disables the profiler. Profiling
+	// labels are a closed set; see internal/profiling for the rationale.
+	profCfg := profiling.NewConfig(string(metrics.ServiceSignald))
+	profStop, err := profiling.Init(profCfg, version.Version)
+	if err != nil {
+		return fmt.Errorf("init profiling: %w", err)
+	}
+	defer func() {
+		if err := profStop(); err != nil {
+			slog.Warn("profiling shutdown", "err", err)
+		}
+	}()
+	if profCfg.ServerAddress != "" {
+		slog.Info("Pyroscope profiling enabled", "endpoint", profCfg.ServerAddress)
 	}
 
 	database, err := db.Open(cfg.DatabaseURL)

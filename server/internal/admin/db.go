@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	_ "github.com/lib/pq"
+
+	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
 type AdminDB struct {
@@ -13,7 +15,10 @@ type AdminDB struct {
 }
 
 func OpenAdmin(ctx context.Context, databaseURL string) (*AdminDB, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	// tracing.OpenSQLDB wraps lib/pq through otelsql with DisableQuery
+	// set, so DB span attributes never echo SQL text or bound parameters.
+	// See internal/tracing/db.go for the privacy rationale.
+	db, err := tracing.OpenSQLDB("postgres", databaseURL, "digits_admin")
 	if err != nil {
 		return nil, fmt.Errorf("open admin db: %w", err)
 	}
