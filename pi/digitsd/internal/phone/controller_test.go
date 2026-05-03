@@ -1,6 +1,7 @@
 package phone
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ type mockCallbacks struct {
 	meshPeers          map[string]bool   // phone -> initiator flag
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
+	initiateCallErr    error             // injected error for InitiateCall
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -52,10 +54,11 @@ func (m *mockCallbacks) SetFlashEnabled(enabled bool) {
 	defer m.mu.Unlock()
 	m.flashEnabledLog = append(m.flashEnabledLog, enabled)
 }
-func (m *mockCallbacks) InitiateCall(number string) {
+func (m *mockCallbacks) InitiateCall(number string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, number)
+	return m.initiateCallErr
 }
 func (m *mockCallbacks) AnswerCall() {
 	m.mu.Lock()
@@ -522,6 +525,54 @@ func TestController_DialBlockedContact(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected RINGBACK tone for blocked number, got tones: %v", cb.Tones())
+	}
+}
+
+func TestController_DialServerUnreachable(t *testing.T) {
+	cb := &mockCallbacks{initiateCallErr: fmt.Errorf("signal: not connected")}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("DIAL:5551234")
+
+	if c.State() != StateCALLING {
+		t.Fatalf("expected CALLING, got %s", c.State())
+	}
+
+	// InitiateCall was attempted (after 800ms async delay)
+	waitForCall(cb)
+	if !cb.calledNumber("5551234") {
+		t.Fatalf("expected InitiateCall(5551234), got %v", cb.Calls())
+	}
+
+	// After InitiateCall fails, playRejectSequence runs async (3s wait
+	// + intercept + busy). Verify by waiting and checking tones.
+	// The sequence takes ~3.5s; wait a bit longer.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		found := false
+		for _, tone := range cb.Tones() {
+			if tone == ToneIntercept {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	tones := cb.Tones()
+	hasIntercept := false
+	for _, tone := range tones {
+		if tone == ToneIntercept {
+			hasIntercept = true
+		}
+	}
+	if !hasIntercept {
+		t.Errorf("expected INTERCEPT tone after server-unreachable call, got tones: %v", tones)
 	}
 }
 
@@ -1659,5 +1710,77 @@ func TestController_SetSilentModeIdleIsSideEffectFree(t *testing.T) {
 
 	if len(cb.Rings()) != 0 || len(cb.LEDs()) != 0 {
 		t.Errorf("expected no callbacks while idle, got rings=%v leds=%v", cb.Rings(), cb.LEDs())
+	}
+}
+
+// TestController_Reset verifies Reset() drops back to IDLE with no digits.
+func TestController_Reset(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	if c.State() != StateDIALING {
+		t.Fatalf("setup: expected DIALING, got %s", c.State())
+	}
+
+	c.Reset()
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE after Reset, got %s", c.State())
+	}
+	if c.digits != "" {
+		t.Errorf("expected empty digits after Reset, got %q", c.digits)
+	}
+}
+
+// TestController_ResetToDialtone_NextKeyStopsTone is the regression test for
+// the volume-code dialtone bug: after entering *#*N, the daemon callback
+// restarts the dial-tone loop, and the FSM was being forced to IDLE which
+// silently ignored every subsequent key press, leaving the resumed dial tone
+// playing forever.
+//
+// Now ResetToDialtone() puts the FSM back in DIALTONE so the next key press
+// transitions to DIALING and emits SendTone(STOP) just like the initial
+// off-hook sequence.
+func TestController_ResetToDialtone_NextKeyStopsTone(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := NewController(cb, "")
+
+	// Simulate user picking up and typing partial code; controller is now in
+	// DIALING with some buffered digits.
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:#")
+	c.HandleEvent("KEY:*")
+	if c.State() != StateDIALING {
+		t.Fatalf("setup: expected DIALING, got %s", c.State())
+	}
+
+	// Volume code matched in main.go: callback restarted dial tone loop, and
+	// the event loop calls ResetToDialtone() instead of Reset().
+	c.ResetToDialtone()
+	if c.State() != StateDIALTONE {
+		t.Fatalf("expected DIALTONE after ResetToDialtone, got %s", c.State())
+	}
+	if c.digits != "" {
+		t.Errorf("expected empty digits after ResetToDialtone, got %q", c.digits)
+	}
+
+	// Snapshot tone count, then press a key. The FSM must transition back to
+	// DIALING and emit STOP so the resumed dial-tone loop is silenced.
+	tonesBefore := len(cb.Tones())
+	c.HandleEvent("KEY:7")
+	if c.State() != StateDIALING {
+		t.Fatalf("expected DIALING after key press in DIALTONE, got %s", c.State())
+	}
+	tones := cb.Tones()
+	if len(tones) <= tonesBefore {
+		t.Fatal("expected SendTone(STOP) on first key after ResetToDialtone")
+	}
+	if last := tones[len(tones)-1]; last != ToneStop {
+		t.Errorf("expected last tone to be STOP, got %q", last)
+	}
+	if c.digits != "7" {
+		t.Errorf("expected digits=%q after key, got %q", "7", c.digits)
 	}
 }

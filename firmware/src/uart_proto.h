@@ -6,8 +6,6 @@
 #include "hardware/uart.h"
 
 #define PROTO_UART_ID uart0
-#define PROTO_UART_TX_PIN 0  // GP0
-#define PROTO_UART_RX_PIN 1  // GP1
 #define PROTO_UART_BAUD 115200
 #define PROTO_MAX_LINE 128
 

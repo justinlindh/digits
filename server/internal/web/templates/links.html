@@ -1,6 +1,9 @@
 {{define "title"}}Connected families{{end}}
 
 {{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+  {{template "links-am" .}}
+{{else}}
 <div class="page" style="max-width: 900px;">
 
   <header class="page__head">
@@ -192,6 +195,202 @@
   {{end}}
 
   {{template "page-footer" .}}
+
+</div>
+{{end}}
+{{end}}
+
+{{define "links-am"}}
+<div class="am-links">
+
+  {{if .Error}}<div class="banner banner--err">{{.Error}}</div>{{end}}
+  {{if .Accepted}}<div class="banner banner--ok">Family connected successfully.</div>{{end}}
+  {{if .Conflicts}}<div class="banner banner--warn">Number conflict: line numbers <strong>{{.Conflicts}}</strong> exist in both households. One family will need to change these numbers under Lines before calls can be placed.</div>{{end}}
+  {{if .Revoked}}<div class="banner banner--warn">Family disconnected.</div>{{end}}
+  {{if .Canceled}}<div class="banner banner--warn">Invite canceled.</div>{{end}}
+
+  <div class="am-plate am-page-header">
+    <div class="am-page-header__info">
+      <span class="am-label">Station directory</span>
+      <span class="am-title">{{len .LinkedFamilies}} household{{if ne (len .LinkedFamilies) 1}}s{{end}} connected</span>
+    </div>
+    <div class="am-page-header__spacer"></div>
+    <div class="am-well am-page-header__well">
+      <div class="am-led am-page-header__led">{{printf "%02d" (len .LinkedFamilies)}}</div>
+      <div class="am-led am-led--dim am-page-header__cap">Connected</div>
+    </div>
+  </div>
+
+  <div class="am-links__pair">
+
+    <div class="am-plate am-labelmaker">
+      <div class="am-plate__label">Make invite</div>
+      <p class="am-hint am-labelmaker__hint">Print a label to share with another family.</p>
+
+      {{if .CreatedCode}}
+      <div class="am-tape-label" role="note" aria-label="Invite label">
+        <div class="am-tape-label__stripe">Family code</div>
+        <div class="am-tape-label__code">{{.CreatedCode}}</div>
+        <div class="am-tape-label__note">Share this code. It expires when used.</div>
+      </div>
+      {{end}}
+
+      <form method="POST" action="/links/invite" class="am-labelmaker__form">
+        <button type="submit" class="am-tab am-labelmaker__button">{{if .CreatedCode}}Print another{{else}}Print invite{{end}}</button>
+      </form>
+    </div>
+
+    <div class="am-plate am-accept">
+      <div class="am-plate__label">Accept invite</div>
+      <p class="am-hint am-accept__hint">Enter a code shared by another family.</p>
+
+      <form method="POST" action="/links/accept" class="am-accept__form">
+        <input type="text" name="code" placeholder="ENTER CODE" required
+               class="am-accept__input" aria-label="Invite code"
+               autocomplete="off" maxlength="8">
+        <button type="submit" class="am-key am-accept__submit">
+          <span class="am-key__symbol">&#x25B6;</span>
+          <span class="am-key__label">Accept</span>
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  {{if .LinkedFamilies}}
+  <div class="am-plate am-hub" aria-label="Connected families">
+    <div class="am-plate__label">Party line</div>
+
+    <div class="am-hub__decks">
+      {{range .LinkedFamilies}}
+      <div class="am-hub__spoke">
+        <div class="am-hub__deck" aria-hidden="true">
+          <span class="am-hub__deck-led am-lamp am-lamp--on-green"></span>
+          <div class="am-tape am-tape--mini am-tape--idle">
+            <div class="am-tape__reel"></div>
+            <div class="am-tape__tape"></div>
+            <div class="am-tape__reel"></div>
+          </div>
+          <div class="am-hub__deck-grille">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <svg class="am-hub__cord am-hub__cord--spoke" viewBox="0 0 14 28" aria-hidden="true">
+          <path d="M 7 0 q 3.5 3 0 6 q -3.5 3 0 6 q 3.5 3 0 6 q -3.5 3 0 6 L 7 28"
+                stroke="#3a2016" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div class="am-hub__deck-name">{{.Name}}</div>
+        {{if .AcceptedAt}}<div class="am-hub__deck-since">Since {{.AcceptedAt.Format "Jan 2, 2006"}}</div>{{end}}
+      </div>
+      {{end}}
+    </div>
+
+    <div class="am-hub__rail">
+      <span class="am-hub__rail-cap"></span>
+      <span class="am-hub__rail-trunk-label">Trunk</span>
+      <div class="am-hub__rail-jacks" aria-hidden="true">
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c0"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c1"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c2"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c3"></span></span>
+        <span class="am-jack__socket am-jack__socket--mini"><span class="am-jack__plug am-jack__plug--c4"></span></span>
+      </div>
+      <span class="am-hub__rail-cap"></span>
+    </div>
+
+    <svg class="am-hub__cord am-hub__cord--center" viewBox="0 0 24 36" aria-hidden="true">
+      <path d="M 12 0 q 5 4 0 8 q -5 4 0 8 q 5 4 0 8 q -5 4 0 8 L 12 36"
+            stroke="#3a2016" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+    </svg>
+
+    <div class="am-hub__center">
+      <div class="am-hub__center-deck" aria-hidden="true">
+        <div class="am-hub__center-head">
+          <span class="am-unit__tag">Primary</span>
+          <span class="am-hub__center-rec">
+            <span class="am-lamp am-lamp--on-amber"></span>
+            <span class="am-hub__center-rec-cap">On air</span>
+          </span>
+        </div>
+        <div class="am-tape am-hub__center-tape">
+          <div class="am-tape__reel"></div>
+          <div class="am-tape__tape"></div>
+          <div class="am-tape__reel"></div>
+        </div>
+        <div class="am-hub__center-foot">
+          <span class="am-hub__center-led-well">
+            <span class="am-led am-hub__center-count">{{printf "%02d" (len .LinkedFamilies)}}</span>
+            <span class="am-led am-led--dim am-hub__center-cap">Trunks</span>
+          </span>
+          <div class="am-hub__center-keys">
+            <span class="am-key am-key--mini">&#x25B6;</span>
+            <span class="am-key am-key--mini am-key--red">&#x25CF;</span>
+          </div>
+        </div>
+      </div>
+      <div class="am-hub__center-name">{{if $.HouseholdName}}{{$.HouseholdName}}{{else}}Your household{{end}}</div>
+      <div class="am-hub__center-sub">You</div>
+    </div>
+  </div>
+  {{end}}
+
+  <div class="am-plate am-roster">
+    <div class="am-roster__head"><span class="am-label">Stations</span></div>
+    {{if .LinkedFamilies}}
+    {{range $i, $f := .LinkedFamilies}}
+    <div class="am-roster__row am-directory__row" id="family-{{$f.ID}}">
+      <span class="am-roster__num am-directory__num">{{printf "%02d" (inc $i)}}</span>
+      <span class="am-lamp am-lamp--on-green am-directory__lamp"></span>
+      <div class="am-roster__body">
+        <div class="am-roster__name am-directory__name">{{$f.Name}}</div>
+        <div class="am-roster__meta">
+          {{if $f.AcceptedAt}}Since {{$f.AcceptedAt.Format "Jan 2, 2006"}} &middot; {{end}}{{len $f.Lines}} line{{if ne (len $f.Lines) 1}}s{{end}}
+        </div>
+        {{if $f.Lines}}
+        <div class="am-directory__lines">
+          {{range $f.Lines}}
+          <span class="am-directory__line">
+            <span class="am-directory__line-name">{{.Name}}</span>
+            <span class="am-directory__line-num">{{fmtPhone .Number}}</span>
+          </span>
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+      <div class="am-roster__actions">
+        <button type="button"
+          data-confirm
+          data-confirm-action="/links/{{$f.ID}}/revoke"
+          data-confirm-title="Disconnect from {{$f.Name}}?"
+          data-confirm-body="Calls between families will no longer be possible. You can reconnect later with a new invite."
+          data-confirm-submit="Disconnect"
+          class="am-tab">Disconnect</button>
+      </div>
+    </div>
+    {{end}}
+    {{else}}
+    <div class="am-directory__empty am-hint">No families connected. Print an invite label and share the code.</div>
+    {{end}}
+  </div>
+
+  {{if .PendingInvites}}
+  <div class="am-plate am-roster">
+    <div class="am-roster__head"><span class="am-label">Outbox</span></div>
+    {{range .PendingInvites}}
+    <div class="am-roster__row am-outbox__row">
+      <span class="am-outbox__code">{{.InviteCode}}</span>
+      <span class="am-outbox__date">Printed {{.CreatedAt.Format "Jan 2, 2006"}}</span>
+      <button type="button"
+        data-confirm
+        data-confirm-action="/links/{{.ID}}/revoke"
+        data-confirm-title="Cancel invite {{.InviteCode}}?"
+        data-confirm-body="The code will stop working immediately. You can generate a new invite anytime."
+        data-confirm-submit="Cancel invite"
+        class="am-tab">Cancel</button>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
 
 </div>
 {{end}}

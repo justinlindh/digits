@@ -47,29 +47,3 @@ func MagicLinkEmail(link string) (subject, body string) {
 	body = brandedWrap(content)
 	return
 }
-
-// HouseholdInviteEmail returns subject and HTML body for a household link invite notification.
-func HouseholdInviteEmail(householdName, inviteCode, baseURL string) (subject, body string) {
-	subject = fmt.Sprintf("Digits: Invite to link with %s", householdName)
-	content := fmt.Sprintf(`<h2 style="color:#e6edf3; margin:0 0 16px 0; font-size:20px;">Household Link Invite</h2>
-  <p style="color:#8b949e; font-size:14px; margin:0 0 16px 0;">You&#39;ve been invited to link your household with <strong>%s</strong> on Digits.</p>
-  <div style="background:#0d1117; border:1px solid #21262d; border-radius:8px; padding:16px; margin:16px 0; text-align:center;">
-    <p style="color:#8b949e; font-size:12px; margin:0 0 8px;">Your invite code:</p>
-    <p style="font-family:monospace; font-size:24px; letter-spacing:4px; color:#58a6ff; margin:0;">%s</p>
-  </div>
-  <p style="color:#8b949e; font-size:14px; margin:0;">Enter this code at <a href="%s/links" style="color:#58a6ff;">%s/links</a> to connect your families.</p>`,
-		householdName, inviteCode, baseURL, baseURL)
-	body = brandedWrap(content)
-	return
-}
-
-// ContactInviteEmail returns subject and HTML body for a contact invite notification.
-func ContactInviteEmail(fromPhoneName, toPhoneName, baseURL string) (subject, body string) {
-	subject = fmt.Sprintf("Digits: Contact request for %s", toPhoneName)
-	content := fmt.Sprintf(`<h2 style="color:#e6edf3; margin:0 0 16px 0; font-size:20px;">New Contact Request</h2>
-  <p style="color:#8b949e; font-size:14px; margin:0 0 16px 0;"><strong>%s</strong> wants to add <strong>%s</strong> as a contact on Digits.</p>
-  <p style="color:#8b949e; font-size:14px; margin:0;">Review and respond at <a href="%s/contacts" style="color:#58a6ff;">%s/contacts</a>.</p>`,
-		fromPhoneName, toPhoneName, baseURL, baseURL)
-	body = brandedWrap(content)
-	return
-}

@@ -5,7 +5,10 @@
 # Only requires Docker on your machine.
 #
 # Usage:
-#   ./pi/image/build-docker.sh [--dev] [raspios-lite.img.xz]
+#   ./pi/image/build-docker.sh [--dev] [--pcb] [raspios-lite.img.xz]
+#
+# --pcb selects V2 carrier board (onboard TLV320AIC3104 codec, inverted hook).
+# Without --pcb the build targets V1/prototype hardware (Codec Zero HAT).
 #
 # If no base image is provided, a known-good Raspberry Pi OS Lite image
 # is downloaded automatically and cached in a Docker volume for reuse.
@@ -21,14 +24,20 @@ REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_VOLUME="digits-image-cache"
 
 # Parse args
-DEV_FLAG=""
+BUILD_FLAGS=()
 SOURCE_IMAGE=""
 for arg in "$@"; do
-    if [[ "$arg" == "--dev" ]]; then
-        DEV_FLAG="--dev"
-    else
-        SOURCE_IMAGE="$arg"
-    fi
+    case "$arg" in
+        --dev|--pcb)
+            BUILD_FLAGS+=("$arg")
+            ;;
+        --*)
+            die "Unknown flag: $arg"
+            ;;
+        *)
+            SOURCE_IMAGE="$arg"
+            ;;
+    esac
 done
 
 # Generate embedded assets on the host (avoids root-owned files from Docker)
@@ -39,12 +48,17 @@ make -C "$REPO_DIR/pi/digitsd" embed
 info "Building digits-image-builder Docker image..."
 docker build -t digits-image-builder "$SCRIPT_DIR"
 
-# Set up volume mounts
+# Set up volume mounts. Pass the host UID/GID so entrypoint.sh can chown
+# the artifacts it writes back to the bind-mounted repo (tools/build/,
+# pi/digits-recovery/bin/, the output .img.gz). Without this, subsequent
+# host-side builds hit Permission denied when overwriting them.
 DOCKER_ARGS=(
     --rm --privileged
     -v "$REPO_DIR":/digits
     -v "$CACHE_VOLUME":/cache
     -w /digits
+    -e "HOST_UID=$(id -u)"
+    -e "HOST_GID=$(id -g)"
 )
 
 # If this is a git worktree, .git is a file pointing to the main repo's
@@ -61,7 +75,7 @@ if [[ -f "$GIT_PATH" ]]; then
     fi
 fi
 ENTRYPOINT_ARGS=()
-[[ -n "$DEV_FLAG" ]] && ENTRYPOINT_ARGS+=("$DEV_FLAG")
+(( ${#BUILD_FLAGS[@]} > 0 )) && ENTRYPOINT_ARGS+=("${BUILD_FLAGS[@]}")
 
 if [[ -n "$SOURCE_IMAGE" ]]; then
     # User provided a base image -- mount its directory

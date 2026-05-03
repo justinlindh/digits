@@ -1,8 +1,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include "hardware/gpio.h"
 #include "pico/stdlib.h"
 
+#include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
@@ -10,6 +12,24 @@
 #include "ringer.h"
 #include "tone.h"
 #include "uart_proto.h"
+
+// Drive both candidate UART_TX pins high so the Pi sees a clean idle line
+// during the boot window. We don't know which is the real one until
+// board_init() reads the rev byte from flash, so cover both. The unused
+// pin is released after board_init().
+static void uart_tx_idle_high(void) {
+    gpio_init(0);
+    gpio_set_dir(0, GPIO_OUT);
+    gpio_put(0, 1);
+    gpio_init(28);
+    gpio_set_dir(28, GPIO_OUT);
+    gpio_put(28, 1);
+}
+
+static void release_unused_uart_tx_pin(void) {
+    if (board->uart_tx_pin != 0)  gpio_deinit(0);
+    if (board->uart_tx_pin != 28) gpio_deinit(28);
+}
 
 // USB console line buffer
 static char usb_line[64];
@@ -48,6 +68,12 @@ static void usb_console_poll(void) {
 }
 
 int main(void) {
+    uart_tx_idle_high();
+
+    board_init();
+
+    release_unused_uart_tx_pin();
+
     stdio_init_all();
 
     hook_init();

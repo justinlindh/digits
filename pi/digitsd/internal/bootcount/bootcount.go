@@ -9,6 +9,12 @@ import (
 
 const DefaultPath = "/data/digits/boot-counter"
 
+// AutoFactoryResetFlag signals the recovery server to skip its
+// Try Again / Factory Reset menu and run Factory Reset directly.
+// Written by digitsd's confirmed *#00000# path before reboot.
+// Cleared automatically when /data is reformatted during the wipe.
+const AutoFactoryResetFlag = "/data/digits/auto-factory-reset"
+
 func Read(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

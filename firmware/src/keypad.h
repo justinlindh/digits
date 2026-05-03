@@ -3,21 +3,16 @@
 
 #include <stdint.h>
 
-// Row GPIOs (active-low scan outputs)
-#define KEYPAD_ROW0 2
-#define KEYPAD_ROW1 3
-#define KEYPAD_ROW2 4
-#define KEYPAD_ROW3 5
-
-// Column GPIOs (inputs with pull-up)
-#define KEYPAD_COL0 6
-#define KEYPAD_COL1 7
-#define KEYPAD_COL2 8
-#define KEYPAD_COL3 9
+// Telephone matrix keypad. Pin assignments and column count come from the
+// active board profile (see board.h). V1 is a 4x4 matrix (12 phone keys plus
+// an extra A-D column). V2 is a standard 4x3 telephone matrix.
+//   rows = scan outputs (active low when selected)
+//   cols = inputs with pull-up (read low when key pressed in selected row)
 
 void keypad_init(void);
 
-// Returns pressed key ('0'-'9', '*', '#', 'A'-'D') or '\0' if no new key press.
+// Returns pressed key ('0'-'9', '*', '#', and on V1 also 'A'-'D')
+// or '\0' if no new key press.
 char keypad_scan(void);
 
 #endif  // DIGITS_KEYPAD_H

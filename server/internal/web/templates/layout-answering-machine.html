@@ -4,12 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{block "title" .}}Digits{{end}} · Digits</title>
-<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="preload" href="/static/fonts/inter-tight-500.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/static/fonts/jetbrains-mono-400.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/static/answering-machine.css">
-<script src="/static/htmx.min.js"></script>
-<script src="/static/sse.min.js"></script>
+<link rel="icon" type="image/svg+xml" href="{{static "favicon.svg"}}">
+<link rel="preload" href="{{static "fonts/inter-tight-500.woff2"}}" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="{{static "fonts/jetbrains-mono-400.woff2"}}" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="{{static "answering-machine.css"}}">
+<script src="{{static "htmx.min.js"}}"></script>
+<script src="{{static "sse.min.js"}}"></script>
 </head>
 <body class="am">
 
@@ -20,25 +20,34 @@
       <span class="am__brand">Digits 2500<small>Family Telephone System</small></span>
     </div>
 
-    <button class="am-shell__toggle" id="am-nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="am-nav-tabs" aria-expanded="false">Menu</button>
+    <button class="am-shell__toggle" id="am-nav-toggle" type="button" aria-label="Toggle navigation" aria-controls="am-nav-drawer" aria-expanded="false">Menu</button>
 
-    <nav class="am-tabs" id="am-nav-tabs" aria-label="Sections">
-      <a class="am-tab {{if eq .Page "dashboard"}}is-active{{end}}" href="/">Overview</a>
-      <a class="am-tab {{if eq .Page "phones"}}is-active{{end}}" href="/phones">Lines</a>
-      <a class="am-tab {{if eq .Page "links"}}is-active{{end}}" href="/links">Families</a>
-      {{if .CallHistoryEnabled}}
-      <a class="am-tab {{if eq .Page "calls"}}is-active{{end}}" href="/calls">Calls</a>
+    <div class="am-shell__drawer" id="am-nav-drawer">
+      <nav class="am-tabs" aria-label="Sections">
+        <a class="am-tab {{if eq .Page "dashboard"}}is-active{{end}}" href="/">Overview</a>
+        <a class="am-tab {{if eq .Page "phones"}}is-active{{end}}" href="/phones">Lines</a>
+        <a class="am-tab {{if eq .Page "links"}}is-active{{end}}" href="/links">Families</a>
+        {{if .CallHistoryEnabled}}
+        <a class="am-tab {{if eq .Page "calls"}}is-active{{end}}" href="/calls">Calls</a>
+        {{end}}
+        <a class="am-tab {{if eq .Page "settings"}}is-active{{end}}" href="/settings">Settings</a>
+      </nav>
+
+      {{if .HouseholdName}}<span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>{{end}}
+
+      {{if .HouseholdDND}}
+      <a href="/settings#do-not-disturb" class="am-shell__dnd" title="Household Do Not Disturb is on" aria-label="Do Not Disturb is on">
+        <span class="am-lamp am-lamp--on-red am-shell__dnd-lamp" aria-hidden="true"></span>
+        <span class="am-led am-led--red am-shell__dnd-cap">DND</span>
+      </a>
       {{end}}
-      <a class="am-tab {{if eq .Page "settings"}}is-active{{end}}" href="/settings">Settings</a>
-    </nav>
 
-    {{if .HouseholdName}}<span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>{{end}}
-
-    <form class="am-shell__signout-form" method="POST" action="/auth/logout">
-      <button class="am-key am-key--nav" type="submit">
-        <span class="am-key__label">Sign out</span>
-      </button>
-    </form>
+      <form class="am-shell__signout-form" method="POST" action="/auth/logout">
+        <button class="am-key am-key--nav" type="submit">
+          <span class="am-key__label">Sign out</span>
+        </button>
+      </form>
+    </div>
   </header>
 
   <main class="am-shell__main">
@@ -57,10 +66,10 @@
 <script>
 (function () {
   var toggle = document.getElementById('am-nav-toggle');
-  var tabs = document.getElementById('am-nav-tabs');
-  if (!toggle || !tabs) return;
+  var drawer = document.getElementById('am-nav-drawer');
+  if (!toggle || !drawer) return;
   toggle.addEventListener('click', function () {
-    var open = tabs.classList.toggle('is-open');
+    var open = drawer.classList.toggle('is-open');
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   });
 })();

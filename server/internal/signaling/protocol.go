@@ -26,6 +26,7 @@ const (
 	TypeRestart       = "restart"        // Server → Phone: restart service or reboot
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
+	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
 )
 
 // Conference message types (three-way calling)
@@ -133,9 +134,6 @@ type Message struct {
 	// Update status fields (update_status messages)
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
 	UpdateDetail string `json:"update_detail,omitempty"` // human-readable detail
-
-	// Flash capability (device_info messages)
-	FlashCapable bool `json:"flash_capable,omitempty"`
 
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"

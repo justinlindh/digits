@@ -1,5 +1,6 @@
 #include "ringer.h"
 
+#include "board.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
@@ -23,23 +24,23 @@ static uint32_t now_ms(void) {
 // When phase=false: IN1=LOW, IN2=HIGH (current flows the other way).
 // Both LOW = no current (coast/stop).
 static void set_hbridge(bool phase) {
-    gpio_put(RINGER_PIN_IN1, phase ? 1 : 0);
-    gpio_put(RINGER_PIN_IN2, phase ? 0 : 1);
+    gpio_put(board->ringer_in1_pin, phase ? 1 : 0);
+    gpio_put(board->ringer_in2_pin, phase ? 0 : 1);
 }
 
 static void stop_hbridge(void) {
-    gpio_put(RINGER_PIN_IN1, 0);
-    gpio_put(RINGER_PIN_IN2, 0);
+    gpio_put(board->ringer_in1_pin, 0);
+    gpio_put(board->ringer_in2_pin, 0);
 }
 
 void ringer_init(void) {
-    gpio_init(RINGER_PIN_IN1);
-    gpio_set_dir(RINGER_PIN_IN1, GPIO_OUT);
-    gpio_put(RINGER_PIN_IN1, 0);
+    gpio_init(board->ringer_in1_pin);
+    gpio_set_dir(board->ringer_in1_pin, GPIO_OUT);
+    gpio_put(board->ringer_in1_pin, 0);
 
-    gpio_init(RINGER_PIN_IN2);
-    gpio_set_dir(RINGER_PIN_IN2, GPIO_OUT);
-    gpio_put(RINGER_PIN_IN2, 0);
+    gpio_init(board->ringer_in2_pin);
+    gpio_set_dir(board->ringer_in2_pin, GPIO_OUT);
+    gpio_put(board->ringer_in2_pin, 0);
 
     s_active = false;
     s_phase = false;

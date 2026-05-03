@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -178,6 +180,104 @@ func TestCallsPageReturns200(t *testing.T) {
 	}
 }
 
+func TestHandleCalls_BadCursor_Returns400(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/calls?before=!!!not-base64!!!", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("bad cursor: got %d, want 400", w.Code)
+	}
+}
+
+func TestHandleCalls_ValidCursor_Returns200(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Seed a small number of calls so we have at least one entry to build a cursor from.
+	seedEndedCallsForCursorTest(t, h, database, hh, 3)
+
+	// Build a cursor directly from the most recent entry, bypassing template rendering.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("valid cursor: got %d, want 200", w.Code)
+	}
+}
+
+// seedEndedCallsForCursorTest inserts n plain ended calls between two phone
+// numbers on hh's line list, with monotonically increasing timestamps. If hh
+// has fewer than 2 lines, two lines are seeded first. Used by handler tests
+// that need real call history.
+func seedEndedCallsForCursorTest(t *testing.T, h *Handler, database *db.Database, hh *household.Household, n int) {
+	t.Helper()
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	if len(lines) < 2 {
+		seedNumbers := []string{"3149001", "3149002"}
+		for _, num := range seedNumbers {
+			ln, err := h.lineStore.Add(context.Background(), num, "Cursor Test "+num, hh.ID)
+			if err != nil {
+				t.Fatalf("seed line %s: %v", num, err)
+			}
+			id := ln.ID
+			t.Cleanup(func() {
+				_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", id)
+			})
+		}
+		lines, err = h.lineStore.ListByHousehold(context.Background(), hh.ID)
+		if err != nil {
+			t.Fatalf("list lines after seed: %v", err)
+		}
+	}
+	if len(lines) < 2 {
+		t.Fatalf("seed needs at least 2 lines on the household, got %d", len(lines))
+	}
+	a, b := lines[0].Number, lines[1].Number
+	for i := 0; i < n; i++ {
+		if _, err := h.tracker.OnCallInitiated(context.Background(), a, b); err != nil {
+			t.Fatalf("OnCallInitiated[%d]: %v", i, err)
+		}
+		if err := h.tracker.OnCallEnded(context.Background(), a, b); err != nil {
+			t.Fatalf("OnCallEnded[%d]: %v", i, err)
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller = $1 OR callee = $1 OR caller = $2 OR callee = $2", a, b)
+	})
+}
+
 func TestSettingsPageReturns200(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
@@ -329,12 +429,12 @@ func TestNotFound(t *testing.T) {
 }
 
 // setupPairedDevice creates a paired device via the pairing flow and returns
-// the hardware ID and plaintext device token.
-func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, token string) {
+// the hardware ID, phone number, and plaintext device token.
+func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, number, token string) {
 	t.Helper()
 
 	hardwareID = fmt.Sprintf("test-hw-%d", time.Now().UnixNano())
-	number := fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
+	number = fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
 
 	// Create a household for the line
 	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
@@ -344,6 +444,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 			t.Fatalf("create user: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, user.ID)
 	hh, err := householdStore.Create(context.Background(), "Test Household", user.ID)
 	if err != nil {
 		t.Fatalf("create household: %v", err)
@@ -368,7 +469,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
-	return hardwareID, token
+	return hardwareID, number, token
 }
 
 func TestPhoneRestartOnline(t *testing.T) {
@@ -381,7 +482,7 @@ func TestPhoneRestartOnline(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"service"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -460,7 +561,7 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"explode"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -498,7 +599,7 @@ func TestPhoneOnlineStatus(t *testing.T) {
 	}
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	req = httptest.NewRequest("GET", "/phones/3140001/online", nil)
 	req.Header.Set("Accept", "application/json")
@@ -784,7 +885,7 @@ func TestPhoneSilentModePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -813,7 +914,7 @@ func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	// Line defaults to silent_mode=false on insert. Saving false again must be a no-op.
 	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
@@ -855,7 +956,7 @@ func TestPhoneVoiceStylePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	if w := postVoiceStyle(t, h, cookie, "modern", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -884,7 +985,7 @@ func TestPhoneVoiceStyleNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register("3140001", conn)
+	h.hub.Register("3140001", conn)
 
 	// Line defaults to copper on insert — saving copper again must be a no-op.
 	if w := postVoiceStyle(t, h, cookie, "copper", false); w.Code != http.StatusSeeOther {
@@ -923,7 +1024,7 @@ func TestWSRegister_PairedDevice_MissingToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -946,7 +1047,7 @@ func TestWSRegister_PairedDevice_WrongToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -970,7 +1071,7 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -1101,6 +1202,7 @@ func seedLinkedFamily(t *testing.T, h *Handler, database *db.Database, authStore
 	if err != nil {
 		t.Fatalf("create other user: %v", err)
 	}
+	markUserOnboarded(t, authStore, otherUser.ID)
 	otherHH, err := h.householdStore.Create(context.Background(), otherName, otherUser.ID)
 	if err != nil {
 		t.Fatalf("create other household: %v", err)
@@ -1490,8 +1592,8 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register(number, conn)
-	h.Hub().UpdateDeviceInfo(number, "", "", fwVersion, "", false)
+	h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "")
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
@@ -1658,5 +1760,624 @@ func TestPairBannerRendersOnQueryParam(t *testing.T) {
 	}
 	if !strings.Contains(body, "fw 1.4.0") {
 		t.Errorf("body missing fw version")
+	}
+}
+
+func readLineName(t *testing.T, database *db.Database) string {
+	t.Helper()
+	var name string
+	if err := database.DB.QueryRow(`SELECT name FROM lines WHERE number = '3140001'`).Scan(&name); err != nil {
+		t.Fatalf("read line name: %v", err)
+	}
+	return name
+}
+
+func postLineName(t *testing.T, h *Handler, cookie *http.Cookie, value string, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{"name": {value}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/name", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func TestPhoneNamePostUpdatesAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "Garage", false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	if got := readLineName(t, database); got != "Garage" {
+		t.Fatalf("expected name=Garage in db, got %q", got)
+	}
+}
+
+func TestPhoneNamePostHTMXReturnsDisplayPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "  Garage  ", true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="name-section"`) {
+		t.Fatalf("htmx response missing name-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, ">Garage<") {
+		t.Fatalf("htmx response missing trimmed name display:\n%s", body)
+	}
+	if strings.Contains(body, `name="name"`) {
+		t.Fatalf("htmx response should be display partial, but contains form input:\n%s", body)
+	}
+	if got := readLineName(t, database); got != "Garage" {
+		t.Fatalf("expected trimmed name=Garage in db, got %q", got)
+	}
+}
+
+func TestPhoneNamePostEmptyReturnsEditWithError(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postLineName(t, h, cookie, "   ", true)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty name, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `name="name"`) {
+		t.Fatalf("expected edit form re-rendered on error:\n%s", body)
+	}
+	if !strings.Contains(body, "name is required") {
+		t.Fatalf("expected validation message in body:\n%s", body)
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
+	}
+}
+
+func TestPhoneNamePostTooLongReturnsEditWithError(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	overlong := strings.Repeat("a", 51)
+	w := postLineName(t, h, cookie, overlong, true)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for too-long name, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "name too long") {
+		t.Fatalf("expected length error in body:\n%s", w.Body.String())
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged, got %q", got)
+	}
+}
+
+func TestPhoneNameEditGetReturnsForm(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140001/name/edit", nil)
+	req.AddCookie(cookie)
+	req.Header.Set("HX-Request", "true")
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `name="name"`) {
+		t.Fatalf("expected name input in edit form:\n%s", body)
+	}
+	if !strings.Contains(body, `value="Test Phone"`) {
+		t.Fatalf("expected current name prefilled:\n%s", body)
+	}
+	if !strings.Contains(body, `maxlength="50"`) {
+		t.Fatalf("expected maxlength attribute:\n%s", body)
+	}
+}
+
+func TestPhoneEditPostEmptyNameReturns400(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	form := url.Values{"name": {"   "}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/edit", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty name on list-view edit, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := readLineName(t, database); got != "Test Phone" {
+		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
+	}
+}
+
+// TestHandleCalls_Intercom_PaginationControls covers the intercom theme's
+// behavior around pagination controls and auto-refresh attributes:
+//   - Page 1 with no older entries: no pagination nav, hx-trigger present.
+//   - Page 1 with an older page available: nav rendered, hx-trigger present.
+//   - Page 2 (paged via ?before=cursor): nav rendered, hx-trigger absent.
+func TestHandleCalls_Intercom_PaginationControls(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Sub-case 1: empty dataset, page 1. No pagination, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (empty): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 1 (empty): pagination nav should be absent")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (empty): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Seed enough ended calls to force OlderCursor on page 1.
+	// The page size is 50, so seed 51 to guarantee a next page.
+	seedEndedCallsForCursorTest(t, h, database, hh, 51)
+
+	// Sub-case 2: page 1 with older page available. Nav rendered, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (with older): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 1 (with older): expected pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls?before=`) {
+			t.Errorf("page 1 (with older): expected Older link with cursor")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (with older): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Build a cursor from the most recent entry to exercise the IsPaged path.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	// Sub-case 3: page 2 via ?before=cursor. Nav rendered, polling off.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 2: got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `class="panel__pagination"`) {
+			t.Errorf("page 2: expected pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls"`) {
+			t.Errorf("page 2: expected Newer link to /calls")
+		}
+		if strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 2: hx-trigger must be absent on paged view")
+		}
+	}
+}
+
+// TestHandleCalls_Dialup_PaginationControls covers the dialup theme's
+// behavior around pagination controls and auto-refresh attributes:
+//   - Page 1 with no older entries: no pagination nav, hx-trigger present.
+//   - Page 1 with an older page available: nav rendered, hx-trigger present.
+//   - Page 2 (paged via ?before=cursor): nav rendered, hx-trigger absent.
+func TestHandleCalls_Dialup_PaginationControls(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Switch the test user to the dialup theme so the dialup template
+	// renders. Reset on cleanup so subsequent tests sharing the user
+	// (via setupAuthedHousehold) see the default value.
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeDialup); err != nil {
+		t.Fatalf("set dialup theme: %v", err)
+	}
+	t.Cleanup(func() { _ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom) })
+
+	// Sub-case 1: empty dataset, page 1. No pagination, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (empty): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `dialup-pagination`) {
+			t.Errorf("page 1 (empty): pagination nav should be absent")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (empty): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Seed enough ended calls to force OlderCursor on page 1.
+	// The page size is 50, so seed 51 to guarantee a next page.
+	seedEndedCallsForCursorTest(t, h, database, hh, 51)
+
+	// Sub-case 2: page 1 with older page available. Nav rendered, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (with older): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `dialup-pagination`) {
+			t.Errorf("page 1 (with older): expected dialup pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls?before=`) {
+			t.Errorf("page 1 (with older): expected Older link with cursor")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (with older): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Build a cursor from the most recent entry to exercise the IsPaged path.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	// Sub-case 3: page 2 via ?before=cursor. Nav rendered, polling off.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 2: got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `dialup-pagination`) {
+			t.Errorf("page 2: expected dialup pagination nav")
+		}
+		if !strings.Contains(body, `href="/calls"`) {
+			t.Errorf("page 2: expected Newer link to /calls")
+		}
+		if strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 2: hx-trigger must be absent on paged view")
+		}
+	}
+}
+
+// TestHandleCalls_AM_PaginationControls covers the answering-machine theme's
+// behavior around pagination controls and auto-refresh attributes:
+//   - Page 1 with no older entries: no transport bar, hx-trigger present.
+//   - Page 1 with an older page available: transport bar rendered, Older link
+//     with cursor, hx-trigger present.
+//   - Page 2 (paged via ?before=cursor): transport bar rendered, Newer link
+//     to /calls, hx-trigger absent (snapshot mode, REW LED in header).
+func TestHandleCalls_AM_PaginationControls(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
+
+	// Switch the test user to the AM theme so the calls-am template renders.
+	// Reset on cleanup so subsequent tests sharing the user (via
+	// setupAuthedHousehold) see the default value.
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeAnsweringMachine); err != nil {
+		t.Fatalf("set AM theme: %v", err)
+	}
+	t.Cleanup(func() { _ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom) })
+
+	// Sub-case 1: empty dataset, page 1. No transport bar, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (empty): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 1 (empty): transport bar should be absent")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (empty): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Seed enough ended calls to force OlderCursor on page 1.
+	// The page size is 50, so seed 51 to guarantee a next page.
+	seedEndedCallsForCursorTest(t, h, database, hh, 51)
+
+	// Sub-case 2: page 1 with older page available. Bar rendered, polling on.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 1 (with older): got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 1 (with older): expected AM transport bar")
+		}
+		if !strings.Contains(body, `am-transport--rew`) {
+			t.Errorf("page 1 (with older): expected enabled REW (older) button")
+		}
+		if !strings.Contains(body, `href="/calls?before=`) {
+			t.Errorf("page 1 (with older): expected Older link with cursor")
+		}
+		if !strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 1 (with older): expected hx-trigger='every 10s'")
+		}
+	}
+
+	// Build a cursor from the most recent entry to exercise the IsPaged path.
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	cursor := calls.CursorForEntry(entries[0]).Encode()
+
+	// Sub-case 3: page 2 via ?before=cursor. Bar rendered, polling off.
+	{
+		req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		h.Router().ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page 2: got %d, want 200", w.Code)
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `am-calls__transport`) {
+			t.Errorf("page 2: expected AM transport bar")
+		}
+		if !strings.Contains(body, `am-transport--ff`) {
+			t.Errorf("page 2: expected enabled FF (newer) button")
+		}
+		if !strings.Contains(body, `href="/calls"`) {
+			t.Errorf("page 2: expected Newer link to /calls")
+		}
+		if strings.Contains(body, `hx-trigger="every 10s"`) {
+			t.Errorf("page 2: hx-trigger must be absent on paged view")
+		}
+	}
+}
+
+func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
+	conn.RemoteAddr = "192.168.1.42"
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "192.168.1.42") {
+		t.Errorf("phones page missing LAN IP %q in body", "192.168.1.42")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenEmpty(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
+	conn.RemoteAddr = ""
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup despite empty RemoteAddr")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Add a line WITHOUT registering a Conn: phone is offline.
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140044", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup for offline phone")
+	}
+}
+
+// runWSConnectAndCaptureAddr dials srv's /ws with the given header set,
+// sends a register message for the paired device, waits for hub registration,
+// and returns the RemoteAddr the hub stored for that connection.
+func runWSConnectAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signaling.Hub, hardwareID, number, token, xff string) string {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	headers := http.Header{}
+	if xff != "" {
+		headers.Set("X-Forwarded-For", xff)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	if err != nil {
+		t.Fatalf("dial ws: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.WriteJSON(signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      number,
+		HardwareID:  hardwareID,
+		DeviceToken: token,
+	}); err != nil {
+		t.Fatalf("write register: %v", err)
+	}
+	waitForRegister(t, hub, number)
+	info := hub.DeviceInfo(number)
+	if info == nil {
+		t.Fatal("hub.DeviceInfo returned nil after register")
+	}
+	return info.RemoteAddr
+}
+
+func TestHandleWS_RemoteAddrFromXFFWhenPrivate(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "192.168.1.7")
+	if got != "192.168.1.7" {
+		t.Errorf("RemoteAddr = %q, want %q", got, "192.168.1.7")
+	}
+}
+
+func TestHandleWS_RemoteAddrEmptyWhenPublicXFF(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "8.8.8.8")
+	if got != "" {
+		t.Errorf("RemoteAddr = %q, want empty for public XFF", got)
+	}
+}
+
+func TestHandleWS_RemoteAddrFallsBackToRemoteAddr(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	// httptest.Server listens on 127.0.0.1, which is in IsPrivateAddr's
+	// loopback range; with no XFF the resolved RemoteAddr should be
+	// "127.0.0.1".
+	got := runWSConnectAndCaptureAddr(t, srv, h.hub, hwID, number, token, "")
+	if got != "127.0.0.1" {
+		t.Errorf("RemoteAddr = %q, want %q", got, "127.0.0.1")
+	}
+}
+
+func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140055", "Living Room")
+	conn.RemoteAddr = "192.168.77.77"
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "192.168.77.77") {
+		t.Errorf("dashboard rendered LAN IP %q in body; this surface must not surface device IPs", "192.168.77.77")
 	}
 }

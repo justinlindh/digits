@@ -42,22 +42,27 @@ export async function navigateTo(page: Page, path: string): Promise<boolean> {
 }
 
 /**
- * Theme identifiers. Match auth.ThemeIntercom / auth.ThemeDialup in the server.
+ * Theme identifiers. Match auth.ThemeIntercom / auth.ThemeDialup /
+ * auth.ThemeAnsweringMachine in the server.
  */
-export type Theme = 'intercom' | 'dialup';
+export type Theme = 'intercom' | 'dialup' | 'answering-machine';
 
 /**
  * Layout identifiers, one per layout template.
  *   'v2'     -> layout-v2.html (top rail, brass accent) used by theme 'intercom'
  *   'dialup' -> layout-dialup.html (channels sidebar) used by theme 'dialup'
+ *   'am'     -> layout-answering-machine.html (am-shell chrome, LED displays)
+ *               used by theme 'answering-machine'
  */
-export type Layout = 'v2' | 'dialup';
+export type Layout = 'v2' | 'dialup' | 'am';
 
 /**
  * Sniff which layout template rendered the current page by looking for the
  * layout-specific root element. Returns the active layout.
  */
 export async function getLayout(page: Page): Promise<Layout> {
+  const am = await page.locator('body.am').count();
+  if (am > 0) return 'am';
   const dialup = await page.locator('.dialup-window').count();
   if (dialup > 0) return 'dialup';
   return 'v2';
@@ -67,7 +72,9 @@ export async function getLayout(page: Page): Promise<Layout> {
  * Map a theme value to the layout it renders with.
  */
 export function layoutForTheme(theme: Theme): Layout {
-  return theme === 'dialup' ? 'dialup' : 'v2';
+  if (theme === 'answering-machine') return 'am';
+  if (theme === 'dialup') return 'dialup';
+  return 'v2';
 }
 
 /**

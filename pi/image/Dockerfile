@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     dosfstools \
     zstd \
+    device-tree-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Cross-compilation toolchain for digitsd (arm64 with CGO)

@@ -15,8 +15,8 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -38,6 +38,115 @@ func TemplateFS() embed.FS {
 	return templateFS
 }
 
+// TemplateFuncs returns the html/template FuncMap that page templates expect.
+// Exposed so test helpers that parse templates directly (without going through
+// NewHandler) get the same {{static}}, {{fmtPhone}}, etc. helpers as prod.
+func TemplateFuncs() template.FuncMap {
+	return baseTemplateFuncs()
+}
+
+func baseTemplateFuncs() template.FuncMap {
+	return template.FuncMap{
+		"fmtPhone": line.FormatNumber,
+		"fmtDuration": func(seconds int) string {
+			if seconds < 60 {
+				return fmt.Sprintf("%ds", seconds)
+			}
+			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
+		"derefFloat32": func(p *float32) float32 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"derefInt64": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"iter": func(n int) []int {
+			out := make([]int, n)
+			for i := range out {
+				out[i] = i
+			}
+			return out
+		},
+		"inc": func(n int) int { return n + 1 },
+		"mod": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a % b
+		},
+		"humanBytes": func(n int64) string {
+			switch {
+			case n > 1024*1024:
+				return fmt.Sprintf("%.1fM", float64(n)/(1024*1024))
+			case n > 1024:
+				return fmt.Sprintf("%.1fK", float64(n)/1024)
+			default:
+				return fmt.Sprintf("%dB", n)
+			}
+		},
+		"pctToSegments": func(pct float32) segDesc {
+			lit := int(pct / 10.0)
+			if pct > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case pct >= 2.0:
+				sev = "bad"
+			case pct >= 0.5:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
+		},
+		"msToSegments": func(ms float32) segDesc {
+			lit := int(ms / 6.0)
+			if ms > 0 && lit == 0 {
+				lit = 1
+			}
+			if lit > 10 {
+				lit = 10
+			}
+			sev := ""
+			switch {
+			case ms >= 40.0:
+				sev = "bad"
+			case ms >= 20.0:
+				sev = "warn"
+			}
+			return segDesc{Lit: lit, Severity: sev}
+		},
+		"renderNotes": renderNotes,
+		// staticURL returns a cache-bust-suffixed /static/ URL. Cloudflare and
+		// other CDNs key on the full URL including query, so each release's
+		// commit-suffixed URL bypasses the prior release's cached entry. In
+		// dev (commit unset) we fall back to the bare path so the disk-served
+		// edits still revalidate per request.
+		"static": func(path string) string {
+			if version.Commit == "" || version.Commit == "unknown" {
+				return "/static/" + path
+			}
+			return "/static/" + path + "?v=" + version.Commit
+		},
+		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
+			for i := range edges {
+				if edges[i].From == from && edges[i].Peer == peer {
+					return &edges[i]
+				}
+			}
+			return nil
+		},
+	}
+}
+
 // devStaticDirDefault is the disk path (relative to the process CWD) used
 // for /static/ when DevMode is on and no explicit override is supplied.
 // It matches the Makefile's dev-up target, which runs signald with CWD
@@ -50,23 +159,36 @@ const devStaticDirDefault = "internal/web/static"
 // production mode it serves the embedded FS, keeping the binary
 // self-contained. Both code paths route /static/dialup.css to the same
 // file content for a given checkout.
+//
+// Requests carrying a query string (e.g. /static/foo.css?v=<commit>) are
+// served with a 1-year immutable cache header; templates use the {{static}}
+// helper to produce those versioned URLs so a new release writes a new URL
+// that bypasses any CDN cache of the prior one.
 func staticFileServer(devMode bool, diskDir string) http.Handler {
+	var base http.Handler
 	if devMode {
 		if diskDir == "" {
 			diskDir = devStaticDirDefault
 		}
-		return http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+		base = http.StripPrefix("/static/", http.FileServer(http.Dir(diskDir)))
+	} else {
+		// fs.Sub strips the "static" prefix from the embedded FS so request
+		// paths align with the disk-mode handler's StripPrefix treatment.
+		sub, err := fs.Sub(staticFS, "static")
+		if err != nil {
+			// embed declares the "static" directory above; sub-rooting to it
+			// cannot fail at runtime. A panic here would indicate a programmer
+			// error in the embed declaration.
+			panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
+		}
+		base = http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 	}
-	// fs.Sub strips the "static" prefix from the embedded FS so request
-	// paths align with the disk-mode handler's StripPrefix treatment.
-	sub, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		// embed declares the "static" directory above; sub-rooting to it
-		// cannot fail at runtime. A panic here would indicate a programmer
-		// error in the embed declaration.
-		panic(fmt.Errorf("fs.Sub(staticFS, \"static\"): %w", err))
-	}
-	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		base.ServeHTTP(w, r)
+	})
 }
 
 type Handler struct {
@@ -77,6 +199,7 @@ type Handler struct {
 	tracker     *calls.Tracker
 	relay       *signaling.Relay
 	healthStore *calls.HealthStore
+	dashEvents  *events.Broadcaster
 	// Per-page template sets to avoid {{define}} name conflicts
 	tmplDashboard      *template.Template
 	tmplPhones         *template.Template
@@ -86,10 +209,12 @@ type Handler struct {
 	tmplPhoneDetail    *template.Template
 	tmplLinks          *template.Template
 	tmplConnecting     *template.Template
+	tmplWelcome        *template.Template
 	tmplCallLivePanel          *template.Template
 	tmplCallLiveDetail         *template.Template
 	tmplConferenceLivePanel    *template.Template
 	tmplConferenceLiveDetail   *template.Template
+	tmplDashboardAMStatus      *template.Template
 	cfg                HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -101,8 +226,6 @@ type Handler struct {
 	pairingStore *pairing.Store
 	// Household links
 	linkStore *household.LinkStore
-	// Email
-	emailSender email.Sender
 	// Rate limiters. All four are Handler fields so Router() has a single
 	// construction pattern; previously the magic-link verify and Google
 	// login limiters were instantiated inline inside Router(), which made
@@ -153,98 +276,17 @@ type Deps struct {
 	Tracker        *calls.Tracker
 	Relay          *signaling.Relay
 	HealthStore    *calls.HealthStore
+	DashEvents     *events.Broadcaster
 	AuthStore      *auth.Store
 	AuthHandlers   *auth.Handlers
 	GoogleAuth     *auth.GoogleAuth
 	HouseholdStore *household.Store
 	PairingStore   *pairing.Store
 	LinkStore      *household.LinkStore
-	EmailSender    email.Sender
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
-	funcMap := template.FuncMap{
-		"fmtPhone": line.FormatNumber,
-		"fmtDuration": func(seconds int) string {
-			if seconds < 60 {
-				return fmt.Sprintf("%ds", seconds)
-			}
-			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
-		},
-		"derefFloat32": func(p *float32) float32 {
-			if p == nil {
-				return 0
-			}
-			return *p
-		},
-		"derefInt64": func(p *int64) int64 {
-			if p == nil {
-				return 0
-			}
-			return *p
-		},
-		"iter": func(n int) []int {
-			out := make([]int, n)
-			for i := range out {
-				out[i] = i
-			}
-			return out
-		},
-		"inc": func(n int) int { return n + 1 },
-		"humanBytes": func(n int64) string {
-			switch {
-			case n > 1024*1024:
-				return fmt.Sprintf("%.1fM", float64(n)/(1024*1024))
-			case n > 1024:
-				return fmt.Sprintf("%.1fK", float64(n)/1024)
-			default:
-				return fmt.Sprintf("%dB", n)
-			}
-		},
-		"pctToSegments": func(pct float32) segDesc {
-			lit := int(pct / 10.0)
-			if pct > 0 && lit == 0 {
-				lit = 1
-			}
-			if lit > 10 {
-				lit = 10
-			}
-			sev := ""
-			switch {
-			case pct >= 2.0:
-				sev = "bad"
-			case pct >= 0.5:
-				sev = "warn"
-			}
-			return segDesc{Lit: lit, Severity: sev}
-		},
-		"msToSegments": func(ms float32) segDesc {
-			lit := int(ms / 6.0)
-			if ms > 0 && lit == 0 {
-				lit = 1
-			}
-			if lit > 10 {
-				lit = 10
-			}
-			sev := ""
-			switch {
-			case ms >= 40.0:
-				sev = "bad"
-			case ms >= 20.0:
-				sev = "warn"
-			}
-			return segDesc{Lit: lit, Severity: sev}
-		},
-		"renderNotes": renderNotes,
-		"edgeFor": func(edges []ConferenceLinkHealthEdge, from, peer string) *ConferenceLinkHealthEdge {
-			for i := range edges {
-				if edges[i].From == from && edges[i].Peer == peer {
-					return &edges[i]
-				}
-			}
-			return nil
-		},
-	}
+	funcMap := baseTemplateFuncs()
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
 	parsePage := func(page string) (*template.Template, error) {
@@ -260,6 +302,15 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	tmplDashboard, err := parsePage("dashboard.html")
 	if err != nil {
 		return nil, err
+	}
+	// Merge the AM status partial so {{template "dashboard-am-status"}} resolves
+	// inside the dashboard page.
+	if _, err := tmplDashboard.ParseFS(templateFS, "templates/_dashboard-am-status.html"); err != nil {
+		return nil, fmt.Errorf("parse dashboard-am-status partial into dashboard: %w", err)
+	}
+	tmplDashboardAMStatus, err := template.New("dashboard-am-status").Funcs(funcMap).ParseFS(templateFS, "templates/_dashboard-am-status.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse dashboard-am-status: %w", err)
 	}
 	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
@@ -286,6 +337,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		return nil, err
 	}
 	tmplConnecting, err := parsePage("connecting.html")
+	if err != nil {
+		return nil, err
+	}
+	tmplWelcome, err := parsePage("welcome.html")
 	if err != nil {
 		return nil, err
 	}
@@ -333,6 +388,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tracker:            deps.Tracker,
 		relay:              deps.Relay,
 		healthStore:        deps.HealthStore,
+		dashEvents:         deps.DashEvents,
 		tmplDashboard:      tmplDashboard,
 		tmplPhones:         tmplPhones,
 		tmplCalls:          tmplCalls,
@@ -341,10 +397,12 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplPhoneDetail:    tmplPhoneDetail,
 		tmplLinks:          tmplLinks,
 		tmplConnecting:     tmplConnecting,
+		tmplWelcome:        tmplWelcome,
 		tmplCallLivePanel:          tmplCallLivePanel,
 		tmplCallLiveDetail:         tmplCallLiveDetail,
 		tmplConferenceLivePanel:    tmplConferenceLivePanel,
 		tmplConferenceLiveDetail:   tmplConferenceLiveDetail,
+		tmplDashboardAMStatus:      tmplDashboardAMStatus,
 		cfg:                cfg,
 		authStore:          deps.AuthStore,
 		authHandlers:       deps.AuthHandlers,
@@ -352,17 +410,11 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		householdStore:     deps.HouseholdStore,
 		pairingStore:       deps.PairingStore,
 		linkStore:          deps.LinkStore,
-		emailSender:        deps.EmailSender,
 		authLimiter:        ratelimit.New(5, time.Minute),
 		magicVerifyLimiter: ratelimit.New(10, time.Minute),
 		googleLoginLimiter: ratelimit.New(10, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
 	}, nil
-}
-
-// Hub returns the signaling hub (used in tests).
-func (h *Handler) Hub() *signaling.Hub {
-	return h.hub
 }
 
 func (h *Handler) Router() http.Handler {
@@ -417,6 +469,8 @@ func (h *Handler) Router() http.Handler {
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
 	protected.HandleFunc("GET /connecting", h.handleConnecting)
+	protected.HandleFunc("GET /welcome", h.handleWelcomeGet)
+	protected.HandleFunc("POST /welcome", h.handleWelcomePost)
 	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
 	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
@@ -425,6 +479,9 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
 	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
 	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
+	protected.HandleFunc("GET /phones/{number}/name", h.handlePhoneNameGet)
+	protected.HandleFunc("GET /phones/{number}/name/edit", h.handlePhoneNameEditGet)
+	protected.HandleFunc("POST /phones/{number}/name", h.handlePhoneNamePost)
 	protected.HandleFunc("POST /phones/{number}/voice-style", h.handlePhoneVoiceStylePost)
 	protected.HandleFunc("POST /phones/{number}/silent-mode", h.handlePhoneSilentModePost)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
@@ -450,6 +507,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /api/active-calls", h.handleAPIActiveCalls)
 	protected.HandleFunc("GET /call/live/{id}", h.handleCallLiveDetail)
 	protected.HandleFunc("GET /conference/live/{uuid}", h.handleConferenceLiveDetail)
+	protected.HandleFunc("GET /api/dashboard/stream", h.handleDashboardStream)
 	protected.HandleFunc("GET /api/call/{id}/link-health", h.handleCallLinkHealth)
 	protected.HandleFunc("GET /api/call/{id}/link-health/stream", h.handleCallLinkHealthStream)
 	protected.HandleFunc("GET /api/conference/{uuid}/link-health", h.handleConferenceLinkHealth)
@@ -458,30 +516,68 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /api/call/{id}/disconnect", h.handleCallDisconnect)
 	protected.HandleFunc("GET /api/lines/number-available", h.handleAPINumberAvailable)
 
-	// Onboarding gate: redirect users without a household to /onboard
-	// Only active when householdStore is set (nil means feature disabled)
-	protectedHandler := h.authStore.RequireAuth(protected)
-	if h.householdStore != nil {
-		protectedHandler = h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Don't gate the onboard routes themselves
-			if r.URL.Path == "/onboard" || strings.HasPrefix(r.URL.Path, "/auth/") {
-				protected.ServeHTTP(w, r)
+	// Two gates compose in front of protected routes, both behind RequireAuth:
+	//
+	//   1. Welcome gate: until theme_chosen=true, send the user to /welcome
+	//      so they pick a theme. Always active (the column has a backfill so
+	//      pre-existing users skip it).
+	//   2. Onboarding gate: until the user has a household, send them to
+	//      /onboard. Only active when householdStore is wired.
+	//
+	// Order matters: welcome runs first so the household onboarding screens
+	// render in the user's chosen theme, not the intercom default.
+	protectedHandler := h.authStore.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Welcome gate. Exempts /welcome itself plus the universal set
+		// (/auth/*, /api/*, /ws) so JSON/SSE/WS clients get their natural
+		// 4xx instead of an HTML redirect.
+		if !isGateExempt(r.URL.Path, "/welcome") {
+			user := auth.UserFromContext(r.Context())
+			if user != nil && !user.ThemeChosen {
+				http.Redirect(w, r, "/welcome", http.StatusSeeOther)
 				return
 			}
+		}
+		// Onboarding gate. Adds /onboard (its redirect target) and
+		// /welcome (the picker runs before a household exists) to the
+		// universal exempt set.
+		if h.householdStore != nil && !isGateExempt(r.URL.Path, "/welcome", "/onboard") {
 			user := auth.UserFromContext(r.Context())
-			if user != nil {
-				if h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
-					http.Redirect(w, r, "/onboard", http.StatusSeeOther)
-					return
-				}
+			if user != nil && h.householdStore.NeedsOnboarding(r.Context(), user.ID) {
+				http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+				return
 			}
-			protected.ServeHTTP(w, r)
-		}))
-	}
+		}
+		protected.ServeHTTP(w, r)
+	}))
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
 	return rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+}
+
+// isGateExempt reports whether a request path should bypass the welcome and
+// onboarding redirect gates. /auth/*, /api/*, and /ws[/*] are always exempt
+// because their consumers can't (or shouldn't) follow an HTML page redirect:
+// SSE/fetch clients would parse the HTML as JSON, WS upgrades would fail,
+// and the auth flow itself must reach /auth/login regardless of state. Each
+// gate also passes its own redirect target (and any other gate's target it
+// needs to defer to) as `extra` so a redirect-to-self can't loop.
+func isGateExempt(path string, extra ...string) bool {
+	for _, p := range extra {
+		if path == p {
+			return true
+		}
+	}
+	if strings.HasPrefix(path, "/auth/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	if path == "/ws" || strings.HasPrefix(path, "/ws/") {
+		return true
+	}
+	return false
 }
 
 func securityHeadersMiddleware(next http.Handler) http.Handler {

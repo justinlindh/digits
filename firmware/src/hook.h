@@ -4,8 +4,6 @@
 #include <stdbool.h>
 #include "pico/stdlib.h"
 
-#define HOOK_PIN 10  // GP10
-
 // Hook transition events returned by hook_get_event().
 typedef enum {
     HOOK_EVENT_NONE  = 0,
@@ -19,9 +17,10 @@ void hook_poll(void);       // Call from main loop
 bool hook_is_off_hook(void);
 hook_event_t hook_get_event(void);
 
-// Invert the physical hook sense. When inverted, LOW = off-hook and
-// HIGH = on-hook (for PCB carrier boards with on-board tactile switch).
-// Default is non-inverted (HIGH = off-hook, for V-153-1C25 microswitch).
+// Invert the physical hook sense. Default is non-inverted: switch closed
+// to GND when on-hook (HIGH = off-hook via internal pull-up). Use invert
+// when the wired switch's polarity is reversed (NC contacts, or a switch
+// that opens when the handset is cradled).
 void hook_set_inverted(bool inverted);
 bool hook_is_inverted(void);
 

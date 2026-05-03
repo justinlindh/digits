@@ -59,6 +59,23 @@ make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
 ./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
 
+Pi OS image and SD card flash (from repo root):
+```
+make image            # build V1 (Codec Zero HAT) image via Docker
+make image-dev        # V1 image with SSH enabled
+make image-v2         # build V2 (carrier board) image
+make image-v2-dev     # V2 image with SSH enabled
+
+make flash            # flash newest image to auto-detected SD (override SD=/dev/sdX)
+make flash-v1         # flash newest V1 image
+make flash-v2         # flash newest V2 image
+
+make image-flash      # build V1 dev image AND flash in one shot
+make image-v2-flash   # build V2 dev image AND flash
+```
+
+The flash targets refuse to write to anything that isn't a block device. Override SD detection with `make flash-v2 SD=/dev/sdX`. `make help` lists every target with a one-line description.
+
 Test tiers, build tag syntax, env vars, and CI workflow names live in `server/TESTING.md`.
 
 ## Local dev server
@@ -72,7 +89,7 @@ make dev-seed    # re-runs the idempotent seeder only
 make dev-logs    # tails the DB container
 ```
 
-Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored). Sign in via `http://localhost:<port>/auth/dev-session?email=dev@digits.local`. The seeded user has `theme='dialup'` and is preloaded with three lines, two linked households, and one pending invite, so every surface (`/`, `/links`, `/phones`, `/calls`, `/settings`) renders with real data.
+Defaults in `.env.dev.example` (committed); override by copying to `.env.dev` (gitignored). Sign in via `http://localhost:<port>/auth/dev-session?email=dev@digits.local`. The seeded user has `theme='dialup'` and is preloaded with three lines, two linked households, and one pending invite, so every surface (`/`, `/links`, `/phones`, `/calls`, `/settings`) renders with real data. The app ships three themes: `intercom` (default), `dialup`, and `answering-machine`; switch at `/settings/theme`.
 
 When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static/`), so CSS and JS edits show on reload. Template edits still require a restart.
 
@@ -103,6 +120,8 @@ docs: update wiring notes
 ```
 
 **Git.** Remote: `github` (`git@github.com:justinlindh/digits.git`). PRs required to merge into main; no direct pushes. PR template at `.github/pull_request_template.md`.
+
+**`gh` PR/issue bodies.** With a single-quoted heredoc (`<<'EOF'`), the shell does no interpretation, so write backticks and quotes literally. Escaping them as `\`` or `\"` ships the backslashes to GitHub verbatim and breaks the rendered formatting (symptom: published body shows `\`foo\`` everywhere instead of `foo` in inline code).
 
 **Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 

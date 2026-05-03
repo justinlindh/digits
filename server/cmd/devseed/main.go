@@ -80,6 +80,37 @@ var (
 			},
 			LinkToPrimary: true,
 		},
+		{
+			Email:         "whitfields@digits.local",
+			DisplayName:   "Whitfield",
+			HouseholdName: "Whitfield Cabin",
+			Theme:         auth.ThemeDialup,
+			Lines: []seededLine{
+				{"7070001", "Cabin"},
+			},
+			LinkToPrimary: true,
+		},
+		{
+			Email:         "hayashis@digits.local",
+			DisplayName:   "Hayashi",
+			HouseholdName: "Hayashi family",
+			Theme:         auth.ThemeAnsweringMachine,
+			Lines: []seededLine{
+				{"4150001", "Living room"},
+				{"4150002", "Kitchen"},
+			},
+			LinkToPrimary: true,
+		},
+		{
+			Email:         "marquezes@digits.local",
+			DisplayName:   "Marquez",
+			HouseholdName: "Marquez household",
+			Theme:         auth.ThemeIntercom,
+			Lines: []seededLine{
+				{"6190001", "Garage"},
+			},
+			LinkToPrimary: true,
+		},
 	}
 )
 
@@ -110,7 +141,7 @@ func main() {
 	defer func() { _ = database.Close() }()
 
 	s := &stores{
-		auth:  auth.NewStoreFromDB(database.DB),
+		auth:  auth.NewStore(database.DB),
 		house: household.NewStore(database.DB),
 		link:  household.NewLinkStore(database.DB),
 		line:  line.NewStore(database),
@@ -161,6 +192,13 @@ func ensureUser(ctx context.Context, s *stores, spec seededUser, minimal bool) (
 	}
 	if err := s.auth.SetTheme(ctx, u.ID, spec.Theme); err != nil {
 		return nil, nil, fmt.Errorf("set theme: %w", err)
+	}
+	// Seeded users have a deterministic theme already, so flip the flag so
+	// they don't bounce through /welcome on every dev-up. To exercise the
+	// picker locally, run:
+	//   psql $DATABASE_URL -c "UPDATE users SET theme_chosen = FALSE WHERE email = 'dev@digits.local'"
+	if err := s.auth.MarkThemeChosen(ctx, u.ID); err != nil {
+		return nil, nil, fmt.Errorf("mark theme chosen: %w", err)
 	}
 	hh, err := ensureHousehold(ctx, s.house, u.ID, spec.HouseholdName)
 	if err != nil {

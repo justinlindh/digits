@@ -82,10 +82,46 @@ jobs:
             echo 'GROOM_EOF_COMMITS'
           } >> "$GITHUB_ENV"
 
+      - name: Compute Silly Goose gap
+        if: steps.body.outputs.already_groomed != 'true'
+        id: goose
+        run: |
+          current_date=$(gh release view "$TAG" --json publishedAt -q .publishedAt)
+          if [ -z "$current_date" ] || [ "$current_date" = "null" ]; then
+            current_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          fi
+          # gh release list --json does not expose body, so do a two-step lookup:
+          # get the 50 most-recent prior tags, then view each in order until we find
+          # one whose body contains the literal phrase "Silly Goose Award".
+          mapfile -t prior_entries < <(gh release list --limit 200 --json tagName,publishedAt \
+            --jq "[.[] | select(.publishedAt < \"$current_date\")] | sort_by(.publishedAt) | reverse | .[0:50] | .[] | \"\(.tagName)|\(.publishedAt)\"")
+          last_goose_date=""
+          for entry in "${prior_entries[@]}"; do
+            prior_tag="${entry%%|*}"
+            prior_date="${entry##*|}"
+            body=$(gh release view "$prior_tag" --json body -q .body 2>/dev/null || true)
+            if printf '%s' "$body" | grep -q "Silly Goose Award"; then
+              last_goose_date="$prior_date"
+              break
+            fi
+          done
+          if [ -n "$last_goose_date" ]; then
+            current_epoch=$(date -d "$current_date" +%s)
+            last_epoch=$(date -d "$last_goose_date" +%s)
+            days=$(( (current_epoch - last_epoch) / 86400 ))
+            CONTEXT="It has been $days days since Justin last won the Silly Goose Award."
+          else
+            CONTEXT="Justin has never won the Silly Goose Award before. This release would be his inaugural."
+          fi
+          echo "Silly Goose context: $CONTEXT"
+          echo "GOOSE_CONTEXT=$CONTEXT" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Groom notes with Claude
         if: steps.body.outputs.already_groomed != 'true'
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action/base-action@v1
         continue-on-error: true
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -105,6 +141,9 @@ jobs:
 
             Commits in this release:
             ${{ env.COMMITS }}
+
+            Silly Goose context:
+            ${{ env.GOOSE_CONTEXT }}
 
       - name: Update release body
         if: steps.body.outputs.already_groomed != 'true' && steps.claude.outcome == 'success'

@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// ErrInvalidRequest is returned by ConfigureWithDeps for user-facing validation
+// ErrInvalidRequest is returned by Configure for user-facing validation
 // failures (missing SSID, etc.) so handlers can return 400 vs. 500.
 var ErrInvalidRequest = errors.New("invalid configure request")
 
@@ -24,48 +24,43 @@ type ConfigRequest struct {
 	Hidden   bool   `json:"hidden"`
 }
 
-// Configurator writes Wi-Fi config.
-type Configurator interface {
-	Configure(req ConfigRequest) error
-}
-
-// FileSystem abstracts file operations for testing.
-type FileSystem interface {
+// fileSystem abstracts file operations for testing.
+type fileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFile(name string, data []byte, perm os.FileMode) error
 	Remove(name string) error
 	Rename(oldpath, newpath string) error
 }
 
-// OSFileSystem is the real filesystem.
-type OSFileSystem struct{}
+// osFileSystem is the real filesystem.
+type osFileSystem struct{}
 
-func (OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
+func (osFileSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-func (OSFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
+func (osFileSystem) WriteFile(name string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(name, data, perm)
 }
 
-func (OSFileSystem) Remove(name string) error {
+func (osFileSystem) Remove(name string) error {
 	return os.Remove(name)
 }
 
-func (OSFileSystem) Rename(oldpath, newpath string) error {
+func (osFileSystem) Rename(oldpath, newpath string) error {
 	return os.Rename(oldpath, newpath)
 }
 
-// Mounter abstracts remounting the root filesystem.
-type Mounter interface {
+// mounter abstracts remounting the root filesystem.
+type mounter interface {
 	RemountRW() error
 	RemountRO() error
 }
 
-// SystemMounter calls `mount -o remount,{rw,ro} /`.
-type SystemMounter struct{}
+// systemMounter calls `mount -o remount,{rw,ro} /`.
+type systemMounter struct{}
 
-func (SystemMounter) RemountRW() error {
+func (systemMounter) RemountRW() error {
 	out, err := exec.Command("mount", "-o", "remount,rw", "/").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("remount rw: %w: %s", err, out)
@@ -73,7 +68,7 @@ func (SystemMounter) RemountRW() error {
 	return nil
 }
 
-func (SystemMounter) RemountRO() error {
+func (systemMounter) RemountRO() error {
 	out, err := exec.Command("mount", "-o", "remount,ro", "/").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("remount ro: %w: %s", err, out)
@@ -115,11 +110,10 @@ func (SystemAPController) Down() error {
 	return nil
 }
 
-// SystemConfigurator is the production configurator.
-type SystemConfigurator struct{}
-
-func (c *SystemConfigurator) Configure(req ConfigRequest) error {
-	return ConfigureWithDeps(req, OSFileSystem{}, SystemMounter{})
+// Configure writes Wi-Fi config using production filesystem and mount
+// implementations. Tests call configureWithDeps directly with mocks.
+func Configure(req ConfigRequest) error {
+	return configureWithDeps(req, osFileSystem{}, systemMounter{})
 }
 
 const (
@@ -138,12 +132,12 @@ func uuidForSSID(ssid string) string {
 	return s[0:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:32]
 }
 
-// ConfigureWithDeps performs configuration with injectable dependencies.
+// configureWithDeps performs configuration with injectable dependencies.
 //
 // The flag at wifiConfiguredFlag is written last so a partial failure during
 // the operational write does not promote the device to station mode on next
 // boot with a half-written config.
-func ConfigureWithDeps(req ConfigRequest, fs FileSystem, mounter Mounter) error {
+func configureWithDeps(req ConfigRequest, fs fileSystem, m mounter) error {
 	if req.SSID == "" {
 		return fmt.Errorf("%w: ssid is required", ErrInvalidRequest)
 	}
@@ -186,11 +180,11 @@ method=auto
 		return fmt.Errorf("backup write: %w", err)
 	}
 
-	if err := mounter.RemountRW(); err != nil {
+	if err := m.RemountRW(); err != nil {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 	defer func() {
-		if err := mounter.RemountRO(); err != nil {
+		if err := m.RemountRO(); err != nil {
 			log.Printf("configure: remount ro failed: %v", err)
 		}
 	}()
@@ -220,7 +214,7 @@ method=auto
 }
 
 // writeAtomic writes data to path via a sibling temp file and atomic rename.
-func writeAtomic(fs FileSystem, path string, data []byte, perm os.FileMode) error {
+func writeAtomic(fs fileSystem, path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := fs.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)

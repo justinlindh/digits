@@ -33,7 +33,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	}
 	t.Cleanup(func() { _ = rawDB.Close() })
 
-	authStore := auth.NewStoreFromDB(rawDB)
+	authStore := auth.NewStore(rawDB)
 
 	// Google OAuth disabled (empty credentials)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
@@ -42,7 +42,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	emailSender := email.NewNoopSender()
 
 	// Parse login template from the embedded FS
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}

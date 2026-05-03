@@ -1,0 +1,17 @@
+[Unit]
+Description=Digits Numpad Panic Button Check
+Documentation=https://github.com/justinlindh/digits
+# Run after filesystem is ready but before AP check and networking.
+# If the user is holding * on the keypad, write the recovery flag and reboot.
+DefaultDependencies=no
+Wants=local-fs.target
+After=local-fs.target digits-first-boot.service
+Before=digits-ap-check.service network-pre.target
+
+[Service]
+Type=oneshot
+SuccessExitStatus=1
+ExecStart=/usr/local/bin/digits-panic-check
+
+[Install]
+WantedBy=sysinit.target

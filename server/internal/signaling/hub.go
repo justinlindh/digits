@@ -23,12 +23,23 @@ type Conn struct {
 	Send       chan []byte
 	LastSeen   time.Time
 
+	// RemoteAddr is the resolved LAN address of the connected device, or
+	// "" when the resolved client address is not in a private range. The
+	// WS handler assigns it when the Conn is created; see handler_ws.go.
+	RemoteAddr string
+
 	// Device info (reported on connect via device_info message)
 	PiVersion       string
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
-	FlashCapable    bool
+}
+
+// dashNotifier is the subset of *dashboard/events.Broadcaster the Hub uses
+// to wake dashboard SSE subscribers when the set of online lines changes.
+// Optional; nil disables notifications.
+type dashNotifier interface {
+	Notify()
 }
 
 type Hub struct {
@@ -36,18 +47,28 @@ type Hub struct {
 	conns        map[string]*Conn                 // phone number → connection
 	hwConns      map[string]*Conn                 // hardware ID → connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number → last update status
+	dashEvents   dashNotifier
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		conns:   make(map[string]*Conn),
-		hwConns: make(map[string]*Conn),
+		conns:        make(map[string]*Conn),
+		hwConns:      make(map[string]*Conn),
+		updateStatus: make(map[string]*UpdateStatusSnapshot),
 	}
+}
+
+// SetDashboardEvents registers an optional broadcaster that is signalled
+// whenever the set of online lines changes. Wakes dashboard SSE subscribers.
+// Safe to call once at startup; subsequent calls overwrite.
+func (h *Hub) SetDashboardEvents(b dashNotifier) {
+	h.mu.Lock()
+	h.dashEvents = b
+	h.mu.Unlock()
 }
 
 func (h *Hub) Register(number string, conn *Conn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	// Close existing connection for this number if any
 	if old, ok := h.conns[number]; ok {
 		if old.WS != nil {
@@ -68,19 +89,34 @@ func (h *Hub) Register(number string, conn *Conn) {
 	if conn.HardwareID != "" {
 		h.hwConns[conn.HardwareID] = conn
 	}
+	d := h.dashEvents
+	h.mu.Unlock()
 	slog.Debug("hub registered", "number", number)
+
+	if d != nil {
+		d.Notify()
+	}
 }
 
 func (h *Hub) Unregister(number string, conn *Conn) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
+	var changed bool
 	if existing, ok := h.conns[number]; ok && existing == conn {
 		close(conn.Send)
 		delete(h.conns, number)
 		if conn.HardwareID != "" {
 			delete(h.hwConns, conn.HardwareID)
 		}
+		changed = true
+	}
+	d := h.dashEvents
+	h.mu.Unlock()
+
+	if changed {
 		slog.Debug("hub unregistered", "number", number)
+		if d != nil {
+			d.Notify()
+		}
 	}
 }
 
@@ -139,7 +175,14 @@ type DeviceInfoSnapshot struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
-	FlashCapable    bool
+
+	// RemoteAddr is the resolved LAN address of the connected device.
+	// Owner-scope HTML only: rendered on /phones and /phones/{number} for
+	// the device owner, never serialized to JSON, SSE, or any other
+	// external surface. The json:"-" tag enforces that for this type;
+	// downstream code that copies the field into another type must apply
+	// the same care.
+	RemoteAddr string `json:"-"`
 }
 
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
@@ -155,7 +198,7 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 		PiCommit:        conn.PiCommit,
 		FirmwareVersion: conn.FirmwareVersion,
 		FirmwareCommit:  conn.FirmwareCommit,
-		FlashCapable:    conn.FlashCapable,
+		RemoteAddr:      conn.RemoteAddr,
 	}
 }
 
@@ -163,9 +206,6 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.updateStatus == nil {
-		h.updateStatus = make(map[string]*UpdateStatusSnapshot)
-	}
 	h.updateStatus[number] = &UpdateStatusSnapshot{
 		Status:    status,
 		Detail:    detail,
@@ -177,9 +217,6 @@ func (h *Hub) SetUpdateStatus(number, status, detail string) {
 func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.updateStatus == nil {
-		return nil
-	}
 	return h.updateStatus[number]
 }
 
@@ -187,13 +224,11 @@ func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 func (h *Hub) ClearUpdateStatus(number string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.updateStatus != nil {
-		delete(h.updateStatus, number)
-	}
+	delete(h.updateStatus, number)
 }
 
 // UpdateDeviceInfo sets version info for a connected phone under the write lock.
-func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, flashCapable bool) bool {
+func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
@@ -204,7 +239,6 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit string, 
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
-	conn.FlashCapable = flashCapable
 	return true
 }
 

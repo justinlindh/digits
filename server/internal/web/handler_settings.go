@@ -6,45 +6,19 @@ import (
 	"strings"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/household"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type settingsData struct {
-	Page               string
-	Version            string
-	CallHistoryEnabled bool
-	HouseholdDND       bool
-	HouseholdName      string
-	User               *auth.User
-	Household          *household.Household
-	Saved              bool
+	chromeData
+	Saved bool
 }
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	var hh *household.Household
-	if user != nil && h.householdStore != nil {
-		households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
-		if len(households) > 0 {
-			hh = households[0]
-		}
-	}
-	hhName := ""
-	dnd := false
-	if hh != nil {
-		hhName = hh.Name
-		dnd = hh.DoNotDisturb
-	}
+	hh := h.primaryHousehold(r)
 	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
-		Page:               "settings",
-		Version:            version.Version,
-		CallHistoryEnabled: h.callHistoryEnabled(r),
-		HouseholdDND:       dnd,
-		HouseholdName:      hhName,
-		User:               user,
-		Household:          hh,
-		Saved:              r.URL.Query().Get("saved") == "1",
+		chromeData: newChromeData("settings", user, hh),
+		Saved:      r.URL.Query().Get("saved") == "1",
 	})
 }
 

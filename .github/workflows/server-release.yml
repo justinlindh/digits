@@ -14,6 +14,17 @@ on:
       - "server/**"
       - ".github/workflows/server-release.yml"
 
+# Serialize release runs so two PRs merging back-to-back don't race
+# semantic-release. Without this, the second run's checkout is "behind"
+# the now-advanced remote main and semantic-release bails with
+# "The local branch main is behind the remote one, therefore a new
+# version won't be published" -- silently skipping the tag for that
+# PR's commits. cancel-in-progress=false queues the second run instead
+# of cancelling, so each merge eventually gets analyzed.
+concurrency:
+  group: server-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -63,17 +74,17 @@ jobs:
           ref: ${{ needs.release.outputs.new_release_git_tag }}
           fetch-depth: 0
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push signald
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: server
           file: server/Dockerfile
@@ -86,7 +97,7 @@ jobs:
             ghcr.io/justinlindh/digits/signald:latest
 
       - name: Build and push admind
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: server
           file: server/cmd/admind/Dockerfile

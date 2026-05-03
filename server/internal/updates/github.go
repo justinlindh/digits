@@ -202,7 +202,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 // fetchSHA256 downloads a .sha256 asset and returns the trimmed content.
 // Returns "" on any error.
 func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return ""
 	}

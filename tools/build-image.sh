@@ -10,7 +10,7 @@
 #   - x86_64 Linux host
 #   - qemu-user-static (for arm64 chroot — apt-get ONLY)
 #   - losetup, parted, e2fsck, resize2fs, mkfs.ext4
-#   - Cross-compiled binaries in tools/build/ (digitsd, digits-setup)
+#   - Cross-compiled digitsd in tools/build/ and embed dir populated via 'make -C pi/digitsd embed'
 #
 # Design principle:
 #   qemu-user chroot is ONLY used for apt-get operations. All other
@@ -18,7 +18,8 @@
 #   is done host-side to avoid qemu-aarch64 silently corrupting files
 #   like /etc/shadow and /etc/group.
 #
-# Output: digits-pi-YYYYMMDD.img.gz in the current directory
+# Output: digits-pi-v{1,2}-YYYYMMDD.img.gz in the current directory
+#         (v1 for Codec Zero HAT / prototype, v2 when --pcb is passed)
 #
 # See tools/README-image-builder.md for full documentation.
 
@@ -29,12 +30,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OVERLAY_DIR="${REPO_DIR}/pi/image/rootfs-overlay"
+EMBED_DIR="${REPO_DIR}/pi/digitsd/internal/assets/embed"
+ASSET_MARKER_TOOL="${SCRIPT_DIR}/compute-asset-marker.py"
 PARTITION_SETUP="${REPO_DIR}/pi/image/partition-setup.sh"
 INIT_DATA="${REPO_DIR}/pi/image/init-data.sh"
 BUILD_DIR="${SCRIPT_DIR}/build"
 TONES_DIR="${REPO_DIR}/pi/tones"
 DATE_STAMP=$(date +%Y%m%d)
-OUTPUT_NAME="digits-pi-${DATE_STAMP}.img"
+# OUTPUT_NAME is finalized after --pcb is parsed so V1 and V2 builds land in
+# distinct files (digits-pi-v1-DATE.img vs digits-pi-v2-DATE.img).
+OUTPUT_NAME=""
 
 # Packages to install via chroot (the ONLY thing qemu chroot is used for)
 CHROOT_PACKAGES=(
@@ -46,6 +51,7 @@ CHROOT_PACKAGES=(
     libsndfile1
     openocd
     i2c-tools
+    minicom
 )
 
 # Packages to purge from the base Pi OS image (from pi-os-audit.md)
@@ -140,7 +146,12 @@ info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
-# PCB mode: pass --pcb to configure for PCB carrier board (inverted hook switch)
+# PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
+# TLV320AIC3104 codec overlay, the GPCLK0 MCLK service, and the V2 mixer
+# state. Without --pcb, the image is built for V1/prototype hardware
+# (Codec Zero HAT). Both V1 and V2 use the firmware's non-inverted hook
+# polarity; the previous --pcb flip of hook_inverted was a workaround for
+# a since-fixed firmware pin mismatch.
 DEV_MODE=false
 PCB_MODE=false
 while [[ "${1:-}" == --* ]]; do
@@ -151,7 +162,7 @@ while [[ "${1:-}" == --* ]]; do
             ;;
         --pcb)
             PCB_MODE=true
-            info "PCB MODE: hook_inverted will be set in config.json"
+            info "PCB MODE: V2 carrier board (codec overlay, GPCLK0, V2 mixer state)"
             ;;
         *)
             die "Unknown flag: $1"
@@ -159,6 +170,12 @@ while [[ "${1:-}" == --* ]]; do
     esac
     shift
 done
+
+if [[ "$PCB_MODE" == true ]]; then
+    OUTPUT_NAME="digits-pi-v2-${DATE_STAMP}.img"
+else
+    OUTPUT_NAME="digits-pi-v1-${DATE_STAMP}.img"
+fi
 
 require_cmd() {
     for cmd in "$@"; do
@@ -363,7 +380,7 @@ hostside_mask_service() {
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
 require_cmd losetup parted e2fsck resize2fs mkfs.ext4 \
-            qemu-aarch64-static gzip blkid rsync openssl zstd
+            qemu-aarch64-static gzip blkid rsync openssl zstd dtc python3
 
 # Verify we're on x86_64
 [[ "$(uname -m)" == "x86_64" ]] || die "This script must run on x86_64 Linux"
@@ -373,8 +390,8 @@ INPUT_IMG="${1:-}"
 [[ -f "$INPUT_IMG" ]] || die "Input image not found: $INPUT_IMG"
 
 # Verify pre-built binaries exist
-[[ -f "${BUILD_DIR}/digitsd" ]]      || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
-[[ -f "${BUILD_DIR}/digits-setup" ]] || die "Missing ${BUILD_DIR}/digits-setup -- run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
+[[ -f "${BUILD_DIR}/digits-panic-check" ]] || die "Missing ${BUILD_DIR}/digits-panic-check -- run cross-compilation first"
 [[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
 
 # Verify overlay directory exists
@@ -599,7 +616,7 @@ hostside_add_to_groups "$ROOTFS_MNT" "digits" audio i2c
 info "Copying Digits binaries..."
 
 install -m 755 "${BUILD_DIR}/digitsd" "${ROOTFS_MNT}/usr/local/bin/digitsd"
-install -m 755 "${BUILD_DIR}/digits-setup" "${ROOTFS_MNT}/usr/local/bin/digits-setup"
+install -m 755 "${BUILD_DIR}/digits-panic-check" "${ROOTFS_MNT}/usr/local/bin/digits-panic-check"
 
 
 # ── step 13: copy rootfs overlay (host-side) ────────────────────────────────
@@ -607,15 +624,70 @@ install -m 755 "${BUILD_DIR}/digits-setup" "${ROOTFS_MNT}/usr/local/bin/digits-s
 info "Copying rootfs overlay..."
 rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 
+# Layer the digitsd embed tree on top: same content as the overlay for shared
+# files (embed/rootfs/ is generated from rootfs-overlay/ by `make embed`,
+# minus a few build-time-only paths) plus digits-setup, which is cross-
+# compiled into embed only and would otherwise reach the rootfs only via
+# digitsd's runtime asset extractor on first boot.
+[[ -d "${EMBED_DIR}/rootfs" ]] || die "Embed dir not populated: ${EMBED_DIR}/rootfs (run 'make -C pi/digitsd embed')"
+rsync -a --no-owner --no-group "${EMBED_DIR}/rootfs/" "$ROOTFS_MNT/"
+
 # Make scripts executable
 chmod +x "${ROOTFS_MNT}/usr/local/bin/"* 2>/dev/null || true
+
+# Stamp the PCB-revision marker. /etc/digits-pcb-rev defaults to "1" via the
+# rootfs overlay; --pcb means the V2 carrier, so overwrite. Anything that needs
+# variant-specific behavior at runtime (digitsd's SWD config selection, future
+# users) reads this file rather than guessing from unrelated config flags.
+if [[ "$PCB_MODE" == true ]]; then
+    echo "2" > "${ROOTFS_MNT}/etc/digits-pcb-rev"
+fi
+info "PCB rev marker: $(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")"
+
+# Pre-render the active SWD config from the per-rev source. digitsd's startup
+# code at cmd/digitsd/main.go does the same byte-compare-and-write at runtime
+# as a self-heal path (so editing /etc/digits-pcb-rev or shipping a new rev
+# config via OTA still works without an asset-version bump), but on a fresh
+# flash that path triggers a rw/ro remount cycle to write a file we already
+# know the content of. Doing it here keeps digitsd's startup write-free.
+PCB_REV=$(cat "${ROOTFS_MNT}/etc/digits-pcb-rev")
+SWD_SRC="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd-v${PCB_REV}.cfg"
+SWD_DST="${ROOTFS_MNT}/usr/local/share/digits/swd/digits-swd.cfg"
+[[ -f "$SWD_SRC" ]] || die "SWD config source not found: $SWD_SRC"
+cp "$SWD_SRC" "$SWD_DST"
+chmod 644 "$SWD_DST"
+info "SWD config: pre-rendered $(basename "$SWD_SRC") -> $(basename "$SWD_DST")"
+
+# ── step 13a: compile device-tree overlays (host-side) ──────────────────────
+# The FAT boot firmware loads compiled .dtbo binaries only; .dts sources in
+# /boot/firmware/overlays/ are ignored by the loader.
+
+info "Compiling device-tree overlays..."
+for dts in "${BOOT_MNT}/overlays/"digits-*.dts; do
+    [[ -f "$dts" ]] || continue
+    dtbo="${dts%.dts}.dtbo"
+    info "  $(basename "$dts") -> $(basename "$dtbo")"
+    dtc -@ -q -I dts -O dtb -o "$dtbo" "$dts"
+    rm -f "$dts"
+done
 
 # ── step 14: copy tone files (host-side) ────────────────────────────────────
 
 if [[ -d "$TONES_DIR" ]] && compgen -G "$TONES_DIR/*.wav" > /dev/null 2>&1; then
     info "Copying tone WAV files..."
     mkdir -p "${DATA_MNT}/digits/tones"
-    rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # --no-owner --no-group: rsync as root would otherwise preserve the host
+    # build user's uid/gid (often 1000, which collides with `pi` on the Pi).
+    # Subdirectories like pairing/ are created by rsync itself, so they pick up
+    # the host owner unless we strip it. The init-data.sh step that runs after
+    # only fixes the top-level tones/ dir, not nested ones, which is why a
+    # plain `rsync -a` previously left /data/digits/tones/pairing/ owned by
+    # pi:pi while the flat .wav files happened to get fixed up later by
+    # digitsd's first-boot asset extractor.
+    rsync -a --no-owner --no-group --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${DATA_MNT}/digits/tones/"
+    # Reassert canonical ownership across the whole tree. uid 999 / gid 992
+    # match the digits user/group baked into the rootfs (see init-data.sh).
+    chown -R 999:992 "${DATA_MNT}/digits/tones"
 else
     warn "No tone WAV files found in $TONES_DIR — skipping"
 fi
@@ -623,20 +695,29 @@ fi
 # ── step 14a: copy Pico firmware to /data (host-side) ────────────────────────
 
 FW_ELF="${BUILD_DIR}/firmware.elf"
-if [[ -f "$FW_ELF" ]]; then
-    info "Copying Pico firmware to /data/digits/firmware.elf..."
-    cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
-    chown 999:992 "${DATA_MNT}/digits/firmware.elf"
-    chmod 644 "${DATA_MNT}/digits/firmware.elf"
-else
-    warn "No firmware.elf found in tools/build/ -- Pico will need OTA flash after first boot"
+FW_VER="${BUILD_DIR}/firmware.elf.version"
+[[ -f "$FW_ELF" ]] || die "Missing ${FW_ELF} -- entrypoint.sh should have staged it. Run 'make stage-firmware' on the host or rebuild via 'make image-v2-flash'."
+info "Copying Pico firmware to /data/digits/firmware.elf..."
+cp "$FW_ELF" "${DATA_MNT}/digits/firmware.elf"
+chown 999:992 "${DATA_MNT}/digits/firmware.elf"
+chmod 644 "${DATA_MNT}/digits/firmware.elf"
+# Sidecar version lets digitsd reflash on Pico/image mismatch; absent
+# file = skip the check (no failure).
+if [[ -f "$FW_VER" ]]; then
+    cp "$FW_VER" "${DATA_MNT}/digits/firmware.elf.version"
+    chown 999:992 "${DATA_MNT}/digits/firmware.elf.version"
+    chmod 644 "${DATA_MNT}/digits/firmware.elf.version"
 fi
 
 # ── step 14b: copy mixer state to /data (host-side) ─────────────────────────
 
-MIXER_STATE="${REPO_DIR}/pi/digits_mixer.state"
+if [[ "$PCB_MODE" == true ]]; then
+    MIXER_STATE="${REPO_DIR}/pi/mixer-state/v2.state"
+else
+    MIXER_STATE="${REPO_DIR}/pi/mixer-state/v1.state"
+fi
 if [[ -f "$MIXER_STATE" ]]; then
-    info "Copying mixer state to /data..."
+    info "Copying mixer state to /data ($(basename "$MIXER_STATE"))..."
     cp "$MIXER_STATE" "${DATA_MNT}/digits_mixer.state"
 else
     warn "No mixer state file found at $MIXER_STATE — audio may not work on first boot"
@@ -650,6 +731,21 @@ if [[ "$PCB_MODE" == true ]]; then
 else
     bash "$INIT_DATA" "$DATA_MNT"
 fi
+
+# Pre-write the asset-version marker so digitsd's first-boot Extract sees
+# matching marker and skips the rw/ro remount + asset-rewrite pass entirely.
+# The marker format must match Extractor.Extract's `currentVersion + ":" +
+# contentHash` (see pi/digitsd/internal/assets/assets.go); the helper script
+# mirrors the Go hashEmbeddedFS algorithm exactly. Image builds do not pass
+# a -ldflags override, so version.Version stays "dev" and we hardcode it.
+# OTA digitsd updates land with a different version string and a fresh hash,
+# so the runtime extractor takes over from there.
+info "Pre-writing asset-version marker..."
+ASSET_MARKER=$(python3 "$ASSET_MARKER_TOOL" "$EMBED_DIR" dev)
+echo "$ASSET_MARKER" > "${DATA_MNT}/digits/asset-version"
+chown 999:992 "${DATA_MNT}/digits/asset-version"
+chmod 644 "${DATA_MNT}/digits/asset-version"
+info "  marker: $ASSET_MARKER"
 
 # ── step 15b: populate recovery partition (host-side) ───────────────────────
 
@@ -671,6 +767,22 @@ rm -f "${DATA_MNT}/wifi-configured"
 rm -rf "${DATA_MNT}/wifi/"*
 rm -rf "${DATA_MNT}/log/journal/"*
 rm -rf "${DATA_MNT}/ssh/"*
+
+# Re-populate /data/ssh with dev SSH host keys after the cleanup, so the
+# skeleton tar below captures them and factory reset still leaves SSH
+# working on dev images. The rootfs symlinks /etc/ssh/ssh_host_*_key
+# point at /data/ssh/* (created later in the dev block); a factory reset
+# wipes /data, restores it from this skeleton, then reboots into the
+# (unchanged) rootfs snapshot. Without these keys in the skeleton, the
+# symlinks resolve to nothing post-reset and sshd refuses to start.
+# Production images skip this entirely; they have no dev user, no
+# password auth, and no symlinks pointing at /data/ssh.
+if [[ "$DEV_MODE" == true ]]; then
+    info "  DEV MODE: pre-generating SSH host keys for skeleton..."
+    mkdir -p "${DATA_MNT}/ssh"
+    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
+    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+fi
 
 # Create compressed data skeleton archive
 info "  Creating data skeleton archive..."
@@ -891,7 +1003,7 @@ if ! grep -q '^\[all\]' "$CONFIG_TXT"; then
 fi
 
 # Remove any existing Digits config after [all]
-sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
+sed -i '/^\[all\]$/,$ { /^over_voltage=/d; /^enable_uart=/d; /^dtoverlay=disable-bt/d; /^dtoverlay=digits-codec/d; /^dtparam=audio=/d; }' "$CONFIG_TXT"
 
 # Append Digits config
 cat >> "$CONFIG_TXT" << 'DIGITS_CONFIG'
@@ -899,6 +1011,13 @@ over_voltage=2
 enable_uart=1
 dtoverlay=disable-bt
 DIGITS_CONFIG
+
+# V2 carrier board has an onboard TLV320AIC3104 codec that needs an explicit
+# overlay. V1/prototype uses the Codec Zero HAT which auto-loads via HAT EEPROM,
+# so the digits-codec overlay must stay off.
+if [[ "$PCB_MODE" == true ]]; then
+    echo "dtoverlay=digits-codec" >> "$CONFIG_TXT"
+fi
 
 # Set audio off (headless, saves resources)
 sed -i 's/^dtparam=audio=on/dtparam=audio=off/' "$CONFIG_TXT"
@@ -1004,11 +1123,26 @@ hostside_disable_service "$ROOTFS_MNT" "dnsmasq.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.socket"
 
+# Mask packaging maintenance services that fail on a ro root: they try to
+# write to /var/cache and /var/lib paths we keep read-only. They are not
+# needed on a Digits device.
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.service"
+hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.timer"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.service"
+hostside_mask_service "$ROOTFS_MNT" "logrotate.timer"
+
 # Enable Digits services
 hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
+hostside_enable_service "$ROOTFS_MNT" "digits-panic-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
+
+# V2 only: enable GPCLK0 on GPIO4 at 12.288 MHz before audio services start.
+# V1 carrier uses the Codec Zero HAT's onboard crystal, so no GPCLK0 needed.
+if [[ "$PCB_MODE" == true ]]; then
+    hostside_enable_service "$ROOTFS_MNT" "digits-enable-gpclk0.service"
+fi
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
@@ -1065,21 +1199,26 @@ if [[ "$DEV_MODE" == true ]]; then
 PasswordAuthentication yes
 SSHDEV
 
-    # Create SSH host keys directory on /data (writable)
-    mkdir -p "${DATA_MNT}/ssh"
+    # SSH host keys on /data/ssh/ were pre-generated earlier (right before
+    # the data-skeleton tar) so they get captured by the skeleton and
+    # survive factory reset. Just bake the symlinks here.
 
-    # Write a tmpfiles rule so SSH host keys live on /data
-    mkdir -p "${ROOTFS_MNT}/etc/tmpfiles.d"
-    cat > "${ROOTFS_MNT}/etc/tmpfiles.d/digits-ssh.conf" << 'SSHCONF'
-L /etc/ssh/ssh_host_rsa_key - - - - /data/ssh/ssh_host_rsa_key
-L /etc/ssh/ssh_host_ed25519_key - - - - /data/ssh/ssh_host_ed25519_key
-SSHCONF
+    # Bake /etc/ssh/ssh_host_*_key symlinks into the rootfs so sshd can find
+    # the keys at /data/ssh/. The rootfs is mounted read-only at boot, so
+    # systemd-tmpfiles cannot create these symlinks at runtime; they must
+    # exist on disk before first boot.
+    ln -sf /data/ssh/ssh_host_rsa_key         "${ROOTFS_MNT}/etc/ssh/ssh_host_rsa_key"
+    ln -sf /data/ssh/ssh_host_rsa_key.pub     "${ROOTFS_MNT}/etc/ssh/ssh_host_rsa_key.pub"
+    ln -sf /data/ssh/ssh_host_ed25519_key     "${ROOTFS_MNT}/etc/ssh/ssh_host_ed25519_key"
+    ln -sf /data/ssh/ssh_host_ed25519_key.pub "${ROOTFS_MNT}/etc/ssh/ssh_host_ed25519_key.pub"
 
-    # Pre-generate SSH host keys on the HOST (not in chroot)
-    ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
-    ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+    # Raspbian's regenerate_ssh_host_keys.service tries to ssh-keygen into
+    # the RO /etc/ssh and leaves stale zero-byte ssh_host_*_key.XXXX files
+    # behind. We supply our own keys above; mask the service so it does not
+    # race with sshd or pollute /etc/ssh.
+    hostside_mask_service "$ROOTFS_MNT" "regenerate_ssh_host_keys.service"
 
-    info "DEV MODE: SSH enabled — user 'dev', password 'digits', passwordless sudo"
+    info "DEV MODE: SSH enabled, user 'dev', password 'digits', passwordless sudo"
 fi
 
 # ── step 23: final cleanup (host-side) ──────────────────────────────────────

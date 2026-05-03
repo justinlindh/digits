@@ -9,12 +9,12 @@ func TestServiceCodeShutdown(t *testing.T) {
 	// Don't set callbacks — we're just testing detection, not actual shutdown
 	h := NewServiceCodeHandler()
 	for _, k := range "*#*" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Fatal("triggered too early")
 		}
 	}
-	if !h.AddKey("#") {
-		t.Error("*#*# should trigger")
+	if got := h.AddKey("#"); got != ServiceCodeTerminal {
+		t.Errorf("*#*# should trigger as terminal, got %v", got)
 	}
 }
 
@@ -23,21 +23,21 @@ func TestServiceCodeReboot(t *testing.T) {
 	for _, k := range "*##" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("*") {
-		t.Error("*##* should trigger")
+	if got := h.AddKey("*"); got != ServiceCodeTerminal {
+		t.Errorf("*##* should trigger as terminal, got %v", got)
 	}
 }
 
 func TestServiceCodeVolume(t *testing.T) {
 	var gotLevel int
 	h := NewServiceCodeHandler()
-	h.SetVolumeCallback(func(level int) { gotLevel = level })
+	h.OnVolume = func(level int) { gotLevel = level }
 
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("5") {
-		t.Error("*#*5 should trigger")
+	if got := h.AddKey("5"); got != ServiceCodeNonTerminal {
+		t.Errorf("*#*5 should trigger as non-terminal, got %v", got)
 	}
 	if gotLevel != 5 {
 		t.Errorf("expected level 5, got %d", gotLevel)
@@ -46,16 +46,19 @@ func TestServiceCodeVolume(t *testing.T) {
 
 func TestServiceCodeAudioTest(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetAudioTestCallback(func() {})
+	h.OnAudioTest = func() {}
 
 	code := "*#8378#"
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i < len(code)-1 {
+		if result != ServiceCodeNone && i < len(code)-1 {
 			t.Fatalf("triggered too early at index %d", i)
 		}
-		if result {
+		if result != ServiceCodeNone {
+			if result != ServiceCodeNonTerminal {
+				t.Errorf("audio test should be non-terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -67,13 +70,13 @@ func TestServiceCodeAudioTest(t *testing.T) {
 func TestServiceCodeVolume8Works(t *testing.T) {
 	var gotLevel int
 	h := NewServiceCodeHandler()
-	h.SetVolumeCallback(func(level int) { gotLevel = level })
+	h.OnVolume = func(level int) { gotLevel = level }
 
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("8") {
-		t.Error("*#*8 should trigger volume")
+	if got := h.AddKey("8"); got != ServiceCodeNonTerminal {
+		t.Errorf("*#*8 should trigger volume as non-terminal, got %v", got)
 	}
 	if gotLevel != 8 {
 		t.Errorf("expected level 8, got %d", gotLevel)
@@ -83,7 +86,7 @@ func TestServiceCodeVolume8Works(t *testing.T) {
 func TestServiceCodeNoMatch(t *testing.T) {
 	h := NewServiceCodeHandler()
 	for _, k := range "1234" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("1234 should not trigger")
 		}
 	}
@@ -92,7 +95,7 @@ func TestServiceCodeNoMatch(t *testing.T) {
 func TestServiceCodeIncomplete(t *testing.T) {
 	h := NewServiceCodeHandler()
 	for _, k := range "*#*" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("incomplete code should not trigger")
 		}
 	}
@@ -107,8 +110,8 @@ func TestServiceCodeAtEnd(t *testing.T) {
 	for _, k := range "*#*" {
 		h.AddKey(string(k))
 	}
-	if !h.AddKey("#") {
-		t.Error("*#*# at end of buffer should trigger")
+	if got := h.AddKey("#"); got != ServiceCodeTerminal {
+		t.Errorf("*#*# at end of buffer should trigger as terminal, got %v", got)
 	}
 }
 
@@ -119,7 +122,7 @@ func TestServiceCodeReset(t *testing.T) {
 	h.AddKey("*")
 	h.Reset()
 	// After reset, adding "#" should NOT complete *#*#
-	if h.AddKey("#") {
+	if h.AddKey("#") != ServiceCodeNone {
 		t.Error("should not trigger after reset")
 	}
 }
@@ -128,16 +131,19 @@ func TestServiceCodeReset(t *testing.T) {
 func TestServiceCodeSetup(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() { called <- struct{}{} })
+	h.OnSetup = func() { called <- struct{}{} }
 
 	code := "*#73887#"
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i < len(code)-1 {
+		if result != ServiceCodeNone && i < len(code)-1 {
 			t.Fatalf("triggered too early at index %d", i)
 		}
-		if result {
+		if result != ServiceCodeNone {
+			if result != ServiceCodeTerminal {
+				t.Errorf("setup should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -155,11 +161,11 @@ func TestServiceCodeSetup(t *testing.T) {
 // don't fire.
 func TestServiceCodeSetupNotTriggeredByPrefix(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() { t.Error("setup should not trigger on partial sequence") })
+	h.OnSetup = func() { t.Error("setup should not trigger on partial sequence") }
 
 	// Type all but the last character
 	for _, k := range "*#73887" {
-		if h.AddKey(string(k)) {
+		if h.AddKey(string(k)) != ServiceCodeNone {
 			t.Error("should not trigger before final #")
 		}
 	}
@@ -169,7 +175,7 @@ func TestServiceCodeSetupNotTriggeredByPrefix(t *testing.T) {
 // when preceded by other keypresses (rolling buffer behavior).
 func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetSetupCallback(func() {}) // register to prevent defaultSetupAction (which reboots)
+	h.OnSetup = func() {} // register to prevent defaultSetupAction (which reboots)
 
 	// Type some digits first
 	for _, k := range "555" {
@@ -180,7 +186,7 @@ func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 	code := "*#73887#"
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
 			triggered = true
 		}
 	}
@@ -193,25 +199,28 @@ func TestServiceCodeSetupAfterOtherKeys(t *testing.T) {
 // TestServiceCodeSetupRegistered verifies the setup callback is stored.
 func TestServiceCodeSetupRegistered(t *testing.T) {
 	h := NewServiceCodeHandler()
-	if h.onSetup != nil {
-		t.Error("onSetup should be nil before registration")
+	if h.OnSetup != nil {
+		t.Error("OnSetup should be nil before registration")
 	}
-	h.SetSetupCallback(func() {})
-	if h.onSetup == nil {
-		t.Error("onSetup should be non-nil after registration")
+	h.OnSetup = func() {}
+	if h.OnSetup == nil {
+		t.Error("OnSetup should be non-nil after registration")
 	}
 }
 
 func TestServiceCodeRepair(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetRepairCallback(func() { called <- struct{}{} })
+	h.OnRepair = func() { called <- struct{}{} }
 
 	code := "*#0*"
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
+			if result != ServiceCodeTerminal {
+				t.Errorf("repair should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -228,13 +237,16 @@ func TestServiceCodeRepair(t *testing.T) {
 func TestServiceCodeFactoryReset(t *testing.T) {
 	called := make(chan struct{}, 1)
 	h := NewServiceCodeHandler()
-	h.SetFactoryResetCallback(func() { called <- struct{}{} })
+	h.OnFactoryReset = func() { called <- struct{}{} }
 
 	code := "*#00000#"
 	var triggered bool
 	for i, k := range code {
 		result := h.AddKey(string(k))
-		if result && i == len(code)-1 {
+		if result != ServiceCodeNone && i == len(code)-1 {
+			if result != ServiceCodeTerminal {
+				t.Errorf("factory reset should be terminal, got %v", result)
+			}
 			triggered = true
 		}
 	}
@@ -250,10 +262,113 @@ func TestServiceCodeFactoryReset(t *testing.T) {
 
 func TestServiceCodeRepairDoesNotTriggerShutdown(t *testing.T) {
 	h := NewServiceCodeHandler()
-	h.SetShutdownCallback(func() { t.Error("shutdown should not trigger on *#0*") })
-	h.SetRepairCallback(func() {})
+	h.OnShutdown = func() { t.Error("shutdown should not trigger on *#0*") }
+	h.OnRepair = func() {}
 
 	for _, k := range "*#0*" {
 		h.AddKey(string(k))
+	}
+}
+
+func TestServiceCodeInCode(t *testing.T) {
+	h := NewServiceCodeHandler()
+	if h.InCode() {
+		t.Error("empty buffer should not be InCode")
+	}
+	h.AddKey("0")
+	if h.InCode() {
+		t.Error("buffer starting with digit should not be InCode")
+	}
+	h.Reset()
+	h.AddKey("*")
+	if h.InCode() {
+		t.Error("lone '*' should not be InCode (a code requires the '*#' prefix)")
+	}
+	h.AddKey("0")
+	if h.InCode() {
+		t.Error("'*' followed by digit should not be InCode (not a code prefix)")
+	}
+	h.Reset()
+	for _, k := range "*#" {
+		h.AddKey(string(k))
+	}
+	if !h.InCode() {
+		t.Error("'*#' prefix should be InCode")
+	}
+	for _, k := range "000" {
+		h.AddKey(string(k))
+	}
+	if !h.InCode() {
+		t.Error("mid-code buffer (*#000) should be InCode")
+	}
+}
+
+// TestFactoryResetVsRickRollEasterEgg exercises the dispatcher pattern from
+// cmd/digitsd/main.go that gates easter eggs on InCode(). It guards against
+// the regression where the "0000" easter egg ate the 4th zero of *#00000#
+// before the service code handler could see the full sequence.
+func TestFactoryResetVsRickRollEasterEgg(t *testing.T) {
+	resetFired := make(chan struct{}, 1)
+	svc := NewServiceCodeHandler()
+	svc.OnFactoryReset = func() { resetFired <- struct{}{} }
+
+	rickRoll := make(chan string, 1)
+	eggs := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { rickRoll <- clip })
+	eggs.MinGap = 0
+
+	for _, k := range "*#00000#" {
+		key := string(k)
+		// Mirrors main.go dispatch: suppress easter eggs while mid-code.
+		if !svc.InCode() {
+			if eggs.AddKey(key) {
+				continue
+			}
+		}
+		svc.AddKey(key)
+	}
+
+	select {
+	case <-resetFired:
+	case <-time.After(time.Second):
+		t.Fatal("factory reset never fired for *#00000#")
+	}
+	select {
+	case clip := <-rickRoll:
+		t.Errorf("Rick Roll should not fire during *#00000#, got clip %q", clip)
+	case <-time.After(50 * time.Millisecond):
+		// expected: no easter egg
+	}
+}
+
+// TestEasterEggFiresAfterLoneStar guards the suppression-window scope: a
+// stray '*' followed by digits is normal-dial input, not a service code, and
+// must not block easter eggs (which require the full '*#' prefix to suppress).
+func TestEasterEggFiresAfterLoneStar(t *testing.T) {
+	svc := NewServiceCodeHandler()
+	rickRoll := make(chan string, 1)
+	eggs := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { rickRoll <- clip })
+	eggs.MinGap = 0
+
+	for _, k := range "*0000" {
+		key := string(k)
+		if !svc.InCode() {
+			if eggs.AddKey(key) {
+				continue
+			}
+		}
+		svc.AddKey(key)
+	}
+
+	select {
+	case clip := <-rickRoll:
+		if clip != "rickroll" {
+			t.Errorf("expected rickroll, got %q", clip)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Rick Roll should fire for *0000 (lone '*' is not a service code)")
 	}
 }

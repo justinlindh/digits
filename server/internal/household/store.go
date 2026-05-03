@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
 // Household represents a family/household group.
@@ -37,31 +39,23 @@ func NewStore(db *sql.DB) *Store {
 
 // Create inserts a new household and adds ownerUserID as an admin member in a single transaction.
 func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Household, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	h := &Household{}
-	err = tx.QueryRowContext(ctx,
-		`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
-		name,
-	).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt)
-	if err != nil {
-		return nil, fmt.Errorf("insert household: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO household_members (user_id, household_id, role) VALUES ($1, $2, 'admin')`,
-		ownerUserID, h.ID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("insert owner member: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
+	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx,
+			`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
+			name,
+		).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt); err != nil {
+			return fmt.Errorf("insert household: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO household_members (user_id, household_id, role) VALUES ($1, $2, 'admin')`,
+			ownerUserID, h.ID,
+		); err != nil {
+			return fmt.Errorf("insert owner member: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return h, nil
 }
@@ -180,8 +174,12 @@ func (s *Store) UpdateName(ctx context.Context, householdID, name string) error 
 }
 
 // Location returns the parsed *time.Location for this household's timezone.
-// Falls back to time.UTC if the timezone string is invalid.
+// Falls back to time.UTC if h is nil or the timezone string is invalid, so
+// callers without a household can still format timestamps without a guard.
 func (h *Household) Location() *time.Location {
+	if h == nil {
+		return time.UTC
+	}
 	loc, err := time.LoadLocation(h.Timezone)
 	if err != nil {
 		return time.UTC

@@ -32,6 +32,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
@@ -131,16 +132,19 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	tracker := calls.New(database)
 	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(true))
 	tracker.SetHealthStore(healthStore)
+	dashEvents := events.New()
+	hub.SetDashboardEvents(dashEvents)
+	tracker.SetDashboardEvents(dashEvents)
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 	relay.HealthStore = healthStore
 
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 	emailSender := email.NewNoopSender()
-	loginTmpl, err := template.New("").ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)
 	}
@@ -153,14 +157,24 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		Tracker:        tracker,
 		Relay:          relay,
 		HealthStore:    healthStore,
+		DashEvents:     dashEvents,
 		AuthStore:      authStore,
 		AuthHandlers:   authHandlers,
 		GoogleAuth:     googleAuth,
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
 	}, authStore
+}
+
+// markUserOnboarded flips the welcome-gate flag on a freshly-created test
+// user so requests to protected routes don't get bounced to /welcome. Real
+// users hit this state by submitting the picker; tests skip the picker.
+func markUserOnboarded(t *testing.T, store *auth.Store, userID string) {
+	t.Helper()
+	if err := store.MarkThemeChosen(context.Background(), userID); err != nil {
+		t.Fatalf("mark theme chosen for %s: %v", userID, err)
+	}
 }
 
 // addSessionCookie creates test@example.com on demand, opens a session, and
@@ -174,6 +188,7 @@ func addSessionCookie(t *testing.T, store *auth.Store) *http.Cookie {
 			t.Fatalf("create test user: %v", err)
 		}
 	}
+	markUserOnboarded(t, store, user.ID)
 	token, _, err := store.CreateSession(context.Background(), user.ID, auth.SessionTTL)
 	if err != nil {
 		t.Fatalf("create session: %v", err)
@@ -215,7 +230,7 @@ func setupLineWithConn(t *testing.T, h *Handler, database *db.Database, hh *hous
 		t.Fatalf("add line %s: %v", number, err)
 	}
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.Hub().Register(number, conn)
+	h.hub.Register(number, conn)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
 	})
@@ -233,6 +248,7 @@ func seedE2EHousehold(t *testing.T, database *db.Database, authStore *auth.Store
 			t.Fatalf("create test user: %v", err)
 		}
 	}
+	markUserOnboarded(t, authStore, user.ID)
 	store := household.NewStore(database.DB)
 	hh, err := store.Create(context.Background(), "E2E Test Household", user.ID)
 	if err != nil {
@@ -307,6 +323,7 @@ func seedUnrelatedUser(t *testing.T, env callsTestEnv, label string) *auth.User 
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: CreateUser: %v", label, err)
 	}
+	markUserOnboarded(t, env.authStore, u.ID)
 	hh, err := env.householdStore.Create(context.Background(), hhName, u.ID)
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: Create household: %v", label, err)

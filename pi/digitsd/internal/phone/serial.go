@@ -22,6 +22,9 @@ type SerialPort struct {
 	flashEnabled atomic.Bool                 // whether HOOK:FLASH should be forwarded (requires firmware v1.5.0+)
 	stop         chan struct{}
 	logger       *slog.Logger
+
+	monitorMu sync.Mutex
+	monitors  map[chan string]struct{} // tap subscribers (e.g. interactive UART terminal)
 }
 
 // OpenSerial opens the serial port and starts the RX reader goroutine.
@@ -52,6 +55,41 @@ func (sp *SerialPort) Events() <-chan string {
 	return sp.events
 }
 
+// AddMonitor registers a subscriber that will receive every TX command and
+// every RX line from the Pico, prefixed with "> " (TX) or "< " (RX). Used by
+// the interactive UART terminal to tail traffic without disturbing the main
+// event loop. Send is non-blocking: if the channel buffer is full, the line
+// is dropped silently.
+//
+// The returned function unregisters the channel. The caller is responsible
+// for draining and (eventually) closing the channel.
+func (sp *SerialPort) AddMonitor(ch chan string) func() {
+	sp.monitorMu.Lock()
+	defer sp.monitorMu.Unlock()
+	if sp.monitors == nil {
+		sp.monitors = make(map[chan string]struct{})
+	}
+	sp.monitors[ch] = struct{}{}
+	return func() {
+		sp.monitorMu.Lock()
+		defer sp.monitorMu.Unlock()
+		delete(sp.monitors, ch)
+	}
+}
+
+// broadcastMonitor delivers a line to every monitor subscriber, dropping on
+// any subscriber whose buffer is full so a stuck consumer cannot stall TX/RX.
+func (sp *SerialPort) broadcastMonitor(line string) {
+	sp.monitorMu.Lock()
+	defer sp.monitorMu.Unlock()
+	for ch := range sp.monitors {
+		select {
+		case ch <- line:
+		default:
+		}
+	}
+}
+
 // SendCommand sends a command and waits for a response line.
 func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, error) {
 	sp.mu.Lock()
@@ -62,6 +100,7 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 	defer sp.respCh.Store(nil)
 
 	sp.logger.Info("TX", "cmd", cmd)
+	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
 		return "", fmt.Errorf("serial write: %w", err)
 	}
@@ -79,6 +118,7 @@ func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.logger.Info("TX", "cmd", cmd)
+	sp.broadcastMonitor("> " + cmd)
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
 		sp.logger.Warn("serial: write failed", "cmd", cmd, "error", err)
 	}
@@ -109,6 +149,23 @@ func (sp *SerialPort) QueryVersion() (string, string, error) {
 		return "", "", fmt.Errorf("unexpected version response: %q", resp)
 	}
 	return parts[1], parts[2], nil
+}
+
+// QueryBoard sends BOARD? and parses the response.
+// Returns (name, raw, error). `name` is the firmware-active profile name
+// (e.g. "v1", "v2"). `raw` is the full response line, retained for logging
+// since it also carries the rev byte the firmware read from flash.
+func (sp *SerialPort) QueryBoard() (string, string, error) {
+	resp, err := sp.SendCommand("BOARD?", 1*time.Second)
+	if err != nil {
+		return "", "", err
+	}
+	// Response format: BOARD:<name>:0x<rev_byte_hex>
+	parts := strings.SplitN(resp, ":", 3)
+	if len(parts) < 2 || parts[0] != "BOARD" {
+		return "", resp, fmt.Errorf("unexpected board response: %q", resp)
+	}
+	return parts[1], resp, nil
 }
 
 // SetFlashEnabled toggles whether HOOK:FLASH events emitted by the Pico should
@@ -228,6 +285,7 @@ func (sp *SerialPort) readLoop() {
 				}
 
 				sp.logger.Info("RX", "line", line)
+				sp.broadcastMonitor("< " + line)
 
 				// Unsolicited Pico events (hook, keypad, boot) always go to
 				// the events channel, never to a pending command response.

@@ -1,7 +1,7 @@
 {{define "title"}}Overview{{end}}
 
 {{define "content"}}
-{{if eq .User.Theme "answering-machine"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
   {{template "dashboard-am" .}}
 {{else}}
 <div class="page">
@@ -90,58 +90,10 @@
 {{define "dashboard-am"}}
 <div class="am-overview">
 
-  {{/* Top row: LED status display + indicator lamps cluster */}}
-  <div class="am-overview__top">
-
-    {{/* LED status plate */}}
-    <div class="am-plate am-plate--screws am-overview__status">
-      <div class="am-screw am-screw--tl"></div><div class="am-screw am-screw--tr"></div>
-      <div class="am-label am-overview__status-label">Status &middot; {{.Now.Format "Monday, January 2"}}</div>
-      <div class="am-well am-overview__led-well">
-        <div class="am-overview__led-group">
-          <div class="am-led am-overview__led-big">{{printf "%02d" .Stats.ActiveCalls}}</div>
-          <div class="am-led am-led--dim am-overview__led-caption">ON&middot;CALL</div>
-        </div>
-        <div class="am-overview__led-sep"></div>
-        <div class="am-overview__led-group">
-          <div class="am-led am-led--green am-overview__led-mid">{{.Stats.OnlineLines}}</div>
-          <div class="am-led am-led--dim am-overview__led-caption">LINES&middot;ONLINE</div>
-        </div>
-        <div class="am-overview__led-sep"></div>
-        <div class="am-overview__led-group">
-          <div class="am-led am-overview__led-mid">{{len .LinkedFamilies}}</div>
-          <div class="am-led am-led--dim am-overview__led-caption">FAMILIES</div>
-        </div>
-        <div class="am-overview__led-spacer"></div>
-        <div class="am-overview__led-group am-overview__led-group--right">
-          <div class="am-led am-overview__led-time">{{.Now.Format "3:04pm"}}</div>
-          <div class="am-led am-led--dim am-overview__led-caption">LOCAL&middot;TIME</div>
-        </div>
-      </div>
-    </div>
-
-    {{/* Indicator lamps + REC-off cluster */}}
-    <div class="am-plate am-overview__indicators">
-      <div class="am-plate__label">Indicators</div>
-      <div class="am-overview__lamps">
-        <div class="am-overview__lamp">
-          <span class="am-lamp{{if gt .Stats.ActiveCalls 0}} am-lamp--on-red{{end}}"></span>
-          <span class="am-overview__lamp-label">Ringing</span>
-        </div>
-        <div class="am-overview__lamp">
-          <span class="am-lamp{{if gt .Stats.OnlineLines 0}} am-lamp--on-green{{end}}"></span>
-          <span class="am-overview__lamp-label">Online</span>
-        </div>
-        <div class="am-overview__lamp">
-          <span class="am-lamp{{if .LinkedFamilies}} am-lamp--on-amber{{end}}"></span>
-          <span class="am-overview__lamp-label">Paired</span>
-        </div>
-      </div>
-      <div class="am-overview__rec">
-        <div class="am-rec"><span class="am-lamp"></span><span class="am-rec__label">REC</span></div>
-        <div class="am-hint am-overview__rec-hint">This lamp is wired to nothing. Audio never reaches this box.</div>
-      </div>
-    </div>
+  {{/* Top row swaps live via SSE: counters tick on call start/end and
+       handset online/offline; LOCAL TIME advances at least every minute. */}}
+  <div id="am-dashboard-status" hx-ext="sse" sse-connect="/api/dashboard/stream" sse-swap="status">
+    {{template "dashboard-am-status" .Status}}
   </div>
 
   {{/* Main grid: active session + messages on the left, lines on the right */}}

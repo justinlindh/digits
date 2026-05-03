@@ -3,7 +3,8 @@ PI_HOST    ?= digits@<pi-ip>
 PI_DIR      = ~/digits/digitsd
 BUILDER_IMG = digitsd-builder
 
-VERSION ?= dev
+PI_VERSION_RAW := $(shell git describe --tags --dirty --match 'pi/v*' 2>/dev/null)
+VERSION ?= $(if $(PI_VERSION_RAW),$(PI_VERSION_RAW:pi/v%=%),dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell git diff --quiet 2>/dev/null || echo -dirty)
 LDFLAGS  = -X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$(VERSION) \
            -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$(COMMIT)
@@ -12,24 +13,27 @@ REPO_ROOT   = $(shell git rev-parse --show-toplevel)
 EMBED_DIR         = internal/assets/embed
 OVERLAY_SRC       = $(REPO_ROOT)/pi/image/rootfs-overlay
 TONES_SRC         = $(REPO_ROOT)/pi/tones
+MIXER_STATE_SRC   = $(REPO_ROOT)/pi/mixer-state
 DIGITS_SETUP_SRC  = $(REPO_ROOT)/pi/digits-setup
 DIGITS_SETUP_BIN  = $(EMBED_DIR)/rootfs/usr/local/bin/digits-setup
 
 # Paths in rootfs-overlay that are only consumed at image-build time (kernel
 # boot config and device tree fragments live on the FAT firmware partition;
 # the *.fragment files are appended into existing system files by the image
-# builder; ro-root/rw-root are toggled manually on-device). None of these
-# should be extracted at runtime by digitsd.
-OVERLAY_EXCLUDE = boot etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater
+# builder; ro-root/rw-root are toggled manually on-device; digits-pcb-rev is
+# stamped per-image by build-image.sh and must NEVER be overwritten at
+# runtime). None of these should be extracted at runtime by digitsd.
+OVERLAY_EXCLUDE = boot etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater etc/digits-pcb-rev
 
 .PHONY: build build-local builder deploy run test clean embed clean-embed
 
 embed: clean-embed
-	@mkdir -p $(EMBED_DIR)/rootfs $(EMBED_DIR)/data
+	@mkdir -p $(EMBED_DIR)/rootfs $(EMBED_DIR)/data $(EMBED_DIR)/mixer
 	@cp -a $(OVERLAY_SRC)/. $(EMBED_DIR)/rootfs/
 	@for x in $(OVERLAY_EXCLUDE); do rm -rf $(EMBED_DIR)/rootfs/$$x; done
 	@find $(EMBED_DIR)/rootfs -type d -empty -delete 2>/dev/null || true
 	@cp -a $(TONES_SRC)/. $(EMBED_DIR)/data/tones/
+	@cp -a $(MIXER_STATE_SRC)/. $(EMBED_DIR)/mixer/
 	@mkdir -p $(dir $(DIGITS_SETUP_BIN))
 	@echo "embed: cross-compiling digits-setup for arm64"
 	@cd $(DIGITS_SETUP_SRC) && \

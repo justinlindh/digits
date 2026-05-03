@@ -1,0 +1,197 @@
+# Unified firmware design
+
+## Goal
+
+Replace the build-time `HARDWARE_REV` split in the Pico firmware with a single binary that detects the board it is running on at boot and adapts at runtime. One ELF artifact per release. No more chance of flashing V1 firmware to V2 hardware (or vice versa).
+
+## Motivation
+
+Today the firmware is forked at compile time:
+
+- `HARDWARE_REV=1`: V1 family (ElectroCookie prototype + V1 PCB).
+- `HARDWARE_REV=2`: V2 carrier PCB.
+
+Differences between the two builds are entirely GPIO pin assignments plus one boot2 stage selection. Every other line of firmware is identical.
+
+The fork has caused several bugs already:
+
+- Pin constants (HOOK_PIN, LED_PIN, KEYPAD_*, ringer pins) were hardcoded to V1 values; V2 PCB shipped with the firmware ignoring its actual wiring until each constant was made `HARDWARE_REV`-conditional one at a time.
+- The CI release pipeline builds with default `HARDWARE_REV=1` and publishes a single ELF as `firmware-${VERSION}.elf`. Every release ships V1 firmware, the server hands the same URL to every Pi, and any V2 unit auto-flashing this OTA gets V1 firmware on V2 hardware (UART pin mismatch alone breaks all communication).
+- The local build script reads `HARDWARE_REV` from environment only; passing `-DHARDWARE_REV=2` as a positional argument silently builds V1. This footgun has already cost a bench session chasing a phantom UART loopback bug.
+
+A unified firmware closes all of these failure modes at once. The mechanism (a Pi-flashed rev byte at a reserved flash sector plus a Pi-side UART override backstop) extends naturally to future board revisions without another firmware fork.
+
+## Non-goals
+
+- Codec / mixer / audio path differences between V1 and V2: these live in the Pi SD image overlay (mixer state files, GPCLK0 service, codec sample-rate constraints), not in the Pico firmware. They stay where they are.
+- digitsd OTA URL filtering: with one ELF per release, the existing "pick the .elf" code in the server is correct and needs no change.
+- The `pcb_rev` marker file on the Pi: stays. It still drives image-side decisions (SWD pinout extraction, mixer state, codec config). The firmware no longer cares about it; the Pi-side image still does.
+
+## Design
+
+### Detection mechanism
+
+Pi-flashed rev byte at a reserved Pico flash offset, with a Pi-side UART override available as a runtime backstop.
+
+The Pi already knows its target hardware revision: `/etc/digits-pcb-rev` is stamped at image build time and reads `1` or `2` (or future revs). When `flash-pico.sh` writes firmware to the Pico, it also writes a single byte at flash offset `0x1FF000` (last 4 KB sector of 2 MB flash, address `XIP_BASE + 0x1FF000` = `0x101FF000`) containing the ASCII rev character. Firmware reads that byte at boot via XIP (no SSI command needed) and selects the matching profile.
+
+JEDEC ID auto-detection was considered and discarded: the Pi Pico modules used on V1 PCB and the bare RP2040 used on V2 both ship with W25Q16JV flash, so JEDEC ID returns `0xEF4015` on both boards and cannot distinguish them.
+
+Bootstrap order: when an unprogrammed sector is read (fresh chip, all `0xFF`), the firmware falls back to the V2 profile. This biases new hardware toward forward progress: a brand-new board that hasn't been Pi-flashed yet gets a V2 pinout by default, which is the safe assumption for V2-line successors. A bench-only flash that bypasses `flash-pico.sh` (e.g., `openocd program`) leaves the rev sector untouched (writing the firmware ELF doesn't reach the last sector), so a previously-written rev byte persists across firmware flashes; only a full chip erase or a deliberate sector erase resets it.
+
+The UART override (`CONFIG:PCB_REV=N`) is the runtime backstop. If digitsd's `pcb_rev` disagrees with the firmware's selected profile (for example, a fresh chip with no rev byte, or a board moved between Pi units), digitsd sends the override after the first `BOARD?` round trip and the firmware re-installs the profile pointer.
+
+### Boot2 unification
+
+Standardize on `boot2_generic_03h` for all boards. It uses bare 0x03 single-bit reads, which work on every SPI flash chip we have or are likely to use. XIP throughput drops on V1 from approximately 24 MB/s to 5 MB/s. The firmware is roughly 80 KB total and is not bandwidth-bound (no large lookup tables, no streaming flash reads in hot paths). The slowdown is imperceptible.
+
+### Pin map data structure
+
+A single `board_profile_t` struct holds every per-rev value. All pin numbers and per-rev quirks live here. Modules read from a global `board` pointer instead of compile-time constants.
+
+```c
+// firmware/src/board.h
+
+typedef struct {
+    const char* name;          // "v1" / "v2"
+    uint8_t rev_byte;          // ASCII rev character expected in the flash marker
+
+    // UART (Pi to Pico)
+    uint uart_tx_pin;
+    uint uart_rx_pin;
+
+    // Hookswitch
+    uint hook_pin;
+
+    // Status LED
+    uint led_pin;
+
+    // Keypad matrix
+    uint keypad_rows[4];
+    uint keypad_cols[4];
+    uint keypad_num_cols;      // V1=4, V2=3
+    const char* keychars;      // flat (row, col) -> ASCII lookup, length 4 * num_cols
+
+    // Ringer (DRV8871 H-bridge inputs)
+    uint ringer_in1_pin;
+    uint ringer_in2_pin;
+} board_profile_t;
+
+extern const board_profile_t* board;
+
+void board_init(void);  // reads rev byte from flash sector, installs profile pointer
+```
+
+Profiles defined as `static const` in `board.c`. New profile = new struct entry plus a new ASCII rev byte. No other firmware change.
+
+### Init sequence
+
+```c
+int main(void) {
+    // 1. Pre-bootstrap: drive both candidate UART_TX pins high so the Pi
+    //    sees a clean idle line during the boot window. We don't know the
+    //    profile yet so we cover both possibilities.
+    gpio_init(0);  gpio_set_dir(0, GPIO_OUT);  gpio_put(0, 1);
+    gpio_init(28); gpio_set_dir(28, GPIO_OUT); gpio_put(28, 1);
+
+    // 2. Read rev byte from flash sector, install board profile.
+    board_init();
+
+    // 3. Release the pre-bootstrap pin we don't need.
+    if (board->uart_tx_pin != 0)  gpio_deinit(0);
+    if (board->uart_tx_pin != 28) gpio_deinit(28);
+
+    // 4. Standard subsystem init (each reads from board->...).
+    uart_proto_init();
+    hook_init();
+    led_init();
+    keypad_init();
+    ringer_init();
+    phone_fsm_init();
+
+    // 5. Main loop.
+    while (true) { /* poll loop unchanged */ }
+}
+```
+
+Step 1 is the only place raw GPIO numbers appear outside profile lookup. It is intentional: the rev byte read in step 2 has not happened yet, so we cannot know which UART_TX pin to drive. Driving both costs nothing and protects the bootstrap window.
+
+### Pi-side flash sector write
+
+`flash-pico.sh` runs on the Pi during firmware deploy. After `openocd` finishes programming the firmware ELF, the script reads `/etc/digits-pcb-rev`, builds a 1-byte payload (the ASCII rev character), and writes it to flash address `0x101FF000` via openocd. This guarantees the firmware reads the correct rev on next boot.
+
+The rev sector is the last 4 KB of the 2 MB flash, well beyond anything the firmware ELF touches. Programming the firmware ELF does not erase or overwrite this sector. A previously-written rev byte persists across firmware OTA flashes.
+
+For bench-only flashing that bypasses `flash-pico.sh` (e.g., raw `openocd program firmware.elf`), the rev sector retains whatever value it last had: a previous rev byte if Pi-flashed before, or `0xFF` (V2 fallback) if never Pi-flashed.
+
+### Pi-side UART override (runtime backstop)
+
+Firmware exposes:
+
+```
+BOARD?              -> BOARD:<name>:<rev_byte_hex>
+                       Reports the active profile and the rev byte read from flash.
+CONFIG:PCB_REV=N    -> CONFIG:PCB_REV=N:OK if N matches a known profile, else
+                       CONFIG:PCB_REV=N:UNKNOWN. Swaps the active profile pointer.
+                       Modules that latched their pin numbers at init() time are
+                       NOT re-initialized.
+```
+
+digitsd reads its own `pcb_rev` at startup, queries `BOARD?`, and sends `CONFIG:PCB_REV=N` if the answers disagree. This recovers from a fresh chip that hasn't been Pi-flashed yet, or a board moved between Pi units with mismatched rev markers.
+
+## CI and release plumbing
+
+- `tools/build-firmware.sh`: drops the per-rev concept. Builds once, outputs `artifacts/firmware-${VERSION}.elf`.
+- `firmware/.releaserc-full.cjs`: publishes one ELF and one SHA256 file per release.
+- `firmware/CMakeLists.txt`: removes the `HARDWARE_REV` cache var, the per-rev boot2 branch, the `HARDWARE_REV=...` define. Boot2 hardcoded to `boot2_generic_03h`.
+- `firmware/Makefile`: drops the `HARDWARE_REV` env var threading.
+- `scripts/build.sh`: drops `HARDWARE_REV` env var handling and the `-DHARDWARE_REV=...` cmake arg.
+- Top-level `Makefile`: removes `firmware-v1` / `firmware-v2` / `firmware-v1-local` / `firmware-v2-local` (added today as a stopgap). Goes back to single `firmware` and `firmware-local` targets.
+
+Net change is mostly deletion. Fewer build paths, fewer chances to ship the wrong artifact.
+
+## digitsd changes
+
+- New `BOARD?` query at startup. Logs the firmware-reported board name. Cross-checks against the on-disk `pcb_rev`; warns on mismatch.
+- New `CONFIG:PCB_REV=N` send when `BOARD?` and `pcb_rev` disagree (currently never happens; future-proofing only).
+- OTA URL-picking code unchanged. Already picks "the .elf"; one ELF per release means it picks correctly.
+
+## ERRATA and docs cleanup
+
+V2 ERRATA items affected by this change:
+
+| Item | Status after unified firmware |
+|---|---|
+| 2. UART_TX_PI pullup | Demoted from required to optional. Firmware-side `needs_uart_tx_idle_workaround` flag stays on for V2 profile. The hardware pullup becomes a "nice to have" so the line stays high even with no firmware running. |
+| 3. boot2 chip mismatch | Closed. Unified firmware uses `boot2_generic_03h` which works on the existing W25Q16JV. No flash chip swap needed. |
+| 9. Firmware HOOK_PIN GP10 vs GP20 | Closed. Subsumed into the unified firmware refactor. |
+
+Items 1, 4, 6, 7, 8 still need their respective V2.1 or V3 PCB work.
+
+`hardware/pcb/v2.1/CHANGES_FROM_V2.md`: drop the flash chip swap section, demote the UART pullup section. V2.1 KiCad scope shrinks to component-side flip, J6 polarity swap (J8 reassignment is already done in the V2.1 schematic).
+
+`#313` (V2.1 KiCad work issue): update checklist to remove the flash chip swap and demote the UART pullup.
+
+## Migration plan
+
+Each step independently verifiable on hardware. Worst-case rollback is reverting one commit.
+
+1. **Add `board.h` / `board.c` with both profiles, but keep `HARDWARE_REV` working.** New module that nothing depends on. Rev byte read at flash 0x101FF000 is implemented and exercised; bench tests pre-write the byte via openocd. The existing constants still drive the build. Verify: `BOARD?` returns "v1" on V1 PCB and "v2" on V2 carrier.
+
+2. **Migrate one module at a time to read from `board->...`.** Start with `led.c`. Then `hook.c`, `keypad.c`, `ringer.c`, `uart_proto.c`. After each module: build, flash, verify both boards still work.
+
+3. **Drop `boot2_w25q080`, standardize on `boot2_generic_03h`.** One-line CMakeLists change. The riskiest step on V1, since `boot2_generic_03h` running on the W25Q080 is the only new combination. Easy to roll back.
+
+4. **Remove the `HARDWARE_REV` build-time override.** Delete the cache var, env var threading, `firmware-v1` / `firmware-v2` Make targets. The per-rev `#if` blocks in `hook.h`, `led.h`, `keypad.h`, `ringer.h`, `uart_proto.h` should be empty after step 2; remove the conditional shells.
+
+5. **Update CI and release plumbing.** Single ELF artifact, single Make target. Cut a fresh firmware release.
+
+6. **Update digitsd.** Add `BOARD?` query at startup, log result, cross-check against `pcb_rev`. Wire up the dormant `CONFIG:PCB_REV=N` UART command.
+
+7. **ERRATA and docs cleanup.** Close V2 ERRATA items 3 and 9. Demote item 2 to optional. Update V2.1 CHANGES doc and #313 to reflect shrunk KiCad scope.
+
+## Risks
+
+- **`boot2_generic_03h` on the V1 PCB's W25Q16JV** is the same combination V2 already runs on, so this is low risk. Step 3 of the migration plan validates on V1 hardware to be safe.
+- **Fresh chip without a rev byte** falls through to the V2 profile. Modules init with V2 pins. If the actual board is V1, `BOARD?` returns `v2` but UART itself works (V2 UART pins happen to not collide with anything destructive on V1 in the tested cases). digitsd notices the mismatch with `pcb_rev` and sends `CONFIG:PCB_REV=v1`, which swaps the active profile pointer. Pin-latched modules continue using V2 pins until next firmware boot. **First-boot recovery is bounded:** the next reboot reads the now-Pi-written rev byte and selects the correct profile.
+- **Bench testing without `flash-pico.sh`.** Raw `openocd program firmware.elf` doesn't touch the rev sector, so the previously-written byte persists. To force a specific rev for testing, write the byte manually via `openocd -c "init; flash filld 0x101FF000 0x32 1; reset; shutdown"` (`0x32` = ASCII `'2'`).

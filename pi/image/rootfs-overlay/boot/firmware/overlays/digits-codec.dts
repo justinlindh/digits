@@ -4,8 +4,43 @@
 / {
     compatible = "brcm,bcm2835";
 
-    /* Enable I2C1 for codec control */
+    /*
+     * U7 (XC6206P182MR) is a fixed 1.8 V LDO that produces the codec's DVDD
+     * rail. It has no software control, so model it as a fixed-regulator the
+     * codec driver can read voltage from.
+     */
     fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            vdd_1v8_codec_reg: vdd-1v8-codec {
+                compatible = "regulator-fixed";
+                regulator-name = "vdd-1v8-codec";
+                regulator-min-microvolt = <1800000>;
+                regulator-max-microvolt = <1800000>;
+                regulator-always-on;
+            };
+        };
+    };
+
+    /*
+     * Fixed-clock node representing the 12.288 MHz MCLK supplied to the codec.
+     * Pi GPIO4 sources GPCLK0 to U6 pin 1 (MCLK) per the V2 schematic. The
+     * actual clock generator is enabled by the audremap fragment below.
+     */
+    fragment@1 {
+        target-path = "/";
+        __overlay__ {
+            codec_mclk: codec-mclk {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <12288000>;
+                clock-output-names = "codec-mclk";
+            };
+        };
+    };
+
+    /* Enable I2C1 for codec control */
+    fragment@2 {
         target = <&i2c1>;
         __overlay__ {
             status = "okay";
@@ -19,12 +54,27 @@
                 AVDD-supply = <&vdd_3v3_reg>;
                 IOVDD-supply = <&vdd_3v3_reg>;
                 DRVDD-supply = <&vdd_3v3_reg>;
+                DVDD-supply = <&vdd_1v8_codec_reg>;
+                clocks = <&codec_mclk>;
+                clock-names = "mclk";
+
+                /* CODEC_RESET on Pi GP22 (active-low). Without this the
+                 * driver never asserts a clean POR and the chip can latch
+                 * indeterminate analog-front-end state at first boot. */
+                reset-gpios = <&gpio 22 1>;
+
+                /* MICBIAS level: 3 = AVDD (~3.3 V on the V2 carrier). The
+                 * driver writes R25 bits[7:6] from this; without the
+                 * property MICBIAS stays powered down and the electret
+                 * never sees bias. Capture path is dead-silent without
+                 * this even when machine routing is correct. */
+                ai3x-micbias-vg = <3>;
             };
         };
     };
 
     /* Enable I2S */
-    fragment@1 {
+    fragment@3 {
         target = <&i2s>;
         __overlay__ {
             status = "okay";
@@ -32,21 +82,44 @@
     };
 
     /* Sound card using simple-audio-card */
-    fragment@2 {
+    fragment@4 {
         target-path = "/";
         __overlay__ {
             digits_sound: digits-sound {
                 compatible = "simple-audio-card";
                 simple-audio-card,name = "digitscodec";
                 simple-audio-card,format = "i2s";
+                simple-audio-card,bitclock-master = <&dailink_cpu>;
+                simple-audio-card,frame-master = <&dailink_cpu>;
                 status = "okay";
 
-                simple-audio-card,cpu {
+                /* External widgets connected to the codec's input/output
+                 * pins. simple-audio-card needs these declared so DAPM
+                 * builds a complete graph through the codec; without the
+                 * routing block below DAPM power-gates the entire input
+                 * chain (Mic Bias supply, LINE1L pin, Left PGA Mixer,
+                 * Left ADC) and arecord captures only chip self-noise. */
+                simple-audio-card,widgets =
+                    "Microphone", "Handset Mic",
+                    "Speaker",    "Earpiece";
+
+                /* Routing format is {sink, source}. The kernel driver knows
+                 * the codec datasheet's MIC1LP pin as LINE1L (and MIC1RP as
+                 * LINE1R). On V2 the handset mic AC-couples into MIC1LP
+                 * single-ended, so only the Left side is wired. */
+                simple-audio-card,routing =
+                    "LINE1L",      "Handset Mic",
+                    "Handset Mic", "Mic Bias",
+                    "Earpiece",    "HPLOUT",
+                    "Earpiece",    "HPLCOM";
+
+                dailink_cpu: simple-audio-card,cpu {
                     sound-dai = <&i2s>;
                 };
 
                 simple-audio-card,codec {
                     sound-dai = <&codec>;
+                    system-clock-frequency = <12288000>;
                 };
             };
         };

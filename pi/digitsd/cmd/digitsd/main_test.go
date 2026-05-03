@@ -2,10 +2,94 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestPollPing_Immediate(t *testing.T) {
+	calls := 0
+	err := pollPing(func() error { calls++; return nil }, 5*time.Second, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("pollPing returned error on immediate success: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 ping, got %d", calls)
+	}
+}
+
+func TestPollPing_SucceedsOnRetry(t *testing.T) {
+	calls := 0
+	err := pollPing(func() error {
+		calls++
+		if calls < 3 {
+			return errors.New("not ready")
+		}
+		return nil
+	}, 5*time.Second, 1*time.Millisecond)
+	if err != nil {
+		t.Fatalf("pollPing returned error after retry success: %v", err)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 pings, got %d", calls)
+	}
+}
+
+func TestPollPing_Deadline(t *testing.T) {
+	calls := 0
+	want := errors.New("never ready")
+	start := time.Now()
+	err := pollPing(func() error { calls++; return want }, 50*time.Millisecond, 10*time.Millisecond)
+	elapsed := time.Since(start)
+	if !errors.Is(err, want) {
+		t.Errorf("pollPing returned %v, want last error %v", err, want)
+	}
+	if calls < 2 {
+		t.Errorf("expected at least 2 attempts before deadline, got %d", calls)
+	}
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("pollPing returned before deadline: %v elapsed", elapsed)
+	}
+}
+
+func TestFirmwareNeedsReflash(t *testing.T) {
+	cases := []struct {
+		name    string
+		pico    string
+		bundled string
+		want    bool
+	}{
+		{"both empty", "", "", false},
+		{"pico empty", "", "1.7.0", false},
+		{"bundled empty (sidecar absent)", "1.7.0", "", false},
+		{"identical versions", "1.7.0", "1.7.0", false},
+		{"older pico than bundled", "1.5.0-69-g8fc14f5a-dirty", "1.7.0", true},
+		{"newer pico than bundled", "1.8.0", "1.7.0", true},
+		{"dirty bundled, clean pico", "1.7.0", "1.7.0-3-gabcd-dirty", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := firmwareNeedsReflash(tc.pico, tc.bundled)
+			if got != tc.want {
+				t.Errorf("firmwareNeedsReflash(%q, %q) = %v, want %v", tc.pico, tc.bundled, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReadBundledFirmwareVersion_Missing(t *testing.T) {
+	// Default path almost certainly doesn't exist on the dev host. The
+	// function must return "" without erroring so firmwareNeedsReflash
+	// short-circuits to "no reflash needed."
+	if _, err := os.Stat(defaultFirmwareVersionPath); err == nil {
+		t.Skipf("%s exists on this host; skipping", defaultFirmwareVersionPath)
+	}
+	if got := readBundledFirmwareVersion(); got != "" {
+		t.Errorf("readBundledFirmwareVersion() with missing file = %q, want %q", got, "")
+	}
+}
 
 func TestWritePCMWav(t *testing.T) {
 	samples := []int16{0, 100, -100, 32767, -32768, 0}

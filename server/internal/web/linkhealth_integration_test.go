@@ -116,19 +116,24 @@ func newLHEnv(t *testing.T) lhSetup {
 		_, _ = db.Exec("DELETE FROM users WHERE email IN ($1,$2,$3)", emailA, emailB, emailC)
 	})
 
-	// Create users.
+	// Create users. markUserOnboarded flips the welcome-gate flag so the
+	// users behave like already-onboarded users on protected routes; the
+	// welcome flow itself is exercised separately.
 	userA, err := env.authStore.CreateUser(context.Background(), emailA, "LH User A", nil)
 	if err != nil {
 		t.Fatalf("create user A: %v", err)
 	}
+	markUserOnboarded(t, env.authStore, userA.ID)
 	userB, err := env.authStore.CreateUser(context.Background(), emailB, "LH User B", nil)
 	if err != nil {
 		t.Fatalf("create user B: %v", err)
 	}
+	markUserOnboarded(t, env.authStore, userB.ID)
 	userC, err := env.authStore.CreateUser(context.Background(), emailC, "LH User C", nil)
 	if err != nil {
 		t.Fatalf("create user C: %v", err)
 	}
+	markUserOnboarded(t, env.authStore, userC.ID)
 
 	// Create households.
 	hhA, err := env.householdStore.Create(context.Background(), hhNameA, userA.ID)

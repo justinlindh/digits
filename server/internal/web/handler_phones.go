@@ -8,14 +8,28 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
-	"github.com/justinlindh/digits/server/internal/version"
 )
+
+const maxLineNameRunes = 50
+
+func validateLineName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", errors.New("name is required")
+	}
+	if utf8.RuneCountInString(name) > maxLineNameRunes {
+		return "", errors.New("name too long")
+	}
+	return name, nil
+}
 
 type pairSuccess struct {
 	Name            string
@@ -23,16 +37,11 @@ type pairSuccess struct {
 }
 
 type linesData struct {
-	Page                  string
-	Version               string
-	CallHistoryEnabled    bool
-	HouseholdName         string
-	HouseholdDND          bool
+	chromeData
 	Lines                 []lineRow
 	Error                 string
 	PairError             string
 	PairSuccess           *pairSuccess
-	User                  *auth.User
 	LatestPiVersion       string
 	LatestFirmwareVersion string
 }
@@ -49,22 +58,19 @@ type lineRow struct {
 	PiUpdateNotes       []updates.Release
 }
 
-func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
+// buildLinesData assembles the line-list page payload. hh may be nil; when
+// nil or lookup fails the handler shows an empty list rather than leaking
+// every line on the server.
+func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
 	var user *auth.User
 	if r != nil {
 		user = auth.UserFromContext(r.Context())
 	}
 
 	var lines []line.Line
-
-	// Scope to household if user has one and householdStore is available
-	if user != nil && h.householdStore != nil {
-		households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-		if err == nil && len(households) > 0 {
-			lines, _ = h.lineStore.ListByHousehold(r.Context(), households[0].ID)
-		}
+	if hh != nil && h.lineStore != nil {
+		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	}
-
 	// If household lookup failed, show empty list rather than leaking all lines
 	if lines == nil {
 		lines = []line.Line{}
@@ -102,23 +108,17 @@ func (h *Handler) buildLinesData(r *http.Request, errMsg string) linesData {
 		}
 		rows[i] = row
 	}
-	hhName, callHistory, hhDND, _ := h.householdContext(r)
 	return linesData{
-		Page:                  "phones",
-		Version:               version.Version,
-		CallHistoryEnabled:    callHistory,
-		HouseholdName:         hhName,
-		HouseholdDND:          hhDND,
+		chromeData:            newChromeData("phones", user, hh),
 		Lines:                 rows,
 		Error:                 errMsg,
-		User:                  user,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
 	}
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	data := h.buildLinesData(r, "")
+	data := h.buildLinesData(r, h.primaryHousehold(r), "")
 	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
 		data.PairSuccess = &pairSuccess{
 			Name:            pairedName,
@@ -136,32 +136,27 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	// Get user's household to associate the new line
+	hh := h.primaryHousehold(r)
 	var householdID string
-	if h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-			if err == nil && len(households) > 0 {
-				householdID = households[0].ID
-			}
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 
 	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, err.Error())
+		data := h.buildLinesData(r, hh, err.Error())
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	_, err := h.lineStore.Add(r.Context(), number, name, householdID)
-	data := h.buildLinesData(r, "")
+	msg := ""
 	if err != nil {
-		data = h.buildLinesData(r, err.Error())
+		msg = err.Error()
 	}
+	data := h.buildLinesData(r, hh, msg)
 
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	if err != nil {
@@ -180,41 +175,36 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
+	hh := h.primaryHousehold(r)
+
 	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesData(r, hh, "")
 		data.PairError = "invalid phone number: " + err.Error()
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	if h.pairingStore == nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesData(r, hh, "")
 		data.PairError = "pairing is not enabled"
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
-	// Get user's household
 	var householdID string
-	if h.householdStore != nil {
-		user := auth.UserFromContext(r.Context())
-		if user != nil {
-			households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-			if err == nil && len(households) > 0 {
-				householdID = households[0].ID
-			}
-		}
+	if hh != nil {
+		householdID = hh.ID
 	}
 	if householdID == "" {
-		data := h.buildLinesData(r, "")
-		data.PairError = "no household found — please complete onboarding first"
+		data := h.buildLinesData(r, hh, "")
+		data.PairError = "no household found: please complete onboarding first"
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
 	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
 	if err != nil {
-		data := h.buildLinesData(r, "")
+		data := h.buildLinesData(r, hh, "")
 		data.PairError = err.Error()
 		renderWith(w, h.tmplPhones, layoutFor(r), data)
 		return
@@ -236,11 +226,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 }
 
 type lineDetailData struct {
-	Page                  string
-	Version               string
-	CallHistoryEnabled    bool
-	HouseholdName         string
-	HouseholdDND          bool
+	chromeData
 	Line                  line.Line
 	Online                bool
 	Devices               []device.Device
@@ -252,12 +238,11 @@ type lineDetailData struct {
 	FWReleases            []updates.Release
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
-	User                  *auth.User
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -298,7 +283,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
 
-	hhName, callHistory, hhDND, loc := h.householdContext(r)
+	loc := hh.Location()
 
 	if lastSeenAt != nil {
 		t := lastSeenAt.In(loc)
@@ -320,11 +305,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		Page:                  "phones",
-		Version:               version.Version,
-		CallHistoryEnabled:    callHistory,
-		HouseholdName:         hhName,
-		HouseholdDND:          hhDND,
+		chromeData:            newChromeData("phones", user, hh),
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
@@ -336,7 +317,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FWReleases:            fwReleases,
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
-		User:                  user,
 	})
 }
 
@@ -347,7 +327,9 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	}
 	online := h.hub.Get(number) != nil
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, "phone-status", struct{ Online bool }{online})
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
+			Online bool
+		}{online})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -363,7 +345,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	online := h.hub.Get(number) != nil
-	renderWith(w, h.tmplPhones, "phone-edit-row", lineRow{Line: *ln, Online: online})
+	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
@@ -372,25 +354,89 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("name"))
+	name, err := validateLineName(r.FormValue("name"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
 
-	if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-		slog.Error("line update failed", "err", err, "line_id", ln.ID)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+	if name != ln.Name {
+		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
-	data := h.buildLinesData(r, "")
+	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+// nameSectionData carries the prefilled input value and any validation error
+// when re-rendering the edit partial after a failed POST, so the user's draft
+// and the reason for rejection survive the round-trip.
+type nameSectionData struct {
+	Line  line.Line
+	Error string
+	Value string
+}
+
+func (h *Handler) handlePhoneNameGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+}
+
+func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
+}
+
+func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	raw := r.FormValue("name")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	name, verr := validateLineName(raw)
+	if verr != nil {
+		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
+		return
+	}
+	if name != ln.Name {
+		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
+			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		ln.Name = name
+	}
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
@@ -403,7 +449,7 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	h.updateLineSetting(w, r, "voice-style-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, "voice-style-section", "am-voice-style-section", func(s *line.Settings) {
 		s.VoiceStyle = raw
 	})
 }
@@ -414,17 +460,17 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
-	h.updateLineSetting(w, r, "silent-mode-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, "silent-mode-section", "am-silent-mode-section", func(s *line.Settings) {
 		s.SilentMode = silent
 	})
 }
 
 // updateLineSetting applies a mutation to the Settings of the line identified
 // by the {number} path value, persists and pushes it if anything changed, and
-// then renders the named template partial (or redirects to the phone detail
+// then renders the theme-appropriate partial (or redirects to the phone detail
 // page for non-htmx callers). Handlers are expected to have already called
 // ParseForm and extracted the field they need before invoking this helper.
-func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, partial string, mutate func(*line.Settings)) {
+func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
 	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
@@ -449,7 +495,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, part
 		ln.Settings = next
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partial, struct {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
 			Line line.Line
 		}{Line: *ln})
 		return
@@ -507,21 +553,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		slog.Info("update trigger sent", "number", number, "target_pi", targetPi, "target_fw", targetFW)
 	}
 
-	if r.Header.Get("Accept") == "application/json" {
-		w.Header().Set("Content-Type", "application/json")
-		if sendErr != "" {
-			w.WriteHeader(http.StatusBadGateway)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": sendErr}); err != nil {
-				slog.Error("phone update: json encode failed", "err", err)
-			}
-		} else {
-			if err := json.NewEncoder(w).Encode(map[string]string{"status": "triggered"}); err != nil {
-				slog.Error("phone update: json encode failed", "err", err)
-			}
-		}
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -562,17 +594,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 		slog.Info("factory reset triggered", "number", number)
 	}
 
-	if r.Header.Get("Accept") == "application/json" {
-		w.Header().Set("Content-Type", "application/json")
-		if sendErr != "" {
-			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
-		} else {
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
-		}
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
@@ -606,13 +628,23 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		slog.Info("restart command sent", "number", number, "mode", mode)
 	}
 
+	h.respondPhoneCommandResult(w, r, number, sendErr)
+}
+
+// respondPhoneCommandResult writes the response for a phone-command handler
+// (update, factory reset, restart). JSON-accept callers get a structured
+// status/error body; everyone else is redirected to the phone detail page.
+// sendErr is the empty string on success or the hub send error string.
+func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Request, number, sendErr string) {
 	if r.Header.Get("Accept") == "application/json" {
 		w.Header().Set("Content-Type", "application/json")
+		payload := map[string]string{"status": "triggered"}
 		if sendErr != "" {
 			w.WriteHeader(http.StatusBadGateway)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": sendErr})
-		} else {
-			_ = json.NewEncoder(w).Encode(map[string]string{"status": "triggered"})
+			payload = map[string]string{"error": sendErr}
+		}
+		if err := json.NewEncoder(w).Encode(payload); err != nil {
+			slog.Error("phone command response: json encode failed", "number", number, "err", err)
 		}
 		return
 	}
@@ -621,7 +653,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -630,9 +662,9 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return
 	}
-	data := h.buildLinesData(r, "")
+	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, "phones-table", data)
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)

@@ -16,6 +16,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
+	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
@@ -63,6 +64,13 @@ func run(ctx context.Context) error {
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
 
+	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
+	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
+	// counters without polling.
+	dashEvents := events.New()
+	hub.SetDashboardEvents(dashEvents)
+	tracker.SetDashboardEvents(dashEvents)
+
 	// Link-health store with its own lifecycle; flusher runs until ctx is cancelled.
 	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(cfg.LinkHealthFlushDisabled))
 	if cfg.LinkHealthFlushDisabled {
@@ -90,7 +98,7 @@ func run(ctx context.Context) error {
 	}
 
 	// Auth
-	authStore := auth.NewStoreFromDB(database.DB)
+	authStore := auth.NewStore(database.DB)
 	authStore.CookieDomain = cfg.CookieDomain
 
 	var emailSender email.Sender
@@ -107,7 +115,7 @@ func run(ctx context.Context) error {
 		slog.Info("Google OAuth enabled")
 	}
 
-	loginTmpl, err := template.ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
+	loginTmpl, err := template.New("").Funcs(web.TemplateFuncs()).ParseFS(web.TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		return fmt.Errorf("parse login template: %w", err)
 	}
@@ -129,13 +137,13 @@ func run(ctx context.Context) error {
 		Tracker:        tracker,
 		Relay:          relay,
 		HealthStore:    healthStore,
+		DashEvents:     dashEvents,
 		AuthStore:      authStore,
 		AuthHandlers:   authHandlers,
 		GoogleAuth:     googleAuth,
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
 	}, web.HandlerConfig{
 		Addr:        cfg.Addr,
 		BaseURL:     cfg.BaseURL,

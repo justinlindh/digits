@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
@@ -87,9 +88,14 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		wsWriteTimeout = 10 * time.Second
 	)
 
+	remoteAddr := httputil.ClientIP(r)
+	if !httputil.IsPrivateAddr(remoteAddr) {
+		remoteAddr = ""
+	}
 	conn := &signaling.Conn{
 		WS:         ws,
 		HardwareID: msg.HardwareID,
+		RemoteAddr: remoteAddr,
 		Send:       make(chan []byte, 32),
 		LastSeen:   time.Now(),
 	}
@@ -155,6 +161,22 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		msg, err := signaling.ParseMessage(data)
 		if err != nil {
 			slog.Warn("bad websocket message", "number", number, "err", err)
+			continue
+		}
+		// TypeRepair is intercepted here (not in relay) because we have the
+		// authenticated connection's HardwareID in scope and don't need to
+		// thread the device store into the Relay. The phone calls this from
+		// its *#0* callback before reboot to invalidate server-side pairing,
+		// so the next register-without-token is treated as a fresh pair-up
+		// rather than rejected as "device_token required".
+		if msg.Type == signaling.TypeRepair {
+			if h.deviceStore != nil && msg.HardwareID != "" {
+				if err := h.deviceStore.Unpair(r.Context(), msg.HardwareID); err != nil {
+					slog.Warn("repair: unpair failed", "hardware_id", msg.HardwareID, "err", err)
+				} else {
+					slog.Info("repair: device unpaired by client request", "hardware_id", msg.HardwareID, "number", number)
+				}
+			}
 			continue
 		}
 		h.relay.HandleMessage(r.Context(), number, msg)
@@ -236,14 +258,15 @@ func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Reque
 }
 
 // handleDevSeedFirmware registers a fake hub entry for a line number with the
-// given firmware version. It is only reachable when DevMode is true and lets
-// the Playwright e2e suite exercise the firmware update chip without a real
-// device connection.
+// given firmware (and optional pi) version. It is only reachable when DevMode
+// is true and lets the Playwright e2e suite (and interactive dev sessions)
+// exercise the update chip without a real device connection.
 //
-// POST /dev/seed-firmware?number=<line-number>&fw=<semver>
+// POST /dev/seed-firmware?number=<line-number>&fw=<semver>[&pi=<semver>]
 func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) {
 	number := r.URL.Query().Get("number")
 	fw := r.URL.Query().Get("fw")
+	pi := r.URL.Query().Get("pi")
 	if number == "" || fw == "" {
 		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
 		return
@@ -256,7 +279,7 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		}
 	}()
 	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fw, "", false)
+	h.hub.UpdateDeviceInfo(number, pi, "", fw, "")
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q}`, number, fw)
+	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)
 }

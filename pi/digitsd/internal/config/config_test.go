@@ -53,48 +53,6 @@ func TestLoadValid(t *testing.T) {
 	}
 }
 
-func TestLoadPartialConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	data := `{"server_url": "wss://digits.family/ws", "pairing_code": "B3Z1", "phone_number": "3140002"}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := Load(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !c.NeedsPairing() {
-		t.Error("NeedsPairing should be true when pairing_code is set and device_token is empty")
-	}
-	if !c.IsConfigured() {
-		t.Error("IsConfigured should be true when server_url and pairing_code are set")
-	}
-}
-
-func TestLoadTokenPresent(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-
-	data := `{"server_url": "wss://digits.family/ws", "device_token": "tok-xyz"}`
-	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := Load(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if c.NeedsPairing() {
-		t.Error("NeedsPairing should be false when device_token is present")
-	}
-	if !c.IsConfigured() {
-		t.Error("IsConfigured should be true when server_url and device_token are set")
-	}
-}
-
 func TestLoadBadJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")

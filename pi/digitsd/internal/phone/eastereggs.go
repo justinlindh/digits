@@ -21,10 +21,11 @@ type EasterEgg struct {
 // EasterEggDetector watches keypress timing to detect easter egg sequences.
 // Each key must arrive within MinGap–MaxGap of the previous one.
 type EasterEggDetector struct {
-	mu   sync.Mutex
-	eggs []EasterEgg
-	buf  []timedKey
-	play func(clip string) // callback to play a clip
+	mu     sync.Mutex
+	eggs   []EasterEgg
+	maxLen int // longest trigger length, computed once at construction
+	buf    []timedKey
+	play   func(clip string) // callback to play a clip
 
 	MaxGap time.Duration
 	MinGap time.Duration
@@ -32,14 +33,15 @@ type EasterEggDetector struct {
 
 // NewEasterEggDetector creates a detector with the given eggs and playback callback.
 func NewEasterEggDetector(eggs []EasterEgg, play func(clip string)) *EasterEggDetector {
-	maxTrigger := 0
+	maxLen := 0
 	for _, e := range eggs {
-		if len(e.Trigger) > maxTrigger {
-			maxTrigger = len(e.Trigger)
+		if len(e.Trigger) > maxLen {
+			maxLen = len(e.Trigger)
 		}
 	}
 	return &EasterEggDetector{
 		eggs:   eggs,
+		maxLen: maxLen,
 		play:   play,
 		MaxGap: 1500 * time.Millisecond,
 		MinGap: 100 * time.Millisecond,
@@ -63,15 +65,9 @@ func (d *EasterEggDetector) AddKey(key string) bool {
 
 	d.buf = append(d.buf, timedKey{key: key, when: now})
 
-	// Keep buffer trimmed to longest trigger
-	maxLen := 0
-	for _, e := range d.eggs {
-		if len(e.Trigger) > maxLen {
-			maxLen = len(e.Trigger)
-		}
-	}
-	if len(d.buf) > maxLen {
-		d.buf = d.buf[len(d.buf)-maxLen:]
+	// Keep buffer trimmed to longest trigger.
+	if len(d.buf) > d.maxLen {
+		d.buf = d.buf[len(d.buf)-d.maxLen:]
 	}
 
 	seq := d.sequence()

@@ -24,29 +24,6 @@ const (
 	roleAdded = "added"
 )
 
-// withTx runs fn inside a database transaction. Commits on success,
-// rolls back on error or panic.
-func withTx(ctx context.Context, d *sql.DB, fn func(*sql.Tx) error) error {
-	tx, err := d.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	if err := fn(tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	committed = true
-	return nil
-}
-
 type Call struct {
 	ID                      int64
 	Caller                  string
@@ -78,12 +55,20 @@ type healthLifecycle interface {
 	EvictConference(confID uuid.UUID)
 }
 
+// dashNotifier is the subset of *dashboard/events.Broadcaster the Tracker
+// uses to wake dashboard SSE subscribers when active-call count changes.
+// Optional; nil disables notifications.
+type dashNotifier interface {
+	Notify()
+}
+
 type Tracker struct {
 	db          *db.Database
 	mu          sync.Mutex
 	active      map[string]*activeCall // "caller→callee" → call
 	conferences *ConferenceTracker
 	health      healthLifecycle
+	dashEvents  dashNotifier
 }
 
 func New(d *db.Database) *Tracker {
@@ -104,6 +89,15 @@ func (t *Tracker) Conferences() *ConferenceTracker {
 func (t *Tracker) SetHealthStore(h healthLifecycle) {
 	t.mu.Lock()
 	t.health = h
+	t.mu.Unlock()
+}
+
+// SetDashboardEvents registers an optional broadcaster that is signalled
+// whenever the active-call count changes. Wakes dashboard SSE subscribers.
+// Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetDashboardEvents(b dashNotifier) {
+	t.mu.Lock()
+	t.dashEvents = b
 	t.mu.Unlock()
 }
 
@@ -128,10 +122,14 @@ func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, 
 		StartedAt: time.Now(),
 	}
 	h := t.health
+	d := t.dashEvents
 	t.mu.Unlock()
 
 	if h != nil {
 		h.Init(id)
+	}
+	if d != nil {
+		d.Notify()
 	}
 	return id, nil
 }
@@ -161,13 +159,18 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	} else if c, ok := t.active[key2]; ok {
 		id = c.ID
 	}
+	removed := id != 0
 	delete(t.active, key1)
 	delete(t.active, key2)
 	h := t.health
+	d := t.dashEvents
 	t.mu.Unlock()
 
 	if h != nil && id != 0 {
 		h.Evict(id)
+	}
+	if d != nil && removed {
+		d.Notify()
 	}
 
 	_, err := t.db.DB.ExecContext(ctx,
@@ -200,6 +203,8 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		delete(t.active, key)
 	}
 	h := t.health
+	d := t.dashEvents
+	removedAny := len(toDelete) > 0
 	t.mu.Unlock()
 
 	if h != nil {
@@ -208,6 +213,9 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 				h.Evict(id)
 			}
 		}
+	}
+	if d != nil && removedAny {
+		d.Notify()
 	}
 
 	// End any open calls in the database
@@ -340,17 +348,12 @@ func (t *Tracker) Active() []activeCall {
 	return calls
 }
 
-func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
-	rows, err := t.db.DB.QueryContext(ctx,
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
+// callColumns is the SELECT list for queries that scan into a Call via
+// scanCallRows. Keep the order in sync with the scan there.
+const callColumns = `id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
+	end_reason, originating_conference_id, force_ended_by`
 
+func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	var calls []Call
 	for rows.Next() {
 		var c Call
@@ -367,6 +370,17 @@ func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
+}
+
+func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
+	rows, err := t.db.DB.QueryContext(ctx,
+		`SELECT `+callColumns+` FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	return scanCallRows(rows)
 }
 
 // MarkForceEnded records which user force-ended a call. Returns nil error
@@ -403,7 +417,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil, err
 	}
 
-	txErr := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	txErr := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
 			conf.ID, conf.Host, conf.OriginatingCallID,
@@ -473,7 +487,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	h := t.health
 	t.mu.Unlock()
 
-	if err := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	if err := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
 			reason, confID,
@@ -570,7 +584,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	var continuationCallID int64
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
-	if txErr := withTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	if txErr := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conference_members SET left_at = NOW(), left_reason = $1
 			 WHERE conference_id = $2 AND phone = $3`,
@@ -672,11 +686,10 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 
 	// Build IN clause — reuse same $1..$N placeholders for both caller and callee
 	n := len(phoneNumbers)
-	ph := dbutil.Placeholders(n, 0)
+	ph := dbutil.Placeholders(n)
 	query := fmt.Sprintf(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
+		`SELECT `+callColumns+
+			` FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
 	args := make([]interface{}, 0, n+1)
 	for _, num := range phoneNumbers {
@@ -689,21 +702,5 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-
-	var calls []Call
-	for rows.Next() {
-		var c Call
-		var feb sql.NullString
-		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
-			return nil, err
-		}
-		if feb.Valid {
-			s := feb.String
-			c.ForceEndedBy = &s
-		}
-		calls = append(calls, c)
-	}
-	return calls, rows.Err()
+	return scanCallRows(rows)
 }

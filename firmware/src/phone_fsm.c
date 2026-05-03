@@ -1,9 +1,11 @@
 #include "phone_fsm.h"
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
@@ -11,6 +13,8 @@
 #include "tone.h"
 #include "uart_proto.h"
 
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 #include "pico/stdlib.h"
 #include "pico/time.h"
 
@@ -28,6 +32,31 @@ static bool s_keytest_mode = false;
 
 static uint32_t now_ms(void) {
     return to_ms_since_boot(get_absolute_time());
+}
+
+// Saturating snprintf accumulator. Appends a formatted string into buf at
+// position *pos and updates *pos. If the buffer is already full, returns
+// without writing. If the formatted output would overflow, truncates and
+// pins *pos at buf_size - 1 so subsequent calls become no-ops without
+// underflowing the size_t arithmetic that a naive `n += snprintf(buf + n,
+// sizeof(buf) - n, ...)` pattern is prone to.
+static void buf_appendf(char *buf, size_t buf_size, size_t *pos,
+                        const char *fmt, ...) {
+    if (buf_size == 0 || *pos >= buf_size) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    int written = vsnprintf(buf + *pos, buf_size - *pos, fmt, ap);
+    va_end(ap);
+    if (written <= 0) {
+        return;
+    }
+    if ((size_t)written >= buf_size - *pos) {
+        *pos = buf_size - 1;
+    } else {
+        *pos += (size_t)written;
+    }
 }
 
 static void clear_dialing_buffer(void) {
@@ -162,6 +191,28 @@ static void process_pi_command(const char *cmd) {
         }
     } else if (strcmp(cmd, "PING") == 0) {
         uart_proto_send("PONG");
+    } else if (strcmp(cmd, "BOARD?") == 0) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "BOARD:%s:0x%02X", board->name, (unsigned int)board_read_rev_byte());
+        uart_proto_send(buf);
+    } else if (strncmp(cmd, "CONFIG:PCB_REV=", 15) == 0) {
+        // Swaps the active board profile pointer only. Modules read pins
+        // live from `board->...` on every access, so subsequent reads target
+        // the new profile's pins. Those pins were never gpio_init'd,
+        // gpio_set_dir'd, or gpio_pull_up'd: only the original profile's
+        // pins were configured at boot. The override is therefore reliable
+        // only across a firmware reboot, which the Pi-side flow already
+        // guarantees: digitsd sends this on a mismatch, then flash-pico.sh
+        // writes the rev byte and the next reset picks the right profile
+        // from the start.
+        const char* name = cmd + 15;
+        char buf[64];
+        if (board_set_profile(name)) {
+            snprintf(buf, sizeof(buf), "CONFIG:PCB_REV=%s:OK", name);
+        } else {
+            snprintf(buf, sizeof(buf), "CONFIG:PCB_REV=%s:UNKNOWN", name);
+        }
+        uart_proto_send(buf);
     } else if (strcmp(cmd, "VERSION") == 0) {
         char resp[64];
         snprintf(resp, sizeof(resp), "VERSION:%s:%s", FIRMWARE_VERSION, FIRMWARE_COMMIT);
@@ -170,6 +221,45 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         set_state(PHONE_STATE_IDLE);
         uart_proto_send("RST:OK");
+    } else if (strcmp(cmd, "DIAL:RESET") == 0) {
+        // Drop accumulated digits without changing state. digitsd uses this
+        // after a service-code completion or confirmer cancel: the user
+        // typed e.g. "*#73887#" while off-hook, the firmware accumulated
+        // "73887" in its dialing buffer, and after the service code matches
+        // we don't want the next 2 dialed digits to surprise-fire DIAL on
+        // a stale prefix.
+        clear_dialing_buffer();
+        uart_proto_send("DIAL:RESET:OK");
+    } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
+        // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
+        // resets and stays in bootrom waiting for a USB host connection
+        // that on V2 will never come, which means SWD has unlimited time
+        // to grab the cores and reflash. Required for headless OTA: a
+        // plain watchdog reset puts the chip back in firmware within ~10 ms
+        // (way faster than openocd's ~200 ms init), and the chip's bootrom
+        // window is too narrow to race.
+        //
+        // To exit BOOTSEL: openocd `reset run` after programming, or a
+        // power cycle.
+        uart_proto_send("REBOOT:OK");
+        // Give the UART TX FIFO time to flush before we kill the CPU.
+        sleep_ms(50);
+        // disable_interface_mask = 0 (enable both UF2 and PICOBOOT),
+        // usb_activity_gpio_pin_mask = 0 (no LED indicator).
+        reset_usb_boot(0, 0);
+        while (true) {
+            tight_loop_contents();
+        }
+    } else if (strcmp(cmd, "REBOOT:WATCHDOG") == 0) {
+        // Soft watchdog reset back into firmware (no flash window). Useful
+        // when you want to reset firmware state without dropping into
+        // bootrom. flash-pico.sh does NOT use this path.
+        uart_proto_send("REBOOT:OK");
+        sleep_ms(50);
+        watchdog_enable(1, 1);
+        while (true) {
+            tight_loop_contents();
+        }
     } else if (strcmp(cmd, "STATE?") == 0) {
         char buf[32];
         snprintf(buf, sizeof(buf), "STATE:%s", phone_fsm_state_name(s_state));
@@ -211,41 +301,42 @@ static void process_pi_command(const char *cmd) {
         s_keytest_mode = false;
         uart_proto_send("MODE:NORMAL");
     } else if (strcmp(cmd, "KEYDUMP") == 0) {
-        // Raw GPIO state dump for all keypad pins
-        char buf[128];
-        static const uint8_t row_gpios[] = {
-            KEYPAD_ROW0, KEYPAD_ROW1, KEYPAD_ROW2, KEYPAD_ROW3,
-        };
-        static const uint8_t col_gpios[] = {
-            KEYPAD_COL0, KEYPAD_COL1, KEYPAD_COL2, KEYPAD_COL3,
-        };
-        // Read row pins (outputs -- show what we're driving)
-        snprintf(buf, sizeof(buf), "ROWS: R0/GP%d=%d R1/GP%d=%d R2/GP%d=%d R3/GP%d=%d",
-                 row_gpios[0], gpio_get(row_gpios[0]),
-                 row_gpios[1], gpio_get(row_gpios[1]),
-                 row_gpios[2], gpio_get(row_gpios[2]),
-                 row_gpios[3], gpio_get(row_gpios[3]));
+        // Raw GPIO state dump for all keypad pins. Pin assignments and column
+        // count come from the active board profile (V1 = 4 cols, V2 = 3).
+        char buf[160];
+        const uint num_cols = board->keypad_num_cols;
+        // Read row pins (outputs: show what we're driving)
+        size_t n = 0;
+        buf_appendf(buf, sizeof(buf), &n, "ROWS:");
+        for (int r = 0; r < 4; ++r) {
+            buf_appendf(buf, sizeof(buf), &n, " R%d/GP%u=%d",
+                        r, board->keypad_rows[r], gpio_get(board->keypad_rows[r]));
+        }
         uart_proto_send(buf);
         printf("%s\n", buf);
-        // Read col pins (inputs -- show what we're sensing)
-        snprintf(buf, sizeof(buf), "COLS: C0/GP%d=%d C1/GP%d=%d C2/GP%d=%d C3/GP%d=%d",
-                 col_gpios[0], gpio_get(col_gpios[0]),
-                 col_gpios[1], gpio_get(col_gpios[1]),
-                 col_gpios[2], gpio_get(col_gpios[2]),
-                 col_gpios[3], gpio_get(col_gpios[3]));
+        // Read col pins (inputs: show what we're sensing)
+        n = 0;
+        buf_appendf(buf, sizeof(buf), &n, "COLS:");
+        for (uint c = 0; c < num_cols; ++c) {
+            buf_appendf(buf, sizeof(buf), &n, " C%u/GP%u=%d",
+                        c, board->keypad_cols[c], gpio_get(board->keypad_cols[c]));
+        }
         uart_proto_send(buf);
         printf("%s\n", buf);
         // Now drive each row LOW and read columns
         for (int row = 0; row < 4; ++row) {
-            gpio_put(row_gpios[row], 0);
+            gpio_put(board->keypad_rows[row], 0);
             sleep_us(50);
-            snprintf(buf, sizeof(buf), "SCAN R%d/GP%d=LOW: C0=%d C1=%d C2=%d C3=%d",
-                     row, row_gpios[row],
-                     gpio_get(col_gpios[0]), gpio_get(col_gpios[1]),
-                     gpio_get(col_gpios[2]), gpio_get(col_gpios[3]));
+            n = 0;
+            buf_appendf(buf, sizeof(buf), &n, "SCAN R%d/GP%u=LOW:",
+                        row, board->keypad_rows[row]);
+            for (uint c = 0; c < num_cols; ++c) {
+                buf_appendf(buf, sizeof(buf), &n, " C%u=%d",
+                            c, gpio_get(board->keypad_cols[c]));
+            }
             uart_proto_send(buf);
             printf("%s\n", buf);
-            gpio_put(row_gpios[row], 1);
+            gpio_put(board->keypad_rows[row], 1);
             sleep_us(50);
         }
         stdio_flush();
