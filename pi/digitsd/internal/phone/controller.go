@@ -473,6 +473,10 @@ func (c *Controller) dialThirdParty(number string) {
 		if err != nil {
 			slog.Info("phone: add-call failed, server unreachable", "number", number, "error", err)
 			c.mu.Lock()
+			if c.state != StateADD_CALLING {
+				c.mu.Unlock()
+				return
+			}
 			c.state = StateADD_INTERCEPT
 			c.mu.Unlock()
 			c.cb.SendTone(ToneStop)

@@ -180,6 +180,14 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}); err != nil {
 		return fmt.Errorf("server unreachable: %w", err)
 	}
+	// TypeCall was sent. If any later step fails, send a hangup so the
+	// callee does not ring until timeout.
+	callSent := true
+	defer func() {
+		if callSent {
+			sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: targetNumber})
+		}
+	}()
 
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
@@ -287,6 +295,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	}
 
 	slog.Info("call initiated", "target", targetNumber)
+	callSent = false
 	return nil
 }
 
