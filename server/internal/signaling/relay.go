@@ -83,10 +83,11 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeRequestICE:
 		r.handleRequestICE(ctx, from, msg)
 	case TypeDeviceInfo:
-		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit) {
+		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr) {
 			slog.Info("device_info", "number", from,
 				"pi_version", msg.PiVersion,
-				"fw_version", msg.FirmwareVersion)
+				"fw_version", msg.FirmwareVersion,
+				"local_addr", msg.LocalAddr)
 		}
 		// If device reconnects after a rebooting update, mark it as success
 		if status := r.Hub.GetUpdateStatus(from); status != nil && status.Status == "rebooting" {

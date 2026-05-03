@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -2817,6 +2818,7 @@ func requestICEServers(sig *sigclient.Client) {
 }
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
+	localAddr := primaryLocalAddr()
 	if err := sig.Send(&sigclient.Message{
 		Type:            sigclient.TypeDeviceInfo,
 		PiVersion:       version.Version,
@@ -2824,11 +2826,31 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		FirmwareVersion: fwVersion,
 		FirmwareCommit:  fwCommit,
 		FlashCapable:    flashCapable,
+		LocalAddr:       localAddr,
 	}); err != nil {
 		slog.Warn("device_info: send failed", "error", err)
 	} else {
-		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable)
+		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable, "local_addr", localAddr)
 	}
+}
+
+// primaryLocalAddr returns the source IP that the OS would use to route to
+// the public internet, which is the address the device should self-report
+// to the signaling server. Uses a UDP "dial" to a sentinel: no packet is
+// actually sent because UDP is connectionless, but the kernel resolves the
+// route and assigns a local address. Returns "" when no default route
+// exists or the local address cannot be parsed.
+func primaryLocalAddr() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = conn.Close() }()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || addr == nil {
+		return ""
+	}
+	return addr.IP.String()
 }
 
 // writePCMWav writes mono 16-bit PCM samples to a WAV file. Used by the
