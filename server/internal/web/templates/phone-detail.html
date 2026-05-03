@@ -102,6 +102,9 @@
           <h2 class="panel__title">Hardware &amp; firmware</h2>
         </header>
         <div class="panel__body">
+          <div id="auto-update-section" style="margin-bottom: 12px;">
+            {{template "auto-update-section" .}}
+          </div>
           {{if .DeviceInfo}}
           <div class="stack-md" style="margin-bottom: 12px;">
             <div>
@@ -175,12 +178,6 @@
             </div>
             {{end}}
           </div>
-
-          {{if .Online}}
-          <div id="auto-update-section">
-            {{template "auto-update-section" .}}
-          </div>
-          {{end}}
 
           {{if .Online}}
           <!-- Pi Software update -->
@@ -968,6 +965,10 @@
 <section class="am-plate am-handset__plate am-handset__plate--wide am-update">
   <span class="am-plate__label">Software update</span>
 
+  <div id="auto-update-section" style="margin-bottom: 12px;">
+    {{template "am-auto-update-section" .}}
+  </div>
+
   {{if not .Online}}
     <p class="am-hint am-update__offline">Handset is offline. Updates resume when it reconnects.</p>
     {{if .LastSeenAt}}<p class="am-hint am-update__offline">Last seen {{.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}.</p>{{end}}
@@ -980,9 +981,6 @@
       </button>
     </form>
   {{else}}
-    <div id="auto-update-section" style="margin-bottom: 12px;">
-      {{template "am-auto-update-section" .}}
-    </div>
     <div class="am-update__components">
 
       <div class="am-update__component">

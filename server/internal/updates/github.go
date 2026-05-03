@@ -56,14 +56,15 @@ type GitHubReleases struct {
 
 // NewGitHubReleases creates a GitHubReleases that polls the given repo.
 // It fetches immediately in the background and refreshes every ttlSeconds.
-func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int) *GitHubReleases {
+func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int, onChange func(piLatest, fwLatest string)) *GitHubReleases {
 	g := &GitHubReleases{
-		owner:   owner,
-		repo:    repo,
-		apiBase: "https://api.github.com",
-		token:   token,
-		client:  &http.Client{Timeout: 15 * time.Second},
-		ttl:     time.Duration(ttlSeconds) * time.Second,
+		owner:    owner,
+		repo:     repo,
+		apiBase:  "https://api.github.com",
+		token:    token,
+		client:   &http.Client{Timeout: 15 * time.Second},
+		ttl:      time.Duration(ttlSeconds) * time.Second,
+		OnChange: onChange,
 	}
 	go g.poll(ctx)
 	return g
