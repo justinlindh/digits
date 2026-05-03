@@ -280,8 +280,16 @@
         <div class="panel__body">
 
           <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
+            <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
             <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
             <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
+          </div>
+
+          <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
+            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+              <div id="ring-test-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+              <span id="ring-test-text" style="font-size: 13px; color: var(--ink);">Ringing...</span>
+            </div>
           </div>
 
           <div id="restart-confirm" class="hidden">
@@ -336,6 +344,41 @@
   var fwPollTimer = null;
   var restartPollTimer = null;
   var restartMode = null;
+
+  function doRingTest() {
+    var btn = document.getElementById('ring-test-btn');
+    var status = document.getElementById('ring-test-status');
+    var spinner = document.getElementById('ring-test-spinner');
+    var text = document.getElementById('ring-test-text');
+    btn.disabled = true;
+    status.classList.remove('hidden');
+    spinner.classList.remove('hidden');
+    text.textContent = 'Ringing...';
+    text.style.color = 'var(--ink)';
+    fetch('/phones/' + phoneNumber + '/ring-test', {
+      method: 'POST',
+      headers: {'Accept': 'application/json'}
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      spinner.classList.add('hidden');
+      if (data.error) {
+        text.textContent = 'Failed: ' + data.error;
+        text.style.color = 'var(--rust)';
+        btn.disabled = false;
+      } else {
+        text.textContent = 'Done';
+        text.style.color = 'var(--forest)';
+        setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
+      }
+    })
+    .catch(function(err) {
+      spinner.classList.add('hidden');
+      text.textContent = 'Error: ' + err.message;
+      text.style.color = 'var(--rust)';
+      btn.disabled = false;
+    });
+  }
 
   function triggerComponentUpdate(prefix, paramName) {
     var btn = document.getElementById(prefix + '-install-btn');
@@ -835,6 +878,79 @@
 
     {{template "am-software-update-section" .}}
 
+    {{if .Online}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Device controls</span>
+      <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
+        <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
+          <span class="am-key__symbol">&#x266A;</span>
+          <span class="am-key__label">Ring test</span>
+        </button>
+        <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
+          <span class="am-key__symbol">&#x21BB;</span>
+          <span class="am-key__label">Restart service</span>
+        </button>
+        <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
+          <span class="am-key__symbol">&#x23FB;</span>
+          <span class="am-key__label">Reboot device</span>
+        </button>
+      </div>
+      <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-ring-test-text" class="am-led">Ringing...</span>
+        </div>
+      </div>
+      <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
+        <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
+          </button>
+          <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
+        </div>
+      </div>
+      <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-restart-text" class="am-led">Sending command...</span>
+        </div>
+      </div>
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+        <div id="am-recovery-default">
+          <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x26A0;</span>
+            <span class="am-key__label">Recovery mode</span>
+          </button>
+          <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
+        </div>
+        <div id="am-recovery-confirm" class="hidden">
+          <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
+          <div class="am-handset__actions-row" style="gap: 8px;">
+            <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
+              <span class="am-key__symbol">&#x2713;</span>
+              <span class="am-key__label">Confirm</span>
+            </button>
+            <button type="button" onclick="amCancelRecovery()" class="am-key">
+              <span class="am-key__symbol">&#x2715;</span>
+              <span class="am-key__label">Cancel</span>
+            </button>
+          </div>
+        </div>
+        <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
+          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+            <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+            <span id="am-recovery-text" class="am-led">Sending reset command...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    {{end}}
+
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
       <span class="am-plate__label">Actions</span>
       <p class="am-hint am-handset__action-desc">Removing a handset is permanent. The device will need to be re-paired to come back online.</p>
@@ -928,7 +1044,162 @@
       if (kind !== 'success' && btn) btn.disabled = false;
     }
 
+    window.amDoRingTest = function() {
+      var btn = document.getElementById('am-ring-test-btn');
+      var status = document.getElementById('am-ring-test-status');
+      var lamp = document.getElementById('am-ring-test-lamp');
+      var text = document.getElementById('am-ring-test-text');
+      btn.disabled = true;
+      status.classList.remove('hidden');
+      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add('am-lamp--on-amber');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.textContent = 'Ringing...';
+      fetch('/phones/' + phoneNumber + '/ring-test', {
+        method: 'POST',
+        headers: {'Accept': 'application/json'}
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          lamp.classList.remove('am-lamp--on-amber');
+          lamp.classList.add('am-lamp--on-red');
+          text.classList.add('am-led--red');
+          text.textContent = 'Failed: ' + data.error;
+          btn.disabled = false;
+        } else {
+          lamp.classList.remove('am-lamp--on-amber');
+          lamp.classList.add('am-lamp--on-green');
+          text.classList.add('am-led--green');
+          text.textContent = 'Done';
+          setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
+        }
+      })
+      .catch(function(err) {
+        lamp.classList.remove('am-lamp--on-amber');
+        lamp.classList.add('am-lamp--on-red');
+        text.classList.add('am-led--red');
+        text.textContent = 'Error: ' + err.message;
+        btn.disabled = false;
+      });
+    };
+
+    var amRestartMode = null;
+    var amRestartPollTimer = null;
+
+    window.amShowRestartConfirm = function(mode) {
+      amRestartMode = mode;
+      document.getElementById('am-ctrl-buttons').classList.add('hidden');
+      var c = document.getElementById('am-restart-confirm');
+      c.classList.remove('hidden');
+      var text = document.getElementById('am-restart-confirm-text');
+      if (mode === 'reboot') {
+        text.textContent = 'Reboot the entire device? This will take about 30 seconds.';
+      } else {
+        text.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
+      }
+    };
+
+    window.amCancelRestartConfirm = function() {
+      amRestartMode = null;
+      document.getElementById('am-restart-confirm').classList.add('hidden');
+      document.getElementById('am-ctrl-buttons').classList.remove('hidden');
+    };
+
+    window.amDoRestart = function() {
+      var mode = amRestartMode;
+      document.getElementById('am-restart-confirm').classList.add('hidden');
+      var progress = document.getElementById('am-restart-progress');
+      var lamp = document.getElementById('am-restart-lamp');
+      var text = document.getElementById('am-restart-text');
+      progress.classList.remove('hidden');
+      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add('am-lamp--on-amber');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
+      var body = new URLSearchParams({mode: mode});
+      fetch('/phones/' + phoneNumber + '/restart', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) { amShowRestartResult('failed', 'Failed: ' + data.error); return; }
+        var maxAttempts = mode === 'reboot' ? 90 : 15;
+        text.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
+        amPollOnline(maxAttempts);
+      })
+      .catch(function(err) { amShowRestartResult('failed', 'Network error: ' + err.message); });
+    };
+
+    function amPollOnline(maxAttempts) {
+      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
+      var attempts = 0;
+      var sawOffline = false;
+      setTimeout(function() {
+        amRestartPollTimer = setInterval(function() {
+          attempts++;
+          if (attempts > maxAttempts) { clearInterval(amRestartPollTimer); amShowRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
+          fetch('/phones/' + phoneNumber + '/online')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.online) { sawOffline = true; document.getElementById('am-restart-text').textContent = 'Waiting for device to reconnect...'; }
+            else if (sawOffline) { clearInterval(amRestartPollTimer); amShowRestartResult('success', 'Device is back online'); setTimeout(function() { location.reload(); }, 1500); }
+          }).catch(function() {});
+        }, 1000);
+      }, 2000);
+    }
+
+    function amShowRestartResult(kind, msg) {
+      var lamp = document.getElementById('am-restart-lamp');
+      var text = document.getElementById('am-restart-text');
+      lamp.classList.remove('am-lamp--on-amber', 'am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add(kind === 'success' ? 'am-lamp--on-green' : 'am-lamp--on-red');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.classList.add(kind === 'success' ? 'am-led--green' : 'am-led--red');
+      text.textContent = msg;
+    }
+
+    window.amShowRecoveryConfirm = function() {
+      document.getElementById('am-recovery-default').classList.add('hidden');
+      document.getElementById('am-recovery-confirm').classList.remove('hidden');
+    };
+
+    window.amCancelRecovery = function() {
+      document.getElementById('am-recovery-confirm').classList.add('hidden');
+      document.getElementById('am-recovery-default').classList.remove('hidden');
+    };
+
+    window.amDoRecovery = function() {
+      document.getElementById('am-recovery-confirm').classList.add('hidden');
+      var progress = document.getElementById('am-recovery-progress');
+      var lamp = document.getElementById('am-recovery-lamp');
+      var text = document.getElementById('am-recovery-text');
+      progress.classList.remove('hidden');
+      fetch('/phones/' + phoneNumber + '/factory-reset', { method: 'POST', headers: {'Accept': 'application/json'} })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        lamp.classList.remove('am-lamp--on-amber');
+        if (data.error) {
+          lamp.classList.add('am-lamp--on-red');
+          text.classList.add('am-led--red');
+          text.textContent = 'Failed: ' + data.error;
+        } else {
+          lamp.classList.add('am-lamp--on-amber');
+          text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery Wi-Fi network to continue.';
+        }
+      })
+      .catch(function(err) {
+        lamp.classList.remove('am-lamp--on-amber');
+        lamp.classList.add('am-lamp--on-red');
+        text.classList.add('am-led--red');
+        text.textContent = 'Error: ' + err.message;
+      });
+    };
+
     window.addEventListener('pagehide', function() {
+      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
       Object.keys(pollers).forEach(function(p) { if (pollers[p]) clearInterval(pollers[p]); });
     });
   })();

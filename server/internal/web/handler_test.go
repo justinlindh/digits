@@ -576,6 +576,59 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 	}
 }
 
+func TestPhoneRingTestOnline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	h.hub.Register("3140001", conn)
+
+	req := httptest.NewRequest("POST", "/phones/3140001/ring-test", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, _ := signaling.ParseMessage(data)
+		if msg.Type != signaling.TypeRingTest {
+			t.Fatalf("expected ring_test message, got %s", msg.Type)
+		}
+	default:
+		t.Fatal("device did not receive ring_test message")
+	}
+}
+
+func TestPhoneRingTestOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	req := httptest.NewRequest("POST", "/phones/3140001/ring-test", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 502 {
+		t.Fatalf("expected 502 for offline device, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestPhoneOnlineStatus(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
