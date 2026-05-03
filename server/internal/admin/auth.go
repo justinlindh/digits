@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,9 +36,12 @@ func VerifySecret(hash, password string) error {
 func (s *AuthStore) CreateAdmin(ctx context.Context, username, secretHash string) (string, error) {
 	var id string
 	err := s.db.DB.QueryRowContext(ctx,
-		"INSERT INTO admin_users (username, secret_hash) VALUES ($1, $2) RETURNING id",
+		"INSERT INTO admin_users (username, secret_hash) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING RETURNING id",
 		username, secretHash,
 	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
 	return id, err
 }
 

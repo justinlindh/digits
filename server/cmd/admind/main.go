@@ -85,7 +85,9 @@ func main() {
 		}
 		id, err := authStore.CreateAdmin(context.Background(), cfg.InitialAdmin, hash)
 		if err != nil {
-			slog.Warn("initial admin creation skipped", "username", cfg.InitialAdmin, "err", err)
+			slog.Warn("initial admin creation failed", "username", cfg.InitialAdmin, "err", err)
+		} else if id == "" {
+			slog.Info("initial admin already exists", "username", cfg.InitialAdmin)
 		} else {
 			slog.Info("initial admin created", "username", cfg.InitialAdmin, "id", id)
 		}
