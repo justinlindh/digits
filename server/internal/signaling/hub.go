@@ -141,6 +141,25 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	return sendToConn(conn, msg, "hardware", hardwareID)
 }
 
+// Broadcast marshals msg and sends it to every connected device without
+// blocking. Devices whose Send buffers are full are skipped with a warning.
+func (h *Hub) Broadcast(msg *Message) {
+	data, err := msg.Marshal()
+	if err != nil {
+		slog.Error("broadcast marshal failed", "type", msg.Type, "err", err)
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for number, conn := range h.conns {
+		select {
+		case conn.Send <- data:
+		default:
+			slog.Warn("broadcast: send buffer full, skipping", "number", number)
+		}
+	}
+}
+
 // sendToConn marshals msg and pushes it onto conn.Send without blocking.
 // label/id are only used to label the resulting error: "<label> <id>: <reason>".
 // Returns ErrNotConnected when conn is nil so callers can errors.Is past
