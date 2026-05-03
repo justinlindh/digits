@@ -315,23 +315,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 			return fmt.Errorf("audio pipeline: %w", err)
 		}
 
-		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-		go func() {
-			defer recoverGoroutine("caller-encode-loop")
-			for frame := range d.pipeline.OutFrames() {
-				d.mu.Lock()
-				pm := d.peerMgr
-				mesh := d.mesh
-				d.mu.Unlock()
-				if pm != nil {
-					pm.SendPCMFrame(frame)
-				}
-				if mesh != nil {
-					mesh.SendPCMFrameToAll(frame)
-				}
-			}
-		}()
+		d.startEncodeLoop()
 	}
 
 	slog.Info("call initiated", "target", targetNumber)
@@ -370,14 +354,12 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.pendingOffer = ""
 		d.pendingCaller = ""
 
-		// Send answer SDP to caller.
 		sendSignal(d.sig, &sigclient.Message{
 			Type: sigclient.TypeAnswer,
 			To:   caller,
 			SDP:  answerSDP,
 		})
 
-		// Send all gathered ICE candidates to caller.
 		for _, candidate := range candidates {
 			sendSignal(d.sig, &sigclient.Message{
 				Type:      sigclient.TypeICE,
@@ -386,29 +368,12 @@ func (d *daemonCallbacks) AnswerCall() {
 			})
 		}
 
-		// Start audio pipeline.
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("audio pipeline (answer fast-path) start failed", "error", err)
 			return
 		}
-
-		// Spawn encode loop.
-		go func() {
-			defer recoverGoroutine("answer-encode-loop")
-			for frame := range d.pipeline.OutFrames() {
-				d.mu.Lock()
-				pm := d.peerMgr
-				mesh := d.mesh
-				d.mu.Unlock()
-				if pm != nil {
-					pm.SendPCMFrame(frame)
-				}
-				if mesh != nil {
-					mesh.SendPCMFrameToAll(frame)
-				}
-			}
-		}()
+		d.startEncodeLoop()
 
 		slog.Info("answered call (fast path)", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
 		return
@@ -439,92 +404,8 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.handleConnectionStateChange(answerPM, state)
 	}
 
-	// Handle remote audio track — decode and feed into mixer.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-		go func() {
-			defer recoverGoroutine("answer-remote-track")
-			var frameCount int
-
-			// Phase 1: Wait for pipeline (user picks up phone).
-			// Read and discard RTP packets to prevent buffering.
-			// Decode each to keep Opus decoder state in sync.
-			slog.Info("remote track active, waiting for answer")
-			var discarded int
-			for {
-				d.mu.Lock()
-				pip := d.pipeline
-				d.mu.Unlock()
-				if pip != nil {
-					slog.Info("pipeline ready", "discarded_packets", discarded)
-					break
-				}
-
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
-					return
-				}
-				answerPM.Decode(pkt.Payload) //nolint:errcheck
-				discarded++
-			}
-
-			// Phase 2: Drain stale packets until caught up to real-time.
-			// Decode each to maintain Opus state, but don't play.
-			drainStart := time.Now()
-			var drained int
-			var lastSeq uint16
-			for {
-				start := time.Now()
-				pkt, _, err := track.ReadRTP()
-				readTime := time.Since(start)
-				if err != nil {
-					slog.Info("remote track ended during drain")
-					return
-				}
-				answerPM.Decode(pkt.Payload) //nolint:errcheck
-				drained++
-				lastSeq = pkt.SequenceNumber
-
-				if readTime > 5*time.Millisecond {
-					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
-					break
-				}
-			}
-
-			// Phase 3: Live playback loop — feed decoded PCM into mixer.
-			for {
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended", "frames", frameCount)
-					return
-				}
-				recvTime := time.Now()
-				pcm, err := answerPM.Decode(pkt.Payload)
-				if err != nil {
-					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
-					continue
-				}
-				if answerPM.InboundMuted() {
-					// Silent hold: drop decoded audio rather than feeding the mixer.
-					continue
-				}
-				// Copy — Decode returns a slice of a reused internal buffer
-				frame := make([]int16, len(pcm))
-				copy(frame, pcm)
-				frameCount++
-				select {
-				case webrtcCh <- frame:
-				default:
-					// Drop frame — mixer is behind
-				}
-
-				if frameCount <= 10 || frameCount%50 == 0 {
-					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
-				}
-			}
-		}()
-	}
+	d.peerMgr.OnRemoteTrack = d.remoteTrackHandler(answerPM, webrtcCh)
 
 	// Gate ICE candidates behind answer SDP send.
 	sdpSent := make(chan struct{})
@@ -562,32 +443,13 @@ func (d *daemonCallbacks) AnswerCall() {
 	})
 	close(sdpSent)
 
-	// Start audio pipeline (capture only — playback goes through mixer).
-	// Skip if one is already running; see matching comment in InitiateCall.
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("audio pipeline (answer) start failed", "error", err)
 			return
 		}
-
-		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-		go func() {
-			defer recoverGoroutine("answer-encode-loop")
-			for frame := range d.pipeline.OutFrames() {
-				d.mu.Lock()
-				pm := d.peerMgr
-				mesh := d.mesh
-				d.mu.Unlock()
-				if pm != nil {
-					pm.SendPCMFrame(frame)
-				}
-				if mesh != nil {
-					mesh.SendPCMFrameToAll(frame)
-				}
-			}
-		}()
+		d.startEncodeLoop()
 	}
 
 	slog.Info("answered call", "caller", caller)
@@ -1040,6 +902,110 @@ func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
 	return audio.NewPipeline(cfg)
 }
 
+// startEncodeLoop spawns the goroutine that reads captured PCM from the
+// pipeline and sends it to the active peer and any conference mesh.
+// Must be called with d.mu held (reads d.pipeline).
+func (d *daemonCallbacks) startEncodeLoop() {
+	go func() {
+		defer recoverGoroutine("encode-loop")
+		for frame := range d.pipeline.OutFrames() {
+			d.mu.Lock()
+			pm := d.peerMgr
+			mesh := d.mesh
+			d.mu.Unlock()
+			if pm != nil {
+				pm.SendPCMFrame(frame)
+			}
+			if mesh != nil {
+				mesh.SendPCMFrameToAll(frame)
+			}
+		}
+	}()
+}
+
+// remoteTrackHandler returns an OnRemoteTrack callback that decodes incoming
+// RTP and feeds the mixer. It implements a three-phase startup:
+//   - Phase 1: discard packets until the audio pipeline is running
+//   - Phase 2: drain any buffered packets to catch up to real-time
+//   - Phase 3: live decode and playback
+func (d *daemonCallbacks) remoteTrackHandler(pm *owebrtc.PeerManager, webrtcCh chan []int16) func(*webrtc.TrackRemote) {
+	return func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("remote-track")
+			var frameCount int
+
+			slog.Info("remote track active, waiting for pipeline")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					slog.Info("pipeline ready", "discarded_packets", discarded)
+					break
+				}
+
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended while waiting for pipeline", "discarded_packets", discarded)
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					slog.Info("remote track ended during drain")
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+
+				if readTime > 5*time.Millisecond {
+					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					break
+				}
+			}
+
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended", "frames", frameCount)
+					return
+				}
+				recvTime := time.Now()
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
+					continue
+				}
+				if pm.InboundMuted() {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+
+				if frameCount <= 10 || frameCount%50 == 0 {
+					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
+				}
+			}
+		}()
+	}
+}
+
 // prepareAnswer pre-creates the WebRTC PeerConnection during the ring phase.
 // This moves expensive ECDSA cert generation, SDP processing, and ICE gathering
 // off the critical path between handset pickup and first audio.
@@ -1083,87 +1049,8 @@ func (d *daemonCallbacks) prepareAnswer() {
 		}
 	}
 
-	// Register remote track handler (Phase 1/2/3). OnRemoteTrack cannot fire
-	// during ring because ICE+DTLS require the caller to have our answer SDP.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-		go func() {
-			defer recoverGoroutine("answer-remote-track")
-			var frameCount int
-
-			// Phase 1: Wait for pipeline.
-			slog.Info("remote track active, waiting for answer")
-			var discarded int
-			for {
-				d.mu.Lock()
-				pip := d.pipeline
-				d.mu.Unlock()
-				if pip != nil {
-					slog.Info("pipeline ready", "discarded_packets", discarded)
-					break
-				}
-
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
-					return
-				}
-				pm.Decode(pkt.Payload) //nolint:errcheck
-				discarded++
-			}
-
-			// Phase 2: Drain stale packets until caught up to real-time.
-			drainStart := time.Now()
-			var drained int
-			var lastSeq uint16
-			for {
-				start := time.Now()
-				pkt, _, err := track.ReadRTP()
-				readTime := time.Since(start)
-				if err != nil {
-					slog.Info("remote track ended during drain")
-					return
-				}
-				pm.Decode(pkt.Payload) //nolint:errcheck
-				drained++
-				lastSeq = pkt.SequenceNumber
-
-				if readTime > 5*time.Millisecond {
-					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
-					break
-				}
-			}
-
-			// Phase 3: Live playback.
-			for {
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended", "frames", frameCount)
-					return
-				}
-				recvTime := time.Now()
-				pcm, err := pm.Decode(pkt.Payload)
-				if err != nil {
-					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
-					continue
-				}
-				if pm.InboundMuted() {
-					continue
-				}
-				frame := make([]int16, len(pcm))
-				copy(frame, pcm)
-				frameCount++
-				select {
-				case webrtcCh <- frame:
-				default:
-				}
-
-				if frameCount <= 10 || frameCount%50 == 0 {
-					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
-				}
-			}
-		}()
-	}
+	pm.OnRemoteTrack = d.remoteTrackHandler(pm, webrtcCh)
 
 	answerSDP, err := pm.AcceptOffer(offerSDP)
 	if err != nil {
