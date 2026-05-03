@@ -574,6 +574,27 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if h.requireLineOwnership(w, r, number) == nil {
+		return
+	}
+
+	msg := &signaling.Message{
+		Type: signaling.TypeRingTest,
+	}
+
+	var sendErr string
+	if err := h.hub.SendTo(number, msg); err != nil {
+		slog.Warn("ring test trigger failed", "number", number, "err", err)
+		sendErr = err.Error()
+	} else {
+		slog.Info("ring test triggered", "number", number)
+	}
+
+	h.respondPhoneCommandResult(w, r, number, sendErr)
+}
+
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	if h.requireLineOwnership(w, r, number) == nil {
