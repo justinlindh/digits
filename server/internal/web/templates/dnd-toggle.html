@@ -3,17 +3,17 @@
      htmx-swaps itself via hx-post + outerHTML targeting #dnd-toggle. */}}
 {{define "dnd-toggle"}}
 {{if .Lines}}
-<div id="dnd-toggle" style="margin-left: auto;">
-  <form method="POST" action="/settings/do-not-disturb"
-        hx-post="/settings/do-not-disturb" hx-target="#dnd-toggle" hx-swap="outerHTML">
-    <label class="toggle toggle--sm" title="{{if .HouseholdDND}}Do Not Disturb is on{{else}}Do Not Disturb is off{{end}}">
-      <input type="checkbox" name="enabled" value="true"
-             {{if .HouseholdDND}}checked{{end}}
-             onchange="this.form.requestSubmit()">
-      <span class="toggle__track"></span>
-    </label>
-  </form>
-</div>
+<form id="dnd-toggle" method="POST" action="/settings/do-not-disturb"
+      hx-post="/settings/do-not-disturb" hx-target="#dnd-toggle" hx-swap="outerHTML"
+      style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+  <label class="toggle toggle--sm">
+    <input type="checkbox" name="enabled" value="true"
+           {{if .HouseholdDND}}checked{{end}}
+           onchange="this.form.requestSubmit()">
+    <span class="toggle__track"></span>
+  </label>
+  <span style="font-size: 13px; color: var(--ink-muted); white-space: nowrap;">Silence all</span>
+</form>
 {{end}}
 {{end}}
 
@@ -36,7 +36,7 @@
         <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
       </span>
     </label>
-    <span class="am-label" style="font-size: 10px;">DND</span>
+    <span class="am-label" style="font-size: 10px;">Silence all</span>
   </form>
 </div>
 {{end}}
