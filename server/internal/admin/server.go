@@ -11,6 +11,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/metrics"
+	"github.com/justinlindh/digits/server/internal/tracing"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -56,9 +57,13 @@ func NewServer(cfg *Config, db *AdminDB, auth *AuthStore) *Server {
 		tmplHH:    parse("templates/layout.html", "templates/households.html"),
 		tmplHP:    parse("templates/layout.html", "templates/health.html"),
 	}
+	// Wrap the router in metrics middleware first (so the metrics layer
+	// observes the request even when tracing is off), then in the
+	// tracing middleware so the server span surrounds everything and
+	// honors any inbound traceparent header from the upstream caller.
 	s.httpSrv = &http.Server{
 		Addr:    cfg.Addr,
-		Handler: s.metrics.Middleware(s.router()),
+		Handler: tracing.HTTPServerMiddleware("admind", s.metrics.Middleware(s.router())),
 	}
 	return s
 }

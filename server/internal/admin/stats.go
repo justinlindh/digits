@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
 type Stats struct {
@@ -24,10 +26,17 @@ type StatsClient struct {
 }
 
 func NewStatsClient(url, secret string) *StatsClient {
+	// Wrap the default transport with otelhttp via tracing.HTTPClientTransport
+	// so admind->signald requests carry W3C traceparent headers. The inbound
+	// span on signald becomes a child of the admind handler span, giving
+	// Tempo a continuous trace across the cross-service boundary.
 	return &StatsClient{
 		url:    url,
 		secret: secret,
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: tracing.HTTPClientTransport(http.DefaultTransport),
+		},
 	}
 }
 

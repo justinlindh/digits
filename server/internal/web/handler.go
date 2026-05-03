@@ -24,6 +24,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/ratelimit"
 	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/tracing"
 	"github.com/justinlindh/digits/server/internal/updates"
 	"github.com/justinlindh/digits/server/internal/version"
 )
@@ -571,13 +572,20 @@ func (h *Handler) Router() http.Handler {
 
 	// Wrap with root-domain redirect before security headers.
 	wrapped := rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
-	// Metrics middleware sits outermost so it sees the actual response code
-	// and duration including any redirect/header work above. RouteOf bucket
-	// is computed from the request path, never from a route name read off
-	// the matched handler, so the labels can't pick up an internal name.
+	// Metrics middleware sits outside redirect/security headers so it
+	// sees the actual response code and duration including any redirect
+	// header work above. RouteOf bucket is computed from the request
+	// path, never from a route name read off the matched handler, so the
+	// labels can't pick up an internal name.
 	if h.metrics != nil {
 		wrapped = h.metrics.Middleware(wrapped)
 	}
+	// Tracing middleware sits outermost so the server span covers the
+	// full request lifetime and so an inbound traceparent header is
+	// honored before any other middleware runs. The middleware uses the
+	// same metrics.RouteOf bucketer for span names, so a phone number in
+	// the URL never reaches a span attribute or span name.
+	wrapped = tracing.HTTPServerMiddleware("signald", wrapped)
 	return wrapped
 }
 
