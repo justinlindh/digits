@@ -4,10 +4,11 @@ Minimal recovery server that runs when the phone fails to boot. Provides factory
 
 ## When it runs
 
-Recovery mode activates in two situations:
+Recovery mode activates in three situations:
 
 - **Boot failure:** The initramfs tracks a boot counter on the data partition. If it reaches 3 consecutive failed boots, recovery starts automatically.
 - **Factory reset:** When triggered from the web UI or by dialing `*#00000#`, digitsd sets the counter to the threshold and reboots into recovery.
+- **Numpad panic button:** Holding the keypad's `*` key during boot causes `digits-panic-check` to write `/data/digits/recovery-mode` and reboot; the initramfs sees the flag and enters recovery mode on the next boot.
 
 See [docs/architecture/updates-and-recovery.md](../../docs/architecture/updates-and-recovery.md) for the full design.
 

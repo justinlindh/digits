@@ -31,7 +31,11 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# Check for persistent recovery flag (set by service code or web UI factory reset)
+# Check for persistent recovery flag. Writers:
+#   - digits-panic-check (early boot) when * is held on the keypad
+#   - this script itself (below) once the boot counter reaches threshold
+# Note: the *#00000# service code and web UI factory reset use the boot counter
+# instead of this flag (see bootcount.SetThreshold).
 if [ -f "$DATA_MNT/digits/recovery-mode" ]; then
     echo "boot-check: persistent recovery flag found, entering recovery mode"
     touch "$RECOVERY_FLAG"
