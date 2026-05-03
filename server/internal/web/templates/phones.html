@@ -112,23 +112,17 @@
 
   {{if .Lines}}
   {{template "phones-table" .}}
+  {{end}}
 
-  <details class="panel" style="margin-top: 20px;">
-    <summary class="panel__head panel__head--clickable">
-      <h2 class="panel__title">Add a phone</h2>
-      <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
-    </summary>
-    {{template "pair-form" .}}
-  </details>
-  {{else}}
-  <section class="panel" style="margin-bottom: 20px;">
+  <section class="panel" style="margin-top: 20px;">
     <header class="panel__head">
-      <h2 class="panel__title">Pair a new handset</h2>
+      <h2 class="panel__title">{{if .Lines}}Add a phone{{else}}Pair a new handset{{end}}</h2>
       <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
     </header>
     {{template "pair-form" .}}
   </section>
 
+  {{if not .Lines}}
   {{template "phones-table" .}}
   {{end}}
 
@@ -543,10 +537,6 @@
 
     {{template "am-phones-table" .}}
 
-    {{if .Lines}}
-    <details class="am-phones__pair-wrap">
-      <summary class="am-phones__pair-summary">Add a phone</summary>
-    {{end}}
     <div class="am-plate am-phones__pair" id="pair-new">
       <div class="am-phones__pair-label">Pair a new handset</div>
       <div class="am-phones__pair-hint">Enter the 6-digit code from the handset.</div>
@@ -601,9 +591,6 @@
         </button>
       </form>
     </div>
-    {{if .Lines}}
-    </details>
-    {{end}}
 
   </div>
 </div>

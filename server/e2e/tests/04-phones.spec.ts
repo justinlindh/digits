@@ -20,16 +20,6 @@ function isAuthOrOnboard(url: string) {
 }
 
 
-/**
- * When lines exist, the pair form is inside a collapsed <details> element.
- * This helper opens it so the form inputs become visible.
- */
-async function openPairForm(page: import('@playwright/test').Page): Promise<void> {
-  const details = page.locator('details .panel__head--clickable');
-  if (await details.count() > 0) {
-    await details.click();
-  }
-}
 
 test.describe('Phones list', () => {
   test('phones page renders heading and pair form', async ({ page }) => {
@@ -56,7 +46,6 @@ test.describe('Phones list', () => {
       return;
     }
 
-    await openPairForm(page);
 
     // The redesigned pair form splits the pairing code into two inputs: a
     // hidden input[name="code"] submitted to the server, and a visible
@@ -89,7 +78,6 @@ test.describe('Phones list', () => {
       return;
     }
 
-    await openPairForm(page);
 
     // The visible manual input carries the pattern + maxlength. The hidden
     // input[name="code"] is populated by JS from this one (or the keypad).
@@ -108,7 +96,6 @@ test.describe('Phones list', () => {
       return;
     }
 
-    await openPairForm(page);
 
     // Fresh load: no code, no number, no name — submit is disabled.
     const pairBtn = page.locator('button#pair-submit');
