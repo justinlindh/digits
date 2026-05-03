@@ -57,6 +57,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -316,8 +317,9 @@ func fallbackResource(cfg Config) *resource.Resource {
 //
 //   - http.route: the bucketed route (e.g. "/phones/{number}")
 //   - http.method, http.status_code: standard semconv fields with no PII
-//   - server.address: the request Host header (already a configured
-//     domain, not user-derived)
+//   - server.address: the request Host header (in practice the
+//     configured domain behind our reverse proxy; technically
+//     client-controlled but cannot leak PII)
 //
 // Inbound traceparent headers are honored via the global propagator
 // (installed by Init), so a request from admind carrying a traceparent
@@ -361,6 +363,9 @@ func HTTPServerMiddleware(serviceName string, next http.Handler) http.Handler {
 		next.ServeHTTP(rec, r.WithContext(ctx))
 
 		span.SetAttributes(attribute.Int("http.status_code", rec.status))
+		if rec.status >= 500 {
+			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		}
 	})
 }
 
@@ -439,23 +444,26 @@ func HTTPClientTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return &tracingTransport{base: base}
+	return &tracingTransport{
+		base:   base,
+		tracer: otel.Tracer("github.com/justinlindh/digits/server/internal/tracing"),
+	}
 }
 
 // tracingTransport implements http.RoundTripper. It is intentionally
 // minimal; the OTel SDK does the heavy lifting via tracer.Start and the
 // global propagator.
 type tracingTransport struct {
-	base http.RoundTripper
+	base   http.RoundTripper
+	tracer trace.Tracer
 }
 
 // RoundTrip starts a client span, injects traceparent into the request
 // headers, dispatches via the wrapped transport, and records the status.
 func (t *tracingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	tracer := otel.Tracer("github.com/justinlindh/digits/server/internal/tracing")
 	propagator := otel.GetTextMapPropagator()
 
-	ctx, span := tracer.Start(req.Context(), "HTTP "+req.Method,
+	ctx, span := t.tracer.Start(req.Context(), "HTTP "+req.Method,
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("http.method", req.Method),
@@ -474,6 +482,7 @@ func (t *tracingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err
 	}
 	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
