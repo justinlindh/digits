@@ -106,6 +106,13 @@ type daemonCallbacks struct {
 	// meshReporterCancels holds one CancelFunc per mesh peer's link-health
 	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
 	meshReporterCancels map[string]context.CancelFunc
+
+	// Auto-update state. The atomic bools are safe for concurrent read from
+	// the update goroutine. triggerAutoUpdate is set once at startup and
+	// captures the run()-scoped variables needed by runAutoUpdate.
+	autoUpdateEnabled atomic.Bool
+	pendingAutoUpdate atomic.Bool
+	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -894,6 +901,13 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() {
+		slog.Info("auto-update: call ended, running deferred update")
+		if d.triggerAutoUpdate != nil {
+			go d.triggerAutoUpdate()
+		}
+	}
+
 	go func() {
 		defer recoverGoroutine("hangup-teardown")
 		teardownStart := time.Now()
@@ -971,6 +985,15 @@ func (d *daemonCallbacks) applySilentModeLive(silent bool) {
 func (d *daemonCallbacks) setSilentModeConfig(silent bool) error {
 	d.mu.Lock()
 	d.cfg.SilentMode = silent
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
+// setAutoUpdateConfig writes the new flag to the local config cache under
+// d.mu and persists it to disk outside the lock.
+func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
+	d.mu.Lock()
+	d.cfg.AutoUpdate = enabled
 	d.mu.Unlock()
 	return d.cfg.Save()
 }
@@ -1326,6 +1349,24 @@ func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
+// runAutoUpdate checks whether the device is idle (no active call) and, if so,
+// delegates to runTargetedUpdate with empty targets (install whatever is
+// latest). When a call is in progress the update is deferred: pendingAutoUpdate
+// is set so HangupCall can retry once the call ends.
+func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
+	d.mu.Lock()
+	inCall := d.callPeer != ""
+	d.mu.Unlock()
+
+	if inCall {
+		slog.Info("auto-update: call in progress, deferring until idle")
+		d.pendingAutoUpdate.Store(true)
+		return
+	}
+
+	slog.Info("auto-update: device is idle, checking for updates")
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, reportStatus, afterFirmwareUpdated)
+}
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
 	if !updateInProgress.CompareAndSwap(false, true) {
@@ -2103,6 +2144,18 @@ func main() {
 		cb.paired.Store(true)
 	}
 
+	// Wire auto-update. The closure captures run()-scoped variables so that
+	// HangupCall (which lives on daemonCallbacks) can trigger an update
+	// without needing direct access to those locals.
+	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
+	cb.triggerAutoUpdate = func() {
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), nil, requeryFirmware)
+	}
+	if cb.autoUpdateEnabled.Load() {
+		slog.Info("auto-update: enabled, checking for updates on startup")
+		go cb.triggerAutoUpdate()
+	}
+
 	// 8. Create phone Controller
 	ctrl := phone.NewController(cb, effectiveNumber)
 	cb.ctrl = ctrl
@@ -2608,6 +2661,12 @@ func main() {
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
 
+			case sigclient.TypeReleaseAvailable:
+				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
+				if cb.autoUpdateEnabled.Load() {
+					go cb.triggerAutoUpdate()
+				}
+
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
 				go triggerFactoryReset(sig, deviceID)
@@ -2763,6 +2822,15 @@ func main() {
 					cb.applySilentModeLive(silent)
 					if err := cb.setSilentModeConfig(silent); err != nil {
 						slog.Warn("line_settings: silent-mode save failed", "err", err)
+					}
+				}
+
+				au := msg.LineSettings.AutoUpdate
+				if au != cb.autoUpdateEnabled.Load() {
+					cb.autoUpdateEnabled.Store(au)
+					slog.Info("line_settings applied", "auto_update", au)
+					if err := cb.setAutoUpdateConfig(au); err != nil {
+						slog.Warn("line_settings: auto-update save failed", "err", err)
 					}
 				}
 
