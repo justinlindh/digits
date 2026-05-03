@@ -335,13 +335,12 @@ func (d *daemonCallbacks) AnswerCall() {
 	// Fast path: use pre-created PeerConnection from ring phase.
 	if d.preAnswer.peerMgr != nil {
 		t0 := time.Now()
+		d.mixer.StopTone()
 		caller := d.preAnswer.caller
 		pm := d.preAnswer.peerMgr
 		answerSDP := d.preAnswer.answerSDP
 		candidates := d.preAnswer.candidates
-		// webrtcCh already registered in mixer during prepareAnswer
 
-		// Promote into active call state.
 		d.peerMgr = pm
 		d.callPeer = caller
 		d.isCaller = false
@@ -361,6 +360,15 @@ func (d *daemonCallbacks) AnswerCall() {
 		})
 
 		for _, candidate := range candidates {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		// Any candidates still gathering after promotion should be sent directly.
+		pm.OnICECandidate = func(candidate string) {
 			sendSignal(d.sig, &sigclient.Message{
 				Type:      sigclient.TypeICE,
 				To:        caller,
