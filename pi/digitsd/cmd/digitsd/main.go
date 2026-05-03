@@ -2879,6 +2879,9 @@ func main() {
 					if err := cb.setAutoUpdateConfig(au); err != nil {
 						slog.Warn("line_settings: auto-update save failed", "err", err)
 					}
+					if au && cb.triggerAutoUpdate != nil {
+						go cb.triggerAutoUpdate()
+					}
 				}
 
 			case sigclient.TypeConferenceMember:
