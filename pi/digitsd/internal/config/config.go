@@ -272,14 +272,6 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	return nil
 }
 
-// SetDeviceToken records a device token returned after pairing and clears the
-// pairing code, then saves the config to disk.
-func (c *Config) SetDeviceToken(token string) error {
-	c.DeviceToken = token
-	c.PairingCode = ""
-	return c.Save()
-}
-
 // Path returns the file path this config was loaded from.
 func (c *Config) Path() string {
 	return c.path
