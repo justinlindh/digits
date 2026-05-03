@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
@@ -23,10 +25,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/logging"
+	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/turn"
 	"github.com/justinlindh/digits/server/internal/updates"
+	"github.com/justinlindh/digits/server/internal/version"
 	"github.com/justinlindh/digits/server/internal/web"
 )
 
@@ -64,6 +68,14 @@ func run(ctx context.Context) error {
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
 
+	// Prometheus metrics. The registry is wired into the web handler as
+	// middleware (HTTP request count + duration) and into the signaling
+	// relay (signaling_errors_total). Live-state gauges sample the hub and
+	// tracker at scrape time so we never persist counts elsewhere.
+	mreg := metrics.New(metrics.ServiceSignald, version.Version, version.Commit)
+	mreg.RegisterDevicesGauge(func() float64 { return float64(len(hub.OnlineNumbers())) })
+	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
+
 	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
 	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
 	// counters without polling.
@@ -88,6 +100,7 @@ func run(ctx context.Context) error {
 	// Relay and TURN
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
+	relay.Errors = mreg
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
@@ -144,6 +157,7 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
+		Metrics:        mreg,
 	}, web.HandlerConfig{
 		Addr:        cfg.Addr,
 		BaseURL:     cfg.BaseURL,
@@ -190,16 +204,47 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	// Metrics listener. Bound to a separate addr/port so /metrics is never
+	// served over the public app listener. Operators are expected to keep
+	// this address on a private interface (the docker prod compose binds it
+	// to 127.0.0.1; cluster scrapes reach it via the docker host IP). Empty
+	// SIGNALD_METRICS_ADDR disables the listener entirely.
+	var metricsSrv *http.Server
+	metricsErr := make(chan error, 1)
+	if cfg.MetricsAddr != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("GET /metrics", promhttp.HandlerFor(mreg.Reg, promhttp.HandlerOpts{Registry: mreg.Reg}))
+		metricsMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		metricsSrv = &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux}
+		go func() {
+			slog.Info("metrics listener started", "addr", cfg.MetricsAddr)
+			metricsErr <- metricsSrv.ListenAndServe()
+		}()
+	}
+
 	select {
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return fmt.Errorf("listen: %w", err)
+	case err := <-metricsErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("metrics listen: %w", err)
 	case <-ctx.Done():
 		slog.Info("shutdown signal received, draining")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if metricsSrv != nil {
+			if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+				slog.Warn("metrics shutdown", "err", err)
+			}
+		}
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("http shutdown: %w", err)
 		}

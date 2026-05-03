@@ -20,6 +20,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/ratelimit"
 	"github.com/justinlindh/digits/server/internal/signaling"
@@ -236,6 +237,10 @@ type Handler struct {
 	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
 	// Updates
 	Releases *updates.GitHubReleases
+	// Metrics is the optional Prometheus registry. When set, a request
+	// timing/count middleware is wrapped around the public mux. nil disables
+	// HTTP instrumentation entirely (useful for tests that don't care).
+	metrics *metrics.Registry
 }
 
 // segDesc drives bar segment rendering. Lit is the count (0..10) of
@@ -283,6 +288,7 @@ type Deps struct {
 	HouseholdStore *household.Store
 	PairingStore   *pairing.Store
 	LinkStore      *household.LinkStore
+	Metrics        *metrics.Registry
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
@@ -417,6 +423,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		magicVerifyLimiter: ratelimit.New(10, time.Minute),
 		googleLoginLimiter: ratelimit.New(10, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
+		metrics:            deps.Metrics,
 	}, nil
 }
 
@@ -563,7 +570,15 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
-	return rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+	wrapped := rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+	// Metrics middleware sits outermost so it sees the actual response code
+	// and duration including any redirect/header work above. RouteOf bucket
+	// is computed from the request path, never from a route name read off
+	// the matched handler, so the labels can't pick up an internal name.
+	if h.metrics != nil {
+		wrapped = h.metrics.Middleware(wrapped)
+	}
+	return wrapped
 }
 
 // isGateExempt reports whether a request path should bypass the welcome and

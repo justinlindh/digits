@@ -4,6 +4,9 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net/http"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/justinlindh/digits/server/internal/admin"
 	"github.com/justinlindh/digits/server/internal/logging"
@@ -44,6 +47,27 @@ func main() {
 	}
 
 	srv := admin.NewServer(cfg, db, authStore)
+
+	// Metrics listener. Bound to a separate addr/port so /metrics is never
+	// served over the admin web listener (which the operator may expose
+	// behind auth at admin.digits.family). Empty ADMIN_METRICS_ADDR
+	// disables the listener entirely.
+	if cfg.MetricsAddr != "" {
+		mreg := srv.Metrics()
+		go func() {
+			mux := http.NewServeMux()
+			mux.Handle("GET /metrics", promhttp.HandlerFor(mreg.Reg, promhttp.HandlerOpts{Registry: mreg.Reg}))
+			mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"status":"ok"}`))
+			})
+			slog.Info("metrics listener started", "addr", cfg.MetricsAddr)
+			if err := http.ListenAndServe(cfg.MetricsAddr, mux); err != nil {
+				slog.Error("metrics listener exited", "err", err)
+			}
+		}()
+	}
+
 	slog.Info("server started", "addr", cfg.Addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("listen: %v", err)

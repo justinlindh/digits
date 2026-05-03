@@ -22,8 +22,14 @@ services:
       SIGNALD_TURN_ENABLED: "${SIGNALD_TURN_ENABLED:-false}"
       SIGNALD_TURN_SECRET: "${SIGNALD_TURN_SECRET:-}"
       SIGNALD_TURN_DOMAIN: "${SIGNALD_TURN_DOMAIN:-}"
+      SIGNALD_METRICS_ADDR: ":9091"
     ports:
       - "8090:8080"
+      # Metrics listener. Bound on all interfaces inside the container; the
+      # host-side mapping limits exposure to the loopback or local-network
+      # IP, never the public internet. The cluster Prometheus scrapes via
+      # the docker host IP on this port.
+      - "9091:9091"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/healthz || exit 1"]
       interval: 10s
@@ -44,8 +50,11 @@ services:
       ADMIN_INITIAL_USER: "${ADMIN_INITIAL_USER:-admin}"
       ADMIN_INITIAL_SECRET: "${ADMIN_INITIAL_SECRET}"
       LOG_FORMAT: "json"
+      ADMIN_METRICS_ADDR: ":9092"
     ports:
       - "9094:9090"
+      # Metrics listener; same exposure model as signald above.
+      - "9092:9092"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
       interval: 10s

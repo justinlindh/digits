@@ -3,7 +3,8 @@ package config
 import "os"
 
 type Config struct {
-	Addr        string // HTTP listen address
+	Addr        string // HTTP listen address (public app port)
+	MetricsAddr string // Prometheus metrics listen address (separate listener; empty disables)
 	DatabaseURL string // Postgres connection string
 	TLSCert     string // TLS certificate path (empty = plain HTTP)
 	TLSKey      string // TLS key path
@@ -39,12 +40,14 @@ type Config struct {
 
 func Load() *Config {
 	c := &Config{
-		Addr:     ":8443",
-		SMTPPort: "587",
-		SMTPFrom: "noreply@digits.family",
-		BaseURL:  "https://app.digits.family",
+		Addr:        ":8443",
+		MetricsAddr: ":9091",
+		SMTPPort:    "587",
+		SMTPFrom:    "noreply@digits.family",
+		BaseURL:     "https://app.digits.family",
 	}
 	StringEnv("SIGNALD_ADDR", &c.Addr)
+	StringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
 	StringEnv("DATABASE_URL", &c.DatabaseURL)
 	StringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
 	StringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
