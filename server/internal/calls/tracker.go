@@ -230,7 +230,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 }
 
-func (t *Tracker) Busy(ctx context.Context, number string) bool {
+func (t *Tracker) Busy(number string) bool {
 	if t.conferences.IsBusy(number) {
 		return true
 	}
@@ -252,7 +252,7 @@ func (t *Tracker) Busy(ctx context.Context, number string) bool {
 //
 // Together with the normal Busy(to) check, this lets the 5ESS-style three-way
 // flow work without allowing arbitrary multi-call spam.
-func (t *Tracker) CanAddAsHost(ctx context.Context, number string) bool {
+func (t *Tracker) CanAddAsHost(number string) bool {
 	if t.conferences.IsBusy(number) {
 		return false
 	}
@@ -272,7 +272,7 @@ func (t *Tracker) CanAddAsHost(ctx context.Context, number string) bool {
 
 // AllPeersOf returns all remote parties that number has active 2-party calls
 // with. Empty if number has no active calls.
-func (t *Tracker) AllPeersOf(ctx context.Context, number string) []string {
+func (t *Tracker) AllPeersOf(number string) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	var peers []string
@@ -288,7 +288,7 @@ func (t *Tracker) AllPeersOf(ctx context.Context, number string) []string {
 
 // PeerOf returns the other party in an active call involving number,
 // or "" if number is not in any active call.
-func (t *Tracker) PeerOf(ctx context.Context, number string) string {
+func (t *Tracker) PeerOf(number string) string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
@@ -305,7 +305,7 @@ func (t *Tracker) PeerOf(ctx context.Context, number string) string {
 // CallIDForPair returns the database call ID for an active call between a and
 // b, or 0 if no such call exists. Used by conference setup to find the
 // originating 2-party call id before migrating to mesh.
-func (t *Tracker) CallIDForPair(ctx context.Context, a, b string) int64 {
+func (t *Tracker) CallIDForPair(a, b string) int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if c, ok := t.active[callKey(a, b)]; ok {
@@ -319,7 +319,7 @@ func (t *Tracker) CallIDForPair(ctx context.Context, a, b string) int64 {
 
 // CallIDFor returns the active call id for an endpoint phone number.
 // Returns (0, false) if the number is not currently in a call.
-func (t *Tracker) CallIDFor(ctx context.Context, number string) (int64, bool) {
+func (t *Tracker) CallIDFor(number string) (int64, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
@@ -330,7 +330,7 @@ func (t *Tracker) CallIDFor(ctx context.Context, number string) (int64, bool) {
 	return 0, false
 }
 
-func (t *Tracker) InCall(ctx context.Context, a, b string) bool {
+func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	_, fwd := t.active[callKey(a, b)]
@@ -405,7 +405,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 	// creating the conference so the active map is still intact.
 	addedCallIDs := make([]int64, 0, len(addedMembers))
 	for _, member := range addedMembers {
-		cid := t.CallIDForPair(ctx, host, member)
+		cid := t.CallIDForPair(host, member)
 		if cid == 0 {
 			return nil, fmt.Errorf("no active call between %s and %s", host, member)
 		}

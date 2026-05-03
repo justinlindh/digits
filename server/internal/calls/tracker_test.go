@@ -76,10 +76,10 @@ func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 	if id <= 0 {
 		t.Fatalf("want positive id, got %d", id)
 	}
-	if got, ok := tr.CallIDFor(context.Background(), "555-1111"); !ok || got != id {
+	if got, ok := tr.CallIDFor("555-1111"); !ok || got != id {
 		t.Fatalf("CallIDFor caller: got (%d,%v), want (%d,true)", got, ok, id)
 	}
-	if got, ok := tr.CallIDFor(context.Background(), "555-2222"); !ok || got != id {
+	if got, ok := tr.CallIDFor("555-2222"); !ok || got != id {
 		t.Fatalf("CallIDFor callee: got (%d,%v), want (%d,true)", got, ok, id)
 	}
 }

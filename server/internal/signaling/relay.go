@@ -16,15 +16,15 @@ type CallTracker interface {
 	OnCallAnswered(ctx context.Context, caller, callee string) error
 	OnCallEnded(ctx context.Context, caller, callee string) error
 	ClearByNumber(ctx context.Context, number string)
-	InCall(ctx context.Context, a, b string) bool
-	Busy(ctx context.Context, number string) bool
-	CanAddAsHost(ctx context.Context, number string) bool
-	PeerOf(ctx context.Context, number string) string
-	AllPeersOf(ctx context.Context, number string) []string
+	InCall(a, b string) bool
+	Busy(number string) bool
+	CanAddAsHost(number string) bool
+	PeerOf(number string) string
+	AllPeersOf(number string) []string
 	Conferences() *calls.ConferenceTracker
 	CreateConferencePersistent(ctx context.Context, host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error)
-	CallIDForPair(ctx context.Context, a, b string) int64
-	CallIDFor(ctx context.Context, number string) (int64, bool)
+	CallIDForPair(a, b string) int64
+	CallIDFor(number string) (int64, bool)
 	EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error
 	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
 }
@@ -135,11 +135,11 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 		// except for the party-line add-dial case: a host already in one
 		// 2-party call (as caller) may initiate a second call to a third
 		// party, which a subsequent conference_merge will bond into a 3-way.
-		if r.Tracker.Busy(ctx, msg.To) {
+		if r.Tracker.Busy(msg.To) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		if r.Tracker.Busy(ctx, from) && !r.Tracker.CanAddAsHost(ctx, from) {
+		if r.Tracker.Busy(from) && !r.Tracker.CanAddAsHost(from) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
@@ -155,7 +155,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
-	if r.Tracker != nil && !r.Tracker.InCall(ctx, from, msg.To) {
+	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
@@ -195,7 +195,7 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	// single hook-on ends both. For the normal 2-party case this is one peer.
 	var peers []string
 	if r.Tracker != nil {
-		peers = r.Tracker.AllPeersOf(ctx, from)
+		peers = r.Tracker.AllPeersOf(from)
 	}
 	if len(peers) == 0 && msg.To != "" {
 		peers = []string{msg.To}
@@ -358,7 +358,7 @@ func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message)
 	}
 
 	if p.Peer == "" {
-		callID, ok := r.Tracker.CallIDFor(ctx, from)
+		callID, ok := r.Tracker.CallIDFor(from)
 		if !ok {
 			slog.Debug("link_health for endpoint not in active call", "endpoint", from)
 			return
