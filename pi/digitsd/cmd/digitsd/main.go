@@ -87,6 +87,16 @@ type daemonCallbacks struct {
 	pendingOffer     string
 	pendingCaller    string
 	pendingICE       []string // ICE candidates received before peerMgr is created
+	// preAnswer holds a PeerConnection created during the ring phase to
+	// reduce call-answer latency. Promoted into the active call state on
+	// HOOK:OFF; torn down if the caller hangs up before we answer.
+	preAnswer struct {
+		peerMgr    *owebrtc.PeerManager
+		answerSDP  string
+		webrtcCh   chan []int16
+		candidates []string // local ICE candidates gathered during ring, sent on pickup
+		caller     string   // pendingCaller at time of preparation
+	}
 	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
