@@ -57,6 +57,7 @@ const (
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+	AutoUpdate bool   `json:"auto_update,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.
