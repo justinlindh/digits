@@ -277,8 +277,16 @@
         <div class="panel__body">
 
           <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
+            <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
             <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
             <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
+          </div>
+
+          <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
+            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+              <div id="ring-test-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+              <span id="ring-test-text" style="font-size: 13px; color: var(--ink);">Ringing...</span>
+            </div>
           </div>
 
           <div id="restart-confirm" class="hidden">
@@ -333,6 +341,41 @@
   var fwPollTimer = null;
   var restartPollTimer = null;
   var restartMode = null;
+
+  function doRingTest() {
+    var btn = document.getElementById('ring-test-btn');
+    var status = document.getElementById('ring-test-status');
+    var spinner = document.getElementById('ring-test-spinner');
+    var text = document.getElementById('ring-test-text');
+    btn.disabled = true;
+    status.classList.remove('hidden');
+    spinner.classList.remove('hidden');
+    text.textContent = 'Ringing...';
+    text.style.color = 'var(--ink)';
+    fetch('/phones/' + phoneNumber + '/ring-test', {
+      method: 'POST',
+      headers: {'Accept': 'application/json'}
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      spinner.classList.add('hidden');
+      if (data.error) {
+        text.textContent = 'Failed: ' + data.error;
+        text.style.color = 'var(--rust)';
+        btn.disabled = false;
+      } else {
+        text.textContent = 'Done';
+        text.style.color = 'var(--forest)';
+        setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
+      }
+    })
+    .catch(function(err) {
+      spinner.classList.add('hidden');
+      text.textContent = 'Error: ' + err.message;
+      text.style.color = 'var(--rust)';
+      btn.disabled = false;
+    });
+  }
 
   function triggerComponentUpdate(prefix, paramName) {
     var btn = document.getElementById(prefix + '-install-btn');
