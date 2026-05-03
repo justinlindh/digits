@@ -304,6 +304,7 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 		Household: hh,
 	}
 }
+
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

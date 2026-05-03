@@ -19,8 +19,6 @@ function isAuthOrOnboard(url: string) {
   return url.includes('/auth/login') || url.includes('/onboard');
 }
 
-
-
 test.describe('Phones list', () => {
   test('phones page renders heading and pair form', async ({ page }) => {
     await page.goto('/phones');
@@ -32,9 +30,8 @@ test.describe('Phones list', () => {
     // Page heading: <h1 class="page__title">Lines</h1>
     await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 
-    // When lines exist, the pair section collapses into a <details> titled
-    // "Add a phone". When no lines exist, it renders as an open panel titled
-    // "Pair a new handset". Check for either.
+    // When lines exist, the pair section shows as "Add a phone".
+    // When no lines exist, it renders as "Pair a new handset".
     const pairHeading = page.locator('h2.panel__title', { hasText: /pair a new handset|add a phone/i });
     await expect(pairHeading).toBeVisible();
   });
@@ -45,7 +42,6 @@ test.describe('Phones list', () => {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
-
 
     // The redesigned pair form splits the pairing code into two inputs: a
     // hidden input[name="code"] submitted to the server, and a visible
@@ -78,7 +74,6 @@ test.describe('Phones list', () => {
       return;
     }
 
-
     // The visible manual input carries the pattern + maxlength. The hidden
     // input[name="code"] is populated by JS from this one (or the keypad).
     const codeInput = page.locator('input[name="code_manual"]');
@@ -95,7 +90,6 @@ test.describe('Phones list', () => {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
-
 
     // Fresh load: no code, no number, no name — submit is disabled.
     const pairBtn = page.locator('button#pair-submit');

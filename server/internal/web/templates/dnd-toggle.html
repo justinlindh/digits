@@ -5,7 +5,7 @@
 {{if .Lines}}
 <form id="dnd-toggle" method="POST" action="/settings/do-not-disturb"
       hx-post="/settings/do-not-disturb" hx-target="#dnd-toggle" hx-swap="outerHTML"
-      style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+      style="display: flex; align-items: center; gap: 8px;">
   <label class="toggle toggle--sm">
     <input type="checkbox" name="enabled" value="true"
            {{if .HouseholdDND}}checked{{end}}
