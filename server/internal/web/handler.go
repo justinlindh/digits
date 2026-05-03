@@ -316,6 +316,9 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := tmplPhones.ParseFS(templateFS, "templates/dnd-toggle.html"); err != nil {
+		return nil, fmt.Errorf("parse dnd-toggle partial into phones: %w", err)
+	}
 	tmplCalls, err := parsePage("calls.html")
 	if err != nil {
 		return nil, err

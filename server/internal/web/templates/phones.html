@@ -1,35 +1,6 @@
 {{define "title"}}Lines{{end}}
 
-{{define "content"}}
-{{if and .User (eq .User.Theme "answering-machine")}}
-  {{template "phones-am" .}}
-{{else}}
-<div class="page">
-
-  <header class="page__head">
-    <h1 class="page__title">Lines</h1>
-  </header>
-
-  {{if .PairError}}
-  <div class="banner banner--err">{{.PairError}}</div>
-  {{end}}
-
-  {{if .PairSuccess}}
-  <div class="pair-banner" role="status">
-    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
-    <span class="pair-banner__text">
-      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
-    </span>
-    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
-  </div>
-  {{end}}
-
-  <section class="panel" style="margin-bottom: 20px;">
-    <header class="panel__head">
-      <h2 class="panel__title">Pair a new handset</h2>
-      <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
-    </header>
-
+{{define "pair-form"}}
     <div class="panel__body">
       <div class="cols cols--side" style="align-items: center;">
 
@@ -56,9 +27,9 @@
               <button type="button" class="keypad__btn" data-digit="7"><span class="keypad__num">7</span><span class="keypad__letters">PQRS</span></button>
               <button type="button" class="keypad__btn" data-digit="8"><span class="keypad__num">8</span><span class="keypad__letters">TUV</span></button>
               <button type="button" class="keypad__btn" data-digit="9"><span class="keypad__num">9</span><span class="keypad__letters">WXYZ</span></button>
-              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="clear" aria-label="Clear"><span class="keypad__num">✻</span></button>
+              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="clear" aria-label="Clear"><span class="keypad__num">&#x2733;</span></button>
               <button type="button" class="keypad__btn" data-digit="0"><span class="keypad__num">0</span></button>
-              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="backspace" aria-label="Backspace"><span class="keypad__num">⌫</span></button>
+              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="backspace" aria-label="Backspace"><span class="keypad__num">&#x232B;</span></button>
             </div>
             <div class="keypad-wrap__strip">DIGITS</div>
           </div>
@@ -112,10 +83,48 @@
 
       </div>
     </div>
+{{end}}
+
+{{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+  {{template "phones-am" .}}
+{{else}}
+<div class="page">
+
+  <header class="page__head">
+    <h1 class="page__title">Lines</h1>
+    {{template "dnd-toggle" .}}
+  </header>
+
+  {{if .PairError}}
+  <div class="banner banner--err">{{.PairError}}</div>
+  {{end}}
+
+  {{if .PairSuccess}}
+  <div class="pair-banner" role="status">
+    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
+    <span class="pair-banner__text">
+      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
+    </span>
+    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
+  </div>
+  {{end}}
+
+  {{if .Lines}}
+  {{template "phones-table" .}}
+  {{end}}
+
+  <section class="panel" style="margin-top: 20px;">
+    <header class="panel__head">
+      <h2 class="panel__title">{{if .Lines}}Add a phone{{else}}Pair a new handset{{end}}</h2>
+      <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
+    </header>
+    {{template "pair-form" .}}
   </section>
 
-  <!-- Existing lines -->
+  {{if not .Lines}}
   {{template "phones-table" .}}
+  {{end}}
 
 </div>
 {{end}}
@@ -483,6 +492,7 @@
       <div class="am-led am-led--dim am-page-header__cap">PAIRED</div>
     </div>
     <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
+    {{template "dnd-toggle-am" .}}
   </div>
 
   {{/* Patchbay rail sizing. N=0 shows a dark rail with a pair-me-in hint.

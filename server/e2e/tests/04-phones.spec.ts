@@ -27,11 +27,13 @@ test.describe('Phones list', () => {
       return;
     }
 
-    // Page heading — <h1 class="page__title">Lines</h1>
+    // Page heading: <h1 class="page__title">Lines</h1>
     await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
 
-    // "Pair a new handset" section (intercom-redesign copy).
-    await expect(page.locator('h2.panel__title', { hasText: /pair a new handset/i })).toBeVisible();
+    // When lines exist, the pair section shows as "Add a phone".
+    // When no lines exist, it renders as "Pair a new handset".
+    const pairHeading = page.locator('h2.panel__title', { hasText: /pair a new handset|add a phone/i });
+    await expect(pairHeading).toBeVisible();
   });
 
   test('pair form has visible manual code, line number, and line name inputs', async ({ page }) => {

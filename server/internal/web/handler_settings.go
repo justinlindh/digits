@@ -74,6 +74,10 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
 	if h.householdStore == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -105,6 +109,12 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		if pushErr := h.pushLineSettings(ln.Number, ln.Settings, enabled); pushErr != nil {
 			slog.Warn("DND fan-out push failed", "number", ln.Number, "err", pushErr)
 		}
+	}
+	if isHTMX(r) {
+		households[0].DoNotDisturb = enabled
+		data := h.buildLinesData(r, households[0], "")
+		renderWith(w, h.tmplPhones, partialFor(r, "dnd-toggle", "dnd-toggle-am"), data)
+		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
