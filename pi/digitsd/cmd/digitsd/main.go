@@ -2734,6 +2734,15 @@ func main() {
 					slog.Warn("unknown restart mode", "mode", mode)
 				}
 
+			case sigclient.TypeRingTest:
+				slog.Info("ring test: triggering 1s bell")
+				sp.SendFire("RING:TEST")
+				go func() {
+					time.Sleep(1 * time.Second)
+					sp.SendFire("RING:STOP")
+					slog.Info("ring test: stopped")
+				}()
+
 			case sigclient.TypeLineSettings:
 				if msg.LineSettings == nil {
 					slog.Warn("line_settings message missing payload", "from", msg.From)

@@ -48,6 +48,9 @@ const (
 	// TypeRestart is sent by the server to restart the service or reboot the device.
 	TypeRestart = "restart"
 
+	// TypeRingTest is sent by the server to briefly ring the bell for hardware verification.
+	TypeRingTest = "ring_test"
+
 	// TypeLineSettings is sent by the server to push an updated Settings blob
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
