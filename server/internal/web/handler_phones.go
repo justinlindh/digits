@@ -465,6 +465,17 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	autoUpdate := strings.TrimSpace(r.FormValue("auto_update")) == "on"
+	h.updateLineSetting(w, r, "auto-update-section", "am-auto-update-section", func(s *line.Settings) {
+		s.AutoUpdate = autoUpdate
+	})
+}
+
 // updateLineSetting applies a mutation to the Settings of the line identified
 // by the {number} path value, persists and pushes it if anything changed, and
 // then renders the theme-appropriate partial (or redirects to the phone detail
@@ -516,6 +527,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings, househ
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
 			SilentMode: line.EffectiveSilent(settings, householdDND),
+			AutoUpdate: settings.AutoUpdate,
 		},
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {

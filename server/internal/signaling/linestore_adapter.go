@@ -27,5 +27,6 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 	return &LineSettings{
 		VoiceStyle: settings.VoiceStyle,
 		SilentMode: silent,
+		AutoUpdate: settings.AutoUpdate,
 	}, nil
 }

@@ -75,6 +75,41 @@ func TestOnRegisteredPushesSilentMode(t *testing.T) {
 	}
 }
 
+func TestOnRegisteredPushesAutoUpdate(t *testing.T) {
+	hub := NewHub()
+	store := newFakeLineStore()
+	store.set("3140003", &LineSettings{
+		VoiceStyle: "copper",
+		SilentMode: false,
+		AutoUpdate: true,
+	})
+	relay := NewRelay(hub, nil, nil, store)
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140003", conn)
+
+	relay.OnRegistered(context.Background(), "3140003")
+
+	select {
+	case data := <-conn.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeLineSettings {
+			t.Errorf("Type: got %q, want %q", msg.Type, TypeLineSettings)
+		}
+		if msg.LineSettings == nil {
+			t.Fatal("LineSettings: got nil, want non-nil")
+		}
+		if !msg.LineSettings.AutoUpdate {
+			t.Errorf("AutoUpdate: got false, want true")
+		}
+	default:
+		t.Fatal("device did not receive a line_settings push after OnRegistered")
+	}
+}
+
 // TestOnRegisteredPushesSilentModeFalseByDefault verifies that when
 // OnRegistered is called for a number whose stored LineSettings has
 // SilentMode: false, the pushed message also carries SilentMode: false.

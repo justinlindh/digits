@@ -118,6 +118,51 @@ func TestSettingsMergeSilentModeFromPatch(t *testing.T) {
 	}
 }
 
+func TestSettingsAutoUpdateDefaultFalse(t *testing.T) {
+	s := DefaultSettings()
+	if s.AutoUpdate {
+		t.Errorf("AutoUpdate default: got true, want false")
+	}
+}
+
+func TestSettingsJSONRoundTripAutoUpdate(t *testing.T) {
+	in := Settings{VoiceStyle: VoiceStyleCopper, AutoUpdate: true}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out Settings
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out != in {
+		t.Errorf("round trip: got %+v, want %+v", out, in)
+	}
+}
+
+func TestSettingsJSONOmitsAutoUpdateWhenFalse(t *testing.T) {
+	s := Settings{VoiceStyle: VoiceStyleCopper, AutoUpdate: false}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), "auto_update") {
+		t.Errorf("expected auto_update omitted when false, got %s", b)
+	}
+}
+
+func TestSettingsMergeAutoUpdateFromPatch(t *testing.T) {
+	base := DefaultSettings()
+	patch := Settings{AutoUpdate: true}
+	merged := base.Merge(patch)
+	if !merged.AutoUpdate {
+		t.Errorf("Merge did not take AutoUpdate from patch")
+	}
+	if merged.VoiceStyle != VoiceStyleCopper {
+		t.Errorf("Merge clobbered VoiceStyle: got %q", merged.VoiceStyle)
+	}
+}
+
 func TestEffectiveSilent(t *testing.T) {
 	cases := []struct {
 		name         string

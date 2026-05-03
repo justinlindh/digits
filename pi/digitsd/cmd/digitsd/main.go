@@ -106,6 +106,35 @@ type daemonCallbacks struct {
 	// meshReporterCancels holds one CancelFunc per mesh peer's link-health
 	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
 	meshReporterCancels map[string]context.CancelFunc
+
+	// Firmware version strings, protected by mu. Read/write via
+	// getFirmwareVersion / setFirmwareVersion so that goroutines outside the
+	// main event loop (SWD probe, service-code update, auto-update) never
+	// race with the main loop's writes.
+	fwVer string
+	fwCom string
+
+	// Auto-update state. The atomic bools are safe for concurrent read from
+	// the update goroutine. triggerAutoUpdate is set once at startup and
+	// captures the run()-scoped variables needed by runAutoUpdate.
+	autoUpdateEnabled atomic.Bool
+	pendingAutoUpdate atomic.Bool
+	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+}
+
+// getFirmwareVersion returns the current firmware version and commit under mu.
+func (d *daemonCallbacks) getFirmwareVersion() (version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.fwVer, d.fwCom
+}
+
+// setFirmwareVersion stores a new firmware version and commit under mu.
+func (d *daemonCallbacks) setFirmwareVersion(version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fwVer = version
+	d.fwCom = commit
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -894,6 +923,13 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() {
+		slog.Info("auto-update: call ended, running deferred update")
+		if d.triggerAutoUpdate != nil {
+			go d.triggerAutoUpdate()
+		}
+	}
+
 	go func() {
 		defer recoverGoroutine("hangup-teardown")
 		teardownStart := time.Now()
@@ -971,6 +1007,15 @@ func (d *daemonCallbacks) applySilentModeLive(silent bool) {
 func (d *daemonCallbacks) setSilentModeConfig(silent bool) error {
 	d.mu.Lock()
 	d.cfg.SilentMode = silent
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
+// setAutoUpdateConfig writes the new flag to the local config cache under
+// d.mu and persists it to disk outside the lock.
+func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
+	d.mu.Lock()
+	d.cfg.AutoUpdate = enabled
 	d.mu.Unlock()
 	return d.cfg.Save()
 }
@@ -1326,6 +1371,24 @@ func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
+// runAutoUpdate checks whether the device is idle (no active call) and, if so,
+// delegates to runTargetedUpdate with empty targets (install whatever is
+// latest). When a call is in progress the update is deferred: pendingAutoUpdate
+// is set so HangupCall can retry once the call ends.
+func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, afterFirmwareUpdated func()) {
+	d.mu.Lock()
+	inCall := d.callPeer != ""
+	d.mu.Unlock()
+
+	if inCall {
+		slog.Info("auto-update: call in progress, deferring until idle")
+		d.pendingAutoUpdate.Store(true)
+		return
+	}
+
+	slog.Info("auto-update: device is idle, checking for updates")
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, nil, afterFirmwareUpdated)
+}
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
 	if !updateInProgress.CompareAndSwap(false, true) {
@@ -2013,7 +2076,7 @@ func main() {
 	swdFilesPresent := err1 == nil && err2 == nil
 
 	if swdFilesPresent {
-		go func() {
+		go func(fwVer, fwCom string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "sudo", defaultOpenOCD,
@@ -2027,8 +2090,8 @@ func main() {
 				slog.Info("swd probe: Pico detected on SWD bus, enabling flash capability")
 				flashCapable.Store(true)
 			}
-			sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-		}()
+			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
+		}(fwVersion, fwCommit)
 	}
 
 	svcCodes.OnRepair = func() {
@@ -2054,10 +2117,9 @@ func main() {
 		})
 	}
 
-	svcCodes.OnUpdate = func() {
-		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
-		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil, requeryFirmware)
-	}
+	// svcCodes.OnUpdate is set after cb is created so the closure can read
+	// fwVersion through the synchronized getter (OnUpdate runs in its own
+	// goroutine and would otherwise race with the main loop).
 
 	svcCodes.OnFactoryReset = func() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
@@ -2102,9 +2164,33 @@ func main() {
 		linkHealthDisabled:  linkHealthDisabled,
 		linkHealthInterval:  linkHealthInterval,
 		meshReporterCancels: make(map[string]context.CancelFunc),
+		fwVer:               fwVersion,
+		fwCom:               fwCommit,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
+	}
+
+	// Deferred from above: OnUpdate runs in its own goroutine, so it reads
+	// fwVersion through the synchronized getter to avoid racing with the
+	// main event loop.
+	svcCodes.OnUpdate = func() {
+		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
+		fwVer, _ := cb.getFirmwareVersion()
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+	}
+
+	// Wire auto-update. The closure reads fwVersion via the synchronized
+	// getter so that HangupCall (which runs off the main goroutine) never
+	// races with the main loop's writes.
+	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
+	cb.triggerAutoUpdate = func() {
+		fwVer, _ := cb.getFirmwareVersion()
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
+	}
+	if cb.autoUpdateEnabled.Load() {
+		slog.Info("auto-update: enabled, checking for updates on startup")
+		go cb.triggerAutoUpdate()
 	}
 
 	// 8. Create phone Controller
@@ -2411,6 +2497,7 @@ func main() {
 		case r := <-fwVersionCh:
 			if r.version != fwVersion || r.commit != fwCommit {
 				fwVersion, fwCommit = r.version, r.commit
+				cb.setFirmwareVersion(fwVersion, fwCommit)
 				slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
 				hookFlash = hookFlashCapable(fwVersion)
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
@@ -2612,6 +2699,12 @@ func main() {
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
 
+			case sigclient.TypeReleaseAvailable:
+				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
+				if cb.autoUpdateEnabled.Load() {
+					go cb.triggerAutoUpdate()
+				}
+
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
 				go triggerFactoryReset(sig, deviceID)
@@ -2767,6 +2860,15 @@ func main() {
 					cb.applySilentModeLive(silent)
 					if err := cb.setSilentModeConfig(silent); err != nil {
 						slog.Warn("line_settings: silent-mode save failed", "err", err)
+					}
+				}
+
+				au := msg.LineSettings.AutoUpdate
+				if au != cb.autoUpdateEnabled.Load() {
+					cb.autoUpdateEnabled.Store(au)
+					slog.Info("line_settings applied", "auto_update", au)
+					if err := cb.setAutoUpdateConfig(au); err != nil {
+						slog.Warn("line_settings: auto-update save failed", "err", err)
 					}
 				}
 
