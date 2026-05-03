@@ -79,9 +79,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeConferenceMerge:
 		r.handleConferenceMerge(ctx, from, msg)
 	case TypeDTMF:
-		r.forward(ctx, msg)
+		r.forward(msg)
 	case TypeRequestICE:
-		r.handleRequestICE(ctx, from, msg)
+		r.handleRequestICE(from)
 	case TypeDeviceInfo:
 		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr) {
 			slog.Info("device_info", "number", from,
@@ -160,7 +160,7 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
-	r.forward(ctx, msg)
+	r.forward(msg)
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
@@ -169,7 +169,7 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 			slog.Error("failed to track call answer", "err", err)
 		}
 	}
-	r.forward(ctx, msg)
+	r.forward(msg)
 }
 
 func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
@@ -224,7 +224,7 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 			return
 		}
 	}
-	r.forward(ctx, msg)
+	r.forward(msg)
 }
 
 func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
@@ -241,10 +241,10 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 			return
 		}
 	}
-	r.forward(ctx, msg)
+	r.forward(msg)
 }
 
-func (r *Relay) handleRequestICE(ctx context.Context, from string, _ *Message) {
+func (r *Relay) handleRequestICE(from string) {
 	resp := &Message{Type: TypeICEServers}
 
 	// Always include a STUN server
@@ -314,7 +314,7 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string) {
 	r.Tracker.ClearByNumber(ctx, number)
 }
 
-func (r *Relay) forward(ctx context.Context, msg *Message) {
+func (r *Relay) forward(msg *Message) {
 	if msg.To == "" {
 		slog.Warn("no destination for message", "type", msg.Type, "from", msg.From)
 		return

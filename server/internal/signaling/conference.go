@@ -17,7 +17,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	// 1. Validate: host is in both calls.
 	if !r.Tracker.InCall(ctx, host, held) || !r.Tracker.InCall(ctx, host, active) {
 		slog.Warn("conference: merge rejected", "host", host, "reason", "host_not_in_both_calls", "held", held, "active", active)
-		r.sendRejection(ctx, host, msg.ConfID, "host_not_in_both_calls")
+		r.sendRejection(host, msg.ConfID, "host_not_in_both_calls")
 		return
 	}
 
@@ -25,7 +25,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	for _, p := range []string{held, active} {
 		if r.Tracker.Conferences().IsBusy(p) {
 			slog.Warn("conference: merge rejected", "host", host, "reason", "member_already_in_conference", "busy_member", p)
-			r.sendRejection(ctx, host, msg.ConfID, "member_already_in_conference")
+			r.sendRejection(host, msg.ConfID, "member_already_in_conference")
 			return
 		}
 	}
@@ -34,14 +34,14 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	callID := r.Tracker.CallIDForPair(ctx, host, held)
 	if callID == 0 {
 		slog.Warn("conference: merge rejected", "host", host, "reason", "call_id_unknown", "held", held)
-		r.sendRejection(ctx, host, msg.ConfID, "call_id_unknown")
+		r.sendRejection(host, msg.ConfID, "call_id_unknown")
 		return
 	}
 
 	conf, err := r.Tracker.CreateConferencePersistent(ctx, host, callID, []string{held, active})
 	if err != nil {
 		slog.Error("create conference", "err", err)
-		r.sendRejection(ctx, host, msg.ConfID, "create_failed")
+		r.sendRejection(host, msg.ConfID, "create_failed")
 		return
 	}
 	slog.Info("conference: created", "conf_id", conf.ID.String(), "host", host, "held", held, "active", active, "originating_call_id", callID)
@@ -82,7 +82,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	slog.Info("conference: ConferenceConnect dispatched", "conf_id", conf.ID.String(), "held", held, "active", active, "held_is_initiator", heldIsInitiator)
 }
 
-func (r *Relay) sendRejection(ctx context.Context, host, confID, reason string) {
+func (r *Relay) sendRejection(host, confID, reason string) {
 	_ = r.Hub.SendTo(host, &Message{
 		Type:   TypeConferenceRejected,
 		ConfID: confID,
