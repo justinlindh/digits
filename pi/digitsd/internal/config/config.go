@@ -64,6 +64,12 @@ type Config struct {
 	// the LED. Cached locally so the setting survives reboots while offline.
 	SilentMode bool `json:"silent_mode,omitempty"`
 
+	// AutoUpdate controls whether digitsd applies OTA updates automatically.
+	// When true, the daemon downloads and applies available updates without
+	// waiting for a manual update_trigger from the server. Cached locally so
+	// the setting survives reboots while offline.
+	AutoUpdate bool `json:"auto_update,omitempty"`
+
 	// WiFiFallback configures the WiFi auto-fallback supervisor.
 	WiFiFallback WiFiFallback `json:"wifi_fallback"`
 
