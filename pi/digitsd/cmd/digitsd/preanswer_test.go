@@ -32,35 +32,43 @@ func TestPrepareAnswer_CreatesState(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	d.mu.Lock()
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
-
 	d.prepareAnswer()
+	pm := d.preAnswer.peerMgr
+	answerSDP := d.preAnswer.answerSDP
+	callerField := d.preAnswer.caller
+	pendingICE := d.pendingICE
+	d.mu.Unlock()
 
-	if d.preAnswer.peerMgr == nil {
+	if pm == nil {
 		t.Fatal("expected preAnswer.peerMgr to be set")
 	}
-	if d.preAnswer.answerSDP == "" {
+	if answerSDP == "" {
 		t.Fatal("expected preAnswer.answerSDP to be non-empty")
 	}
-	if d.preAnswer.caller != "3140001" {
-		t.Fatalf("expected caller 3140001, got %q", d.preAnswer.caller)
+	if callerField != "3140001" {
+		t.Fatalf("expected caller 3140001, got %q", callerField)
 	}
-	if d.pendingICE != nil {
+	if pendingICE != nil {
 		t.Fatal("expected pendingICE to be cleared")
 	}
 
-	_ = d.preAnswer.peerMgr.Close()
+	_ = pm.Close()
 }
 
 func TestPrepareAnswer_NoopWithoutOffer(t *testing.T) {
 	d := newTestDaemon()
+
+	d.mu.Lock()
 	d.pendingCaller = "3140001"
 	d.pendingOffer = ""
-
 	d.prepareAnswer()
+	pm := d.preAnswer.peerMgr
+	d.mu.Unlock()
 
-	if d.preAnswer.peerMgr != nil {
+	if pm != nil {
 		t.Fatal("expected preAnswer.peerMgr to remain nil without offer")
 	}
 }
@@ -79,19 +87,20 @@ func TestPrepareAnswer_Idempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	d.mu.Lock()
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
-
 	d.prepareAnswer()
 	firstPM := d.preAnswer.peerMgr
-
 	d.prepareAnswer()
+	secondPM := d.preAnswer.peerMgr
+	d.mu.Unlock()
 
-	if d.preAnswer.peerMgr != firstPM {
+	if secondPM != firstPM {
 		t.Fatal("expected prepareAnswer to be idempotent")
 	}
 
-	_ = d.preAnswer.peerMgr.Close()
+	_ = firstPM.Close()
 }
 
 func TestCleanupPreAnswer_ClosesAndZeros(t *testing.T) {
@@ -108,28 +117,36 @@ func TestCleanupPreAnswer_ClosesAndZeros(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	d.mu.Lock()
 	d.pendingCaller = "3140001"
 	d.pendingOffer = offer
 	d.prepareAnswer()
 
 	if d.preAnswer.peerMgr == nil {
+		d.mu.Unlock()
 		t.Fatal("setup: preAnswer.peerMgr should exist")
 	}
 
 	d.cleanupPreAnswer()
+	pm := d.preAnswer.peerMgr
+	sdp := d.preAnswer.answerSDP
+	c := d.preAnswer.caller
+	d.mu.Unlock()
 
-	if d.preAnswer.peerMgr != nil {
+	if pm != nil {
 		t.Fatal("expected preAnswer.peerMgr to be nil after cleanup")
 	}
-	if d.preAnswer.answerSDP != "" {
+	if sdp != "" {
 		t.Fatal("expected preAnswer.answerSDP to be empty after cleanup")
 	}
-	if d.preAnswer.caller != "" {
+	if c != "" {
 		t.Fatal("expected preAnswer.caller to be empty after cleanup")
 	}
 }
 
 func TestCleanupPreAnswer_NoopWhenEmpty(t *testing.T) {
 	d := newTestDaemon()
+	d.mu.Lock()
 	d.cleanupPreAnswer()
+	d.mu.Unlock()
 }
