@@ -31,6 +31,9 @@
 package metrics
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -220,8 +223,8 @@ func (r *Registry) ObserveSignalingErrorCategory(category string) {
 }
 
 // statusRecorder captures the response status without buffering the body.
-// http.Flusher and http.Hijacker pass-through preserves SSE / WebSocket
-// upgrade behavior; without them, /api/dashboard/stream and /ws would break.
+// Flush and Hijack pass through to the underlying ResponseWriter so SSE
+// streaming (/api/dashboard/stream) and WebSocket upgrades (/ws) work.
 type statusRecorder struct {
 	http.ResponseWriter
 	status      int
@@ -249,6 +252,13 @@ func (s *statusRecorder) Flush() {
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not support Hijack")
 }
 
 // Middleware returns an http.Handler middleware that records request count
