@@ -107,12 +107,34 @@ type daemonCallbacks struct {
 	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
 	meshReporterCancels map[string]context.CancelFunc
 
+	// Firmware version strings, protected by mu. Read/write via
+	// getFirmwareVersion / setFirmwareVersion so that goroutines outside the
+	// main event loop (SWD probe, service-code update, auto-update) never
+	// race with the main loop's writes.
+	fwVer string
+	fwCom string
+
 	// Auto-update state. The atomic bools are safe for concurrent read from
 	// the update goroutine. triggerAutoUpdate is set once at startup and
 	// captures the run()-scoped variables needed by runAutoUpdate.
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+}
+
+// getFirmwareVersion returns the current firmware version and commit under mu.
+func (d *daemonCallbacks) getFirmwareVersion() (version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.fwVer, d.fwCom
+}
+
+// setFirmwareVersion stores a new firmware version and commit under mu.
+func (d *daemonCallbacks) setFirmwareVersion(version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fwVer = version
+	d.fwCom = commit
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -2054,7 +2076,7 @@ func main() {
 	swdFilesPresent := err1 == nil && err2 == nil
 
 	if swdFilesPresent {
-		go func() {
+		go func(fwVer, fwCom string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "sudo", defaultOpenOCD,
@@ -2068,8 +2090,8 @@ func main() {
 				slog.Info("swd probe: Pico detected on SWD bus, enabling flash capability")
 				flashCapable.Store(true)
 			}
-			sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-		}()
+			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
+		}(fwVersion, fwCommit)
 	}
 
 	svcCodes.OnRepair = func() {
@@ -2095,10 +2117,9 @@ func main() {
 		})
 	}
 
-	svcCodes.OnUpdate = func() {
-		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
-		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil, requeryFirmware)
-	}
+	// svcCodes.OnUpdate is set after cb is created so the closure can read
+	// fwVersion through the synchronized getter (OnUpdate runs in its own
+	// goroutine and would otherwise race with the main loop).
 
 	svcCodes.OnFactoryReset = func() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
@@ -2143,17 +2164,29 @@ func main() {
 		linkHealthDisabled:  linkHealthDisabled,
 		linkHealthInterval:  linkHealthInterval,
 		meshReporterCancels: make(map[string]context.CancelFunc),
+		fwVer:               fwVersion,
+		fwCom:               fwCommit,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
 	}
 
-	// Wire auto-update. The closure captures run()-scoped variables so that
-	// HangupCall (which lives on daemonCallbacks) can trigger an update
-	// without needing direct access to those locals.
+	// Deferred from above: OnUpdate runs in its own goroutine, so it reads
+	// fwVersion through the synchronized getter to avoid racing with the
+	// main event loop.
+	svcCodes.OnUpdate = func() {
+		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
+		fwVer, _ := cb.getFirmwareVersion()
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+	}
+
+	// Wire auto-update. The closure reads fwVersion via the synchronized
+	// getter so that HangupCall (which runs off the main goroutine) never
+	// races with the main loop's writes.
 	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
 	cb.triggerAutoUpdate = func() {
-		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVersion, flashCapable.Load(), requeryFirmware)
+		fwVer, _ := cb.getFirmwareVersion()
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
 	}
 	if cb.autoUpdateEnabled.Load() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
@@ -2464,6 +2497,7 @@ func main() {
 		case r := <-fwVersionCh:
 			if r.version != fwVersion || r.commit != fwCommit {
 				fwVersion, fwCommit = r.version, r.commit
+				cb.setFirmwareVersion(fwVersion, fwCommit)
 				slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
 				hookFlash = hookFlashCapable(fwVersion)
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
