@@ -25,6 +25,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	}
 	s := NewStore(database.DB)
 	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_invites")
 		_, _ = database.DB.Exec("DELETE FROM household_members")
 		_, _ = database.DB.Exec("DELETE FROM households")
 		_, _ = database.DB.Exec("DELETE FROM sessions")
