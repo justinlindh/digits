@@ -73,32 +73,29 @@ func (m *mockMounter) RemountRO() error {
 	return nil
 }
 
-func TestConfigureSuccess(t *testing.T) {
+// --- SaveToBackup tests ---
+
+func TestSaveToBackupSuccess(t *testing.T) {
 	fs := newMockFS()
-	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "MyNetwork", Password: "secret123"}
-	if err := configureWithDeps(req, fs, mounter); err != nil {
+	backupPath, err := saveToBackupWithDeps(req, fs)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	filename := "digits-wifi-MyNetwork-" + uuidForSSID("MyNetwork")[:6] + ".nmconnection"
-	backupPath := filepath.Join("/data/wifi", filename)
-	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
+	wantPath := filepath.Join("/data/wifi", filename)
+	if backupPath != wantPath {
+		t.Errorf("backupPath = %q, want %q", backupPath, wantPath)
+	}
 
 	backup, ok := fs.files[backupPath]
 	if !ok {
 		t.Fatalf("backup not written to %s", backupPath)
 	}
-	op, ok := fs.files[opPath]
-	if !ok {
-		t.Fatalf("operational not written to %s", opPath)
-	}
-	if string(backup.data) != string(op.data) {
-		t.Errorf("backup and operational content differ")
-	}
-	if backup.perm != 0600 || op.perm != 0600 {
-		t.Errorf("perms backup=%o op=%o, want 0600/0600", backup.perm, op.perm)
+	if backup.perm != 0600 {
+		t.Errorf("perm = %o, want 0600", backup.perm)
 	}
 	if !strings.Contains(string(backup.data), "ssid=MyNetwork") {
 		t.Errorf("missing ssid, got: %s", backup.data)
@@ -112,92 +109,88 @@ func TestConfigureSuccess(t *testing.T) {
 		}
 	}
 
-	flag, ok := fs.files["/data/wifi-configured"]
-	if !ok {
-		t.Fatal("wifi-configured flag not written")
+	// SaveToBackup must NOT write the flag or operational file.
+	if _, ok := fs.files[wifiConfiguredFlag]; ok {
+		t.Error("wifi-configured flag must not be written by SaveToBackup")
 	}
-	if string(flag.data) != "1\n" {
-		t.Errorf("flag = %q, want '1\\n'", string(flag.data))
+	opPath := filepath.Join(operationalDir, filename)
+	if _, ok := fs.files[opPath]; ok {
+		t.Error("operational file must not be written by SaveToBackup")
 	}
 }
 
-func TestConfigureMissingSSID(t *testing.T) {
+func TestSaveToBackupMissingSSID(t *testing.T) {
 	fs := newMockFS()
-	mounter := &mockMounter{}
 
-	err := configureWithDeps(ConfigRequest{Password: "secret"}, fs, mounter)
+	_, err := saveToBackupWithDeps(ConfigRequest{Password: "secret"}, fs)
 	if err == nil {
 		t.Fatal("expected error for missing SSID")
+	}
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("err = %v, want ErrInvalidRequest", err)
 	}
 	if !strings.Contains(err.Error(), "ssid") {
 		t.Errorf("error = %q, want mention of ssid", err.Error())
 	}
-	if mounter.rwCalls != 0 {
-		t.Error("remount must not be called on validation error")
-	}
-	if _, ok := fs.files["/data/wifi-configured"]; ok {
+	if _, ok := fs.files[wifiConfiguredFlag]; ok {
 		t.Error("flag must not be set on error")
 	}
 }
 
-func TestConfigureHiddenNetwork(t *testing.T) {
+func TestSaveToBackupHiddenNetwork(t *testing.T) {
 	fs := newMockFS()
-	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "SecretNet", Password: "pass123", Hidden: true}
-	if err := configureWithDeps(req, fs, mounter); err != nil {
+	backupPath, err := saveToBackupWithDeps(req, fs)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	filename := "digits-wifi-SecretNet-" + uuidForSSID("SecretNet")[:6] + ".nmconnection"
-	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
-	f, ok := fs.files[opPath]
+	f, ok := fs.files[backupPath]
 	if !ok {
-		t.Fatalf("nmconnection not written to %s", opPath)
+		t.Fatalf("backup not written to %s", backupPath)
 	}
 	if !strings.Contains(string(f.data), "hidden=true") {
 		t.Errorf("hidden network should have hidden=true, got: %s", f.data)
 	}
 }
 
-func TestConfigureVisibleNetworkNoScanSSID(t *testing.T) {
+func TestSaveToBackupVisibleNetworkNoHidden(t *testing.T) {
 	fs := newMockFS()
-	mounter := &mockMounter{}
 
 	req := ConfigRequest{SSID: "VisibleNet", Password: "pass123"}
-	if err := configureWithDeps(req, fs, mounter); err != nil {
+	backupPath, err := saveToBackupWithDeps(req, fs)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	filename := "digits-wifi-VisibleNet-" + uuidForSSID("VisibleNet")[:6] + ".nmconnection"
-	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
-	f, ok := fs.files[opPath]
+	f, ok := fs.files[backupPath]
 	if !ok {
-		t.Fatalf("nmconnection not written to %s", opPath)
+		t.Fatalf("backup not written to %s", backupPath)
 	}
 	if strings.Contains(string(f.data), "hidden=") {
 		t.Errorf("visible network should not have hidden=, got: %s", f.data)
 	}
 }
 
-func TestConfigureFilenameCollisionPrevention(t *testing.T) {
+func TestSaveToBackupFilenameCollisionPrevention(t *testing.T) {
 	fs := newMockFS()
 
 	req1 := ConfigRequest{SSID: "Network 1", Password: "pass1"}
 	req2 := ConfigRequest{SSID: "Network-1", Password: "pass2"}
 
-	if err := configureWithDeps(req1, fs, &mockMounter{}); err != nil {
-		t.Fatalf("first configure failed: %v", err)
+	path1, err := saveToBackupWithDeps(req1, fs)
+	if err != nil {
+		t.Fatalf("first save failed: %v", err)
 	}
-	path1 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network 1")[:6]+".nmconnection")
 	if _, exists := fs.files[path1]; !exists {
 		t.Fatalf("first network file not written to %s", path1)
 	}
 
-	if err := configureWithDeps(req2, fs, &mockMounter{}); err != nil {
-		t.Fatalf("second configure failed: %v", err)
+	path2, err := saveToBackupWithDeps(req2, fs)
+	if err != nil {
+		t.Fatalf("second save failed: %v", err)
 	}
-	path2 := filepath.Join("/data/wifi", "digits-wifi-Network-1-"+uuidForSSID("Network-1")[:6]+".nmconnection")
 	if _, exists := fs.files[path2]; !exists {
 		t.Fatalf("second network file not written to %s", path2)
 	}
@@ -210,32 +203,88 @@ func TestConfigureFilenameCollisionPrevention(t *testing.T) {
 	}
 }
 
-func TestConfigureRemountRWFailureAbortsWithoutFlag(t *testing.T) {
-	fs := newMockFS()
-	mounter := &mockMounter{failRW: true}
+// --- CommitToOperational tests ---
 
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	err := configureWithDeps(req, fs, mounter)
+func TestCommitToOperationalSuccess(t *testing.T) {
+	// Write a real backup file so commitWithDeps can os.ReadFile it.
+	tmpDir := t.TempDir()
+	backupPath := filepath.Join(tmpDir, "test.nmconnection")
+	backupData := []byte("[connection]\nid=test\n")
+	if err := os.WriteFile(backupPath, backupData, 0600); err != nil {
+		t.Fatalf("write temp backup: %v", err)
+	}
+
+	fs := newMockFS()
+	mnt := &mockMounter{}
+
+	if err := commitWithDeps(backupPath, fs, mnt); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	opPath := filepath.Join(operationalDir, "test.nmconnection")
+	op, ok := fs.files[opPath]
+	if !ok {
+		t.Fatalf("operational file not written to %s", opPath)
+	}
+	if string(op.data) != string(backupData) {
+		t.Errorf("operational data = %q, want %q", op.data, backupData)
+	}
+	if op.perm != 0600 {
+		t.Errorf("perm = %o, want 0600", op.perm)
+	}
+
+	flag, ok := fs.files[wifiConfiguredFlag]
+	if !ok {
+		t.Fatal("wifi-configured flag not written")
+	}
+	if string(flag.data) != "1\n" {
+		t.Errorf("flag = %q, want '1\\n'", string(flag.data))
+	}
+
+	if mnt.rwCalls != 1 {
+		t.Errorf("rwCalls = %d, want 1", mnt.rwCalls)
+	}
+	if mnt.roCalls != 1 {
+		t.Errorf("roCalls = %d, want 1", mnt.roCalls)
+	}
+}
+
+func TestCommitToOperationalRemountRWFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupPath := filepath.Join(tmpDir, "test.nmconnection")
+	if err := os.WriteFile(backupPath, []byte("data"), 0600); err != nil {
+		t.Fatalf("write temp backup: %v", err)
+	}
+
+	fs := newMockFS()
+	mnt := &mockMounter{failRW: true}
+
+	err := commitWithDeps(backupPath, fs, mnt)
 	if err == nil {
 		t.Fatal("expected error from failing remount rw")
 	}
-	if _, ok := fs.files["/data/wifi-configured"]; ok {
-		t.Error("flag must not be set when operational write is skipped")
+	if _, ok := fs.files[wifiConfiguredFlag]; ok {
+		t.Error("flag must not be set when remount rw fails")
 	}
-	filename := "digits-wifi-Net-" + uuidForSSID("Net")[:6] + ".nmconnection"
-	backupPath := filepath.Join("/data/wifi", filename)
-	if _, ok := fs.files[backupPath]; !ok {
-		t.Error("backup should be written before remount is attempted")
-	}
-	if mounter.roCalls != 0 {
+	if mnt.roCalls != 0 {
 		t.Error("remount ro must not be called when remount rw failed")
 	}
 }
 
-// failOpWriteFS fails WriteFile once, for the operational path only. Used to
-// verify that a failed operational write leaves the backup present and does
-// NOT set the wifi-configured flag (the "half-written config never promotes
-// to station" invariant from configureWithDeps' doc comment).
+func TestCommitToOperationalMissingBackup(t *testing.T) {
+	fs := newMockFS()
+	mnt := &mockMounter{}
+
+	err := commitWithDeps("/nonexistent/backup.nmconnection", fs, mnt)
+	if err == nil {
+		t.Fatal("expected error for missing backup file")
+	}
+	if !strings.Contains(err.Error(), "read backup") {
+		t.Errorf("error = %q, want mention of read backup", err.Error())
+	}
+}
+
+// failOpWriteFS fails WriteFile once, for the operational path only.
 type failOpWriteFS struct {
 	*mockFS
 }
@@ -247,44 +296,42 @@ func (f *failOpWriteFS) WriteFile(name string, data []byte, perm os.FileMode) er
 	return f.mockFS.WriteFile(name, data, perm)
 }
 
-func TestConfigureMissingSSIDIsInvalidRequest(t *testing.T) {
-	err := configureWithDeps(ConfigRequest{Password: "pw"}, newMockFS(), &mockMounter{})
-	if !errors.Is(err, ErrInvalidRequest) {
-		t.Fatalf("err = %v, want ErrInvalidRequest", err)
+func TestCommitToOperationalWriteFailureOmitsFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupPath := filepath.Join(tmpDir, "test.nmconnection")
+	if err := os.WriteFile(backupPath, []byte("data"), 0600); err != nil {
+		t.Fatalf("write temp backup: %v", err)
 	}
-}
 
-func TestConfigureOperationalWriteFailureKeepsBackupOmitsFlag(t *testing.T) {
 	base := newMockFS()
 	fs := &failOpWriteFS{mockFS: base}
-	mounter := &mockMounter{}
+	mnt := &mockMounter{}
 
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	err := configureWithDeps(req, fs, mounter)
+	err := commitWithDeps(backupPath, fs, mnt)
 	if err == nil {
 		t.Fatal("expected error from failing operational write")
 	}
-
-	filename := "digits-wifi-Net-" + uuidForSSID("Net")[:6] + ".nmconnection"
-	backupPath := filepath.Join("/data/wifi", filename)
-	if _, ok := base.files[backupPath]; !ok {
-		t.Error("backup must remain when operational write fails")
-	}
-	if _, ok := base.files["/data/wifi-configured"]; ok {
+	if _, ok := base.files[wifiConfiguredFlag]; ok {
 		t.Error("flag must not be set when operational write fails")
 	}
-	if mounter.roCalls != 1 {
-		t.Errorf("remount ro should run via defer, got roCalls=%d", mounter.roCalls)
+	if mnt.roCalls != 1 {
+		t.Errorf("remount ro should run via defer, got roCalls=%d", mnt.roCalls)
 	}
 }
 
-func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
+func TestCommitToOperationalLegacyCleanup(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupPath := filepath.Join(tmpDir, "test.nmconnection")
+	if err := os.WriteFile(backupPath, []byte("data"), 0600); err != nil {
+		t.Fatalf("write temp backup: %v", err)
+	}
+
 	fs := newMockFS()
 	fs.files["/data/wifi/digits-wifi.nmconnection"] = mockFile{data: []byte("old"), perm: 0600}
 	fs.files["/etc/NetworkManager/system-connections/digits-wifi.nmconnection"] = mockFile{data: []byte("old"), perm: 0600}
+	mnt := &mockMounter{}
 
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := configureWithDeps(req, fs, &mockMounter{}); err != nil {
+	if err := commitWithDeps(backupPath, fs, mnt); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, ok := fs.files["/data/wifi/digits-wifi.nmconnection"]; ok {
@@ -295,13 +342,20 @@ func TestConfigureLegacyCleanupBothDirs(t *testing.T) {
 	}
 }
 
-func TestConfigureLegacyCleanupMissingIsOK(t *testing.T) {
+func TestCommitToOperationalLegacyCleanupMissingIsOK(t *testing.T) {
+	tmpDir := t.TempDir()
+	backupPath := filepath.Join(tmpDir, "test.nmconnection")
+	if err := os.WriteFile(backupPath, []byte("data"), 0600); err != nil {
+		t.Fatalf("write temp backup: %v", err)
+	}
+
 	fs := newMockFS()
-	req := ConfigRequest{SSID: "Net", Password: "pw"}
-	if err := configureWithDeps(req, fs, &mockMounter{}); err != nil {
+	if err := commitWithDeps(backupPath, fs, &mockMounter{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+// --- iw scan tests (unchanged) ---
 
 func TestParseIWScan(t *testing.T) {
 	input := `BSS aa:bb:cc:dd:ee:ff(on wlan0)
