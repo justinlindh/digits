@@ -58,11 +58,13 @@ func (a *audioPlayer) detectCodec() (device string, rate int) {
 func (a *audioPlayer) Play(ctx context.Context, wav []byte) error {
 	device, _ := a.detectCodec()
 
-	cmd := exec.CommandContext(ctx, a.aplayPath, "-D", device, "-t", "wav", "-q")
+	cmd := exec.CommandContext(ctx, a.aplayPath, "-D", device, "-t", "wav")
 	cmd.Stdin = bytes.NewReader(wav)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("aplay: %w", err)
+		return fmt.Errorf("aplay -D %s: %w: %s", device, err, stderr.String())
 	}
 	return nil
 }

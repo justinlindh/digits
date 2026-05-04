@@ -47,9 +47,20 @@ func (p *Phone) Ping() error {
 }
 
 // LED sets the LED to the given mode. Valid modes: ON, OFF, BLINK,
-// DOUBLE_PULSE, HEARTBEAT.
+// FAST_BLINK, DOUBLE_PULSE, HEARTBEAT.
 func (p *Phone) LED(mode string) error {
 	return p.serial.SendFire("LED:" + mode)
+}
+
+// LEDLock prevents the firmware FSM from changing the LED on hook/state events.
+// Use this when the Pi binary needs exclusive LED control (e.g. recovery mode).
+func (p *Phone) LEDLock() error {
+	return p.serial.SendFire("LED:LOCK")
+}
+
+// LEDUnlock restores normal FSM LED behavior.
+func (p *Phone) LEDUnlock() error {
+	return p.serial.SendFire("LED:UNLOCK")
 }
 
 // SetPhase sends STATE:SET:<phase> and expects STATE:SET:OK in response within

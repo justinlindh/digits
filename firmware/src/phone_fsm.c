@@ -32,6 +32,7 @@ static uint32_t s_dial_tone_start_ms = 0;
 static bool s_dial_sent = false;
 static bool s_keytest_mode = false;
 static bool s_pi_connected = false;
+static bool s_led_locked = false;
 
 static uint32_t now_ms(void) {
     return to_ms_since_boot(get_absolute_time());
@@ -97,14 +98,14 @@ static void set_state(phone_state_t next) {
 
     switch (s_state) {
         case PHONE_STATE_IDLE:
-            if (s_pi_connected) led_set_mode(LED_MODE_OFF);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_OFF);
             tone_stop();
             ringer_stop();
             clear_dialing_buffer();
             break;
 
         case PHONE_STATE_DIAL_TONE:
-            if (s_pi_connected) led_set_mode(LED_MODE_ON);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_ON);
             ringer_stop();
             clear_dialing_buffer();
             tone_play(TONE_DIAL);
@@ -112,7 +113,7 @@ static void set_state(phone_state_t next) {
             break;
 
         case PHONE_STATE_DIALING:
-            if (s_pi_connected) led_set_mode(LED_MODE_ON);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_ON);
             ringer_stop();
             tone_stop();
             s_dialing_start_ms = now_ms();
@@ -120,7 +121,7 @@ static void set_state(phone_state_t next) {
 
         case PHONE_STATE_RINGING:
             tone_stop();
-            if (s_pi_connected) led_set_mode(LED_MODE_BLINK);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_BLINK);
             ringer_start();
             uart_proto_send("RING:ACK");
             break;
@@ -128,12 +129,12 @@ static void set_state(phone_state_t next) {
         case PHONE_STATE_CONNECTED:
             ringer_stop();
             tone_stop();
-            if (s_pi_connected) led_set_mode(LED_MODE_ON);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_ON);
             break;
 
         case PHONE_STATE_BUSY:
             ringer_stop();
-            if (s_pi_connected) led_set_mode(LED_MODE_ON);
+            if (s_pi_connected && !s_led_locked) led_set_mode(LED_MODE_ON);
             tone_play(TONE_BUSY);
             break;
 
@@ -198,6 +199,10 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_OFF);
     } else if (strcmp(cmd, "LED:BLINK") == 0) {
         led_set_mode(LED_MODE_BLINK);
+    } else if (strcmp(cmd, "LED:LOCK") == 0) {
+        s_led_locked = true;
+    } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
+        s_led_locked = false;
     } else if (strcmp(cmd, "LED:FAST_BLINK") == 0) {
         led_set_mode(LED_MODE_FAST_BLINK);
     } else if (strcmp(cmd, "LED:DOUBLE_PULSE") == 0) {

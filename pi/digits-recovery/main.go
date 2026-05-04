@@ -337,8 +337,10 @@ func unblockWifi() {
 func loadAudio(name string) []byte {
 	data, err := recoveryAudioFS.ReadFile("recovery_audio/" + name)
 	if err != nil {
+		log.Printf("recovery: loadAudio %s: %v", name, err)
 		return nil
 	}
+	log.Printf("recovery: loadAudio %s: %d bytes", name, len(data))
 	return data
 }
 
@@ -539,28 +541,68 @@ func main() {
 		log.Println("recovery: continuing anyway (HTTP server may not be reachable)")
 	}
 
+	// Load audio kernel modules from the rootfs. The rootfs isn't mounted
+	// during recovery, so bind-mount its /lib/modules over /lib/modules so
+	// BusyBox modprobe can find them.
+	if initMode {
+		rootfsMnt := "/tmp/rootfs-ro"
+		os.MkdirAll(rootfsMnt, 0755)
+		if err := syscall.Mount("/dev/mmcblk0p2", rootfsMnt, "ext4", syscall.MS_RDONLY, ""); err != nil {
+			log.Printf("recovery: mount rootfs for modules failed: %v", err)
+		} else {
+			os.MkdirAll("/lib/modules", 0755)
+			if err := syscall.Mount(rootfsMnt+"/lib/modules", "/lib/modules", "", syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
+				log.Printf("recovery: bind-mount modules failed: %v", err)
+			} else {
+				log.Println("recovery: loading audio kernel modules")
+				for _, mod := range []string{"snd-soc-tlv320aic3x-i2c", "snd-soc-simple-card"} {
+					out, err := exec.Command("/sbin/modprobe", mod).CombinedOutput()
+					if err != nil {
+						log.Printf("recovery: modprobe %s: %v: %s", mod, err, string(out))
+					} else {
+						log.Printf("recovery: loaded module %s", mod)
+					}
+				}
+				syscall.Unmount("/lib/modules", 0)
+			}
+			syscall.Unmount(rootfsMnt, 0)
+		}
+		time.Sleep(time.Second)
+	}
+
 	var phone *phonekit.Phone
 	if initMode {
-		p, err := phonekit.Open("/dev/serial0", 115200)
+		serialDev := "/dev/serial0"
+		if initMode {
+			serialDev = "/dev/ttyAMA0"
+		}
+		log.Printf("recovery: opening %s at 115200", serialDev)
+		p, err := phonekit.Open(serialDev, 115200)
 		if err != nil {
 			log.Printf("recovery: phonekit open failed: %v (voice menu disabled)", err)
 		} else {
+			log.Println("recovery: serial port opened, starting ping retries")
 			var pingOK bool
 			for attempt := 1; attempt <= 10; attempt++ {
 				time.Sleep(500 * time.Millisecond)
 				if err := p.Ping(); err == nil {
 					pingOK = true
+					log.Printf("recovery: pico ping OK on attempt %d", attempt)
 					break
+				} else {
+					log.Printf("recovery: pico ping attempt %d/10: %v", attempt, err)
 				}
-				log.Printf("recovery: pico ping attempt %d/10 failed", attempt)
 			}
 			if pingOK {
 				phone = p
+				phone.LEDLock()
 				phone.LED("HEARTBEAT")
-				log.Println("recovery: phonekit connected, LED set to HEARTBEAT")
+				log.Println("recovery: phonekit connected, LED locked to HEARTBEAT")
 			} else {
-				log.Println("recovery: pico ping failed after 10 attempts, continuing without voice menu")
+				log.Println("recovery: pico ping failed after 10 attempts, continuing with phone anyway")
 				phone = p
+				phone.LEDLock()
+				phone.LED("HEARTBEAT")
 			}
 		}
 	}
