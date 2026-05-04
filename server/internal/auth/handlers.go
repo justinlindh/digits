@@ -219,6 +219,9 @@ func safeReturnTo(returnTo string, user *User) string {
 }
 
 // HandleLogout destroys the session and clears the cookie.
+// An optional "redirect" form parameter (must be a relative path) overrides
+// the default redirect to /auth/login, which the invite page uses to send the
+// user back to the invite after signing out of the wrong account.
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil {
@@ -227,5 +230,11 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	clearSessionCookie(w, h.cookieDomain)
-	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	redirect := "/auth/login"
+	if redir := r.FormValue("redirect"); redir != "" {
+		if strings.HasPrefix(redir, "/") && !strings.HasPrefix(redir, "//") {
+			redirect = redir
+		}
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }

@@ -1,6 +1,71 @@
 {{define "title"}}Invite{{end}}
+
 {{define "content"}}
 <div class="page" style="max-width: 480px; margin: 0 auto; padding-top: 80px;">
-  <p>Invite page placeholder</p>
+
+  {{if eq .State "invalid"}}
+  <div class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Invite not found</h2>
+    </header>
+    <div class="panel__body">
+      <p class="muted">This invite is no longer valid. It may have expired or been cancelled.</p>
+      <a href="/auth/login" class="btn btn--primary" style="margin-top: 16px;">Sign in</a>
+    </div>
+  </div>
+  {{end}}
+
+  {{if eq .State "login"}}
+  <div class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">You're invited</h2>
+    </header>
+    <div class="panel__body">
+      <p style="margin: 0 0 8px 0;">{{if .InviterName}}{{.InviterName}} invited you to join{{else}}You've been invited to join{{end}} <strong>{{.HouseholdName}}</strong> on Digits.</p>
+      <p class="muted" style="margin: 0 0 24px 0;">Sign in as <strong>{{.InviteEmail}}</strong> to accept.</p>
+
+      <form action="/auth/magic" method="POST" style="margin-bottom: 16px;">
+        <input type="hidden" name="email" value="{{.InviteEmail}}">
+        <input type="hidden" name="return_to" value="/invite/{{.Token}}">
+        <button type="submit" class="btn btn--primary" style="width: 100%;">Send sign-in link to {{.InviteEmail}}</button>
+      </form>
+
+      {{if .GoogleEnabled}}
+      <a href="/auth/google/login?return_to=/invite/{{.Token}}" class="btn" style="width: 100%; text-align: center; display: block;">Sign in with Google</a>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+
+  {{if eq .State "wrong_email"}}
+  <div class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Wrong account</h2>
+    </header>
+    <div class="panel__body">
+      <p style="margin: 0 0 8px 0;">This invite was sent to <strong>{{.InviteEmail}}</strong>.</p>
+      <p class="muted" style="margin: 0 0 24px 0;">You're signed in as <strong>{{.CurrentEmail}}</strong>.</p>
+      <form action="/auth/logout" method="POST">
+        <input type="hidden" name="redirect" value="/invite/{{.Token}}">
+        <button type="submit" class="btn btn--primary">Sign out and try again</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
+
+  {{if eq .State "accept"}}
+  <div class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Join {{.HouseholdName}}</h2>
+    </header>
+    <div class="panel__body">
+      <p style="margin: 0 0 24px 0;">{{if .InviterName}}{{.InviterName}} invited you to join{{else}}You've been invited to join{{end}} <strong>{{.HouseholdName}}</strong>. You'll be able to manage lines, settings, and calls.</p>
+      <form action="/invite/{{.Token}}/accept" method="POST">
+        <button type="submit" class="btn btn--primary" style="width: 100%;">Accept Invite</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
+
 </div>
 {{end}}
