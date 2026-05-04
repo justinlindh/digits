@@ -222,11 +222,18 @@ func (h *Hub) Get(number string) *Conn {
 }
 
 func (h *Hub) SendTo(number string, msg *Message) error {
-	if err := sendToConn(h.Get(number), msg, "phone", number); err == nil {
+	err := sendToConn(h.Get(number), msg, "phone", number)
+	if err == nil {
 		return nil
 	}
 
-	// Fast path missed. If Redis is configured, publish for cross-pod delivery.
+	// Only fall through to Redis when the device is not connected locally.
+	// Buffer-full means the connection exists on this pod but is
+	// backpressured; other pods won't have it either.
+	if !errors.Is(err, ErrNotConnected) {
+		return err
+	}
+
 	h.mu.RLock()
 	bridge := h.redis
 	h.mu.RUnlock()
@@ -236,11 +243,10 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 			Target:     number,
 			Message:    msg,
 		})
-		return nil // optimistic: another pod may deliver
+		return nil
 	}
 
-	// No Redis and not local: return the original error.
-	return sendToConn(nil, msg, "phone", number)
+	return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
@@ -249,8 +255,13 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	bridge := h.redis
 	h.mu.RUnlock()
 
-	if err := sendToConn(conn, msg, "hardware", hardwareID); err == nil {
+	err := sendToConn(conn, msg, "hardware", hardwareID)
+	if err == nil {
 		return nil
+	}
+
+	if !errors.Is(err, ErrNotConnected) {
+		return err
 	}
 
 	if bridge != nil {
@@ -262,7 +273,7 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 		return nil
 	}
 
-	return sendToConn(nil, msg, "hardware", hardwareID)
+	return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
 }
 
 // Broadcast marshals msg and sends it to every connected device without
