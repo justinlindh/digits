@@ -37,6 +37,14 @@ ingress:
   admind:
     host: ""
 
+# Redis pub/sub for multi-replica signaling. When set, signald uses Redis as
+# a shared broadcast channel so cross-pod calls reach the right device.
+# Leave empty for single-replica deployments. For passwords or rotating
+# credentials, leave url empty here and inject REDIS_URL via signald.envFrom
+# (an existing secret) instead.
+redis:
+  url: ""
+
 cnpg:
   enabled: false
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
