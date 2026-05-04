@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -16,10 +17,15 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/justinlindh/digits/pi/phonekit"
 )
 
 //go:embed static/*
 var staticFS embed.FS
+
+//go:embed recovery_audio/*
+var recoveryAudioFS embed.FS
 
 type statusResponse struct {
 	BootCount int    `json:"boot_count"`
@@ -328,6 +334,177 @@ func unblockWifi() {
 	}
 }
 
+func loadAudio(name string) []byte {
+	data, err := recoveryAudioFS.ReadFile("recovery_audio/" + name)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func runVoiceMenu(phone *phonekit.Phone, srv *recoveryServer) {
+	ctx := context.Background()
+	for {
+		log.Println("recovery: voice menu waiting for handset pickup")
+		if err := phone.WaitForHook(ctx, "OFF"); err != nil {
+			log.Printf("recovery: hook wait error: %v", err)
+			time.Sleep(time.Second)
+			continue
+		}
+		menuLoop(ctx, phone, srv)
+	}
+}
+
+func menuLoop(ctx context.Context, phone *phonekit.Phone, srv *recoveryServer) {
+	for {
+		if clip := loadAudio("recovery_menu.wav"); clip != nil {
+			if err := phone.Play(ctx, clip); err != nil {
+				log.Printf("recovery: play menu failed: %v", err)
+			}
+		}
+
+		keyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		ev, err := phone.WaitForEvent(keyCtx, func(e phonekit.Event) bool {
+			return e.Type == "KEY" || (e.Type == "HOOK" && e.Value == "ON")
+		})
+		cancel()
+
+		if err != nil {
+			continue
+		}
+
+		if ev.Type == "HOOK" && ev.Value == "ON" {
+			return
+		}
+
+		switch ev.Value {
+		case "1":
+			handleVoiceTryAgain(ctx, phone, srv)
+			return
+		case "2":
+			if handleVoiceFactoryReset(ctx, phone, srv) {
+				return
+			}
+		}
+	}
+}
+
+func handleVoiceTryAgain(ctx context.Context, phone *phonekit.Phone, srv *recoveryServer) {
+	if clip := loadAudio("restarting.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+	os.WriteFile(srv.counterPath, []byte("0"), 0644)
+	os.Remove(filepath.Join(filepath.Dir(srv.counterPath), "recovery-mode"))
+	time.Sleep(500 * time.Millisecond)
+	if srv.rebootFunc != nil {
+		srv.rebootFunc()
+	}
+}
+
+func handleVoiceFactoryReset(ctx context.Context, phone *phonekit.Phone, srv *recoveryServer) bool {
+	if clip := loadAudio("confirm_factory_reset.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+
+	confirmCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	ev, err := phone.WaitForEvent(confirmCtx, func(e phonekit.Event) bool {
+		return e.Type == "KEY" || (e.Type == "HOOK" && e.Value == "ON")
+	})
+	cancel()
+
+	if err != nil || ev.Type == "HOOK" || ev.Value != "2" {
+		if clip := loadAudio("factory_reset_cancelled.wav"); clip != nil {
+			phone.Play(ctx, clip)
+		}
+		return ev.Type == "HOOK" && ev.Value == "ON"
+	}
+
+	if clip := loadAudio("factory_reset_in_progress.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+
+	srv.reset.mu.Lock()
+	srv.reset.inProgress = true
+	srv.reset.status = "Restoring rootfs..."
+	srv.reset.mu.Unlock()
+
+	if err := doFactoryResetWithVoice(ctx, phone, srv); err != nil {
+		log.Printf("recovery: voice factory reset failed: %v", err)
+		return true
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	if srv.rebootFunc != nil {
+		srv.rebootFunc()
+	}
+	return true
+}
+
+func doFactoryResetWithVoice(ctx context.Context, phone *phonekit.Phone, srv *recoveryServer) error {
+	if clip := loadAudio("restoring_system.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+
+	if err := os.WriteFile(srv.counterPath, []byte("0"), 0644); err != nil {
+		log.Printf("recovery: failed to clear boot counter (non-fatal): %v", err)
+	}
+
+	bin := filepath.Join(srv.recoveryDir, "bin")
+	rootfsImg := filepath.Join(srv.recoveryDir, "rootfs.img.zst")
+	log.Printf("recovery: restoring rootfs from %s to %s", rootfsImg, srv.rootfsDev)
+	if err := pipeCommands(
+		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", rootfsImg),
+		exec.Command(filepath.Join(bin, "dd"), "of="+srv.rootfsDev, "bs=4M", "conv=fsync"),
+	); err != nil {
+		return fmt.Errorf("rootfs restore: %w", err)
+	}
+	log.Println("recovery: rootfs restore complete, syncing")
+	syscall.Sync()
+
+	if clip := loadAudio("formatting_data.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+
+	srv.setResetStatus("Formatting data partition...")
+	closeDataLog()
+	if out, err := exec.Command(filepath.Join(bin, "umount"), "/data").CombinedOutput(); err != nil {
+		log.Printf("recovery: umount /data failed (trying lazy): %v: %s", err, string(out))
+		exec.Command(filepath.Join(bin, "umount"), "-l", "/data").Run()
+	}
+
+	log.Printf("recovery: formatting %s", srv.dataDev)
+	if err := exec.Command(filepath.Join(bin, "mkfs.ext4"), "-L", "data", "-F", srv.dataDev).Run(); err != nil {
+		return fmt.Errorf("data format: %w", err)
+	}
+
+	dataMnt := "/tmp/data-restore"
+	if err := os.MkdirAll(dataMnt, 0755); err != nil {
+		return fmt.Errorf("create mount point: %w", err)
+	}
+	if err := exec.Command(filepath.Join(bin, "mount"), srv.dataDev, dataMnt).Run(); err != nil {
+		return fmt.Errorf("data mount: %w", err)
+	}
+
+	srv.setResetStatus("Restoring data...")
+	skelArchive := filepath.Join(srv.recoveryDir, "data-skeleton.tar.zst")
+	if err := pipeCommands(
+		exec.Command(filepath.Join(bin, "zstd"), "-d", "-c", skelArchive),
+		exec.Command(filepath.Join(bin, "tar"), "xf", "-", "-C", dataMnt),
+	); err != nil {
+		exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
+		return fmt.Errorf("data skeleton restore: %w", err)
+	}
+	exec.Command(filepath.Join(bin, "umount"), dataMnt).Run()
+
+	if clip := loadAudio("reset_complete.wav"); clip != nil {
+		phone.Play(ctx, clip)
+	}
+
+	srv.setResetStatus("Rebooting...")
+	log.Println("recovery: factory reset complete")
+	return nil
+}
+
 func main() {
 	initMode := isInitMode()
 
@@ -360,6 +537,20 @@ func main() {
 	if err := startAP(recoveryDir); err != nil {
 		log.Printf("recovery: WARNING: AP setup failed: %v", err)
 		log.Println("recovery: continuing anyway (HTTP server may not be reachable)")
+	}
+
+	var phone *phonekit.Phone
+	if initMode {
+		p, err := phonekit.Open("/dev/serial0", 115200)
+		if err != nil {
+			log.Printf("recovery: phonekit open failed: %v (voice menu disabled)", err)
+		} else {
+			phone = p
+			if err := phone.Ping(); err != nil {
+				log.Printf("recovery: pico ping failed: %v", err)
+			}
+			phone.LED("HEARTBEAT")
+		}
 	}
 
 	rebootFn := func() error {
@@ -397,8 +588,19 @@ func main() {
 		srv.reset.status = "Auto-confirmed factory reset, restoring rootfs..."
 		srv.reset.mu.Unlock()
 		go func() {
-			if err := srv.doFactoryReset(); err != nil {
-				log.Printf("recovery: auto factory reset failed: %v", err)
+			if phone != nil {
+				if clip := loadAudio("factory_reset_in_progress.wav"); clip != nil {
+					phone.Play(context.Background(), clip)
+				}
+			}
+			var resetErr error
+			if phone != nil {
+				resetErr = doFactoryResetWithVoice(context.Background(), phone, srv)
+			} else {
+				resetErr = srv.doFactoryReset()
+			}
+			if resetErr != nil {
+				log.Printf("recovery: auto factory reset failed: %v", resetErr)
 				srv.reset.mu.Lock()
 				srv.reset.inProgress = false
 				srv.reset.status = ""
@@ -423,6 +625,10 @@ func main() {
 				srv.reset.mu.Unlock()
 			}
 		}()
+	}
+
+	if phone != nil {
+		go runVoiceMenu(phone, srv)
 	}
 
 	staticSub, _ := fs.Sub(staticFS, "static")
