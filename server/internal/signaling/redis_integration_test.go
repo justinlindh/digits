@@ -54,7 +54,7 @@ func TestRedisBridgeEndToEnd(t *testing.T) {
 
 	// Register a connection on pod B.
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hubB.Register("3140001", conn)
+	_ = hubB.Register("3140001", conn)
 
 	// Send from pod A (target is not on pod A, so it publishes to Redis).
 	err = hubA.SendTo("3140001", &Message{Type: TypeRing, From: "3140002"})
@@ -105,7 +105,7 @@ func TestRedisBridgeSelfMessagesSkipped(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	// Send to a number NOT on this hub. The hub publishes to Redis, but
 	// the subscriber should skip the message because it originated here.
@@ -160,7 +160,7 @@ func TestRedisBridgeBroadcastCrossPod(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hubB.Register("3140001", conn)
+	_ = hubB.Register("3140001", conn)
 
 	hubA.Broadcast(&Message{Type: TypeReleaseAvailable, LatestPiVersion: "9.9.9"})
 

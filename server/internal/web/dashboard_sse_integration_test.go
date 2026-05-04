@@ -107,7 +107,7 @@ func TestDashboardStream_HubRegisterTriggersFrame(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 1)}
-	h.hub.Register(number, conn)
+	_ = h.hub.Register(number, conn)
 	t.Cleanup(func() { h.hub.Unregister(number, conn) })
 
 	ev, _, err := readSSEFrame(t, ctx, sr)

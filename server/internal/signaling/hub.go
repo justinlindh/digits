@@ -19,6 +19,10 @@ import (
 // logging.
 var ErrNotConnected = errors.New("not connected")
 
+// ErrDraining is returned by Register when the hub is draining (shutdown in
+// progress). The WebSocket handler should reject new upgrade requests.
+var ErrDraining = errors.New("hub is draining")
+
 type Conn struct {
 	WS         *websocket.Conn
 	Number     string
@@ -54,6 +58,7 @@ type Hub struct {
 	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
 	dashEvents   dashNotifier
 	redis        redisPubSub // nil = single-instance mode (no Redis)
+	draining     bool        // set by StartDraining; blocks new Register calls
 }
 
 func NewHub() *Hub {
@@ -153,6 +158,92 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 	}
 }
 
+// StartDraining marks the hub as draining. New Register calls will return
+// ErrDraining and the WebSocket handler should reject upgrade requests.
+func (h *Hub) StartDraining() {
+	h.mu.Lock()
+	h.draining = true
+	h.mu.Unlock()
+	slog.Info("hub draining started")
+}
+
+// IsDraining reports whether the hub is in drain mode.
+func (h *Hub) IsDraining() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.draining
+}
+
+// DrainAndClose sends a WebSocket close frame (1001 Going Away) to every
+// connected device and waits for connections to disconnect. If the context
+// deadline is reached, remaining connections are force-closed. The method
+// logs aggregate counts only (no per-device data).
+func (h *Hub) DrainAndClose(ctx context.Context) {
+	h.mu.RLock()
+	n := len(h.conns)
+	snapshot := make([]*Conn, 0, n)
+	for _, c := range h.conns {
+		snapshot = append(snapshot, c)
+	}
+	h.mu.RUnlock()
+
+	if n == 0 {
+		slog.Info("drain: no connections to close")
+		return
+	}
+	slog.Info("drain: sending close frames", "connections", n)
+
+	// Send 1001 Going Away close frame to each connection.
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(5 * time.Second)
+	}
+	slog.Info("drain: sending close frames", "connections", n, "remaining", time.Until(deadline).Round(time.Millisecond))
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+	for _, c := range snapshot {
+		if c.WS != nil {
+			_ = c.WS.WriteControl(websocket.CloseMessage, closeMsg, deadline)
+		}
+	}
+
+	// Poll until all connections are gone or the context expires.
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			h.forceCloseAll()
+			return
+		case <-ticker.C:
+			h.mu.RLock()
+			remaining := len(h.conns)
+			h.mu.RUnlock()
+			if remaining == 0 {
+				slog.Info("drain: all connections closed gracefully")
+				return
+			}
+		}
+	}
+}
+
+// forceCloseAll hard-closes every remaining WebSocket connection.
+func (h *Hub) forceCloseAll() {
+	h.mu.RLock()
+	remaining := len(h.conns)
+	conns := make([]*Conn, 0, remaining)
+	for _, c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.mu.RUnlock()
+
+	for _, c := range conns {
+		if c.WS != nil {
+			_ = c.WS.Close()
+		}
+	}
+	slog.Info("drain: force-closed remaining connections", "connections", remaining)
+}
+
 // SetDashboardEvents registers an optional broadcaster that is signalled
 // whenever the set of online lines changes. Wakes dashboard SSE subscribers.
 // Safe to call once at startup; subsequent calls overwrite.
@@ -162,8 +253,12 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) Register(number string, conn *Conn) {
+func (h *Hub) Register(number string, conn *Conn) error {
 	h.mu.Lock()
+	if h.draining {
+		h.mu.Unlock()
+		return ErrDraining
+	}
 	// Close existing connection for this number if any
 	if old, ok := h.conns[number]; ok {
 		if old.WS != nil {
@@ -191,6 +286,7 @@ func (h *Hub) Register(number string, conn *Conn) {
 	if d != nil {
 		d.Notify()
 	}
+	return nil
 }
 
 func (h *Hub) Unregister(number string, conn *Conn) {
