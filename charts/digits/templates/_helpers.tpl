@@ -76,3 +76,28 @@ Admind image.
 {{- define "digits.admind.image" -}}
 {{ .Values.admind.image.repository }}:{{ .Values.admind.image.tag | default (printf "v%s" .Chart.AppVersion) }}
 {{- end }}
+
+{{/*
+Observability env vars (OTEL + Pyroscope). Pass a dict with "serviceName" and "ctx".
+Usage: include "digits.observability.env" (dict "serviceName" "signald" "ctx" .)
+*/}}
+{{- define "digits.observability.env" -}}
+{{- if .ctx.Values.observability.otelEndpoint }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .serviceName | quote }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ .ctx.Values.observability.otelEndpoint | quote }}
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: {{ .ctx.Values.observability.otelProtocol | quote }}
+- name: OTEL_EXPORTER_OTLP_INSECURE
+  value: {{ .ctx.Values.observability.otelInsecure | quote }}
+{{- if .ctx.Values.observability.otelResourceAttributes }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ .ctx.Values.observability.otelResourceAttributes | quote }}
+{{- end }}
+{{- end }}
+{{- if .ctx.Values.observability.pyroscopeEndpoint }}
+- name: PYROSCOPE_SERVER_ADDRESS
+  value: {{ .ctx.Values.observability.pyroscopeEndpoint | quote }}
+{{- end }}
+{{- end }}

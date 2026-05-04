@@ -57,24 +57,7 @@ spec:
                   name: {{ .Values.admind.statsSecretRef.name }}
                   key: {{ .Values.admind.statsSecretRef.key }}
             {{- if .Values.observability.enabled }}
-            {{- if .Values.observability.otelEndpoint }}
-            - name: OTEL_SERVICE_NAME
-              value: "admind"
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.observability.otelEndpoint | quote }}
-            - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{ .Values.observability.otelProtocol | quote }}
-            - name: OTEL_EXPORTER_OTLP_INSECURE
-              value: {{ .Values.observability.otelInsecure | quote }}
-            {{- if .Values.observability.otelResourceAttributes }}
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: {{ .Values.observability.otelResourceAttributes | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.observability.pyroscopeEndpoint }}
-            - name: PYROSCOPE_SERVER_ADDRESS
-              value: {{ .Values.observability.pyroscopeEndpoint | quote }}
-            {{- end }}
+            {{- include "digits.observability.env" (dict "serviceName" "admind" "ctx" .) | nindent 12 }}
             {{- end }}
             {{- range $key, $value := .Values.admind.env }}
             - name: {{ $key }}
