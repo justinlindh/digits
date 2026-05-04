@@ -118,7 +118,7 @@ func TestSendToLocalFastPathSkipsRedis(t *testing.T) {
 	hub.redis = fake
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	err := hub.SendTo("3140001", &Message{Type: TypeRing, From: "3140002"})
 	if err != nil {
@@ -170,7 +170,7 @@ func TestSendToHardwareLocalSkipsRedis(t *testing.T) {
 	hub.redis = fake
 
 	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-abc"}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	err := hub.SendToHardware("hw-abc", &Message{Type: TypePaired})
 	if err != nil {
@@ -189,7 +189,7 @@ func TestBroadcastPublishesToRedis(t *testing.T) {
 	hub.redis = fake
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	hub.Broadcast(&Message{Type: TypeReleaseAvailable, LatestPiVersion: "3.0.0"})
 
@@ -213,7 +213,7 @@ func TestBroadcastPublishesToRedis(t *testing.T) {
 func TestDeliverFromRedisToLocalConnection(t *testing.T) {
 	hub := NewHub()
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	hub.deliverFromRedis(&Envelope{
 		PodID:      "other-pod",
@@ -250,7 +250,7 @@ func TestDeliverFromRedisSkipsMissingTarget(t *testing.T) {
 func TestDeliverFromRedisHardware(t *testing.T) {
 	hub := NewHub()
 	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-abc"}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	hub.deliverFromRedis(&Envelope{
 		PodID:      "other-pod",
@@ -277,8 +277,8 @@ func TestDeliverFromRedisBroadcast(t *testing.T) {
 	hub := NewHub()
 	c1 := &Conn{Send: make(chan []byte, 10)}
 	c2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", c1)
-	hub.Register("3140002", c2)
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140002", c2)
 
 	hub.deliverFromRedis(&Envelope{
 		PodID:      "other-pod",
@@ -336,7 +336,7 @@ func TestRunDeliversFromSubscription(t *testing.T) {
 	hub.redis = fake
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

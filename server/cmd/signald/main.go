@@ -297,17 +297,31 @@ func run(ctx context.Context) error {
 		}
 		return fmt.Errorf("metrics listen: %w", err)
 	case <-ctx.Done():
-		slog.Info("shutdown signal received, draining")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		slog.Info("shutdown signal received, draining connections")
+
+		// 25s budget leaves 5s headroom before k8s SIGKILL at 30s.
+		drainCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
+
+		// 1. Stop accepting new WebSocket upgrades (returns 503).
+		hub.StartDraining()
+
+		// 2. Shut down HTTP server (waits for non-hijacked requests).
+		if err := srv.Shutdown(drainCtx); err != nil {
+			slog.Warn("http shutdown", "err", err)
+		}
+
+		// 3. Close remaining WebSocket connections gracefully (close frame 1001).
+		hub.DrainAndClose(drainCtx)
+
+		// 4. Shut down metrics listener.
 		if metricsSrv != nil {
-			if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+			if err := metricsSrv.Shutdown(drainCtx); err != nil {
 				slog.Warn("metrics shutdown", "err", err)
 			}
 		}
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("http shutdown: %w", err)
-		}
+
+		slog.Info("shutdown complete")
 		return nil
 	}
 }

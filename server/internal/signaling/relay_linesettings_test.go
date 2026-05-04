@@ -48,7 +48,7 @@ func TestOnRegisteredPushesSilentMode(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, store)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	relay.OnRegistered(context.Background(), "3140001")
 
@@ -86,7 +86,7 @@ func TestOnRegisteredPushesAutoUpdate(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, store)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140003", conn)
+	_ = hub.Register("3140003", conn)
 
 	relay.OnRegistered(context.Background(), "3140003")
 
@@ -125,7 +125,7 @@ func TestOnRegisteredPushesSilentModeFalseByDefault(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, store)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140002", conn)
+	_ = hub.Register("3140002", conn)
 
 	relay.OnRegistered(context.Background(), "3140002")
 
