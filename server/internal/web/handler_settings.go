@@ -1,11 +1,13 @@
 package web
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/justinlindh/digits/server/internal/auth"
+	emailpkg "github.com/justinlindh/digits/server/internal/email"
 )
 
 type settingsData struct {
@@ -207,17 +209,133 @@ func (h *Handler) handleSettingsAppearance(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	hh := h.activeHousehold(r)
+	if hh == nil {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	inviteEmail := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
+	if inviteEmail == "" || !strings.Contains(inviteEmail, "@") {
+		http.Redirect(w, r, "/settings?error=invalid+email", http.StatusSeeOther)
+		return
+	}
+
+	members, err := h.householdStore.GetMembers(r.Context(), hh.ID)
+	if err != nil {
+		slog.Error("list members failed", "err", err)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	for _, m := range members {
+		u, _ := h.authStore.GetUserByID(r.Context(), m.UserID)
+		if u != nil && strings.EqualFold(u.Email, inviteEmail) {
+			http.Redirect(w, r, "/settings?error=already+a+member", http.StatusSeeOther)
+			return
+		}
+	}
+
+	inv, err := h.inviteStore.CreateInvite(r.Context(), hh.ID, inviteEmail, user.ID)
+	if err != nil {
+		slog.Error("create invite failed", "err", err)
+		http.Redirect(w, r, "/settings?error=invite+failed", http.StatusSeeOther)
+		return
+	}
+
+	link := fmt.Sprintf("%s/invite/%s", h.cfg.BaseURL, inv.Token)
+	subject, body := emailpkg.HouseholdInviteEmail(hh.Name, userDisplayLabel(user), link)
+	if err := h.emailer.Send(inviteEmail, subject, body); err != nil {
+		slog.Error("invite email failed", "email", inviteEmail, "err", err)
+	}
+
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
 func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	inviteID := r.PathValue("id")
+	if err := h.inviteStore.CancelInvite(r.Context(), inviteID); err != nil {
+		slog.Error("cancel invite failed", "err", err)
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
 func (h *Handler) handleHouseholdMemberRemovePost(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	hh := h.activeHousehold(r)
+	if hh == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	targetUserID := r.PathValue("id")
+
+	count, err := h.householdStore.MemberCount(r.Context(), hh.ID)
+	if err != nil {
+		slog.Error("member count failed", "err", err)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if count <= 1 {
+		http.Redirect(w, r, "/settings?error=last+member", http.StatusSeeOther)
+		return
+	}
+
+	if err := h.householdStore.RemoveMember(r.Context(), targetUserID, hh.ID); err != nil {
+		slog.Error("remove member failed", "err", err)
+	}
+	if targetUserID == user.ID {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
 func (h *Handler) handleHouseholdSwitchPost(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	householdID := r.FormValue("household_id")
+
+	_, err := h.householdStore.GetRole(r.Context(), user.ID, householdID)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	cookie, err := r.Cookie(auth.CookieName)
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if err := h.authStore.SetActiveHousehold(r.Context(), cookie.Value, householdID); err != nil {
+		slog.Error("switch household failed", "err", err)
+	}
+
+	referer := r.Header.Get("Referer")
+	if referer == "" {
+		referer = "/"
+	}
+	http.Redirect(w, r, referer, http.StatusSeeOther)
 }
