@@ -8,20 +8,53 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	emailpkg "github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/household"
 )
+
+type settingsMember struct {
+	UserID string
+	Email  string
+	Name   string
+	IsYou  bool
+}
 
 type settingsData struct {
 	chromeData
-	Saved bool
+	Saved          bool
+	Error          string
+	Members        []settingsMember
+	PendingInvites []*household.HouseholdInvite
+	Households     []*household.Household
 }
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
 	hh := h.activeHousehold(r)
-	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
+
+	data := settingsData{
 		chromeData: newChromeData("settings", user, hh),
 		Saved:      r.URL.Query().Get("saved") == "1",
-	})
+		Error:      r.URL.Query().Get("error"),
+	}
+
+	if hh != nil && user != nil {
+		members, _ := h.householdStore.GetMembers(r.Context(), hh.ID)
+		for _, m := range members {
+			u, _ := h.authStore.GetUserByID(r.Context(), m.UserID)
+			sm := settingsMember{UserID: m.UserID, IsYou: m.UserID == user.ID}
+			if u != nil {
+				sm.Email = u.Email
+				sm.Name = u.Name
+			}
+			data.Members = append(data.Members, sm)
+		}
+		if h.inviteStore != nil {
+			data.PendingInvites, _ = h.inviteStore.GetPendingForHousehold(r.Context(), hh.ID)
+		}
+		data.Households, _ = h.householdStore.GetForUser(r.Context(), user.ID)
+	}
+
+	renderWith(w, h.tmplSettings, layoutFor(r), data)
 }
 
 func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
