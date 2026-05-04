@@ -110,16 +110,14 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if _, err := h.inviteStore.AcceptInvite(r.Context(), token); err != nil {
-		slog.Error("accept invite failed", "err", err)
+	if err := h.householdStore.AddMember(r.Context(), user.ID, inv.HouseholdID, "admin"); err != nil {
+		slog.Error("add member failed", "err", err)
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
 
-	if err := h.householdStore.AddMember(r.Context(), user.ID, inv.HouseholdID, "admin"); err != nil {
-		slog.Error("add member failed", "err", err)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
+	if _, err := h.inviteStore.AcceptInvite(r.Context(), token); err != nil {
+		slog.Error("accept invite failed", "err", err)
 	}
 
 	if err := h.authStore.SetActiveHousehold(r.Context(), sessionToken, inv.HouseholdID); err != nil {

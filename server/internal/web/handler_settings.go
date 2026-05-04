@@ -60,8 +60,8 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, _ := h.householdStore.GetForUser(r.Context(), user.ID)
-	if len(households) == 0 {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
@@ -71,8 +71,8 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
-		if err := h.householdStore.UpdateName(r.Context(), households[0].ID, name); err != nil {
-			slog.Error("update household name failed", "household_id", households[0].ID, "err", err)
+		if err := h.householdStore.UpdateName(r.Context(), hh.ID, name); err != nil {
+			slog.Error("update household name failed", "household_id", hh.ID, "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
 		}
@@ -81,22 +81,13 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
-	if h.householdStore == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), households[0].ID, enabled); err != nil {
+	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), hh.ID, enabled); err != nil {
 		slog.Error("set call history failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -109,30 +100,20 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if h.householdStore == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	householdID := households[0].ID
-	if err := h.householdStore.SetDoNotDisturb(r.Context(), householdID, enabled); err != nil {
-		slog.Error("set do not disturb failed", "err", err, "household_id", householdID)
+	if err := h.householdStore.SetDoNotDisturb(r.Context(), hh.ID, enabled); err != nil {
+		slog.Error("set do not disturb failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), householdID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
-		slog.Error("list lines for DND fan-out failed", "err", err, "household_id", householdID)
+		slog.Error("list lines for DND fan-out failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 		return
 	}
@@ -142,8 +123,8 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if isHTMX(r) {
-		households[0].DoNotDisturb = enabled
-		data := h.buildLinesData(r, households[0], "")
+		hh.DoNotDisturb = enabled
+		data := h.buildLinesData(r, hh, "")
 		renderWith(w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
 		return
 	}
@@ -151,17 +132,8 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request) {
-	if h.householdStore == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
@@ -171,7 +143,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	}
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
-		if err := h.householdStore.SetTimezone(r.Context(), households[0].ID, tz); err != nil {
+		if err := h.householdStore.SetTimezone(r.Context(), hh.ID, tz); err != nil {
 			slog.Warn("set timezone failed", "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return

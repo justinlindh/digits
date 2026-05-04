@@ -1,6 +1,9 @@
 package email
 
-import "fmt"
+import (
+	"fmt"
+	"html"
+)
 
 // brandedWrap wraps email content in the Digits branded template.
 func brandedWrap(content string) string {
@@ -51,6 +54,8 @@ func MagicLinkEmail(link string) (subject, body string) {
 // HouseholdInviteEmail returns subject and HTML body for a household member invite.
 func HouseholdInviteEmail(householdName, inviterName, link string) (subject, body string) {
 	subject = fmt.Sprintf("You've been invited to join %s on Digits", householdName)
+	safeHousehold := html.EscapeString(householdName)
+	safeInviter := html.EscapeString(inviterName)
 	content := fmt.Sprintf(`<h2 style="color:#e6edf3; margin:0 0 16px 0; font-size:20px;">You're invited</h2>
   <p style="color:#8b949e; font-size:14px; margin:0 0 24px 0;">%s invited you to join <strong style="color:#e6edf3;">%s</strong> on Digits. Accept the invite to manage lines, settings, and calls together.</p>
   <p style="text-align:center; margin:0 0 24px 0;">
@@ -58,7 +63,7 @@ func HouseholdInviteEmail(householdName, inviterName, link string) (subject, bod
   </p>
   <p style="color:#484f58; font-size:12px; margin:0 0 8px 0;">This invite expires in 7 days.</p>
   <p style="color:#484f58; font-size:12px; margin:0;">If you weren&#39;t expecting this, you can safely ignore this email.</p>`,
-		inviterName, householdName, link)
+		safeInviter, safeHousehold, link)
 	body = brandedWrap(content)
 	return
 }
