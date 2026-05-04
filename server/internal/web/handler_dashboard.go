@@ -293,7 +293,6 @@ func fmtElapsed(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-
 type connectingData struct {
 	chromeData
 }

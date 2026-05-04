@@ -17,8 +17,8 @@ import (
 type HistoryEntryKind int
 
 const (
-	HistoryEntryCall       HistoryEntryKind = iota
-	HistoryEntryConference HistoryEntryKind = iota
+	HistoryEntryCall HistoryEntryKind = iota
+	HistoryEntryConference
 )
 
 // HistoryEntry is a unified view of either a 2-party call or a 3-way

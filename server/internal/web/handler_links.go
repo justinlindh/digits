@@ -202,4 +202,3 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
-

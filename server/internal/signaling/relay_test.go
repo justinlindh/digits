@@ -958,7 +958,7 @@ func TestHandleLinkHealth_3WayPath_RecordsEdge(t *testing.T) {
 
 	loss := float32(4.2)
 	m := &Message{
-		Type: TypeLinkHealth,
+		Type:       TypeLinkHealth,
 		LinkHealth: &LinkHealthPayload{TS: 1, LossPct: &loss, Peer: "B"},
 	}
 	r.handleLinkHealth(context.Background(), "A", m)

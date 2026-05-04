@@ -60,13 +60,13 @@ const (
 type SignalingErrorCategory string
 
 const (
-	ErrTURNAllocFailed     SignalingErrorCategory = "turn_alloc_failed"
-	ErrICETimeout          SignalingErrorCategory = "ice_timeout"
-	ErrPeerUnreachable     SignalingErrorCategory = "peer_unreachable"
-	ErrCallSetupFailed     SignalingErrorCategory = "call_setup_failed"
-	ErrAuthFailed          SignalingErrorCategory = "auth_failed"
-	ErrInvalidMessage      SignalingErrorCategory = "invalid_message"
-	ErrRelayDelivery       SignalingErrorCategory = "relay_delivery"
+	ErrTURNAllocFailed SignalingErrorCategory = "turn_alloc_failed"
+	ErrICETimeout      SignalingErrorCategory = "ice_timeout"
+	ErrPeerUnreachable SignalingErrorCategory = "peer_unreachable"
+	ErrCallSetupFailed SignalingErrorCategory = "call_setup_failed"
+	ErrAuthFailed      SignalingErrorCategory = "auth_failed"
+	ErrInvalidMessage  SignalingErrorCategory = "invalid_message"
+	ErrRelayDelivery   SignalingErrorCategory = "relay_delivery"
 )
 
 // Registry bundles a Prometheus registry, the metrics registered into it,
@@ -77,10 +77,10 @@ type Registry struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
 
-	ActiveDevices    prometheus.Gauge
-	ActiveCalls      prometheus.Gauge
-	SignalingErrors  *prometheus.CounterVec
-	BuildInfo        *prometheus.GaugeVec
+	ActiveDevices   prometheus.Gauge
+	ActiveCalls     prometheus.Gauge
+	SignalingErrors *prometheus.CounterVec
+	BuildInfo       *prometheus.GaugeVec
 }
 
 // New builds a Registry with all metrics registered. Callers wire live-state
