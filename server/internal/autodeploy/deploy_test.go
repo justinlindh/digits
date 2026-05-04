@@ -22,19 +22,19 @@ type mockRunner struct {
 	errs  map[string]error // keyed by "Name" or "Name arg0"
 }
 
-func (m *mockRunner) Run(ctx context.Context, spec RunSpec) (RunOutput, error) {
+func (m *mockRunner) Run(ctx context.Context, spec RunSpec) error {
 	m.calls = append(m.calls, spec)
 	if m.errs != nil {
 		if e, ok := m.errs[spec.Name]; ok {
-			return RunOutput{}, e
+			return e
 		}
 		if len(spec.Args) > 0 {
 			if e, ok := m.errs[spec.Name+" "+spec.Args[0]]; ok {
-				return RunOutput{}, e
+				return e
 			}
 		}
 	}
-	return RunOutput{}, nil
+	return nil
 }
 
 type sentEmail struct {

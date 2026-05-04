@@ -141,7 +141,7 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 	// require a manual --retry. Instead, exit cleanly and retry next tick.
 	for _, svc := range d.Cfg.Services {
 		img := fmt.Sprintf("ghcr.io/%s/%s:v%s", d.Cfg.Repo, svc, version)
-		if _, err := d.Runner.Run(ctx, RunSpec{
+		if err := d.Runner.Run(ctx, RunSpec{
 			Name: "docker", Args: []string{"manifest", "inspect", img},
 		}); err != nil {
 			d.log().Info("images not yet pushed for tag, will retry",
@@ -213,7 +213,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 	// Skip docker login for public images: docker pull works unauthenticated
 	// and `login --password-stdin` with an empty token errors anyway.
 	if d.Cfg.GHCRToken != "" {
-		if _, err := d.Runner.Run(ctx, RunSpec{
+		if err := d.Runner.Run(ctx, RunSpec{
 			Name:  "docker",
 			Args:  []string{"login", "ghcr.io", "-u", d.Cfg.GHCRUsername, "--password-stdin"},
 			Stdin: []byte(d.Cfg.GHCRToken),
@@ -231,7 +231,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 
 	pullArgs := append(append([]string{}, composeArgs...), "pull")
 	pullArgs = append(pullArgs, d.Cfg.Services...)
-	if _, err := d.Runner.Run(ctx, RunSpec{
+	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: pullArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
 		return &stepError{Step: StepPull, Err: err}
@@ -239,7 +239,7 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 
 	upArgs := append(append([]string{}, composeArgs...), "up", "-d", "--wait")
 	upArgs = append(upArgs, d.Cfg.Services...)
-	if _, err := d.Runner.Run(ctx, RunSpec{
+	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: upArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
 		return &stepError{Step: StepUp, Err: err}
