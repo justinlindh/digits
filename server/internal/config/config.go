@@ -30,6 +30,11 @@ type Config struct {
 	// Link health flusher: when true, calls.NewHealthStore starts with the
 	// background DB flush disabled. Used by integration tests that drive time.
 	LinkHealthFlushDisabled bool
+	// Redis pub/sub for multi-replica signaling. When set, the hub publishes
+	// signaling messages to a Redis channel when the target device is not on
+	// the local pod. Empty disables Redis (single-instance mode).
+	RedisURL string
+
 	// Release index source. Exactly one of FakeUpdates or GitHubRepo (owner/repo)
 	// should be set. FakeUpdates wins if both are set and is intended for e2e
 	// tests. An unset GitHubRepo disables the release endpoint entirely.
@@ -74,6 +79,8 @@ func Load() *Config {
 	if os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1" {
 		c.LinkHealthFlushDisabled = true
 	}
+	// Redis
+	StringEnv("REDIS_URL", &c.RedisURL)
 	// Release index
 	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
 		c.FakeUpdates = true

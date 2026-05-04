@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -48,10 +49,11 @@ type dashNotifier interface {
 
 type Hub struct {
 	mu           sync.RWMutex
-	conns        map[string]*Conn                 // phone number → connection
-	hwConns      map[string]*Conn                 // hardware ID → connection
-	updateStatus map[string]*UpdateStatusSnapshot // phone number → last update status
+	conns        map[string]*Conn                 // phone number -> connection
+	hwConns      map[string]*Conn                 // hardware ID -> connection
+	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
 	dashEvents   dashNotifier
+	redis        redisPubSub // nil = single-instance mode (no Redis)
 }
 
 func NewHub() *Hub {
@@ -59,6 +61,95 @@ func NewHub() *Hub {
 		conns:        make(map[string]*Conn),
 		hwConns:      make(map[string]*Conn),
 		updateStatus: make(map[string]*UpdateStatusSnapshot),
+	}
+}
+
+// SetRedis attaches a RedisBridge to the hub, enabling cross-pod message
+// delivery. Must be called before Run. Passing nil disables Redis (the
+// default single-instance mode).
+func (h *Hub) SetRedis(bridge redisPubSub) {
+	h.mu.Lock()
+	h.redis = bridge
+	h.mu.Unlock()
+}
+
+// Run starts the Redis subscriber goroutine that delivers incoming
+// cross-pod messages to local connections. Blocks until ctx is cancelled.
+// If no RedisBridge is configured, Run returns immediately.
+func (h *Hub) Run(ctx context.Context) {
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+
+	if bridge == nil {
+		return
+	}
+
+	ch := bridge.Subscribe(ctx)
+	for env := range ch {
+		h.deliverFromRedis(env)
+	}
+}
+
+// deliverFromRedis attempts local delivery of an envelope received from
+// another pod via Redis.
+func (h *Hub) deliverFromRedis(env *Envelope) {
+	if env.Message == nil {
+		return
+	}
+
+	switch env.TargetType {
+	case "number":
+		conn := h.Get(env.Target)
+		if conn == nil {
+			return
+		}
+		data, err := env.Message.Marshal()
+		if err != nil {
+			slog.Debug("redis: marshal for local delivery failed", "err", err)
+			return
+		}
+		select {
+		case conn.Send <- data:
+			slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
+		default:
+			slog.Debug("redis: local send buffer full", "pod", env.PodID)
+		}
+
+	case "hardware":
+		h.mu.RLock()
+		conn := h.hwConns[env.Target]
+		h.mu.RUnlock()
+		if conn == nil {
+			return
+		}
+		data, err := env.Message.Marshal()
+		if err != nil {
+			slog.Debug("redis: marshal for local delivery failed", "err", err)
+			return
+		}
+		select {
+		case conn.Send <- data:
+			slog.Debug("redis: delivered to local hardware connection", "pod", env.PodID, "delivered", true)
+		default:
+			slog.Debug("redis: local hw send buffer full", "pod", env.PodID)
+		}
+
+	case "broadcast":
+		data, err := env.Message.Marshal()
+		if err != nil {
+			slog.Debug("redis: marshal for local broadcast failed", "err", err)
+			return
+		}
+		h.mu.RLock()
+		for _, conn := range h.conns {
+			select {
+			case conn.Send <- data:
+			default:
+			}
+		}
+		h.mu.RUnlock()
+		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
 	}
 }
 
@@ -131,18 +222,53 @@ func (h *Hub) Get(number string) *Conn {
 }
 
 func (h *Hub) SendTo(number string, msg *Message) error {
-	return sendToConn(h.Get(number), msg, "phone", number)
+	if err := sendToConn(h.Get(number), msg, "phone", number); err == nil {
+		return nil
+	}
+
+	// Fast path missed. If Redis is configured, publish for cross-pod delivery.
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "number",
+			Target:     number,
+			Message:    msg,
+		})
+		return nil // optimistic: another pod may deliver
+	}
+
+	// No Redis and not local: return the original error.
+	return sendToConn(nil, msg, "phone", number)
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	h.mu.RLock()
 	conn := h.hwConns[hardwareID]
+	bridge := h.redis
 	h.mu.RUnlock()
-	return sendToConn(conn, msg, "hardware", hardwareID)
+
+	if err := sendToConn(conn, msg, "hardware", hardwareID); err == nil {
+		return nil
+	}
+
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "hardware",
+			Target:     hardwareID,
+			Message:    msg,
+		})
+		return nil
+	}
+
+	return sendToConn(nil, msg, "hardware", hardwareID)
 }
 
 // Broadcast marshals msg and sends it to every connected device without
 // blocking. Devices whose Send buffers are full are skipped with a warning.
+// When Redis is configured, the message is also published so other pods
+// deliver to their local connections.
 func (h *Hub) Broadcast(msg *Message) {
 	data, err := msg.Marshal()
 	if err != nil {
@@ -150,13 +276,21 @@ func (h *Hub) Broadcast(msg *Message) {
 		return
 	}
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	bridge := h.redis
 	for number, conn := range h.conns {
 		select {
 		case conn.Send <- data:
 		default:
 			slog.Warn("broadcast: send buffer full, skipping", "number", number)
 		}
+	}
+	h.mu.RUnlock()
+
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "broadcast",
+			Message:    msg,
+		})
 	}
 }
 
