@@ -25,8 +25,8 @@ type Serial struct {
 	respCh atomic.Pointer[chan string]
 }
 
-// Open opens the serial device at baud and starts the read loop.
-func Open(device string, baud int) (*Serial, error) {
+// openSerial opens the serial device at baud and starts the read loop.
+func openSerial(device string, baud int) (*Serial, error) {
 	port, err := openSerialPort(device, baud)
 	if err != nil {
 		return nil, err
