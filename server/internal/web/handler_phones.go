@@ -69,6 +69,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 			slog.Error("list lines by household failed", "household_id", hh.ID, "err", err)
 		}
 	}
+	// On error or nil household, show empty list rather than leaking all lines.
 	if lines == nil {
 		lines = []line.Line{}
 	}
