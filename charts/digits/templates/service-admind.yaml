@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admind
+  labels:
+    {{- include "digits.admind.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "digits.admind.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.admind.port }}
+      protocol: TCP
+    {{- if .Values.observability.enabled }}
+    - name: metrics
+      port: {{ .Values.observability.admindMetricsPort }}
+      targetPort: {{ .Values.observability.admindMetricsPort }}
+      protocol: TCP
+    {{- end }}

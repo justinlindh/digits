@@ -1,0 +1,50 @@
+{{- if .Values.cnpg.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "digits.fullname" . }}-admindb
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-admindb
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cnpg.admindb.instances }}
+  imageName: {{ .Values.cnpg.imageName }}
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: {{ .Values.cnpg.admindb.size }}
+    {{- if .Values.cnpg.admindb.storageClass }}
+    storageClass: {{ .Values.cnpg.admindb.storageClass }}
+    {{- end }}
+  bootstrap:
+    initdb:
+      database: {{ .Values.cnpg.admindb.database }}
+      owner: {{ .Values.cnpg.admindb.owner }}
+  {{- if .Values.cnpg.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.cnpg.backup.destinationPath }}/{{ include "digits.fullname" . }}-admindb
+      endpointURL: {{ .Values.cnpg.backup.endpointURL }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.cnpg.backup.s3CredentialsSecret }}
+          key: {{ .Values.cnpg.backup.s3AccessKeyIDKey }}
+        secretAccessKey:
+          name: {{ .Values.cnpg.backup.s3CredentialsSecret }}
+          key: {{ .Values.cnpg.backup.s3SecretAccessKeyKey }}
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
+  {{- end }}
+  {{- if .Values.observability.enabled }}
+  monitoring:
+    enablePodMonitor: true
+  {{- end }}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+{{- end }}
