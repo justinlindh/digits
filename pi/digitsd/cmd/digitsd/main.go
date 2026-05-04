@@ -2016,6 +2016,9 @@ func main() {
 		pbDev = audio.CodecPlaybackDevice()
 		slog.Info("alsa playback: using codec", "device", pbDev)
 	}
+	if err := os.WriteFile("/data/digits/codec-device", []byte(pbDev), 0644); err != nil {
+		slog.Warn("failed to write codec marker", "err", err)
+	}
 	pbCfg := audio.Config{
 		Device:     pbDev,
 		SampleRate: 48000,
@@ -2134,6 +2137,7 @@ func main() {
 				time.Sleep(50 * time.Millisecond)
 			}
 			time.Sleep(200 * time.Millisecond)
+			sp.SendFire("STATE:SET:SETUP")
 			_ = exec.Command("sudo", "reboot").Run()
 		})
 	}
@@ -2260,6 +2264,7 @@ func main() {
 					slog.Warn("service code repair: save config failed", "error", err)
 				}
 			}
+			sp.SendFire("STATE:SET:UNPAIRED")
 			_ = exec.Command("sudo", "reboot").Run()
 		})
 	}
@@ -2272,6 +2277,7 @@ func main() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
 		confirm("confirm_factory_reset", func() {
 			slog.Info("service code factory reset confirmed")
+			sp.SendFire("STATE:SET:SETUP")
 			triggerFactoryReset(sig, deviceID)
 		})
 	}
@@ -2858,6 +2864,7 @@ func main() {
 
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
+				sp.SendFire("STATE:SET:SETUP")
 				go triggerFactoryReset(sig, deviceID)
 
 			case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
@@ -2939,6 +2946,9 @@ func main() {
 						slog.Info("signal: paired", "number", msg.Number, "config", cb.cfg.Path())
 					}
 					cb.paired.Store(true)
+					if _, err := sp.SendCommand("STATE:SET:PAIRED", 5*time.Second); err != nil {
+						slog.Warn("failed to set device phase", "err", err)
+					}
 					cb.pairingCode = ""
 					mixer.StopAll()
 					mixer.PlayOnce("tone_dial")
