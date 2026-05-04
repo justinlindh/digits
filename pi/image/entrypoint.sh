@@ -3,19 +3,21 @@
 #
 # Provides two modes for sourcing Pi binaries:
 #
-#   Default (local build):
-#     Cross-compiles digitsd, digits-recovery, digits-panic-check from the
-#     mounted repo. Used for development and testing unreleased code.
-#
-#   Release mode (RELEASE_TAG=pi/v<version>):
-#     Downloads pre-built binaries from the specified GitHub release tag
-#     instead of compiling locally. Use this for producing clean production
-#     images from a tagged release.
+#   Default (release mode):
+#     Downloads pre-built binaries from the latest pi/v* GitHub release.
+#     Produces clean production images without requiring the Go cross-compile
+#     toolchain. Pin a specific release with RELEASE_TAG=pi/v<version>.
 #
 #     Example: RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
 #
 #     The firmware is sourced from its own release (FIRMWARE_TAG=fw/v<version>).
 #     If FIRMWARE_TAG is not set, the latest fw/v* release is used.
+#
+#   Local build mode (BUILD_LOCAL=1):
+#     Cross-compiles digitsd, digits-recovery, digits-panic-check from the
+#     mounted repo. Use this to test unreleased code changes.
+#
+#     Example: BUILD_LOCAL=1 ./pi/image/build-docker.sh --pcb
 #
 # The repo must be mounted at /digits. If no base image is provided,
 # downloads a known-good Raspberry Pi OS Lite image to /cache.
@@ -96,27 +98,42 @@ fi
 
 mkdir -p /digits/tools/build
 
-# ── binary sourcing: release mode vs local build ─────────────────────────────
+# ── binary sourcing: release mode (default) vs local build ───────────────────
 #
-# RELEASE_TAG=pi/v<version> downloads pre-built binaries from GitHub Releases.
-# Default (no RELEASE_TAG) cross-compiles from the local working tree.
+# Default: download pre-built binaries from the latest pi/v* GitHub release.
+# Pin a specific tag with RELEASE_TAG=pi/v<version>.
+# Set BUILD_LOCAL=1 to cross-compile from the local working tree instead.
 
-if [[ -n "${RELEASE_TAG:-}" ]]; then
+if [[ -z "${BUILD_LOCAL:-}" ]]; then
     # Release mode: download pre-built binaries from GitHub Releases.
-    info "Release mode: downloading Pi binaries from GitHub release ${RELEASE_TAG}..."
 
-    # Verify the tag exists before proceeding.
-    if ! gh release view "${RELEASE_TAG}" --repo justinlindh/digits &>/dev/null; then
-        die "GitHub release '${RELEASE_TAG}' not found. Check the tag and try again."
+    # Resolve the release tag: use RELEASE_TAG if set, otherwise auto-detect
+    # the latest pi/v* release from GitHub.
+    if [[ -n "${RELEASE_TAG:-}" ]]; then
+        PI_TAG="${RELEASE_TAG}"
+        info "Release mode: downloading Pi binaries from GitHub release ${PI_TAG}..."
+
+        # Verify the tag exists before proceeding.
+        if ! gh release view "${PI_TAG}" --repo justinlindh/digits &>/dev/null; then
+            die "GitHub release '${PI_TAG}' not found. Check RELEASE_TAG and try again."
+        fi
+    else
+        info "Resolving latest Pi release from GitHub..."
+        PI_TAG=$(gh release list --repo justinlindh/digits --limit 20 --json tagName \
+            --jq '[.[].tagName | select(startswith("pi/"))] | first' 2>/dev/null || true)
+        if [[ -z "$PI_TAG" ]]; then
+            die "Could not determine latest pi/v* release tag from GitHub. Set RELEASE_TAG=pi/v<version> or BUILD_LOCAL=1."
+        fi
+        info "Release mode: downloading Pi binaries from latest release ${PI_TAG}..."
     fi
 
     # Resolve the version string from the tag (e.g. pi/v1.21.0 -> 1.21.0).
-    PI_VERSION="${RELEASE_TAG#pi/v}"
+    PI_VERSION="${PI_TAG#pi/v}"
     # Export for build-image.sh so it writes the correct asset-version marker.
     export DIGITS_PI_VERSION="${PI_VERSION}"
 
     info "  Downloading digitsd-${PI_VERSION}-aarch64..."
-    gh release download "${RELEASE_TAG}" \
+    gh release download "${PI_TAG}" \
         --repo justinlindh/digits \
         --pattern "digitsd-${PI_VERSION}-aarch64" \
         --output /digits/tools/build/digitsd
@@ -125,7 +142,7 @@ if [[ -n "${RELEASE_TAG:-}" ]]; then
     info "  Downloading digits-setup-${PI_VERSION}-aarch64..."
     DIGITS_SETUP_EMBED=/digits/pi/digitsd/internal/assets/embed/rootfs/usr/local/bin/digits-setup
     mkdir -p "$(dirname "$DIGITS_SETUP_EMBED")"
-    gh release download "${RELEASE_TAG}" \
+    gh release download "${PI_TAG}" \
         --repo justinlindh/digits \
         --pattern "digits-setup-${PI_VERSION}-aarch64" \
         --output "$DIGITS_SETUP_EMBED"
@@ -133,20 +150,20 @@ if [[ -n "${RELEASE_TAG:-}" ]]; then
 
     info "  Downloading digits-recovery-${PI_VERSION}-aarch64..."
     mkdir -p /digits/pi/digits-recovery/bin
-    gh release download "${RELEASE_TAG}" \
+    gh release download "${PI_TAG}" \
         --repo justinlindh/digits \
         --pattern "digits-recovery-${PI_VERSION}-aarch64" \
         --output /digits/pi/digits-recovery/bin/digits-recovery
     chmod +x /digits/pi/digits-recovery/bin/digits-recovery
 
     info "  Downloading digits-panic-check-${PI_VERSION}-aarch64..."
-    gh release download "${RELEASE_TAG}" \
+    gh release download "${PI_TAG}" \
         --repo justinlindh/digits \
         --pattern "digits-panic-check-${PI_VERSION}-aarch64" \
         --output /digits/tools/build/digits-panic-check
     chmod +x /digits/tools/build/digits-panic-check
 
-    info "Pi binaries downloaded from ${RELEASE_TAG}."
+    info "Pi binaries downloaded from ${PI_TAG}."
 else
     # Local build mode: cross-compile from the mounted repo.
 

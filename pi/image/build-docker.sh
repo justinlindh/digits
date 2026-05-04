@@ -13,11 +13,16 @@
 # If no base image is provided, a known-good Raspberry Pi OS Lite image
 # is downloaded automatically and cached in a Docker volume for reuse.
 #
-# Release mode: set RELEASE_TAG=pi/v<version> to download pre-built binaries
-# from GitHub Releases instead of compiling locally. Produces a clean image
-# from a tagged release without requiring the Go cross-compile toolchain.
+# Default: downloads pre-built binaries from the latest pi/v* GitHub release.
+# No Go toolchain required. Pin a specific release with RELEASE_TAG:
 #
 #   RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
+#
+# Local build mode: set BUILD_LOCAL=1 to cross-compile from the local working
+# tree instead of downloading release artifacts. Use this to test unreleased
+# code changes.
+#
+#   BUILD_LOCAL=1 ./pi/image/build-docker.sh --pcb
 #
 # Optionally pin the firmware release with FIRMWARE_TAG=fw/v<version>.
 # Without FIRMWARE_TAG, the latest fw/v* release is used.
@@ -50,10 +55,9 @@ for arg in "$@"; do
 done
 
 # Generate embedded assets on the host (avoids root-owned files from Docker).
-# In release mode, make embed still runs to populate rootfs overlay, tones,
-# and mixer state; the container then overwrites digits-setup (and the other
-# Go binaries) with the downloaded release artifacts before build-image.sh
-# uses them.
+# make embed populates rootfs overlay, tones, and mixer state regardless of
+# build mode. In release mode, the container overwrites the Go binaries with
+# downloaded release artifacts before build-image.sh uses them.
 info "Generating embedded assets..."
 make -C "$REPO_DIR/pi/digitsd" embed
 
@@ -74,7 +78,8 @@ DOCKER_ARGS=(
     -e "HOST_GID=$(id -g)"
 )
 
-# Pass release tags into the container when set.
+# Pass build mode and release tags into the container when set.
+[[ -n "${BUILD_LOCAL:-}" ]]   && DOCKER_ARGS+=(-e "BUILD_LOCAL=${BUILD_LOCAL}")
 [[ -n "${RELEASE_TAG:-}" ]]   && DOCKER_ARGS+=(-e "RELEASE_TAG=${RELEASE_TAG}")
 [[ -n "${FIRMWARE_TAG:-}" ]]  && DOCKER_ARGS+=(-e "FIRMWARE_TAG=${FIRMWARE_TAG}")
 
