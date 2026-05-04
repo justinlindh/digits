@@ -321,11 +321,28 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 
 func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
 	user := auth.UserFromContext(r.Context())
-	hh := h.activeHousehold(r)
-	cd := newChromeData(page, user, hh)
-	if user != nil && h.householdStore != nil {
-		cd.Households, _ = h.householdStore.GetForUser(r.Context(), user.ID)
+	if user == nil || h.householdStore == nil {
+		return newChromeData(page, user, nil)
 	}
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
+	if err != nil || len(households) == 0 {
+		return newChromeData(page, user, nil)
+	}
+	active := households[0]
+	cookie, cookieErr := r.Cookie(auth.CookieName)
+	if cookieErr == nil && h.authStore != nil {
+		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if activeID != "" {
+			for _, hh := range households {
+				if hh.ID == activeID {
+					active = hh
+					break
+				}
+			}
+		}
+	}
+	cd := newChromeData(page, user, active)
+	cd.Households = households
 	return cd
 }
 

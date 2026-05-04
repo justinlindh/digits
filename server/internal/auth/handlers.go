@@ -208,11 +208,15 @@ func LoginRedirectFor(u *User) string {
 	return "/"
 }
 
+func isSafeRedirect(path string) bool {
+	return path != "" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//")
+}
+
 // safeReturnTo validates a returnTo path to prevent open redirect attacks.
 // It only allows paths that start with "/" but not "//" (which browsers treat as
 // protocol-relative URLs). Falls back to LoginRedirectFor when the path is invalid.
 func safeReturnTo(returnTo string, user *User) string {
-	if returnTo != "" && strings.HasPrefix(returnTo, "/") && !strings.HasPrefix(returnTo, "//") {
+	if isSafeRedirect(returnTo) {
 		return returnTo
 	}
 	return LoginRedirectFor(user)
@@ -231,10 +235,8 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	clearSessionCookie(w, h.cookieDomain)
 	redirect := "/auth/login"
-	if redir := r.FormValue("redirect"); redir != "" {
-		if strings.HasPrefix(redir, "/") && !strings.HasPrefix(redir, "//") {
-			redirect = redir
-		}
+	if redir := r.FormValue("redirect"); isSafeRedirect(redir) {
+		redirect = redir
 	}
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }

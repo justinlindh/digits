@@ -24,34 +24,31 @@ type settingsData struct {
 	Error          string
 	Members        []settingsMember
 	PendingInvites []*household.HouseholdInvite
-	Households     []*household.Household
 }
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	hh := h.activeHousehold(r)
 
 	data := settingsData{
-		chromeData: newChromeData("settings", user, hh),
+		chromeData: h.newChromeDataWithHouseholds(r, "settings"),
 		Saved:      r.URL.Query().Get("saved") == "1",
 		Error:      r.URL.Query().Get("error"),
 	}
 
+	hh := data.Household
 	if hh != nil && user != nil {
-		members, _ := h.householdStore.GetMembers(r.Context(), hh.ID)
+		members, _ := h.householdStore.GetMembersWithUsers(r.Context(), hh.ID)
 		for _, m := range members {
-			u, _ := h.authStore.GetUserByID(r.Context(), m.UserID)
-			sm := settingsMember{UserID: m.UserID, IsYou: m.UserID == user.ID}
-			if u != nil {
-				sm.Email = u.Email
-				sm.Name = u.Name
-			}
-			data.Members = append(data.Members, sm)
+			data.Members = append(data.Members, settingsMember{
+				UserID: m.UserID,
+				Email:  m.Email,
+				Name:   m.Name,
+				IsYou:  m.UserID == user.ID,
+			})
 		}
 		if h.inviteStore != nil {
 			data.PendingInvites, _ = h.inviteStore.GetPendingForHousehold(r.Context(), hh.ID)
 		}
-		data.Households, _ = h.householdStore.GetForUser(r.Context(), user.ID)
 	}
 
 	renderWith(w, h.tmplSettings, layoutFor(r), data)
@@ -82,7 +79,6 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
-
 
 func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
 	if h.householdStore == nil {
@@ -262,18 +258,15 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	members, err := h.householdStore.GetMembers(r.Context(), hh.ID)
+	isMember, err := h.householdStore.IsMemberByEmail(r.Context(), hh.ID, inviteEmail)
 	if err != nil {
-		slog.Error("list members failed", "err", err)
+		slog.Error("check member email failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	for _, m := range members {
-		u, _ := h.authStore.GetUserByID(r.Context(), m.UserID)
-		if u != nil && strings.EqualFold(u.Email, inviteEmail) {
-			http.Redirect(w, r, "/settings?error=already+a+member", http.StatusSeeOther)
-			return
-		}
+	if isMember {
+		http.Redirect(w, r, "/settings?error=already+a+member", http.StatusSeeOther)
+		return
 	}
 
 	inv, err := h.inviteStore.CreateInvite(r.Context(), hh.ID, inviteEmail, user.ID)

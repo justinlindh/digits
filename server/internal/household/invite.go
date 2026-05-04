@@ -13,6 +13,12 @@ import (
 
 const inviteTTL = 7 * 24 * time.Hour
 
+const (
+	InviteStatusPending   = "pending"
+	InviteStatusAccepted  = "accepted"
+	InviteStatusCancelled = "cancelled"
+)
+
 type HouseholdInvite struct {
 	ID          string
 	HouseholdID string

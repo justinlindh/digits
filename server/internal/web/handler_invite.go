@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -23,11 +24,24 @@ type inviteData struct {
 	LogoutURL     string
 }
 
+func (h *Handler) userFromSessionCookie(r *http.Request) (*auth.User, string) {
+	cookie, err := r.Cookie(auth.CookieName)
+	if err != nil {
+		return nil, ""
+	}
+	sess, err := h.authStore.ValidateSession(r.Context(), cookie.Value)
+	if err != nil {
+		return nil, ""
+	}
+	user, _ := h.authStore.GetUserByID(r.Context(), sess.UserID)
+	return user, cookie.Value
+}
+
 func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 
 	inv, err := h.inviteStore.GetByToken(r.Context(), token)
-	if err != nil || inv.Status != "pending" || inv.ExpiresAt.Before(time.Now()) {
+	if err != nil || inv.Status != household.InviteStatusPending || inv.ExpiresAt.Before(time.Now()) {
 		renderWith(w, h.tmplInvite, "layout-v2.html", inviteData{
 			Page:    "invite",
 			Version: version.Version,
@@ -61,13 +75,7 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 		GoogleEnabled: h.googleAuth != nil && h.googleAuth.Enabled(),
 	}
 
-	// This is a public route; try to load user from session cookie if present
-	var user *auth.User
-	if cookie, cookieErr := r.Cookie(auth.CookieName); cookieErr == nil {
-		if sess, sessErr := h.authStore.ValidateSession(r.Context(), cookie.Value); sessErr == nil {
-			user, _ = h.authStore.GetUserByID(r.Context(), sess.UserID)
-		}
-	}
+	user, _ := h.userFromSessionCookie(r)
 
 	if user == nil {
 		data.State = "login"
@@ -85,20 +93,14 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 
-	var user *auth.User
-	cookie, err := r.Cookie(auth.CookieName)
-	if err == nil {
-		if sess, sessErr := h.authStore.ValidateSession(r.Context(), cookie.Value); sessErr == nil {
-			user, _ = h.authStore.GetUserByID(r.Context(), sess.UserID)
-		}
-	}
+	user, sessionToken := h.userFromSessionCookie(r)
 	if user == nil {
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
 
 	inv, err := h.inviteStore.GetByToken(r.Context(), token)
-	if err != nil || inv.Status != "pending" || inv.ExpiresAt.Before(time.Now()) {
+	if err != nil || inv.Status != household.InviteStatusPending || inv.ExpiresAt.Before(time.Now()) {
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
@@ -120,7 +122,7 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.authStore.SetActiveHousehold(r.Context(), cookie.Value, inv.HouseholdID); err != nil {
+	if err := h.authStore.SetActiveHousehold(r.Context(), sessionToken, inv.HouseholdID); err != nil {
 		slog.Error("set active household failed", "err", err)
 	}
 
