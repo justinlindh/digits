@@ -14,6 +14,16 @@
 #define BOARD_REV_FLASH_OFFSET 0x1FF000u
 #define BOARD_REV_FLASH_ADDR   (XIP_BASE + BOARD_REV_FLASH_OFFSET)
 
+// Device phase byte: offset +1 in the same 4 KB sector as the rev byte.
+// Written by digitsd via the STATE:SET UART command; read at boot to pick
+// the initial LED pattern before the Pi has fully started.
+// 0xFF (unprogrammed flash) and 0x00 both map to SETUP.
+#define DEVICE_PHASE_FLASH_OFFSET (BOARD_REV_FLASH_OFFSET + 1)
+#define DEVICE_PHASE_FLASH_ADDR   (XIP_BASE + DEVICE_PHASE_FLASH_OFFSET)
+#define DEVICE_PHASE_SETUP    0x00
+#define DEVICE_PHASE_UNPAIRED 0x01
+#define DEVICE_PHASE_PAIRED   0x02
+
 typedef struct {
     const char* name;          // e.g. "v1", "v2"
     uint8_t rev_byte;          // ASCII rev character expected in the flash marker

@@ -84,6 +84,15 @@ int main(void) {
     uart_proto_init();
     phone_fsm_init();
 
+    {
+        uint8_t phase = *(const volatile uint8_t *)DEVICE_PHASE_FLASH_ADDR;
+        switch (phase) {
+        case DEVICE_PHASE_UNPAIRED: led_set_mode(LED_MODE_DOUBLE_PULSE); break;
+        case DEVICE_PHASE_PAIRED:   led_set_mode(LED_MODE_HEARTBEAT);    break;
+        default:                    led_set_mode(LED_MODE_BLINK);        break;
+        }
+    }
+
     bool banner_printed = false;
 
     uart_proto_send("STATUS:READY");

@@ -13,6 +13,8 @@
 #include "tone.h"
 #include "uart_proto.h"
 
+#include "hardware/flash.h"
+#include "hardware/sync.h"
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
 #include "pico/stdlib.h"
@@ -140,6 +142,26 @@ static void set_state(phone_state_t next) {
 
     printf("FSM:%s\n", phone_fsm_state_name(s_state));
     stdio_flush();
+}
+
+// Writes phase to the device phase byte in flash. Reads the entire 4 KB
+// sector, patches byte [1], erases, and reprograms. Interrupts must be
+// disabled during the flash operation (RP2040 requirement). Returns true if
+// the written value reads back correctly.
+static bool write_device_phase(uint8_t phase) {
+    uint8_t sector[FLASH_SECTOR_SIZE];
+    const uint8_t *src = (const uint8_t *)(XIP_BASE + BOARD_REV_FLASH_OFFSET);
+    for (size_t i = 0; i < FLASH_SECTOR_SIZE; i++) {
+        sector[i] = src[i];
+    }
+    sector[1] = phase;  // phase is at offset +1 within the sector
+
+    uint32_t ints = save_and_disable_interrupts();
+    flash_range_erase(BOARD_REV_FLASH_OFFSET, FLASH_SECTOR_SIZE);
+    flash_range_program(BOARD_REV_FLASH_OFFSET, sector, FLASH_SECTOR_SIZE);
+    restore_interrupts(ints);
+
+    return *(const volatile uint8_t *)DEVICE_PHASE_FLASH_ADDR == phase;
 }
 
 static void process_pi_command(const char *cmd) {
@@ -344,6 +366,31 @@ static void process_pi_command(const char *cmd) {
             sleep_us(50);
         }
         stdio_flush();
+    } else if (strncmp(cmd, "STATE:SET:", 10) == 0) {
+        const char *phase_name = cmd + 10;
+        uint8_t phase_val;
+        led_mode_t led_mode;
+        if (strcmp(phase_name, "SETUP") == 0) {
+            phase_val = DEVICE_PHASE_SETUP;
+            led_mode  = LED_MODE_BLINK;
+        } else if (strcmp(phase_name, "UNPAIRED") == 0) {
+            phase_val = DEVICE_PHASE_UNPAIRED;
+            led_mode  = LED_MODE_DOUBLE_PULSE;
+        } else if (strcmp(phase_name, "PAIRED") == 0) {
+            phase_val = DEVICE_PHASE_PAIRED;
+            led_mode  = LED_MODE_HEARTBEAT;
+        } else {
+            char resp[64];
+            snprintf(resp, sizeof(resp), "STATE:SET:ERR:unknown phase %s", phase_name);
+            uart_proto_send(resp);
+            return;
+        }
+        if (!write_device_phase(phase_val)) {
+            uart_proto_send("STATE:SET:ERR:flash verify failed");
+            return;
+        }
+        led_set_mode(led_mode);
+        uart_proto_send("STATE:SET:OK");
     }
 }
 
