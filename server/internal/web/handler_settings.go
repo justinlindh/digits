@@ -205,3 +205,19 @@ func (h *Handler) handleSettingsAppearance(w http.ResponseWriter, r *http.Reques
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
+
+func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (h *Handler) handleHouseholdMemberRemovePost(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (h *Handler) handleHouseholdSwitchPost(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
