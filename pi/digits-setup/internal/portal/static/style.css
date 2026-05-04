@@ -198,3 +198,17 @@ header h1 {
 #ssid-manual {
   margin-top: 8px;
 }
+
+.banner {
+  background: #2d2100;
+  border: 1px solid #9e6a03;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.banner p {
+  margin: 0;
+  color: #d29922;
+  font-size: 14px;
+}

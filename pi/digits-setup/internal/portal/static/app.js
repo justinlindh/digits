@@ -6,11 +6,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSubmit = document.getElementById('btn-submit');
   const statusEl = document.getElementById('status');
   const stepWifi = document.getElementById('step-wifi');
+  const stepVerifying = document.getElementById('step-verifying');
   const stepDone = document.getElementById('step-done');
+  const errorBanner = document.getElementById('error-banner');
+  const errorBannerText = document.getElementById('error-banner-text');
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg;
     statusEl.className = 'status ' + (isError ? 'error' : 'success');
+  }
+
+  async function checkStatus() {
+    try {
+      const resp = await fetch('/api/status');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.verifying) {
+        stepWifi.classList.remove('active');
+        stepVerifying.classList.add('active');
+        setTimeout(() => window.location.reload(), 35000);
+        return;
+      }
+      if (data.last_attempt && data.last_attempt.error) {
+        errorBannerText.textContent = data.last_attempt.error;
+        errorBanner.classList.remove('hidden');
+      }
+    } catch (e) {
+      // Status endpoint not available
+    }
   }
 
   async function scanNetworks() {
@@ -29,17 +52,16 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const net of networks) {
           const opt = document.createElement('option');
           opt.value = net.ssid;
-          opt.textContent = `${net.ssid} (${net.signal} dBm)`;
+          opt.textContent = net.ssid + ' (' + net.signal + ' dBm)';
           ssidSelect.appendChild(opt);
         }
       }
-      // Always add hidden network option at the end
       const hiddenOpt = document.createElement('option');
       hiddenOpt.value = '__hidden__';
       hiddenOpt.textContent = 'Hidden network...';
       ssidSelect.appendChild(hiddenOpt);
     } catch (err) {
-      ssidSelect.innerHTML = '<option value="">Scan failed — tap ↻</option>';
+      ssidSelect.innerHTML = '<option value="">Scan failed</option>';
     } finally {
       ssidSelect.disabled = false;
       btnRefresh.disabled = false;
@@ -69,7 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnSubmit.disabled = true;
-    setStatus('Configuring...', false);
+    errorBanner.classList.add('hidden');
+    setStatus('', false);
 
     try {
       const resp = await fetch('/api/configure', {
@@ -82,12 +105,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }),
       });
 
+      if (resp.status === 202) {
+        stepWifi.classList.remove('active');
+        stepVerifying.classList.add('active');
+        setTimeout(() => window.location.reload(), 35000);
+        return;
+      }
+
       if (!resp.ok) {
         const text = await resp.text();
         throw new Error(text || 'Configuration failed');
       }
 
-      // Success — show done screen
       stepWifi.classList.remove('active');
       stepDone.classList.add('active');
     } catch (err) {
@@ -96,6 +125,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Initial scan
+  checkStatus();
   scanNetworks();
 });

@@ -13,6 +13,10 @@
       <p class="subtitle">Let's get your phone connected</p>
     </header>
 
+    <div id="error-banner" class="banner hidden">
+      <p id="error-banner-text"></p>
+    </div>
+
     <div id="step-wifi" class="step active">
       <div class="panel">
         <h2>Wi-Fi Network</h2>
@@ -34,6 +38,14 @@
 
       <button id="btn-submit" class="btn-primary">Connect</button>
       <div id="status" class="status"></div>
+    </div>
+
+    <div id="step-verifying" class="step">
+      <div class="panel done-panel">
+        <h2>Verifying Wi-Fi...</h2>
+        <p>Testing your connection. This may take up to 30 seconds.</p>
+        <p>If the connection fails, this page will reload automatically.</p>
+      </div>
     </div>
 
     <div id="step-done" class="step">
