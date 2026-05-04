@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// ErrInvalidRequest is returned by Configure for user-facing validation
+// ErrInvalidRequest is returned by SaveToBackup for user-facing validation
 // failures (missing SSID, etc.) so handlers can return 400 vs. 500.
 var ErrInvalidRequest = errors.New("invalid configure request")
 
@@ -86,8 +86,8 @@ const apCheckBinary = "/usr/local/bin/digits-ap-check"
 // SystemAPController calls `digits-ap-check down` as a detached transient
 // systemd unit via systemd-run --no-block. We cannot invoke digits-ap-check
 // directly as a child process because its do_ap_down routine stops
-// digits-setup.service, which -- under systemd's default
-// KillMode=control-group -- terminates every process in the service's
+// digits-setup.service, which, under systemd's default
+// KillMode=control-group, terminates every process in the service's
 // cgroup including a child digits-ap-check. By spawning digits-ap-check in
 // its own transient cgroup, the teardown script survives the death of its
 // caller and runs to completion.
@@ -110,12 +110,6 @@ func (SystemAPController) Down() error {
 	return nil
 }
 
-// Configure writes Wi-Fi config using production filesystem and mount
-// implementations. Tests call configureWithDeps directly with mocks.
-func Configure(req ConfigRequest) error {
-	return configureWithDeps(req, osFileSystem{}, systemMounter{})
-}
-
 const (
 	backupDir          = "/data/wifi"
 	operationalDir     = "/etc/NetworkManager/system-connections"
@@ -132,14 +126,16 @@ func uuidForSSID(ssid string) string {
 	return s[0:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:32]
 }
 
-// configureWithDeps performs configuration with injectable dependencies.
-//
-// The flag at wifiConfiguredFlag is written last so a partial failure during
-// the operational write does not promote the device to station mode on next
-// boot with a half-written config.
-func configureWithDeps(req ConfigRequest, fs fileSystem, m mounter) error {
+// SaveToBackup writes Wi-Fi config to the backup directory only (not
+// operational, no flag). Returns the backup file path so the caller can pass
+// it to Verify and CommitToOperational.
+func SaveToBackup(req ConfigRequest) (string, error) {
+	return saveToBackupWithDeps(req, osFileSystem{})
+}
+
+func saveToBackupWithDeps(req ConfigRequest, fs fileSystem) (string, error) {
 	if req.SSID == "" {
-		return fmt.Errorf("%w: ssid is required", ErrInvalidRequest)
+		return "", fmt.Errorf("%w: ssid is required", ErrInvalidRequest)
 	}
 
 	safeName := SanitizeSSID(req.SSID)
@@ -177,15 +173,31 @@ method=auto
 
 	backupPath := filepath.Join(backupDir, filename)
 	if err := writeAtomic(fs, backupPath, data, 0600); err != nil {
-		return fmt.Errorf("backup write: %w", err)
+		return "", fmt.Errorf("backup write: %w", err)
 	}
+	return backupPath, nil
+}
+
+// CommitToOperational copies the backup config to the operational directory,
+// does legacy cleanup, and writes the wifi-configured flag.
+func CommitToOperational(backupPath string) error {
+	return commitWithDeps(backupPath, osFileSystem{}, systemMounter{})
+}
+
+func commitWithDeps(backupPath string, fs fileSystem, m mounter) error {
+	data, err := os.ReadFile(backupPath)
+	if err != nil {
+		return fmt.Errorf("read backup: %w", err)
+	}
+
+	filename := filepath.Base(backupPath)
 
 	if err := m.RemountRW(); err != nil {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 	defer func() {
 		if err := m.RemountRO(); err != nil {
-			log.Printf("configure: remount ro failed: %v", err)
+			log.Printf("commit: remount ro failed: %v", err)
 		}
 	}()
 
@@ -202,7 +214,7 @@ method=auto
 		filepath.Join(operationalDir, legacyConnFilename),
 	} {
 		if err := fs.Remove(p); err != nil && !os.IsNotExist(err) {
-			log.Printf("configure: legacy cleanup of %s failed: %v", p, err)
+			log.Printf("commit: legacy cleanup of %s failed: %v", p, err)
 		}
 	}
 
@@ -211,6 +223,18 @@ method=auto
 	}
 
 	return nil
+}
+
+// Configure writes Wi-Fi config using the two-step save-then-commit flow.
+// It exists for callers that do not need verification between steps. The
+// handler will switch to SaveToBackup + Verify + CommitToOperational once
+// the onboarding flow wires up the verify step.
+func Configure(req ConfigRequest) error {
+	backupPath, err := SaveToBackup(req)
+	if err != nil {
+		return err
+	}
+	return CommitToOperational(backupPath)
 }
 
 // writeAtomic writes data to path via a sibling temp file and atomic rename.
