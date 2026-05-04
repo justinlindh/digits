@@ -382,6 +382,35 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (25);
     END IF;
 END $$;`,
+
+		// v26: household user invites + multi-household session scoping + auth return_to
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 26) THEN
+
+        CREATE TABLE IF NOT EXISTS household_invites (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            household_id  UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+            email         TEXT NOT NULL,
+            invited_by    UUID NOT NULL REFERENCES users(id),
+            token         TEXT NOT NULL UNIQUE,
+            status        TEXT NOT NULL DEFAULT 'pending',
+            created_at    TIMESTAMPTZ DEFAULT NOW(),
+            accepted_at   TIMESTAMPTZ,
+            expires_at    TIMESTAMPTZ NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_household_invites_pending
+            ON household_invites (household_id, email) WHERE status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_household_invites_token
+            ON household_invites (token);
+
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_household_id UUID REFERENCES households(id);
+
+        ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS return_to TEXT;
+
+        INSERT INTO schema_version (version) VALUES (26);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
