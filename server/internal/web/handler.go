@@ -240,6 +240,7 @@ type Handler struct {
 	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
 	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
 	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
+	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
 	// Updates
 	Releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
@@ -437,6 +438,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		magicVerifyLimiter: ratelimit.New(10, time.Minute),
 		googleLoginLimiter: ratelimit.New(10, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
+		inviteLimiter:      ratelimit.New(5, time.Minute),
 		metrics:            deps.Metrics,
 	}, nil
 }
@@ -533,7 +535,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
 	protected.HandleFunc("POST /settings/appearance", h.handleSettingsAppearance)
-	protected.HandleFunc("POST /settings/household/invite", h.handleHouseholdInvitePost)
+	protected.Handle("POST /settings/household/invite", h.inviteLimiter.Middleware(http.HandlerFunc(h.handleHouseholdInvitePost)))
 	protected.HandleFunc("POST /settings/household/invite/{id}/cancel", h.handleHouseholdInviteCancelPost)
 	protected.HandleFunc("POST /settings/household/members/{id}/remove", h.handleHouseholdMemberRemovePost)
 	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)

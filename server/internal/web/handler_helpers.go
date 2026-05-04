@@ -227,15 +227,11 @@ func userDisplayLabel(u *auth.User) string {
 // householdNumbers returns the set of phone numbers belonging to the
 // authenticated user's household. Returns nil if the user has no household.
 func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.householdStore == nil {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		return nil
-	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
 		return nil
 	}
