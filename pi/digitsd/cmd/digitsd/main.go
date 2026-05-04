@@ -1683,7 +1683,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *modeFlag == "recovery" {
+	if *modeFlag == "recovery" || os.Getpid() == 1 {
+		if os.Getpid() == 1 {
+			*serialDev = "/dev/ttyAMA0"
+			*toneDir = "/tones"
+		}
 		runRecoveryMode()
 		return
 	}
