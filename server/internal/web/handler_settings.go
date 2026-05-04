@@ -269,6 +269,17 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	pending, err := h.inviteStore.IsPendingForHouseholdEmail(r.Context(), hh.ID, inviteEmail)
+	if err != nil {
+		slog.Error("check pending invite failed", "err", err)
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
+	if pending {
+		http.Redirect(w, r, "/settings?error=already+invited", http.StatusSeeOther)
+		return
+	}
+
 	inv, err := h.inviteStore.CreateInvite(r.Context(), hh.ID, inviteEmail, user.ID)
 	if err != nil {
 		slog.Error("create invite failed", "err", err)
@@ -291,7 +302,17 @@ func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
+	hh := h.activeHousehold(r)
+	if hh == nil {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
 	inviteID := r.PathValue("id")
+	inv, err := h.inviteStore.GetByID(r.Context(), inviteID)
+	if err != nil || inv.HouseholdID != hh.ID {
+		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+		return
+	}
 	if err := h.inviteStore.CancelInvite(r.Context(), inviteID); err != nil {
 		slog.Error("cancel invite failed", "err", err)
 	}
@@ -359,9 +380,5 @@ func (h *Handler) handleHouseholdSwitchPost(w http.ResponseWriter, r *http.Reque
 		slog.Error("switch household failed", "err", err)
 	}
 
-	referer := r.Header.Get("Referer")
-	if referer == "" {
-		referer = "/"
-	}
-	http.Redirect(w, r, referer, http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

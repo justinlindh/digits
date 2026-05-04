@@ -209,7 +209,7 @@ func LoginRedirectFor(u *User) string {
 }
 
 func isSafeRedirect(path string) bool {
-	return path != "" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//")
+	return path != "" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "/\\")
 }
 
 // safeReturnTo validates a returnTo path to prevent open redirect attacks.

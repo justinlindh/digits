@@ -77,6 +77,20 @@ func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invi
 	return inv, nil
 }
 
+// GetByID looks up an invite by its ID.
+func (s *InviteStore) GetByID(ctx context.Context, id string) (*HouseholdInvite, error) {
+	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
+		SELECT `+inviteColumns+` FROM household_invites WHERE id = $1
+	`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("invite not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get invite by id: %w", err)
+	}
+	return inv, nil
+}
+
 func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdInvite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		SELECT `+inviteColumns+` FROM household_invites WHERE token = $1
