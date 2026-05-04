@@ -89,7 +89,7 @@ int main(void) {
         switch (phase) {
         case DEVICE_PHASE_UNPAIRED: led_set_mode(LED_MODE_DOUBLE_PULSE); break;
         case DEVICE_PHASE_PAIRED:   led_set_mode(LED_MODE_HEARTBEAT);    break;
-        default:                    led_set_mode(LED_MODE_BLINK);        break;
+        default:                    led_set_mode(LED_MODE_FAST_BLINK);   break;
         }
     }
 

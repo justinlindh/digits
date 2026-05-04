@@ -4,7 +4,8 @@
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
-#define LED_BLINK_INTERVAL_US 500000
+#define LED_BLINK_INTERVAL_US      500000
+#define LED_FAST_BLINK_INTERVAL_US 150000
 
 // DOUBLE_PULSE: 150ms on, 150ms off, 150ms on, 1550ms off (2s cycle)
 #define LED_DP_ON_US   150000
@@ -53,6 +54,15 @@ void led_update(void) {
 
     if (s_mode == LED_MODE_BLINK) {
         if (elapsed >= LED_BLINK_INTERVAL_US) {
+            s_led_on = !s_led_on;
+            gpio_put(board->led_pin, s_led_on ? 1 : 0);
+            s_last_toggle = now;
+        }
+        return;
+    }
+
+    if (s_mode == LED_MODE_FAST_BLINK) {
+        if (elapsed >= LED_FAST_BLINK_INTERVAL_US) {
             s_led_on = !s_led_on;
             gpio_put(board->led_pin, s_led_on ? 1 : 0);
             s_last_toggle = now;

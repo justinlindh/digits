@@ -198,6 +198,8 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_OFF);
     } else if (strcmp(cmd, "LED:BLINK") == 0) {
         led_set_mode(LED_MODE_BLINK);
+    } else if (strcmp(cmd, "LED:FAST_BLINK") == 0) {
+        led_set_mode(LED_MODE_FAST_BLINK);
     } else if (strcmp(cmd, "LED:DOUBLE_PULSE") == 0) {
         led_set_mode(LED_MODE_DOUBLE_PULSE);
     } else if (strcmp(cmd, "LED:HEARTBEAT") == 0) {
@@ -375,7 +377,7 @@ static void process_pi_command(const char *cmd) {
         led_mode_t led_mode;
         if (strcmp(phase_name, "SETUP") == 0) {
             phase_val = DEVICE_PHASE_SETUP;
-            led_mode  = LED_MODE_BLINK;
+            led_mode  = LED_MODE_FAST_BLINK;
         } else if (strcmp(phase_name, "UNPAIRED") == 0) {
             phase_val = DEVICE_PHASE_UNPAIRED;
             led_mode  = LED_MODE_DOUBLE_PULSE;
