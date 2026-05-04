@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -152,7 +153,11 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
-func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
+// handleUserPrefPost shares the boilerplate between the theme/CRT/appearance
+// post handlers: require a session, parse the form, read field, persist via
+// save. On any failure it redirects back to /settings; on success it
+// redirects to /settings?saved=1 so the page can flash a confirmation.
+func (h *Handler) handleUserPrefPost(w http.ResponseWriter, r *http.Request, field string, save func(ctx context.Context, userID, value string) error) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
@@ -162,51 +167,31 @@ func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	theme := auth.Theme(r.FormValue("theme"))
-	if err := h.authStore.SetTheme(r.Context(), user.ID, theme); err != nil {
-		slog.Error("set theme failed", "err", err, "theme", theme)
+	value := r.FormValue(field)
+	if err := save(r.Context(), user.ID, value); err != nil {
+		slog.Error("set "+field+" failed", "err", err, field, value)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsTheme(w http.ResponseWriter, r *http.Request) {
+	h.handleUserPrefPost(w, r, "theme", func(ctx context.Context, userID, value string) error {
+		return h.authStore.SetTheme(ctx, userID, auth.Theme(value))
+	})
 }
 
 func (h *Handler) handleSettingsCRTMode(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	mode := auth.CRTMode(r.FormValue("crt_mode"))
-	if err := h.authStore.SetCRTMode(r.Context(), user.ID, mode); err != nil {
-		slog.Error("set crt_mode failed", "err", err, "crt_mode", mode)
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+	h.handleUserPrefPost(w, r, "crt_mode", func(ctx context.Context, userID, value string) error {
+		return h.authStore.SetCRTMode(ctx, userID, auth.CRTMode(value))
+	})
 }
 
 func (h *Handler) handleSettingsAppearance(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	appearance := auth.Appearance(r.FormValue("appearance"))
-	if err := h.authStore.SetAppearance(r.Context(), user.ID, appearance); err != nil {
-		slog.Error("set appearance failed", "err", err, "appearance", appearance)
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+	h.handleUserPrefPost(w, r, "appearance", func(ctx context.Context, userID, value string) error {
+		return h.authStore.SetAppearance(ctx, userID, auth.Appearance(value))
+	})
 }
 
 func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Request) {
