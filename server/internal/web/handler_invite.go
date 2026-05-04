@@ -8,20 +8,16 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/household"
-	"github.com/justinlindh/digits/server/internal/version"
 )
 
 type inviteData struct {
-	Page          string
-	Version       string
+	chromeData
 	Token         string
-	HouseholdName string
 	InviterName   string
 	InviteEmail   string
 	State         string
 	CurrentEmail  string
 	GoogleEnabled bool
-	LogoutURL     string
 }
 
 func (h *Handler) userFromSessionCookie(r *http.Request) (*auth.User, string) {
@@ -43,9 +39,8 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 	inv, err := h.inviteStore.GetByToken(r.Context(), token)
 	if err != nil || inv.Status != household.InviteStatusPending || inv.ExpiresAt.Before(time.Now()) {
 		renderWith(w, h.tmplInvite, "layout-v2.html", inviteData{
-			Page:    "invite",
-			Version: version.Version,
-			State:   "invalid",
+			chromeData: newChromeData("invite", nil, nil),
+			State:      "invalid",
 		})
 		return
 	}
@@ -54,7 +49,8 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("invite: household lookup failed", "err", err)
 		renderWith(w, h.tmplInvite, "layout-v2.html", inviteData{
-			Page: "invite", Version: version.Version, State: "invalid",
+			chromeData: newChromeData("invite", nil, nil),
+			State:      "invalid",
 		})
 		return
 	}
@@ -65,17 +61,15 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 		inviterName = userDisplayLabel(inviter)
 	}
 
+	user, _ := h.userFromSessionCookie(r)
+
 	data := inviteData{
-		Page:          "invite",
-		Version:       version.Version,
+		chromeData:    newChromeData("invite", user, hh),
 		Token:         token,
-		HouseholdName: hh.Name,
 		InviterName:   inviterName,
 		InviteEmail:   inv.Email,
 		GoogleEnabled: h.googleAuth != nil && h.googleAuth.Enabled(),
 	}
-
-	user, _ := h.userFromSessionCookie(r)
 
 	if user == nil {
 		data.State = "login"
