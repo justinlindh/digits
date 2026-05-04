@@ -32,43 +32,15 @@ func ClientIP(r *http.Request) string {
 	return host
 }
 
-// privateNets is built once at init from the canonical CIDRs we treat
-// as "LAN-only" for display purposes: RFC1918 plus loopback (v4 and v6),
-// link-local (v4 and v6), and IPv6 ULA. Non-private ranges (public,
-// CGNAT 100.64/10) are explicitly NOT included.
-var privateNets []*net.IPNet
-
-func init() {
-	for _, cidr := range []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"::1/128",
-		"fe80::/10",
-		"fc00::/7",
-	} {
-		_, n, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic("httputil: bad private CIDR " + cidr + ": " + err.Error())
-		}
-		privateNets = append(privateNets, n)
-	}
-}
-
-// IsPrivateAddr reports whether ip parses as an IP address inside one of
-// the private ranges enumerated above. Empty or unparseable input returns
-// false.
+// IsPrivateAddr reports whether ip parses as an address we treat as
+// "LAN-only" for display purposes: RFC1918 / RFC4193 (IsPrivate), loopback
+// (IsLoopback), or link-local unicast (IsLinkLocalUnicast). Non-private
+// ranges (public, CGNAT 100.64/10) are excluded by all three predicates.
+// Empty or unparseable input returns false.
 func IsPrivateAddr(ip string) bool {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		return false
 	}
-	for _, n := range privateNets {
-		if n.Contains(parsed) {
-			return true
-		}
-	}
-	return false
+	return parsed.IsPrivate() || parsed.IsLoopback() || parsed.IsLinkLocalUnicast()
 }
