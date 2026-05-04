@@ -103,6 +103,24 @@ func run(ctx context.Context) error {
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
+
+	// Redis pub/sub for multi-replica signaling. When REDIS_URL is set,
+	// the hub publishes to a shared channel when a target device is not
+	// connected to this pod. Other pods subscribe and deliver locally.
+	if cfg.RedisURL != "" {
+		bridge, err := signaling.NewRedisBridge(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("connect redis: %w", err)
+		}
+		defer func() { _ = bridge.Close() }()
+		if err := bridge.Ping(ctx); err != nil {
+			return fmt.Errorf("redis ping: %w", err)
+		}
+		hub.SetRedis(bridge)
+		go hub.Run(ctx)
+		slog.Info("redis pub/sub enabled for multi-replica signaling")
+	}
+
 	tracker := calls.New(database)
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
