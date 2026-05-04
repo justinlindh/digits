@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -42,9 +43,14 @@ func (g *GoogleAuth) Enabled() bool {
 // HandleLogin redirects to Google consent screen.
 func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	state, _ := randomToken(16)
+	returnTo := r.URL.Query().Get("return_to")
+	cookieVal := state
+	if returnTo != "" {
+		cookieVal = state + "|" + returnTo
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
-		Value:    state,
+		Value:    cookieVal,
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
@@ -59,7 +65,17 @@ func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Verify state
 	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
+	if err != nil {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	cookieVal := stateCookie.Value
+	var returnTo string
+	if idx := strings.Index(cookieVal, "|"); idx >= 0 {
+		returnTo = cookieVal[idx+1:]
+		cookieVal = cookieVal[:idx]
+	}
+	if cookieVal != r.URL.Query().Get("state") {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -152,5 +168,5 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
 }

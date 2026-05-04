@@ -220,16 +220,17 @@ func (s *Store) RefreshSession(ctx context.Context, token string, ttl time.Durat
 }
 
 // CreateMagicLink generates a single-use login token for passwordless email auth.
-// Returns the raw token to embed in the email link.
-func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Duration) (string, error) {
+// Returns the raw token to embed in the email link. returnTo is an optional
+// path to redirect to after authentication; pass "" to use the default.
+func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Duration, returnTo string) (string, error) {
 	token, err := randomToken(32)
 	if err != nil {
 		return "", err
 	}
 	hash := device.HashToken(token)
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO magic_links (email, token_hash, expires_at) VALUES ($1, $2, $3)`,
-		email, hash, time.Now().Add(ttl),
+		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
+		email, hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
 	)
 	if err != nil {
 		return "", fmt.Errorf("create magic link: %w", err)
@@ -238,24 +239,25 @@ func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Dura
 }
 
 // ValidateMagicLink checks and atomically consumes a magic link token.
-// Returns the associated email on success. Returns an error if the token
-// is invalid, expired, or has already been used.
-func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, error) {
+// Returns the associated email and optional returnTo path on success.
+// Returns an error if the token is invalid, expired, or has already been used.
+func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, string, error) {
 	hash := device.HashToken(token)
 	var email string
+	var returnTo sql.NullString
 	err := s.db.QueryRowContext(ctx,
 		`UPDATE magic_links SET used = TRUE
 		 WHERE token_hash = $1 AND expires_at > NOW() AND used = FALSE
-		 RETURNING email`,
+		 RETURNING email, return_to`,
 		hash,
-	).Scan(&email)
+	).Scan(&email, &returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("invalid, expired, or already used magic link")
+		return "", "", fmt.Errorf("invalid, expired, or already used magic link")
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return email, nil
+	return email, returnTo.String, nil
 }
 
 // CountUsers returns the total number of user accounts.
