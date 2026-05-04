@@ -12,7 +12,8 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "digits.signald.labels" . | nindent 8 }}
+        {{- include "digits.signald.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: {{ include "digits.name" . }}
     spec:
       securityContext:
         runAsNonRoot: true

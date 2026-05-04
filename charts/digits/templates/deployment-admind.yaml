@@ -12,7 +12,8 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "digits.admind.labels" . | nindent 8 }}
+        {{- include "digits.admind.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: {{ include "digits.name" . }}
     spec:
       securityContext:
         runAsNonRoot: true
@@ -50,6 +51,11 @@ spec:
                   name: {{ include "digits.fullname" . }}-admindb-app
                   key: uri
             {{- end }}
+            - name: ADMIN_STATS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admind.statsSecretRef.name }}
+                  key: {{ .Values.admind.statsSecretRef.key }}
             {{- if .Values.observability.enabled }}
             {{- if .Values.observability.otelEndpoint }}
             - name: OTEL_SERVICE_NAME

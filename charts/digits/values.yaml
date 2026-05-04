@@ -21,6 +21,10 @@ admind:
   envFrom: []
   # Container port for the admin HTTP listener.
   port: 9090
+  # Secret reference for ADMIN_STATS_SECRET (remapped from the shared secret).
+  statsSecretRef:
+    name: digits-secrets
+    key: ADMIN_SECRET
 
 ingress:
   enabled: false
