@@ -53,7 +53,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := linksData{
-		chromeData:  newChromeData("links", user, myHousehold),
+		chromeData:  h.newChromeDataWithHouseholds(r, "links"),
 		CreatedCode: r.URL.Query().Get("created"),
 		Accepted:    r.URL.Query().Get("accepted") == "1",
 		Revoked:     r.URL.Query().Get("revoked") == "1",

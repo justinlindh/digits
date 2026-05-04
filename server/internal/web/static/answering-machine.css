@@ -2191,3 +2191,23 @@ body.am .deck-kick-confirm .deck-confirm__go {
   .am-transport { padding: 5px 10px 5px 8px; gap: 6px; }
 }
 
+/* Household switcher */
+.am-hh-switcher { position: relative; }
+.am-hh-switcher summary { cursor: pointer; list-style: none; }
+.am-hh-switcher summary::-webkit-details-marker { display: none; }
+.am-hh-arrow { font-size: 8px; opacity: 0.6; }
+.am-hh-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: var(--case); border: 1px solid var(--bezel);
+  border-radius: 4px; min-width: 180px; margin-top: 4px; overflow: hidden;
+}
+.am-hh-option {
+  display: block; width: 100%; padding: 6px 10px;
+  border: none; background: transparent; color: var(--led-amber);
+  font-family: var(--font-label); font-size: 11px;
+  text-align: left; cursor: pointer; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.am-hh-option:hover { background: var(--bezel); }
+.am-hh-option.is-active { font-weight: 700; }
+

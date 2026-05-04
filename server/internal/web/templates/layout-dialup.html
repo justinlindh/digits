@@ -19,7 +19,21 @@
   <div class="dialup-title">
     <div class="dialup-title__app">
       <span class="dialup-title__icon" aria-hidden="true"></span>
+      {{if and .Households (gt (len .Households) 1)}}
+      <details class="dialup-hh-switcher">
+        <summary><span>Digits: {{if .HouseholdName}}{{.HouseholdName}}{{else}}Phone Network{{end}}</span> <span class="dialup-hh-arrow">&#9660;</span></summary>
+        <div class="dialup-hh-menu">
+          {{range .Households}}
+          <form action="/settings/household/switch" method="POST">
+            <input type="hidden" name="household_id" value="{{.ID}}">
+            <button type="submit" class="dialup-hh-option{{if eq .Name $.HouseholdName}} is-active{{end}}">{{.Name}}</button>
+          </form>
+          {{end}}
+        </div>
+      </details>
+      {{else}}
       <span>Digits: {{if .HouseholdName}}{{.HouseholdName}}{{else}}Phone Network{{end}}</span>
+      {{end}}
     </div>
     <div class="dialup-title__controls" aria-hidden="true">
       <span class="dialup-title__btn">_</span>

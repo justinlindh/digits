@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -62,11 +61,6 @@ type lineRow struct {
 // nil or lookup fails the handler shows an empty list rather than leaking
 // every line on the server.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
-	var user *auth.User
-	if r != nil {
-		user = auth.UserFromContext(r.Context())
-	}
-
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
 		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
@@ -109,7 +103,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		rows[i] = row
 	}
 	return linesData{
-		chromeData:            newChromeData("phones", user, hh),
+		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Lines:                 rows,
 		Error:                 errMsg,
 		LatestPiVersion:       latestPi,
@@ -302,10 +296,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user := auth.UserFromContext(r.Context())
-
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		chromeData:            newChromeData("phones", user, hh),
+		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,

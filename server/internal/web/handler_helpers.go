@@ -282,10 +282,11 @@ func (h *Handler) activeHousehold(r *http.Request) *household.Household {
 // HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
 // Household pointer so templates hit one source of truth per request.
 type chromeData struct {
-	Page      string
-	Version   string
-	User      *auth.User
-	Household *household.Household
+	Page       string
+	Version    string
+	User       *auth.User
+	Household  *household.Household
+	Households []*household.Household
 }
 
 func (c chromeData) HouseholdName() string {
@@ -316,6 +317,16 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 		User:      user,
 		Household: hh,
 	}
+}
+
+func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
+	user := auth.UserFromContext(r.Context())
+	hh := h.activeHousehold(r)
+	cd := newChromeData(page, user, hh)
+	if user != nil && h.householdStore != nil {
+		cd.Households, _ = h.householdStore.GetForUser(r.Context(), user.ID)
+	}
+	return cd
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
