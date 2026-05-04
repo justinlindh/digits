@@ -13,6 +13,15 @@
 # If no base image is provided, a known-good Raspberry Pi OS Lite image
 # is downloaded automatically and cached in a Docker volume for reuse.
 #
+# Release mode: set RELEASE_TAG=pi/v<version> to download pre-built binaries
+# from GitHub Releases instead of compiling locally. Produces a clean image
+# from a tagged release without requiring the Go cross-compile toolchain.
+#
+#   RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
+#
+# Optionally pin the firmware release with FIRMWARE_TAG=fw/v<version>.
+# Without FIRMWARE_TAG, the latest fw/v* release is used.
+#
 # Output: digits-pi-YYYYMMDD.img.gz in the current directory.
 set -euo pipefail
 
@@ -40,7 +49,11 @@ for arg in "$@"; do
     esac
 done
 
-# Generate embedded assets on the host (avoids root-owned files from Docker)
+# Generate embedded assets on the host (avoids root-owned files from Docker).
+# In release mode, make embed still runs to populate rootfs overlay, tones,
+# and mixer state; the container then overwrites digits-setup (and the other
+# Go binaries) with the downloaded release artifacts before build-image.sh
+# uses them.
 info "Generating embedded assets..."
 make -C "$REPO_DIR/pi/digitsd" embed
 
@@ -60,6 +73,16 @@ DOCKER_ARGS=(
     -e "HOST_UID=$(id -u)"
     -e "HOST_GID=$(id -g)"
 )
+
+# Pass release tags into the container when set.
+[[ -n "${RELEASE_TAG:-}" ]]   && DOCKER_ARGS+=(-e "RELEASE_TAG=${RELEASE_TAG}")
+[[ -n "${FIRMWARE_TAG:-}" ]]  && DOCKER_ARGS+=(-e "FIRMWARE_TAG=${FIRMWARE_TAG}")
+
+# Release mode needs gh CLI auth inside the container. If a GITHUB_TOKEN is
+# present in the environment, forward it; otherwise gh will use the host's
+# stored credential via the mounted repo's config (no extra setup needed for
+# public releases).
+[[ -n "${GITHUB_TOKEN:-}" ]]  && DOCKER_ARGS+=(-e "GITHUB_TOKEN=${GITHUB_TOKEN}")
 
 # If this is a git worktree, .git is a file pointing to the main repo's
 # .git/worktrees/ directory. Mount the main repo's .git so the pointer
