@@ -279,6 +279,58 @@ func TestUpdateName(t *testing.T) {
 	}
 }
 
+func TestRemoveMember(t *testing.T) {
+	s, database := testStore(t)
+	ownerID := createTestUser(t, database, "owner-rm@example.com")
+	memberID := createTestUser(t, database, "member-rm@example.com")
+
+	hh, err := s.Create(context.Background(), "Remove Test", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.AddMember(context.Background(), memberID, hh.ID, "admin"); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	members, err := s.GetMembers(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("GetMembers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(members))
+	}
+
+	if err := s.RemoveMember(context.Background(), memberID, hh.ID); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+
+	members, err = s.GetMembers(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("GetMembers after remove: %v", err)
+	}
+	if len(members) != 1 {
+		t.Fatalf("expected 1 member after remove, got %d", len(members))
+	}
+}
+
+func TestMemberCount(t *testing.T) {
+	s, database := testStore(t)
+	ownerID := createTestUser(t, database, "owner-cnt@example.com")
+
+	hh, err := s.Create(context.Background(), "Count Test", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	count, err := s.MemberCount(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("MemberCount: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1, got %d", count)
+	}
+}
+
 func TestSetDoNotDisturb(t *testing.T) {
 	s, database := testStore(t)
 	userID := createTestUser(t, database, "dnd@example.com")

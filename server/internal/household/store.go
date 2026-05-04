@@ -187,6 +187,32 @@ func (h *Household) Location() *time.Location {
 	return loc
 }
 
+// RemoveMember removes a user from a household.
+func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM household_members WHERE user_id = $1 AND household_id = $2`,
+		userID, householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("remove member: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("user is not a member of this household")
+	}
+	return nil
+}
+
+// MemberCount returns the number of members in a household.
+func (s *Store) MemberCount(ctx context.Context, householdID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM household_members WHERE household_id = $1`,
+		householdID,
+	).Scan(&count)
+	return count, err
+}
+
 // SetCallHistoryEnabled toggles call history for a household.
 func (s *Store) SetCallHistoryEnabled(ctx context.Context, householdID string, enabled bool) error {
 	_, err := s.db.ExecContext(ctx,
