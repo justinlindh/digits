@@ -152,6 +152,17 @@ no per-user or per-call data, no caller/callee identifiers). See
 [`docs/metrics.md`](docs/metrics.md) for the full list and the rules
 around what is and is not collected.
 
+### Multi-replica signaling
+
+| Variable    | Description                                                    |
+|-------------|----------------------------------------------------------------|
+| `REDIS_URL` | Redis connection URL (`redis://host:port` or `rediss://...`). When set, signald uses Redis pub/sub as a cross-pod broadcast channel so calls whose target is on a different pod still reach the device. Empty disables Redis (single-instance mode). |
+
+Without `REDIS_URL`, behavior is identical to the single-instance default
+and Redis is not a runtime dependency. With it, every pod publishes to a
+shared `digits:signal` channel when a local lookup misses, and subscribing
+pods deliver to their local connections.
+
 ### Tracing and Profiling
 
 | Variable                       | Description                                |

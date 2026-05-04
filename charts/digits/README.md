@@ -98,6 +98,24 @@ observability:
 
 When enabled, the deployments expose Prometheus metrics on dedicated ports and the chart creates ServiceMonitor resources (requires prometheus-operator/kube-prometheus-stack).
 
+### Multi-replica signaling (Redis)
+
+Single-replica is the default. To run more than one signald pod, configure a
+Redis instance the pods can share so cross-pod calls reach the right device:
+
+```yaml
+signald:
+  replicas: 2
+
+redis:
+  url: "redis://redis.redis.svc.cluster.local:6379"
+```
+
+When `redis.url` is empty, signaling is local-only and replica counts above 1
+will silently drop calls whose target is on a different pod. For passwords or
+rotating credentials, leave `redis.url` empty and inject `REDIS_URL` via
+`signald.envFrom` referencing your own Secret.
+
 ### Image tags
 
 By default, image tags derive from `Chart.yaml`'s `appVersion` (prefixed with `v`). Override per-service:
