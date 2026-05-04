@@ -126,7 +126,8 @@
   <!-- Invite Form -->
   <section class="panel" style="margin-bottom: 18px;">
     <header class="panel__head">
-      <h2 class="panel__title">Invite Someone</h2>
+      <h2 class="panel__title">Invite to {{.HouseholdName}}</h2>
+      <span class="panel__title-sub">They'll be able to manage lines and settings for this household.</span>
     </header>
     <div class="panel__body">
       <form action="/settings/household/invite" method="POST" class="hstack hstack--wrap" style="gap: 10px;">
@@ -668,7 +669,8 @@
       {{end}}
 
       <section class="am-plate am-settings__section">
-        <div class="am-plate__label">Invite Someone</div>
+        <div class="am-plate__label">Invite to {{.HouseholdName}}</div>
+        <p class="am-hint am-settings__hint">They'll be able to manage lines and settings for this household.</p>
         <form action="/settings/household/invite" method="POST" class="am-settings__form">
           <div class="am-settings__field">
             <label for="invite-email-am" class="am-label am-settings__field-label">Email address</label>
