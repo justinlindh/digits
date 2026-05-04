@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Digits Recovery</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:400px;margin:40px auto;padding:0 20px;background:#1a1a1a;color:#e0e0e0}
+h1{text-align:center;margin-bottom:8px}
+p.subtitle{text-align:center;color:#888;margin-top:0}
+button{display:block;width:100%;padding:16px;margin:12px 0;border:none;border-radius:8px;font-size:16px;font-weight:500;cursor:pointer;transition:opacity 0.2s}
+button:disabled{opacity:0.5;cursor:not-allowed}
+.btn-try{background:#2563eb;color:white}
+.btn-try:hover:not(:disabled){background:#1d4ed8}
+.btn-reset{background:#dc2626;color:white}
+.btn-reset:hover:not(:disabled){background:#b91c1c}
+#status{text-align:center;margin:20px 0;padding:12px;background:#262626;border-radius:6px;color:#a0a0a0;font-size:14px}
+</style>
+</head>
+<body>
+<h1>Digits Recovery</h1>
+<p class="subtitle">Your phone entered recovery mode.</p>
+<div id="status">Loading...</div>
+<button class="btn-try" onclick="tryAgain()">Try Again (Reboot)</button>
+<button class="btn-reset" onclick="factoryReset()">Factory Reset</button>
+<script>
+fetch('/status').then(function(r){return r.json()}).then(function(d){
+  document.getElementById('status').textContent='Boot attempts: '+d.boot_count;
+}).catch(function(){
+  document.getElementById('status').textContent='Could not load status';
+});
+function tryAgain(){
+  if(!confirm('Reboot normally?'))return;
+  var btns=document.querySelectorAll('button');
+  btns.forEach(function(b){b.disabled=true});
+  document.getElementById('status').textContent='Rebooting...';
+  fetch('/try-again',{method:'POST'}).catch(function(){});
+}
+function factoryReset(){
+  if(!confirm('This will erase all data and restore the phone to factory state. Are you sure?'))return;
+  var btns=document.querySelectorAll('button');
+  btns.forEach(function(b){b.disabled=true});
+  document.getElementById('status').textContent='Factory reset in progress...';
+  fetch('/factory-reset',{method:'POST'}).catch(function(){});
+}
+</script>
+</body></html>
