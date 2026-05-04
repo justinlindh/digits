@@ -1,10 +1,8 @@
 # Digits Helm Chart
 
-This chart deploys the digits signaling server (signald) and admin dashboard (admind) to a Kubernetes cluster. It is used internally to run digits in a homelab k8s environment managed by ArgoCD. Most users will never need this; the standard deployment path is Docker Compose (see `server/docker-compose.prod.yml`).
+You almost certainly don't need this. The `docker compose` setup in `server/` is the intended deployment path and will get you running in about two minutes. This Helm chart exists because I run a homelab Kubernetes cluster and enjoy over-engineering things. It's a fun project, and part of the fun is deploying it like it's a real production service with HA Postgres, distributed tracing, and continuous profiling. Is any of that necessary for a three-phone network? Absolutely not. But here we are.
 
-## When to use this
-
-You have a Kubernetes cluster and want to run digits there instead of Docker. The chart handles:
+If you do happen to have a k8s cluster lying around and want to deploy digits there, this chart handles:
 
 - signald and admind Deployments with security-hardened pod specs
 - ClusterIP Services (with optional metrics ports)
