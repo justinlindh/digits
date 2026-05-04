@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log"
 	"log/slog"
@@ -41,6 +42,10 @@ func (rs *recoveryState) startReset() bool {
 func recoveryInitSetup() {
 	slog.Info("recovery init: running as PID 1")
 
+	// Set PATH and LD_LIBRARY_PATH for recovery partition layout.
+	os.Setenv("PATH", "/bin:/sbin:/usr/bin:/usr/sbin")
+	os.Setenv("LD_LIBRARY_PATH", "/lib")
+
 	// Mount essential filesystems (may already be moved from initramfs).
 	for _, m := range []struct{ src, dst, fstype string }{
 		{"proc", "/proc", "proc"},
@@ -61,7 +66,9 @@ func recoveryInitSetup() {
 	// Tee log to /data/digits/recovery.log for post-mortem.
 	os.MkdirAll("/data/digits", 0755)
 	if f, err := os.OpenFile("/data/digits/recovery.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644); err == nil {
-		log.SetOutput(f)
+		w := io.MultiWriter(os.Stderr, f)
+		slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
+		log.SetOutput(w)
 		slog.Info("recovery init: log file opened")
 	}
 
@@ -90,9 +97,9 @@ func recoveryInitSetup() {
 
 	// Start AP.
 	slog.Info("recovery init: starting AP")
-	exec.Command("ip", "link", "set", "wlan0", "up").Run()
-	exec.Command("ip", "addr", "flush", "dev", "wlan0").Run()
-	exec.Command("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run()
+	exec.Command("/bin/ip", "link", "set", "wlan0", "up").Run()
+	exec.Command("/bin/ip", "addr", "flush", "dev", "wlan0").Run()
+	exec.Command("/bin/ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run()
 
 	hostapdConf := "/tmp/hostapd.conf"
 	os.WriteFile(hostapdConf, []byte("interface=wlan0\ndriver=nl80211\nssid=Digits-Recovery\nhw_mode=g\nchannel=6\nauth_algs=1\nwpa=0\ncountry_code=US\nieee80211d=1\n"), 0644)
