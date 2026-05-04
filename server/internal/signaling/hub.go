@@ -194,13 +194,14 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 	slog.Info("drain: sending close frames", "connections", n)
 
 	// Send 1001 Going Away close frame to each connection.
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(5 * time.Second)
+	}
+	slog.Info("drain: sending close frames", "connections", n, "remaining", time.Until(deadline).Round(time.Millisecond))
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
 	for _, c := range snapshot {
 		if c.WS != nil {
-			deadline, ok := ctx.Deadline()
-			if !ok {
-				deadline = time.Now().Add(5 * time.Second)
-			}
 			_ = c.WS.WriteControl(websocket.CloseMessage, closeMsg, deadline)
 		}
 	}
