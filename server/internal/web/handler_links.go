@@ -46,7 +46,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	myHousehold := h.primaryHousehold(r)
+	myHousehold := h.activeHousehold(r)
 	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return

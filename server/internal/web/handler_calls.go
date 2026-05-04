@@ -21,7 +21,7 @@ const callsPageSize = 50
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	if hh == nil || !hh.CallHistoryEnabled {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return

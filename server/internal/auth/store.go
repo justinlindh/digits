@@ -276,6 +276,31 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 	return err
 }
 
+// SetActiveHousehold updates the active_household_id on the user's current session.
+func (s *Store) SetActiveHousehold(ctx context.Context, sessionToken string, householdID string) error {
+	hash := device.HashToken(sessionToken)
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE sessions SET active_household_id = $1 WHERE token_hash = $2 AND expires_at > NOW()`,
+		householdID, hash,
+	)
+	if err != nil {
+		return fmt.Errorf("set active household: %w", err)
+	}
+	return nil
+}
+
+// ActiveHouseholdID returns the active_household_id from the current session,
+// or empty string if not set.
+func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) string {
+	hash := device.HashToken(sessionToken)
+	var id sql.NullString
+	_ = s.db.QueryRowContext(ctx,
+		`SELECT active_household_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()`,
+		hash,
+	).Scan(&id)
+	return id.String
+}
+
 // randomToken generates a cryptographically random hex string of the given byte length.
 func randomToken(bytes int) (string, error) {
 	b := make([]byte, bytes)

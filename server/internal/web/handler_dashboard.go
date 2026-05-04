@@ -66,7 +66,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	active := h.tracker.Active()
 	user := auth.UserFromContext(ctx)
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
 	loc := hh.Location()
 	now := time.Now().In(loc)
@@ -306,6 +306,6 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
-		chromeData: newChromeData("connecting", user, h.primaryHousehold(r)),
+		chromeData: newChromeData("connecting", user, h.activeHousehold(r)),
 	})
 }

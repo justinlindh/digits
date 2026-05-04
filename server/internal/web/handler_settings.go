@@ -15,7 +15,7 @@ type settingsData struct {
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	renderWith(w, h.tmplSettings, layoutFor(r), settingsData{
 		chromeData: newChromeData("settings", user, hh),
 		Saved:      r.URL.Query().Get("saved") == "1",

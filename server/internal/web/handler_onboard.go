@@ -20,7 +20,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 		suggested = user.Name + "'s Family"
 	}
 	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
-		chromeData:    newChromeData("onboard", user, h.primaryHousehold(r)),
+		chromeData:    newChromeData("onboard", user, h.activeHousehold(r)),
 		SuggestedName: suggested,
 	})
 }

@@ -246,10 +246,10 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// primaryHousehold returns the first household the authenticated user belongs
-// to, or nil when the user is unauthenticated, the store is not wired, lookup
-// fails, or the user has no households.
-func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
+// activeHousehold returns the household the user is currently viewing. Reads
+// active_household_id from the session; falls back to the first household
+// when unset or when the user is no longer a member.
+func (h *Handler) activeHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
 		return nil
 	}
@@ -261,6 +261,19 @@ func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if err != nil || len(households) == 0 {
 		return nil
 	}
+
+	cookie, err := r.Cookie(auth.CookieName)
+	if err == nil && h.authStore != nil {
+		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if activeID != "" {
+			for _, hh := range households {
+				if hh.ID == activeID {
+					return hh
+				}
+			}
+		}
+	}
+
 	return households[0]
 }
 
