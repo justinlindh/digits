@@ -80,9 +80,10 @@ Admind image.
 {{/*
 Observability env vars (OTEL + Pyroscope). Pass a dict with "serviceName" and "ctx".
 Usage: include "digits.observability.env" (dict "serviceName" "signald" "ctx" .)
+Callers should guard with observability.enabled, but the helper also checks it.
 */}}
 {{- define "digits.observability.env" -}}
-{{- if .ctx.Values.observability.otelEndpoint }}
+{{- if and .ctx.Values.observability.enabled .ctx.Values.observability.otelEndpoint }}
 - name: OTEL_SERVICE_NAME
   value: {{ .serviceName | quote }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -96,7 +97,7 @@ Usage: include "digits.observability.env" (dict "serviceName" "signald" "ctx" .)
   value: {{ .ctx.Values.observability.otelResourceAttributes | quote }}
 {{- end }}
 {{- end }}
-{{- if .ctx.Values.observability.pyroscopeEndpoint }}
+{{- if and .ctx.Values.observability.enabled .ctx.Values.observability.pyroscopeEndpoint }}
 - name: PYROSCOPE_SERVER_ADDRESS
   value: {{ .ctx.Values.observability.pyroscopeEndpoint | quote }}
 {{- end }}

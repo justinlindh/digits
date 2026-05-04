@@ -15,6 +15,7 @@ spec:
         {{- include "digits.signald.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/part-of: {{ include "digits.name" . }}
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -28,6 +29,7 @@ spec:
           imagePullPolicy: {{ .Values.signald.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           ports:

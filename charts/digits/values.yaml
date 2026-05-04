@@ -1,3 +1,6 @@
+nameOverride: ""
+fullnameOverride: ""
+
 signald:
   image:
     repository: ghcr.io/justinlindh/digits/signald

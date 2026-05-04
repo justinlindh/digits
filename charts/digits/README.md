@@ -18,8 +18,6 @@ You have a Kubernetes cluster and want to run digits there instead of Docker. Th
 helm install digits ./charts/digits -n digits --create-namespace -f my-values.yaml
 ```
 
-Or via ArgoCD pointing at this repo's `charts/digits` path (see `argocd-application.example.yaml` for a working multi-source Application).
-
 ## Configuration
 
 All features are off by default. Enable what your cluster provides.
@@ -114,8 +112,6 @@ admind:
   image:
     tag: v1.57.0
 ```
-
-With ArgoCD Image Updater, tags are bumped automatically on release.
 
 ## Full values reference
 
