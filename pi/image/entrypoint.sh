@@ -119,7 +119,7 @@ if [[ -z "${BUILD_LOCAL:-}" ]]; then
         fi
     else
         info "Resolving latest Pi release from GitHub..."
-        PI_TAG=$(gh release list --repo justinlindh/digits --limit 20 --json tagName \
+        PI_TAG=$(gh release list --repo justinlindh/digits --limit 50 --json tagName \
             --jq '[.[].tagName | select(startswith("pi/"))] | first' 2>/dev/null || true)
         if [[ -z "$PI_TAG" ]]; then
             die "Could not determine latest pi/v* release tag from GitHub. Set RELEASE_TAG=pi/v<version> or BUILD_LOCAL=1."

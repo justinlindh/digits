@@ -14,7 +14,8 @@
 # is downloaded automatically and cached in a Docker volume for reuse.
 #
 # Default: downloads pre-built binaries from the latest pi/v* GitHub release.
-# No Go toolchain required. Pin a specific release with RELEASE_TAG:
+# Requires a Go toolchain for `make embed` (cross-compiles digits-setup into
+# the rootfs overlay). Pin a specific release with RELEASE_TAG:
 #
 #   RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
 #
@@ -83,10 +84,10 @@ DOCKER_ARGS=(
 [[ -n "${RELEASE_TAG:-}" ]]   && DOCKER_ARGS+=(-e "RELEASE_TAG=${RELEASE_TAG}")
 [[ -n "${FIRMWARE_TAG:-}" ]]  && DOCKER_ARGS+=(-e "FIRMWARE_TAG=${FIRMWARE_TAG}")
 
-# Release mode needs gh CLI auth inside the container. If a GITHUB_TOKEN is
-# present in the environment, forward it; otherwise gh will use the host's
-# stored credential via the mounted repo's config (no extra setup needed for
-# public releases).
+# Release mode needs gh CLI auth inside the container for GitHub API access.
+if [[ -z "${BUILD_LOCAL:-}" && -z "${GITHUB_TOKEN:-}" ]]; then
+    warn "No GITHUB_TOKEN set. Release mode requires a token to download artifacts. Set GITHUB_TOKEN or use BUILD_LOCAL=1."
+fi
 [[ -n "${GITHUB_TOKEN:-}" ]]  && DOCKER_ARGS+=(-e "GITHUB_TOKEN=${GITHUB_TOKEN}")
 
 # If this is a git worktree, .git is a file pointing to the main repo's

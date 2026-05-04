@@ -50,8 +50,9 @@ stage-firmware: firmware ## Build firmware and stage it at tools/build/firmware.
 # ── Pi SD Card Image ─────────────────────────────────────────────────────────
 #
 # Default (make image / make image-v2): downloads pre-built binaries and
-# firmware from the latest GitHub release. No local Go or ARM toolchain needed.
+# firmware from the latest GitHub release. Requires Go (for `make embed`).
 # To build from local source instead: BUILD_LOCAL=1 make image
+# (run `git fetch --tags` first so version stamps are accurate).
 #
 # Dev targets (make image-dev / make image-v2-dev) imply BUILD_LOCAL=1 and
 # stage firmware from the local build before invoking the container.
