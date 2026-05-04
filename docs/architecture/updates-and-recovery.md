@@ -71,6 +71,7 @@ Recovery mode is a minimal environment that runs before the main rootfs is mount
 Recovery mode activates in three situations:
 
 - **Boot failure:** The initramfs maintains a boot counter on the data partition. If the counter reaches 3 consecutive failed boots, recovery mode starts automatically. If the data partition cannot be mounted at all, recovery mode starts as a safety fallback.
+- **Manual power-cycle (3x):** Unplug the phone, then plug it in and wait for the LED to start its boot pattern (heartbeat flash, about 8 seconds). Once you see the first LED flash, unplug. Repeat two more times (three total power cycles). On the third boot the counter reaches 3 and recovery starts. The key is waiting for the LED flash before unplugging: that confirms the initramfs has finished writing the counter. Unplugging before the LED appears (under ~7 seconds) means the counter was not incremented.
 - **Factory reset request:** When a factory reset is initiated (via web UI or service code), `digitsd` sets the boot counter to the threshold value and reboots. The initramfs sees the counter at threshold and enters recovery mode.
 - **Numpad panic button:** Hold the keypad's `*` key while the phone boots. The `digits-panic-check` early-boot service reads the keypad matrix from the Pico over UART and, if `*` is held, writes `/data/digits/recovery-mode` and reboots. The initramfs sees the persistent flag and enters recovery mode. This is the user-facing escape hatch when the device is unreachable over the network or the web UI.
 
@@ -80,7 +81,11 @@ The counter lives on the data partition (`/data/digits/boot-counter`), which is 
 
 ### Recovery Binary
 
-The recovery binary starts a Wi-Fi access point and serves a small web UI:
+The recovery binary provides two interfaces: a voice + keypad menu on the phone itself, and a web UI over Wi-Fi.
+
+**Voice menu (primary):** Pick up the handset to hear "Recovery mode. Press 1 to restart. Press 2 for factory reset." Press 2 requires a second press to confirm. Voice clips play at each stage of the factory reset process. The LED shows a heartbeat pattern while in recovery.
+
+**Web UI (fallback):** Connect to the `Digits-Recovery` Wi-Fi AP and visit `http://192.168.4.1`.
 
 - **SSID:** Digits-Recovery
 - **Address:** `192.168.4.1`

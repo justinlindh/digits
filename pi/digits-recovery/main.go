@@ -545,11 +545,23 @@ func main() {
 		if err != nil {
 			log.Printf("recovery: phonekit open failed: %v (voice menu disabled)", err)
 		} else {
-			phone = p
-			if err := phone.Ping(); err != nil {
-				log.Printf("recovery: pico ping failed: %v", err)
+			var pingOK bool
+			for attempt := 1; attempt <= 10; attempt++ {
+				time.Sleep(500 * time.Millisecond)
+				if err := p.Ping(); err == nil {
+					pingOK = true
+					break
+				}
+				log.Printf("recovery: pico ping attempt %d/10 failed", attempt)
 			}
-			phone.LED("HEARTBEAT")
+			if pingOK {
+				phone = p
+				phone.LED("HEARTBEAT")
+				log.Println("recovery: phonekit connected, LED set to HEARTBEAT")
+			} else {
+				log.Println("recovery: pico ping failed after 10 attempts, continuing without voice menu")
+				phone = p
+			}
 		}
 	}
 
