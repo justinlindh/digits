@@ -240,7 +240,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 
 	var devices []device.Device
 	if h.deviceStore != nil {
@@ -317,7 +317,7 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
 			Online bool
@@ -336,7 +336,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 

@@ -292,6 +292,16 @@ func (h *Hub) LastSeenAt(number string) *time.Time {
 	return &t
 }
 
+// IsOnline returns true if number has an active hub connection and is not in
+// pairing mode. Unpaired devices connect under the sentinel "unpaired" number
+// and must not be presented as online in the UI.
+func (h *Hub) IsOnline(number string) bool {
+	if number == "unpaired" {
+		return false
+	}
+	return h.Get(number) != nil
+}
+
 func (h *Hub) OnlineNumbers() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

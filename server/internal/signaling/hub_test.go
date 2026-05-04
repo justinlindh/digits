@@ -32,6 +32,33 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 	}
 }
 
+func TestIsOnlineReturnsFalseForUnpaired(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("unpaired", conn)
+	// A device in pairing mode is connected under "unpaired" but must not
+	// report as online for UI purposes.
+	if hub.IsOnline("unpaired") {
+		t.Fatal("IsOnline should return false for the unpaired sentinel number")
+	}
+}
+
+func TestIsOnlineReturnsTrueForPairedConnected(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	hub.Register("3140001", conn)
+	if !hub.IsOnline("3140001") {
+		t.Fatal("IsOnline should return true for a paired, connected device")
+	}
+}
+
+func TestIsOnlineReturnsFalseForOffline(t *testing.T) {
+	hub := NewHub()
+	if hub.IsOnline("3140099") {
+		t.Fatal("IsOnline should return false for a number with no connection")
+	}
+}
+
 func TestHubGetReturnsNilForOffline(t *testing.T) {
 	hub := NewHub()
 	if hub.Get("3140099") != nil {
