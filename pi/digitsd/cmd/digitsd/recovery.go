@@ -3,7 +3,6 @@ package main
 import (
 	"embed"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"log"
 	"log/slog"
@@ -39,10 +38,114 @@ func (rs *recoveryState) startReset() bool {
 	return true
 }
 
+func recoveryInitSetup() {
+	slog.Info("recovery init: running as PID 1")
+
+	// Mount essential filesystems (may already be moved from initramfs).
+	for _, m := range []struct{ src, dst, fstype string }{
+		{"proc", "/proc", "proc"},
+		{"sysfs", "/sys", "sysfs"},
+		{"tmpfs", "/tmp", "tmpfs"},
+		{"devtmpfs", "/dev", "devtmpfs"},
+	} {
+		os.MkdirAll(m.dst, 0755)
+		syscall.Mount(m.src, m.dst, m.fstype, 0, "")
+	}
+
+	// Mount data partition for boot counter and recovery log.
+	os.MkdirAll("/data", 0755)
+	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
+		slog.Warn("recovery init: mount /data failed (non-fatal)", "error", err)
+	}
+
+	// Tee log to /data/digits/recovery.log for post-mortem.
+	os.MkdirAll("/data/digits", 0755)
+	if f, err := os.OpenFile("/data/digits/recovery.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644); err == nil {
+		log.SetOutput(f)
+		slog.Info("recovery init: log file opened")
+	}
+
+	// Load WiFi kernel module.
+	slog.Info("recovery init: loading brcmfmac")
+	exec.Command("/sbin/modprobe", "brcmfmac").Run()
+	time.Sleep(2 * time.Second)
+
+	// Unblock WiFi radio.
+	entries, _ := os.ReadDir("/sys/class/rfkill")
+	for _, entry := range entries {
+		typePath := "/sys/class/rfkill/" + entry.Name() + "/type"
+		if data, err := os.ReadFile(typePath); err == nil && string(data) == "wlan\n" {
+			os.WriteFile("/sys/class/rfkill/"+entry.Name()+"/soft", []byte("0"), 0644)
+		}
+	}
+
+	// Wait for wlan0.
+	slog.Info("recovery init: waiting for wlan0")
+	for i := 0; i < 15; i++ {
+		if _, err := os.Stat("/sys/class/net/wlan0"); err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
+	// Start AP.
+	slog.Info("recovery init: starting AP")
+	exec.Command("ip", "link", "set", "wlan0", "up").Run()
+	exec.Command("ip", "addr", "flush", "dev", "wlan0").Run()
+	exec.Command("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0").Run()
+
+	hostapdConf := "/tmp/hostapd.conf"
+	os.WriteFile(hostapdConf, []byte("interface=wlan0\ndriver=nl80211\nssid=Digits-Recovery\nhw_mode=g\nchannel=6\nauth_algs=1\nwpa=0\ncountry_code=US\nieee80211d=1\n"), 0644)
+
+	dnsmasqConf := "/tmp/dnsmasq.conf"
+	os.WriteFile(dnsmasqConf, []byte("interface=wlan0\nbind-interfaces\nuser=root\npid-file=/tmp/dnsmasq.pid\ndhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,5m\naddress=/#/192.168.4.1\nno-resolv\ndomain-needed\ndhcp-leasefile=/tmp/dnsmasq-recovery.leases\n"), 0644)
+
+	if out, err := exec.Command("/bin/hostapd", "-B", hostapdConf).CombinedOutput(); err != nil {
+		slog.Warn("recovery init: hostapd failed", "error", err, "output", string(out))
+	}
+	if out, err := exec.Command("/bin/dnsmasq", "-C", dnsmasqConf).CombinedOutput(); err != nil {
+		slog.Warn("recovery init: dnsmasq failed", "error", err, "output", string(out))
+	}
+
+	slog.Info("recovery init: AP started (Digits-Recovery)")
+
+	// Load audio kernel modules from the rootfs (mounted read-only temporarily).
+	os.MkdirAll("/tmp/rootfs", 0755)
+	if err := syscall.Mount("/dev/mmcblk0p2", "/tmp/rootfs", "ext4", syscall.MS_RDONLY, ""); err == nil {
+		os.MkdirAll("/lib/modules", 0755)
+		syscall.Mount("/tmp/rootfs/lib/modules", "/lib/modules", "", syscall.MS_BIND, "")
+		for _, mod := range []string{"snd_soc_bcm2835_i2s", "snd_soc_tlv320aic3x_i2c", "snd_soc_simple_card"} {
+			if out, err := exec.Command("/sbin/modprobe", mod).CombinedOutput(); err != nil {
+				slog.Warn("recovery init: modprobe failed", "module", mod, "error", err, "output", string(out))
+			} else {
+				slog.Info("recovery init: loaded module", "module", mod)
+			}
+		}
+		syscall.Unmount("/lib/modules", 0)
+		syscall.Unmount("/tmp/rootfs", 0)
+	} else {
+		slog.Warn("recovery init: could not mount rootfs for audio modules", "error", err)
+	}
+	time.Sleep(time.Second)
+
+	// Reap zombies (PID 1 responsibility).
+	go func() {
+		for {
+			syscall.Wait4(-1, nil, 0, nil)
+		}
+	}()
+
+	slog.Info("recovery init: setup complete")
+}
+
 func runRecoveryMode() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 	slog.Info("digitsd: entering recovery mode")
+
+	if os.Getpid() == 1 {
+		recoveryInitSetup()
+	}
 
 	// Open serial port with retry.
 	var sp *phone.SerialPort
@@ -280,12 +383,21 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	}
 
 	slog.Info("recovery: decompressing rootfs to /dev/mmcblk0p2")
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("zstd -d -c %s | dd of=/dev/mmcblk0p2 bs=4M conv=fsync", rootfsImg))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		slog.Error("recovery: rootfs restore failed", "error", err)
-		mixer.PlayOnce("error_tone")
+	zstdCmd := exec.Command("/bin/zstd", "-d", "-c", rootfsImg)
+	ddCmd := exec.Command("/bin/dd", "of=/dev/mmcblk0p2", "bs=4M", "conv=fsync")
+	ddCmd.Stdin, _ = zstdCmd.StdoutPipe()
+	ddCmd.Stderr = os.Stderr
+	zstdCmd.Stderr = os.Stderr
+	if err := ddCmd.Start(); err != nil {
+		slog.Error("recovery: dd start failed", "error", err)
+		return
+	}
+	if err := zstdCmd.Run(); err != nil {
+		slog.Error("recovery: zstd failed", "error", err)
+		return
+	}
+	if err := ddCmd.Wait(); err != nil {
+		slog.Error("recovery: dd failed", "error", err)
 		return
 	}
 	slog.Info("recovery: rootfs restored")
@@ -298,7 +410,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	_ = syscall.Unmount("/data", 0)
 
 	slog.Info("recovery: formatting /dev/mmcblk0p4")
-	mkfs := exec.Command("mkfs.ext4", "-L", "data", "-F", "/dev/mmcblk0p4")
+	mkfs := exec.Command("/bin/mkfs.ext4", "-L", "data", "-F", "/dev/mmcblk0p4")
 	mkfs.Stdout = os.Stdout
 	mkfs.Stderr = os.Stderr
 	if err := mkfs.Run(); err != nil {
@@ -318,12 +430,17 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	skeletonPath := "/data-skeleton.tar.zst"
 	if _, err := os.Stat(skeletonPath); err == nil {
 		slog.Info("recovery: extracting data skeleton")
-		tar := exec.Command("sh", "-c", fmt.Sprintf("zstd -d -c %s | tar -xf - -C /data", skeletonPath))
-		tar.Stdout = os.Stdout
-		tar.Stderr = os.Stderr
-		if err := tar.Run(); err != nil {
-			slog.Error("recovery: data skeleton extract failed", "error", err)
-			// Non-fatal: continue to reboot.
+		zstdSkel := exec.Command("/bin/zstd", "-d", "-c", skeletonPath)
+		tarCmd := exec.Command("/bin/tar", "xf", "-", "-C", "/data")
+		tarCmd.Stdin, _ = zstdSkel.StdoutPipe()
+		tarCmd.Stderr = os.Stderr
+		zstdSkel.Stderr = os.Stderr
+		tarCmd.Start()
+		if err := zstdSkel.Run(); err != nil {
+			slog.Error("recovery: skeleton zstd failed", "error", err)
+		}
+		if err := tarCmd.Wait(); err != nil {
+			slog.Error("recovery: skeleton tar failed", "error", err)
 		}
 	} else {
 		slog.Info("recovery: no data skeleton found, skipping", "path", skeletonPath)
