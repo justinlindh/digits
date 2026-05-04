@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signald
+  labels:
+    {{- include "digits.signald.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.signald.replicas }}
+  selector:
+    matchLabels:
+      {{- include "digits.signald.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "digits.signald.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: signald
+          image: {{ include "digits.signald.image" . }}
+          imagePullPolicy: {{ .Values.signald.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.signald.port }}
+            {{- if .Values.observability.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.observability.signaldMetricsPort }}
+            {{- end }}
+          env:
+            - name: SIGNALD_ADDR
+              value: ":{{ .Values.signald.port }}"
+            {{- if .Values.observability.enabled }}
+            - name: SIGNALD_METRICS_ADDR
+              value: ":{{ .Values.observability.signaldMetricsPort }}"
+            {{- end }}
+            {{- if .Values.cnpg.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "digits.fullname" . }}-userdb-app
+                  key: uri
+            {{- end }}
+            {{- if .Values.observability.enabled }}
+            {{- if .Values.observability.otelEndpoint }}
+            - name: OTEL_SERVICE_NAME
+              value: "signald"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.observability.otelEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.observability.otelProtocol | quote }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: {{ .Values.observability.otelInsecure | quote }}
+            {{- if .Values.observability.otelResourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: {{ .Values.observability.otelResourceAttributes | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.observability.pyroscopeEndpoint }}
+            - name: PYROSCOPE_SERVER_ADDRESS
+              value: {{ .Values.observability.pyroscopeEndpoint | quote }}
+            {{- end }}
+            {{- end }}
+            {{- range $key, $value := .Values.signald.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.signald.envFrom }}
+          envFrom:
+            {{- toYaml .Values.signald.envFrom | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- with .Values.signald.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
