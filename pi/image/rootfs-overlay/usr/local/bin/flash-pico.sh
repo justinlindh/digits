@@ -123,13 +123,31 @@ fi
 # Map ASCII char to hex value for openocd flash filld.
 # shellcheck disable=SC2016,SC2027,SC2086
 PCB_REV_HEX=$(printf "0x%02X" "'$PCB_REV")
-echo "Writing PCB rev marker: '$PCB_REV' ($PCB_REV_HEX) at $PCB_REV_ADDR"
+
+# Read the device phase byte (offset +1) before erasing. If the Pico is
+# unreachable or the read fails, default to 0x00 (SETUP) which is the safe
+# fallback for a freshly flashed device.
+PHASE_ADDR=$((PCB_REV_ADDR + 1))
+PHASE_HEX="0x00"
+PHASE_RAW=$(sudo "$OPENOCD" \
+    -c "set FLASHSIZE $FLASHSIZE" \
+    -c "set USE_CORE 0" \
+    -f "$SWD_CFG" \
+    -f target/rp2040.cfg \
+    -c "init; mdb $PHASE_ADDR 1; shutdown" \
+    2>&1 | grep -oP '0x[0-9a-fA-F]+: \K[0-9a-fA-F]+' || true)
+if [ -n "$PHASE_RAW" ] && [ "$PHASE_RAW" != "ff" ]; then
+    PHASE_HEX="0x$PHASE_RAW"
+fi
+
+echo "Writing PCB rev marker: '$PCB_REV' ($PCB_REV_HEX) at $PCB_REV_ADDR, preserving phase ($PHASE_HEX)"
+PHASE_ADDR_HEX=$(printf "0x%X" "$PHASE_ADDR")
 sudo "$OPENOCD" \
     -c "set FLASHSIZE $FLASHSIZE" \
     -c "set USE_CORE 0" \
     -f "$SWD_CFG" \
     -f target/rp2040.cfg \
-    -c "init; reset halt; flash erase_address $PCB_REV_ADDR 0x1000; flash filld $PCB_REV_ADDR $PCB_REV_HEX 1; reset run; shutdown" \
+    -c "init; reset halt; flash erase_address $PCB_REV_ADDR 0x1000; flash filld $PCB_REV_ADDR $PCB_REV_HEX 1; flash filld $PHASE_ADDR_HEX $PHASE_HEX 1; reset run; shutdown" \
     2>&1 | tail -5
 echo "Rev marker written. Waiting for Pico to boot..."
 sleep 2
