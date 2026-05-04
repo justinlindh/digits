@@ -1,0 +1,26 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.ingress.admind.host }}
+{{- fail "ingress.admind.host is required when ingress is enabled" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: admind
+  labels:
+    {{- include "digits.admind.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.admind.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: admind
+                port:
+                  number: 80
+{{- end }}

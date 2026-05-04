@@ -1,0 +1,62 @@
+# Example ArgoCD Application for the digits Helm chart.
+# Requires: a repository credential Secret in the argocd namespace for
+# github.com/justinlindh/digits, configured as a GitHub App:
+#
+#   apiVersion: v1
+#   kind: Secret
+#   metadata:
+#     name: digits-repo
+#     namespace: argocd
+#     labels:
+#       argocd.argoproj.io/secret-type: repository
+#   stringData:
+#     type: git
+#     url: https://github.com/justinlindh/digits.git
+#     githubAppID: "<app-id>"
+#     githubAppInstallationID: "<installation-id>"
+#     githubAppPrivateKey: "<PEM private key>"
+#
+# This replaces the existing kustomize-based digits Application in
+# homelab-k8s/manifests/argocd/digits.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: digits
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: |
+      signald=ghcr.io/justinlindh/digits/signald,
+      admind=ghcr.io/justinlindh/digits/admind
+    argocd-image-updater.argoproj.io/signald.update-strategy: semver
+    argocd-image-updater.argoproj.io/admind.update-strategy: semver
+    argocd-image-updater.argoproj.io/signald.allow-tags: "regexp:^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    argocd-image-updater.argoproj.io/admind.allow-tags: "regexp:^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+    argocd-image-updater.argoproj.io/write-back-method: "git:secret:argocd/image-updater-git-credentials"
+    argocd-image-updater.argoproj.io/git-branch: master
+    argocd-image-updater.argoproj.io/write-back-target: "helm:values"
+    argocd-image-updater.argoproj.io/signald.helm.image-name: signald.image.repository
+    argocd-image-updater.argoproj.io/signald.helm.image-tag: signald.image.tag
+    argocd-image-updater.argoproj.io/admind.helm.image-name: admind.image.repository
+    argocd-image-updater.argoproj.io/admind.helm.image-tag: admind.image.tag
+spec:
+  project: apps
+  sources:
+    - repoURL: https://github.com/justinlindh/digits.git
+      targetRevision: main
+      path: charts/digits
+      helm:
+        valueFiles:
+          - $values/helm/digits-values.yaml
+    - repoURL: ssh://git@<your-gitea>:22/<org>/homelab-k8s.git
+      targetRevision: master
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: digits
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
