@@ -33,7 +33,23 @@
         <a class="am-tab {{if eq .Page "settings"}}is-active{{end}}" href="/settings">Settings</a>
       </nav>
 
-      {{if .HouseholdName}}<span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>{{end}}
+      {{if .HouseholdName}}
+      {{if and .Households (gt (len .Households) 1)}}
+      <details class="am-hh-switcher">
+        <summary class="am-shell__household">Household &middot; {{.HouseholdName}} <span class="am-hh-arrow">&#9660;</span></summary>
+        <div class="am-hh-menu">
+          {{range .Households}}
+          <form action="/settings/household/switch" method="POST">
+            <input type="hidden" name="household_id" value="{{.ID}}">
+            <button type="submit" class="am-hh-option{{if eq .ID $.Household.ID}} is-active{{end}}">{{.Name}}</button>
+          </form>
+          {{end}}
+        </div>
+      </details>
+      {{else}}
+      <span class="am-shell__household">Household &middot; {{.HouseholdName}}</span>
+      {{end}}
+      {{end}}
 
       <span id="dnd-indicator">{{template "dnd-indicator-content" .}}</span>
 

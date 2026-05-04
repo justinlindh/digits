@@ -46,14 +46,14 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	myHousehold := h.primaryHousehold(r)
+	myHousehold := h.activeHousehold(r)
 	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
 
 	data := linksData{
-		chromeData:  newChromeData("links", user, myHousehold),
+		chromeData:  h.newChromeDataWithHouseholds(r, "links"),
 		CreatedCode: r.URL.Query().Get("created"),
 		Accepted:    r.URL.Query().Get("accepted") == "1",
 		Revoked:     r.URL.Query().Get("revoked") == "1",
@@ -87,12 +87,11 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.activeHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	link, err := h.linkStore.CreateInvite(r.Context(), myHousehold.ID, user.ID)
 	if err != nil {
@@ -110,12 +109,11 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.activeHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)

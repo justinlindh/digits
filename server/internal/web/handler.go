@@ -17,6 +17,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -212,6 +213,7 @@ type Handler struct {
 	tmplLinks          *template.Template
 	tmplConnecting     *template.Template
 	tmplWelcome        *template.Template
+	tmplInvite         *template.Template
 	tmplCallLivePanel          *template.Template
 	tmplCallLiveDetail         *template.Template
 	tmplConferenceLivePanel    *template.Template
@@ -227,7 +229,9 @@ type Handler struct {
 	// Pairing
 	pairingStore *pairing.Store
 	// Household links
-	linkStore *household.LinkStore
+	linkStore   *household.LinkStore
+	inviteStore *household.InviteStore
+	emailer     email.Sender
 	// Rate limiters. All four are Handler fields so Router() has a single
 	// construction pattern; previously the magic-link verify and Google
 	// login limiters were instantiated inline inside Router(), which made
@@ -236,6 +240,7 @@ type Handler struct {
 	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
 	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
 	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
+	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
 	// Updates
 	Releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
@@ -289,6 +294,8 @@ type Deps struct {
 	HouseholdStore *household.Store
 	PairingStore   *pairing.Store
 	LinkStore      *household.LinkStore
+	InviteStore    *household.InviteStore
+	Emailer        email.Sender
 	Metrics        *metrics.Registry
 }
 
@@ -354,6 +361,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	tmplInvite, err := parsePage("invite.html")
+	if err != nil {
+		return nil, err
+	}
 	tmplCallLivePanel, err := template.New("call-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_call-live-panel.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-panel: %w", err)
@@ -408,6 +419,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplLinks:          tmplLinks,
 		tmplConnecting:     tmplConnecting,
 		tmplWelcome:        tmplWelcome,
+		tmplInvite:         tmplInvite,
 		tmplCallLivePanel:          tmplCallLivePanel,
 		tmplCallLiveDetail:         tmplCallLiveDetail,
 		tmplConferenceLivePanel:    tmplConferenceLivePanel,
@@ -420,10 +432,13 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		householdStore:     deps.HouseholdStore,
 		pairingStore:       deps.PairingStore,
 		linkStore:          deps.LinkStore,
+		inviteStore:        deps.InviteStore,
+		emailer:            deps.Emailer,
 		authLimiter:        ratelimit.New(5, time.Minute),
 		magicVerifyLimiter: ratelimit.New(10, time.Minute),
 		googleLoginLimiter: ratelimit.New(10, time.Minute),
 		pairingLimiter:     ratelimit.New(5, time.Minute),
+		inviteLimiter:      ratelimit.New(5, time.Minute),
 		metrics:            deps.Metrics,
 	}, nil
 }
@@ -453,6 +468,8 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", h.googleLoginLimiter.Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
+	mux.HandleFunc("GET /invite/{token}", h.handleInviteGet)
+	mux.HandleFunc("POST /invite/{token}/accept", h.handleInviteAcceptPost)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
 	mux.HandleFunc("GET /ws", h.handleWS)
@@ -518,6 +535,10 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
 	protected.HandleFunc("POST /settings/appearance", h.handleSettingsAppearance)
+	protected.Handle("POST /settings/household/invite", h.inviteLimiter.Middleware(http.HandlerFunc(h.handleHouseholdInvitePost)))
+	protected.HandleFunc("POST /settings/household/invite/{id}/cancel", h.handleHouseholdInviteCancelPost)
+	protected.HandleFunc("POST /settings/household/members/{id}/remove", h.handleHouseholdMemberRemovePost)
+	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)

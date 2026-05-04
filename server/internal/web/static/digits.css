@@ -2094,3 +2094,21 @@ html[data-theme="dark"] .confirm-dialog {
   cursor: default;
   pointer-events: none;
 }
+
+/* Household switcher */
+.rail__hh-switcher { position: relative; }
+.rail__hh-switcher summary { cursor: pointer; list-style: none; }
+.rail__hh-switcher summary::-webkit-details-marker { display: none; }
+.rail__hh-arrow { font-size: 8px; opacity: 0.5; }
+.rail__hh-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; min-width: 180px; margin-top: 4px; overflow: hidden;
+}
+.rail__hh-option {
+  display: block; width: 100%; padding: 8px 12px;
+  border: none; background: transparent; color: var(--ink);
+  font-size: 13px; text-align: left; cursor: pointer;
+}
+.rail__hh-option:hover { background: var(--line); }
+.rail__hh-option.is-active { font-weight: 600; }

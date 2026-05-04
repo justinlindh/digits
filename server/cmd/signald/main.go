@@ -197,6 +197,8 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
+		InviteStore:    household.NewInviteStore(database.DB),
+		Emailer:        emailSender,
 		Metrics:        mreg,
 	}, web.HandlerConfig{
 		Addr:        cfg.Addr,

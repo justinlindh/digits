@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
@@ -20,8 +19,7 @@ type callsData struct {
 const callsPageSize = 50
 
 func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	if hh == nil || !hh.CallHistoryEnabled {
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
@@ -78,7 +76,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderWith(w, h.tmplCalls, layoutFor(r), callsData{
-		chromeData:  newChromeData("calls", user, hh),
+		chromeData:  h.newChromeDataWithHouseholds(r, "calls"),
 		Entries:     entries,
 		OlderCursor: olderCursor,
 		IsPaged:     cursor != nil,
@@ -105,12 +103,11 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	call, ownedLines, hh, ok := h.requireCallEndpointOwnership(w, r, callID)
+	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
 	if !ok {
 		return
 	}
 
-	user := auth.UserFromContext(r.Context())
 	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
 	callerEp, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
@@ -126,7 +123,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := callLiveDetailData{
-		chromeData:   newChromeData("call-live", user, hh),
+		chromeData:   h.newChromeDataWithHouseholds(r, "call-live"),
 		Call:         call,
 		Caller:       callerEp,
 		Callee:       calleeEp,

@@ -251,7 +251,7 @@ func TestRefreshSession(t *testing.T) {
 func TestCreateAndValidateMagicLink(t *testing.T) {
 	s := testDB(t)
 
-	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", 15*time.Minute, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// First use should succeed
-	email, err := s.ValidateMagicLink(context.Background(), token)
+	email, _, err := s.ValidateMagicLink(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateMagicLink: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// Second use should fail (single-use enforcement)
-	_, err = s.ValidateMagicLink(context.Background(), token)
+	_, _, err = s.ValidateMagicLink(context.Background(), token)
 	if err == nil {
 		t.Error("expected error on reuse of magic link, got nil")
 	}
@@ -277,7 +277,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 
 func TestValidateMagicLink_InvalidToken(t *testing.T) {
 	s := testDB(t)
-	_, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
+	_, _, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
 	if err == nil {
 		t.Error("expected error for invalid magic link token, got nil")
 	}
@@ -299,7 +299,7 @@ func TestCleanupExpired(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
-	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", 15*time.Minute)
+	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", 15*time.Minute, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}

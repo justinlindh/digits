@@ -227,15 +227,11 @@ func userDisplayLabel(u *auth.User) string {
 // householdNumbers returns the set of phone numbers belonging to the
 // authenticated user's household. Returns nil if the user has no household.
 func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.householdStore == nil {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		return nil
-	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
 		return nil
 	}
@@ -246,10 +242,10 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// primaryHousehold returns the first household the authenticated user belongs
-// to, or nil when the user is unauthenticated, the store is not wired, lookup
-// fails, or the user has no households.
-func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
+// activeHousehold returns the household the user is currently viewing. Reads
+// active_household_id from the session; falls back to the first household
+// when unset or when the user is no longer a member.
+func (h *Handler) activeHousehold(r *http.Request) *household.Household {
 	if h.householdStore == nil {
 		return nil
 	}
@@ -261,6 +257,19 @@ func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 	if err != nil || len(households) == 0 {
 		return nil
 	}
+
+	cookie, err := r.Cookie(auth.CookieName)
+	if err == nil && h.authStore != nil {
+		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if activeID != "" {
+			for _, hh := range households {
+				if hh.ID == activeID {
+					return hh
+				}
+			}
+		}
+	}
+
 	return households[0]
 }
 
@@ -269,10 +278,11 @@ func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
 // HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
 // Household pointer so templates hit one source of truth per request.
 type chromeData struct {
-	Page      string
-	Version   string
-	User      *auth.User
-	Household *household.Household
+	Page       string
+	Version    string
+	User       *auth.User
+	Household  *household.Household
+	Households []*household.Household
 }
 
 func (c chromeData) HouseholdName() string {
@@ -303,6 +313,33 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 		User:      user,
 		Household: hh,
 	}
+}
+
+func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
+	user := auth.UserFromContext(r.Context())
+	if user == nil || h.householdStore == nil {
+		return newChromeData(page, user, nil)
+	}
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
+	if err != nil || len(households) == 0 {
+		return newChromeData(page, user, nil)
+	}
+	active := households[0]
+	cookie, cookieErr := r.Cookie(auth.CookieName)
+	if cookieErr == nil && h.authStore != nil {
+		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if activeID != "" {
+			for _, hh := range households {
+				if hh.ID == activeID {
+					active = hh
+					break
+				}
+			}
+		}
+	}
+	cd := newChromeData(page, user, active)
+	cd.Households = households
+	return cd
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

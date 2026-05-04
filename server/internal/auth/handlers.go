@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/email"
@@ -63,8 +64,9 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 		http.Redirect(w, r, "/auth/login?error=email+required", http.StatusSeeOther)
 		return
 	}
+	returnTo := r.FormValue("return_to")
 
-	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, 15*time.Minute)
+	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, 15*time.Minute, returnTo)
 	if err != nil {
 		slog.Error("magic link creation failed", "err", err)
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
@@ -88,7 +90,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 // HandleMagicLinkVerify validates a magic link token and creates a session.
 func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
-	emailAddr, err := h.store.ValidateMagicLink(r.Context(), token)
+	emailAddr, returnTo, err := h.store.ValidateMagicLink(r.Context(), token)
 	if err != nil {
 		http.Redirect(w, r, "/auth/login?error=invalid+or+expired+link", http.StatusSeeOther)
 		return
@@ -129,7 +131,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
 }
 
 // HandleDevSession creates an authenticated session in one round-trip for e2e testing.
@@ -206,7 +208,24 @@ func LoginRedirectFor(u *User) string {
 	return "/"
 }
 
+func isSafeRedirect(path string) bool {
+	return path != "" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "/\\")
+}
+
+// safeReturnTo validates a returnTo path to prevent open redirect attacks.
+// It only allows paths that start with "/" but not "//" (which browsers treat as
+// protocol-relative URLs). Falls back to LoginRedirectFor when the path is invalid.
+func safeReturnTo(returnTo string, user *User) string {
+	if isSafeRedirect(returnTo) {
+		return returnTo
+	}
+	return LoginRedirectFor(user)
+}
+
 // HandleLogout destroys the session and clears the cookie.
+// An optional "redirect" form parameter (must be a relative path) overrides
+// the default redirect to /auth/login, which the invite page uses to send the
+// user back to the invite after signing out of the wrong account.
 func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil {
@@ -215,5 +234,9 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	clearSessionCookie(w, h.cookieDomain)
-	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	redirect := "/auth/login"
+	if redir := r.FormValue("redirect"); isSafeRedirect(redir) {
+		redirect = redir
+	}
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }

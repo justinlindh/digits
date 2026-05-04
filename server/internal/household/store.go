@@ -154,6 +154,53 @@ func (s *Store) GetMembers(ctx context.Context, householdID string) ([]Member, e
 	return members, rows.Err()
 }
 
+// MemberWithUser includes user profile data alongside membership info.
+type MemberWithUser struct {
+	UserID string
+	Email  string
+	Name   string
+	Role   string
+}
+
+// GetMembersWithUsers returns all members of a household with their user profile data.
+func (s *Store) GetMembersWithUsers(ctx context.Context, householdID string) ([]MemberWithUser, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT hm.user_id, u.email, u.name, hm.role
+		 FROM household_members hm
+		 JOIN users u ON u.id = hm.user_id
+		 WHERE hm.household_id = $1`,
+		householdID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var members []MemberWithUser
+	for rows.Next() {
+		var m MemberWithUser
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Role); err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+// IsMemberByEmail checks if a user with the given email is a member of the household.
+func (s *Store) IsMemberByEmail(ctx context.Context, householdID, email string) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM household_members hm
+		 JOIN users u ON u.id = hm.user_id
+		 WHERE hm.household_id = $1 AND lower(u.email) = lower($2)`,
+		householdID, email,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("check member by email: %w", err)
+	}
+	return count > 0, nil
+}
+
 // CountHouseholds returns the total number of households.
 func (s *Store) CountHouseholds(ctx context.Context) (int, error) {
 	var count int
@@ -185,6 +232,32 @@ func (h *Household) Location() *time.Location {
 		return time.UTC
 	}
 	return loc
+}
+
+// RemoveMember removes a user from a household.
+func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM household_members WHERE user_id = $1 AND household_id = $2`,
+		userID, householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("remove member: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("user is not a member of this household")
+	}
+	return nil
+}
+
+// MemberCount returns the number of members in a household.
+func (s *Store) MemberCount(ctx context.Context, householdID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM household_members WHERE household_id = $1`,
+		householdID,
+	).Scan(&count)
+	return count, err
 }
 
 // SetCallHistoryEnabled toggles call history for a household.

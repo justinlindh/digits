@@ -38,7 +38,7 @@ func (h *Handler) handleDashboardStream(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
