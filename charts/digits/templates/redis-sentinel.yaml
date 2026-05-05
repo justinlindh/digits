@@ -14,7 +14,9 @@ data:
     maxmemory 64mb
     maxmemory-policy allkeys-lru
   sentinel.conf: |
-    sentinel monitor {{ .Values.redis.sentinelMasterName }} {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless 6379 2
+    sentinel resolve-hostnames yes
+    sentinel announce-hostnames yes
+    sentinel monitor {{ .Values.redis.sentinelMasterName }} {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379 {{ div (add (int .Values.redis.replicas) 1) 2 }}
     sentinel down-after-milliseconds {{ .Values.redis.sentinelMasterName }} 5000
     sentinel failover-timeout {{ .Values.redis.sentinelMasterName }} 10000
     sentinel parallel-syncs {{ .Values.redis.sentinelMasterName }} 1
@@ -108,9 +110,10 @@ spec:
             - |
               cp /etc/redis/redis.conf /tmp/redis.conf
               if [ "$(hostname)" != "{{ include "digits.fullname" . }}-redis-0" ]; then
-                echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless 6379" >> /tmp/redis.conf
+                echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379" >> /tmp/redis.conf
               fi
               redis-server /tmp/redis.conf
+          command: ["redis-server", "/etc/redis/redis.conf"]
           volumeMounts:
             - name: config
               mountPath: /etc/redis
