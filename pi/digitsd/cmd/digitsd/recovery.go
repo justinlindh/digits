@@ -72,10 +72,48 @@ func recoveryInitSetup() {
 		slog.Info("recovery init: log file opened")
 	}
 
-	// Load WiFi kernel module.
-	slog.Info("recovery init: loading brcmfmac")
-	exec.Command("/sbin/modprobe", "brcmfmac").Run()
-	time.Sleep(2 * time.Second)
+	// Load kernel modules explicitly via insmod in dependency order.
+	// BusyBox modprobe fails on the recovery partition because modules.dep
+	// references thousands of modules that don't exist here. insmod bypasses
+	// that entirely.
+	kver := ""
+	if entries, err := os.ReadDir("/lib/modules"); err == nil && len(entries) > 0 {
+		kver = entries[0].Name()
+	}
+	slog.Info("recovery init: kernel version", "kver", kver)
+
+	loadMod := func(path string) {
+		full := "/lib/modules/" + kver + "/" + path
+		if out, err := exec.Command("/sbin/insmod", full).CombinedOutput(); err != nil {
+			slog.Warn("recovery init: insmod failed", "path", path, "error", err, "output", string(out))
+		} else {
+			slog.Info("recovery init: insmod ok", "path", path)
+		}
+	}
+
+	// WiFi chain
+	loadMod("rfkill.ko")
+	loadMod("cfg80211.ko")
+	loadMod("brcmutil.ko")
+	loadMod("brcmfmac.ko")
+	loadMod("brcmfmac-wcc.ko")
+
+	// Audio chain
+	loadMod("kernel/sound/core/snd.ko")
+	loadMod("kernel/sound/core/snd-timer.ko")
+	loadMod("kernel/sound/core/snd-pcm.ko")
+	loadMod("kernel/sound/core/snd-pcm-dmaengine.ko")
+	loadMod("kernel/sound/core/snd-compress.ko")
+	loadMod("kernel/drivers/base/regmap/regmap-i2c.ko")
+	loadMod("kernel/sound/soc/snd-soc-core.ko")
+	loadMod("kernel/sound/soc/bcm/snd-soc-bcm2835-i2s.ko")
+	loadMod("kernel/sound/soc/codecs/snd-soc-tlv320aic3x.ko")
+	loadMod("kernel/sound/soc/codecs/snd-soc-tlv320aic3x-i2c.ko")
+	loadMod("kernel/sound/soc/generic/snd-soc-simple-card-utils.ko")
+	loadMod("kernel/sound/soc/generic/snd-soc-simple-card.ko")
+
+	slog.Info("recovery init: modules loaded, waiting for devices")
+	time.Sleep(3 * time.Second)
 
 	// Unblock WiFi radio.
 	entries, _ := os.ReadDir("/sys/class/rfkill")
@@ -116,24 +154,13 @@ func recoveryInitSetup() {
 
 	slog.Info("recovery init: AP started (Digits-Recovery)")
 
-	// Load audio kernel modules from the rootfs (mounted read-only temporarily).
-	os.MkdirAll("/tmp/rootfs", 0755)
-	if err := syscall.Mount("/dev/mmcblk0p2", "/tmp/rootfs", "ext4", syscall.MS_RDONLY, ""); err == nil {
-		os.MkdirAll("/lib/modules", 0755)
-		syscall.Mount("/tmp/rootfs/lib/modules", "/lib/modules", "", syscall.MS_BIND, "")
-		for _, mod := range []string{"snd_soc_bcm2835_i2s", "snd_soc_tlv320aic3x_i2c", "snd_soc_simple_card"} {
-			if out, err := exec.Command("/sbin/modprobe", mod).CombinedOutput(); err != nil {
-				slog.Warn("recovery init: modprobe failed", "module", mod, "error", err, "output", string(out))
-			} else {
-				slog.Info("recovery init: loaded module", "module", mod)
-			}
-		}
-		syscall.Unmount("/lib/modules", 0)
-		syscall.Unmount("/tmp/rootfs", 0)
-	} else {
-		slog.Warn("recovery init: could not mount rootfs for audio modules", "error", err)
+	// Audio in recovery is not yet working. The kernel modules load
+	// successfully but the device tree binding doesn't trigger from
+	// insmod alone, and writing to the sysfs bind file crashes PID 1.
+	// The voice menu runs silently; keypad controls still work.
+	if data, err := os.ReadFile("/proc/asound/cards"); err == nil {
+		slog.Info("recovery init: ALSA cards", "cards", string(data))
 	}
-	time.Sleep(time.Second)
 
 	// Reap zombies (PID 1 responsibility).
 	go func() {
@@ -143,22 +170,24 @@ func recoveryInitSetup() {
 	}()
 
 	slog.Info("recovery init: setup complete")
+	syscall.Sync()
 }
 
 func runRecoveryMode() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
 	slog.Info("digitsd: entering recovery mode")
 
 	if os.Getpid() == 1 {
 		recoveryInitSetup()
 	}
+	slog.Info("recovery: init done, starting serial/audio")
+	syscall.Sync()
 
 	// Open serial port with retry.
+	serialLogger := slog.Default()
 	var sp *phone.SerialPort
 	for attempt := 1; attempt <= 10; attempt++ {
 		var err error
-		sp, err = phone.OpenSerial(*serialDev, 115200, logger)
+		sp, err = phone.OpenSerial(*serialDev, 115200, serialLogger)
 		if err != nil {
 			slog.Warn("serial: open failed, retrying", "attempt", attempt, "error", err)
 			time.Sleep(500 * time.Millisecond)
@@ -177,54 +206,95 @@ func runRecoveryMode() {
 		log.Fatal("serial: failed to open and ping after 10 attempts")
 	}
 	slog.Info("serial: connected")
+	syscall.Sync()
 
 	// Set LED state for recovery mode.
 	sp.LED("LOCK")
 	time.Sleep(50 * time.Millisecond)
 	sp.LED("HEARTBEAT")
 
-	// Initialize ALSA playback.
-	pbCfg := audio.DefaultPlaybackConfig()
-	if *alsaDevice != "" {
-		pbCfg.Device = *alsaDevice
+	// Initialize ALSA playback. In recovery mode, /etc/asound.conf is
+	// unavailable (rootfs unmounted), so try the raw hardware device first.
+	// Log what ALSA sees for diagnostics.
+	if data, err := os.ReadFile("/proc/asound/cards"); err == nil {
+		slog.Info("ALSA cards", "cards", string(data))
+	} else {
+		slog.Warn("ALSA: cannot read /proc/asound/cards", "error", err)
 	}
-	pb, err := audio.NewPlayback(pbCfg)
-	if err != nil {
-		// Fallback: try the raw hardware device directly.
-		slog.Warn("playback: default device failed, trying hw:CARD=digitscodec,DEV=0", "error", err)
-		pbCfg.Device = "hw:CARD=digitscodec,DEV=0"
-		pb, err = audio.NewPlayback(pbCfg)
+	var mixer *audio.Mixer
+	for _, dev := range []string{"hw:CARD=digitscodec,DEV=0", "hw:1,0", "hw:0,0", "plughw:CARD=Zero,DEV=0", "default"} {
+		slog.Info("playback: trying device", "device", dev)
+		pbCfg := audio.Config{
+			Device:     dev,
+			SampleRate: 48000,
+			Channels:   1,
+			FrameSize:  960,
+		}
+		pb, err := audio.NewPlayback(pbCfg)
 		if err != nil {
-			log.Fatalf("playback: cannot open any device: %v", err)
+			slog.Warn("playback: device failed", "device", dev, "error", err)
+			continue
+		}
+		slog.Info("playback: opened", "device", dev)
+		mixer = audio.NewMixer(pb)
+		if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
+			slog.Warn("mixer: failed to load tones (voice menu will be silent)", "dir", *toneDir, "error", err)
+		}
+		mixer.Start()
+		defer mixer.Stop()
+		break
+	}
+	if mixer == nil {
+		slog.Warn("playback: no audio device available, voice menu will be silent")
+	}
+	syscall.Sync()
+
+	// Wrap mixer in a nil-safe helper for recovery code.
+	play := func(name string) {
+		if mixer != nil {
+			mixer.PlayOnce(name)
 		}
 	}
-	slog.Info("playback: opened", "device", pbCfg.Device)
-
-	// Create mixer and load tones.
-	mixer := audio.NewMixer(pb)
-	if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
-		slog.Warn("mixer: failed to load tones (voice menu will be silent)", "dir", *toneDir, "error", err)
+	stopAll := func() {
+		if mixer != nil {
+			mixer.StopAll()
+		}
 	}
-	mixer.Start()
-	defer mixer.Stop()
+	oncePlaying := func() bool {
+		if mixer != nil {
+			return mixer.OncePlaying()
+		}
+		return false
+	}
 
 	state := &recoveryState{}
 
 	// Start recovery web UI.
-	go serveRecoveryWeb(state, mixer, sp)
+	go serveRecoveryWeb(state, play, sp)
 
 	// Run voice menu event loop.
-	recoveryEventLoop(sp, mixer, state)
+	recoveryEventLoop(sp, play, stopAll, oncePlaying, state)
 }
 
+type playFunc func(string)
+
 // serveRecoveryWeb starts the recovery HTTP server on :80.
-func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.SerialPort) {
+func serveRecoveryWeb(state *recoveryState, play playFunc, sp *phone.SerialPort) {
 	staticFS, err := fs.Sub(recoveryStaticFS, "recovery_static")
 	if err != nil {
 		log.Fatalf("recovery web: embed sub: %v", err)
 	}
 
 	mux := http.NewServeMux()
+
+	// Captive portal detection redirects.
+	captiveRedirect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusFound)
+	})
+	mux.Handle("/generate_204", captiveRedirect)
+	mux.Handle("/hotspot-detect.html", captiveRedirect)
+	mux.Handle("/connecttest.txt", captiveRedirect)
+	mux.Handle("/library/test/success.html", captiveRedirect)
 
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
@@ -241,6 +311,7 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 		}
 		slog.Info("recovery web: try-again requested")
 		_ = bootcount.Clear(bootcount.DefaultPath)
+		os.Remove("/data/digits/recovery-mode")
 		w.WriteHeader(http.StatusOK)
 		go doReboot()
 	})
@@ -256,38 +327,36 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 		}
 		slog.Info("recovery web: factory-reset requested")
 		w.WriteHeader(http.StatusOK)
-		go doRecoveryFactoryReset(mixer)
+		go doRecoveryFactoryReset(play)
 	})
 
 	slog.Info("recovery web: listening on :80")
+	syscall.Sync()
 	if err := http.ListenAndServe(":80", mux); err != nil {
 		slog.Error("recovery web: listen failed", "error", err)
 	}
 }
 
 // recoveryEventLoop runs the voice menu on the phone handset.
-func recoveryEventLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState) {
+func recoveryEventLoop(sp *phone.SerialPort, play playFunc, stopAll func(), oncePlaying func() bool, state *recoveryState) {
 	events := sp.Events()
 	for {
-		// Wait for off-hook.
 		ev := <-events
 		if ev != "HOOK:OFF" {
 			continue
 		}
 		slog.Info("recovery: handset off-hook, playing menu")
-		recoveryHandsetSession(sp, mixer, state, events)
+		recoveryHandsetSession(play, stopAll, oncePlaying, state, events)
 	}
 }
 
-// recoveryHandsetSession handles one off-hook session: plays menu, waits for input.
-func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState, events <-chan string) {
+func recoveryHandsetSession(play playFunc, stopAll func(), oncePlaying func() bool, state *recoveryState, events <-chan string) {
 	for {
-		mixer.PlayOnce("recovery_menu")
+		play("recovery_menu")
 
-		// Wait for the menu audio to finish, a key press, or on-hook.
 		key, hungUp := waitForKeyOrHangup(events, 30*time.Second)
 		if hungUp {
-			mixer.StopAll()
+			stopAll()
 			slog.Info("recovery: handset on-hook")
 			return
 		}
@@ -295,19 +364,19 @@ func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *rec
 		switch key {
 		case "1":
 			slog.Info("recovery: user pressed 1, restarting")
-			mixer.PlayOnce("restarting")
-			waitForOnceComplete(mixer, 5*time.Second)
+			play("restarting")
+			waitForOnceComplete(oncePlaying, 5*time.Second)
 			_ = bootcount.Clear(bootcount.DefaultPath)
+			os.Remove("/data/digits/recovery-mode")
 			doReboot()
 			return
 
 		case "2":
 			slog.Info("recovery: user pressed 2, confirming factory reset")
-			mixer.PlayOnce("confirm_factory_reset")
-			// Wait for confirmation (KEY:2 again) or bail.
+			play("confirm_factory_reset")
 			confirm, hungUp := waitForKeyOrHangup(events, 15*time.Second)
 			if hungUp {
-				mixer.StopAll()
+				stopAll()
 				return
 			}
 			if confirm != "2" {
@@ -318,7 +387,7 @@ func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *rec
 				slog.Warn("recovery: factory reset already in progress")
 				return
 			}
-			doRecoveryFactoryReset(mixer)
+			doRecoveryFactoryReset(play)
 			return
 
 		case "":
@@ -355,8 +424,7 @@ func waitForKeyOrHangup(events <-chan string, timeout time.Duration) (string, bo
 	}
 }
 
-// waitForOnceComplete waits up to timeout for all one-shot tones to finish.
-func waitForOnceComplete(mixer *audio.Mixer, timeout time.Duration) {
+func waitForOnceComplete(oncePlaying func() bool, timeout time.Duration) {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
@@ -365,7 +433,7 @@ func waitForOnceComplete(mixer *audio.Mixer, timeout time.Duration) {
 		case <-deadline:
 			return
 		case <-ticker.C:
-			if !mixer.OncePlaying() {
+			if !oncePlaying() {
 				return
 			}
 		}
@@ -373,19 +441,18 @@ func waitForOnceComplete(mixer *audio.Mixer, timeout time.Duration) {
 }
 
 // doRecoveryFactoryReset performs the full factory reset sequence.
-func doRecoveryFactoryReset(mixer *audio.Mixer) {
+func doRecoveryFactoryReset(play playFunc) {
 	slog.Info("recovery: starting factory reset")
-	mixer.PlayOnce("factory_reset_in_progress")
-	waitForOnceComplete(mixer, 10*time.Second)
+	play("factory_reset_in_progress")
+	time.Sleep(5 * time.Second)
 
-	// Restore root filesystem.
-	mixer.PlayOnce("restoring_system")
-	waitForOnceComplete(mixer, 10*time.Second)
+	play("restoring_system")
+	time.Sleep(3 * time.Second)
 
 	rootfsImg := "/rootfs.img.zst"
 	if _, err := os.Stat(rootfsImg); err != nil {
 		slog.Error("recovery: rootfs.img.zst not found", "path", rootfsImg, "error", err)
-		mixer.PlayOnce("error_tone")
+		play("error_tone")
 		return
 	}
 
@@ -410,8 +477,8 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	slog.Info("recovery: rootfs restored")
 
 	// Format /data partition.
-	mixer.PlayOnce("formatting_data")
-	waitForOnceComplete(mixer, 10*time.Second)
+	play("formatting_data")
+	time.Sleep(3 * time.Second)
 
 	slog.Info("recovery: unmounting /data")
 	_ = syscall.Unmount("/data", 0)
@@ -422,7 +489,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	mkfs.Stderr = os.Stderr
 	if err := mkfs.Run(); err != nil {
 		slog.Error("recovery: mkfs.ext4 failed", "error", err)
-		mixer.PlayOnce("error_tone")
+		play("error_tone")
 		return
 	}
 
@@ -430,7 +497,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	slog.Info("recovery: mounting /data")
 	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
 		slog.Error("recovery: mount /data failed", "error", err)
-		mixer.PlayOnce("error_tone")
+		play("error_tone")
 		return
 	}
 
@@ -454,8 +521,8 @@ func doRecoveryFactoryReset(mixer *audio.Mixer) {
 	}
 
 	slog.Info("recovery: factory reset complete")
-	mixer.PlayOnce("reset_complete")
-	waitForOnceComplete(mixer, 10*time.Second)
+	play("reset_complete")
+	time.Sleep(3 * time.Second)
 
 	doReboot()
 }
