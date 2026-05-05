@@ -66,7 +66,7 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, *household.Household, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
-		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		slog.Error("ownedLinesForUser: list households failed", "user_id", user.ID, "err", err)
 		return nil, nil, false
 	}
 	if len(households) == 0 {
@@ -76,7 +76,7 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 	for _, hh := range households {
 		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
-			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			slog.Error("ownedLinesForUser: list lines failed", "household_id", hh.ID, "err", err)
 			return nil, nil, false
 		}
 		for i := range hhLines {
