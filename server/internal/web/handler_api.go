@@ -160,7 +160,9 @@ func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"available": !exists}) //nolint:errcheck
+	if err := json.NewEncoder(w).Encode(map[string]bool{"available": !exists}); err != nil {
+		slog.Error("number available: json encode failed", "err", err)
+	}
 }
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {

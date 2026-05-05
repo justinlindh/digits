@@ -191,7 +191,6 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 		slog.Info("drain: no connections to close")
 		return
 	}
-	slog.Info("drain: sending close frames", "connections", n)
 
 	// Send 1001 Going Away close frame to each connection.
 	deadline, ok := ctx.Deadline()
