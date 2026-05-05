@@ -36,6 +36,7 @@ redis:
 cnpg:
   enabled: false
   imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  enableSuperuserAccess: false
   userdb:
     instances: 2
     size: 10Gi
@@ -45,6 +46,7 @@ cnpg:
     sharedPreloadLibraries: []
     customQueriesConfigMap: []
     postInitSQL: []
+    postInitApplicationSQL: []
   backup:
     enabled: false
     retentionPolicy: "14d"
