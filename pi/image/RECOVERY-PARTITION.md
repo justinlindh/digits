@@ -72,6 +72,25 @@ These are already copied by `build-image.sh` and remain required:
 /bin/busybox (with /sbin/modprobe symlink)
 ```
 
+## ALSA Configuration
+
+The recovery partition needs `/usr/share/alsa/` (the full ALSA config tree from the rootfs). Without it, `plughw:`, `sysdefault:`, and `alsactl` cannot resolve device names. Copy the entire `/usr/share/alsa/` directory during image build.
+
+## Additional Binaries
+
+Beyond the tool list above, the following are also required:
+
+| Binary | Purpose |
+|---|---|
+| `/bin/amixer` | Set PCM volume after mixer state restore |
+| `/bin/alsactl` | Restore codec mixer state from `/mixer.state` |
+
+Copy from the rootfs. Both are dynamically linked against `libasound.so.2` (already present).
+
+## Mixer State File
+
+Copy the codec mixer state to `/mixer.state` on the recovery partition. Source: `pi/digitsd/internal/assets/embed/mixer/v2.state`. This file configures the TLV320AIC3104's internal routing (DAC to HP output, gain stages, power enables). Without it, the output path is muted.
+
 ## Build Script Checklist
 
 When updating `tools/build-image.sh` (step 15b: populate recovery partition):
@@ -82,7 +101,9 @@ When updating `tools/build-image.sh` (step 15b: populate recovery partition):
 4. Copy audio kernel modules to `/lib/modules/<kver>/kernel/` (decompress `.ko.xz` to `.ko`)
 5. Copy and fix `modules.dep` (sed `s/.ko.xz/.ko/g`)
 6. Copy recovery WAV files to `/tones/`
-7. Copy `aplay` to `/bin/` (already in the tool list)
+7. Copy `aplay`, `amixer`, `alsactl` to `/bin/`
+8. Copy `/usr/share/alsa/` directory (ALSA config tree)
+9. Copy `pi/digitsd/internal/assets/embed/mixer/v2.state` to `/mixer.state`
 
 ## What digitsd handles at runtime (PID 1 init)
 
@@ -90,15 +111,28 @@ When running as PID 1, digitsd's `recoveryInitSetup()` handles:
 
 - Sets `PATH=/bin:/sbin:/usr/bin:/usr/sbin` and `LD_LIBRARY_PATH=/lib`
 - Mounts `/proc`, `/sys`, `/tmp`, `/dev`, `/data`
-- Loads `brcmfmac` via `/sbin/modprobe` for WiFi
+- Enables GPCLK0 on GPIO4 for codec MCLK (12.288 MHz, via /dev/mem register writes with atomic stores for ARM64 ordering)
+- Loads all kernel modules via insmod in dependency order (WiFi + I2C + audio)
+- Triggers device tree uevent re-emission for codec binding
 - Unblocks rfkill, waits for wlan0
 - Starts hostapd (`Digits-Recovery` SSID) and dnsmasq (captive portal DNS)
-- Mounts rootfs (p2) read-only temporarily to bind-mount `/lib/modules` for manual modprobe fallback
+- Re-toggles GPCLK0 after sound card registration
+- Restores codec mixer state via `alsactl restore`
 - Opens serial port at `/dev/ttyAMA0` (no udev, so `/dev/serial0` symlink does not exist)
-- Initializes ALSA playback, loads tones from `/tones/`
+- Plays audio via `aplay -D plughw:0,0` (blocking, per-clip subprocess)
 - Starts recovery web UI on `:80` with captive portal detection handlers
 - Runs voice menu event loop (off-hook: play menu, KEY:1 restart, KEY:2 factory reset)
 - Zombie reaping (PID 1 responsibility)
+
+## GPCLK0 (Codec Master Clock)
+
+The TLV320AIC3104 needs a 12.288 MHz master clock on its MCLK pin, sourced from GPIO4 (GPCLK0). digitsd configures this via `/dev/mem` register writes to the BCM2835 clock manager.
+
+Critical implementation detail: Go code accessing BCM2835 peripheral registers via mmap MUST use `sync/atomic.StoreUint32` and `atomic.LoadUint32`. Plain pointer dereference (`*(*uint32)(unsafe.Pointer(...)) = val`) compiles to unordered `STR` instructions on ARM64, which the CPU can reorder. The clock manager silently drops divider writes that arrive out of order (before the disable takes effect). This manifests as a zero divider and no audio output despite everything else appearing correct.
+
+The GPCLK0 setup must run twice: once before module loading (so the codec sees MCLK when its driver probes), and once after the sound card registers (to ensure the clock is stable when playback begins).
+
+This Go implementation replaces the Python `digits-enable-gpclk0` systemd service. The Python service can be removed from the image.
 
 ## Known Issues
 
