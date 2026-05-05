@@ -39,33 +39,6 @@ services:
       user-db:
         condition: service_healthy
 
-  admind:
-    image: ghcr.io/justinlindh/digits/admind:v${BUILD_VERSION}
-    restart: unless-stopped
-    environment:
-      ADMIN_ADDR: ":9090"
-      ADMIN_DATABASE_URL: "postgres://${ADMIN_DB_USER:-digits_admin}:${ADMIN_DB_PASSWORD:-changeme}@admin-db:5432/digits_admin?sslmode=disable"
-      ADMIN_STATS_URL: "http://signald:8080/internal/stats"
-      ADMIN_STATS_SECRET: "${ADMIN_SECRET}"
-      ADMIN_INITIAL_USER: "${ADMIN_INITIAL_USER:-admin}"
-      ADMIN_INITIAL_SECRET: "${ADMIN_INITIAL_SECRET}"
-      LOG_FORMAT: "json"
-      ADMIN_METRICS_ADDR: ":9092"
-    ports:
-      - "9094:9090"
-      # Metrics listener; same exposure model as signald above.
-      - "9092:9092"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    depends_on:
-      admin-db:
-        condition: service_healthy
-      signald:
-        condition: service_started
-
   user-db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -81,21 +54,5 @@ services:
       timeout: 3s
       retries: 5
 
-  admin-db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: digits_admin
-      POSTGRES_USER: digits_admin
-      POSTGRES_PASSWORD: "${ADMIN_DB_PASSWORD:-digits_admin}"
-    volumes:
-      - admin_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U digits_admin"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
 volumes:
   user_pgdata:
-  admin_pgdata:

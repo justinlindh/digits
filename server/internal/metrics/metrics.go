@@ -1,5 +1,5 @@
 // Package metrics defines the privacy-respecting Prometheus metric set
-// exported by signald and admind. The design is deliberately conservative:
+// exported by signald. The design is deliberately conservative:
 // every label and every measurement is reviewed against the digits
 // anti-surveillance policy described in docs/mission.md and
 // docs/why-digits.md. Reviewers should treat any new label here as a
@@ -43,15 +43,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
-// Service identifies which binary the metrics belong to. Used as a
-// "service" label on shared metrics so a single Prometheus scrape config
-// can distinguish signald from admind without renaming the metric family.
-type Service string
-
-const (
-	ServiceSignald Service = "signald"
-	ServiceAdmind  Service = "admind"
-)
+const serviceName = "signald"
 
 // SignalingErrorCategory is a closed set of categories for the
 // signaling_errors_total counter. The list is intentionally small and
@@ -87,7 +79,7 @@ type Registry struct {
 // gauges (active devices, active calls) by calling RegisterDevicesGauge and
 // RegisterCallsGauge with closures that read in-memory state. Counters are
 // driven by middleware and signaling code.
-func New(svc Service, version, commit string) *Registry {
+func New(version, commit string) *Registry {
 	reg := prometheus.NewRegistry()
 
 	// Standard process and Go runtime collectors. These provide goroutines,
@@ -103,7 +95,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.HTTPRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "http_requests_total",
 			Help:      "Total HTTP requests handled, partitioned by coarse route group, method, and status code. Routes are bucketed to avoid path components that carry user identifiers.",
 		},
@@ -112,7 +104,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.HTTPRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "http_request_duration_seconds",
 			Help:      "HTTP request latency in seconds, partitioned by coarse route group, method, and status code.",
 			Buckets:   prometheus.DefBuckets,
@@ -121,20 +113,20 @@ func New(svc Service, version, commit string) *Registry {
 	)
 	r.ActiveDevices = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "digits",
-		Subsystem: string(svc),
+		Subsystem: serviceName,
 		Name:      "active_devices",
 		Help:      "Currently connected phones. Count only; no identifiers.",
 	})
 	r.ActiveCalls = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "digits",
-		Subsystem: string(svc),
+		Subsystem: serviceName,
 		Name:      "active_calls",
 		Help:      "Currently active calls. Count only; no participants or routing.",
 	})
 	r.SignalingErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "signaling_errors_total",
 			Help:      "Signaling errors observed by the server, partitioned by a fixed category set. No peer identity is recorded.",
 		},
@@ -143,7 +135,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "build_info",
 			Help:      "Static build info. Always 1; the version and commit are carried as labels.",
 		},

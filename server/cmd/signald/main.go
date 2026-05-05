@@ -60,7 +60,7 @@ func run(ctx context.Context) error {
 	// leaving in-process propagation on, so a future enable does not
 	// require a code change. The shutdown closure flushes buffered spans
 	// on a clean SIGTERM; deferred so a panic during run() still flushes.
-	traceCfg := tracing.NewConfig(string(metrics.ServiceSignald), version.Version, version.Commit)
+	traceCfg := tracing.NewConfig("signald", version.Version, version.Commit)
 	traceShutdown, err := tracing.Init(ctx, traceCfg)
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
@@ -79,7 +79,7 @@ func run(ctx context.Context) error {
 	// Pyroscope continuous profiling. Server address is read from
 	// PYROSCOPE_SERVER_ADDRESS; empty disables the profiler. Profiling
 	// labels are a closed set; see internal/profiling for the rationale.
-	profCfg := profiling.NewConfig(string(metrics.ServiceSignald))
+	profCfg := profiling.NewConfig("signald")
 	profStop, err := profiling.Init(profCfg, version.Version)
 	if err != nil {
 		return fmt.Errorf("init profiling: %w", err)
@@ -130,7 +130,7 @@ func run(ctx context.Context) error {
 	// middleware (HTTP request count + duration) and into the signaling
 	// relay (signaling_errors_total). Live-state gauges sample the hub and
 	// tracker at scrape time so we never persist counts elsewhere.
-	mreg := metrics.New(metrics.ServiceSignald, version.Version, version.Commit)
+	mreg := metrics.New(version.Version, version.Commit)
 	mreg.RegisterDevicesGauge(func() float64 { return float64(len(hub.OnlineNumbers())) })
 	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
 

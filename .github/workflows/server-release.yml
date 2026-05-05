@@ -95,16 +95,3 @@ jobs:
           tags: |
             ghcr.io/justinlindh/digits/signald:v${{ needs.release.outputs.new_release_version }}
             ghcr.io/justinlindh/digits/signald:latest
-
-      - name: Build and push admind
-        uses: docker/build-push-action@v7
-        with:
-          context: server
-          file: server/cmd/admind/Dockerfile
-          push: true
-          build-args: |
-            VERSION=${{ needs.release.outputs.new_release_version }}
-            COMMIT=${{ github.sha }}
-          tags: |
-            ghcr.io/justinlindh/digits/admind:v${{ needs.release.outputs.new_release_version }}
-            ghcr.io/justinlindh/digits/admind:latest

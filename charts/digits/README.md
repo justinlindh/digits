@@ -4,11 +4,11 @@ You almost certainly don't need this. The `docker compose` setup in `server/` is
 
 If you do happen to have a k8s cluster lying around and want to deploy digits there, this chart handles:
 
-- signald and admind Deployments with security-hardened pod specs
-- ClusterIP Services (with optional metrics ports)
-- Ingress resources for external access
-- CNPG PostgreSQL Clusters (userdb + admindb) with S3-compatible backups
-- OpenTelemetry tracing, Pyroscope profiling, and Prometheus ServiceMonitors
+- signald Deployment with security-hardened pod spec
+- ClusterIP Service (with optional metrics port)
+- Ingress resource for external access
+- CNPG PostgreSQL Cluster (userdb) with S3-compatible backups
+- OpenTelemetry tracing, Pyroscope profiling, and Prometheus ServiceMonitor
 
 ## Install
 
@@ -32,16 +32,9 @@ signald:
   envFrom:
     - secretRef:
         name: digits-secrets  # must contain ADMIN_SECRET, SMTP_*, GOOGLE_*, SIGNALD_TURN_*
-
-admind:
-  env:
-    ADMIN_STATS_URL: "http://signald.digits.svc.cluster.local:8080/internal/stats"
-  envFrom:
-    - secretRef:
-        name: digits-secrets
 ```
 
-The `digits-secrets` Secret is created out-of-band (kubectl or sealed-secrets). It must contain at minimum `ADMIN_SECRET` for cross-service auth.
+The `digits-secrets` Secret is created out-of-band (kubectl or sealed-secrets). It must contain at minimum `ADMIN_SECRET` for the internal stats API.
 
 ### CNPG (PostgreSQL)
 
@@ -54,10 +47,6 @@ cnpg:
     instances: 2
     size: 10Gi
     storageClass: longhorn  # your StorageClass
-  admindb:
-    instances: 2
-    size: 5Gi
-    storageClass: longhorn
   backup:
     enabled: true
     destinationPath: s3://cnpg-backups
@@ -65,7 +54,7 @@ cnpg:
     s3CredentialsSecret: minio-cnpg-credentials
 ```
 
-When enabled, the chart creates CNPG Cluster CRs. The operator generates Secrets (`<release>-userdb-app`, `<release>-admindb-app`) containing connection URIs that the deployments consume automatically.
+When enabled, the chart creates a CNPG Cluster CR. The operator generates a Secret (`<release>-userdb-app`) containing the connection URI that the deployment consumes automatically.
 
 ### Ingress
 
@@ -75,8 +64,6 @@ ingress:
   className: traefik  # or nginx, etc.
   signald:
     host: app.example.com
-  admind:
-    host: admin.example.com
 ```
 
 TLS is expected to terminate upstream (load balancer or reverse proxy). The chart does not manage certificates.
@@ -90,13 +77,12 @@ observability:
   otelProtocol: "grpc"
   pyroscopeEndpoint: "http://pyroscope.observability.svc.cluster.local:4040"
   signaldMetricsPort: 9091
-  admindMetricsPort: 9092
   serviceMonitor:
     enabled: true
     interval: 30s
 ```
 
-When enabled, the deployments expose Prometheus metrics on dedicated ports and the chart creates ServiceMonitor resources (requires prometheus-operator/kube-prometheus-stack).
+When enabled, the deployment exposes Prometheus metrics on a dedicated port and the chart creates a ServiceMonitor resource (requires prometheus-operator/kube-prometheus-stack).
 
 ### Multi-replica signaling (Redis)
 
@@ -118,13 +104,10 @@ rotating credentials, leave `redis.url` empty and inject `REDIS_URL` via
 
 ### Image tags
 
-By default, image tags derive from `Chart.yaml`'s `appVersion` (prefixed with `v`). Override per-service:
+By default, image tags derive from `Chart.yaml`'s `appVersion` (prefixed with `v`). Override:
 
 ```yaml
 signald:
-  image:
-    tag: v1.57.0
-admind:
   image:
     tag: v1.57.0
 ```

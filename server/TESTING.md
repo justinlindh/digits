@@ -22,7 +22,7 @@ The blank line between the build tag and the `package` declaration is required b
 
 ## End-to-end tests
 
-Playwright suite in `internal/web/e2e/` driven by `make e2e`. Spins up the full stack (signald + admind + Postgres via `docker compose`) and drives a real browser. Outside the Go test runner.
+Playwright suite in `internal/web/e2e/` driven by `make e2e`. Spins up the full stack (signald + Postgres via `docker compose`) and drives a real browser. Outside the Go test runner.
 
 ## Running tests locally
 
@@ -34,17 +34,16 @@ make test-integration        # unit + integration (starts test-db, resets, runs)
 make e2e                     # playwright e2e (needs running stack)
 ```
 
-`make test-integration` is the preferred local workflow: it spins up an ephemeral Postgres (the `test-db` service in `docker-compose.yml`, profile `test`), drops any leftover schemas, and runs the full integration suite with `TEST_DATABASE_URL` and `TEST_ADMIN_DATABASE_URL` already set. Individual targets (`test-db-up`, `test-db-down`, `test-db-reset`) are available if you want to manage the container separately.
+`make test-integration` is the preferred local workflow: it spins up an ephemeral Postgres (the `test-db` service in `docker-compose.yml`, profile `test`), drops any leftover schemas, and runs the full integration suite with `TEST_DATABASE_URL` already set. Individual targets (`test-db-up`, `test-db-down`, `test-db-reset`) are available if you want to manage the container separately.
 
 Manual invocation also works:
 
 ```
 go test -tags=integration ./...
 export TEST_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_test?sslmode=disable"
-export TEST_ADMIN_DATABASE_URL="postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable"
 ```
 
-If either variable is unset, tests that require it call `t.Skip` and log the reason. Running `go test -tags=integration ./...` without a DSN is safe: it skips anything it can't run.
+If the variable is unset, tests that require it call `t.Skip` and log the reason. Running `go test -tags=integration ./...` without a DSN is safe: it skips anything it can't run.
 
 ## CI
 

@@ -75,7 +75,7 @@ func TestRouteOfNeverEchoesNumber(t *testing.T) {
 }
 
 func TestMiddlewareCountsAndTimes(t *testing.T) {
-	r := New(ServiceSignald, "test", "abc123")
+	r := New("test", "abc123")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -136,7 +136,7 @@ func TestMiddlewareCountsAndTimes(t *testing.T) {
 }
 
 func TestActiveDeviceAndCallGauges(t *testing.T) {
-	r := New(ServiceSignald, "test", "abc123")
+	r := New("test", "abc123")
 	devCount := 0
 	callCount := 0
 	r.RegisterDevicesGauge(func() float64 { return float64(devCount) })
@@ -167,7 +167,7 @@ func TestActiveDeviceAndCallGauges(t *testing.T) {
 }
 
 func TestObserveSignalingError(t *testing.T) {
-	r := New(ServiceSignald, "test", "abc123")
+	r := New("test", "abc123")
 	r.ObserveSignalingError(ErrTURNAllocFailed)
 	r.ObserveSignalingError(ErrTURNAllocFailed)
 	r.ObserveSignalingError(ErrICETimeout)
@@ -181,7 +181,7 @@ func TestObserveSignalingError(t *testing.T) {
 }
 
 func TestBuildInfoLabel(t *testing.T) {
-	r := New(ServiceSignald, "v1.2.3", "deadbeef")
+	r := New("v1.2.3", "deadbeef")
 	if got := testutil.ToFloat64(r.BuildInfo.WithLabelValues("v1.2.3", "deadbeef")); got != 1 {
 		t.Errorf("build_info = %v, want 1", got)
 	}
@@ -191,7 +191,7 @@ func TestBuildInfoLabel(t *testing.T) {
 // expected metric names and no surprise labels (no hidden user identifier
 // labels added by collectors).
 func TestPromhttpExportsExpectedMetrics(t *testing.T) {
-	r := New(ServiceSignald, "test", "abc123")
+	r := New("test", "abc123")
 	// Exercise each metric so the prometheus text exposition emits a HELP/TYPE
 	// line for it. Empty *Vec families don't appear in the scrape output until
 	// at least one labelled child has been observed.

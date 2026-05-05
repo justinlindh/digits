@@ -36,7 +36,7 @@ func withRecording(t *testing.T) *tracetest.SpanRecorder {
 // TestNewConfigDisabledByDefault: with no env vars, NewConfig produces a
 // disabled exporter. Init then returns a no-op shutdown without an error.
 // This is the safe default: if the OTEL_EXPORTER_OTLP_ENDPOINT is
-// missing, signald and admind must still boot.
+// missing, signald must still boot.
 func TestNewConfigDisabledByDefault(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 	c := NewConfig("signald", "v1.0.0", "abc123")
@@ -234,9 +234,8 @@ func TestHTTPServerMiddlewareFiltersNoiseRoutes(t *testing.T) {
 
 // TestHTTPClientTransportInjectsTraceparent confirms outbound requests
 // carry the W3C traceparent header when wrapped via HTTPClientTransport.
-// Without this, admind->signald and any future cross-service hop would
-// produce two disconnected traces in Tempo instead of a parent-child
-// pair.
+// Without this, any cross-service hop would produce two disconnected
+// traces in Tempo instead of a parent-child pair.
 func TestHTTPClientTransportInjectsTraceparent(t *testing.T) {
 	withRecording(t)
 
