@@ -43,7 +43,6 @@ docker compose logs --follow
 
 Once running:
 - **User app** → `https://your-domain.com`
-- **Admin panel** → `https://your-domain.com/admin`
 
 ---
 
@@ -164,7 +163,7 @@ If your server uses a self-signed cert (dev only), add `-insecure` to skip TLS v
 
 ### Pairing Flow
 
-1. In the admin panel (`/admin`), create a household and add a line.
+1. In the user app, complete onboarding to create a household, then add a line on `/phones`.
 2. The system generates a pairing code.
 3. On the Pi, the pairing code is exchanged automatically on first connect -- no screen needed.
 4. Once paired, the phone registers itself and is ready to dial.

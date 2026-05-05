@@ -32,9 +32,6 @@ func TestRouteOfBucketsKnownPaths(t *testing.T) {
 		{"/conference/live/8b6e2bb8-19fa-4f0a-8af9-f60094f0a7d5", "/conference/live/{uuid}"},
 		{"/internal/stats", "/internal/stats"},
 		{"/internal/metrics", "/internal/metrics"},
-		{"/admin", "/admin"},
-		{"/admin/users", "/admin"},
-		{"/admin/login", "/admin"},
 		// Random/unknown paths must NOT echo segments back as labels: that
 		// is the leakage path we explicitly guard against.
 		{"/some/secret/that/should/not/appear", "other"},

@@ -350,10 +350,6 @@ func RouteOf(path string) string {
 	case path == "/connecting":
 		return "/connecting"
 
-	// Admin routes.
-	case path == "/admin" || path == "/admin/" || strings.HasPrefix(path, "/admin/"):
-		return "/admin"
-
 	default:
 		return "other"
 	}
