@@ -3,7 +3,10 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io"
+	"sync/atomic"
+	"unsafe"
 	"io/fs"
 	"log"
 	"log/slog"
@@ -39,6 +42,98 @@ func (rs *recoveryState) startReset() bool {
 	return true
 }
 
+// stereoAdapter wraps a stereo FrameWriter and accepts mono input,
+// duplicating each sample to both channels.
+type stereoAdapter struct {
+	inner      audio.FrameWriter
+	periodSize int
+}
+
+func (s *stereoAdapter) WriteFrame(mono []int16) error {
+	stereo := make([]int16, len(mono)*2)
+	for i, sample := range mono {
+		stereo[i*2] = sample
+		stereo[i*2+1] = sample
+	}
+	return s.inner.WriteFrame(stereo)
+}
+
+func (s *stereoAdapter) PeriodSize() int {
+	return s.periodSize
+}
+
+// enableGPCLK0 configures BCM2835 GPCLK0 on GPIO4 to output ~12.288 MHz.
+// The V2 codec's TLV320AIC3104 needs this as its MCLK source.
+// Source: 19.2 MHz oscillator, divider 1.5625 (DIVI=1, DIVF=2304).
+func enableGPCLK0() {
+	const (
+		clkBase  = 0x3F101000
+		gpioBase = 0x3F200000
+		ctlOff   = 0x70 // CM_GP0CTL
+		divOff   = 0x74 // CM_GP0DIV
+		passwd   = 0x5A000000
+		mash1    = 1 << 9
+		srcOSC   = 1
+		enab     = 1 << 4
+		busy     = 1 << 7
+		divi     = 1
+		divf     = 2304
+	)
+
+	f, err := os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, 0)
+	if err != nil {
+		slog.Warn("gpclk0: cannot open /dev/mem", "error", err)
+		return
+	}
+	defer f.Close()
+
+	clkMem, err := syscall.Mmap(int(f.Fd()), clkBase, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		slog.Warn("gpclk0: mmap clk failed", "error", err)
+		return
+	}
+	defer syscall.Munmap(clkMem)
+
+	gpioMem, err := syscall.Mmap(int(f.Fd()), gpioBase, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	if err != nil {
+		slog.Warn("gpclk0: mmap gpio failed", "error", err)
+		return
+	}
+	defer syscall.Munmap(gpioMem)
+
+	w32 := func(mem []byte, off int, val uint32) {
+		atomic.StoreUint32((*uint32)(unsafe.Pointer(&mem[off])), val)
+	}
+	r32 := func(mem []byte, off int) uint32 {
+		return atomic.LoadUint32((*uint32)(unsafe.Pointer(&mem[off])))
+	}
+
+	// Replicate the exact sequence from the /test-gpclk endpoint that works:
+	// disable, poll BUSY with reads (200 iterations), write div, enable.
+	// The repeated reads of CTL may have a side effect on BCM2835 hardware.
+	w32(clkMem, ctlOff, passwd|0)
+	time.Sleep(10 * time.Millisecond)
+	for i := 0; i < 200; i++ {
+		if r32(clkMem, ctlOff)&busy == 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	w32(clkMem, divOff, passwd|uint32(divi<<12)|uint32(divf))
+	w32(clkMem, ctlOff, passwd|mash1|srcOSC|enab)
+	time.Sleep(10 * time.Millisecond)
+	slog.Info("gpclk0: configured")
+
+	// Set GPIO4 to ALT0 (GPCLK0)
+	fsel := r32(gpioMem, 0) // GPFSEL0
+	shift := uint(12)       // GPIO4 is bits 14:12
+	fsel &^= 0x7 << shift   // clear
+	fsel |= 0x4 << shift    // ALT0 = 0b100
+	w32(gpioMem, 0, fsel)
+
+	slog.Info("gpclk0: enabled 12.288 MHz on GPIO4")
+}
+
 func recoveryInitSetup() {
 	slog.Info("recovery init: running as PID 1")
 
@@ -72,6 +167,9 @@ func recoveryInitSetup() {
 		slog.Info("recovery init: log file opened")
 	}
 
+	// Enable GPCLK0 on GPIO4 for the codec's MCLK (12.288 MHz).
+	enableGPCLK0()
+
 	// Load kernel modules explicitly via insmod in dependency order.
 	// BusyBox modprobe fails on the recovery partition because modules.dep
 	// references thousands of modules that don't exist here. insmod bypasses
@@ -98,6 +196,9 @@ func recoveryInitSetup() {
 	loadMod("brcmfmac.ko")
 	loadMod("brcmfmac-wcc.ko")
 
+	// I2C bus (needed for the codec to probe)
+	loadMod("kernel/drivers/i2c/busses/i2c-bcm2835.ko")
+
 	// Audio chain
 	loadMod("kernel/sound/core/snd.ko")
 	loadMod("kernel/sound/core/snd-timer.ko")
@@ -112,7 +213,22 @@ func recoveryInitSetup() {
 	loadMod("kernel/sound/soc/generic/snd-soc-simple-card-utils.ko")
 	loadMod("kernel/sound/soc/generic/snd-soc-simple-card.ko")
 
-	slog.Info("recovery init: modules loaded, waiting for devices")
+	slog.Info("recovery init: modules loaded, triggering deferred probe")
+
+	// Trigger uevent re-emission to simulate udev coldplug. Without this,
+	// the kernel's deferred probe never re-evaluates device tree bindings
+	// after late module load (there's no udev in recovery).
+	for _, uevent := range []string{
+		"/sys/bus/i2c/devices/1-0018/uevent",
+		"/sys/bus/platform/devices/digits-sound/uevent",
+	} {
+		if err := os.WriteFile(uevent, []byte("add"), 0644); err != nil {
+			slog.Warn("recovery init: uevent trigger failed", "path", uevent, "error", err)
+		} else {
+			slog.Info("recovery init: uevent triggered", "path", uevent)
+		}
+	}
+
 	time.Sleep(3 * time.Second)
 
 	// Unblock WiFi radio.
@@ -154,13 +270,35 @@ func recoveryInitSetup() {
 
 	slog.Info("recovery init: AP started (Digits-Recovery)")
 
-	// Audio in recovery is not yet working. The kernel modules load
-	// successfully but the device tree binding doesn't trigger from
-	// insmod alone, and writing to the sysfs bind file crashes PID 1.
-	// The voice menu runs silently; keypad controls still work.
+	// Trigger device tree rebind for the audio card. Writing to the
+	// sysfs bind file from PID 1 can crash the process if the driver
+	// probe fails, so do it from a subprocess.
+	bindCmd := exec.Command("/bin/sh", "-c", "echo digits-sound > /sys/bus/platform/drivers/asoc-simple-card/bind 2>/dev/null; exit 0")
+	if out, err := bindCmd.CombinedOutput(); err != nil {
+		slog.Warn("recovery init: sound bind subprocess failed", "error", err, "output", string(out))
+	} else {
+		slog.Info("recovery init: sound bind attempted")
+	}
+	time.Sleep(2 * time.Second)
+
 	if data, err := os.ReadFile("/proc/asound/cards"); err == nil {
 		slog.Info("recovery init: ALSA cards", "cards", string(data))
 	}
+	if entries, err := os.ReadDir("/dev/snd"); err == nil {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		slog.Info("recovery init: /dev/snd contents", "files", names)
+	} else {
+		slog.Warn("recovery init: /dev/snd not found", "error", err)
+	}
+
+	// Point ALSA at the config file on the recovery partition.
+	os.Setenv("ALSA_CONFIG_PATH", "/usr/share/alsa/alsa.conf")
+	// Also copy ALSA plugin dir path so libasound can find type plugins.
+	// The plugins (libasound_module_pcm_hw.so etc.) are in /lib/ on recovery.
+	os.Setenv("ALSA_PLUGIN_DIR", "/lib")
 
 	// Reap zombies (PID 1 responsibility).
 	go func() {
@@ -221,51 +359,42 @@ func runRecoveryMode() {
 	} else {
 		slog.Warn("ALSA: cannot read /proc/asound/cards", "error", err)
 	}
-	var mixer *audio.Mixer
-	for _, dev := range []string{"hw:CARD=digitscodec,DEV=0", "hw:1,0", "hw:0,0", "plughw:CARD=Zero,DEV=0", "default"} {
-		slog.Info("playback: trying device", "device", dev)
-		pbCfg := audio.Config{
-			Device:     dev,
-			SampleRate: 48000,
-			Channels:   1,
-			FrameSize:  960,
-		}
-		pb, err := audio.NewPlayback(pbCfg)
-		if err != nil {
-			slog.Warn("playback: device failed", "device", dev, "error", err)
+	// Restore the codec mixer state before any playback.
+	for _, stateFile := range []string{"/mixer.state", "/data/digits_mixer.state"} {
+		if _, err := os.Stat(stateFile); err != nil {
 			continue
 		}
-		slog.Info("playback: opened", "device", dev)
-		mixer = audio.NewMixer(pb)
-		if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
-			slog.Warn("mixer: failed to load tones (voice menu will be silent)", "dir", *toneDir, "error", err)
+		if out, err := exec.Command("/bin/alsactl", "restore", "-f", stateFile, "0").CombinedOutput(); err != nil {
+			slog.Warn("playback: alsactl restore failed", "file", stateFile, "error", err, "output", string(out))
+		} else {
+			slog.Info("playback: mixer state restored", "file", stateFile)
+			break
 		}
-		mixer.Start()
-		defer mixer.Stop()
-		break
 	}
-	if mixer == nil {
-		slog.Warn("playback: no audio device available, voice menu will be silent")
-	}
+	// Crank PCM volume.
+	exec.Command("/bin/amixer", "-c", "digitscodec", "sset", "PCM", "127").Run()
+	slog.Info("playback: codec configured")
 	syscall.Sync()
 
-	// Wrap mixer in a nil-safe helper for recovery code.
+	// Open and close the PCM device once to trigger DAPM power-up in the
+	// codec (this produces the "pop" on the output). Then re-toggle GPCLK0.
+	// The codec needs MCLK toggled AFTER its output stage powers on.
+	exec.Command("/bin/aplay", "-D", "plughw:0,0", "-d", "1", "-f", "S16_LE", "-r", "44100", "-c", "1", "/dev/zero").Run()
+	slog.Info("playback: DAPM power-up triggered")
+	time.Sleep(100 * time.Millisecond)
+	enableGPCLK0()
+	slog.Info("playback: GPCLK0 re-toggled after DAPM power-up")
+
+	// Use aplay for playback (proven to work). Skip the mixer entirely.
 	play := func(name string) {
-		if mixer != nil {
-			mixer.PlayOnce(name)
+		wavPath := *toneDir + "/" + name + ".wav"
+		if _, err := os.Stat(wavPath); err != nil {
+			return
 		}
+		exec.Command("/bin/aplay", "-D", "plughw:0,0", wavPath).Run()
 	}
-	stopAll := func() {
-		if mixer != nil {
-			mixer.StopAll()
-		}
-	}
-	oncePlaying := func() bool {
-		if mixer != nil {
-			return mixer.OncePlaying()
-		}
-		return false
-	}
+	stopAll := func() {}
+	oncePlaying := func() bool { return false }
 
 	state := &recoveryState{}
 
@@ -330,6 +459,143 @@ func serveRecoveryWeb(state *recoveryState, play playFunc, sp *phone.SerialPort)
 		go doRecoveryFactoryReset(play)
 	})
 
+	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintln(w, "=== RECOVERY LOG ===")
+		if data, err := os.ReadFile("/data/digits/recovery.log"); err == nil {
+			w.Write(data)
+		}
+		fmt.Fprintln(w, "\n=== /proc/asound/cards ===")
+		if data, err := os.ReadFile("/proc/asound/cards"); err == nil {
+			w.Write(data)
+		}
+		fmt.Fprintln(w, "\n=== /dev/snd/ ===")
+		if entries, err := os.ReadDir("/dev/snd"); err == nil {
+			for _, e := range entries {
+				fmt.Fprintln(w, e.Name())
+			}
+		}
+		fmt.Fprintln(w, "\n=== amixer contents ===")
+		if out, err := exec.Command("/bin/amixer", "-c", "0", "contents").CombinedOutput(); err == nil {
+			w.Write(out)
+		} else {
+			fmt.Fprintf(w, "amixer failed: %v\n", err)
+		}
+		fmt.Fprintln(w, "\n=== GPCLK0 ===")
+		// Check if GPIO4 is in ALT0 mode
+		if data, err := os.ReadFile("/sys/kernel/debug/gpio"); err == nil {
+			w.Write(data)
+		}
+	})
+
+	mux.HandleFunc("/test-gpclk", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		f, err := os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, 0)
+		if err != nil {
+			fmt.Fprintf(w, "cannot open /dev/mem: %v\n", err)
+			return
+		}
+		defer f.Close()
+		clkMem, err := syscall.Mmap(int(f.Fd()), 0x3F101000, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if err != nil {
+			fmt.Fprintf(w, "mmap clk failed: %v\n", err)
+			return
+		}
+		defer syscall.Munmap(clkMem)
+		gpioMem, err := syscall.Mmap(int(f.Fd()), 0x3F200000, 4096, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if err != nil {
+			fmt.Fprintf(w, "mmap gpio failed: %v\n", err)
+			return
+		}
+		defer syscall.Munmap(gpioMem)
+
+		r32 := func(mem []byte, off int) uint32 {
+			return *(*uint32)(unsafe.Pointer(&mem[off]))
+		}
+
+		ctl := r32(clkMem, 0x70)
+		div := r32(clkMem, 0x74)
+		fsel := r32(gpioMem, 0)
+		gpio4fn := (fsel >> 12) & 0x7
+
+		fmt.Fprintf(w, "CM_GP0CTL = 0x%08x\n", ctl)
+		fmt.Fprintf(w, "  BUSY=%d ENAB=%d MASH=%d SRC=%d\n", (ctl>>7)&1, (ctl>>4)&1, (ctl>>9)&3, ctl&0xF)
+		fmt.Fprintf(w, "CM_GP0DIV = 0x%08x (DIVI=%d, DIVF=%d)\n", div, (div>>12)&0xFFF, div&0xFFF)
+		fmt.Fprintf(w, "GPFSEL0 = 0x%08x (GPIO4 fn = %d)\n", fsel, gpio4fn)
+		fmt.Fprintf(w, "GPIO4 ALT0 = %v (should be 4 for GPCLK0)\n", gpio4fn == 4)
+
+		if (ctl>>7)&1 == 1 && (ctl>>4)&1 == 1 && gpio4fn == 4 {
+			fmt.Fprintln(w, "\nGPCLK0 IS RUNNING")
+		} else {
+			fmt.Fprintln(w, "\nGPCLK0 IS NOT RUNNING")
+		}
+
+		// Try to fix the divider right now
+		fmt.Fprintln(w, "\n=== ATTEMPTING FIX ===")
+		w32 := func(mem []byte, off int, val uint32) {
+			*(*uint32)(unsafe.Pointer(&mem[off])) = val
+		}
+		// Disable
+		w32(clkMem, 0x70, 0x5A000000|0)
+		time.Sleep(10 * time.Millisecond)
+		ctl2 := r32(clkMem, 0x70)
+		fmt.Fprintf(w, "After disable: CTL=0x%08x BUSY=%d\n", ctl2, (ctl2>>7)&1)
+
+		// Wait for busy to clear
+		for i := 0; i < 200; i++ {
+			if r32(clkMem, 0x70)&(1<<7) == 0 {
+				fmt.Fprintf(w, "BUSY cleared after %d ms\n", i)
+				break
+			}
+			time.Sleep(time.Millisecond)
+			if i == 199 {
+				fmt.Fprintln(w, "BUSY NEVER CLEARED after 200ms")
+			}
+		}
+
+		// Write divider: DIVI=1, DIVF=2304 = 0x5A001900
+		w32(clkMem, 0x74, 0x5A000000|uint32(1<<12)|uint32(2304))
+		div2 := r32(clkMem, 0x74)
+		fmt.Fprintf(w, "After DIV write: DIV=0x%08x (DIVI=%d, DIVF=%d)\n", div2, (div2>>12)&0xFFF, div2&0xFFF)
+
+		// Enable: MASH=1, SRC=OSC, ENAB
+		w32(clkMem, 0x70, 0x5A000000|(1<<9)|1|(1<<4))
+		time.Sleep(10 * time.Millisecond)
+		ctl3 := r32(clkMem, 0x70)
+		div3 := r32(clkMem, 0x74)
+		fmt.Fprintf(w, "After enable: CTL=0x%08x DIV=0x%08x\n", ctl3, div3)
+		fmt.Fprintf(w, "  BUSY=%d ENAB=%d MASH=%d SRC=%d DIVI=%d DIVF=%d\n",
+			(ctl3>>7)&1, (ctl3>>4)&1, (ctl3>>9)&3, ctl3&0xF, (div3>>12)&0xFFF, div3&0xFFF)
+	})
+
+	mux.HandleFunc("/pcm-status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintln(w, "=== PCM hw_params ===")
+		if data, err := os.ReadFile("/proc/asound/card0/pcm0p/sub0/hw_params"); err == nil {
+			w.Write(data)
+		} else {
+			fmt.Fprintf(w, "error: %v\n", err)
+		}
+		fmt.Fprintln(w, "\n=== PCM status ===")
+		if data, err := os.ReadFile("/proc/asound/card0/pcm0p/sub0/status"); err == nil {
+			w.Write(data)
+		} else {
+			fmt.Fprintf(w, "error: %v\n", err)
+		}
+	})
+
+	mux.HandleFunc("/test-audio", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		// Try plughw which handles format conversion
+		fmt.Fprintln(w, "Playing /tones/recovery_menu.wav via aplay plughw:0,0...")
+		out, err := exec.Command("/bin/aplay", "-D", "plughw:0,0", "/tones/recovery_menu.wav").CombinedOutput()
+		if err != nil {
+			fmt.Fprintf(w, "plughw error: %v\n%s\n", err, string(out))
+		} else {
+			fmt.Fprintf(w, "plughw success\n%s\n", string(out))
+		}
+	})
+
 	slog.Info("recovery web: listening on :80")
 	syscall.Sync()
 	if err := http.ListenAndServe(":80", mux); err != nil {
@@ -353,8 +619,8 @@ func recoveryEventLoop(sp *phone.SerialPort, play playFunc, stopAll func(), once
 func recoveryHandsetSession(play playFunc, stopAll func(), oncePlaying func() bool, state *recoveryState, events <-chan string) {
 	for {
 		play("recovery_menu")
-
-		key, hungUp := waitForKeyOrHangup(events, 30*time.Second)
+		// Wait for the clip to finish (~4.3s) plus a 5s pause before replaying.
+		key, hungUp := waitForKeyOrHangup(events, 10*time.Second)
 		if hungUp {
 			stopAll()
 			slog.Info("recovery: handset on-hook")
