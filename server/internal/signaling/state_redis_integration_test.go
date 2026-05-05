@@ -30,7 +30,6 @@ func TestDeviceStateIntegrationTwoPods(t *testing.T) {
 		for iter.Next(ctx) {
 			_ = client.Del(ctx, iter.Val())
 		}
-		_ = client.Del(ctx, "digits:counter:online-devices")
 	})
 
 	dsA := NewDeviceState(client, "pod-a")

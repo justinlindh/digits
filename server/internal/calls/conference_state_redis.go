@@ -23,6 +23,7 @@ type redisConference struct {
 	Host              string    `json:"host"`
 	OriginatingCallID int64     `json:"originating_call_id"`
 	Members           []string  `json:"members"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // ConfState manages conference membership state in Redis.
@@ -42,6 +43,7 @@ func (cs *ConfState) Create(ctx context.Context, confID uuid.UUID, host string, 
 		Host:              host,
 		OriginatingCallID: originatingCallID,
 		Members:           members,
+		CreatedAt:         time.Now(),
 	}
 	data, err := json.Marshal(rc)
 	if err != nil {
@@ -138,14 +140,13 @@ func (cs *ConfState) loadConference(ctx context.Context, confID uuid.UUID) *Conf
 		return nil
 	}
 
-	now := time.Now()
 	conf := &Conference{
 		ID:                rc.ID,
 		Host:              rc.Host,
 		OriginatingCallID: rc.OriginatingCallID,
 		Members:           make(map[string]*ConferenceMember, len(rc.Members)),
 		State:             ConferenceStateActive,
-		CreatedAt:         now,
+		CreatedAt:         rc.CreatedAt,
 	}
 	for _, m := range rc.Members {
 		role := ConferenceRoleAdded
@@ -155,7 +156,7 @@ func (cs *ConfState) loadConference(ctx context.Context, confID uuid.UUID) *Conf
 		conf.Members[m] = &ConferenceMember{
 			Phone:    m,
 			Role:     role,
-			JoinedAt: now,
+			JoinedAt: rc.CreatedAt,
 		}
 	}
 	return conf

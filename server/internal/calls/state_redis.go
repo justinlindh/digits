@@ -9,7 +9,12 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const callKeyPrefix = "digits:call:"
+const (
+	callKeyPrefix = "digits:call:"
+	// Safety-net TTL for call keys. Normal end/disconnect paths delete
+	// keys explicitly; this only fires if a pod crashes mid-call.
+	callTTL = 30 * time.Minute
+)
 
 type callEntry struct {
 	ID        int64     `json:"id"`
@@ -39,9 +44,13 @@ func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, c
 		return
 	}
 
+	callerKey := callKeyPrefix + caller
+	calleeKey := callKeyPrefix + callee
 	pipe := s.client.Pipeline()
-	pipe.HSet(ctx, callKeyPrefix+caller, callee, string(callerEntry))
-	pipe.HSet(ctx, callKeyPrefix+callee, caller, string(calleeEntry))
+	pipe.HSet(ctx, callerKey, callee, string(callerEntry))
+	pipe.HSet(ctx, calleeKey, caller, string(calleeEntry))
+	pipe.Expire(ctx, callerKey, callTTL)
+	pipe.Expire(ctx, calleeKey, callTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Error("redis: OnCallInitiated failed", "callID", callID, "err", err)
 	}
@@ -229,12 +238,13 @@ func (s *CallState) Active(ctx context.Context) []activeCall {
 	return calls
 }
 
+var deleteIfEmptyScript = redis.NewScript(`
+if redis.call('HLEN', KEYS[1]) == 0 then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`)
+
 func (s *CallState) deleteIfEmpty(ctx context.Context, key string) {
-	n, err := s.client.HLen(ctx, key).Result()
-	if err != nil {
-		return
-	}
-	if n == 0 {
-		_ = s.client.Del(ctx, key).Err()
-	}
+	_ = deleteIfEmptyScript.Run(ctx, s.client, []string{key}).Err()
 }

@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/XSAM/otelsql v0.42.0
+	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/redis/go-redis/v9 v9.19.0
@@ -23,7 +24,6 @@ require (
 )
 
 require (
-	github.com/alicebob/miniredis/v2 v2.37.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
