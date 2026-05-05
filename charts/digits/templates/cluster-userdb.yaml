@@ -19,6 +19,10 @@ spec:
     initdb:
       database: {{ .Values.cnpg.userdb.database }}
       owner: {{ .Values.cnpg.userdb.owner }}
+      {{- if .Values.cnpg.userdb.postInitSQL }}
+      postInitSQL:
+        {{- toYaml .Values.cnpg.userdb.postInitSQL | nindent 8 }}
+      {{- end }}
   {{- if .Values.cnpg.backup.enabled }}
   backup:
     barmanObjectStore:
