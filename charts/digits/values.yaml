@@ -19,13 +19,19 @@ ingress:
   signald:
     host: ""
 
-# Redis pub/sub for multi-replica signaling. When set, signald uses Redis as
-# a shared broadcast channel so cross-pod calls reach the right device.
-# Leave empty for single-replica deployments. For passwords or rotating
-# credentials, leave url empty here and inject REDIS_URL via signald.envFrom
-# (an existing secret) instead.
+# Redis pub/sub for multi-replica signaling. When enabled, the chart deploys
+# a 3-node Redis Sentinel StatefulSet and configures signald to use failover.
+# For single-replica deployments, leave enabled: false.
 redis:
-  url: ""
+  enabled: false
+  replicas: 3
+  sentinelMasterName: digits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
 
 cnpg:
   enabled: false

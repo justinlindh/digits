@@ -53,9 +53,11 @@ spec:
                   name: {{ include "digits.fullname" . }}-userdb-app
                   key: uri
             {{- end }}
-            {{- if .Values.redis.url }}
+            {{- if .Values.redis.enabled }}
             - name: REDIS_URL
-              value: {{ .Values.redis.url | quote }}
+              value: "{{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless:26379,{{ include "digits.fullname" . }}-redis-1.{{ include "digits.fullname" . }}-redis-headless:26379,{{ include "digits.fullname" . }}-redis-2.{{ include "digits.fullname" . }}-redis-headless:26379"
+            - name: REDIS_SENTINEL_MASTER
+              value: {{ .Values.redis.sentinelMasterName | quote }}
             {{- end }}
             {{- if .Values.observability.enabled }}
             {{- include "digits.observability.env" (dict "serviceName" "signald" "ctx" .) | nindent 12 }}

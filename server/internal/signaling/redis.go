@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/redis/go-redis/v9"
@@ -32,7 +33,7 @@ type redisPubSub interface {
 // RedisBridge wraps a Redis pub/sub connection for cross-pod signaling.
 // The zero value is not usable; create with NewRedisBridge.
 type RedisBridge struct {
-	client *redis.Client
+	client redis.UniversalClient
 	podID  string
 
 	published atomic.Int64
@@ -42,15 +43,34 @@ type RedisBridge struct {
 // compile-time check
 var _ redisPubSub = (*RedisBridge)(nil)
 
-// NewRedisBridge connects to Redis at the given URL and returns a bridge
-// ready for use. The URL should be a redis:// or rediss:// connection
-// string. Call Close when done.
+// NewRedisBridge connects to Redis and returns a bridge ready for use.
+// It supports two modes:
+//
+//   - Standard: pass a redis:// or rediss:// URL.
+//   - Sentinel: pass a comma-separated list of sentinel addresses as the URL
+//     with the master name in REDIS_SENTINEL_MASTER (defaults to "mymaster").
+//     Format: "sentinel-0:26379,sentinel-1:26379,sentinel-2:26379"
+//
+// The mode is selected by the presence of REDIS_SENTINEL_MASTER in the
+// environment. When set, redisURL is treated as a comma-separated sentinel
+// address list. When unset, redisURL is parsed as a standard Redis URL.
 func NewRedisBridge(redisURL string) (*RedisBridge, error) {
-	opts, err := redis.ParseURL(redisURL)
-	if err != nil {
-		return nil, err
+	var client redis.UniversalClient
+
+	if master := os.Getenv("REDIS_SENTINEL_MASTER"); master != "" {
+		addrs := strings.Split(redisURL, ",")
+		client = redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:    master,
+			SentinelAddrs: addrs,
+		})
+		slog.Info("redis: using sentinel failover", "master", master, "sentinels", addrs)
+	} else {
+		opts, err := redis.ParseURL(redisURL)
+		if err != nil {
+			return nil, err
+		}
+		client = redis.NewClient(opts)
 	}
-	client := redis.NewClient(opts)
 
 	podID, _ := os.Hostname()
 	if podID == "" {
