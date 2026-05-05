@@ -51,6 +51,7 @@ func main() {
 // through slog instead of bypassing it via log.Fatal.
 func run(ctx context.Context) error {
 	cfg := config.Load()
+	slog.Info("starting signald", "version", version.Version, "commit", version.Commit)
 	if cfg.DatabaseURL == "" {
 		return errors.New("DATABASE_URL must be set")
 	}
