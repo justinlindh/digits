@@ -186,7 +186,7 @@ func NewHandler(scanner wifi.Scanner, ap wifi.APController, phone *phonekit.Phon
 				}
 			} else {
 				log.Printf("wifi verify failed: %s: %s", req.SSID, result.Error)
-				os.Remove(backupPath)
+				_ = os.Remove(backupPath)
 				if phone != nil {
 					_ = phone.LED("BLINK")
 					if clip := loadSetupAudio("wifi_failed.wav"); clip != nil {

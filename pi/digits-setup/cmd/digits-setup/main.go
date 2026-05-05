@@ -22,7 +22,7 @@ func main() {
 		log.Printf("phonekit: %v (LED and audio disabled)", err)
 	} else {
 		phone = p
-		defer phone.Close()
+		defer func() { _ = phone.Close() }()
 		if err := phone.Ping(); err != nil {
 			log.Printf("phonekit: ping failed: %v", err)
 		}
