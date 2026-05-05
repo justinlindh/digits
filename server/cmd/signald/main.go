@@ -107,21 +107,32 @@ func run(ctx context.Context) error {
 	// Redis pub/sub for multi-replica signaling. When REDIS_URL is set,
 	// the hub publishes to a shared channel when a target device is not
 	// connected to this pod. Other pods subscribe and deliver locally.
+	var redisBridge *signaling.RedisBridge
 	if cfg.RedisURL != "" {
-		bridge, err := signaling.NewRedisBridge(cfg.RedisURL)
+		var err error
+		redisBridge, err = signaling.NewRedisBridge(cfg.RedisURL)
 		if err != nil {
 			return fmt.Errorf("connect redis: %w", err)
 		}
-		defer func() { _ = bridge.Close() }()
-		if err := bridge.Ping(ctx); err != nil {
+		defer func() { _ = redisBridge.Close() }()
+		if err := redisBridge.Ping(ctx); err != nil {
 			return fmt.Errorf("redis ping: %w", err)
 		}
-		hub.SetRedis(bridge)
+		hub.SetRedis(redisBridge)
 		go hub.Run(ctx)
 		slog.Info("redis pub/sub enabled for multi-replica signaling")
 	}
 
 	tracker := calls.New(database)
+	if redisBridge != nil {
+		rc := redisBridge.Client()
+		podID := redisBridge.PodID()
+
+		hub.SetDeviceState(signaling.NewDeviceState(rc, podID))
+		tracker.SetCallState(calls.NewCallState(rc))
+		tracker.Conferences().SetConfState(calls.NewConfState(rc))
+		slog.Info("redis cluster state enabled for multi-replica operation")
+	}
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
@@ -138,6 +149,10 @@ func run(ctx context.Context) error {
 	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
 	// counters without polling.
 	dashEvents := events.New()
+	if redisBridge != nil {
+		dashEvents.SetRedis(redisBridge.Client(), redisBridge.PodID())
+		go dashEvents.RunRedis(ctx)
+	}
 	hub.SetDashboardEvents(dashEvents)
 	tracker.SetDashboardEvents(dashEvents)
 

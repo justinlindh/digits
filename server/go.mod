@@ -6,11 +6,11 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/lib/pq v1.12.3
 	github.com/lmittmann/tint v1.1.3
-	golang.org/x/crypto v0.50.0
 )
 
 require (
 	github.com/XSAM/otelsql v0.42.0
+	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.2.8
 	github.com/redis/go-redis/v9 v9.19.0
@@ -30,6 +30,7 @@ require (
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/yuin/gopher-lua v1.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
