@@ -19,14 +19,6 @@ type Household struct {
 	CreatedAt          time.Time
 }
 
-// Member represents a user's membership in a household.
-type Member struct {
-	UserID      string
-	HouseholdID string
-	Role        string
-	CreatedAt   time.Time
-}
-
 // Store provides household persistence backed by Postgres.
 type Store struct {
 	db *sql.DB
@@ -131,27 +123,6 @@ func (s *Store) AddMember(ctx context.Context, userID, householdID, role string)
 		return fmt.Errorf("add member: %w", err)
 	}
 	return nil
-}
-
-// GetMembers returns all members of a household.
-func (s *Store) GetMembers(ctx context.Context, householdID string) ([]Member, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT user_id, household_id, role FROM household_members WHERE household_id = $1`,
-		householdID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var members []Member
-	for rows.Next() {
-		var m Member
-		if err := rows.Scan(&m.UserID, &m.HouseholdID, &m.Role); err != nil {
-			return nil, err
-		}
-		members = append(members, m)
-	}
-	return members, rows.Err()
 }
 
 // MemberWithUser includes user profile data alongside membership info.
