@@ -146,47 +146,6 @@ func (s *Store) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// SetPairingCode sets the pairing code and its expiry on a device.
-func (s *Store) SetPairingCode(ctx context.Context, id int64, code string, expiresAt time.Time) error {
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE devices
-		SET pairing_code = $2, pairing_code_expires_at = $3
-		WHERE id = $1
-	`, id, code, expiresAt)
-	if err != nil {
-		return fmt.Errorf("set pairing code: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("set pairing code rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// CompletePairing marks a device as paired by setting paired_at to now and
-// clearing the pairing code fields.
-func (s *Store) CompletePairing(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE devices
-		SET paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
-		WHERE id = $1
-	`, id)
-	if err != nil {
-		return fmt.Errorf("complete pairing: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("complete pairing rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // Unpair invalidates the device's paired_at and device_token so the next
 // register-without-token from this hardware ID will be issued a fresh
 // pairing code instead of being rejected. Used by the Phone -> Server
@@ -215,28 +174,6 @@ func (s *Store) TouchLastSeen(ctx context.Context, hardwareID string) error {
 		return fmt.Errorf("touch last seen: %w", err)
 	}
 	return nil
-}
-
-// GetByPairingCode returns the device with the given pairing code, provided
-// the code has not yet expired. Returns ErrNotFound if no matching device exists.
-func (s *Store) GetByPairingCode(ctx context.Context, code string) (*Device, error) {
-	d := &Device{}
-	err := s.db.QueryRowContext(ctx, `
-		SELECT `+deviceColumns+`
-		FROM devices
-		WHERE pairing_code = $1
-		  AND pairing_code_expires_at > NOW()
-	`, code).Scan(
-		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get device by pairing code: %w", err)
-	}
-	return d, nil
 }
 
 // HashToken returns the SHA-256 hex hash of a plaintext device token.

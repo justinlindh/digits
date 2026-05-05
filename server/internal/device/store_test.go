@@ -219,59 +219,6 @@ func TestTouchLastSeen_UnknownHardware(t *testing.T) {
 	}
 }
 
-func TestPairingCode(t *testing.T) {
-	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "Pairing Household")
-	lineID := createTestLine(t, database, "5556667777", hhID)
-
-	dev, err := s.Create(context.Background(), lineID, "hw-pair-001")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	expiresAt := time.Now().Add(10 * time.Minute)
-	if err := s.SetPairingCode(context.Background(), dev.ID, "SECRET123", expiresAt); err != nil {
-		t.Fatalf("SetPairingCode: %v", err)
-	}
-
-	got, err := s.GetByPairingCode(context.Background(), "SECRET123")
-	if err != nil {
-		t.Fatalf("GetByPairingCode: %v", err)
-	}
-	if got.ID != dev.ID {
-		t.Errorf("GetByPairingCode.ID = %d, want %d", got.ID, dev.ID)
-	}
-
-	// Expired code should not be found
-	pastExpiry := time.Now().Add(-1 * time.Minute)
-	if err := s.SetPairingCode(context.Background(), dev.ID, "EXPIRED", pastExpiry); err != nil {
-		t.Fatalf("SetPairingCode (expired): %v", err)
-	}
-	_, err = s.GetByPairingCode(context.Background(), "EXPIRED")
-	if err != ErrNotFound {
-		t.Errorf("expected ErrNotFound for expired pairing code, got %v", err)
-	}
-
-	// CompletePairing clears the code
-	if err := s.SetPairingCode(context.Background(), dev.ID, "COMPLETE", time.Now().Add(10*time.Minute)); err != nil {
-		t.Fatalf("SetPairingCode (complete): %v", err)
-	}
-	if err := s.CompletePairing(context.Background(), dev.ID); err != nil {
-		t.Fatalf("CompletePairing: %v", err)
-	}
-
-	completed, err := s.GetByID(context.Background(), dev.ID)
-	if err != nil {
-		t.Fatalf("GetByID after CompletePairing: %v", err)
-	}
-	if completed.PairingCode != nil {
-		t.Errorf("expected PairingCode to be nil after CompletePairing, got %q", *completed.PairingCode)
-	}
-	if completed.PairedAt == nil {
-		t.Error("expected PairedAt to be set after CompletePairing")
-	}
-}
-
 func TestValidateToken_Correct(t *testing.T) {
 	s, database := testStore(t)
 	hhID := createTestHousehold(t, database, "Token Household")
