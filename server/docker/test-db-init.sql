@@ -1,3 +1,0 @@
--- Intentionally empty. The test-db container creates digits_test as its
--- default database via POSTGRES_DB. Additional test databases for other
--- services were previously created here but are no longer needed.
