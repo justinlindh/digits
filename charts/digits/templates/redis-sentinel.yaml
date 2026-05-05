@@ -38,6 +38,8 @@ spec:
       port: 6379
     - name: sentinel
       port: 26379
+    - name: metrics
+      port: 9121
 ---
 apiVersion: v1
 kind: Service
@@ -161,6 +163,24 @@ spec:
               memory: 32Mi
             limits:
               memory: 64Mi
+        - name: exporter
+          image: oliver006/redis_exporter:v1.67.0-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 9121
+          args:
+            - --redis.addr=redis://localhost:6379
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
       volumes:
         - name: config
           configMap:
@@ -169,4 +189,30 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+---
+{{- if .Values.observability.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "digits.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: instance
+        - action: replace
+          targetLabel: job
+          replacement: digits-redis
+{{- end }}
 {{- end }}
