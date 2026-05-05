@@ -37,9 +37,18 @@ spec:
         compression: gzip
     retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
   {{- end }}
+  {{- if .Values.cnpg.userdb.sharedPreloadLibraries }}
+  postgresql:
+    shared_preload_libraries:
+      {{- toYaml .Values.cnpg.userdb.sharedPreloadLibraries | nindent 6 }}
+  {{- end }}
   {{- if .Values.observability.enabled }}
   monitoring:
     enablePodMonitor: true
+    {{- if .Values.cnpg.userdb.customQueriesConfigMap }}
+    customQueriesConfigMap:
+      {{- toYaml .Values.cnpg.userdb.customQueriesConfigMap | nindent 6 }}
+    {{- end }}
   {{- end }}
   resources:
     requests:

@@ -42,6 +42,8 @@ cnpg:
     storageClass: ""
     database: digits
     owner: digits
+    sharedPreloadLibraries: []
+    customQueriesConfigMap: []
   backup:
     enabled: false
     retentionPolicy: "14d"
