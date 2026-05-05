@@ -41,8 +41,8 @@ COMPOSE_DIR=$SERVER_DIR
 COMPOSE_FILE=docker-compose.prod.yml
 COMPOSE_PROJECT=digits-prod
 COMPOSE_ENV_FILE=$SERVER_DIR/.env.prod
-SERVICES=signald admind
-HEALTH_URLS=http://localhost:8090/healthz http://localhost:9094/healthz
+SERVICES=signald
+HEALTH_URLS=http://localhost:8090/healthz
 GHCR_USERNAME=justinlindh
 # Optional: path to a read-only GHCR PAT. Only needed if the images are
 # private; for public packages docker pull works unauthenticated and

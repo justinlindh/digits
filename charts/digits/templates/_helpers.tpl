@@ -48,33 +48,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
-Admind labels.
-*/}}
-{{- define "digits.admind.labels" -}}
-app.kubernetes.io/name: admind
-{{ include "digits.labels" . }}
-{{- end }}
-
-{{/*
-Admind selector labels.
-*/}}
-{{- define "digits.admind.selectorLabels" -}}
-app.kubernetes.io/name: admind
-app.kubernetes.io/instance: {{ .Release.Name }}
-{{- end }}
-
-{{/*
 Signald image.
 */}}
 {{- define "digits.signald.image" -}}
 {{ .Values.signald.image.repository }}:{{ .Values.signald.image.tag | default (printf "v%s" .Chart.AppVersion) }}
-{{- end }}
-
-{{/*
-Admind image.
-*/}}
-{{- define "digits.admind.image" -}}
-{{ .Values.admind.image.repository }}:{{ .Values.admind.image.tag | default (printf "v%s" .Chart.AppVersion) }}
 {{- end }}
 
 {{/*

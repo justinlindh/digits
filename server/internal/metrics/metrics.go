@@ -1,5 +1,5 @@
 // Package metrics defines the privacy-respecting Prometheus metric set
-// exported by signald and admind. The design is deliberately conservative:
+// exported by signald. The design is deliberately conservative:
 // every label and every measurement is reviewed against the digits
 // anti-surveillance policy described in docs/mission.md and
 // docs/why-digits.md. Reviewers should treat any new label here as a
@@ -44,13 +44,12 @@ import (
 )
 
 // Service identifies which binary the metrics belong to. Used as a
-// "service" label on shared metrics so a single Prometheus scrape config
-// can distinguish signald from admind without renaming the metric family.
+// "service" label on shared metrics so a Prometheus scrape config
+// can identify the service without renaming the metric family.
 type Service string
 
 const (
 	ServiceSignald Service = "signald"
-	ServiceAdmind  Service = "admind"
 )
 
 // SignalingErrorCategory is a closed set of categories for the

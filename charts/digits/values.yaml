@@ -13,28 +13,10 @@ signald:
   # Container port for the HTTP/WebSocket listener.
   port: 8080
 
-admind:
-  image:
-    repository: ghcr.io/justinlindh/digits/admind
-    tag: ""  # defaults to appVersion
-    pullPolicy: IfNotPresent
-  replicas: 1
-  resources: {}
-  env: {}
-  envFrom: []
-  # Container port for the admin HTTP listener.
-  port: 9090
-  # Secret reference for ADMIN_STATS_SECRET (remapped from the shared secret).
-  statsSecretRef:
-    name: digits-secrets
-    key: ADMIN_SECRET
-
 ingress:
   enabled: false
   className: ""
   signald:
-    host: ""
-  admind:
     host: ""
 
 # Redis pub/sub for multi-replica signaling. When set, signald uses Redis as
@@ -54,12 +36,6 @@ cnpg:
     storageClass: ""
     database: digits
     owner: digits
-  admindb:
-    instances: 2
-    size: 5Gi
-    storageClass: ""
-    database: digits_admin
-    owner: digits_admin
   backup:
     enabled: false
     retentionPolicy: "14d"
@@ -77,7 +53,6 @@ observability:
   otelResourceAttributes: ""
   pyroscopeEndpoint: ""
   signaldMetricsPort: 9091
-  admindMetricsPort: 9092
   serviceMonitor:
     enabled: false
     interval: 30s

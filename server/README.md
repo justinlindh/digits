@@ -12,7 +12,6 @@ Central WebRTC signaling relay for the Digits phone network. Brokers SDP/ICE exc
 - **Call history** -- persistent log of all calls with status and duration
 - **Device updates** -- trigger and track OTA firmware/Pi updates on paired devices
 - **TURN credentials** -- optional HMAC-SHA1 credential generation for NAT traversal
-- **Admin panel** -- separate service (`admind`) for system-wide monitoring and management
 - **Single binary** -- templates and static assets embedded, no external file dependencies
 
 ## Build
@@ -23,7 +22,6 @@ make build          # build bin/signald with version/commit info
 make build-dev      # build without ldflags (faster)
 make run            # build and run
 make test           # go test ./...
-make css            # compile Tailwind CSS for web and admin templates
 make e2e            # Playwright end-to-end tests (needs running server)
 make clean          # remove build artifacts
 ```
@@ -128,23 +126,11 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `SMTP_PASS` |                          | SMTP password              |
 | `SMTP_FROM` | `noreply@digits.family`  | From address on emails     |
 
-### Admin Panel
-
-| Variable               | Description                                |
-|------------------------|--------------------------------------------|
-| `ADMIN_DATABASE_URL`   | Postgres connection string for admin DB    |
-| `ADMIN_ADDR`           | Admin listen address (default `:9090`)     |
-| `ADMIN_INITIAL_USER`   | Bootstrap admin username                   |
-| `ADMIN_INITIAL_SECRET` | Bootstrap admin password                   |
-| `ADMIN_STATS_URL`      | Stats API URL (points to signald)          |
-| `ADMIN_STATS_SECRET`   | Must match `ADMIN_SECRET`                  |
-
 ### Metrics
 
 | Variable               | Description                                |
 |------------------------|--------------------------------------------|
 | `SIGNALD_METRICS_ADDR` | Prometheus metrics listener (default `:9091`, empty disables) |
-| `ADMIN_METRICS_ADDR`   | Prometheus metrics listener for admind (default `:9092`, empty disables) |
 
 The `/metrics` endpoint runs on a separate listener from public traffic.
 The metric set is deliberately privacy-respecting (aggregate counters,
@@ -172,7 +158,7 @@ pods deliver to their local connections.
 | `OTEL_EXPORTER_OTLP_INSECURE`  | `false` to require TLS. Defaults to `true` for in-cluster collectors. |
 | `OTEL_TRACES_SAMPLER_ARG`      | Head-based sample ratio, 0..1. Default `1.0`. |
 | `OTEL_RESOURCE_ATTRIBUTES`     | `k=v[,k=v...]` resource attributes.        |
-| `OTEL_SERVICE_NAME`            | Override service name; the binary supplies `signald` / `admind` by default. |
+| `OTEL_SERVICE_NAME`            | Override service name; the binary supplies `signald` by default. |
 | `PYROSCOPE_SERVER_ADDRESS`     | Pyroscope HTTP ingest URL. Empty disables the profiler. |
 | `PYROSCOPE_AUTH_TOKEN`         | Bearer token for hosted Pyroscope. Empty for in-cluster.  |
 | `PYROSCOPE_TENANT_ID`          | `X-Scope-OrgID` for multi-tenant Pyroscope. |
@@ -299,10 +285,8 @@ After SDP/ICE exchange, audio flows peer-to-peer via WebRTC DTLS-SRTP.
 
 ```
 cmd/signald/             Entry point -- wires all components
-cmd/admind/              Admin panel entry point
 
 internal/
-  admin/                 Admin panel: server, auth, DB, stats dashboard
   auth/                  User authentication (magic links, Google OAuth, sessions)
   calls/                 Call lifecycle tracking and history
   config/                Environment variable config loading
@@ -346,7 +330,7 @@ The prod GPU box runs a systemd timer (`digits-autodeploy.timer`) that fires eve
 
 1. Asks the GitHub Releases API for the newest `server/v*` tag.
 2. If it matches `last_deployed_tag` in `/var/lib/digits-autodeploy/state.json`, exits immediately.
-3. Otherwise logs in to GHCR, pulls `ghcr.io/justinlindh/digits/{signald,admind}:vX.Y.Z`, and runs `docker compose up -d --wait signald admind`.
+3. Otherwise logs in to GHCR, pulls `ghcr.io/justinlindh/digits/signald:vX.Y.Z`, and runs `docker compose up -d --wait signald`.
 4. Polls `/healthz` on both services for a version match (timeout 90s).
 5. On success: updates state, exits 0.
 6. On failure: re-pins compose to the previous version, sends an SMTP alert, and exits 1.
@@ -394,5 +378,4 @@ cd ~/src/digits/server && ./deploy.sh --local-build signald
 
 - Authentication is required -- magic link emails or Google OAuth.
 - Rate limiting is applied to auth and pairing endpoints.
-- The admin panel runs as a separate process on port 9090 with its own database and auth.
 - TURN credentials are time-limited (24h) and use HMAC-SHA1.

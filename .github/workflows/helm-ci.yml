@@ -33,7 +33,6 @@ jobs:
           helm lint charts/digits/ \
             --set ingress.enabled=true \
             --set ingress.signald.host=app.example.com \
-            --set ingress.admind.host=admin.example.com \
             --set cnpg.enabled=true \
             --set redis.url=redis://redis:6379 \
             --set observability.enabled=true \
@@ -48,10 +47,8 @@ jobs:
           helm template digits charts/digits/ --namespace digits \
             --set ingress.enabled=true \
             --set ingress.signald.host=app.example.com \
-            --set ingress.admind.host=admin.example.com \
             --set cnpg.enabled=true \
             --set cnpg.userdb.storageClass=default \
-            --set cnpg.admindb.storageClass=default \
             --set cnpg.backup.enabled=true \
             --set cnpg.backup.destinationPath=s3://backups \
             --set cnpg.backup.endpointURL=http://minio:9000 \

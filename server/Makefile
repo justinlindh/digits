@@ -1,4 +1,4 @@
-.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy css dev-up dev-down dev-seed dev-logs
+.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy dev-up dev-down dev-seed dev-logs
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -7,9 +7,6 @@ LDFLAGS  = -X github.com/justinlindh/digits/server/internal/version.Version=$(VE
            -X github.com/justinlindh/digits/server/internal/version.Commit=$(COMMIT)
 
 TAILWINDCSS ?= $(shell command -v tailwindcss 2>/dev/null || echo /tmp/tailwindcss-cli-linux-x64)
-
-css:
-	$(TAILWINDCSS) --input internal/admin/static/input.css --output internal/admin/static/tailwind.css --content 'internal/admin/templates/*.html' --minify
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/signald ./cmd/signald/
@@ -20,7 +17,7 @@ build-autodeploy:
 build-dev:
 	go build -o bin/signald ./cmd/signald/
 
-run: css build
+run: build
 	./bin/signald
 
 test:
@@ -30,7 +27,6 @@ test:
 # `test-db-reset` drops any leftover test state before running, matching the fresh-container
 # isolation that CI gets from ephemeral service containers.
 TEST_DATABASE_URL ?= postgres://digits:digits@localhost:5432/digits_test?sslmode=disable
-TEST_ADMIN_DATABASE_URL ?= postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable
 
 test-db-up:
 	docker compose --profile test up -d test-db
@@ -46,11 +42,9 @@ test-db-down:
 
 test-db-reset:
 	@docker exec server-test-db-1 psql -U digits -d digits_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO digits;" > /dev/null
-	@docker exec server-test-db-1 psql -U digits -d digits_admin_test -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO digits;" > /dev/null
 
 test-integration: test-db-up test-db-reset
 	TEST_DATABASE_URL=$(TEST_DATABASE_URL) \
-	TEST_ADMIN_DATABASE_URL=$(TEST_ADMIN_DATABASE_URL) \
 	go test -tags=integration -race -count=1 -p 1 ./...
 
 # E2E tests (Playwright) — requires a running dev server at BASE_URL (default: http://localhost:8080)
@@ -136,4 +130,4 @@ deploy:
 	git fetch --tags
 	BUILD_VERSION=$$(git describe --tags --match 'server/v*' --always | sed 's|^server/v||') \
 	BUILD_COMMIT=$$(git rev-parse --short HEAD) \
-	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build signald admind
+	docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build signald
