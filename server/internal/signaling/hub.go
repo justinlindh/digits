@@ -306,9 +306,6 @@ func (h *Hub) Register(number string, conn *Conn) error {
 			FirmwareCommit:  conn.FirmwareCommit,
 			RemoteAddr:      conn.RemoteAddr,
 		})
-		if !replacing {
-			ds.IncrOnline(context.Background())
-		}
 	}
 	return nil
 }
@@ -335,7 +332,6 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 		}
 		if ds != nil {
 			ds.SetOffline(context.Background(), number)
-			ds.DecrOnline(context.Background())
 		}
 	}
 }

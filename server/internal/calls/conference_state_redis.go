@@ -13,6 +13,9 @@ import (
 const (
 	confDetailPrefix = "digits:conf:"
 	confMemberPrefix = "digits:conference-member:"
+	// Safety-net TTL for conference keys. Normal end/drop paths delete
+	// keys explicitly; this only fires if a pod crashes mid-conference.
+	confTTL = 30 * time.Minute
 )
 
 type redisConference struct {
@@ -47,9 +50,9 @@ func (cs *ConfState) Create(ctx context.Context, confID uuid.UUID, host string, 
 	}
 
 	pipe := cs.client.Pipeline()
-	pipe.Set(ctx, confDetailPrefix+confID.String(), string(data), 0)
+	pipe.Set(ctx, confDetailPrefix+confID.String(), string(data), confTTL)
 	for _, m := range members {
-		pipe.Set(ctx, confMemberPrefix+m, confID.String(), 0)
+		pipe.Set(ctx, confMemberPrefix+m, confID.String(), confTTL)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Error("redis: ConfState.Create failed", "confID", confID, "err", err)

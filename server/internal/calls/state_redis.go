@@ -9,10 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const (
-	callKeyPrefix      = "digits:call:"
-	activeCallsCounter = "digits:counter:active-calls"
-)
+const callKeyPrefix = "digits:call:"
 
 type callEntry struct {
 	ID        int64     `json:"id"`
@@ -45,7 +42,6 @@ func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, c
 	pipe := s.client.Pipeline()
 	pipe.HSet(ctx, callKeyPrefix+caller, callee, string(callerEntry))
 	pipe.HSet(ctx, callKeyPrefix+callee, caller, string(calleeEntry))
-	pipe.Incr(ctx, activeCallsCounter)
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Error("redis: OnCallInitiated failed", "callID", callID, "err", err)
 	}
@@ -55,7 +51,6 @@ func (s *CallState) OnCallEnded(ctx context.Context, caller, callee string) {
 	pipe := s.client.Pipeline()
 	pipe.HDel(ctx, callKeyPrefix+caller, callee)
 	pipe.HDel(ctx, callKeyPrefix+callee, caller)
-	pipe.Decr(ctx, activeCallsCounter)
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Error("redis: OnCallEnded failed", "caller", caller, "callee", callee, "err", err)
 		return
@@ -81,7 +76,6 @@ func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 	pipe.Del(ctx, key)
 	for peer := range entries {
 		pipe.HDel(ctx, callKeyPrefix+peer, number)
-		pipe.Decr(ctx, activeCallsCounter)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		slog.Error("redis: ClearByNumber pipeline failed", "number", number, "err", err)

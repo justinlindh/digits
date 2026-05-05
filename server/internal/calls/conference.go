@@ -118,12 +118,14 @@ func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int
 // IsBusy returns true if phone is an active member of any active conference.
 func (ct *ConferenceTracker) IsBusy(phone string) bool {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
 	if _, ok := ct.memberIndex[phone]; ok {
+		ct.mu.Unlock()
 		return true
 	}
-	if ct.state != nil {
-		return ct.state.IsBusy(context.Background(), phone)
+	state := ct.state
+	ct.mu.Unlock()
+	if state != nil {
+		return state.IsBusy(context.Background(), phone)
 	}
 	return false
 }
@@ -131,31 +133,36 @@ func (ct *ConferenceTracker) IsBusy(phone string) bool {
 // ConferenceByPhone returns the active conference for a phone, or nil.
 func (ct *ConferenceTracker) ConferenceByPhone(phone string) *Conference {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
 	id, ok := ct.memberIndex[phone]
-	if !ok {
-		if ct.state != nil {
-			return ct.state.ConferenceByPhone(context.Background(), phone)
-		}
-		return nil
+	if ok {
+		conf := ct.active[id]
+		ct.mu.Unlock()
+		return conf
 	}
-	return ct.active[id]
+	state := ct.state
+	ct.mu.Unlock()
+	if state != nil {
+		return state.ConferenceByPhone(context.Background(), phone)
+	}
+	return nil
 }
 
 // ConferenceContains reports whether both phones are members of the same active conference.
 func (ct *ConferenceTracker) ConferenceContains(confID uuid.UUID, phoneA, phoneB string) bool {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
 	conf, ok := ct.active[confID]
-	if !ok || conf.State != ConferenceStateActive {
-		if ct.state != nil {
-			return ct.state.Contains(context.Background(), confID, phoneA, phoneB)
-		}
-		return false
+	if ok && conf.State == ConferenceStateActive {
+		_, hasA := conf.Members[phoneA]
+		_, hasB := conf.Members[phoneB]
+		ct.mu.Unlock()
+		return hasA && hasB
 	}
-	_, hasA := conf.Members[phoneA]
-	_, hasB := conf.Members[phoneB]
-	return hasA && hasB
+	state := ct.state
+	ct.mu.Unlock()
+	if state != nil {
+		return state.Contains(context.Background(), confID, phoneA, phoneB)
+	}
+	return false
 }
 
 // DropMember removes a single member. Returns the remaining member list and

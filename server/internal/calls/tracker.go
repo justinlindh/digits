@@ -258,11 +258,10 @@ func (t *Tracker) Busy(number string) bool {
 	}
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.Busy(context.Background(), number)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -286,11 +285,10 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 	}
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.CanAddAsHost(context.Background(), number)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	callerCount := 0
 	for _, c := range t.active {
@@ -309,11 +307,10 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 func (t *Tracker) AllPeersOf(number string) []string {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.AllPeersOf(context.Background(), number)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	var peers []string
 	for _, c := range t.active {
@@ -331,11 +328,10 @@ func (t *Tracker) AllPeersOf(number string) []string {
 func (t *Tracker) PeerOf(number string) string {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.PeerOf(context.Background(), number)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number {
@@ -354,11 +350,10 @@ func (t *Tracker) PeerOf(number string) string {
 func (t *Tracker) CallIDForPair(a, b string) int64 {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.CallIDForPair(context.Background(), a, b)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	if c, ok := t.active[callKey(a, b)]; ok {
 		return c.ID
@@ -374,11 +369,10 @@ func (t *Tracker) CallIDForPair(a, b string) int64 {
 func (t *Tracker) CallIDFor(number string) (int64, bool) {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.CallIDFor(context.Background(), number)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -391,11 +385,10 @@ func (t *Tracker) CallIDFor(number string) (int64, bool) {
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.InCall(context.Background(), a, b)
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	_, fwd := t.active[callKey(a, b)]
 	_, rev := t.active[callKey(b, a)]
@@ -405,11 +398,10 @@ func (t *Tracker) InCall(a, b string) bool {
 func (t *Tracker) Active() []activeCall {
 	t.mu.Lock()
 	s := t.state
-	t.mu.Unlock()
 	if s != nil {
+		t.mu.Unlock()
 		return s.Active(context.Background())
 	}
-	t.mu.Lock()
 	defer t.mu.Unlock()
 	calls := make([]activeCall, 0, len(t.active))
 	for _, c := range t.active {

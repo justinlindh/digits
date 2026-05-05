@@ -12,7 +12,6 @@ import (
 const (
 	deviceKeyPrefix    = "digits:device:"
 	updateStatusPrefix = "digits:update-status:"
-	onlineCounterKey   = "digits:counter:online-devices"
 
 	deviceTTL       = 90 * time.Second
 	updateStatusTTL = 1 * time.Hour
@@ -231,33 +230,6 @@ func (s *DeviceState) ClearUpdateStatus(ctx context.Context, number string) {
 	}
 }
 
-func (s *DeviceState) IncrOnline(ctx context.Context) {
-	if err := s.client.Incr(ctx, onlineCounterKey).Err(); err != nil {
-		slog.Error("redis: IncrOnline failed", "err", err)
-	}
-}
-
-func (s *DeviceState) DecrOnline(ctx context.Context) {
-	if err := s.client.Decr(ctx, onlineCounterKey).Err(); err != nil {
-		slog.Error("redis: DecrOnline failed", "err", err)
-	}
-}
-
-func (s *DeviceState) CountOnline(ctx context.Context) int {
-	val, err := s.client.Get(ctx, onlineCounterKey).Result()
-	if err != nil {
-		if err != redis.Nil {
-			slog.Error("redis: CountOnline GET failed, falling back to scan", "err", err)
-		}
-		return len(s.OnlineNumbers(ctx))
-	}
-	n, err := strconv.Atoi(val)
-	if err != nil {
-		slog.Error("redis: CountOnline parse failed", "val", val, "err", err)
-		return len(s.OnlineNumbers(ctx))
-	}
-	return n
-}
 
 // PodID returns the pod identifier this state instance was created with.
 func (s *DeviceState) PodID() string {
