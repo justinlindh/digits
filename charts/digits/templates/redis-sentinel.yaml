@@ -112,8 +112,7 @@ spec:
               if [ "$(hostname)" != "{{ include "digits.fullname" . }}-redis-0" ]; then
                 echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379" >> /tmp/redis.conf
               fi
-              redis-server /tmp/redis.conf
-          command: ["redis-server", "/etc/redis/redis.conf"]
+              exec redis-server /tmp/redis.conf
           volumeMounts:
             - name: config
               mountPath: /etc/redis
@@ -150,7 +149,7 @@ spec:
             - -c
             - |
               cp /etc/redis/sentinel.conf /tmp/sentinel.conf
-              redis-sentinel /tmp/sentinel.conf
+              exec redis-sentinel /tmp/sentinel.conf
           volumeMounts:
             - name: config
               mountPath: /etc/redis
