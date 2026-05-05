@@ -372,17 +372,6 @@ func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	return calls, rows.Err()
 }
 
-func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
-	rows, err := t.db.DB.QueryContext(ctx,
-		`SELECT `+callColumns+` FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return scanCallRows(rows)
-}
-
 // MarkForceEnded records which user force-ended a call. Returns nil error
 // even if no rows matched (idempotent against racing peer hangups).
 func (t *Tracker) MarkForceEnded(ctx context.Context, callID int64, userID string) error {
