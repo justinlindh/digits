@@ -106,9 +106,9 @@ func TestE2EFullCallFlow(t *testing.T) {
 	}
 
 	// Verify call in tracker history
-	recentCalls, err := tracker.Recent(context.Background(), 10)
+	recentCalls, err := tracker.RecentForPhones(context.Background(), []string{"3140001", "3140002"}, 10)
 	if err != nil {
-		t.Fatalf("Recent: %v", err)
+		t.Fatalf("RecentForPhones: %v", err)
 	}
 	if len(recentCalls) == 0 {
 		t.Fatal("expected at least 1 call in history")
