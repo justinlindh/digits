@@ -57,8 +57,9 @@ type Hub struct {
 	hwConns      map[string]*Conn                 // hardware ID -> connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
 	dashEvents   dashNotifier
-	redis        redisPubSub // nil = single-instance mode (no Redis)
-	draining     bool        // set by StartDraining; blocks new Register calls
+	redis        redisPubSub  // nil = single-instance mode (no Redis)
+	state        *DeviceState // nil = single-instance mode (no cluster state)
+	draining     bool         // set by StartDraining; blocks new Register calls
 }
 
 func NewHub() *Hub {
@@ -75,6 +76,15 @@ func NewHub() *Hub {
 func (h *Hub) SetRedis(bridge redisPubSub) {
 	h.mu.Lock()
 	h.redis = bridge
+	h.mu.Unlock()
+}
+
+// SetDeviceState attaches a DeviceState to the hub, enabling cluster-wide
+// presence queries via Redis. Passing nil disables cluster state (the
+// default single-instance mode).
+func (h *Hub) SetDeviceState(ds *DeviceState) {
+	h.mu.Lock()
+	h.state = ds
 	h.mu.Unlock()
 }
 
@@ -258,12 +268,12 @@ func (h *Hub) Register(number string, conn *Conn) error {
 		h.mu.Unlock()
 		return ErrDraining
 	}
-	// Close existing connection for this number if any
-	if old, ok := h.conns[number]; ok {
+	_, replacing := h.conns[number]
+	if replacing {
+		old := h.conns[number]
 		if old.WS != nil {
-			_ = old.WS.Close() // close WebSocket first so write pump exits
+			_ = old.WS.Close()
 		}
-		// Only close Send if it's not already closed
 		select {
 		case _, ok := <-old.Send:
 			if ok {
@@ -279,11 +289,26 @@ func (h *Hub) Register(number string, conn *Conn) error {
 		h.hwConns[conn.HardwareID] = conn
 	}
 	d := h.dashEvents
+	ds := h.state
 	h.mu.Unlock()
 	slog.Debug("hub registered", "number", number)
 
 	if d != nil {
 		d.Notify()
+	}
+	if ds != nil {
+		ds.SetOnline(context.Background(), number, DevicePresence{
+			PodID:           ds.PodID(),
+			HardwareID:      conn.HardwareID,
+			PiVersion:       conn.PiVersion,
+			PiCommit:        conn.PiCommit,
+			FirmwareVersion: conn.FirmwareVersion,
+			FirmwareCommit:  conn.FirmwareCommit,
+			RemoteAddr:      conn.RemoteAddr,
+		})
+		if !replacing {
+			ds.IncrOnline(context.Background())
+		}
 	}
 	return nil
 }
@@ -300,12 +325,17 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 		changed = true
 	}
 	d := h.dashEvents
+	ds := h.state
 	h.mu.Unlock()
 
 	if changed {
 		slog.Debug("hub unregistered", "number", number)
 		if d != nil {
 			d.Notify()
+		}
+		if ds != nil {
+			ds.SetOffline(context.Background(), number)
+			ds.DecrOnline(context.Background())
 		}
 	}
 }
@@ -446,6 +476,12 @@ type DeviceInfoSnapshot struct {
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
 func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.DeviceInfo(context.Background(), number)
+	}
+	h.mu.RLock()
 	defer h.mu.RUnlock()
 	conn, ok := h.conns[number]
 	if !ok {
@@ -463,16 +499,26 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 // SetUpdateStatus stores the latest update status for a phone.
 func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.updateStatus[number] = &UpdateStatusSnapshot{
 		Status:    status,
 		Detail:    detail,
 		UpdatedAt: time.Now(),
 	}
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.SetUpdateStatus(context.Background(), number, status, detail)
+	}
 }
 
 // GetUpdateStatus returns the latest update status for a phone, or nil.
 func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.GetUpdateStatus(context.Background(), number)
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.updateStatus[number]
@@ -481,8 +527,12 @@ func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 // ClearUpdateStatus removes update status for a phone.
 func (h *Hub) ClearUpdateStatus(number string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	delete(h.updateStatus, number)
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.ClearUpdateStatus(context.Background(), number)
+	}
 }
 
 // UpdateDeviceInfo sets version info and the device-reported LAN address for
@@ -495,9 +545,9 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 		localAddr = ""
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
 	if !ok {
+		h.mu.Unlock()
 		return false
 	}
 	conn.PiVersion = piVer
@@ -505,20 +555,41 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.UpdateDeviceInfo(context.Background(), number, DevicePresence{
+			PiVersion:       piVer,
+			PiCommit:        piCommit,
+			FirmwareVersion: fwVer,
+			FirmwareCommit:  fwCommit,
+			RemoteAddr:      localAddr,
+		})
+	}
 	return true
 }
 
 // TouchLastSeen updates the in-memory last-seen timestamp for a connected phone.
 func (h *Hub) TouchLastSeen(number string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if conn, ok := h.conns[number]; ok {
 		conn.LastSeen = time.Now()
+	}
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.TouchLastSeen(context.Background(), number)
 	}
 }
 
 // LastSeenAt returns the last-seen timestamp for a connected phone, or nil if offline.
 func (h *Hub) LastSeenAt(number string) *time.Time {
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.LastSeenAt(context.Background(), number)
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	conn, ok := h.conns[number]
@@ -539,16 +610,28 @@ func (h *Hub) IsOnline(number string) bool {
 	if number == "unpaired" {
 		return false
 	}
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.IsOnline(context.Background(), number)
+	}
 	return h.Get(number) != nil
 }
 
 func (h *Hub) OnlineNumbers() []string {
 	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.OnlineNumbers(context.Background())
+	}
+	h.mu.RLock()
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))
 	for n := range h.conns {
 		if n == "unpaired" {
-			continue // skip unpaired phones awaiting pairing
+			continue
 		}
 		nums = append(nums, n)
 	}
