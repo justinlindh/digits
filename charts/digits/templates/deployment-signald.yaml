@@ -16,6 +16,15 @@ spec:
         app.kubernetes.io/part-of: {{ include "digits.name" . }}
     spec:
       automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "digits.signald.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
