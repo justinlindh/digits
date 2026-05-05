@@ -2021,6 +2021,11 @@ func main() {
 	// through a /etc/asound.conf plug device that pins hardware to 44.1 kHz
 	// and resamples 48 kHz application audio for the chip's PLL-friendly
 	// rate.
+	// Enable GPCLK0 for V2 codec MCLK. Replaces the Python systemd service.
+	if audio.CodecPCBVariant() == "2" {
+		enableGPCLK0()
+	}
+
 	pbDev := *alsaDevice
 	if pbDev == "" {
 		pbDev = audio.CodecPlaybackDevice()
