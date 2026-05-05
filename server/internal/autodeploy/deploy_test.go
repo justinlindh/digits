@@ -103,8 +103,8 @@ func TestDeployNoop_NotModified(t *testing.T) {
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{NotModified: true}},
 		Runner: &mockRunner{}, Health: mockHealth(nil), Mailer: &mockMailer{},
-		Store:  &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
-		Now:    func() time.Time { return time.Unix(0, 0) },
+		Store: &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
+		Now:   func() time.Time { return time.Unix(0, 0) },
 	}
 	res, _ := d.Run(context.Background())
 	if res.Action != ActionNoop {
@@ -253,8 +253,8 @@ func TestDeploy_LoginFails(t *testing.T) {
 	mailer := &mockMailer{}
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -291,8 +291,8 @@ func TestDeploy_HealthFails_RevertSucceeds(t *testing.T) {
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
 	health := mockHealth(map[string]error{"1.9.1": errors.New("timeout")})
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
 		Runner: runner, Health: health, Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -331,8 +331,8 @@ func TestDeploy_HealthFails_RevertAlsoFails(t *testing.T) {
 		"1.9.0": errors.New("still broken"),
 	})
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1"}},
 		Runner: runner, Health: health, Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -389,8 +389,8 @@ func TestDeploy_EmailDebounce(t *testing.T) {
 	runner := &mockRunner{errs: map[string]error{"docker login": errors.New("denied")}}
 	mailer := &mockMailer{}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.2"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}
@@ -414,8 +414,8 @@ func TestDeploy_EmailAfterDebounceWindow(t *testing.T) {
 	runner := &mockRunner{errs: map[string]error{"docker login": errors.New("denied")}}
 	mailer := &mockMailer{}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.2"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}

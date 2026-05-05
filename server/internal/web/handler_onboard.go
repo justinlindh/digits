@@ -54,4 +54,3 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 	// from /welcome and the post-login behavior on subsequent visits.
 	http.Redirect(w, r, auth.LoginRedirectFor(user), http.StatusSeeOther)
 }
-

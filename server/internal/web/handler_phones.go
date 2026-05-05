@@ -63,9 +63,13 @@ type lineRow struct {
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
-		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		var err error
+		lines, err = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		if err != nil {
+			slog.Error("list lines by household failed", "household_id", hh.ID, "err", err)
+		}
 	}
-	// If household lookup failed, show empty list rather than leaking all lines
+	// On error or nil household, show empty list rather than leaking all lines.
 	if lines == nil {
 		lines = []line.Line{}
 	}
@@ -694,4 +698,3 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
-

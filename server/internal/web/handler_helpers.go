@@ -386,4 +386,3 @@ func partialFor(r *http.Request, intercom, am string) string {
 	}
 	return intercom
 }
-

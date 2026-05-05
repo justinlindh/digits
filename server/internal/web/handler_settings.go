@@ -38,7 +38,10 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 	hh := data.Household
 	if hh != nil && user != nil {
-		members, _ := h.householdStore.GetMembersWithUsers(r.Context(), hh.ID)
+		members, err := h.householdStore.GetMembersWithUsers(r.Context(), hh.ID)
+		if err != nil {
+			slog.Error("get household members failed", "household_id", hh.ID, "err", err)
+		}
 		for _, m := range members {
 			data.Members = append(data.Members, settingsMember{
 				UserID: m.UserID,
@@ -48,7 +51,10 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		if h.inviteStore != nil {
-			data.PendingInvites, _ = h.inviteStore.GetPendingForHousehold(r.Context(), hh.ID)
+			data.PendingInvites, err = h.inviteStore.GetPendingForHousehold(r.Context(), hh.ID)
+			if err != nil {
+				slog.Error("get pending invites failed", "household_id", hh.ID, "err", err)
+			}
 		}
 	}
 
