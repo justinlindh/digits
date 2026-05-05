@@ -164,3 +164,13 @@ func (b *RedisBridge) Close() error {
 func (b *RedisBridge) Ping(ctx context.Context) error {
 	return b.client.Ping(ctx).Err()
 }
+
+// Client returns the underlying Redis client for shared use by state stores.
+func (b *RedisBridge) Client() redis.UniversalClient {
+	return b.client
+}
+
+// PodID returns this bridge's pod identifier.
+func (b *RedisBridge) PodID() string {
+	return b.podID
+}
