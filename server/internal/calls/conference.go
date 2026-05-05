@@ -1,6 +1,7 @@
 package calls
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -46,6 +47,7 @@ type ConferenceTracker struct {
 	mu          sync.Mutex
 	active      map[uuid.UUID]*Conference
 	memberIndex map[string]uuid.UUID // phone -> conference id (active only)
+	state       *ConfState
 }
 
 func NewConferenceTracker() *ConferenceTracker {
@@ -53,6 +55,11 @@ func NewConferenceTracker() *ConferenceTracker {
 		active:      make(map[uuid.UUID]*Conference),
 		memberIndex: make(map[string]uuid.UUID),
 	}
+}
+
+// SetConfState attaches a Redis-backed conference state helper to the tracker.
+func (ct *ConferenceTracker) SetConfState(cs *ConfState) {
+	ct.state = cs
 }
 
 var (
@@ -99,6 +106,12 @@ func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int
 	for _, m := range addedMembers {
 		ct.memberIndex[m] = conf.ID
 	}
+
+	if ct.state != nil {
+		allMembers := append([]string{host}, addedMembers...)
+		ct.state.Create(context.Background(), conf.ID, host, originatingCallID, allMembers)
+	}
+
 	return conf, nil
 }
 
@@ -106,8 +119,13 @@ func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int
 func (ct *ConferenceTracker) IsBusy(phone string) bool {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
-	_, ok := ct.memberIndex[phone]
-	return ok
+	if _, ok := ct.memberIndex[phone]; ok {
+		return true
+	}
+	if ct.state != nil {
+		return ct.state.IsBusy(context.Background(), phone)
+	}
+	return false
 }
 
 // ConferenceByPhone returns the active conference for a phone, or nil.
@@ -116,6 +134,9 @@ func (ct *ConferenceTracker) ConferenceByPhone(phone string) *Conference {
 	defer ct.mu.Unlock()
 	id, ok := ct.memberIndex[phone]
 	if !ok {
+		if ct.state != nil {
+			return ct.state.ConferenceByPhone(context.Background(), phone)
+		}
 		return nil
 	}
 	return ct.active[id]
@@ -127,6 +148,9 @@ func (ct *ConferenceTracker) ConferenceContains(confID uuid.UUID, phoneA, phoneB
 	defer ct.mu.Unlock()
 	conf, ok := ct.active[confID]
 	if !ok || conf.State != ConferenceStateActive {
+		if ct.state != nil {
+			return ct.state.Contains(context.Background(), confID, phoneA, phoneB)
+		}
 		return false
 	}
 	_, hasA := conf.Members[phoneA]
@@ -166,6 +190,13 @@ func (ct *ConferenceTracker) DropMember(confID uuid.UUID, phone, reason string) 
 	for _, p := range remaining {
 		delete(ct.memberIndex, p)
 	}
+
+	if ct.state != nil {
+		ctx := context.Background()
+		ct.state.RemoveMember(ctx, confID, phone)
+		ct.state.End(ctx, confID, remaining)
+	}
+
 	return remaining, true, nil
 }
 
@@ -212,5 +243,10 @@ func (ct *ConferenceTracker) EndConference(confID uuid.UUID, reason string) ([]s
 	conf.EndedAt = &now
 	conf.EndReason = reason
 	delete(ct.active, confID)
+
+	if ct.state != nil {
+		ct.state.End(context.Background(), confID, active)
+	}
+
 	return active, nil
 }
