@@ -1683,6 +1683,11 @@ func main() {
 		os.Exit(0)
 	}
 
+	if *modeFlag == "gpclk0" {
+		enableGPCLK0()
+		return
+	}
+
 	if *modeFlag == "recovery" || os.Getpid() == 1 {
 		if os.Getpid() == 1 {
 			*serialDev = "/dev/ttyAMA0"
@@ -2021,10 +2026,6 @@ func main() {
 	// through a /etc/asound.conf plug device that pins hardware to 44.1 kHz
 	// and resamples 48 kHz application audio for the chip's PLL-friendly
 	// rate.
-	// Enable GPCLK0 for V2 codec MCLK. Replaces the Python systemd service.
-	if audio.CodecPCBVariant() == "2" {
-		enableGPCLK0()
-	}
 
 	pbDev := *alsaDevice
 	if pbDev == "" {
