@@ -192,7 +192,7 @@ spec:
 ---
 {{- if .Values.observability.enabled }}
 apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+kind: PodMonitor
 metadata:
   name: {{ include "digits.fullname" . }}-redis
   labels:
@@ -203,7 +203,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
       app.kubernetes.io/instance: {{ .Release.Name }}
-  endpoints:
+  podMetricsEndpoints:
     - port: metrics
       path: /metrics
       interval: 30s
