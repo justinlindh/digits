@@ -10,6 +10,7 @@ spec:
   instances: {{ .Values.cnpg.userdb.instances }}
   imageName: {{ .Values.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: {{ .Values.cnpg.enableSuperuserAccess }}
   storage:
     size: {{ .Values.cnpg.userdb.size }}
     {{- if .Values.cnpg.userdb.storageClass }}
@@ -22,6 +23,10 @@ spec:
       {{- if .Values.cnpg.userdb.postInitSQL }}
       postInitSQL:
         {{- toYaml .Values.cnpg.userdb.postInitSQL | nindent 8 }}
+      {{- end }}
+      {{- if .Values.cnpg.userdb.postInitApplicationSQL }}
+      postInitApplicationSQL:
+        {{- toYaml .Values.cnpg.userdb.postInitApplicationSQL | nindent 8 }}
       {{- end }}
   {{- if .Values.cnpg.backup.enabled }}
   backup:
