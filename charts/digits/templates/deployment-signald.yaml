@@ -55,7 +55,7 @@ spec:
             {{- end }}
             {{- if .Values.redis.enabled }}
             - name: REDIS_URL
-              value: "{{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless:26379,{{ include "digits.fullname" . }}-redis-1.{{ include "digits.fullname" . }}-redis-headless:26379,{{ include "digits.fullname" . }}-redis-2.{{ include "digits.fullname" . }}-redis-headless:26379"
+              value: "{{ range $i := until (int .Values.redis.replicas) }}{{ if $i }},{{ end }}{{ include "digits.fullname" $ }}-redis-{{ $i }}.{{ include "digits.fullname" $ }}-redis-headless:26379{{ end }}"
             - name: REDIS_SENTINEL_MASTER
               value: {{ .Values.redis.sentinelMasterName | quote }}
             {{- end }}

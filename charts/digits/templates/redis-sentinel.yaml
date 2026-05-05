@@ -102,12 +102,22 @@ spec:
           ports:
             - name: redis
               containerPort: 6379
-          command: ["redis-server", "/etc/redis/redis.conf"]
+          command:
+            - sh
+            - -c
+            - |
+              cp /etc/redis/redis.conf /tmp/redis.conf
+              if [ "$(hostname)" != "{{ include "digits.fullname" . }}-redis-0" ]; then
+                echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless 6379" >> /tmp/redis.conf
+              fi
+              redis-server /tmp/redis.conf
           volumeMounts:
             - name: config
               mountPath: /etc/redis
             - name: data
               mountPath: /data
+            - name: tmp
+              mountPath: /tmp
           {{- with .Values.redis.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

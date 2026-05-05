@@ -48,17 +48,22 @@ var _ redisPubSub = (*RedisBridge)(nil)
 //
 //   - Standard: pass a redis:// or rediss:// URL.
 //   - Sentinel: pass a comma-separated list of sentinel addresses as the URL
-//     with the master name in REDIS_SENTINEL_MASTER (defaults to "mymaster").
+//     with the master name in REDIS_SENTINEL_MASTER.
 //     Format: "sentinel-0:26379,sentinel-1:26379,sentinel-2:26379"
 //
 // The mode is selected by the presence of REDIS_SENTINEL_MASTER in the
 // environment. When set, redisURL is treated as a comma-separated sentinel
 // address list. When unset, redisURL is parsed as a standard Redis URL.
+// In sentinel mode, connection is lazy; callers must Ping to verify
+// reachability.
 func NewRedisBridge(redisURL string) (*RedisBridge, error) {
 	var client redis.UniversalClient
 
 	if master := os.Getenv("REDIS_SENTINEL_MASTER"); master != "" {
 		addrs := strings.Split(redisURL, ",")
+		for i := range addrs {
+			addrs[i] = strings.TrimSpace(addrs[i])
+		}
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
 			MasterName:    master,
 			SentinelAddrs: addrs,
