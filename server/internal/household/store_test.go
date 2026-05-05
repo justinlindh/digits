@@ -293,24 +293,24 @@ func TestRemoveMember(t *testing.T) {
 		t.Fatalf("AddMember: %v", err)
 	}
 
-	members, err := s.GetMembers(context.Background(), hh.ID)
+	count, err := s.MemberCount(context.Background(), hh.ID)
 	if err != nil {
-		t.Fatalf("GetMembers: %v", err)
+		t.Fatalf("MemberCount: %v", err)
 	}
-	if len(members) != 2 {
-		t.Fatalf("expected 2 members, got %d", len(members))
+	if count != 2 {
+		t.Fatalf("expected 2 members, got %d", count)
 	}
 
 	if err := s.RemoveMember(context.Background(), memberID, hh.ID); err != nil {
 		t.Fatalf("RemoveMember: %v", err)
 	}
 
-	members, err = s.GetMembers(context.Background(), hh.ID)
+	count, err = s.MemberCount(context.Background(), hh.ID)
 	if err != nil {
-		t.Fatalf("GetMembers after remove: %v", err)
+		t.Fatalf("MemberCount after remove: %v", err)
 	}
-	if len(members) != 1 {
-		t.Fatalf("expected 1 member after remove, got %d", len(members))
+	if count != 1 {
+		t.Fatalf("expected 1 member after remove, got %d", count)
 	}
 }
 
