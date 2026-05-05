@@ -788,10 +788,10 @@ fi
 info "  Creating data skeleton archive..."
 tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"
 
-# Copy recovery binary
+# Copy recovery binary (digitsd with --mode=recovery auto-detection via PID 1).
 info "  Copying recovery binary..."
-RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
-[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
+RECOVERY_BIN="${REPO_DIR}/pi/digitsd/bin/digitsd"
+[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary (digitsd) not found: $RECOVERY_BIN (run pi/digitsd build first)"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
 # Create mini-rootfs directory structure on recovery partition.
@@ -824,7 +824,7 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
-for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar aplay; do
+for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar aplay amixer alsactl; do
     # Use readlink -f inside chroot to resolve symlinks to the real binary
     TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
     if [[ -z "$TOOL_PATH" ]]; then
@@ -960,6 +960,73 @@ touch "${RECOVERY_KDIR}/modules.dep.bin" \
       "${RECOVERY_KDIR}/modules.alias.bin" \
       "${RECOVERY_KDIR}/modules.softdep" \
       "${RECOVERY_KDIR}/modules.symbols"
+
+# Copy I2C and audio kernel modules (decompressed).
+# Recovery loads these via insmod in dependency order; the codec needs
+# the I2C bus driver, the ASoC framework, and the simple-audio-card
+# machine driver to produce a sound card.
+info "  Copying audio kernel modules..."
+for mod_path in \
+    kernel/drivers/i2c/busses/i2c-bcm2835.ko.xz \
+    kernel/sound/core/snd.ko.xz \
+    kernel/sound/core/snd-timer.ko.xz \
+    kernel/sound/core/snd-pcm.ko.xz \
+    kernel/sound/core/snd-pcm-dmaengine.ko.xz \
+    kernel/sound/core/snd-compress.ko.xz \
+    kernel/drivers/base/regmap/regmap-i2c.ko.xz \
+    kernel/sound/soc/snd-soc-core.ko.xz \
+    kernel/sound/soc/bcm/snd-soc-bcm2835-i2s.ko.xz \
+    kernel/sound/soc/codecs/snd-soc-tlv320aic3x.ko.xz \
+    kernel/sound/soc/codecs/snd-soc-tlv320aic3x-i2c.ko.xz \
+    kernel/sound/soc/generic/snd-soc-simple-card.ko.xz \
+    kernel/sound/soc/generic/snd-soc-simple-card-utils.ko.xz; do
+    NAME=$(basename "${mod_path%.xz}")
+    DESTDIR="${RECOVERY_KDIR}/$(dirname "$mod_path")"
+    mkdir -p "$DESTDIR"
+    if [[ -f "${KDIR}/${mod_path}" ]]; then
+        xz -dk -c "${KDIR}/${mod_path}" > "${DESTDIR}/${NAME}"
+        info "    ${NAME}"
+    else
+        warn "    Audio module not found: ${mod_path}"
+    fi
+done
+
+# Copy ALSA config tree (needed by plughw, alsactl, amixer).
+info "  Copying ALSA config tree..."
+if [[ -d "${ROOTFS_MNT}/usr/share/alsa" ]]; then
+    mkdir -p "${RECOVERY_MNT}/usr/share"
+    cp -r "${ROOTFS_MNT}/usr/share/alsa" "${RECOVERY_MNT}/usr/share/alsa"
+fi
+
+# Copy codec mixer state (TLV320AIC3104 routing and volume).
+info "  Copying mixer state..."
+MIXER_STATE="${REPO_DIR}/pi/digitsd/internal/assets/embed/mixer/v2.state"
+if [[ -f "$MIXER_STATE" ]]; then
+    cp "$MIXER_STATE" "${RECOVERY_MNT}/mixer.state"
+fi
+
+# Copy recovery tone WAV files.
+info "  Copying recovery tones..."
+mkdir -p "${RECOVERY_MNT}/tones"
+for wav in "${REPO_DIR}/pi/digits-recovery/recovery_audio/"*.wav; do
+    [[ -f "$wav" ]] && cp "$wav" "${RECOVERY_MNT}/tones/"
+done
+
+# Copy additional shared libraries needed by digitsd (libopus, etc.).
+info "  Copying digitsd audio libraries..."
+for lib in libopus.so.0 libopusfile.so.0 libogg.so.0; do
+    LIBPATH=$(chroot "$ROOTFS_MNT" readlink -f "/usr/lib/aarch64-linux-gnu/${lib}" 2>/dev/null || true)
+    if [[ -z "$LIBPATH" ]]; then
+        LIBPATH=$(find "${ROOTFS_MNT}/lib" "${ROOTFS_MNT}/usr/lib" -name "$lib" 2>/dev/null | head -1)
+        LIBPATH="${LIBPATH#${ROOTFS_MNT}}"
+    fi
+    if [[ -n "$LIBPATH" && -f "${ROOTFS_MNT}${LIBPATH}" ]]; then
+        cp -L "${ROOTFS_MNT}${LIBPATH}" "${RECOVERY_MNT}/lib/${lib}"
+        info "    ${lib}"
+    else
+        warn "    Library not found: ${lib}"
+    fi
+done
 
 # Create minimal /etc for dnsmasq (needs passwd for user= directive)
 # and glibc (needs nsswitch.conf for name resolution).
