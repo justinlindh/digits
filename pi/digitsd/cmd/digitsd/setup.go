@@ -17,6 +17,66 @@ import (
 //go:embed setup_static
 var setupStaticFS embed.FS
 
+func setupVoiceLoop(serial *subsystem.SerialModule, audio *subsystem.AudioModule) {
+	sp := serial.Port()
+	mixer := audio.Mixer()
+	events := sp.Events()
+
+	for {
+		ev := <-events
+		if ev != "HOOK:OFF" {
+			continue
+		}
+		slog.Info("setup: handset off-hook, playing instructions")
+
+		// Brief delay so audio reaches the user's ear after lifting handset.
+		time.Sleep(500 * time.Millisecond)
+
+		for {
+			mixer.PlayOnce("wifi_setup_instructions")
+			// Wait for playback to finish, hang-up, or key press.
+			done := false
+			for mixer.OncePlaying() {
+				select {
+				case ev := <-events:
+					if ev == "HOOK:ON" {
+						mixer.StopAll()
+						slog.Info("setup: handset on-hook")
+						done = true
+					}
+				default:
+				}
+				if done {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			if done {
+				break
+			}
+
+			// Pause between replays. Exit on hang-up during the pause.
+			pauseEnd := time.After(15 * time.Second)
+			paused := false
+			for !paused {
+				select {
+				case ev := <-events:
+					if ev == "HOOK:ON" {
+						slog.Info("setup: handset on-hook")
+						paused = true
+						done = true
+					}
+				case <-pauseEnd:
+					paused = true
+				}
+			}
+			if done {
+				break
+			}
+		}
+	}
+}
+
 func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audio *subsystem.AudioModule, wifiAP *subsystem.WiFiAPModule) {
 	_ = mgr
 
@@ -151,5 +211,12 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 	})
 
 	slog.Info("setup: waiting for WiFi configuration via web UI")
+
+	// Voice prompt loop: when the user picks up the handset, play setup
+	// instructions on a timer, similar to recovery's voice menu.
+	if serial != nil && serial.IsReady() && audio != nil && audio.IsReady() {
+		go setupVoiceLoop(serial, audio)
+	}
+
 	select {}
 }
