@@ -112,16 +112,16 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 	if env.Message == nil {
 		return
 	}
+	data, err := env.Message.Marshal()
+	if err != nil {
+		slog.Debug("redis: marshal for local delivery failed", "err", err)
+		return
+	}
 
 	switch env.TargetType {
 	case "number":
 		conn := h.Get(env.Target)
 		if conn == nil {
-			return
-		}
-		data, err := env.Message.Marshal()
-		if err != nil {
-			slog.Debug("redis: marshal for local delivery failed", "err", err)
 			return
 		}
 		select {
@@ -138,11 +138,6 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		if conn == nil {
 			return
 		}
-		data, err := env.Message.Marshal()
-		if err != nil {
-			slog.Debug("redis: marshal for local delivery failed", "err", err)
-			return
-		}
 		select {
 		case conn.Send <- data:
 			slog.Debug("redis: delivered to local hardware connection", "pod", env.PodID, "delivered", true)
@@ -151,11 +146,6 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		}
 
 	case "broadcast":
-		data, err := env.Message.Marshal()
-		if err != nil {
-			slog.Debug("redis: marshal for local broadcast failed", "err", err)
-			return
-		}
 		h.mu.RLock()
 		for _, conn := range h.conns {
 			select {
