@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -91,10 +92,23 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 
 		// LED: fast blink during verification
 		if serial != nil && serial.IsReady() {
-			serial.Port().LED("FAST_BLINK")
+			serial.Port().LED("CONNECTING")
 		}
 
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("setup: verify goroutine panic", "panic", fmt.Sprintf("%v", r))
+					state.mu.Lock()
+					state.verifying = false
+					state.lastAttempt = &wifi.VerifyResult{Error: fmt.Sprintf("internal error: %v", r)}
+					state.mu.Unlock()
+					if serial != nil && serial.IsReady() {
+						serial.Port().LED("DOUBLE_PULSE")
+					}
+				}
+			}()
+
 			state.mu.Lock()
 			state.verifying = true
 			state.mu.Unlock()

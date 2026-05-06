@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function pollStatus() {
     fetch('/api/status').then(function(r) { return r.json(); }).then(function(d) {
       if (d.verifying) {
-        setTimeout(pollStatus, 1000);
+        setTimeout(pollStatus, 2000);
         return;
       }
       if (d.last_attempt && d.last_attempt.Connected && !d.last_attempt.Error) {
@@ -79,11 +79,11 @@ document.addEventListener('DOMContentLoaded', () => {
         failMsg.textContent = d.last_attempt.Error;
         showStep(stepFail);
       } else {
-        setTimeout(pollStatus, 1000);
+        setTimeout(pollStatus, 2000);
       }
     }).catch(function() {
       // AP might be down during verification, keep polling
-      setTimeout(pollStatus, 2000);
+      setTimeout(pollStatus, 3000);
     });
   }
 
@@ -147,19 +147,20 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   function pollLog() {
-    if (!logVisible) { setTimeout(pollLog, 500); return; }
+    if (!logVisible) { setTimeout(pollLog, 2000); return; }
     fetch('/log/raw').then(function(r) { return r.text(); }).then(function(t) {
-      if (t === lastLog) { setTimeout(pollLog, 500); return; }
-      lastLog = t;
-      var sel = window.getSelection();
-      if (sel && sel.rangeCount > 0 && logEl.contains(sel.anchorNode)) {
-        setTimeout(pollLog, 500); return;
+      if (t !== lastLog) {
+        lastLog = t;
+        var sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || !logEl.contains(sel.anchorNode)) {
+          var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+          logEl.textContent = t || '(empty)';
+          if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+        }
       }
-      var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
-      logEl.textContent = t || '(empty)';
-      if (atBottom) logEl.scrollTop = logEl.scrollHeight;
-    }).catch(function() {});
-    setTimeout(pollLog, 500);
+    }).catch(function() {}).finally(function() {
+      setTimeout(pollLog, 2000);
+    });
   }
   pollLog();
 

@@ -154,7 +154,7 @@ func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *sub
 
 	sp.LED("LOCK")
 	time.Sleep(50 * time.Millisecond)
-	sp.LED("HEARTBEAT")
+	sp.LED("FAST_BLINK")
 
 	state := &recoveryState{}
 	dbg := newDebugLog()

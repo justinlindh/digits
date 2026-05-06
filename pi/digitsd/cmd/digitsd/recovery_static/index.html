@@ -89,26 +89,24 @@ function pollAction(){
       statusEl.className='error';
       actionsEl.classList.add('hidden');
     }
-  });
-  setTimeout(pollAction,500);
+  }).finally(function(){setTimeout(pollAction,1000)});
 }
 pollAction();
 
 var lastLog='';
 function pollLog(){
-  if(paused){setTimeout(pollLog,500);return}
+  if(paused){setTimeout(pollLog,1000);return}
   fetch('/log/raw').then(function(r){return r.text()}).then(function(t){
-    if(t===lastLog){setTimeout(pollLog,500);return}
-    lastLog=t;
-    var sel=window.getSelection();
-    if(sel&&sel.rangeCount>0&&logEl.contains(sel.anchorNode)){
-      setTimeout(pollLog,500);return;
+    if(t!==lastLog){
+      lastLog=t;
+      var sel=window.getSelection();
+      if(!sel||sel.rangeCount===0||!logEl.contains(sel.anchorNode)){
+        var atBottom=logEl.scrollTop+logEl.clientHeight>=logEl.scrollHeight-30;
+        logEl.textContent=t||'(empty)';
+        if(atBottom)logEl.scrollTop=logEl.scrollHeight;
+      }
     }
-    var atBottom=logEl.scrollTop+logEl.clientHeight>=logEl.scrollHeight-30;
-    logEl.textContent=t||'(empty)';
-    if(atBottom)logEl.scrollTop=logEl.scrollHeight;
-  }).catch(function(){});
-  setTimeout(pollLog,500);
+  }).catch(function(){}).finally(function(){setTimeout(pollLog,1000)});
 }
 pollLog();
 </script>
