@@ -6,7 +6,7 @@ Requires=digits-dnsmasq-ap.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/digits-setup
+ExecStart=/usr/local/bin/digitsd --mode=setup
 Restart=on-failure
 RestartSec=5
 # Run as root to bind to port 80

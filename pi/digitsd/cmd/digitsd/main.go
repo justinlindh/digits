@@ -1707,6 +1707,7 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 		ToneDir:         *toneDir,
 		GPCLK0Retrigger: gpclk0.Retrigger,
 	})
+	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module.
 	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
 		SSID:       "Digits-Setup",
 		UseSystemd: true,
@@ -1716,7 +1717,7 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 		{Module: gpclk0, Required: true, Enabled: true},
 		{Module: serial, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
 		{Module: audio, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
-		{Module: wifiAP, Required: true, Enabled: true},
+		{Module: wifiAP, Required: false, Enabled: false},
 		{Module: web, Required: true, Enabled: true},
 	}
 	return regs, web, serial, audio, wifiAP
