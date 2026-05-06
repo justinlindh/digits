@@ -58,6 +58,7 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	// knows about the network. Rootfs is read-only, so remount rw first.
 	slog.Info("wifi verify: installing connection for NM", "path", backupPath)
 	cmd.run("mount", "-o", "remount,rw", "/")
+	defer cmd.run("mount", "-o", "remount,ro", "/")
 	filename := filepath.Base(backupPath)
 	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
 	if out, err := cmd.run("cp", backupPath, opPath); err != nil {

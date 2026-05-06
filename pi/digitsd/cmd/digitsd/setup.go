@@ -48,7 +48,11 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 
 	mux := web.Mux()
 
-	staticSub, _ := fs.Sub(setupStaticFS, "setup_static")
+	staticSub, err := fs.Sub(setupStaticFS, "setup_static")
+	if err != nil {
+		slog.Error("setup: embed sub", "error", err)
+		return
+	}
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
 	for _, path := range []string{"/generate_204", "/hotspot-detect.html", "/connecttest.txt", "/library/test/success.html"} {
@@ -98,6 +102,14 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 			http.Error(w, "SSID required", http.StatusBadRequest)
 			return
 		}
+
+		state.mu.Lock()
+		if state.verifying {
+			state.mu.Unlock()
+			http.Error(w, "verification already in progress", http.StatusConflict)
+			return
+		}
+		state.mu.Unlock()
 
 		backupPath, err := wifi.SaveToBackup(req)
 		if err != nil {

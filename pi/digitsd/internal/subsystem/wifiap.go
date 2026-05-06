@@ -74,10 +74,14 @@ func (w *WiFiAPModule) initDirect() error {
 	}
 
 	hostapdConf := "/tmp/recovery-hostapd.conf"
-	os.WriteFile(hostapdConf, []byte(fmt.Sprintf("interface=wlan0\ndriver=nl80211\nssid=%s\nchannel=6\nhw_mode=g\nwmm_enabled=0\nauth_algs=1\nwpa=0\n", w.cfg.SSID)), 0644)
+	if err := os.WriteFile(hostapdConf, []byte(fmt.Sprintf("interface=wlan0\ndriver=nl80211\nssid=%s\nchannel=6\nhw_mode=g\nwmm_enabled=0\nauth_algs=1\nwpa=0\n", w.cfg.SSID)), 0644); err != nil {
+		return fmt.Errorf("write hostapd.conf: %w", err)
+	}
 
 	dnsmasqConf := "/tmp/recovery-dnsmasq.conf"
-	os.WriteFile(dnsmasqConf, []byte("interface=wlan0\nbind-interfaces\nuser=root\ndhcp-range=192.168.4.10,192.168.4.50,24h\npid-file=/tmp/dnsmasq.pid\naddress=/#/192.168.4.1\nlog-facility=/tmp/dnsmasq.log\ndhcp-leasefile=/tmp/dnsmasq-recovery.leases\n"), 0644)
+	if err := os.WriteFile(dnsmasqConf, []byte("interface=wlan0\nbind-interfaces\nuser=root\ndhcp-range=192.168.4.10,192.168.4.50,24h\npid-file=/tmp/dnsmasq.pid\naddress=/#/192.168.4.1\nlog-facility=/tmp/dnsmasq.log\ndhcp-leasefile=/tmp/dnsmasq-recovery.leases\n"), 0644); err != nil {
+		return fmt.Errorf("write dnsmasq.conf: %w", err)
+	}
 
 	if err := run(w.cfg.HostapdPath, "-B", hostapdConf); err != nil {
 		return fmt.Errorf("hostapd: %w", err)
