@@ -165,7 +165,7 @@ func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *sub
 	mountRecoveryRoutes(mux, state, mixer, sp, dbg)
 
 	// Run voice menu event loop.
-	recoveryEventLoop(sp, mixer, state, dbg)
+	runRecoveryVoiceLoop(sp, mixer, state, dbg)
 }
 
 // mountRecoveryRoutes registers recovery-specific HTTP handlers on the
@@ -241,136 +241,68 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 	})
 }
 
-// recoveryEventLoop runs the voice menu on the phone handset.
-func recoveryEventLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) {
+// runRecoveryVoiceLoop runs the voice menu on the phone handset using the
+// shared voicePromptLoop, wiring in recovery-specific key handling.
+func runRecoveryVoiceLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) {
 	events := sp.Events()
 	dbg.add("loop", "waiting for HOOK:OFF")
-	for {
-		ev := <-events
-		dbg.add("serial", ev)
-		if ev != "HOOK:OFF" {
-			continue
-		}
-		recoveryHandsetSession(sp, mixer, state, events, dbg)
-		dbg.add("loop", "session ended, waiting for HOOK:OFF")
+
+	cfg := voicePromptConfig{
+		Clip:           "recovery_menu",
+		ReplayInterval: 0, // no pause between replays; timeout is inside waitForKeyOrHangup
+		OnKey: func(key string) bool {
+			return recoveryHandleKey(key, events, mixer, state, dbg)
+		},
 	}
+	voicePromptLoop(events, mixer, cfg)
 }
 
-// recoveryHandsetSession handles one off-hook session: plays menu, waits for input.
-func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState, events <-chan string, dbg *debugLog) {
-	for {
-		dbg.add("audio", "PlayOnce recovery_menu")
-		mixer.PlayOnce("recovery_menu")
+// recoveryHandleKey processes a key press during the recovery voice menu.
+// Returns true to end the session (e.g. after triggering an action).
+func recoveryHandleKey(key string, events <-chan string, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) bool {
+	switch key {
+	case "1":
+		dbg.add("action", "key 1: restarting")
+		state.startTryAgain()
+		slog.Info("recovery: restart triggered via keypad")
+		mixer.PlayOnce("restarting")
+		waitForOnceComplete(mixer, 5*time.Second)
+		_ = bootcount.Clear(bootcount.DefaultPath)
+		doReboot()
+		return true
 
-		key, hungUp := waitForKeyOrHangup(events, 30*time.Second, dbg)
+	case "2":
+		dbg.add("action", "key 2: awaiting factory reset confirmation")
+		mixer.PlayOnce("confirm_factory_reset")
+		confirm, hungUp := waitForKeyOrHangup(events, 15*time.Second)
 		if hungUp {
-			dbg.add("action", "hang-up, stopping all audio")
 			mixer.StopAll()
-			return
+			return true
 		}
-
-		if key != "" {
-			dbg.add("action", fmt.Sprintf("key=%s, stopping all audio", key))
+		if confirm != "" {
+			dbg.add("action", fmt.Sprintf("confirm key=%s, stopping all audio", confirm))
 			mixer.StopAll()
-			if tone := dtmfToneName(key); tone != "" {
+			if tone := dtmfToneName(confirm); tone != "" {
 				dbg.add("audio", fmt.Sprintf("PlayOnce %s", tone))
 				mixer.PlayOnce(tone)
 				waitForOnceComplete(mixer, 500*time.Millisecond)
-				dbg.add("audio", fmt.Sprintf("dtmf %s done", tone))
 			}
 		}
-
-		switch key {
-		case "1":
-			dbg.add("action", "key 1: restarting")
-			state.startTryAgain()
-			slog.Info("recovery: restart triggered via keypad")
-			mixer.PlayOnce("restarting")
-			waitForOnceComplete(mixer, 5*time.Second)
-			_ = bootcount.Clear(bootcount.DefaultPath)
-			doReboot()
-			return
-
-		case "2":
-			dbg.add("action", "key 2: awaiting factory reset confirmation")
-			mixer.PlayOnce("confirm_factory_reset")
-			confirm, hungUp := waitForKeyOrHangup(events, 15*time.Second, dbg)
-			if hungUp {
-				mixer.StopAll()
-				return
-			}
-			if confirm != "" {
-				dbg.add("action", fmt.Sprintf("confirm key=%s, stopping all audio", confirm))
-				mixer.StopAll()
-				if tone := dtmfToneName(confirm); tone != "" {
-					dbg.add("audio", fmt.Sprintf("PlayOnce %s", tone))
-					mixer.PlayOnce(tone)
-					waitForOnceComplete(mixer, 500*time.Millisecond)
-				}
-			}
-			if confirm != "2" {
-				dbg.add("action", "factory reset not confirmed, replaying menu")
-				continue
-			}
-			if !state.startReset() {
-				dbg.add("action", "factory reset already in progress")
-				return
-			}
-			slog.Info("recovery: factory reset triggered via keypad")
-			doRecoveryFactoryReset(mixer, state, dbg)
-			return
-
-		case "":
-			dbg.add("action", "timeout, replaying menu")
-			continue
-
-		default:
-			dbg.add("action", fmt.Sprintf("unknown key=%s, replaying menu", key))
-			continue
+		if confirm != "2" {
+			dbg.add("action", "factory reset not confirmed, replaying menu")
+			return false
 		}
-	}
-}
-
-// waitForKeyOrHangup waits for a KEY event, HOOK:ON, or timeout.
-// Returns the key digit (e.g. "1") and whether the user hung up.
-// On timeout, returns ("", false).
-func waitForKeyOrHangup(events <-chan string, timeout time.Duration, dbg *debugLog) (string, bool) {
-	dbg.add("wait", fmt.Sprintf("waiting for key/hangup (timeout=%s)", timeout))
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		select {
-		case ev := <-events:
-			dbg.add("serial", ev)
-			if ev == "HOOK:ON" {
-				return "", true
-			}
-			if len(ev) > 4 && ev[:4] == "KEY:" {
-				dbg.add("wait", fmt.Sprintf("got key: %s", ev[4:]))
-				return ev[4:], false
-			}
-			dbg.add("wait", fmt.Sprintf("ignored event: %s", ev))
-		case <-timer.C:
-			dbg.add("wait", "timeout")
-			return "", false
+		if !state.startReset() {
+			dbg.add("action", "factory reset already in progress")
+			return true
 		}
-	}
-}
+		slog.Info("recovery: factory reset triggered via keypad")
+		doRecoveryFactoryReset(mixer, state, dbg)
+		return true
 
-// waitForOnceComplete waits up to timeout for all one-shot tones to finish.
-func waitForOnceComplete(mixer *audio.Mixer, timeout time.Duration) {
-	deadline := time.After(timeout)
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-deadline:
-			return
-		case <-ticker.C:
-			if !mixer.OncePlaying() {
-				return
-			}
-		}
+	default:
+		dbg.add("action", fmt.Sprintf("unknown key=%s, replaying menu", key))
+		return false
 	}
 }
 
