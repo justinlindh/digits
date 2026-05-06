@@ -8,7 +8,7 @@ If you do happen to have a k8s cluster lying around and want to deploy digits th
 - ClusterIP Service (with optional metrics port)
 - Ingress resource for external access
 - CNPG PostgreSQL Cluster (userdb) with S3-compatible backups
-- Optional Redis Sentinel StatefulSet for multi-replica signaling
+- Optional Redis Sentinel StatefulSet for multi-replica signaling and shared cluster state
 - OpenTelemetry tracing, Pyroscope profiling, and Prometheus ServiceMonitor
 
 ## Install
@@ -89,7 +89,7 @@ When enabled, the deployment exposes Prometheus metrics on a dedicated port and 
 
 Single-replica is the default. To run more than one signald pod, enable the
 bundled 3-node Redis Sentinel StatefulSet so cross-pod calls reach the right
-device:
+device and pods share state:
 
 ```yaml
 signald:
@@ -101,11 +101,21 @@ redis:
   sentinelMasterName: digits
 ```
 
-When `redis.enabled` is false, signaling is local-only and replica counts
-above 1 will silently drop calls whose target is on a different pod. With
-`redis.enabled: true`, the chart wires `REDIS_URL` (the comma-separated list
-of sentinel addresses) and `REDIS_SENTINEL_MASTER` into signald automatically;
-the daemon switches to failover-aware client mode based on those env vars.
+When `redis.enabled: true`, the chart wires `REDIS_URL` (the comma-separated
+list of sentinel addresses) and `REDIS_SENTINEL_MASTER` into signald
+automatically; the daemon switches to failover-aware client mode based on
+those env vars. Redis then carries:
+
+- cross-pod signaling pub/sub (calls whose target is on another pod);
+- device presence (which pod owns each connected device);
+- active-call and conference state (so any pod can answer "is this number
+  busy?" or list live calls);
+- dashboard SSE events (so `/api/dashboard/stream` re-renders on any pod).
+
+When `redis.enabled` is false, all of the above is local-only. Replica
+counts above 1 then silently break: calls whose target is on another pod
+get dropped, devices on other pods appear offline here, and dashboard
+counters reflect just the local pod.
 
 To bring your own Redis instead of the bundled StatefulSet, leave
 `redis.enabled: false` and inject `REDIS_URL` (and, for sentinel mode,
