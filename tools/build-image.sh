@@ -392,7 +392,7 @@ INPUT_IMG="${1:-}"
 # Verify pre-built binaries exist
 [[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
 [[ -f "${BUILD_DIR}/digits-panic-check" ]] || die "Missing ${BUILD_DIR}/digits-panic-check -- run cross-compilation first"
-[[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
+# digitsd is also the recovery binary (PID 1 auto-detection triggers recovery mode)
 
 # Verify overlay directory exists
 [[ -d "$OVERLAY_DIR" ]] || die "Overlay directory not found: $OVERLAY_DIR"
@@ -788,10 +788,10 @@ fi
 info "  Creating data skeleton archive..."
 tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"
 
-# Copy recovery binary
+# Copy recovery binary (digitsd with PID 1 auto-detection)
 info "  Copying recovery binary..."
-RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
-[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
+RECOVERY_BIN="${BUILD_DIR}/digitsd"
+[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
 # Create mini-rootfs directory structure on recovery partition.
@@ -852,6 +852,9 @@ for tool_bin in "${RECOVERY_MNT}/bin/"*; do
             grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
     fi
 done
+# Also scan the recovery binary (digitsd), which lives outside bin/
+chroot "$ROOTFS_MNT" ldd /usr/local/bin/digitsd 2>/dev/null | \
+    grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
 
 # Copy unique libraries
 sort -u "$NEEDED_LIBS" | while read -r lib; do

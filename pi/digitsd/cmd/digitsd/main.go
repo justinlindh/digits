@@ -69,7 +69,7 @@ var (
 	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
 	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 	showVersion = flag.Bool("version", false, "print version and exit")
-	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery")
+	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, gpclk0")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -1683,7 +1683,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *modeFlag == "recovery" {
+	if *modeFlag == "gpclk0" {
+		if err := enableGPCLK0(); err != nil {
+			log.Fatalf("gpclk0: %v", err)
+		}
+		return
+	}
+
+	if *modeFlag == "recovery" || os.Getpid() == 1 {
 		runRecoveryMode()
 		return
 	}

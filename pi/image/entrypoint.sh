@@ -112,12 +112,8 @@ GOOS=linux GOARCH=arm64 go build \
 # pi/digitsd/Makefile) and lands on the rootfs via build-image.sh's
 # embed/rootfs/ rsync. Nothing to do here.
 
-# Cross-compile digits-recovery (pure Go, no CGO needed). build-image.sh reads
-# this from pi/digits-recovery/bin/ to match the local Makefile output path.
-info "Cross-compiling digits-recovery for aarch64..."
-cd /digits/pi/digits-recovery
-mkdir -p bin
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
+# Recovery uses the same digitsd binary (PID 1 auto-detection triggers recovery mode).
+# No separate build needed; build-image.sh copies digitsd to the recovery partition.
 
 # Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
 info "Cross-compiling digits-panic-check for aarch64..."
@@ -178,7 +174,6 @@ if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then
     info "Restoring host ownership of build artifacts (${HOST_UID}:${HOST_GID})..."
     chown -R "${HOST_UID}:${HOST_GID}" \
         /digits/tools/build \
-        /digits/pi/digits-recovery/bin \
         2>/dev/null || true
     chown "${HOST_UID}:${HOST_GID}" /digits/digits-pi-*.img.gz 2>/dev/null || true
 fi
