@@ -108,10 +108,6 @@ GOOS=linux GOARCH=arm64 go build \
     -o /digits/tools/build/digitsd \
     ./cmd/digitsd/
 
-# digits-setup is cross-compiled by `make embed` on the host (see
-# pi/digitsd/Makefile) and lands on the rootfs via build-image.sh's
-# embed/rootfs/ rsync. Nothing to do here.
-
 # Recovery uses the same digitsd binary (PID 1 auto-detection triggers recovery mode).
 # No separate build needed; build-image.sh copies digitsd to the recovery partition.
 

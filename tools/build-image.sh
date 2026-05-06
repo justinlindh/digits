@@ -626,9 +626,7 @@ rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 
 # Layer the digitsd embed tree on top: same content as the overlay for shared
 # files (embed/rootfs/ is generated from rootfs-overlay/ by `make embed`,
-# minus a few build-time-only paths) plus digits-setup, which is cross-
-# compiled into embed only and would otherwise reach the rootfs only via
-# digitsd's runtime asset extractor on first boot.
+# minus a few build-time-only paths).
 [[ -d "${EMBED_DIR}/rootfs" ]] || die "Embed dir not populated: ${EMBED_DIR}/rootfs (run 'make -C pi/digitsd embed')"
 rsync -a --no-owner --no-group "${EMBED_DIR}/rootfs/" "$ROOTFS_MNT/"
 
@@ -798,7 +796,7 @@ install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 # After switch_root, this partition IS the root filesystem, so it needs
 # mount points for virtual filesystems and a valid /sbin/init.
 info "  Creating recovery partition rootfs structure..."
-mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin}
+mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin,etc}
 
 # Create /sbin/init symlink -- this is what switch_root execs as PID 1
 ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"

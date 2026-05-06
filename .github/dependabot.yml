@@ -8,10 +8,6 @@ updates:
     directory: "/pi/digitsd"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "gomod"
-    directory: "/pi/digits-setup"
-    schedule:
-      interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
