@@ -16,6 +16,15 @@ spec:
         app.kubernetes.io/part-of: {{ include "digits.name" . }}
     spec:
       automountServiceAccountToken: false
+      {{- if gt (int .Values.signald.replicas) 1 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "digits.signald.selectorLabels" . | nindent 14 }}
+      {{- end }}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

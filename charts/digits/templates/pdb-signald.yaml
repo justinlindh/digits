@@ -1,0 +1,13 @@
+{{- if gt (int .Values.signald.replicas) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signald
+  labels:
+    {{- include "digits.signald.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "digits.signald.selectorLabels" . | nindent 6 }}
+{{- end }}
