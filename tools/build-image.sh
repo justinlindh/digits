@@ -803,6 +803,18 @@ mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin}
 # Create /sbin/init symlink -- this is what switch_root execs as PID 1
 ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
 
+# Copy ALSA config so the digits_playback/digits_capture virtual PCMs are
+# available in recovery mode (the rootfs /etc/asound.conf is not accessible).
+if [[ -f "${ROOTFS_MNT}/etc/asound.conf" ]]; then
+    cp "${ROOTFS_MNT}/etc/asound.conf" "${RECOVERY_MNT}/etc/asound.conf"
+    info "  Copied asound.conf to recovery partition"
+fi
+
+# Copy tones to recovery partition so recovery is fully self-contained.
+info "  Copying tones to recovery partition..."
+mkdir -p "${RECOVERY_MNT}/tones"
+rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${RECOVERY_MNT}/tones/"
+
 # Install initramfs hooks
 info "  Installing initramfs hooks..."
 BOOT_CHECK_SRC="${REPO_DIR}/pi/image/initramfs/boot-check.sh"

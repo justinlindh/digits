@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
+	"regexp"
+	"strings"
 	"log/slog"
 	"net/http"
 	"os"
@@ -66,27 +67,75 @@ func (d *debugLog) snapshot() []debugEntry {
 	return out
 }
 
-// recoveryState tracks whether a factory reset is currently running,
-// preventing duplicate triggers from the web UI and voice menu.
+// recoveryState tracks the current recovery action so the web UI can
+// show the right state on refresh.
 type recoveryState struct {
-	mu       sync.Mutex
-	reseting bool
+	mu     sync.Mutex
+	action string // "", "try-again", "factory-reset"
+	status string // human-readable progress
+	failed bool
 }
 
 func (rs *recoveryState) startReset() bool {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
-	if rs.reseting {
+	if rs.action == "factory-reset" {
 		return false
 	}
-	rs.reseting = true
+	rs.action = "factory-reset"
+	rs.status = "Starting factory reset..."
+	rs.failed = false
 	return true
+}
+
+func (rs *recoveryState) setStatus(s string) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.status = s
+}
+
+func (rs *recoveryState) setFailed(s string) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.status = s
+	rs.failed = true
+}
+
+func (rs *recoveryState) startTryAgain() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	rs.action = "try-again"
+	rs.status = "Rebooting..."
+}
+
+func (rs *recoveryState) snapshot() map[string]any {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return map[string]any{
+		"action": rs.action,
+		"status": rs.status,
+		"failed": rs.failed,
+	}
 }
 
 func runRecoveryMode() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
-	slog.Info("digitsd: entering recovery mode")
+	slog.Info("digitsd: entering recovery mode", "pid", os.Getpid())
+
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("recovery: panic", "panic", fmt.Sprintf("%v", r))
+			if recoveryLogFile != nil {
+				recoveryLogFile.Sync()
+			}
+			select {}
+		}
+	}()
+
+	if os.Getpid() == 1 {
+		recoveryInit()
+	}
 
 	// Open serial port with retry.
 	var sp *phone.SerialPort
@@ -108,7 +157,8 @@ func runRecoveryMode() {
 		break
 	}
 	if sp == nil {
-		log.Fatal("serial: failed to open and ping after 10 attempts")
+		slog.Error("serial: failed to open and ping after 10 attempts")
+		syncAndHalt()
 	}
 	slog.Info("serial: connected")
 
@@ -124,12 +174,12 @@ func runRecoveryMode() {
 	}
 	pb, err := audio.NewPlayback(pbCfg)
 	if err != nil {
-		// Fallback: try the raw hardware device directly.
 		slog.Warn("playback: default device failed, trying hw:CARD=digitscodec,DEV=0", "error", err)
 		pbCfg.Device = "hw:CARD=digitscodec,DEV=0"
 		pb, err = audio.NewPlayback(pbCfg)
 		if err != nil {
-			log.Fatalf("playback: cannot open any device: %v", err)
+			slog.Error("playback: cannot open any device", "error", err)
+			syncAndHalt()
 		}
 	}
 	slog.Info("playback: opened", "device", pbCfg.Device)
@@ -158,7 +208,8 @@ func runRecoveryMode() {
 func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.SerialPort, dbg *debugLog) {
 	staticFS, err := fs.Sub(recoveryStaticFS, "recovery_static")
 	if err != nil {
-		log.Fatalf("recovery web: embed sub: %v", err)
+		slog.Error("recovery web: embed sub", "error", err)
+		syncAndHalt()
 	}
 
 	mux := http.NewServeMux()
@@ -174,13 +225,46 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
-			"events":        dbg.snapshot(),
-			"mixer_active":  mixer.Active(),
-			"once_playing":  mixer.OncePlaying(),
-			"tone_names":    mixer.ToneNames(),
-			"serial_ok":     sp.Ping() == nil,
+			"events":       dbg.snapshot(),
+			"mixer_active": mixer.Active(),
+			"once_playing": mixer.OncePlaying(),
+			"tone_names":   mixer.ToneNames(),
+			"serial_ok":    sp.Ping() == nil,
 		}
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	})
+
+	mux.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>Recovery Log</title>
+<style>body{background:#111;color:#0f0;font:13px/1.4 monospace;margin:1em;white-space:pre-wrap}
+#log{max-height:90vh;overflow-y:auto}</style></head><body><div id="log">Loading...</div>
+<script>async function poll(){try{const r=await fetch('/log/raw');
+document.getElementById('log').textContent=await r.text();
+document.getElementById('log').scrollTop=9999999}catch(e){}
+setTimeout(poll,2000)}poll()</script></body></html>`)
+	})
+
+	mux.HandleFunc("/log/raw", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		data, err := os.ReadFile("/tmp/recovery.log")
+		if err != nil {
+			fmt.Fprintf(w, "error reading log: %v", err)
+			return
+		}
+		// Reformat slog lines into compact readable form.
+		for _, line := range strings.Split(string(data), "\n") {
+			if line == "" {
+				continue
+			}
+			formatted := formatLogLine(line)
+			fmt.Fprintln(w, formatted)
+		}
+	})
+
+	mux.HandleFunc("/action", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(state.snapshot()) //nolint:errcheck
 	})
 
 	mux.HandleFunc("/try-again", func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +272,7 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		state.startTryAgain()
 		dbg.add("action", "try-again via web")
 		_ = bootcount.Clear(bootcount.DefaultPath)
 		w.WriteHeader(http.StatusOK)
@@ -205,7 +290,7 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 		}
 		dbg.add("action", "factory-reset via web")
 		w.WriteHeader(http.StatusOK)
-		go func() { doRecoveryFactoryReset(mixer, dbg) }()
+		go func() { doRecoveryFactoryReset(mixer, state, dbg) }()
 	})
 
 	slog.Info("recovery web: listening on :80")
@@ -287,7 +372,7 @@ func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *rec
 				dbg.add("action", "factory reset already in progress")
 				return
 			}
-			doRecoveryFactoryReset(mixer, dbg)
+			doRecoveryFactoryReset(mixer, state, dbg)
 			return
 
 		case "":
@@ -345,35 +430,38 @@ func waitForOnceComplete(mixer *audio.Mixer, timeout time.Duration) {
 }
 
 // doRecoveryFactoryReset performs the full factory reset sequence.
-func doRecoveryFactoryReset(mixer *audio.Mixer, dbg *debugLog) {
+func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog) {
 	dbg.add("reset", "starting factory reset")
 	slog.Info("recovery: starting factory reset")
+	rs.setStatus("Starting factory reset...")
 	mixer.PlayOnce("factory_reset_in_progress")
 	waitForOnceComplete(mixer, 10*time.Second)
 
-	// Restore root filesystem.
 	mixer.PlayOnce("restoring_system")
 	waitForOnceComplete(mixer, 10*time.Second)
 
 	rootfsImg := "/rootfs.img.zst"
 	if _, err := os.Stat(rootfsImg); err != nil {
 		slog.Error("recovery: rootfs.img.zst not found", "path", rootfsImg, "error", err)
+		rs.setFailed("rootfs image not found")
 		mixer.PlayOnce("error_tone")
 		return
 	}
 
+	rs.setStatus("Restoring rootfs (this takes a few minutes)...")
 	slog.Info("recovery: decompressing rootfs to /dev/mmcblk0p2")
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("zstd -d -c %s | dd of=/dev/mmcblk0p2 bs=4M conv=fsync", rootfsImg))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		slog.Error("recovery: rootfs restore failed", "error", err)
+		rs.setFailed(fmt.Sprintf("rootfs restore failed: %v", err))
 		mixer.PlayOnce("error_tone")
 		return
 	}
 	slog.Info("recovery: rootfs restored")
 
-	// Format /data partition.
+	rs.setStatus("Formatting data partition...")
 	mixer.PlayOnce("formatting_data")
 	waitForOnceComplete(mixer, 10*time.Second)
 
@@ -386,14 +474,16 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, dbg *debugLog) {
 	mkfs.Stderr = os.Stderr
 	if err := mkfs.Run(); err != nil {
 		slog.Error("recovery: mkfs.ext4 failed", "error", err)
+		rs.setFailed(fmt.Sprintf("data format failed: %v", err))
 		mixer.PlayOnce("error_tone")
 		return
 	}
 
-	// Remount /data and extract skeleton.
+	rs.setStatus("Restoring default data...")
 	slog.Info("recovery: mounting /data")
 	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
 		slog.Error("recovery: mount /data failed", "error", err)
+		rs.setFailed(fmt.Sprintf("data mount failed: %v", err))
 		mixer.PlayOnce("error_tone")
 		return
 	}
@@ -406,17 +496,44 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, dbg *debugLog) {
 		tar.Stderr = os.Stderr
 		if err := tar.Run(); err != nil {
 			slog.Error("recovery: data skeleton extract failed", "error", err)
-			// Non-fatal: continue to reboot.
 		}
 	} else {
 		slog.Info("recovery: no data skeleton found, skipping", "path", skeletonPath)
 	}
 
+	rs.setStatus("Factory reset complete. Rebooting...")
 	slog.Info("recovery: factory reset complete")
 	mixer.PlayOnce("reset_complete")
 	waitForOnceComplete(mixer, 10*time.Second)
 
 	doReboot()
+}
+
+var logLineRe = regexp.MustCompile(`^time=\S+\s+level=(\w+)\s+msg="?([^"]*)"?\s*(.*)$`)
+
+// formatLogLine converts a raw slog line into a compact readable form.
+// "time=1970-01-01T00:00:05.399Z level=INFO msg="recovery init: started" key=val"
+// becomes "INFO  recovery init: started  key=val"
+func formatLogLine(line string) string {
+	m := logLineRe.FindStringSubmatch(line)
+	if m == nil {
+		return line
+	}
+	level, msg, extra := m[1], m[2], strings.TrimSpace(m[3])
+	if extra != "" {
+		return fmt.Sprintf("%-5s %s  %s", level, msg, extra)
+	}
+	return fmt.Sprintf("%-5s %s", level, msg)
+}
+
+// syncAndHalt flushes logs and blocks forever. Used instead of log.Fatal
+// when running as PID 1, since os.Exit kills PID 1 and causes a kernel panic
+// before the log file is flushed.
+func syncAndHalt() {
+	if recoveryLogFile != nil {
+		recoveryLogFile.Sync()
+	}
+	select {}
 }
 
 // doReboot reboots the system. If running as PID 1 (init in initramfs),
