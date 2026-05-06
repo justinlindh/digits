@@ -1731,7 +1731,7 @@ func main() {
 	}
 
 	if *modeFlag == "gpclk0" {
-		if err := enableGPCLK0(); err != nil {
+		if err := subsystem.EnableGPCLK0(); err != nil {
 			log.Fatalf("gpclk0: %v", err)
 		}
 		return

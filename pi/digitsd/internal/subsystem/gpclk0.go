@@ -54,6 +54,10 @@ func (g *GPCLK0Module) IsReady() bool                      { return g.status.Sta
 func (g *GPCLK0Module) Status() ModuleStatus               { return g.status }
 func (g *GPCLK0Module) Shutdown(ctx context.Context) error { return nil }
 
+// EnableGPCLK0 configures BCM2835 GPCLK0 on GPIO4 at 12.288 MHz. Exported
+// for use by the --mode=gpclk0 diagnostic path in cmd/digitsd.
+func EnableGPCLK0() error { return enableGPCLK0() }
+
 func enableGPCLK0() error {
 	fd, err := os.OpenFile("/dev/mem", os.O_RDWR|os.O_SYNC, 0)
 	if err != nil {

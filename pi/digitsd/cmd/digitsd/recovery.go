@@ -22,6 +22,10 @@ import (
 //go:embed recovery_static
 var recoveryStaticFS embed.FS
 
+// recoveryLogFile holds an open handle to /tmp/recovery.log when running as
+// PID 1. Synced before halting so in-flight log entries are not lost.
+var recoveryLogFile *os.File
+
 // debugEntry is one timestamped event in the recovery debug log.
 type debugEntry struct {
 	Time    string `json:"time"`
