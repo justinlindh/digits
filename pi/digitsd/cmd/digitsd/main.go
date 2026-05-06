@@ -1689,10 +1689,10 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 	regs := []subsystem.Registration{
 		{Module: subsystem.NewMountsModule(), Required: true, Enabled: true},
 		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true, Enabled: true},
-		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
-		{Module: serial, Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
+		{Module: serial, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
 		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
-		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: true, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: false, Enabled: true},
 		{Module: web, Required: true, Enabled: true},
 		{Module: subsystem.NewReaperModule(), Required: true, Enabled: true},
 	}
@@ -1753,6 +1753,9 @@ func main() {
 	}
 
 	if *modeFlag == "setup" {
+		// Crash log to /data survives reboots for post-mortem.
+		setupCrashLog("/data/digits/crash.log")
+
 		regs, web, serial, audioMod, wifiAP := setupRegistrations()
 		mgr := subsystem.NewManager(regs)
 		web.SetLogPath("/tmp/setup.log")

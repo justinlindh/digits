@@ -167,23 +167,37 @@ func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *sub
 		}
 	}()
 
-	sp := serial.Port()
-	mixer := audioMod.Mixer()
-
-	sp.LED("LOCK")
-	time.Sleep(50 * time.Millisecond)
-	sp.LED("FAST_BLINK")
+	var sp *phone.SerialPort
+	var mixer *audio.Mixer
+	if serial != nil && serial.IsReady() {
+		sp = serial.Port()
+		sp.LED("LOCK")
+		time.Sleep(50 * time.Millisecond)
+		sp.LED("FAST_BLINK")
+	}
+	if audioMod != nil && audioMod.IsReady() {
+		mixer = audioMod.Mixer()
+	}
 
 	state := &recoveryState{}
 	dbg := newDebugLog()
-	dbg.add("init", fmt.Sprintf("tones_loaded=%d", len(mixer.ToneNames())))
+	toneCount := 0
+	if mixer != nil {
+		toneCount = len(mixer.ToneNames())
+	}
+	dbg.add("init", fmt.Sprintf("tones_loaded=%d serial=%v audio=%v", toneCount, sp != nil, mixer != nil))
 
 	// Mount recovery-specific routes on the web module's mux.
 	mux := web.Mux()
 	mountRecoveryRoutes(mux, state, mixer, sp, dbg)
 
-	// Run voice menu event loop.
-	runRecoveryVoiceLoop(sp, mixer, state, dbg)
+	// Run voice menu event loop (only if serial and audio are available).
+	if sp != nil && mixer != nil {
+		runRecoveryVoiceLoop(sp, mixer, state, dbg)
+	} else {
+		slog.Warn("recovery: serial or audio unavailable, voice menu disabled")
+		select {}
+	}
 }
 
 // mountRecoveryRoutes registers recovery-specific HTTP handlers on the

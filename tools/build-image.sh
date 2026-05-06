@@ -801,8 +801,13 @@ mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin,etc}
 # Create /sbin/init symlink -- this is what switch_root execs as PID 1
 ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
 
-# Copy ALSA config so the digits_playback/digits_capture virtual PCMs are
-# available in recovery mode (the rootfs /etc/asound.conf is not accessible).
+# Copy ALSA config tree so libasound can parse plug/dmix/etc PCM types,
+# plus asound.conf for the digits_playback/digits_capture virtual PCMs.
+if [[ -d "${ROOTFS_MNT}/usr/share/alsa" ]]; then
+    mkdir -p "${RECOVERY_MNT}/usr/share"
+    cp -a "${ROOTFS_MNT}/usr/share/alsa" "${RECOVERY_MNT}/usr/share/alsa"
+    info "  Copied /usr/share/alsa/ to recovery partition"
+fi
 if [[ -f "${ROOTFS_MNT}/etc/asound.conf" ]]; then
     cp "${ROOTFS_MNT}/etc/asound.conf" "${RECOVERY_MNT}/etc/asound.conf"
     info "  Copied asound.conf to recovery partition"
