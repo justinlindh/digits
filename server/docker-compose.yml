@@ -71,7 +71,7 @@ services:
 
   # Ephemeral Postgres for local integration tests. Mirrors the CI service in
   # .github/workflows/server-integration.yml: one Postgres 16 container hosting
-  # both digits_test and digits_admin_test, bound to host 5432.
+  # digits_test, bound to host 5432.
   #
   # Start:  docker compose --profile test up -d test-db
   # Stop:   docker compose --profile test down

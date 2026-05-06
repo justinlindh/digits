@@ -39,7 +39,7 @@ A single phone unit is split into two cooperating processors:
 | **Pico H** (firmware) | Low-level telephony, timing-sensitive I/O, UART protocol to Pi |
 | **Pi Zero 2 W** (digitsd) | Go daemon for VoIP, signaling, WebRTC media, Opus codec, call control |
 | **Codec Zero** (DA7212) | Audio pHAT with mic input (3.5mm TRS), speaker output (screw terminal) |
-| **Signaling Server** (Go) | WebSocket relay for SDP/ICE, PostgreSQL persistence, web app + admin |
+| **Signaling Server** (Go) | WebSocket relay for SDP/ICE, PostgreSQL persistence, web app |
 
 See [Architecture deep-dive](docs/architecture/overview.md) for the full call path, data model, and NAT traversal.
 
@@ -48,7 +48,7 @@ See [Architecture deep-dive](docs/architecture/overview.md) for the full call pa
 ```text
 firmware/   Pico H firmware (C/CMake + Pico SDK)
 pi/         Pi Zero userland -- digitsd VoIP daemon, setup tools, image builder
-server/     Go signaling server (WebSocket relay, web app, admin panel)
+server/     Go signaling server (WebSocket relay, web app)
 docs/       Hardware build guides, architecture, self-hosting
 scripts/    Build and flash helpers
 ```
