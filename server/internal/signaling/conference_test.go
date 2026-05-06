@@ -41,9 +41,9 @@ func TestHandleConferenceMerge_Success(t *testing.T) {
 	connA := &Conn{Send: make(chan []byte, 20)}
 	connB := &Conn{Send: make(chan []byte, 20)}
 	connC := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550001", connA)
-	hub.Register("5550002", connB)
-	hub.Register("5550003", connC)
+	_ = hub.Register("5550001", connA)
+	_ = hub.Register("5550002", connB)
+	_ = hub.Register("5550003", connC)
 
 	// Pre-condition: A has active calls to both B and C.
 	tr.onCallInitiated("5550001", "5550002")
@@ -105,8 +105,8 @@ func TestHandleConferenceMerge_RejectsMissingCalls(t *testing.T) {
 
 	connA := &Conn{Send: make(chan []byte, 20)}
 	connB := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550001", connA)
-	hub.Register("5550002", connB)
+	_ = hub.Register("5550001", connA)
+	_ = hub.Register("5550002", connB)
 
 	// A has only A-B, not A-C.
 	tr.onCallInitiated("5550001", "5550002")
@@ -138,8 +138,8 @@ func TestHandleSDP_AllowsConferencePeer(t *testing.T) {
 
 	bConn := &Conn{Send: make(chan []byte, 20)}
 	cConn := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{denyAll: true}}
 
@@ -175,9 +175,9 @@ func TestHandleHangup_InConferenceEndsViaLeave(t *testing.T) {
 	aConn := &Conn{Send: make(chan []byte, 20)}
 	bConn := &Conn{Send: make(chan []byte, 20)}
 	cConn := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{}}
 
@@ -217,9 +217,9 @@ func TestHandleHangup_HostEndsConference(t *testing.T) {
 	aConn := &Conn{Send: make(chan []byte, 20)}
 	bConn := &Conn{Send: make(chan []byte, 20)}
 	cConn := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	r := &Relay{Tracker: tr, Hub: hub, CallAuthorizer: &mockCallAuthorizer{}}
 
@@ -255,11 +255,11 @@ func TestHandleConferenceMerge_RejectsIfMemberAlreadyInConference(t *testing.T) 
 	connB := &Conn{Send: make(chan []byte, 20)}
 	connC := &Conn{Send: make(chan []byte, 20)}
 	connD := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550010", connA1)
-	hub.Register("5550001", connA2)
-	hub.Register("5550002", connB)
-	hub.Register("5550003", connC)
-	hub.Register("5550004", connD)
+	_ = hub.Register("5550010", connA1)
+	_ = hub.Register("5550001", connA2)
+	_ = hub.Register("5550002", connB)
+	_ = hub.Register("5550003", connC)
+	_ = hub.Register("5550004", connD)
 
 	// A1 has merged with B and C previously (conference exists).
 	tr.onCallInitiated("5550010", "5550002")

@@ -13,7 +13,6 @@ import (
 
 type dashboardData struct {
 	chromeData
-	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
@@ -46,12 +45,6 @@ type callRow struct {
 	DurationS int
 }
 
-type dashStats struct {
-	TotalLines  int
-	OnlineLines int
-	ActiveCalls int
-}
-
 type activePair struct {
 	Caller string
 	Callee string
@@ -65,8 +58,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	active := h.tracker.Active()
-	user := auth.UserFromContext(ctx)
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
 	loc := hh.Location()
 	now := time.Now().In(loc)
@@ -179,14 +171,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats := dashStats{
-		TotalLines:  len(ld.Lines),
-		OnlineLines: countOnline(ld.Lines),
-		ActiveCalls: activeCount,
-	}
 	data := dashboardData{
-		chromeData:         newChromeData("dashboard", user, hh),
-		Stats:              stats,
+		chromeData:         h.newChromeDataWithHouseholds(r, "dashboard"),
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
@@ -196,8 +182,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ActivePeer:         activePeer,
 		ActiveElapsed:      activeElapsed,
 		Status: dashStatusVM{
-			ActiveCalls:    stats.ActiveCalls,
-			OnlineLines:    stats.OnlineLines,
+			ActiveCalls:    activeCount,
+			OnlineLines:    countOnline(ld.Lines),
 			LinkedFamilies: len(linkedFamilies),
 			Now:            now,
 		},
@@ -294,7 +280,6 @@ func fmtElapsed(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-
 type connectingData struct {
 	chromeData
 }
@@ -306,6 +291,6 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
-		chromeData: newChromeData("connecting", user, h.primaryHousehold(r)),
+		chromeData: h.newChromeDataWithHouseholds(r, "connecting"),
 	})
 }

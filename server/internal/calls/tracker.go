@@ -69,6 +69,7 @@ type Tracker struct {
 	conferences *ConferenceTracker
 	health      healthLifecycle
 	dashEvents  dashNotifier
+	state       *CallState
 }
 
 func New(d *db.Database) *Tracker {
@@ -101,6 +102,15 @@ func (t *Tracker) SetDashboardEvents(b dashNotifier) {
 	t.mu.Unlock()
 }
 
+// SetCallState registers an optional Redis-backed call state store for
+// cluster-wide call queries. Safe to call once at startup; subsequent calls
+// overwrite.
+func (t *Tracker) SetCallState(cs *CallState) {
+	t.mu.Lock()
+	t.state = cs
+	t.mu.Unlock()
+}
+
 func callKey(a, b string) string {
 	return a + "→" + b
 }
@@ -123,8 +133,12 @@ func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, 
 	}
 	h := t.health
 	d := t.dashEvents
+	s := t.state
 	t.mu.Unlock()
 
+	if s != nil {
+		s.OnCallInitiated(ctx, id, from, to)
+	}
 	if h != nil {
 		h.Init(id)
 	}
@@ -164,8 +178,12 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	delete(t.active, key2)
 	h := t.health
 	d := t.dashEvents
+	s := t.state
 	t.mu.Unlock()
 
+	if s != nil {
+		s.OnCallEnded(ctx, caller, callee)
+	}
 	if h != nil && id != 0 {
 		h.Evict(id)
 	}
@@ -204,9 +222,13 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 	h := t.health
 	d := t.dashEvents
+	s := t.state
 	removedAny := len(toDelete) > 0
 	t.mu.Unlock()
 
+	if s != nil {
+		s.ClearByNumber(ctx, number)
+	}
 	if h != nil {
 		for _, id := range evictIDs {
 			if id != 0 {
@@ -235,6 +257,11 @@ func (t *Tracker) Busy(number string) bool {
 		return true
 	}
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.Busy(context.Background(), number)
+	}
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -257,6 +284,11 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 		return false
 	}
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.CanAddAsHost(context.Background(), number)
+	}
 	defer t.mu.Unlock()
 	callerCount := 0
 	for _, c := range t.active {
@@ -274,6 +306,11 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 // with. Empty if number has no active calls.
 func (t *Tracker) AllPeersOf(number string) []string {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.AllPeersOf(context.Background(), number)
+	}
 	defer t.mu.Unlock()
 	var peers []string
 	for _, c := range t.active {
@@ -290,6 +327,11 @@ func (t *Tracker) AllPeersOf(number string) []string {
 // or "" if number is not in any active call.
 func (t *Tracker) PeerOf(number string) string {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.PeerOf(context.Background(), number)
+	}
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number {
@@ -307,6 +349,11 @@ func (t *Tracker) PeerOf(number string) string {
 // originating 2-party call id before migrating to mesh.
 func (t *Tracker) CallIDForPair(a, b string) int64 {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.CallIDForPair(context.Background(), a, b)
+	}
 	defer t.mu.Unlock()
 	if c, ok := t.active[callKey(a, b)]; ok {
 		return c.ID
@@ -321,6 +368,11 @@ func (t *Tracker) CallIDForPair(a, b string) int64 {
 // Returns (0, false) if the number is not currently in a call.
 func (t *Tracker) CallIDFor(number string) (int64, bool) {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.CallIDFor(context.Background(), number)
+	}
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -332,6 +384,11 @@ func (t *Tracker) CallIDFor(number string) (int64, bool) {
 
 func (t *Tracker) InCall(a, b string) bool {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.InCall(context.Background(), a, b)
+	}
 	defer t.mu.Unlock()
 	_, fwd := t.active[callKey(a, b)]
 	_, rev := t.active[callKey(b, a)]
@@ -340,6 +397,11 @@ func (t *Tracker) InCall(a, b string) bool {
 
 func (t *Tracker) Active() []activeCall {
 	t.mu.Lock()
+	s := t.state
+	if s != nil {
+		t.mu.Unlock()
+		return s.Active(context.Background())
+	}
 	defer t.mu.Unlock()
 	calls := make([]activeCall, 0, len(t.active))
 	for _, c := range t.active {
@@ -370,17 +432,6 @@ func scanCallRows(rows *sql.Rows) ([]Call, error) {
 		calls = append(calls, c)
 	}
 	return calls, rows.Err()
-}
-
-func (t *Tracker) Recent(ctx context.Context, limit int) ([]Call, error) {
-	rows, err := t.db.DB.QueryContext(ctx,
-		`SELECT `+callColumns+` FROM calls ORDER BY started_at DESC LIMIT $1`, limit,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	return scanCallRows(rows)
 }
 
 // MarkForceEnded records which user force-ended a call. Returns nil error
@@ -468,8 +519,14 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		}
 	}
 	h := t.health
+	s := t.state
 	t.mu.Unlock()
 
+	if s != nil {
+		for _, member := range addedMembers {
+			s.OnCallEnded(ctx, host, member)
+		}
+	}
 	if h != nil {
 		h.InitConference(conf.ID)
 	}
@@ -637,8 +694,16 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		t.active[callKey(a, b)] = &activeCall{ID: continuationCallID, Caller: a, Callee: b, StartedAt: time.Now()}
 	}
 	h := t.health
+	s := t.state
 	t.mu.Unlock()
 
+	if s != nil && len(remaining) == 2 {
+		a, b := remaining[0], remaining[1]
+		if b < a {
+			a, b = b, a
+		}
+		s.OnCallInitiated(ctx, continuationCallID, a, b)
+	}
 	if h != nil && ended {
 		h.EvictConference(confID)
 	}

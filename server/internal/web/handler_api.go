@@ -84,9 +84,8 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
 
 	nums := make(map[string]bool, len(ld.Lines))
@@ -161,9 +160,10 @@ func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"available": !exists}) //nolint:errcheck
+	if err := json.NewEncoder(w).Encode(map[string]bool{"available": !exists}); err != nil {
+		slog.Error("number available: json encode failed", "err", err)
+	}
 }
-
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

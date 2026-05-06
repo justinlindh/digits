@@ -21,6 +21,11 @@ func wsReject(ws *websocket.Conn, errMsg string) {
 }
 
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
+	if h.hub.IsDraining() {
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
+
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("websocket upgrade failed", "err", err)
@@ -93,7 +98,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		Send:       make(chan []byte, 32),
 		LastSeen:   time.Now(),
 	}
-	h.hub.Register(msg.Number, conn)
+	if err := h.hub.Register(msg.Number, conn); err != nil {
+		wsReject(ws, "server shutting down")
+		return
+	}
 	h.relay.OnRegistered(r.Context(), msg.Number)
 	number := msg.Number
 
@@ -176,7 +184,6 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		h.relay.HandleMessage(r.Context(), number, msg)
 	}
 }
-
 
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
@@ -272,7 +279,10 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		for range conn.Send {
 		}
 	}()
-	h.hub.Register(number, conn)
+	if err := h.hub.Register(number, conn); err != nil {
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
 	h.hub.UpdateDeviceInfo(number, pi, "", fw, "", "")
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)

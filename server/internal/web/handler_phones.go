@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -62,16 +61,15 @@ type lineRow struct {
 // nil or lookup fails the handler shows an empty list rather than leaking
 // every line on the server.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
-	var user *auth.User
-	if r != nil {
-		user = auth.UserFromContext(r.Context())
-	}
-
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
-		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		var err error
+		lines, err = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		if err != nil {
+			slog.Error("list lines by household failed", "household_id", hh.ID, "err", err)
+		}
 	}
-	// If household lookup failed, show empty list rather than leaking all lines
+	// On error or nil household, show empty list rather than leaking all lines.
 	if lines == nil {
 		lines = []line.Line{}
 	}
@@ -109,7 +107,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		rows[i] = row
 	}
 	return linesData{
-		chromeData:            newChromeData("phones", user, hh),
+		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Lines:                 rows,
 		Error:                 errMsg,
 		LatestPiVersion:       latestPi,
@@ -118,7 +116,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	data := h.buildLinesData(r, h.primaryHousehold(r), "")
+	data := h.buildLinesData(r, h.activeHousehold(r), "")
 	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
 		data.PairSuccess = &pairSuccess{
 			Name:            pairedName,
@@ -136,7 +134,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	var householdID string
 	if hh != nil {
 		householdID = hh.ID
@@ -175,7 +173,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, "")
@@ -246,7 +244,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 
 	var devices []device.Device
 	if h.deviceStore != nil {
@@ -302,10 +300,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user := auth.UserFromContext(r.Context())
-
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		chromeData:            newChromeData("phones", user, hh),
+		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
@@ -325,7 +321,7 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 	if isHTMX(r) {
 		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
 			Online bool
@@ -344,7 +340,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 
@@ -556,16 +552,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		TargetPiVersion: targetPi,
 		TargetFWVersion: targetFW,
 	}
-
-	var sendErr string
-	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("update trigger failed", "number", number, "err", err)
-		sendErr = err.Error()
-	} else {
-		slog.Info("update trigger sent", "number", number, "target_pi", targetPi, "target_fw", targetFW)
-	}
-
-	h.respondPhoneCommandResult(w, r, number, sendErr)
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "update trigger", "target_pi", targetPi, "target_fw", targetFW)
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -595,16 +582,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 	msg := &signaling.Message{
 		Type: signaling.TypeRingTest,
 	}
-
-	var sendErr string
-	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("ring test trigger failed", "number", number, "err", err)
-		sendErr = err.Error()
-	} else {
-		slog.Info("ring test triggered", "number", number)
-	}
-
-	h.respondPhoneCommandResult(w, r, number, sendErr)
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "ring test")
 }
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
@@ -618,16 +596,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 	msg := &signaling.Message{
 		Type: signaling.TypeFactoryReset,
 	}
-
-	var sendErr string
-	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("factory reset trigger failed", "number", number, "err", err)
-		sendErr = err.Error()
-	} else {
-		slog.Info("factory reset triggered", "number", number)
-	}
-
-	h.respondPhoneCommandResult(w, r, number, sendErr)
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "factory reset")
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
@@ -652,15 +621,22 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		Type:        signaling.TypeRestart,
 		RestartMode: mode,
 	}
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "restart command", "mode", mode)
+}
 
+// sendPhoneCommandAndRespond pushes msg to the device, logs the outcome
+// (warn on hub send failure, info on success), and writes the standard
+// phone-command response. opName names the operation for the log
+// messages; extraInfo is forwarded to both the warn and info logs as
+// command-specific context (restart mode, update targets, etc.).
+func (h *Handler) sendPhoneCommandAndRespond(w http.ResponseWriter, r *http.Request, number string, msg *signaling.Message, opName string, extraInfo ...any) {
 	var sendErr string
 	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("restart command failed", "number", number, "mode", mode, "err", err)
+		slog.Warn(opName+" failed", append([]any{"number", number, "err", err}, extraInfo...)...)
 		sendErr = err.Error()
 	} else {
-		slog.Info("restart command sent", "number", number, "mode", mode)
+		slog.Info(opName+" sent", append([]any{"number", number}, extraInfo...)...)
 	}
-
 	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
@@ -702,4 +678,3 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
-

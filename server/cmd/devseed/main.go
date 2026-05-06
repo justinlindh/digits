@@ -58,6 +58,12 @@ var (
 		},
 	}
 
+	secondMember = seededUser{
+		Email:       "other@digits.local",
+		DisplayName: "Other",
+		Theme:       auth.ThemeIntercom,
+	}
+
 	others = []seededUser{
 		{
 			Email:         "grandma@digits.local",
@@ -157,11 +163,35 @@ func main() {
 		return
 	}
 
+	// Add a second member to the primary household
+	secondUser, err := upsertUser(ctx, s.auth, secondMember.Email, secondMember.DisplayName)
+	if err != nil {
+		log.Fatalf("seed second member: %v", err)
+	}
+	if err := s.auth.SetTheme(ctx, secondUser.ID, secondMember.Theme); err != nil {
+		log.Fatalf("set second member theme: %v", err)
+	}
+	if err := s.auth.MarkThemeChosen(ctx, secondUser.ID); err != nil {
+		log.Fatalf("mark second member theme chosen: %v", err)
+	}
+	if err := s.house.AddMember(ctx, secondUser.ID, primaryHH.ID, "admin"); err != nil {
+		log.Fatalf("add second member: %v", err)
+	}
+	seededEmails := []string{primary.Email, secondMember.Email}
+
+	// Seed a pending user invite on the primary household
+	invStore := household.NewInviteStore(database.DB)
+	pending, _ := invStore.IsPendingForHouseholdEmail(ctx, primaryHH.ID, "pending@digits.local")
+	if !pending {
+		if _, err := invStore.CreateInvite(ctx, primaryHH.ID, "pending@digits.local", primaryUser.ID); err != nil {
+			log.Fatalf("seed pending invite: %v", err)
+		}
+	}
+
 	if err := s.house.SetCallHistoryEnabled(ctx, primaryHH.ID, true); err != nil {
 		log.Fatalf("enable call history on primary: %v", err)
 	}
 
-	seededEmails := []string{primary.Email}
 	for _, o := range others {
 		otherUser, otherHH, err := ensureUser(ctx, s, o, false)
 		if err != nil {

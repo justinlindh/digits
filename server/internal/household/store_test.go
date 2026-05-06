@@ -25,6 +25,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	}
 	s := NewStore(database.DB)
 	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_invites")
 		_, _ = database.DB.Exec("DELETE FROM household_members")
 		_, _ = database.DB.Exec("DELETE FROM households")
 		_, _ = database.DB.Exec("DELETE FROM sessions")
@@ -276,6 +277,58 @@ func TestUpdateName(t *testing.T) {
 	}
 	if got.Name != "New Name" {
 		t.Errorf("name = %q, want New Name", got.Name)
+	}
+}
+
+func TestRemoveMember(t *testing.T) {
+	s, database := testStore(t)
+	ownerID := createTestUser(t, database, "owner-rm@example.com")
+	memberID := createTestUser(t, database, "member-rm@example.com")
+
+	hh, err := s.Create(context.Background(), "Remove Test", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.AddMember(context.Background(), memberID, hh.ID, "admin"); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	count, err := s.MemberCount(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("MemberCount: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 members, got %d", count)
+	}
+
+	if err := s.RemoveMember(context.Background(), memberID, hh.ID); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+
+	count, err = s.MemberCount(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("MemberCount after remove: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 member after remove, got %d", count)
+	}
+}
+
+func TestMemberCount(t *testing.T) {
+	s, database := testStore(t)
+	ownerID := createTestUser(t, database, "owner-cnt@example.com")
+
+	hh, err := s.Create(context.Background(), "Count Test", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	count, err := s.MemberCount(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("MemberCount: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1, got %d", count)
 	}
 }
 

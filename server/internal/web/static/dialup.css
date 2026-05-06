@@ -2711,3 +2711,22 @@ body.dialup .phone-silent__text {
   background: var(--dialup-chrome);
   color: var(--dialup-chrome-d);
 }
+
+/* Household switcher */
+.dialup-hh-switcher { position: relative; display: inline-block; }
+.dialup-hh-switcher summary { cursor: pointer; list-style: none; }
+.dialup-hh-switcher summary::-webkit-details-marker { display: none; }
+.dialup-hh-arrow { font-size: 8px; }
+.dialup-hh-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: var(--dialup-chrome); border: 2px outset var(--dialup-chrome);
+  min-width: 200px; margin-top: 2px;
+}
+.dialup-hh-option {
+  display: block; width: 100%; padding: 4px 8px;
+  border: none; background: transparent; color: var(--dialup-text);
+  font-family: var(--dialup-font); font-size: 11px;
+  text-align: left; cursor: pointer;
+}
+.dialup-hh-option:hover { background: var(--dialup-blue); color: #fff; }
+.dialup-hh-option.is-active { font-weight: 700; }

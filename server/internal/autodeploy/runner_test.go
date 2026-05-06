@@ -8,22 +8,20 @@ import (
 
 func TestExecRunner(t *testing.T) {
 	r := NewExecRunner()
-	out, err := r.Run(context.Background(), RunSpec{
-		Name: "echo",
-		Args: []string{"hello"},
-	})
-	if err != nil {
+	if err := r.Run(context.Background(), RunSpec{
+		Name: "true",
+	}); err != nil {
 		t.Fatal(err)
-	}
-	if !strings.Contains(string(out.Stdout), "hello") {
-		t.Errorf("stdout=%q", string(out.Stdout))
 	}
 }
 
 func TestExecRunnerNonZeroExit(t *testing.T) {
 	r := NewExecRunner()
-	_, err := r.Run(context.Background(), RunSpec{Name: "false"})
+	err := r.Run(context.Background(), RunSpec{Name: "sh", Args: []string{"-c", "echo nope >&2; exit 1"}})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "nope") {
+		t.Errorf("expected stderr in error, got %q", err.Error())
 	}
 }

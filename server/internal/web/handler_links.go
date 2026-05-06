@@ -3,6 +3,7 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -46,14 +47,14 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	myHousehold := h.primaryHousehold(r)
+	myHousehold := h.activeHousehold(r)
 	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
 
 	data := linksData{
-		chromeData:  newChromeData("links", user, myHousehold),
+		chromeData:  h.newChromeDataWithHouseholds(r, "links"),
 		CreatedCode: r.URL.Query().Get("created"),
 		Accepted:    r.URL.Query().Get("accepted") == "1",
 		Revoked:     r.URL.Query().Get("revoked") == "1",
@@ -87,17 +88,16 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.activeHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	link, err := h.linkStore.CreateInvite(r.Context(), myHousehold.ID, user.ID)
 	if err != nil {
 		slog.Error("create invite failed", "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -110,12 +110,11 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.activeHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -130,7 +129,7 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 	link, err := h.linkStore.AcceptInvite(r.Context(), code, user.ID, myHousehold.ID)
 	if err != nil {
 		slog.Error("accept invite failed", "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -194,7 +193,7 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 
 	if err := h.linkStore.RevokeLink(r.Context(), id, user.ID); err != nil {
 		slog.Error("revoke link failed", "link_id", id, "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -204,4 +203,3 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
-

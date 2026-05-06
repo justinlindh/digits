@@ -20,7 +20,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 		suggested = user.Name + "'s Family"
 	}
 	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
-		chromeData:    newChromeData("onboard", user, h.primaryHousehold(r)),
+		chromeData:    h.newChromeDataWithHouseholds(r, "onboard"),
 		SuggestedName: suggested,
 	})
 }
@@ -54,4 +54,3 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 	// from /welcome and the post-login behavior on subsequent visits.
 	http.Redirect(w, r, auth.LoginRedirectFor(user), http.StatusSeeOther)
 }
-

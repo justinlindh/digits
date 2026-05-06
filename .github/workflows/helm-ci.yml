@@ -1,0 +1,60 @@
+name: Helm CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+  pull_request:
+    paths:
+      - "charts/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint-and-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint (defaults)
+        run: helm lint charts/digits/
+
+      - name: Lint (all features enabled)
+        run: |
+          helm lint charts/digits/ \
+            --set ingress.enabled=true \
+            --set ingress.signald.host=app.example.com \
+            --set cnpg.enabled=true \
+            --set redis.url=redis://redis:6379 \
+            --set observability.enabled=true \
+            --set observability.otelEndpoint=otel:4317 \
+            --set observability.serviceMonitor.enabled=true
+
+      - name: Template (defaults)
+        run: helm template digits charts/digits/ --namespace digits
+
+      - name: Template (all features enabled)
+        run: |
+          helm template digits charts/digits/ --namespace digits \
+            --set ingress.enabled=true \
+            --set ingress.signald.host=app.example.com \
+            --set cnpg.enabled=true \
+            --set cnpg.userdb.storageClass=default \
+            --set cnpg.backup.enabled=true \
+            --set cnpg.backup.destinationPath=s3://backups \
+            --set cnpg.backup.endpointURL=http://minio:9000 \
+            --set cnpg.backup.s3CredentialsSecret=minio-creds \
+            --set redis.url=redis://redis:6379 \
+            --set observability.enabled=true \
+            --set observability.otelEndpoint=otel:4317 \
+            --set observability.pyroscopeEndpoint=http://pyroscope:4040 \
+            --set observability.serviceMonitor.enabled=true

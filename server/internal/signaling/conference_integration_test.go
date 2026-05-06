@@ -84,9 +84,9 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Step 1: Directly prime both active calls via the tracker (bypassing the
 	// relay's busy-check, which would block A's second call since A is already
@@ -235,9 +235,9 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Prime both active 2-party calls: A-B (held) and A-C (active, adding).
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -312,9 +312,9 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -399,9 +399,9 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -457,9 +457,9 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {

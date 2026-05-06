@@ -1,0 +1,6 @@
+apiVersion: v2
+name: digits
+description: Signaling server and admin dashboard for the digits private phone network.
+type: application
+version: 0.1.0
+appVersion: "1.56.1"

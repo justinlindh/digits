@@ -54,9 +54,9 @@ func TestCallLifecycle(t *testing.T) {
 	}
 
 	// Check history
-	calls, err := tr.Recent(context.Background(), 10)
+	calls, err := tr.RecentForPhones(context.Background(), []string{"3140001", "3140002"}, 10)
 	if err != nil {
-		t.Fatalf("Recent: %v", err)
+		t.Fatalf("RecentForPhones: %v", err)
 	}
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))

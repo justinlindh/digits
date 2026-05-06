@@ -43,7 +43,6 @@ docker compose logs --follow
 
 Once running:
 - **User app** → `https://your-domain.com`
-- **Admin panel** → `https://your-domain.com/admin`
 
 ---
 
@@ -95,28 +94,25 @@ Caddy will obtain and renew a Let's Encrypt certificate automatically. No certbo
                        ┌────▼────┐
                        │  Caddy  │  :443  (TLS termination, reverse proxy)
                        └────┬────┘
-                 ┌──────────┴──────────┐
-                 │                     │
-          ┌──────▼──────┐       ┌──────▼──────┐
-          │   signald   │       │   admind    │
-          │   :8080     │       │   :9090     │
-          │             │       │             │
-          │ WebRTC sig  │       │ Admin UI +  │
-          │ Auth/magic  │       │ stats API   │
-          │ User API    │       │             │
-          └──────┬──────┘       └──────┬──────┘
-                 │                     │
-          ┌──────▼──────┐       ┌──────▼──────┐
-          │   user-db   │       │  admin-db   │
-          │  PostgreSQL │       │  PostgreSQL │
-          │             │       │             │
-          │ users,      │       │ admin users,│
-          │ households, │       │ sessions    │
-          │ sessions    │       │             │
-          └─────────────┘       └─────────────┘
+                            │
+                     ┌──────▼──────┐
+                     │   signald   │
+                     │   :8080     │
+                     │             │
+                     │ WebRTC sig  │
+                     │ Auth/magic  │
+                     │ User API    │
+                     └──────┬──────┘
+                            │
+                     ┌──────▼──────┐
+                     │   user-db   │
+                     │  PostgreSQL │
+                     │             │
+                     │ users,      │
+                     │ households, │
+                     │ sessions    │
+                     └─────────────┘
 ```
-
-**Privacy separation:** `admind` connects *only* to `admin-db`. It has no access to `user-db` and cannot read user data, households, or call records. The admin panel shows aggregate stats fetched via an internal HTTP endpoint on `signald` -- no direct DB access across the boundary. This is intentional and enforced at the network level via Docker Compose service isolation.
 
 ---
 
@@ -127,9 +123,7 @@ All configuration lives in `server/.env`. Copy `server/.env.example` and fill it
 | Variable | Required | Description |
 |---|---|---|
 | `BASE_URL` | ✅ | Public URL of your server, e.g. `https://digits.example.com` |
-| `ADMIN_SECRET` | ✅ | Shared secret between signald and admind (pick something random) |
-| `ADMIN_INITIAL_USER` | ✅ | Username for the first admin account |
-| `ADMIN_INITIAL_SECRET` | ✅ | Password for the first admin account |
+| `ADMIN_SECRET` | ✅ | Secret protecting the internal stats endpoint (pick something random) |
 | `SMTP_HOST` | ✅ | SMTP server hostname |
 | `SMTP_PORT` | ✅ | SMTP port (usually 587 for STARTTLS) |
 | `SMTP_USER` | ✅ | SMTP username |
@@ -169,7 +163,7 @@ If your server uses a self-signed cert (dev only), add `-insecure` to skip TLS v
 
 ### Pairing Flow
 
-1. In the admin panel (`/admin`), create a household and add a line.
+1. In the user app, complete onboarding to create a household, then add a line on `/phones`.
 2. The system generates a pairing code.
 3. On the Pi, the pairing code is exchanged automatically on first connect -- no screen needed.
 4. Once paired, the phone registers itself and is ready to dial.
@@ -178,21 +172,17 @@ If your server uses a self-signed cert (dev only), add `-insecure` to skip TLS v
 
 ## Backup
 
-Two databases, two backups. Run these on a cron or before any upgrade.
+Run this on a cron or before any upgrade.
 
 ```bash
 # Backup user data (users, households, sessions)
 docker compose exec user-db pg_dump -U digits digits > backup-user-$(date +%Y%m%d).sql
-
-# Backup admin data (admin users, audit logs)
-docker compose exec admin-db pg_dump -U digits_admin digits_admin > backup-admin-$(date +%Y%m%d).sql
 ```
 
 Restore:
 
 ```bash
 docker compose exec -T user-db psql -U digits digits < backup-user-20260101.sql
-docker compose exec -T admin-db psql -U digits_admin digits_admin < backup-admin-20260101.sql
 ```
 
 Store backups off-server. S3, rsync to another machine, whatever you've got.
@@ -228,9 +218,8 @@ Caddy handles zero-downtime for its own config reloads. The Go services will hav
 | Magic link email never arrives | SMTP misconfigured | Check `SMTP_HOST/PORT/USER/PASS`. Run `docker compose logs signald` and look for mail errors. Test with `swaks` or your provider's SMTP tester. |
 | "Link expired" on login | Token TTL passed (15 min) | Request a new magic link. If this happens constantly, check server clock (`timedatectl`). |
 | Phone won't connect | Wrong WebSocket URL or TLS error | Verify `-signald` flag on the Pi points to `wss://your-domain.com/ws`. Check `journalctl -u digitsd` on the Pi. |
-| Admin panel shows 0 users | `ADMIN_STATS_SECRET` mismatch | `ADMIN_SECRET` in `.env` must match in both signald and admind. Restart both services after fixing. |
 | Google OAuth "redirect_uri mismatch" | Callback URL not registered | Add `https://your-domain.com/auth/google/callback` to authorized redirect URIs in Google Cloud Console. Verify `GOOGLE_REDIRECT_URL` in `.env` matches exactly. |
-| Caddy returns 502 | Backend not ready | `docker compose ps` -- check signald/admind are healthy. `docker compose logs caddy` for upstream errors. |
+| Caddy returns 502 | Backend not ready | `docker compose ps` -- check signald is healthy. `docker compose logs caddy` for upstream errors. |
 | Database migration fails on startup | Dirty schema state | Check `docker compose logs signald` for migration errors. Usually safe to re-run after fixing the underlying issue. |
 
 ---

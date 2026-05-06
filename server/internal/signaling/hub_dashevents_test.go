@@ -25,7 +25,7 @@ func TestHub_DashEvents_NotifiesOnRegisterAndUnregister(t *testing.T) {
 	h.SetDashboardEvents(n)
 
 	conn := &Conn{Send: make(chan []byte, 1)}
-	h.Register("+15550001", conn)
+	_ = h.Register("+15550001", conn)
 	if got := n.Count(); got != 1 {
 		t.Fatalf("Register: got %d notifications want 1", got)
 	}
@@ -46,6 +46,6 @@ func TestHub_DashEvents_NilSafe(t *testing.T) {
 	h := NewHub()
 	// No SetDashboardEvents call: Register and Unregister must not panic.
 	conn := &Conn{Send: make(chan []byte, 1)}
-	h.Register("+15550002", conn)
+	_ = h.Register("+15550002", conn)
 	h.Unregister("+15550002", conn)
 }
