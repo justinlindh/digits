@@ -140,14 +140,29 @@ around what is and is not collected.
 
 ### Multi-replica signaling
 
-| Variable    | Description                                                    |
-|-------------|----------------------------------------------------------------|
-| `REDIS_URL` | Redis connection URL (`redis://host:port` or `rediss://...`). When set, signald uses Redis pub/sub as a cross-pod broadcast channel so calls whose target is on a different pod still reach the device. Empty disables Redis (single-instance mode). |
+| Variable                | Description                                                    |
+|-------------------------|----------------------------------------------------------------|
+| `REDIS_URL`             | Redis connection URL (`redis://host:port` or `rediss://...`), or a comma-separated list of Sentinel addresses for failover mode. When set, signald enables both cross-pod signaling (pub/sub) and shared cluster state (device presence, active calls and conferences, dashboard SSE events). Empty disables Redis (single-instance mode). |
+| `REDIS_SENTINEL_MASTER` | Sentinel master name. When set together with a comma-separated `REDIS_URL`, the client switches to failover-aware mode. Leave empty for a direct connection. |
 
 Without `REDIS_URL`, behavior is identical to the single-instance default
 and Redis is not a runtime dependency. With it, every pod publishes to a
-shared `digits:signal` channel when a local lookup misses, and subscribing
-pods deliver to their local connections.
+shared `digits:signal` channel when a local lookup misses, subscribing pods
+deliver to their local connections, and the following cluster state moves
+into Redis so multi-pod queries see a consistent view:
+
+- **Device presence:** a pod records the device-to-pod mapping for each
+  connected device, and other pods read it to route calls to the owning pod.
+- **Active calls and conferences:** the call tracker writes per-call and
+  per-conference records (with a 30-minute safety-net TTL) so any pod can
+  answer "is this number busy?" or "what calls are live?".
+- **Dashboard events:** the SSE broadcaster fans out across pods via Redis
+  pub/sub so `/api/dashboard/stream` re-renders counters regardless of which
+  pod the SSE client connected to.
+
+Running multiple replicas without Redis silently breaks all of these:
+calls land on the wrong pod, devices appear offline to other pods, and
+dashboard counters reflect only the local pod's events.
 
 ### Tracing and Profiling
 
