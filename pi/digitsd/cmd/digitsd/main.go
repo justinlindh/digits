@@ -67,7 +67,7 @@ var (
 	numberFlag  = flag.String("number", "", "this phone's number, e.g. 3140001 (overrides config file)")
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
-	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
+	toneDir     = flag.String("tones", "/data/digits/tones", "directory containing WAV tone files")
 	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 	showVersion = flag.Bool("version", false, "print version and exit")
 	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, gpclk0")
@@ -1741,7 +1741,9 @@ func main() {
 	if *modeFlag == "recovery" || os.Getpid() == 1 {
 		regs, web, serial, audioMod := recoveryRegistrations()
 		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/recovery.log")
 		web.SetManager(mgr)
+		setupModeLog("/tmp/recovery.log")
 		if err := mgr.Run(context.Background()); err != nil {
 			slog.Error("recovery init failed", "error", err)
 			syncAndHalt()
@@ -1753,7 +1755,9 @@ func main() {
 	if *modeFlag == "setup" {
 		regs, web, serial, audioMod, wifiAP := setupRegistrations()
 		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/setup.log")
 		web.SetManager(mgr)
+		setupModeLog("/tmp/setup.log")
 		if err := mgr.Run(context.Background()); err != nil {
 			slog.Error("setup init failed", "error", err)
 			os.Exit(1)

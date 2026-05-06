@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -22,9 +23,23 @@ import (
 //go:embed recovery_static
 var recoveryStaticFS embed.FS
 
-// recoveryLogFile holds an open handle to /tmp/recovery.log when running as
-// PID 1. Synced before halting so in-flight log entries are not lost.
-var recoveryLogFile *os.File
+// modeLogFile holds the open log file for non-normal modes so the panic
+// handler can flush it before halting.
+var modeLogFile *os.File
+
+// setupModeLog tees slog to both stderr and a file. The web module's
+// /log/raw endpoint reads the same file for the live log viewer.
+func setupModeLog(path string) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		slog.Warn("could not open log file", "path", path, "error", err)
+		return
+	}
+	modeLogFile = f
+	w := io.MultiWriter(os.Stderr, f)
+	logger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	slog.SetDefault(logger)
+}
 
 // debugEntry is one timestamped event in the recovery debug log.
 type debugEntry struct {
@@ -127,8 +142,8 @@ func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *sub
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("recovery: panic", "panic", fmt.Sprintf("%v", r))
-			if recoveryLogFile != nil {
-				recoveryLogFile.Sync()
+			if modeLogFile != nil {
+				modeLogFile.Sync()
 			}
 			select {}
 		}
@@ -443,8 +458,8 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 // when running as PID 1, since os.Exit kills PID 1 and causes a kernel panic
 // before the log file is flushed.
 func syncAndHalt() {
-	if recoveryLogFile != nil {
-		recoveryLogFile.Sync()
+	if modeLogFile != nil {
+		modeLogFile.Sync()
 	}
 	select {}
 }

@@ -13,18 +13,22 @@ import (
 )
 
 type WebModule struct {
-	mux    *http.ServeMux
-	mgr    *Manager
-	ln     net.Listener
-	status ModuleStatus
+	mux     *http.ServeMux
+	mgr     *Manager
+	ln      net.Listener
+	logPath string
+	status  ModuleStatus
 }
 
 func NewWebModule() *WebModule {
 	return &WebModule{
-		mux:    http.NewServeMux(),
-		status: ModuleStatus{State: StatePending},
+		mux:     http.NewServeMux(),
+		logPath: "/tmp/subsystem.log",
+		status:  ModuleStatus{State: StatePending},
 	}
 }
+
+func (w *WebModule) SetLogPath(path string) { w.logPath = path }
 
 func (w *WebModule) Name() string { return "web" }
 
@@ -34,7 +38,7 @@ func (w *WebModule) Init(ctx context.Context) error {
 	w.status.State = StateInitializing
 
 	w.mux.HandleFunc("/status", w.handleStatus)
-	w.mux.HandleFunc("/log/raw", handleLogRaw)
+	w.mux.HandleFunc("/log/raw", w.handleLogRaw)
 
 	ln, err := net.Listen("tcp", ":80")
 	if err != nil {
@@ -76,9 +80,9 @@ func (w *WebModule) handleStatus(rw http.ResponseWriter, r *http.Request) {
 
 var logLineRe = regexp.MustCompile(`^time=\S+\s+level=(\w+)\s+msg="?([^"]*)"?\s*(.*)$`)
 
-func handleLogRaw(rw http.ResponseWriter, r *http.Request) {
+func (w *WebModule) handleLogRaw(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	data, err := os.ReadFile("/tmp/recovery.log")
+	data, err := os.ReadFile(w.logPath)
 	if err != nil {
 		fmt.Fprintf(rw, "no log available")
 		return

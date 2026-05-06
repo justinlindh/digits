@@ -95,11 +95,11 @@ func TestVerifySuccess(t *testing.T) {
 	}
 
 	// Verify AP teardown and restore sequence.
-	if !cmd.calledWith("systemctl", "stop", "hostapd") {
-		t.Error("should stop hostapd")
+	if !cmd.calledWith("systemctl", "stop", "digits-ap") {
+		t.Error("should stop digits-ap")
 	}
-	if !cmd.calledWith("systemctl", "stop", "dnsmasq") {
-		t.Error("should stop dnsmasq")
+	if !cmd.calledWith("systemctl", "stop", "digits-dnsmasq-ap") {
+		t.Error("should stop digits-dnsmasq-ap")
 	}
 	if !cmd.calledWith("systemctl", "start", "NetworkManager") {
 		t.Error("should start NetworkManager")
@@ -107,11 +107,11 @@ func TestVerifySuccess(t *testing.T) {
 	if !cmd.calledWith("systemctl", "stop", "NetworkManager") {
 		t.Error("should stop NetworkManager after verify")
 	}
-	if !cmd.calledWith("systemctl", "start", "hostapd") {
-		t.Error("should restart hostapd")
+	if !cmd.calledWith("systemctl", "start", "digits-ap") {
+		t.Error("should restart digits-ap")
 	}
-	if !cmd.calledWith("systemctl", "start", "dnsmasq") {
-		t.Error("should restart dnsmasq")
+	if !cmd.calledWith("systemctl", "start", "digits-dnsmasq-ap") {
+		t.Error("should restart digits-dnsmasq-ap")
 	}
 }
 
@@ -201,10 +201,10 @@ func TestVerifyAlwaysRestoresAP(t *testing.T) {
 		if key == "systemctl stop NetworkManager" {
 			foundNMStop = true
 		}
-		if foundNMStop && key == "systemctl start hostapd" {
+		if foundNMStop && key == "systemctl start digits-ap" {
 			hostapdRestarted = true
 		}
-		if foundNMStop && key == "systemctl start dnsmasq" {
+		if foundNMStop && key == "systemctl start digits-dnsmasq-ap" {
 			dnsmasqRestarted = true
 		}
 	}

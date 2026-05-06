@@ -7,10 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusEl = document.getElementById('status');
   const stepWifi = document.getElementById('step-wifi');
   const stepDone = document.getElementById('step-done');
+  const stepFail = document.getElementById('step-fail');
+  const failMsg = document.getElementById('fail-msg');
+  const btnRetry = document.getElementById('btn-retry');
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg;
-    statusEl.className = 'status ' + (isError ? 'error' : 'success');
+    statusEl.className = 'status ' + (isError ? 'error' : 'info');
   }
 
   async function scanNetworks() {
@@ -29,17 +32,16 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const net of networks) {
           const opt = document.createElement('option');
           opt.value = net.ssid;
-          opt.textContent = `${net.ssid} (${net.signal} dBm)`;
+          opt.textContent = net.ssid + ' (' + net.signal + ' dBm)';
           ssidSelect.appendChild(opt);
         }
       }
-      // Always add hidden network option at the end
       const hiddenOpt = document.createElement('option');
       hiddenOpt.value = '__hidden__';
       hiddenOpt.textContent = 'Hidden network...';
       ssidSelect.appendChild(hiddenOpt);
     } catch (err) {
-      ssidSelect.innerHTML = '<option value="">Scan failed — tap ↻</option>';
+      ssidSelect.innerHTML = '<option value="">Scan failed</option>';
     } finally {
       ssidSelect.disabled = false;
       btnRefresh.disabled = false;
@@ -58,8 +60,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  function showStep(step) {
+    stepWifi.classList.remove('active');
+    stepDone.classList.remove('active');
+    stepFail.classList.remove('active');
+    step.classList.add('active');
+  }
+
+  function pollStatus() {
+    fetch('/api/status').then(function(r) { return r.json(); }).then(function(d) {
+      if (d.verifying) {
+        setTimeout(pollStatus, 1000);
+        return;
+      }
+      if (d.last_attempt && d.last_attempt.Connected && !d.last_attempt.Error) {
+        showStep(stepDone);
+      } else if (d.last_attempt && d.last_attempt.Error) {
+        failMsg.textContent = d.last_attempt.Error;
+        showStep(stepFail);
+      } else {
+        setTimeout(pollStatus, 1000);
+      }
+    }).catch(function() {
+      // AP might be down during verification, keep polling
+      setTimeout(pollStatus, 2000);
+    });
+  }
+
   btnSubmit.addEventListener('click', async () => {
-    let ssid = ssidSelect.value;
+    var ssid = ssidSelect.value;
     if (ssid === '__hidden__') {
       ssid = ssidManual.value.trim();
     }
@@ -69,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnSubmit.disabled = true;
-    setStatus('Configuring...', false);
+    setStatus('Verifying connection... you will lose connection briefly. If this page does not return, setup succeeded.', false);
 
     try {
       const resp = await fetch('/api/configure', {
@@ -87,15 +116,52 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(text || 'Configuration failed');
       }
 
-      // Success — show done screen
-      stepWifi.classList.remove('active');
-      stepDone.classList.add('active');
+      // Start polling for verification result
+      setTimeout(pollStatus, 2000);
     } catch (err) {
       setStatus(err.message, true);
       btnSubmit.disabled = false;
     }
   });
 
-  // Initial scan
+  if (btnRetry) {
+    btnRetry.addEventListener('click', function() {
+      showStep(stepWifi);
+      btnSubmit.disabled = false;
+      statusEl.textContent = '';
+      statusEl.className = 'status';
+      password.value = '';
+      scanNetworks();
+    });
+  }
+
+  // Log viewer (collapsed by default)
+  var logEl = document.getElementById('log');
+  var logVisible = false;
+  var lastLog = '';
+
+  window.toggleLog = function() {
+    logVisible = !logVisible;
+    logEl.classList.toggle('collapsed', !logVisible);
+    document.getElementById('log-toggle').textContent = logVisible ? 'Hide' : 'Show';
+  };
+
+  function pollLog() {
+    if (!logVisible) { setTimeout(pollLog, 500); return; }
+    fetch('/log/raw').then(function(r) { return r.text(); }).then(function(t) {
+      if (t === lastLog) { setTimeout(pollLog, 500); return; }
+      lastLog = t;
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount > 0 && logEl.contains(sel.anchorNode)) {
+        setTimeout(pollLog, 500); return;
+      }
+      var atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 30;
+      logEl.textContent = t || '(empty)';
+      if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+    }).catch(function() {});
+    setTimeout(pollLog, 500);
+  }
+  pollLog();
+
   scanNetworks();
 });

@@ -18,8 +18,7 @@ These override default behavior and apply to every output: chat, code, commits, 
 
 ```
 firmware/       Pico H firmware (C, CMake, Pico SDK)
-pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64)
-pi/digits-setup/ First-boot setup tool (Go)
+pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64); handles all modes: normal, recovery, setup, gpclk0
 pi/image/       Pi OS image builder
 server/         Signaling server + web UI (Go, htmx, Tailwind)
 tools/          Build scripts for firmware, Pi binaries, and OS images

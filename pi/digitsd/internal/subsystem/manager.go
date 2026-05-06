@@ -101,16 +101,16 @@ func (m *Manager) runLayer(ctx context.Context, layer []Registration) error {
 			msg := res.err.Error()
 			m.setStateDetails(name, StateFailed, msg, res.dur)
 			if res.reg.Required {
-				log.Printf("subsystem: required module %q failed: %v", name, res.err)
+				log.Printf("subsystem: module %s failed: %v", name, res.err)
 				if firstRequiredErr == nil {
-					firstRequiredErr = fmt.Errorf("required module %q failed: %w", name, res.err)
+					firstRequiredErr = fmt.Errorf("required module %s failed: %w", name, res.err)
 				}
 			} else {
-				log.Printf("subsystem: optional module %q failed (continuing): %v", name, res.err)
+				log.Printf("subsystem: module %s failed (optional, continuing): %v", name, res.err)
 			}
 		} else {
 			m.setStateDetails(name, StateReady, "", res.dur)
-			log.Printf("subsystem: module %q ready (%s)", name, res.dur.Round(time.Millisecond))
+			log.Printf("subsystem: module %s ready (%s)", name, res.dur.Round(time.Millisecond))
 		}
 	}
 
@@ -135,7 +135,7 @@ func (m *Manager) Shutdown(ctx context.Context) {
 			go func() {
 				defer wg.Done()
 				if err := r.Module.Shutdown(ctx); err != nil {
-					log.Printf("subsystem: module %q shutdown error: %v", r.Module.Name(), err)
+					log.Printf("subsystem: module %s shutdown error: %v", r.Module.Name(), err)
 				}
 			}()
 		}

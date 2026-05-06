@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/wifi"
@@ -17,15 +18,20 @@ var setupStaticFS embed.FS
 
 func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audio *subsystem.AudioModule, wifiAP *subsystem.WiFiAPModule) {
 	_ = mgr
-	_ = serial
-	_ = audio
+
+	// LED: signal setup mode if serial is available.
+	if serial != nil && serial.IsReady() {
+		sp := serial.Port()
+		sp.LED("LOCK")
+		time.Sleep(50 * time.Millisecond)
+		sp.LED("DOUBLE_PULSE")
+	}
 
 	mux := web.Mux()
 
 	staticSub, _ := fs.Sub(setupStaticFS, "setup_static")
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	// Captive portal redirects
 	for _, path := range []string{"/generate_204", "/hotspot-detect.html", "/connecttest.txt", "/library/test/success.html"} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusFound)
@@ -83,18 +89,27 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "verifying"}) //nolint:errcheck
 
+		// LED: fast blink during verification
+		if serial != nil && serial.IsReady() {
+			serial.Port().LED("FAST_BLINK")
+		}
+
 		go func() {
 			state.mu.Lock()
 			state.verifying = true
 			state.mu.Unlock()
 
+			slog.Info("setup: verifying WiFi credentials", "ssid", req.SSID)
 			result := wifi.Verify(req.SSID, backupPath)
 
 			if result.Connected {
+				slog.Info("setup: verification succeeded, committing")
 				if err := wifi.CommitToOperational(backupPath); err != nil {
 					slog.Error("setup: commit failed", "error", err)
 					result = wifi.VerifyResult{Error: "commit failed: " + err.Error()}
 				}
+			} else {
+				slog.Warn("setup: verification failed", "error", result.Error)
 			}
 
 			state.mu.Lock()
@@ -104,10 +119,19 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 
 			if result.Connected && result.Error == "" {
 				slog.Info("setup: WiFi configured, rebooting")
-				if err := wifiAP.Teardown(); err != nil {
-					slog.Warn("setup: AP teardown failed", "error", err)
+				if serial != nil && serial.IsReady() {
+					serial.Port().LED("ON")
+				}
+				if audio != nil && audio.IsReady() {
+					audio.Mixer().PlayOnce("confirm_wifi_setup")
+					waitForOnceComplete(audio.Mixer(), 10*time.Second)
 				}
 				doReboot()
+			} else {
+				// Restore LED to setup pattern
+				if serial != nil && serial.IsReady() {
+					serial.Port().LED("DOUBLE_PULSE")
+				}
 			}
 		}()
 	})

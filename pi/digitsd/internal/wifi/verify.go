@@ -45,8 +45,8 @@ func Verify(ssid, backupPath string) VerifyResult {
 
 func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) VerifyResult {
 	// Stop AP services to release wlan0.
-	_, _ = cmd.run("systemctl", "stop", "hostapd")
-	_, _ = cmd.run("systemctl", "stop", "dnsmasq")
+	_, _ = cmd.run("systemctl", "stop", "digits-dnsmasq-ap")
+	_, _ = cmd.run("systemctl", "stop", "digits-ap")
 
 	// Start NetworkManager so it picks up the backup config.
 	_, _ = cmd.run("systemctl", "start", "NetworkManager")
@@ -68,8 +68,8 @@ func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) 
 
 	// Always restore AP services.
 	_, _ = cmd.run("systemctl", "stop", "NetworkManager")
-	_, _ = cmd.run("systemctl", "start", "hostapd")
-	_, _ = cmd.run("systemctl", "start", "dnsmasq")
+	_, _ = cmd.run("systemctl", "start", "digits-ap")
+	_, _ = cmd.run("systemctl", "start", "digits-dnsmasq-ap")
 
 	if connected {
 		return VerifyResult{Connected: true}

@@ -65,3 +65,4 @@ __pycache__/
 # STL preview renders for the keypad badges: kept so the GitHub file
 # browser shows what each printable mesh looks like.
 !hardware/badges/*.png
+sd-backup-pre-factory-reset.img.zst

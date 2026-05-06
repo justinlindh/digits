@@ -15,7 +15,7 @@ body {
 }
 
 .container {
-  max-width: 420px;
+  max-width: 600px;
   width: 100%;
   padding-top: 20px;
 }
@@ -197,4 +197,49 @@ header h1 {
 
 #ssid-manual {
   margin-top: 8px;
+}
+
+#log-section {
+  margin-top: 24px;
+  border-top: 1px solid #30363d;
+  padding-top: 12px;
+}
+
+#log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.log-title {
+  font-size: 13px;
+  color: #8b949e;
+}
+
+.btn-small {
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #8b949e;
+  font-size: 12px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+#log {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 10px;
+  font: 11px/1.5 monospace;
+  color: #3fb950;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#log.collapsed {
+  display: none;
 }

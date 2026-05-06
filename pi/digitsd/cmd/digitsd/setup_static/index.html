@@ -38,9 +38,24 @@
 
     <div id="step-done" class="step">
       <div class="panel done-panel">
-        <h2>✅ All Set!</h2>
+        <h2>All Set!</h2>
         <p>Your Digits phone is connecting to Wi-Fi and will reboot in a few seconds.</p>
       </div>
+    </div>
+
+    <div id="step-fail" class="step">
+      <div class="panel fail-panel">
+        <h2>Connection Failed</h2>
+        <p id="fail-msg"></p>
+        <button id="btn-retry" class="btn-primary">Try Again</button>
+      </div>
+    </div>
+    <div id="log-section">
+      <div id="log-header">
+        <span class="log-title">System Log</span>
+        <button id="log-toggle" class="btn-small" onclick="toggleLog()">Show</button>
+      </div>
+      <div id="log" class="collapsed"></div>
     </div>
   </div>
   <script src="app.js"></script>
