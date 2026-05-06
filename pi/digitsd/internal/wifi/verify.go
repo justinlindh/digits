@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -52,6 +53,18 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	cmd.run("systemctl", "stop", "digits-ap")
 	cmd.run("ip", "addr", "flush", "dev", "wlan0")
 	cmd.run("ip", "link", "set", "wlan0", "down")
+
+	// Copy the backup .nmconnection to NM's operational directory so NM
+	// knows about the network. Rootfs is read-only, so remount rw first.
+	slog.Info("wifi verify: installing connection for NM", "path", backupPath)
+	cmd.run("mount", "-o", "remount,rw", "/")
+	filename := filepath.Base(backupPath)
+	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
+	if out, err := cmd.run("cp", backupPath, opPath); err != nil {
+		slog.Warn("wifi verify: copy to NM dir failed", "error", err, "output", out)
+	}
+	cmd.run("chmod", "600", opPath)
+	cmd.run("mount", "-o", "remount,ro", "/")
 
 	slog.Info("wifi verify: starting NetworkManager")
 	if out, err := cmd.run("systemctl", "start", "NetworkManager"); err != nil {
@@ -121,9 +134,13 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	}
 	slog.Info("wifi verify: AP restored")
 
-	// Delete the backup credentials on failure so NM doesn't retry them.
+	// Delete credentials on failure so NM doesn't retry them.
 	if !connected {
 		cmd.run("rm", "-f", backupPath)
+		// Also remove from NM's operational dir.
+		cmd.run("mount", "-o", "remount,rw", "/")
+		cmd.run("rm", "-f", opPath)
+		cmd.run("mount", "-o", "remount,ro", "/")
 	}
 
 	if connected {
