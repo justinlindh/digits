@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"regexp"
-	"strings"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +16,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
+	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 )
 
 //go:embed recovery_static
@@ -118,9 +117,7 @@ func (rs *recoveryState) snapshot() map[string]any {
 	}
 }
 
-func runRecoveryMode() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	slog.SetDefault(logger)
+func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audioMod *subsystem.AudioModule) {
 	slog.Info("digitsd: entering recovery mode", "pid", os.Getpid())
 
 	defer func() {
@@ -133,90 +130,38 @@ func runRecoveryMode() {
 		}
 	}()
 
-	if os.Getpid() == 1 {
-		recoveryInit()
-	}
+	sp := serial.Port()
+	mixer := audioMod.Mixer()
 
-	// Open serial port with retry.
-	var sp *phone.SerialPort
-	for attempt := 1; attempt <= 10; attempt++ {
-		var err error
-		sp, err = phone.OpenSerial(*serialDev, 115200, logger)
-		if err != nil {
-			slog.Warn("serial: open failed, retrying", "attempt", attempt, "error", err)
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		if err = sp.Ping(); err != nil {
-			slog.Warn("serial: ping failed, retrying", "attempt", attempt, "error", err)
-			_ = sp.Close()
-			sp = nil
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		break
-	}
-	if sp == nil {
-		slog.Error("serial: failed to open and ping after 10 attempts")
-		syncAndHalt()
-	}
-	slog.Info("serial: connected")
-
-	// Set LED state for recovery mode.
 	sp.LED("LOCK")
 	time.Sleep(50 * time.Millisecond)
 	sp.LED("HEARTBEAT")
 
-	// Initialize ALSA playback.
-	pbCfg := audio.DefaultPlaybackConfig()
-	if *alsaDevice != "" {
-		pbCfg.Device = *alsaDevice
-	}
-	pb, err := audio.NewPlayback(pbCfg)
-	if err != nil {
-		slog.Warn("playback: default device failed, trying hw:CARD=digitscodec,DEV=0", "error", err)
-		pbCfg.Device = "hw:CARD=digitscodec,DEV=0"
-		pb, err = audio.NewPlayback(pbCfg)
-		if err != nil {
-			slog.Error("playback: cannot open any device", "error", err)
-			syncAndHalt()
-		}
-	}
-	slog.Info("playback: opened", "device", pbCfg.Device)
-
-	// Create mixer and load tones.
-	mixer := audio.NewMixer(pb)
-	if err := mixer.LoadTonesFromDir(*toneDir); err != nil {
-		slog.Warn("mixer: failed to load tones (voice menu will be silent)", "dir", *toneDir, "error", err)
-	}
-	mixer.Start()
-	defer mixer.Stop()
-
 	state := &recoveryState{}
 	dbg := newDebugLog()
-	dbg.add("init", fmt.Sprintf("serial=%s alsa=%s tones=%s", *serialDev, pbCfg.Device, *toneDir))
 	dbg.add("init", fmt.Sprintf("tones_loaded=%d", len(mixer.ToneNames())))
 
-	// Start recovery web UI.
-	go serveRecoveryWeb(state, mixer, sp, dbg)
+	// Mount recovery-specific routes on the web module's mux.
+	mux := web.Mux()
+	mountRecoveryRoutes(mux, state, mixer, sp, dbg)
 
 	// Run voice menu event loop.
 	recoveryEventLoop(sp, mixer, state, dbg)
 }
 
-// serveRecoveryWeb starts the recovery HTTP server on :80.
-func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.SerialPort, dbg *debugLog) {
+// mountRecoveryRoutes registers recovery-specific HTTP handlers on the
+// web module's shared mux. The web module itself handles /status (subsystem
+// statuses) and /log/raw (formatted log tail).
+func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.Mixer, sp *phone.SerialPort, dbg *debugLog) {
 	staticFS, err := fs.Sub(recoveryStaticFS, "recovery_static")
 	if err != nil {
 		slog.Error("recovery web: embed sub", "error", err)
 		syncAndHalt()
 	}
 
-	mux := http.NewServeMux()
-
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/boot-status", func(w http.ResponseWriter, r *http.Request) {
 		count, _ := bootcount.Read(bootcount.DefaultPath)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"boot_count": count}) //nolint:errcheck
@@ -243,23 +188,6 @@ func serveRecoveryWeb(state *recoveryState, mixer *audio.Mixer, sp *phone.Serial
 document.getElementById('log').textContent=await r.text();
 document.getElementById('log').scrollTop=9999999}catch(e){}
 setTimeout(poll,2000)}poll()</script></body></html>`)
-	})
-
-	mux.HandleFunc("/log/raw", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		data, err := os.ReadFile("/tmp/recovery.log")
-		if err != nil {
-			fmt.Fprintf(w, "error reading log: %v", err)
-			return
-		}
-		// Reformat slog lines into compact readable form.
-		for _, line := range strings.Split(string(data), "\n") {
-			if line == "" {
-				continue
-			}
-			formatted := formatLogLine(line)
-			fmt.Fprintln(w, formatted)
-		}
 	})
 
 	mux.HandleFunc("/action", func(w http.ResponseWriter, r *http.Request) {
@@ -292,11 +220,6 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 		w.WriteHeader(http.StatusOK)
 		go func() { doRecoveryFactoryReset(mixer, state, dbg) }()
 	})
-
-	slog.Info("recovery web: listening on :80")
-	if err := http.ListenAndServe(":80", mux); err != nil {
-		slog.Error("recovery web: listen failed", "error", err)
-	}
 }
 
 // recoveryEventLoop runs the voice menu on the phone handset.
@@ -510,23 +433,6 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	waitForOnceComplete(mixer, 10*time.Second)
 
 	doReboot()
-}
-
-var logLineRe = regexp.MustCompile(`^time=\S+\s+level=(\w+)\s+msg="?([^"]*)"?\s*(.*)$`)
-
-// formatLogLine converts a raw slog line into a compact readable form.
-// "time=1970-01-01T00:00:05.399Z level=INFO msg="recovery init: started" key=val"
-// becomes "INFO  recovery init: started  key=val"
-func formatLogLine(line string) string {
-	m := logLineRe.FindStringSubmatch(line)
-	if m == nil {
-		return line
-	}
-	level, msg, extra := m[1], m[2], strings.TrimSpace(m[3])
-	if extra != "" {
-		return fmt.Sprintf("%-5s %s  %s", level, msg, extra)
-	}
-	return fmt.Sprintf("%-5s %s", level, msg)
 }
 
 // syncAndHalt flushes logs and blocks forever. Used instead of log.Fatal

@@ -31,6 +31,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
@@ -1675,6 +1676,52 @@ func playPairingAnnouncement(mixer *audio.Mixer, code string, receivedAt time.Ti
 	mixer.PlayOnce(unitClip)
 }
 
+func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         "/tones",
+		MixerStateFile:  "/mixer.state",
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: subsystem.NewMountsModule(), Required: true, Enabled: true},
+		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true, Enabled: true},
+		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: serial, Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: true, Enabled: true},
+		{Module: web, Required: true, Enabled: true},
+		{Module: subsystem.NewReaperModule(), Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio
+}
+
+func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule, *subsystem.WiFiAPModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         *toneDir,
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
+		SSID:       "Digits-Setup",
+		UseSystemd: true,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: gpclk0, Required: true, Enabled: true},
+		{Module: serial, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: wifiAP, Required: true, Enabled: true},
+		{Module: web, Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio, wifiAP
+}
+
 func main() {
 	flag.Parse()
 
@@ -1691,7 +1738,26 @@ func main() {
 	}
 
 	if *modeFlag == "recovery" || os.Getpid() == 1 {
-		runRecoveryMode()
+		regs, web, serial, audioMod := recoveryRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetManager(mgr)
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("recovery init failed", "error", err)
+			syncAndHalt()
+		}
+		runRecoveryMode(mgr, web, serial, audioMod)
+		return
+	}
+
+	if *modeFlag == "setup" {
+		regs, web, serial, audioMod, wifiAP := setupRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetManager(mgr)
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("setup init failed", "error", err)
+			os.Exit(1)
+		}
+		runSetupMode(mgr, web, serial, audioMod, wifiAP)
 		return
 	}
 

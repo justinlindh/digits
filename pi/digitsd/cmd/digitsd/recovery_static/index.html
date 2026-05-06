@@ -52,7 +52,7 @@ var logEl=document.getElementById('log');
 var paused=false;
 var actionFails=0;
 
-fetch('/status').then(function(r){return r.json()}).then(function(d){
+fetch('/boot-status').then(function(r){return r.json()}).then(function(d){
   statusEl.textContent='Boot attempts: '+d.boot_count;
 }).catch(function(){});
 
