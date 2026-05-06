@@ -221,11 +221,15 @@ func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
-			"events":       dbg.snapshot(),
-			"mixer_active": mixer.Active(),
-			"once_playing": mixer.OncePlaying(),
-			"tone_names":   mixer.ToneNames(),
-			"serial_ok":    sp.Ping() == nil,
+			"events": dbg.snapshot(),
+		}
+		if mixer != nil {
+			resp["mixer_active"] = mixer.Active()
+			resp["once_playing"] = mixer.OncePlaying()
+			resp["tone_names"] = mixer.ToneNames()
+		}
+		if sp != nil {
+			resp["serial_ok"] = sp.Ping() == nil
 		}
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	})
@@ -343,17 +347,25 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	dbg.add("reset", "starting factory reset")
 	slog.Info("recovery: starting factory reset")
 	rs.setStatus("Starting factory reset...")
-	mixer.PlayOnce("factory_reset_in_progress")
-	waitForOnceComplete(mixer, 10*time.Second)
+	if mixer != nil {
+		mixer.PlayOnce("factory_reset_in_progress")
+		waitForOnceComplete(mixer, 10*time.Second)
+		mixer.PlayOnce("restoring_system")
+		waitForOnceComplete(mixer, 10*time.Second)
+	}
 
-	mixer.PlayOnce("restoring_system")
-	waitForOnceComplete(mixer, 10*time.Second)
+	playOnce := func(name string) {
+		if mixer != nil {
+			mixer.PlayOnce(name)
+			waitForOnceComplete(mixer, 10*time.Second)
+		}
+	}
 
 	rootfsImg := "/rootfs.img.zst"
 	if _, err := os.Stat(rootfsImg); err != nil {
 		slog.Error("recovery: rootfs.img.zst not found", "path", rootfsImg, "error", err)
 		rs.setFailed("rootfs image not found")
-		mixer.PlayOnce("error_tone")
+		playOnce("error_tone")
 		return
 	}
 
@@ -365,16 +377,21 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	if err := cmd.Run(); err != nil {
 		slog.Error("recovery: rootfs restore failed", "error", err)
 		rs.setFailed(fmt.Sprintf("rootfs restore failed: %v", err))
-		mixer.PlayOnce("error_tone")
+		playOnce("error_tone")
 		return
 	}
 	slog.Info("recovery: rootfs restored")
 
 	rs.setStatus("Formatting data partition...")
-	mixer.PlayOnce("formatting_data")
-	waitForOnceComplete(mixer, 10*time.Second)
+	playOnce("formatting_data")
 
-	slog.Info("recovery: unmounting /data")
+	// Flush and close the crash log before unmounting /data.
+	slog.Info("recovery: unmounting /data (crash log will stop)")
+	if crashLogFile != nil {
+		crashLogFile.Sync()
+		crashLogFile.Close()
+		crashLogFile = nil
+	}
 	_ = syscall.Unmount("/data", 0)
 
 	slog.Info("recovery: formatting /dev/mmcblk0p4")
@@ -384,7 +401,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	if err := mkfs.Run(); err != nil {
 		slog.Error("recovery: mkfs.ext4 failed", "error", err)
 		rs.setFailed(fmt.Sprintf("data format failed: %v", err))
-		mixer.PlayOnce("error_tone")
+		playOnce("error_tone")
 		return
 	}
 
@@ -393,7 +410,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
 		slog.Error("recovery: mount /data failed", "error", err)
 		rs.setFailed(fmt.Sprintf("data mount failed: %v", err))
-		mixer.PlayOnce("error_tone")
+		playOnce("error_tone")
 		return
 	}
 
@@ -412,8 +429,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 
 	rs.setStatus("Factory reset complete. Rebooting...")
 	slog.Info("recovery: factory reset complete")
-	mixer.PlayOnce("reset_complete")
-	waitForOnceComplete(mixer, 10*time.Second)
+	playOnce("reset_complete")
 
 	doReboot()
 }
