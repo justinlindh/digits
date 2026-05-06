@@ -36,9 +36,27 @@ func setupModeLog(path string) {
 		return
 	}
 	modeLogFile = f
-	w := io.MultiWriter(os.Stderr, f)
-	logger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	writers := []io.Writer{os.Stderr, f}
+	if crashLogFile != nil {
+		writers = append(writers, crashLogFile)
+	}
+	logger := slog.New(slog.NewTextHandler(io.MultiWriter(writers...), &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
+}
+
+// crashLogFile is a persistent log on /data for post-mortem debugging.
+// Included in the slog MultiWriter by setupModeLog when non-nil.
+var crashLogFile *os.File
+
+// setupCrashLog opens a persistent crash log on /data that survives reboots.
+func setupCrashLog(path string) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return
+	}
+	crashLogFile = f
+	fmt.Fprintf(f, "crash log opened at %s\n", time.Now().Format(time.RFC3339))
+	f.Sync()
 }
 
 // debugEntry is one timestamped event in the recovery debug log.

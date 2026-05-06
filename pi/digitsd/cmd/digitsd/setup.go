@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/wifi"
 )
@@ -31,6 +32,11 @@ func setupVoiceLoop(serial *subsystem.SerialModule, audioMod *subsystem.AudioMod
 
 func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audio *subsystem.AudioModule, wifiAP *subsystem.WiFiAPModule) {
 	_ = mgr
+
+	// Clear boot counter so repeated setup boots don't trigger recovery.
+	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
+		slog.Warn("setup: failed to clear boot counter", "error", err)
+	}
 
 	// LED: signal setup mode if serial is available.
 	if serial != nil && serial.IsReady() {
