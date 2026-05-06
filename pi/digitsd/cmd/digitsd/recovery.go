@@ -341,6 +341,8 @@ func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *rec
 		switch key {
 		case "1":
 			dbg.add("action", "key 1: restarting")
+			state.startTryAgain()
+			slog.Info("recovery: restart triggered via keypad")
 			mixer.PlayOnce("restarting")
 			waitForOnceComplete(mixer, 5*time.Second)
 			_ = bootcount.Clear(bootcount.DefaultPath)
@@ -372,6 +374,7 @@ func recoveryHandsetSession(sp *phone.SerialPort, mixer *audio.Mixer, state *rec
 				dbg.add("action", "factory reset already in progress")
 				return
 			}
+			slog.Info("recovery: factory reset triggered via keypad")
 			doRecoveryFactoryReset(mixer, state, dbg)
 			return
 
@@ -536,22 +539,40 @@ func syncAndHalt() {
 	select {}
 }
 
+// clearRecoveryFlags mounts /data temporarily to clear the boot counter
+// and recovery-mode flag so the next boot proceeds normally.
+func clearRecoveryFlags() {
+	os.MkdirAll("/data", 0755)
+	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
+		slog.Warn("recovery: mount /data for flag cleanup failed", "error", err)
+		return
+	}
+	_ = bootcount.Clear(bootcount.DefaultPath)
+	os.Remove("/data/digits/recovery-mode")
+	slog.Info("recovery: boot counter and recovery flag cleared")
+	syscall.Sync()
+	_ = syscall.Unmount("/data", 0)
+}
+
 // doReboot reboots the system. If running as PID 1 (init in initramfs),
 // uses the raw reboot syscall. Otherwise uses systemctl.
 func doReboot() {
 	slog.Info("recovery: rebooting")
-	time.Sleep(500 * time.Millisecond) // let final log flush
+	clearRecoveryFlags()
+	time.Sleep(500 * time.Millisecond)
 
+	syscall.Sync()
 	if os.Getpid() == 1 {
-		syscall.Sync()
-		_ = syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+		if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
+			slog.Error("recovery: reboot syscall failed", "error", err)
+		}
 	} else {
 		cmd := exec.Command("systemctl", "reboot")
 		if err := cmd.Run(); err != nil {
-			// Last resort: raw reboot.
 			slog.Warn("recovery: systemctl reboot failed, trying raw syscall", "error", err)
-			syscall.Sync()
-			_ = syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+			if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
+				slog.Error("recovery: reboot syscall failed", "error", err)
+			}
 		}
 	}
 	// Block forever if reboot doesn't kill us immediately.
