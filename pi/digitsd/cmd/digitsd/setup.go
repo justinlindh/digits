@@ -132,7 +132,7 @@ func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subs
 			state.mu.Unlock()
 
 			slog.Info("setup: verifying WiFi credentials", "ssid", req.SSID)
-			result := wifi.Verify(req.SSID, backupPath)
+			result := wifi.Verify(req.SSID, backupPath, req.Hidden)
 
 			if result.Connected {
 				slog.Info("setup: verification succeeded, committing")

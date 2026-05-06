@@ -40,11 +40,11 @@ var defaultVerifyConfig = verifyConfig{
 
 // Verify stops the captive-portal AP, starts NetworkManager, polls for
 // connectivity, then restores the AP regardless of outcome.
-func Verify(ssid, backupPath string) VerifyResult {
-	return verifyWithConfig(ssid, backupPath, systemCmdRunner{}, defaultVerifyConfig)
+func Verify(ssid, backupPath string, hidden bool) VerifyResult {
+	return verifyWithConfig(ssid, backupPath, hidden, systemCmdRunner{}, defaultVerifyConfig)
 }
 
-func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) VerifyResult {
+func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg verifyConfig) VerifyResult {
 	// Tear down AP and hand wlan0 to NetworkManager. Mirrors do_ap_down()
 	// in digits-ap-check but without stopping digits-setup (our process).
 	slog.Info("wifi verify: tearing down AP")
@@ -131,8 +131,9 @@ func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) 
 	}
 
 	// Determine failure reason using scan data captured while NM was running.
+	// Hidden networks won't appear in scans, so skip the visibility check.
 	reason := fmt.Sprintf("Could not connect to %s. Check the password and try again.", ssid)
-	if lastScanOutput != "" && !strings.Contains(lastScanOutput, ssid) {
+	if !hidden && lastScanOutput != "" && !strings.Contains(lastScanOutput, ssid) {
 		reason = fmt.Sprintf("Could not find %s. It may be out of range.", ssid)
 	}
 

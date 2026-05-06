@@ -85,7 +85,7 @@ func TestVerifySuccess(t *testing.T) {
 		{output: "STATE      CONNECTIVITY  WIFI-HW  WIFI     WWAN-HW  WWAN\nconnected  full          enabled  enabled  enabled  enabled\n"},
 	}
 
-	result := verifyWithConfig("TestNet", "/data/wifi/test.nmconnection", cmd, testVerifyConfig)
+	result := verifyWithConfig("TestNet", "/data/wifi/test.nmconnection", false, cmd, testVerifyConfig)
 
 	if !result.Connected {
 		t.Fatalf("expected Connected=true, got error: %s", result.Error)
@@ -126,7 +126,7 @@ func TestVerifyAuthFailure(t *testing.T) {
 		output: "IN-USE  BSSID              SSID        MODE   CHAN  RATE       SIGNAL  BARS  SECURITY\n        AA:BB:CC:DD:EE:FF  BadPassNet  Infra  6     54 Mbit/s  80      ***   WPA2\n",
 	}
 
-	result := verifyWithConfig("BadPassNet", "/data/wifi/test.nmconnection", cmd, testVerifyConfig)
+	result := verifyWithConfig("BadPassNet", "/data/wifi/test.nmconnection", false, cmd, testVerifyConfig)
 
 	if result.Connected {
 		t.Fatal("expected Connected=false")
@@ -148,7 +148,7 @@ func TestVerifySSIDNotFound(t *testing.T) {
 		output: "IN-USE  BSSID              SSID          MODE   CHAN  RATE       SIGNAL  BARS  SECURITY\n        AA:BB:CC:DD:EE:FF  OtherNetwork  Infra  6     54 Mbit/s  80      ***   WPA2\n",
 	}
 
-	result := verifyWithConfig("GhostNet", "/data/wifi/test.nmconnection", cmd, testVerifyConfig)
+	result := verifyWithConfig("GhostNet", "/data/wifi/test.nmconnection", false, cmd, testVerifyConfig)
 
 	if result.Connected {
 		t.Fatal("expected Connected=false")
@@ -171,7 +171,7 @@ func TestVerifyNmcliError(t *testing.T) {
 		err:    fmt.Errorf("nmcli not found"),
 	}
 
-	result := verifyWithConfig("TestNet", "/data/wifi/test.nmconnection", cmd, testVerifyConfig)
+	result := verifyWithConfig("TestNet", "/data/wifi/test.nmconnection", false, cmd, testVerifyConfig)
 
 	if result.Connected {
 		t.Fatal("expected Connected=false when nmcli errors")
@@ -191,7 +191,7 @@ func TestVerifyAlwaysRestoresAP(t *testing.T) {
 		{output: "connected  full\n"},
 	}
 
-	_ = verifyWithConfig("Net", "/data/wifi/test.nmconnection", cmd, testVerifyConfig)
+	_ = verifyWithConfig("Net", "/data/wifi/test.nmconnection", false, cmd, testVerifyConfig)
 
 	// Count restore calls (after NM stop).
 	var foundNMStop bool
