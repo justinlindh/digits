@@ -143,7 +143,7 @@ func run(ctx context.Context) error {
 	// relay (signaling_errors_total). Live-state gauges sample the hub and
 	// tracker at scrape time so we never persist counts elsewhere.
 	mreg := metrics.New(version.Version, version.Commit)
-	mreg.RegisterDevicesGauge(func() float64 { return float64(len(hub.OnlineNumbers())) })
+	mreg.RegisterDevicesGauge(func() float64 { return float64(hub.LocalConnectionCount()) })
 	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
 
 	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
