@@ -2,6 +2,7 @@ package wifi
 
 import (
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -44,12 +45,18 @@ func Verify(ssid, backupPath string) VerifyResult {
 }
 
 func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) VerifyResult {
-	// Stop AP services to release wlan0.
-	_, _ = cmd.run("systemctl", "stop", "digits-dnsmasq-ap")
-	_, _ = cmd.run("systemctl", "stop", "digits-ap")
+	slog.Info("wifi verify: stopping AP services")
+	if out, err := cmd.run("systemctl", "stop", "digits-dnsmasq-ap"); err != nil {
+		slog.Warn("wifi verify: stop digits-dnsmasq-ap failed", "error", err, "output", out)
+	}
+	if out, err := cmd.run("systemctl", "stop", "digits-ap"); err != nil {
+		slog.Warn("wifi verify: stop digits-ap failed", "error", err, "output", out)
+	}
 
-	// Start NetworkManager so it picks up the backup config.
-	_, _ = cmd.run("systemctl", "start", "NetworkManager")
+	slog.Info("wifi verify: starting NetworkManager")
+	if out, err := cmd.run("systemctl", "start", "NetworkManager"); err != nil {
+		slog.Warn("wifi verify: start NetworkManager failed", "error", err, "output", out)
+	}
 
 	var connected bool
 	for i := 0; i < cfg.maxAttempts; i++ {
@@ -57,19 +64,29 @@ func verifyWithConfig(ssid, backupPath string, cmd cmdRunner, cfg verifyConfig) 
 
 		out, err := cmd.run("nmcli", "general", "status")
 		if err != nil {
+			slog.Info("wifi verify: nmcli poll failed", "attempt", i+1, "error", err)
 			continue
 		}
 		lower := strings.ToLower(out)
+		slog.Info("wifi verify: nmcli poll", "attempt", i+1, "status", strings.TrimSpace(out))
 		if strings.Contains(lower, "connected") && strings.Contains(lower, "full") {
 			connected = true
 			break
 		}
 	}
 
-	// Always restore AP services.
-	_, _ = cmd.run("systemctl", "stop", "NetworkManager")
-	_, _ = cmd.run("systemctl", "start", "digits-ap")
-	_, _ = cmd.run("systemctl", "start", "digits-dnsmasq-ap")
+	slog.Info("wifi verify: restoring AP services", "connected", connected)
+	if out, err := cmd.run("systemctl", "stop", "NetworkManager"); err != nil {
+		slog.Warn("wifi verify: stop NetworkManager failed", "error", err, "output", out)
+	}
+	if out, err := cmd.run("systemctl", "start", "digits-ap"); err != nil {
+		slog.Warn("wifi verify: start digits-ap failed", "error", err, "output", out)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if out, err := cmd.run("systemctl", "start", "digits-dnsmasq-ap"); err != nil {
+		slog.Warn("wifi verify: start digits-dnsmasq-ap failed", "error", err, "output", out)
+	}
+	slog.Info("wifi verify: AP services restored")
 
 	if connected {
 		return VerifyResult{Connected: true}

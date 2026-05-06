@@ -2,7 +2,7 @@
 Description=Digits Wi-Fi Setup Captive Portal
 Documentation=https://github.com/digits/digits
 After=digits-dnsmasq-ap.service
-Requires=digits-dnsmasq-ap.service
+Wants=digits-dnsmasq-ap.service
 
 [Service]
 Type=simple

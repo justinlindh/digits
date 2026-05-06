@@ -24,9 +24,7 @@ func setupVoiceLoop(serial *subsystem.SerialModule, audioMod *subsystem.AudioMod
 
 	cfg := voicePromptConfig{
 		Clip:           "wifi_setup_instructions",
-		PickupDelay:    500 * time.Millisecond,
 		ReplayInterval: 15 * time.Second,
-		OnKey:          nil, // keys ignored in setup mode
 	}
 	voicePromptLoop(events, mixer, cfg)
 }
