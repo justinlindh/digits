@@ -100,7 +100,7 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, hou
 		SELECT id, hardware_id FROM devices
 		WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
 	`, code).Scan(&deviceID, &hardwareID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", ErrInvalidCode
 	}
 	if err != nil {
@@ -150,7 +150,7 @@ func (s *Store) IsPaired(ctx context.Context, hardwareID string) (bool, error) {
 	err := s.db.QueryRowContext(ctx, `
 		SELECT paired_at FROM devices WHERE hardware_id = $1
 	`, hardwareID).Scan(&pairedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {

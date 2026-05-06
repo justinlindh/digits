@@ -95,7 +95,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
 		&link.RevokedAt, &link.RevokedBy,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("invite code not found or already used")
 	}
 	if err != nil {
@@ -187,7 +187,7 @@ func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID stri
 		WHERE id = $3 AND status != 'revoked'
 		RETURNING id
 	`, time.Now(), revokedByUserID, linkID).Scan(&id)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return errors.New("link not found or already revoked")
 	}
 	if err != nil {
@@ -207,7 +207,7 @@ func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, err
 		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
 		&link.RevokedAt, &link.RevokedBy,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("link not found")
 	}
 	if err != nil {
