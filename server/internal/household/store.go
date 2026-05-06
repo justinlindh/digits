@@ -3,6 +3,7 @@ package household
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -59,7 +60,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
 		`SELECT id, name, call_history_enabled, do_not_disturb, timezone, created_at FROM households WHERE id = $1`,
 		id,
 	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.DoNotDisturb, &h.Timezone, &h.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("household not found")
 	}
 	if err != nil {
@@ -101,7 +102,7 @@ func (s *Store) GetRole(ctx context.Context, userID, householdID string) (string
 		`SELECT role FROM household_members WHERE user_id = $1 AND household_id = $2`,
 		userID, householdID,
 	).Scan(&role)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("user is not a member of this household")
 	}
 	if err != nil {

@@ -120,7 +120,7 @@ func (s *Store) GetByID(ctx context.Context, id int64) (*Line, error) {
 		 FROM lines WHERE id = $1`,
 		id,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
 		 FROM lines WHERE number = $1`,
 		number,
 	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (S
 		 WHERE l.number = $1`,
 		number,
 	).Scan(&settingsRaw, &householdDND)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return Settings{}, false, ErrNotFound
 	}
 	if err != nil {
@@ -329,7 +329,7 @@ func (s *Store) GetHouseholdIDByNumber(ctx context.Context, number string) (stri
 	err := s.db.QueryRowContext(ctx,
 		`SELECT household_id FROM lines WHERE number = $1`, number,
 	).Scan(&householdID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
 	if err != nil {
