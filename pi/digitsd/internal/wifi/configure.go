@@ -1,7 +1,6 @@
 package wifi
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 )
 
 // ErrInvalidRequest is returned by SaveToBackup for user-facing validation
@@ -72,40 +70,6 @@ func (systemMounter) RemountRO() error {
 	out, err := exec.Command("mount", "-o", "remount,ro", "/").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("remount ro: %w: %s", err, out)
-	}
-	return nil
-}
-
-// APController abstracts tearing down the captive-portal AP.
-type APController interface {
-	Down() error
-}
-
-const apCheckBinary = "/usr/local/bin/digits-ap-check"
-
-// SystemAPController calls `digits-ap-check down` as a detached transient
-// systemd unit via systemd-run --no-block. We cannot invoke digits-ap-check
-// directly as a child process because its do_ap_down routine stops
-// digits-setup.service, which, under systemd's default
-// KillMode=control-group, terminates every process in the service's
-// cgroup including a child digits-ap-check. By spawning digits-ap-check in
-// its own transient cgroup, the teardown script survives the death of its
-// caller and runs to completion.
-type SystemAPController struct{}
-
-func (SystemAPController) Down() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(
-		ctx,
-		"systemd-run",
-		"--no-block",
-		"--collect",
-		"--unit=digits-ap-teardown",
-		apCheckBinary, "down",
-	).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("digits-ap-check down (systemd-run): %w: %s", err, out)
 	}
 	return nil
 }
@@ -223,18 +187,6 @@ func commitWithDeps(backupPath string, fs fileSystem, m mounter) error {
 	}
 
 	return nil
-}
-
-// Configure writes Wi-Fi config using the two-step save-then-commit flow.
-// It exists for callers that do not need verification between steps. The
-// handler will switch to SaveToBackup + Verify + CommitToOperational once
-// the onboarding flow wires up the verify step.
-func Configure(req ConfigRequest) error {
-	backupPath, err := SaveToBackup(req)
-	if err != nil {
-		return err
-	}
-	return CommitToOperational(backupPath)
 }
 
 // writeAtomic writes data to path via a sibling temp file and atomic rename.

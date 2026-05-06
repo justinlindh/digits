@@ -58,9 +58,10 @@ func (w *WiFiAPModule) Init(ctx context.Context) error {
 }
 
 func (w *WiFiAPModule) initDirect() error {
+	env := os.Environ()
 	run := func(args ...string) error {
 		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH=/lib")
+		cmd.Env = append(env[:len(env):len(env)], "LD_LIBRARY_PATH=/lib")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
@@ -88,7 +89,7 @@ func (w *WiFiAPModule) initDirect() error {
 	}
 	time.Sleep(500 * time.Millisecond)
 	cmd := exec.Command(w.cfg.DnsmasqPath, "-C", dnsmasqConf)
-	cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH=/lib")
+	cmd.Env = append(env[:len(env):len(env)], "LD_LIBRARY_PATH=/lib")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		slog.Warn("subsystem wifi-ap: dnsmasq failed", "error", err, "output", string(out))
 		return fmt.Errorf("dnsmasq: %w", err)

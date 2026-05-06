@@ -65,7 +65,6 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 		slog.Warn("wifi verify: copy to NM dir failed", "error", err, "output", out)
 	}
 	cmd.run("chmod", "600", opPath)
-	cmd.run("mount", "-o", "remount,ro", "/")
 
 	slog.Info("wifi verify: starting NetworkManager")
 	if out, err := cmd.run("systemctl", "start", "NetworkManager"); err != nil {

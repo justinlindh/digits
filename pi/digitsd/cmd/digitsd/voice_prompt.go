@@ -2,6 +2,7 @@ package main
 
 import (
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
@@ -48,7 +49,7 @@ func voicePromptSession(events <-chan string, mixer *audio.Mixer, cfg voicePromp
 
 		// Wait for clip to finish, checking for hang-up or key press.
 		for mixer.OncePlaying() {
-			key, hungUp := drainEvents(events)
+			key, hungUp := tryReadEvent(events)
 			if hungUp {
 				mixer.StopAll()
 				return false
@@ -76,7 +77,7 @@ func voicePromptSession(events <-chan string, mixer *audio.Mixer, cfg voicePromp
 				if ev == "HOOK:ON" {
 					return false
 				}
-				if len(ev) > 4 && ev[:4] == "KEY:" {
+				if strings.HasPrefix(ev, "KEY:") {
 					key := ev[4:]
 					mixer.StopAll()
 					if tone := dtmfToneName(key); tone != "" {
@@ -95,15 +96,15 @@ func voicePromptSession(events <-chan string, mixer *audio.Mixer, cfg voicePromp
 	}
 }
 
-// drainEvents does a non-blocking read of the events channel.
+// tryReadEvent does a non-blocking read of the events channel.
 // Returns the first KEY or HOOK:ON found, or empty strings if nothing pending.
-func drainEvents(events <-chan string) (key string, hungUp bool) {
+func tryReadEvent(events <-chan string) (key string, hungUp bool) {
 	select {
 	case ev := <-events:
 		if ev == "HOOK:ON" {
 			return "", true
 		}
-		if len(ev) > 4 && ev[:4] == "KEY:" {
+		if strings.HasPrefix(ev, "KEY:") {
 			return ev[4:], false
 		}
 		return "", false
@@ -124,7 +125,7 @@ func waitForKeyOrHangup(events <-chan string, timeout time.Duration) (string, bo
 			if ev == "HOOK:ON" {
 				return "", true
 			}
-			if len(ev) > 4 && ev[:4] == "KEY:" {
+			if strings.HasPrefix(ev, "KEY:") {
 				return ev[4:], false
 			}
 		case <-timer.C:

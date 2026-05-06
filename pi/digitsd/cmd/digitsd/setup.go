@@ -30,8 +30,7 @@ func setupVoiceLoop(serial *subsystem.SerialModule, audioMod *subsystem.AudioMod
 	voicePromptLoop(events, mixer, cfg)
 }
 
-func runSetupMode(mgr *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audio *subsystem.AudioModule, wifiAP *subsystem.WiFiAPModule) {
-	_ = mgr
+func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audio *subsystem.AudioModule, wifiAP *subsystem.WiFiAPModule) {
 
 	// Clear boot counter so repeated setup boots don't trigger recovery.
 	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {

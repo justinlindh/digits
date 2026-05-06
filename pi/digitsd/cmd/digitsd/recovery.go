@@ -90,7 +90,9 @@ func (d *debugLog) add(typ, detail string) {
 	}
 	d.entries = append(d.entries, e)
 	if len(d.entries) > 500 {
-		d.entries = d.entries[len(d.entries)-500:]
+		trimmed := make([]debugEntry, 500)
+		copy(trimmed, d.entries[len(d.entries)-500:])
+		d.entries = trimmed
 	}
 	slog.Info("debug", "type", typ, "detail", detail)
 }
@@ -154,7 +156,7 @@ func (rs *recoveryState) snapshot() map[string]any {
 	}
 }
 
-func runRecoveryMode(_ *subsystem.Manager, web *subsystem.WebModule, serial *subsystem.SerialModule, audioMod *subsystem.AudioModule) {
+func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audioMod *subsystem.AudioModule) {
 	slog.Info("digitsd: entering recovery mode", "pid", os.Getpid())
 
 	defer func() {
@@ -347,12 +349,6 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	dbg.add("reset", "starting factory reset")
 	slog.Info("recovery: starting factory reset")
 	rs.setStatus("Starting factory reset...")
-	if mixer != nil {
-		mixer.PlayOnce("factory_reset_in_progress")
-		waitForOnceComplete(mixer, 10*time.Second)
-		mixer.PlayOnce("restoring_system")
-		waitForOnceComplete(mixer, 10*time.Second)
-	}
 
 	playOnce := func(name string) {
 		if mixer != nil {
@@ -360,6 +356,9 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 			waitForOnceComplete(mixer, 10*time.Second)
 		}
 	}
+
+	playOnce("factory_reset_in_progress")
+	playOnce("restoring_system")
 
 	rootfsImg := "/rootfs.img.zst"
 	if _, err := os.Stat(rootfsImg); err != nil {

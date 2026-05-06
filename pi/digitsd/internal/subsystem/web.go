@@ -3,6 +3,7 @@ package subsystem
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -48,7 +49,7 @@ func (w *WebModule) Init(ctx context.Context) error {
 	w.ln = ln
 
 	go func() {
-		if err := http.Serve(ln, w.mux); err != nil && !strings.Contains(err.Error(), "closed") {
+		if err := http.Serve(ln, w.mux); err != nil && !errors.Is(err, net.ErrClosed) {
 			slog.Error("subsystem web: serve failed", "error", err)
 		}
 	}()

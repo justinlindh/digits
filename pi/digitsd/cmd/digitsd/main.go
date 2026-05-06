@@ -1759,7 +1759,7 @@ func main() {
 			slog.Error("recovery init failed", "error", err)
 			syncAndHalt()
 		}
-		runRecoveryMode(mgr, web, serial, audioMod)
+		runRecoveryMode(web, serial, audioMod)
 		return
 	}
 
@@ -1776,7 +1776,7 @@ func main() {
 			slog.Error("setup init failed", "error", err)
 			os.Exit(1)
 		}
-		runSetupMode(mgr, web, serial, audioMod, wifiAP)
+		runSetupMode(web, serial, audioMod, wifiAP)
 		return
 	}
 
