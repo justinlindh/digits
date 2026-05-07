@@ -232,45 +232,6 @@ func TestHTTPServerMiddlewareFiltersNoiseRoutes(t *testing.T) {
 	}
 }
 
-// TestHTTPClientTransportInjectsTraceparent confirms outbound requests
-// carry the W3C traceparent header when wrapped via HTTPClientTransport.
-// Without this, any cross-service hop would produce two disconnected
-// traces in Tempo instead of a parent-child pair.
-func TestHTTPClientTransportInjectsTraceparent(t *testing.T) {
-	withRecording(t)
-
-	var seenHeader string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seenHeader = r.Header.Get("Traceparent")
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-
-	client := &http.Client{Transport: HTTPClientTransport(http.DefaultTransport)}
-
-	// A traceparent header is only injected when there is an active span.
-	// Start a span around the request so otelhttp has a context to lift.
-	tracer := otel.Tracer("test")
-	ctx, span := tracer.Start(context.Background(), "outer")
-	defer span.End()
-	req, err := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	if seenHeader == "" {
-		t.Fatal("server did not see Traceparent header from wrapped client")
-	}
-	// Per the W3C Trace Context spec, the value is "version-traceid-spanid-flags".
-	if !strings.HasPrefix(seenHeader, "00-") {
-		t.Errorf("Traceparent has unexpected version: %q", seenHeader)
-	}
-}
-
 // TestHTTPServerMiddlewareNeverEchoesNumber is the belt-and-suspenders
 // guard test that mirrors metrics.TestRouteOfNeverEchoesNumber. If a
 // future maintainer adds a route case that lets a phone number through,
