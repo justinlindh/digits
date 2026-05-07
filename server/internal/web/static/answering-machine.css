@@ -2211,24 +2211,20 @@ body.am .deck-kick-confirm .deck-confirm__go {
 .am-hh-option:hover { background: var(--bezel); }
 .am-hh-option.is-active { font-weight: 700; }
 
-/* What's New footer + dialog */
-.am-shell__foot {
-  padding: 12px 16px;
-  text-align: right;
-}
-.am-shell__whats-new {
+/* What's New footer link + dialog */
+.page__foot-sep { color: var(--am-muted); }
+.page__foot-link {
   background: none;
   border: none;
   padding: 0;
-  font-family: var(--am-font);
-  font-size: 11px;
+  font: inherit;
   color: var(--am-muted);
   cursor: pointer;
   text-decoration: underline;
   text-decoration-color: transparent;
   transition: text-decoration-color 0.15s;
 }
-.am-shell__whats-new:hover { text-decoration-color: var(--am-muted); }
+.page__foot-link:hover { text-decoration-color: var(--am-muted); }
 
 .changelog-dialog {
   border: 1px solid var(--am-rule);
