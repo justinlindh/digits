@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Digits Setup</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📞 Digits Setup</h1>
+      <p class="subtitle">Let's get your phone connected</p>
+    </header>
+
+    <div id="step-wifi" class="step active">
+      <div class="panel">
+        <h2>Wi-Fi Network</h2>
+        <div class="field">
+          <label for="ssid">Network</label>
+          <div class="select-row">
+            <select id="ssid">
+              <option value="">Scanning...</option>
+            </select>
+            <button id="btn-refresh" class="btn-icon" title="Rescan">↻</button>
+          </div>
+          <input type="text" id="ssid-manual" class="hidden" placeholder="Enter network name (SSID)" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Wi-Fi password" autocomplete="off">
+        </div>
+      </div>
+
+      <button id="btn-submit" class="btn-primary">Connect</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div id="step-done" class="step">
+      <div class="panel done-panel">
+        <h2>All Set!</h2>
+        <p>Your Digits phone is connecting to Wi-Fi and will reboot in a few seconds.</p>
+      </div>
+    </div>
+
+    <div id="step-fail" class="step">
+      <div class="panel fail-panel">
+        <h2>Connection Failed</h2>
+        <p id="fail-msg"></p>
+        <button id="btn-retry" class="btn-primary">Try Again</button>
+      </div>
+    </div>
+    <div id="log-section">
+      <div id="log-header">
+        <span class="log-title">System Log</span>
+        <button id="log-toggle" class="btn-small" onclick="toggleLog()">Show</button>
+      </div>
+      <div id="log" class="collapsed"></div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -24,6 +24,7 @@ add_executable(digits
     src/hook.c
     src/keypad.c
     src/led.c
+    src/phase.c
     src/tone.c
     src/ringer.c
     src/uart_proto.c
@@ -34,6 +35,8 @@ target_link_libraries(digits
     pico_stdlib
     hardware_gpio
     hardware_pwm
+    hardware_flash
+    hardware_sync
     hardware_uart
     hardware_timer
     hardware_watchdog

@@ -31,6 +31,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
@@ -66,9 +67,10 @@ var (
 	numberFlag  = flag.String("number", "", "this phone's number, e.g. 3140001 (overrides config file)")
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
-	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
+	toneDir     = flag.String("tones", "/data/digits/tones", "directory containing WAV tone files")
 	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 	showVersion = flag.Bool("version", false, "print version and exit")
+	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, setup, gpclk0 (diagnostic)")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -1674,12 +1676,108 @@ func playPairingAnnouncement(mixer *audio.Mixer, code string, receivedAt time.Ti
 	mixer.PlayOnce(unitClip)
 }
 
+func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         "/tones",
+		MixerStateFile:  "/mixer.state",
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: subsystem.NewMountsModule(), Required: true, Enabled: true},
+		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true, Enabled: true},
+		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
+		{Module: serial, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
+		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: false, Enabled: true},
+		{Module: web, Required: true, Enabled: true},
+		{Module: subsystem.NewReaperModule(), Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio
+}
+
+func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule, *subsystem.WiFiAPModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         *toneDir,
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module.
+	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
+		SSID:       "Digits-Setup",
+		UseSystemd: true,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: gpclk0, Required: true, Enabled: true},
+		{Module: serial, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: wifiAP, Required: false, Enabled: false},
+		{Module: web, Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio, wifiAP
+}
+
 func main() {
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version.String())
 		os.Exit(0)
+	}
+
+	if *modeFlag == "gpclk0" {
+		if err := subsystem.EnableGPCLK0(); err != nil {
+			log.Fatalf("gpclk0: %v", err)
+		}
+		return
+	}
+
+	if *modeFlag == "recovery" || os.Getpid() == 1 {
+		// Crash log to /data for SD card post-mortem. Must happen before
+		// mounts module since /data might already be mounted (normal boot
+		// triggering recovery) or will be mounted by the mounts module.
+		if os.Getpid() == 1 {
+			_ = os.MkdirAll("/tmp", 0755)
+			_ = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M")
+			_ = os.MkdirAll("/data", 0755)
+			_ = syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, "")
+		}
+		setupCrashLog("/data/digits/crash.log")
+		setupModeLog("/tmp/recovery.log")
+
+		regs, web, serial, audioMod := recoveryRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/recovery.log")
+		web.SetManager(mgr)
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("recovery init failed", "error", err)
+			syncAndHalt()
+		}
+		runRecoveryMode(web, serial, audioMod)
+		return
+	}
+
+	if *modeFlag == "setup" {
+		// Crash log to /data survives reboots for post-mortem.
+		setupCrashLog("/data/digits/crash.log")
+
+		regs, web, serial, audioMod, wifiAP := setupRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/setup.log")
+		web.SetManager(mgr)
+		setupModeLog("/tmp/setup.log")
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("setup init failed", "error", err)
+			os.Exit(1)
+		}
+		runSetupMode(web, serial, audioMod, wifiAP)
+		return
 	}
 
 	// --- Config file loading ---
@@ -2005,6 +2103,9 @@ func main() {
 	// this is a safe no-op on clean boots.
 	if postOk {
 		resetPicoHardware(sp)
+		if cfg.DeviceToken == "" {
+			sp.StateSet("UNPAIRED")
+		}
 	}
 
 	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
@@ -2940,6 +3041,7 @@ func main() {
 					}
 					cb.paired.Store(true)
 					cb.pairingCode = ""
+					sp.StateSet("PAIRED")
 					mixer.StopAll()
 					mixer.PlayOnce("tone_dial")
 					// Restart to reconnect with the assigned phone number

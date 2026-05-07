@@ -224,6 +224,32 @@ fi
 #   3. Auto-detect: download from the latest fw/v* release on GitHub.
 #   4. Die if none of the above succeed.
 
+# Stamp pi_version / pi_commit so devices report a real version instead
+# of "dev". Tags were refreshed host-side by make fetch-tags before this
+# container ran; if no pi/v* tag exists, fall back to "dev".
+DIGITSD_VERSION=$(git -C /digits describe --tags --dirty --match 'pi/v*' 2>/dev/null | sed 's|^pi/v||')
+DIGITSD_VERSION=${DIGITSD_VERSION:-dev}
+DIGITSD_COMMIT=$(git -C /digits rev-parse --short HEAD 2>/dev/null || echo unknown)
+info "Stamping digitsd: version=$DIGITSD_VERSION commit=$DIGITSD_COMMIT"
+GOOS=linux GOARCH=arm64 go build \
+    -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$DIGITSD_VERSION \
+              -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$DIGITSD_COMMIT" \
+    -o /digits/tools/build/digitsd \
+    ./cmd/digitsd/
+
+# Recovery uses the same digitsd binary (PID 1 auto-detection triggers recovery mode).
+# No separate build needed; build-image.sh copies digitsd to the recovery partition.
+
+# Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
+info "Cross-compiling digits-panic-check for aarch64..."
+cd /digits/pi/digits-panic-check
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /digits/tools/build/digits-panic-check .
+
+info "Binaries ready in tools/build/"
+
+# An image without firmware is a regression we don't ship: prefer the
+# host-staged ELF (make stage-firmware), fall back to GitHub release,
+# die if neither is available.
 FW_ELF=/digits/tools/build/firmware.elf
 FW_VER_FILE=/digits/tools/build/firmware.elf.version
 if [[ -f "$FW_ELF" ]]; then
@@ -278,7 +304,6 @@ if [[ -n "${HOST_UID:-}" && -n "${HOST_GID:-}" ]]; then
     info "Restoring host ownership of build artifacts (${HOST_UID}:${HOST_GID})..."
     chown -R "${HOST_UID}:${HOST_GID}" \
         /digits/tools/build \
-        /digits/pi/digits-recovery/bin \
         2>/dev/null || true
     chown "${HOST_UID}:${HOST_GID}" /digits/digits-pi-*.img.gz 2>/dev/null || true
 fi

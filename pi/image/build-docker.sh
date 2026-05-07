@@ -68,8 +68,8 @@ docker build -t digits-image-builder "$SCRIPT_DIR"
 
 # Set up volume mounts. Pass the host UID/GID so entrypoint.sh can chown
 # the artifacts it writes back to the bind-mounted repo (tools/build/,
-# pi/digits-recovery/bin/, the output .img.gz). Without this, subsequent
-# host-side builds hit Permission denied when overwriting them.
+# the output .img.gz). Without this, subsequent host-side builds hit
+# Permission denied when overwriting them.
 DOCKER_ARGS=(
     --rm --privileged
     -v "$REPO_DIR":/digits

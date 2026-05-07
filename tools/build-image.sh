@@ -392,7 +392,7 @@ INPUT_IMG="${1:-}"
 # Verify pre-built binaries exist
 [[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
 [[ -f "${BUILD_DIR}/digits-panic-check" ]] || die "Missing ${BUILD_DIR}/digits-panic-check -- run cross-compilation first"
-[[ -f "${REPO_DIR}/pi/digits-recovery/bin/digits-recovery" ]] || die "Missing pi/digits-recovery/bin/digits-recovery -- run pi/digits-recovery build first"
+# digitsd is also the recovery binary (PID 1 auto-detection triggers recovery mode)
 
 # Verify overlay directory exists
 [[ -d "$OVERLAY_DIR" ]] || die "Overlay directory not found: $OVERLAY_DIR"
@@ -626,9 +626,7 @@ rsync -a --no-owner --no-group "$OVERLAY_DIR/" "$ROOTFS_MNT/"
 
 # Layer the digitsd embed tree on top: same content as the overlay for shared
 # files (embed/rootfs/ is generated from rootfs-overlay/ by `make embed`,
-# minus a few build-time-only paths) plus digits-setup, which is cross-
-# compiled into embed only and would otherwise reach the rootfs only via
-# digitsd's runtime asset extractor on first boot.
+# minus a few build-time-only paths).
 [[ -d "${EMBED_DIR}/rootfs" ]] || die "Embed dir not populated: ${EMBED_DIR}/rootfs (run 'make -C pi/digitsd embed')"
 rsync -a --no-owner --no-group "${EMBED_DIR}/rootfs/" "$ROOTFS_MNT/"
 
@@ -792,20 +790,37 @@ fi
 info "  Creating data skeleton archive..."
 tar cf - -C "$DATA_MNT" . | zstd -T0 -o "${RECOVERY_MNT}/data-skeleton.tar.zst"
 
-# Copy recovery binary
+# Copy recovery binary (digitsd with PID 1 auto-detection)
 info "  Copying recovery binary..."
-RECOVERY_BIN="${REPO_DIR}/pi/digits-recovery/bin/digits-recovery"
-[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN (run pi/digits-recovery build first)"
+RECOVERY_BIN="${BUILD_DIR}/digitsd"
+[[ -f "$RECOVERY_BIN" ]] || die "Recovery binary not found: $RECOVERY_BIN"
 install -m 755 "$RECOVERY_BIN" "${RECOVERY_MNT}/digits-recovery"
 
 # Create mini-rootfs directory structure on recovery partition.
 # After switch_root, this partition IS the root filesystem, so it needs
 # mount points for virtual filesystems and a valid /sbin/init.
 info "  Creating recovery partition rootfs structure..."
-mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin}
+mkdir -p "${RECOVERY_MNT}"/{dev,proc,sys,tmp,run,data,sbin,lib,bin,etc}
 
 # Create /sbin/init symlink -- this is what switch_root execs as PID 1
 ln -sf /digits-recovery "${RECOVERY_MNT}/sbin/init"
+
+# Copy ALSA config tree so libasound can parse plug/dmix/etc PCM types,
+# plus asound.conf for the digits_playback/digits_capture virtual PCMs.
+if [[ -d "${ROOTFS_MNT}/usr/share/alsa" ]]; then
+    mkdir -p "${RECOVERY_MNT}/usr/share"
+    cp -a "${ROOTFS_MNT}/usr/share/alsa" "${RECOVERY_MNT}/usr/share/alsa"
+    info "  Copied /usr/share/alsa/ to recovery partition"
+fi
+if [[ -f "${ROOTFS_MNT}/etc/asound.conf" ]]; then
+    cp "${ROOTFS_MNT}/etc/asound.conf" "${RECOVERY_MNT}/etc/asound.conf"
+    info "  Copied asound.conf to recovery partition"
+fi
+
+# Copy tones to recovery partition so recovery is fully self-contained.
+info "  Copying tones to recovery partition..."
+mkdir -p "${RECOVERY_MNT}/tones"
+rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${RECOVERY_MNT}/tones/"
 
 # Install initramfs hooks
 info "  Installing initramfs hooks..."
@@ -856,6 +871,9 @@ for tool_bin in "${RECOVERY_MNT}/bin/"*; do
             grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
     fi
 done
+# Also scan the recovery binary (digitsd), which lives outside bin/
+chroot "$ROOTFS_MNT" ldd /usr/local/bin/digitsd 2>/dev/null | \
+    grep "=>" | awk '{print $3}' >> "$NEEDED_LIBS" || true
 
 # Copy unique libraries
 sort -u "$NEEDED_LIBS" | while read -r lib; do
@@ -1142,11 +1160,7 @@ hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
 
-# V2 only: enable GPCLK0 on GPIO4 at 12.288 MHz before audio services start.
-# V1 carrier uses the Codec Zero HAT's onboard crystal, so no GPCLK0 needed.
-if [[ "$PCB_MODE" == true ]]; then
-    hostside_enable_service "$ROOTFS_MNT" "digits-enable-gpclk0.service"
-fi
+# GPCLK0 is enabled by digitsd on startup (all modes). No separate service.
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 
