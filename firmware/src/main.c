@@ -8,6 +8,7 @@
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "phase.h"
 #include "phone_fsm.h"
 #include "ringer.h"
 #include "tone.h"
@@ -79,6 +80,24 @@ int main(void) {
     hook_init();
     keypad_init();
     led_init();
+
+    switch (phase_read()) {
+    case PHASE_PAIRED:
+        led_set_mode(LED_MODE_BREATHING);
+        break;
+    case PHASE_UNPAIRED:
+        led_set_mode(LED_MODE_SLOW_PULSE);
+        break;
+    case PHASE_SETUP:
+        led_set_mode(LED_MODE_DOUBLE_PULSE);
+        break;
+    case PHASE_RECOVERY:
+        led_set_mode(LED_MODE_FAST_BLINK);
+        break;
+    default:
+        break;
+    }
+
     tone_init();
     ringer_init();
     uart_proto_init();
