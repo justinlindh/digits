@@ -109,6 +109,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 			http.Error(w, "verification already in progress", http.StatusConflict)
 			return
 		}
+		state.verifying = true
 		state.mu.Unlock()
 
 		backupPath, err := wifi.SaveToBackup(req)
@@ -138,10 +139,6 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 					}
 				}
 			}()
-
-			state.mu.Lock()
-			state.verifying = true
-			state.mu.Unlock()
 
 			slog.Info("setup: verifying WiFi credentials", "ssid", req.SSID)
 			result := wifi.Verify(req.SSID, backupPath, req.Hidden)

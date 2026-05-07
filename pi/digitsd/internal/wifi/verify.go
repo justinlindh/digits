@@ -137,10 +137,7 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	// Delete credentials on failure so NM doesn't retry them.
 	if !connected {
 		_, _ = cmd.run("rm", "-f", backupPath)
-		// Also remove from NM's operational dir.
-		_, _ = cmd.run("mount", "-o", "remount,rw", "/")
 		_, _ = cmd.run("rm", "-f", opPath)
-		_, _ = cmd.run("mount", "-o", "remount,ro", "/")
 	}
 
 	if connected {
