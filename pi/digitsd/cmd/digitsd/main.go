@@ -1886,16 +1886,12 @@ func main() {
 	}
 
 	// Render the active mixer state from the per-codec embedded file. Picked
-	// by detectCodec() walking /proc/asound, so this naturally tracks V1↔V2
-	// hardware swaps. The on-disk file is the canonical apply target for
-	// digits-mixer.service, which runs alsactl restore at boot before
-	// digitsd starts. On the first boot after an OTA that changed the
-	// embedded state, the service will have applied the previous-version
-	// file; we update the file here so the next reboot picks up the new
-	// canonical. Live re-apply is intentionally skipped: it would need a
-	// sudoers rule for `alsactl restore` that does not currently ship to
-	// the digits user, and the existing OTA channel cannot update sudoers
-	// (etc/sudoers.d/digits-updater is in the Makefile's OVERLAY_EXCLUDE).
+	// by detectCodec() walking /proc/asound, so this naturally tracks V1/V2
+	// hardware swaps. The on-disk file is applied by the ExecStartPre
+	// alsactl restore in digitsd.service. On the first boot after an OTA
+	// that changed the embedded state, the previous-version file was
+	// applied; we update the file here so the next reboot picks up the
+	// new canonical.
 	mixerEmbedSrc := fmt.Sprintf("mixer/v%s.state", audio.CodecPCBVariant())
 	mixerCard := audio.CodecCardName()
 	if data, err := fs.ReadFile(assets.SubFS(), mixerEmbedSrc); err != nil {
@@ -1905,7 +1901,7 @@ func main() {
 	} else if err := extractor.RootfsWriteFile(data, mixerStatePath, 0644); err != nil {
 		slog.Warn("mixer render: write failed", "dest", mixerStatePath, "err", err)
 	} else {
-		slog.Info("mixer render: wrote canonical state, applies on next reboot via digits-mixer.service", "card", mixerCard, "size", len(data))
+		slog.Info("mixer render: wrote canonical state, applies on next reboot", "card", mixerCard, "size", len(data))
 	}
 
 	// 1. Open serial port directly (log to both stdout and uart.log file)

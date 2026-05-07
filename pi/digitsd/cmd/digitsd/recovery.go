@@ -273,7 +273,7 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 		}
 		dbg.add("action", "factory-reset via web")
 		w.WriteHeader(http.StatusOK)
-		go func() { doRecoveryFactoryReset(mixer, state, dbg) }()
+		go func() { doRecoveryFactoryReset(sp, mixer, state, dbg) }()
 	})
 }
 
@@ -287,7 +287,7 @@ func runRecoveryVoiceLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recov
 		Clip:           "recovery_menu",
 		ReplayInterval: 0, // no pause between replays; timeout is inside waitForKeyOrHangup
 		OnKey: func(key string) bool {
-			return recoveryHandleKey(key, events, mixer, state, dbg)
+			return recoveryHandleKey(sp, key, events, mixer, state, dbg)
 		},
 	}
 	voicePromptLoop(events, mixer, cfg)
@@ -295,7 +295,7 @@ func runRecoveryVoiceLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recov
 
 // recoveryHandleKey processes a key press during the recovery voice menu.
 // Returns true to end the session (e.g. after triggering an action).
-func recoveryHandleKey(key string, events <-chan string, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) bool {
+func recoveryHandleKey(sp *phone.SerialPort, key string, events <-chan string, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) bool {
 	switch key {
 	case "1":
 		dbg.add("action", "key 1: restarting")
@@ -333,7 +333,7 @@ func recoveryHandleKey(key string, events <-chan string, mixer *audio.Mixer, sta
 			return true
 		}
 		slog.Info("recovery: factory reset triggered via keypad")
-		doRecoveryFactoryReset(mixer, state, dbg)
+		doRecoveryFactoryReset(sp, mixer, state, dbg)
 		return true
 
 	default:
@@ -343,7 +343,7 @@ func recoveryHandleKey(key string, events <-chan string, mixer *audio.Mixer, sta
 }
 
 // doRecoveryFactoryReset performs the full factory reset sequence.
-func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog) {
+func doRecoveryFactoryReset(sp *phone.SerialPort, mixer *audio.Mixer, rs *recoveryState, dbg *debugLog) {
 	dbg.add("reset", "starting factory reset")
 	slog.Info("recovery: starting factory reset")
 	rs.setStatus("Starting factory reset...")
@@ -426,6 +426,9 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 
 	rs.setStatus("Factory reset complete. Rebooting...")
 	slog.Info("recovery: factory reset complete")
+	if sp != nil {
+		sp.StateSet("SETUP")
+	}
 	playOnce("reset_complete")
 
 	doReboot()

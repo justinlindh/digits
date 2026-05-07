@@ -57,7 +57,7 @@ CHROOT_PACKAGES=(
 # Packages to purge from the base Pi OS image (from pi-os-audit.md)
 # These are removed inside chroot via apt-get purge
 PURGE_PACKAGES=(
-    # Development tools (~420 MB)
+    # Development tools
     gcc-12 g++-12 cpp-12 gcc cpp g++ build-essential
     binutils binutils-aarch64-linux-gnu binutils-common
     libgcc-12-dev libstdc++-12-dev libc6-dev libc6-dbg linux-libc-dev
@@ -65,25 +65,38 @@ PURGE_PACKAGES=(
     git git-man gdb strace
     man-db manpages manpages-dev groff-base
     libasan8 libtsan2 libubsan1 liblsan0 libitm1 libhwasan0 libgprofng0
+    dpkg-dev libdpkg-perl fakeroot libfakeroot patch ed
+    libalgorithm-diff-perl libalgorithm-diff-xs-perl libalgorithm-merge-perl
+    libc-devtools libc-dev-bin libc-l10n libcrypt-dev libnsl-dev libnsl2
+    libbinutils libctf-nobfd0 libctf0 libcc1-0 libisl23 libmpc3 libmpfr6
+    libfile-fcntllock-perl
+    libbabeltrace1 libsource-highlight-common libsource-highlight4v5
+    libdebuginfod-common libdebuginfod1 libnuma1
 
-    # Pi 5 kernel + all kernel headers (~153 MB)
-    linux-image-6.12.47+rpt-rpi-2712 linux-image-rpi-2712
-    linux-headers-6.12.47+rpt-common-rpi
-    linux-headers-6.12.47+rpt-rpi-2712 linux-headers-rpi-2712
-    linux-headers-6.12.47+rpt-rpi-v8 linux-headers-rpi-v8
-    linux-kbuild-6.12.47+rpt raspberrypi-kernel-headers
+    # Pi 5 kernel + all kernel headers (both known base image versions;
+    # apt-get purge is a no-op for packages not present)
+    linux-image-6.6.51+rpt-rpi-2712 linux-image-6.12.47+rpt-rpi-2712
+    linux-image-rpi-2712
+    linux-headers-6.6.51+rpt-common-rpi linux-headers-6.12.47+rpt-common-rpi
+    linux-headers-6.6.51+rpt-rpi-2712 linux-headers-6.12.47+rpt-rpi-2712
+    linux-headers-rpi-2712
+    linux-headers-6.6.51+rpt-rpi-v8 linux-headers-6.12.47+rpt-rpi-v8
+    linux-headers-rpi-v8
+    linux-kbuild-6.6.51+rpt linux-kbuild-6.12.47+rpt
+    raspberrypi-kernel-headers
 
-    # Non-brcm wireless firmware (~127 MB)
+    # Non-brcm wireless firmware (brcm80211 stays: Pi Zero 2W WiFi)
     firmware-atheros firmware-mediatek firmware-libertas firmware-realtek
+    firmware-misc-nonfree firmware-linux-free
 
-    # Bluetooth stack (~6 MB) — disabled via dtoverlay=disable-bt
-    bluez bluez-firmware
+    # Bluetooth (libbluetooth3 stays: NM hard dep)
+    bluez bluez-firmware pi-bluetooth
 
-    # Cellular modem stack (~12 MB) — no modem hardware
+    # Cellular modem stack
     modemmanager libmbim-glib4 libmbim-proxy libmbim-utils
     libqmi-glib5 libqmi-proxy libqmi-utils libqrtr-glib0
 
-    # Mesa/GPU/LLVM/X11 (~220 MB) — headless device
+    # Mesa/GPU/LLVM/X11
     libllvm15 mesa-vulkan-drivers mesa-libgallium mesa-va-drivers mesa-vdpau-drivers
     libgl1-mesa-dri libglapi-mesa libglx-mesa0 libvulkan1 libglvnd0
     libdrm-amdgpu1 libdrm-radeon1 libva2 libva-drm2 libva-x11-2
@@ -96,47 +109,111 @@ PURGE_PACKAGES=(
     librsvg2-2 librsvg2-common
     libgdk-pixbuf-2.0-0 libgdk-pixbuf2.0-bin libgdk-pixbuf2.0-common
 
-    # Camera/V4L2 stack (~13 MB) — no camera
-    libcamera0.5 libcamera-ipa libpisp1 libpisp-common
+    # Camera/V4L2/DRM
+    libcamera0.3 libcamera0.5 libcamera-ipa libpisp1 libpisp-common
     rpicam-apps-core rpicam-apps-lite librpicam-app1
     v4l-utils libv4l-0 libv4lconvert0 libv4l2rds0
+    libdrm2 libdrm-common kms++-utils libkms++0
+    libtiff6 libexif12 libjpeg62-turbo libjbig0 libdeflate0 liblerc4 libpng16-16
 
-    # Video codecs/multimedia (~58 MB) — no media playback
+    # Video codecs/multimedia
     mkvtoolnix libmatroska7 libebml5
     libavcodec59 libavutil57 libswresample4
     libvpx7 libaom3 libdav1d6 librav1e0 libsvtav1enc1
     libx264-164 libx265-199 libheif1 libjxl0.7 libopenjp2-7
     libzvbi0 libzvbi-common
+    libde265-0 libavif15 libgav1-1 libyuv0 libdvdread8
+    libflac12 libwebp7
+    libmp3lame0 libmpg123-0 libvorbis0a libvorbisenc2
 
-    # NFS/RPC (~3.4 MB)
+    # NFS/RPC/SMB
     nfs-common rpcbind rpcsvc-proto libnfsidmap1 libtirpc-dev libtalloc2
+    cifs-utils libwbclient0
 
-    # Storage management (~9 MB) — no removable drives
+    # Storage management
     udisks2 libudisks2-0 ntfs-3g libntfs-3g89
     libmtp9 libmtp-common libmtp-runtime
     usb-modeswitch usb-modeswitch-data
     libparted2 libparted-fs-resize0 parted
     dosfstools exfatprogs fuse3 libfuse3-3
+    libblockdev2 libblockdev-crypto2 libblockdev-fs2 libblockdev-loop2
+    libblockdev-part-err2 libblockdev-part2 libblockdev-swap2 libblockdev-utils2
+    libatasmart4 libgudev-1.0-0 libvolume-key1
+    dmsetup libdevmapper1.02.1
+    eject fdisk gdisk
 
-    # Locale/i18n bloat (~53 MB)
+    # Locale/i18n
     iso-codes locales gnupg-l10n libglib2.0-data
 
-    # Polkit/AppArmor/DKMS (~4 MB)
+    # Polkit/AppArmor/DKMS (NM depends on polkit; purge may be a no-op)
     polkitd polkitd-pkla policykit-1 pkexec
     libpolkit-agent-1-0 libpolkit-gobject-1-0
     apparmor libapparmor1 dkms
 
-    # Pi-specific tools not needed on production device (~67 MB)
+    # Python (nothing we ship depends on it)
+    python3 python3-minimal python3.11 python3.11-minimal
+    python3.11-venv python3-venv python-is-python3
+    libpython3-stdlib libpython3.11 libpython3.11-minimal libpython3.11-stdlib
+    python3-apt python-apt-common
+    python3-certifi python3-chardet python3-charset-normalizer
+    python3-colorzero python3-debconf python3-distro python3-distutils
+    python3-gpiozero python3-idna python3-lgpio python3-lib2to3
+    python3-libgpiod python3-pigpio python3-pip-whl
+    python3-pkg-resources python3-pycryptodome python3-requests
+    python3-rpi-lgpio python3-setuptools-whl python3-six
+    python3-smbus2 python3-spidev python3-toml python3-urllib3
+
+    # Perl (perl-base stays: hard dep of adduser)
+    perl perl-modules-5.36 libperl5.36
+    libtext-charwidth-perl libtext-iconv-perl libtext-wrapi18n-perl
+    liblocale-gettext-perl
+
+    # Lua (only needed by raspi-config)
+    lua5.1 luajit libluajit-5.1-2 libluajit-5.1-common
+
+    # GnuPG stack (apt only needs gpgv, not the full suite)
+    gnupg gnupg-utils gpg gpg-agent gpg-wks-client gpg-wks-server
+    gpgconf gpgsm dirmngr
+    libgpgme11 libassuan0 libksba8 libnpth0
+    pinentry-curses
+
+    # Pi-specific tools not needed
     rpi-eeprom raspi-firmware rpi-update
     rpi-keyboard-config rpi-keyboard-fw-update
     raspi-config raspi-gpio raspinfo userconf-pi read-edid flashrom
+    raspi-utils raspi-utils-core raspi-utils-dt raspi-utils-eeprom raspi-utils-otp
+    raspberrypi-net-mods raspberrypi-sys-mods
+    device-tree-compiler libfdt1
+    dconf-cli libdconf1 fbset
+    dphys-swapfile fake-hwclock pigpio-tools
 
-    # GPIO library (deprecated, not used by digitsd)
+    # GPIO library (deprecated)
     pigpio pigpiod libpigpio1 libpigpio-dev libpigpiod-if1 libpigpiod-if2-1 libpigpiod-if-dev
 
-    # Misc dev/debug tools
+    # Network services not needed
+    avahi-daemon libavahi-common-data libavahi-common3 libavahi-core7
+    libnss-mdns libdaemon0
+    isc-dhcp-client isc-dhcp-common
+
+    # Qt/ICU/misc libs orphaned after above purges
+    libqt5core5a libdouble-conversion3 libpcre2-16-0
+    libpugixml1v5 libfmt9
+    libicu72 libabsl20220623
+    libevent-core-2.1-7 libgd3 libunwind8
+    liblttng-ust1 liblttng-ust-ctl5 liblttng-ust-common1
+    libgomp1 libatomic1 libbpf1
+    libossp-uuid16 uuid libpcap0.8
+    libnss3 libnspr4
+    xml-core sgml-base
+
+    # Misc tools/services not needed
     triggerhappy htop ncdu iperf3 libiperf0 net-tools wget pastebinit
     cron cron-daemon-common ppp
+    apt-listchanges ssh-import-id
+    tasksel tasksel-data lsb-release distro-info-data
+    p7zip p7zip-full dos2unix ethtool dmidecode nftables
+    console-setup console-setup-linux keyboard-configuration
+    xauth xdg-user-dirs logrotate pciutils pci.ids
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -1153,11 +1230,27 @@ hostside_mask_service "$ROOTFS_MNT" "dpkg-db-backup.timer"
 hostside_mask_service "$ROOTFS_MNT" "logrotate.service"
 hostside_mask_service "$ROOTFS_MNT" "logrotate.timer"
 
+# Mask services that waste boot time on a headless phone with no removable
+# media, no modem, no keyboard, and no mDNS.
+hostside_mask_service "$ROOTFS_MNT" "ModemManager.service"
+hostside_mask_service "$ROOTFS_MNT" "avahi-daemon.service"
+hostside_mask_service "$ROOTFS_MNT" "avahi-daemon.socket"
+hostside_mask_service "$ROOTFS_MNT" "polkit.service"
+hostside_mask_service "$ROOTFS_MNT" "udisks2.service"
+hostside_mask_service "$ROOTFS_MNT" "console-setup.service"
+hostside_mask_service "$ROOTFS_MNT" "keyboard-setup.service"
+hostside_mask_service "$ROOTFS_MNT" "raspi-config.service"
+hostside_mask_service "$ROOTFS_MNT" "e2scrub_reap.service"
+hostside_mask_service "$ROOTFS_MNT" "triggerhappy.service"
+hostside_mask_service "$ROOTFS_MNT" "triggerhappy.socket"
+
+# Headless device: use multi-user.target, not graphical.target
+ln -sf /lib/systemd/system/multi-user.target "${ROOTFS_MNT}/etc/systemd/system/default.target"
+
 # Enable Digits services
 hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-panic-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
-hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
 
 # GPCLK0 is enabled by digitsd on startup (all modes). No separate service.
