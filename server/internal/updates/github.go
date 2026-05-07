@@ -254,7 +254,7 @@ func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
 }
 
 // parseTag parses a GitHub release tag into a component name and version.
-// Recognized prefixes: "fw/v" -> "firmware", "pi/v" -> "pi".
+// Recognized prefixes: "fw/v", "pi/v", "server/v".
 // Returns ("", "", false) for unrecognized tags.
 func parseTag(tag string) (component, version string, ok bool) {
 	parts := strings.SplitN(tag, "/v", 2)

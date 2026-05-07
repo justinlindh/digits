@@ -25,12 +25,12 @@
 {{define "changelog-content"}}
 <div class="changelog">
   <div class="changelog-tabs" role="tablist">
-    <button role="tab" class="changelog-tab changelog-tab--active" aria-selected="true" data-tab="software">Software</button>
-    <button role="tab" class="changelog-tab" aria-selected="false" data-tab="firmware">Firmware</button>
-    <button role="tab" class="changelog-tab" aria-selected="false" data-tab="server">Server</button>
+    <button role="tab" class="changelog-tab changelog-tab--active" aria-selected="true" aria-controls="panel-software" id="tab-software" data-tab="software">Software</button>
+    <button role="tab" class="changelog-tab" aria-selected="false" aria-controls="panel-firmware" id="tab-firmware" data-tab="firmware">Firmware</button>
+    <button role="tab" class="changelog-tab" aria-selected="false" aria-controls="panel-server" id="tab-server" data-tab="server">Server</button>
   </div>
 
-  <div class="changelog-panel changelog-panel--active" data-panel="software">
+  <div class="changelog-panel changelog-panel--active" id="panel-software" role="tabpanel" aria-labelledby="tab-software" data-panel="software">
     {{if .Software}}
     {{range .Software}}
     <article class="changelog__release">
@@ -47,7 +47,7 @@
     {{end}}
   </div>
 
-  <div class="changelog-panel" data-panel="firmware">
+  <div class="changelog-panel" id="panel-firmware" role="tabpanel" aria-labelledby="tab-firmware" data-panel="firmware">
     {{if .Firmware}}
     {{range .Firmware}}
     <article class="changelog__release">
@@ -64,7 +64,7 @@
     {{end}}
   </div>
 
-  <div class="changelog-panel" data-panel="server">
+  <div class="changelog-panel" id="panel-server" role="tabpanel" aria-labelledby="tab-server" data-panel="server">
     {{if .Server}}
     {{range .Server}}
     <article class="changelog__release">
