@@ -14,8 +14,8 @@
 #     If FIRMWARE_TAG is not set, the latest fw/v* release is used.
 #
 #   Local build mode (BUILD_LOCAL=1):
-#     Cross-compiles digitsd, digits-recovery, digits-panic-check from the
-#     mounted repo. Use this to test unreleased code changes.
+#     Cross-compiles digitsd and digits-panic-check from the mounted repo.
+#     Use this to test unreleased code changes.
 #
 #     Example: BUILD_LOCAL=1 ./pi/image/build-docker.sh --pcb
 #
@@ -139,23 +139,6 @@ if [[ -z "${BUILD_LOCAL:-}" ]]; then
         --output /digits/tools/build/digitsd
     chmod +x /digits/tools/build/digitsd
 
-    info "  Downloading digits-setup-${PI_VERSION}-aarch64..."
-    DIGITS_SETUP_EMBED=/digits/pi/digitsd/internal/assets/embed/rootfs/usr/local/bin/digits-setup
-    mkdir -p "$(dirname "$DIGITS_SETUP_EMBED")"
-    gh release download "${PI_TAG}" \
-        --repo justinlindh/digits \
-        --pattern "digits-setup-${PI_VERSION}-aarch64" \
-        --output "$DIGITS_SETUP_EMBED"
-    chmod +x "$DIGITS_SETUP_EMBED"
-
-    info "  Downloading digits-recovery-${PI_VERSION}-aarch64..."
-    mkdir -p /digits/pi/digits-recovery/bin
-    gh release download "${PI_TAG}" \
-        --repo justinlindh/digits \
-        --pattern "digits-recovery-${PI_VERSION}-aarch64" \
-        --output /digits/pi/digits-recovery/bin/digits-recovery
-    chmod +x /digits/pi/digits-recovery/bin/digits-recovery
-
     info "  Downloading digits-panic-check-${PI_VERSION}-aarch64..."
     gh release download "${PI_TAG}" \
         --repo justinlindh/digits \
@@ -197,17 +180,6 @@ else
         -o /digits/tools/build/digitsd \
         ./cmd/digitsd/
 
-    # digits-setup is cross-compiled by `make embed` on the host (see
-    # pi/digitsd/Makefile) and lands on the rootfs via build-image.sh's
-    # embed/rootfs/ rsync. Nothing to do here.
-
-    # Cross-compile digits-recovery (pure Go, no CGO needed). build-image.sh reads
-    # this from pi/digits-recovery/bin/ to match the local Makefile output path.
-    info "Cross-compiling digits-recovery for aarch64..."
-    cd /digits/pi/digits-recovery
-    mkdir -p bin
-    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/digits-recovery .
-
     # Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
     info "Cross-compiling digits-panic-check for aarch64..."
     cd /digits/pi/digits-panic-check
@@ -223,29 +195,6 @@ fi
 #   2. FIRMWARE_TAG env var: download from that specific fw/v* release.
 #   3. Auto-detect: download from the latest fw/v* release on GitHub.
 #   4. Die if none of the above succeed.
-
-# Stamp pi_version / pi_commit so devices report a real version instead
-# of "dev". Tags were refreshed host-side by make fetch-tags before this
-# container ran; if no pi/v* tag exists, fall back to "dev".
-DIGITSD_VERSION=$(git -C /digits describe --tags --dirty --match 'pi/v*' 2>/dev/null | sed 's|^pi/v||')
-DIGITSD_VERSION=${DIGITSD_VERSION:-dev}
-DIGITSD_COMMIT=$(git -C /digits rev-parse --short HEAD 2>/dev/null || echo unknown)
-info "Stamping digitsd: version=$DIGITSD_VERSION commit=$DIGITSD_COMMIT"
-GOOS=linux GOARCH=arm64 go build \
-    -ldflags "-X github.com/justinlindh/digits/pi/digitsd/internal/version.Version=$DIGITSD_VERSION \
-              -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$DIGITSD_COMMIT" \
-    -o /digits/tools/build/digitsd \
-    ./cmd/digitsd/
-
-# Recovery uses the same digitsd binary (PID 1 auto-detection triggers recovery mode).
-# No separate build needed; build-image.sh copies digitsd to the recovery partition.
-
-# Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
-info "Cross-compiling digits-panic-check for aarch64..."
-cd /digits/pi/digits-panic-check
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /digits/tools/build/digits-panic-check .
-
-info "Binaries ready in tools/build/"
 
 # An image without firmware is a regression we don't ship: prefer the
 # host-staged ELF (make stage-firmware), fall back to GitHub release,

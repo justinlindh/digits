@@ -4,14 +4,15 @@ Description=Digits Phone Daemon
 # extractor flips the rootfs rw/ro mid-boot, which races with first-boot's
 # own rw remount and causes first-boot's writes to fail with EROFS.
 # Wants= (soft) so a permanently-broken first-boot does not strand digitsd.
-After=network-online.target sound.target sysinit.target digits-first-boot.service
-Wants=network-online.target digits-first-boot.service
+After=sound.target sysinit.target digits-first-boot.service
+Wants=digits-first-boot.service
 
 [Service]
 Type=simple
 User=digits
 Group=digits
 ExecStartPre=+/usr/local/bin/digitsd --mode=gpclk0
+ExecStartPre=+/bin/sh -c 'alsactl restore digitscodec -f /data/digits_mixer.state 2>/dev/null || alsactl restore Zero -f /data/digits_mixer.state 2>/dev/null || true'
 ExecStart=/usr/local/bin/digitsd \
     -config /data/digits/config.json \
     -serial /dev/serial0 \
