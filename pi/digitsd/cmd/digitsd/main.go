@@ -2534,6 +2534,14 @@ func main() {
 	// Dev-mode web UI on :8080 (only when the flag file is present).
 	if devmode.Enabled(devmode.DefaultFlagPath) {
 		slog.Info("devmode: flag present, starting dev-mode web UI")
+		// Snapshot the phase once at startup; it rarely changes during
+		// normal operation and querying UART on every HTTP poll is wasteful.
+		startupPhase := "unknown"
+		if postOk {
+			if resp, err := sp.SendCommand("PHASE?", 1*time.Second); err == nil {
+				startupPhase = resp
+			}
+		}
 		devCfg := &devModeConfig{
 			FlagPath:           devmode.DefaultFlagPath,
 			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
@@ -2541,17 +2549,11 @@ func main() {
 			UARTLogPath:        uartLogPath,
 			StatusFunc: func() devModeStatus {
 				fwVer, fwCom := cb.getFirmwareVersion()
-				phase := "unknown"
-				if postOk {
-					if resp, err := sp.SendCommand("PHASE?", 1*time.Second); err == nil {
-						phase = resp
-					}
-				}
 				return devModeStatus{
 					DigitsdVersion:   version.Version,
 					FirmwareVersion:  fwVer,
 					FirmwareCommit:   fwCom,
-					Phase:            phase,
+					Phase:            startupPhase,
 					Online:           cb.paired.Load(),
 					PhoneNumber:      effectiveNumber,
 					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),

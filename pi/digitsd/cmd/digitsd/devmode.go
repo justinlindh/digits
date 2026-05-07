@@ -20,15 +20,16 @@ import (
 //go:embed devmode_static
 var devmodeStaticFS embed.FS
 
-// devModeStatus holds the snapshot returned by /api/status.
+// devModeStatus holds the snapshot returned by /api/status. Not serialized
+// directly -- the handler merges it with dynamic flag state into a map.
 type devModeStatus struct {
-	DigitsdVersion  string `json:"digitsd_version"`
-	FirmwareVersion string `json:"firmware_version"`
-	FirmwareCommit  string `json:"firmware_commit"`
-	Phase           string `json:"phase"`
-	Online          bool   `json:"online"`
-	PhoneNumber     string `json:"phone_number"`
-	ConfigAutoUpdate bool  `json:"config_auto_update"`
+	DigitsdVersion   string
+	FirmwareVersion  string
+	FirmwareCommit   string
+	Phase            string
+	Online           bool
+	PhoneNumber      string
+	ConfigAutoUpdate bool
 }
 
 // devModeConfig holds paths and callbacks the dev-mode HTTP server needs.
@@ -192,8 +193,16 @@ func devModeFlashHandler(cfg *devModeConfig) http.HandlerFunc {
 
 		slog.Info("devmode: firmware upload received", "filename", header.Filename, "size", header.Size, "staged", destPath)
 
-		// Flash in background.
+		// Guard against concurrent flash operations (shares the same
+		// atomic with the OTA updater).
+		if !updateInProgress.CompareAndSwap(false, true) {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "another flash/update is already in progress"}) //nolint:errcheck
+			return
+		}
+
 		go func() {
+			defer updateInProgress.Store(false)
 			if flashErr := cfg.FlashFunc(destPath); flashErr != nil {
 				slog.Error("devmode: flash failed", "error", flashErr)
 			} else {
