@@ -43,6 +43,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		sp.LED("LOCK")
 		time.Sleep(50 * time.Millisecond)
 		sp.LED("DOUBLE_PULSE")
+		sp.StateSet("SETUP")
 	}
 
 	mux := web.Mux()

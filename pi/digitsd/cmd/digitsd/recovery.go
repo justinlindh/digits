@@ -176,6 +176,7 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 		sp.LED("LOCK")
 		time.Sleep(50 * time.Millisecond)
 		sp.LED("FAST_BLINK")
+		sp.StateSet("RECOVERY")
 	}
 	if audioMod != nil && audioMod.IsReady() {
 		mixer = audioMod.Mixer()

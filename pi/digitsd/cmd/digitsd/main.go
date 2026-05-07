@@ -2103,6 +2103,9 @@ func main() {
 	// this is a safe no-op on clean boots.
 	if postOk {
 		resetPicoHardware(sp)
+		if cfg.DeviceToken == "" {
+			sp.StateSet("UNPAIRED")
+		}
 	}
 
 	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
@@ -3038,6 +3041,7 @@ func main() {
 					}
 					cb.paired.Store(true)
 					cb.pairingCode = ""
+					sp.StateSet("PAIRED")
 					mixer.StopAll()
 					mixer.PlayOnce("tone_dial")
 					// Restart to reconnect with the assigned phone number
