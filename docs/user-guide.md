@@ -170,21 +170,32 @@ Dial `*#*` followed by any digit `0`–`9` to set the volume level. The setting 
 
 ## 8. LED Indicator
 
-The small red LED on the front of the phone tells you what the phone is doing:
+The small red LED on the front of the phone tells you what the phone is doing.
 
-```
-  ◉  ← LED
+### During startup
 
-  OFF      = Idle, on-hook. Phone is ready.
-  SOLID ON = Off-hook. You have the handset lifted.
-  BLINKING = Incoming call! Someone is calling you.
-```
+The LED shows the phone's last known state while it boots (~10 seconds):
 
-| LED state | Meaning |
-|-----------|---------|
-| Off | Phone is idle, ready to receive calls |
-| Solid on | Handset is off the cradle (dial tone, dialing, or in a call) |
-| Blinking | Incoming call -- pick up the handset to answer |
+| LED pattern | Meaning |
+|-------------|---------|
+| Smooth breathing (fades in and out) | Paired and working normally |
+| Brief flash every 1.7 seconds | Unpaired, waiting for a pairing code |
+| Two quick flashes, pause, repeat | In WiFi setup mode |
+| Rapid blinking | Recovery mode or error |
+| Off | First boot (brand new device) |
+
+### Normal operation
+
+Once the phone finishes booting, the LED reflects what the phone is doing right now:
+
+| LED pattern | Meaning |
+|-------------|---------|
+| Off | Idle, on-hook. Phone is ready to receive calls. |
+| Solid on | Handset is off the cradle (dial tone or dialing) |
+| Smooth breathing | Active call in progress |
+| Blinking (~1 per second) | Incoming call. Pick up the handset to answer. |
+| Brief flash every 1.7 seconds | Unpaired. Pick up the handset to hear your pairing code. |
+| Rapid blinking | Something went wrong. Try rebooting. |
 
 ---
 
