@@ -605,6 +605,16 @@ func (h *Hub) IsOnline(number string) bool {
 	return h.Get(number) != nil
 }
 
+func (h *Hub) LocalConnectionCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := len(h.conns)
+	if _, ok := h.conns["unpaired"]; ok {
+		n--
+	}
+	return n
+}
+
 func (h *Hub) OnlineNumbers() []string {
 	h.mu.RLock()
 	ds := h.state
