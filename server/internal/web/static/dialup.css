@@ -2318,6 +2318,95 @@ body.dialup .phone-silent__text {
   min-width: 88px;
 }
 
+/* What's New changelog dialog, dialup theme */
+.page__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--dialup-blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.page__foot-link:hover { color: var(--dialup-blue-dark); }
+
+.changelog-dialog {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  max-width: 520px;
+  width: 92vw;
+  max-height: 80vh;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+.changelog-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+
+.changelog-dialog__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 55%, var(--dialup-blue-light) 100%);
+  color: #ffffff;
+  padding: 3px 5px;
+  font-weight: bold;
+  font-size: 12px;
+  min-height: 22px;
+}
+.changelog-dialog__titlebar-title { text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.changelog-dialog__titlebar-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.changelog-dialog__body { padding: 14px 16px; overflow-y: auto; max-height: calc(80vh - 28px); }
+.changelog-dialog__title {
+  font-weight: bold;
+  font-size: 13px;
+  margin: 0 0 12px;
+  color: var(--dialup-ink);
+}
+
+.changelog__section-title {
+  font-size: 11px;
+  font-weight: bold;
+  text-transform: uppercase;
+  color: var(--dialup-ink);
+  margin: 0 0 8px;
+}
+.changelog__release + .changelog__release {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.changelog__version {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+}
+.changelog__date { font-size: 11px; color: gray; }
+.changelog__adoption { font-size: 11px; color: var(--dialup-blue-dark); margin-left: auto; }
+.changelog__notes { font-size: 12px; line-height: 1.5; }
+.changelog__notes p { margin: 0 0 6px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__empty { color: gray; font-style: italic; font-size: 12px; }
+
 /* =========================================================================
    Call-live observation deck — dialup theme (MODEM CONNECTED)
    ========================================================================= */
