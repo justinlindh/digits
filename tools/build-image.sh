@@ -468,7 +468,6 @@ INPUT_IMG="${1:-}"
 
 # Verify pre-built binaries exist
 [[ -f "${BUILD_DIR}/digitsd" ]] || die "Missing ${BUILD_DIR}/digitsd -- run cross-compilation first (see README)"
-[[ -f "${BUILD_DIR}/digits-panic-check" ]] || die "Missing ${BUILD_DIR}/digits-panic-check -- run cross-compilation first"
 # digitsd is also the recovery binary (PID 1 auto-detection triggers recovery mode)
 
 # Verify overlay directory exists
@@ -693,7 +692,6 @@ hostside_add_to_groups "$ROOTFS_MNT" "digits" audio i2c
 info "Copying Digits binaries..."
 
 install -m 755 "${BUILD_DIR}/digitsd" "${ROOTFS_MNT}/usr/local/bin/digitsd"
-install -m 755 "${BUILD_DIR}/digits-panic-check" "${ROOTFS_MNT}/usr/local/bin/digits-panic-check"
 
 
 # ── step 13: copy rootfs overlay (host-side) ────────────────────────────────
@@ -1249,7 +1247,6 @@ ln -sf /lib/systemd/system/multi-user.target "${ROOTFS_MNT}/etc/systemd/system/d
 
 # Enable Digits services
 hostside_enable_service "$ROOTFS_MNT" "digits-first-boot.service"
-hostside_enable_service "$ROOTFS_MNT" "digits-panic-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
 

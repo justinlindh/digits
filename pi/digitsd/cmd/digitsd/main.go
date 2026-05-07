@@ -2094,13 +2094,38 @@ func main() {
 		}
 	}
 
+	// Check if the Pico detected a held * key at boot (panic button).
+	// BOOT:PANIC is an unsolicited event (see isUnsolicitedEvent in serial.go)
+	// and sits on the events channel by the time POST completes.
+	if postOk {
+		drainDeadline := time.After(100 * time.Millisecond)
+	drainLoop:
+		for {
+			select {
+			case ev := <-sp.Events():
+				if ev == "BOOT:PANIC" {
+					slog.Info("panic button: * key held at boot, entering recovery mode")
+					if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+						slog.Warn("panic button: failed to set boot counter", "error", err)
+					}
+					_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
+					sp.StateSet("RECOVERY")
+					time.Sleep(500 * time.Millisecond)
+					doReboot()
+				}
+			case <-drainDeadline:
+				break drainLoop
+			}
+		}
+	}
+
 	// Clear any residual Pico hardware state from before the last reboot.
-	// If the Pi crashed mid-ring the Pico keeps ringing until told otherwise;
-	// this is a safe no-op on clean boots.
 	if postOk {
 		resetPicoHardware(sp)
 		if cfg.DeviceToken == "" {
 			sp.StateSet("UNPAIRED")
+		} else {
+			sp.StateSet("PAIRED")
 		}
 	}
 

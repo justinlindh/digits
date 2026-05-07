@@ -54,7 +54,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Check for persistent recovery flag. Writers:
-#   - digits-panic-check (early boot) when * is held on the keypad
+#   - digitsd (detects BOOT:PANIC from Pico when * is held at power-on)
 #   - this script itself (below) once the boot counter reaches threshold
 # Note: the *#00000# service code and web UI factory reset use the boot counter
 # instead of this flag (see bootcount.SetThreshold).

@@ -266,15 +266,19 @@ static void process_pi_command(const char *cmd) {
         uart_proto_send("DIAL:RESET:OK");
     } else if (strcmp(cmd, "STATE:SET:PAIRED") == 0) {
         phase_write(PHASE_PAIRED);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
         uart_proto_send("STATE:SET:OK");
     } else if (strcmp(cmd, "STATE:SET:UNPAIRED") == 0) {
         phase_write(PHASE_UNPAIRED);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
         uart_proto_send("STATE:SET:OK");
     } else if (strcmp(cmd, "STATE:SET:SETUP") == 0) {
         phase_write(PHASE_SETUP);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
         uart_proto_send("STATE:SET:OK");
     } else if (strcmp(cmd, "STATE:SET:RECOVERY") == 0) {
         phase_write(PHASE_RECOVERY);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
         uart_proto_send("STATE:SET:OK");
     } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
         // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip

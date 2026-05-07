@@ -48,8 +48,6 @@ module.exports = {
       assets: [
         { path: 'artifacts/digitsd-*-aarch64', label: 'digitsd (aarch64 Linux)' },
         { path: 'artifacts/digitsd-*-aarch64.sha256', label: 'digitsd SHA256 checksum' },
-        { path: 'artifacts/digits-panic-check-*-aarch64', label: 'digits-panic-check (aarch64 Linux)' },
-        { path: 'artifacts/digits-panic-check-*-aarch64.sha256', label: 'digits-panic-check SHA256 checksum' },
       ],
       successComment: false,
       failComment: false,
