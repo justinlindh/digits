@@ -13,8 +13,6 @@
 //     template strings; unknown paths collapse to "other". The default
 //     otelhttp span name (the raw URL.Path) is replaced by the bucketed
 //     route so a span name itself never echoes user data.
-//   - HTTP client spans: same approach for outbound requests; request URL
-//     is reduced to host plus a static path label set by the caller.
 //   - Database client spans: query category (SELECT, INSERT, UPDATE, etc.)
 //     plus a static table name when the driver-supplied operation lookup
 //     can attribute one. SQL text and bound parameters never reach a span
@@ -378,69 +376,4 @@ func isNoiseRoute(path string) bool {
 		return true
 	}
 	return false
-}
-
-// HTTPClientTransport wraps base with a tracing transport that injects
-// W3C traceparent on outbound requests and produces one client span per
-// request. The span carries:
-//
-//   - http.method
-//   - http.status_code (set after the request returns)
-//   - server.address: the destination host (already a configured
-//     service hostname for our internal calls; never a user-derived
-//     value)
-//
-// We deliberately do NOT use otelhttp.NewTransport. That wrapper records
-// url.full and url.path as raw strings, which for any per-call outbound
-// (today: none; tomorrow: who knows) would echo path components into a
-// span attribute. The strip-and-bucket pattern is enforced at the
-// transport rather than every call site so a future caller cannot
-// regress the privacy boundary by forgetting an option.
-func HTTPClientTransport(base http.RoundTripper) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return &tracingTransport{
-		base:   base,
-		tracer: otel.Tracer("github.com/justinlindh/digits/server/internal/tracing"),
-	}
-}
-
-// tracingTransport implements http.RoundTripper. It is intentionally
-// minimal; the OTel SDK does the heavy lifting via tracer.Start and the
-// global propagator.
-type tracingTransport struct {
-	base   http.RoundTripper
-	tracer trace.Tracer
-}
-
-// RoundTrip starts a client span, injects traceparent into the request
-// headers, dispatches via the wrapped transport, and records the status.
-func (t *tracingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	propagator := otel.GetTextMapPropagator()
-
-	ctx, span := t.tracer.Start(req.Context(), "HTTP "+req.Method,
-		trace.WithSpanKind(trace.SpanKindClient),
-		trace.WithAttributes(
-			attribute.String("http.method", req.Method),
-			attribute.String("server.address", req.URL.Host),
-		),
-	)
-	defer span.End()
-
-	// Clone the request so traceparent header injection does not mutate
-	// a caller-owned *http.Request. Headers cloned by req.Clone are deep
-	// copies, so adding traceparent here doesn't leak into a retry's
-	// header set.
-	req = req.Clone(ctx)
-	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-	resp, err := t.base.RoundTrip(req)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		return nil, err
-	}
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
-	return resp, nil
 }
