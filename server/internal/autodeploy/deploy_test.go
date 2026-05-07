@@ -22,19 +22,19 @@ type mockRunner struct {
 	errs  map[string]error // keyed by "Name" or "Name arg0"
 }
 
-func (m *mockRunner) Run(ctx context.Context, spec RunSpec) (RunOutput, error) {
+func (m *mockRunner) Run(ctx context.Context, spec RunSpec) error {
 	m.calls = append(m.calls, spec)
 	if m.errs != nil {
 		if e, ok := m.errs[spec.Name]; ok {
-			return RunOutput{}, e
+			return e
 		}
 		if len(spec.Args) > 0 {
 			if e, ok := m.errs[spec.Name+" "+spec.Args[0]]; ok {
-				return RunOutput{}, e
+				return e
 			}
 		}
 	}
-	return RunOutput{}, nil
+	return nil
 }
 
 type sentEmail struct {
@@ -72,8 +72,8 @@ func baseCfg() Config {
 		Repo: "justinlindh/digits", TagPrefix: "server/v",
 		ComposeDir: "/srv", ComposeFile: "docker-compose.prod.yml",
 		ComposeProject: "digits-prod", ComposeEnvFile: "/srv/.env.prod",
-		Services:     []string{"signald", "admind"},
-		HealthURLs:   []string{"http://x/healthz", "http://y/healthz"},
+		Services:     []string{"signald"},
+		HealthURLs:   []string{"http://x/healthz"},
 		GHCRUsername: "u", GHCRToken: "t", StateFile: "/tmp/state.json",
 		SMTPHost: "s", SMTPPort: "587", SMTPFrom: "f@x", AlertTo: "a@x",
 		HealthTimeout: 5 * time.Second, RevertHealthTimeout: 5 * time.Second,
@@ -103,8 +103,8 @@ func TestDeployNoop_NotModified(t *testing.T) {
 		Cfg:    baseCfg(),
 		GH:     &mockGH{rel: Release{NotModified: true}},
 		Runner: &mockRunner{}, Health: mockHealth(nil), Mailer: &mockMailer{},
-		Store:  &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
-		Now:    func() time.Time { return time.Unix(0, 0) },
+		Store: &memStore{s: State{LastDeployedTag: "server/v1.9.0"}},
+		Now:   func() time.Time { return time.Unix(0, 0) },
 	}
 	res, _ := d.Run(context.Background())
 	if res.Action != ActionNoop {
@@ -253,8 +253,8 @@ func TestDeploy_LoginFails(t *testing.T) {
 	mailer := &mockMailer{}
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -291,8 +291,8 @@ func TestDeploy_HealthFails_RevertSucceeds(t *testing.T) {
 	store := &memStore{s: State{LastDeployedTag: "server/v1.9.0"}}
 	health := mockHealth(map[string]error{"1.9.1": errors.New("timeout")})
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1", CommitSHA: "def"}},
 		Runner: runner, Health: health, Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -331,8 +331,8 @@ func TestDeploy_HealthFails_RevertAlsoFails(t *testing.T) {
 		"1.9.0": errors.New("still broken"),
 	})
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.1"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.1"}},
 		Runner: runner, Health: health, Mailer: mailer, Store: store,
 		Now: func() time.Time { return time.Unix(1000, 0).UTC() },
 	}
@@ -389,8 +389,8 @@ func TestDeploy_EmailDebounce(t *testing.T) {
 	runner := &mockRunner{errs: map[string]error{"docker login": errors.New("denied")}}
 	mailer := &mockMailer{}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.2"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}
@@ -414,8 +414,8 @@ func TestDeploy_EmailAfterDebounceWindow(t *testing.T) {
 	runner := &mockRunner{errs: map[string]error{"docker login": errors.New("denied")}}
 	mailer := &mockMailer{}
 	d := &Deployer{
-		Cfg: baseCfg(),
-		GH:  &mockGH{rel: Release{TagName: "server/v1.9.2"}},
+		Cfg:    baseCfg(),
+		GH:     &mockGH{rel: Release{TagName: "server/v1.9.2"}},
 		Runner: runner, Health: mockHealth(nil), Mailer: mailer, Store: store,
 		Now: func() time.Time { return now },
 	}

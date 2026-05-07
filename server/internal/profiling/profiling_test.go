@@ -6,9 +6,8 @@ import (
 
 // TestNewConfigDisabledByDefault: with no env vars, NewConfig produces a
 // config that disables the profiler. Init then returns a no-op stop
-// closure without an error. signald and admind must boot even when
-// PYROSCOPE_SERVER_ADDRESS is unset (the docker prod deployment until
-// cutover).
+// closure without an error. signald must boot even when
+// PYROSCOPE_SERVER_ADDRESS is unset.
 func TestNewConfigDisabledByDefault(t *testing.T) {
 	t.Setenv("PYROSCOPE_SERVER_ADDRESS", "")
 	c := NewConfig("signald")
@@ -39,7 +38,7 @@ func TestTagsAreClosedSet(t *testing.T) {
 	// default; populate by hand for the test.
 	c.Tags = map[string]string{
 		// These must be silently dropped: a hostile manifest cannot
-		// claim this signald is "admind" or "v0.0.1".
+		// claim this signald is a different service or version.
 		"service":  "imposter",
 		"version":  "stolen",
 		"hostname": "fake-host",
@@ -49,8 +48,8 @@ func TestTagsAreClosedSet(t *testing.T) {
 
 	// Build the merged tags exactly the way Init does. Easiest is to
 	// rerun the merge logic locally; the prod path is exercised via
-	// signal/admind at runtime, but the merge is the privacy boundary
-	// we want a unit test on.
+	// signald at runtime, but the merge is the privacy boundary we
+	// want a unit test on.
 	merged := mergeTags(c, "signald", "v1.0.0", "host-1")
 	if merged["service"] != "signald" {
 		t.Errorf("service tag = %q, want signald", merged["service"])

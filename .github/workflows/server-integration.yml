@@ -34,16 +34,10 @@ jobs:
           go-version: '1.26.1'
           cache-dependency-path: server/go.sum
 
-      - name: Create admind test database
-        env:
-          PGPASSWORD: digits
-        run: psql -h localhost -U digits -d postgres -c "CREATE DATABASE digits_admin_test OWNER digits"
-
       - name: Integration tests
         working-directory: server
         env:
           TEST_DATABASE_URL: postgres://digits:digits@localhost:5432/digits_test?sslmode=disable
-          TEST_ADMIN_DATABASE_URL: postgres://digits:digits@localhost:5432/digits_admin_test?sslmode=disable
         # -p 1 serializes package execution. Integration tests across packages
         # share the same Postgres instance; parallel `CREATE TABLE IF NOT EXISTS`
         # statements issued by each package's Open() migration can race, and

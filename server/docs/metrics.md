@@ -1,6 +1,6 @@
 # Metrics
 
-`signald` and `admind` expose a Prometheus `/metrics` endpoint on a
+`signald` exposes a Prometheus `/metrics` endpoint on a
 **separate listener** from public traffic. Public-facing requests cannot
 reach the metrics endpoint, and metrics requests are not authenticated by
 the operator (the listener is expected to be private; binding it to
@@ -16,7 +16,6 @@ new label as a privacy decision, not a routine refactor.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `SIGNALD_METRICS_ADDR` | `:9091` | Empty disables the listener. Bind to `127.0.0.1:9091` if the host network is shared with other services. |
-| `ADMIN_METRICS_ADDR` | `:9092` | Empty disables. |
 
 The Prometheus server should scrape these as static targets. There is
 deliberately no auth on the listener: the listener is not on the public
@@ -26,8 +25,7 @@ session cookie can.
 
 ## Metrics collected
 
-All metric names are prefixed with `digits_<service>_` where `<service>` is
-`signald` or `admind`.
+All metric names are prefixed with `digits_signald_`.
 
 ### HTTP
 

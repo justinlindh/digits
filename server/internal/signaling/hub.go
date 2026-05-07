@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +18,10 @@ import (
 // expected (e.g., best-effort pushes) can check for it with errors.Is and skip
 // logging.
 var ErrNotConnected = errors.New("not connected")
+
+// ErrDraining is returned by Register when the hub is draining (shutdown in
+// progress). The WebSocket handler should reject new upgrade requests.
+var ErrDraining = errors.New("hub is draining")
 
 type Conn struct {
 	WS         *websocket.Conn
@@ -48,10 +53,13 @@ type dashNotifier interface {
 
 type Hub struct {
 	mu           sync.RWMutex
-	conns        map[string]*Conn                 // phone number → connection
-	hwConns      map[string]*Conn                 // hardware ID → connection
-	updateStatus map[string]*UpdateStatusSnapshot // phone number → last update status
+	conns        map[string]*Conn                 // phone number -> connection
+	hwConns      map[string]*Conn                 // hardware ID -> connection
+	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
 	dashEvents   dashNotifier
+	redis        redisPubSub  // nil = single-instance mode (no Redis)
+	state        *DeviceState // nil = single-instance mode (no cluster state)
+	draining     bool         // set by StartDraining; blocks new Register calls
 }
 
 func NewHub() *Hub {
@@ -60,6 +68,179 @@ func NewHub() *Hub {
 		hwConns:      make(map[string]*Conn),
 		updateStatus: make(map[string]*UpdateStatusSnapshot),
 	}
+}
+
+// SetRedis attaches a RedisBridge to the hub, enabling cross-pod message
+// delivery. Must be called before Run. Passing nil disables Redis (the
+// default single-instance mode).
+func (h *Hub) SetRedis(bridge redisPubSub) {
+	h.mu.Lock()
+	h.redis = bridge
+	h.mu.Unlock()
+}
+
+// SetDeviceState attaches a DeviceState to the hub, enabling cluster-wide
+// presence queries via Redis. Passing nil disables cluster state (the
+// default single-instance mode).
+func (h *Hub) SetDeviceState(ds *DeviceState) {
+	h.mu.Lock()
+	h.state = ds
+	h.mu.Unlock()
+}
+
+// Run starts the Redis subscriber goroutine that delivers incoming
+// cross-pod messages to local connections. Blocks until ctx is cancelled.
+// If no RedisBridge is configured, Run returns immediately.
+func (h *Hub) Run(ctx context.Context) {
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+
+	if bridge == nil {
+		return
+	}
+
+	ch := bridge.Subscribe(ctx)
+	for env := range ch {
+		h.deliverFromRedis(env)
+	}
+}
+
+// deliverFromRedis attempts local delivery of an envelope received from
+// another pod via Redis.
+func (h *Hub) deliverFromRedis(env *Envelope) {
+	if env.Message == nil {
+		return
+	}
+	data, err := env.Message.Marshal()
+	if err != nil {
+		slog.Debug("redis: marshal for local delivery failed", "err", err)
+		return
+	}
+
+	switch env.TargetType {
+	case "number":
+		conn := h.Get(env.Target)
+		if conn == nil {
+			return
+		}
+		select {
+		case conn.Send <- data:
+			slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
+		default:
+			slog.Debug("redis: local send buffer full", "pod", env.PodID)
+		}
+
+	case "hardware":
+		h.mu.RLock()
+		conn := h.hwConns[env.Target]
+		h.mu.RUnlock()
+		if conn == nil {
+			return
+		}
+		select {
+		case conn.Send <- data:
+			slog.Debug("redis: delivered to local hardware connection", "pod", env.PodID, "delivered", true)
+		default:
+			slog.Debug("redis: local hw send buffer full", "pod", env.PodID)
+		}
+
+	case "broadcast":
+		h.mu.RLock()
+		for _, conn := range h.conns {
+			select {
+			case conn.Send <- data:
+			default:
+			}
+		}
+		h.mu.RUnlock()
+		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
+	}
+}
+
+// StartDraining marks the hub as draining. New Register calls will return
+// ErrDraining and the WebSocket handler should reject upgrade requests.
+func (h *Hub) StartDraining() {
+	h.mu.Lock()
+	h.draining = true
+	h.mu.Unlock()
+	slog.Info("hub draining started")
+}
+
+// IsDraining reports whether the hub is in drain mode.
+func (h *Hub) IsDraining() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.draining
+}
+
+// DrainAndClose sends a WebSocket close frame (1001 Going Away) to every
+// connected device and waits for connections to disconnect. If the context
+// deadline is reached, remaining connections are force-closed. The method
+// logs aggregate counts only (no per-device data).
+func (h *Hub) DrainAndClose(ctx context.Context) {
+	h.mu.RLock()
+	n := len(h.conns)
+	snapshot := make([]*Conn, 0, n)
+	for _, c := range h.conns {
+		snapshot = append(snapshot, c)
+	}
+	h.mu.RUnlock()
+
+	if n == 0 {
+		slog.Info("drain: no connections to close")
+		return
+	}
+
+	// Send 1001 Going Away close frame to each connection.
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(5 * time.Second)
+	}
+	slog.Info("drain: sending close frames", "connections", n, "remaining", time.Until(deadline).Round(time.Millisecond))
+	closeMsg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+	for _, c := range snapshot {
+		if c.WS != nil {
+			_ = c.WS.WriteControl(websocket.CloseMessage, closeMsg, deadline)
+		}
+	}
+
+	// Poll until all connections are gone or the context expires.
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			h.forceCloseAll()
+			return
+		case <-ticker.C:
+			h.mu.RLock()
+			remaining := len(h.conns)
+			h.mu.RUnlock()
+			if remaining == 0 {
+				slog.Info("drain: all connections closed gracefully")
+				return
+			}
+		}
+	}
+}
+
+// forceCloseAll hard-closes every remaining WebSocket connection.
+func (h *Hub) forceCloseAll() {
+	h.mu.RLock()
+	remaining := len(h.conns)
+	conns := make([]*Conn, 0, remaining)
+	for _, c := range h.conns {
+		conns = append(conns, c)
+	}
+	h.mu.RUnlock()
+
+	for _, c := range conns {
+		if c.WS != nil {
+			_ = c.WS.Close()
+		}
+	}
+	slog.Info("drain: force-closed remaining connections", "connections", remaining)
 }
 
 // SetDashboardEvents registers an optional broadcaster that is signalled
@@ -71,14 +252,18 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 	h.mu.Unlock()
 }
 
-func (h *Hub) Register(number string, conn *Conn) {
+func (h *Hub) Register(number string, conn *Conn) error {
 	h.mu.Lock()
-	// Close existing connection for this number if any
-	if old, ok := h.conns[number]; ok {
+	if h.draining {
+		h.mu.Unlock()
+		return ErrDraining
+	}
+	_, replacing := h.conns[number]
+	if replacing {
+		old := h.conns[number]
 		if old.WS != nil {
-			_ = old.WS.Close() // close WebSocket first so write pump exits
+			_ = old.WS.Close()
 		}
-		// Only close Send if it's not already closed
 		select {
 		case _, ok := <-old.Send:
 			if ok {
@@ -94,12 +279,25 @@ func (h *Hub) Register(number string, conn *Conn) {
 		h.hwConns[conn.HardwareID] = conn
 	}
 	d := h.dashEvents
+	ds := h.state
 	h.mu.Unlock()
 	slog.Debug("hub registered", "number", number)
 
 	if d != nil {
 		d.Notify()
 	}
+	if ds != nil {
+		ds.SetOnline(context.Background(), number, DevicePresence{
+			PodID:           ds.PodID(),
+			HardwareID:      conn.HardwareID,
+			PiVersion:       conn.PiVersion,
+			PiCommit:        conn.PiCommit,
+			FirmwareVersion: conn.FirmwareVersion,
+			FirmwareCommit:  conn.FirmwareCommit,
+			RemoteAddr:      conn.RemoteAddr,
+		})
+	}
+	return nil
 }
 
 func (h *Hub) Unregister(number string, conn *Conn) {
@@ -114,12 +312,16 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 		changed = true
 	}
 	d := h.dashEvents
+	ds := h.state
 	h.mu.Unlock()
 
 	if changed {
 		slog.Debug("hub unregistered", "number", number)
 		if d != nil {
 			d.Notify()
+		}
+		if ds != nil {
+			ds.SetOffline(context.Background(), number)
 		}
 	}
 }
@@ -131,18 +333,64 @@ func (h *Hub) Get(number string) *Conn {
 }
 
 func (h *Hub) SendTo(number string, msg *Message) error {
-	return sendToConn(h.Get(number), msg, "phone", number)
+	err := sendToConn(h.Get(number), msg, "phone", number)
+	if err == nil {
+		return nil
+	}
+
+	// Only fall through to Redis when the device is not connected locally.
+	// Buffer-full means the connection exists on this pod but is
+	// backpressured; other pods won't have it either.
+	if !errors.Is(err, ErrNotConnected) {
+		return err
+	}
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "number",
+			Target:     number,
+			Message:    msg,
+		})
+		return nil
+	}
+
+	return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 	h.mu.RLock()
 	conn := h.hwConns[hardwareID]
+	bridge := h.redis
 	h.mu.RUnlock()
-	return sendToConn(conn, msg, "hardware", hardwareID)
+
+	err := sendToConn(conn, msg, "hardware", hardwareID)
+	if err == nil {
+		return nil
+	}
+
+	if !errors.Is(err, ErrNotConnected) {
+		return err
+	}
+
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "hardware",
+			Target:     hardwareID,
+			Message:    msg,
+		})
+		return nil
+	}
+
+	return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
 }
 
 // Broadcast marshals msg and sends it to every connected device without
 // blocking. Devices whose Send buffers are full are skipped with a warning.
+// When Redis is configured, the message is also published so other pods
+// deliver to their local connections.
 func (h *Hub) Broadcast(msg *Message) {
 	data, err := msg.Marshal()
 	if err != nil {
@@ -150,13 +398,21 @@ func (h *Hub) Broadcast(msg *Message) {
 		return
 	}
 	h.mu.RLock()
-	defer h.mu.RUnlock()
+	bridge := h.redis
 	for number, conn := range h.conns {
 		select {
 		case conn.Send <- data:
 		default:
 			slog.Warn("broadcast: send buffer full, skipping", "number", number)
 		}
+	}
+	h.mu.RUnlock()
+
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "broadcast",
+			Message:    msg,
+		})
 	}
 }
 
@@ -206,6 +462,12 @@ type DeviceInfoSnapshot struct {
 // DeviceInfo returns version info for a connected phone. Returns nil if offline.
 func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.DeviceInfo(context.Background(), number)
+	}
+	h.mu.RLock()
 	defer h.mu.RUnlock()
 	conn, ok := h.conns[number]
 	if !ok {
@@ -223,16 +485,26 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 // SetUpdateStatus stores the latest update status for a phone.
 func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	h.updateStatus[number] = &UpdateStatusSnapshot{
 		Status:    status,
 		Detail:    detail,
 		UpdatedAt: time.Now(),
 	}
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.SetUpdateStatus(context.Background(), number, status, detail)
+	}
 }
 
 // GetUpdateStatus returns the latest update status for a phone, or nil.
 func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.GetUpdateStatus(context.Background(), number)
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.updateStatus[number]
@@ -241,8 +513,12 @@ func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
 // ClearUpdateStatus removes update status for a phone.
 func (h *Hub) ClearUpdateStatus(number string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	delete(h.updateStatus, number)
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.ClearUpdateStatus(context.Background(), number)
+	}
 }
 
 // UpdateDeviceInfo sets version info and the device-reported LAN address for
@@ -255,9 +531,9 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 		localAddr = ""
 	}
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	conn, ok := h.conns[number]
 	if !ok {
+		h.mu.Unlock()
 		return false
 	}
 	conn.PiVersion = piVer
@@ -265,20 +541,41 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.UpdateDeviceInfo(context.Background(), number, DevicePresence{
+			PiVersion:       piVer,
+			PiCommit:        piCommit,
+			FirmwareVersion: fwVer,
+			FirmwareCommit:  fwCommit,
+			RemoteAddr:      localAddr,
+		})
+	}
 	return true
 }
 
 // TouchLastSeen updates the in-memory last-seen timestamp for a connected phone.
 func (h *Hub) TouchLastSeen(number string) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if conn, ok := h.conns[number]; ok {
 		conn.LastSeen = time.Now()
+	}
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.TouchLastSeen(context.Background(), number)
 	}
 }
 
 // LastSeenAt returns the last-seen timestamp for a connected phone, or nil if offline.
 func (h *Hub) LastSeenAt(number string) *time.Time {
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.LastSeenAt(context.Background(), number)
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	conn, ok := h.conns[number]
@@ -292,13 +589,45 @@ func (h *Hub) LastSeenAt(number string) *time.Time {
 	return &t
 }
 
+// IsOnline returns true if number has an active hub connection and is not in
+// pairing mode. Unpaired devices connect under the sentinel "unpaired" number
+// and must not be presented as online in the UI.
+func (h *Hub) IsOnline(number string) bool {
+	if number == "unpaired" {
+		return false
+	}
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.IsOnline(context.Background(), number)
+	}
+	return h.Get(number) != nil
+}
+
+func (h *Hub) LocalConnectionCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	n := len(h.conns)
+	if _, ok := h.conns["unpaired"]; ok {
+		n--
+	}
+	return n
+}
+
 func (h *Hub) OnlineNumbers() []string {
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.OnlineNumbers(context.Background())
+	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))
 	for n := range h.conns {
 		if n == "unpaired" {
-			continue // skip unpaired phones awaiting pairing
+			continue
 		}
 		nums = append(nums, n)
 	}

@@ -18,14 +18,6 @@ https:// {
 		reverse_proxy signald:8080
 	}
 
-	# Admin dashboard
-	@admin {
-		path /admin /admin/*
-	}
-	handle @admin {
-		reverse_proxy admind:9090
-	}
-
 	# All other requests (test client, API)
 	handle {
 		reverse_proxy signald:8080

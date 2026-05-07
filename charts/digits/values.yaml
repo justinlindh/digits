@@ -1,0 +1,69 @@
+nameOverride: ""
+fullnameOverride: ""
+
+signald:
+  image:
+    repository: ghcr.io/justinlindh/digits/signald
+    tag: ""  # defaults to appVersion
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources: {}
+  env: {}
+  envFrom: []
+  # Container port for the HTTP/WebSocket listener.
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  signald:
+    host: ""
+
+# Redis pub/sub for multi-replica signaling. When enabled, the chart deploys
+# a 3-node Redis Sentinel StatefulSet and configures signald to use failover.
+# For single-replica deployments, leave enabled: false.
+redis:
+  enabled: false
+  replicas: 3
+  sentinelMasterName: digits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+cnpg:
+  enabled: false
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  enableSuperuserAccess: false
+  userdb:
+    instances: 2
+    size: 10Gi
+    storageClass: ""
+    database: digits
+    owner: digits
+    sharedPreloadLibraries: []
+    customQueriesConfigMap: []
+    postInitSQL: []
+    postInitApplicationSQL: []
+  backup:
+    enabled: false
+    retentionPolicy: "14d"
+    destinationPath: ""
+    endpointURL: ""
+    s3CredentialsSecret: ""
+    s3AccessKeyIDKey: ACCESS_KEY_ID
+    s3SecretAccessKeyKey: ACCESS_SECRET_KEY
+
+observability:
+  enabled: false
+  otelEndpoint: ""
+  otelProtocol: "grpc"
+  otelInsecure: "true"
+  otelResourceAttributes: ""
+  pyroscopeEndpoint: ""
+  signaldMetricsPort: 9091
+  serviceMonitor:
+    enabled: false
+    interval: 30s

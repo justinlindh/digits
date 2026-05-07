@@ -3,6 +3,7 @@ package household
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,14 +18,6 @@ type Household struct {
 	DoNotDisturb       bool
 	Timezone           string
 	CreatedAt          time.Time
-}
-
-// Member represents a user's membership in a household.
-type Member struct {
-	UserID      string
-	HouseholdID string
-	Role        string
-	CreatedAt   time.Time
 }
 
 // Store provides household persistence backed by Postgres.
@@ -67,7 +60,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
 		`SELECT id, name, call_history_enabled, do_not_disturb, timezone, created_at FROM households WHERE id = $1`,
 		id,
 	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.DoNotDisturb, &h.Timezone, &h.CreatedAt)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("household not found")
 	}
 	if err != nil {
@@ -109,7 +102,7 @@ func (s *Store) GetRole(ctx context.Context, userID, householdID string) (string
 		`SELECT role FROM household_members WHERE user_id = $1 AND household_id = $2`,
 		userID, householdID,
 	).Scan(&role)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", fmt.Errorf("user is not a member of this household")
 	}
 	if err != nil {
@@ -131,27 +124,6 @@ func (s *Store) AddMember(ctx context.Context, userID, householdID, role string)
 		return fmt.Errorf("add member: %w", err)
 	}
 	return nil
-}
-
-// GetMembers returns all members of a household.
-func (s *Store) GetMembers(ctx context.Context, householdID string) ([]Member, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT user_id, household_id, role FROM household_members WHERE household_id = $1`,
-		householdID,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var members []Member
-	for rows.Next() {
-		var m Member
-		if err := rows.Scan(&m.UserID, &m.HouseholdID, &m.Role); err != nil {
-			return nil, err
-		}
-		members = append(members, m)
-	}
-	return members, rows.Err()
 }
 
 // MemberWithUser includes user profile data alongside membership info.

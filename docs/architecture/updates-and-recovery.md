@@ -50,7 +50,7 @@ A factory reset restores the device to its out-of-box state: rootfs is repopulat
 
 Two paths:
 
-- **Web UI:** The "Factory Reset" button on the phone detail page in the signald admin panel.
+- **Web UI:** The "Factory Reset" button on the phone detail page in the signald web app (`/phones/<number>`).
 - **Service code:** Dial `*#00000#` on the phone keypad.
 
 ### What Happens

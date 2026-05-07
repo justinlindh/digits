@@ -13,7 +13,6 @@ import (
 
 type dashboardData struct {
 	chromeData
-	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
@@ -44,12 +43,6 @@ type callRow struct {
 	PeerName  string
 	Direction string // "in" or "out"
 	DurationS int
-}
-
-type dashStats struct {
-	TotalLines  int
-	OnlineLines int
-	ActiveCalls int
 }
 
 type activePair struct {
@@ -178,14 +171,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats := dashStats{
-		TotalLines:  len(ld.Lines),
-		OnlineLines: countOnline(ld.Lines),
-		ActiveCalls: activeCount,
-	}
 	data := dashboardData{
 		chromeData:         h.newChromeDataWithHouseholds(r, "dashboard"),
-		Stats:              stats,
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
@@ -195,8 +182,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ActivePeer:         activePeer,
 		ActiveElapsed:      activeElapsed,
 		Status: dashStatusVM{
-			ActiveCalls:    stats.ActiveCalls,
-			OnlineLines:    stats.OnlineLines,
+			ActiveCalls:    activeCount,
+			OnlineLines:    countOnline(ld.Lines),
 			LinkedFamilies: len(linkedFamilies),
 			Now:            now,
 		},
@@ -292,7 +279,6 @@ func fmtElapsed(d time.Duration) string {
 	}
 	return fmt.Sprintf("%d:%02d", m, s)
 }
-
 
 type connectingData struct {
 	chromeData

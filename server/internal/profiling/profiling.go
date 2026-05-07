@@ -1,6 +1,6 @@
 // Package profiling wires the Pyroscope continuous-profiling SDK for
-// signald and admind. Profiles are pushed to a Pyroscope server via HTTP;
-// the server is expected to be in-cluster and not internet-reachable.
+// signald. Profiles are pushed to a Pyroscope server via HTTP; the server
+// is expected to be in-cluster and not internet-reachable.
 //
 // Privacy: continuous profiles capture stack traces, goroutine names,
 // memory allocation sites, and CPU samples. None of those carry user
@@ -22,7 +22,7 @@
 //
 // Label set (closed):
 //
-//   - service: "signald" or "admind", picked by the calling main.
+//   - service: "signald", picked by the calling main.
 //   - version: build version from internal/version.
 //   - hostname: os.Hostname() (the k8s pod name in the deployment;
 //     attacker-rebinding away from k8s would only expose the OS hostname,
@@ -39,9 +39,9 @@
 //     label set and create a privacy surface.
 //   - Free-form strings from any external input.
 //
-// The Init function is safe to call from cmd/signald and cmd/admind
-// regardless of whether PYROSCOPE_SERVER_ADDRESS is configured: with no
-// address, Init returns a no-op stop closure and profiling stays off.
+// The Init function is safe to call from cmd/signald regardless of whether
+// PYROSCOPE_SERVER_ADDRESS is configured: with no address, Init returns a
+// no-op stop closure and profiling stays off.
 package profiling
 
 import (

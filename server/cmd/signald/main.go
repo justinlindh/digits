@@ -51,6 +51,7 @@ func main() {
 // through slog instead of bypassing it via log.Fatal.
 func run(ctx context.Context) error {
 	cfg := config.Load()
+	slog.Info("starting signald", "version", version.Version, "commit", version.Commit, "pid", os.Getpid())
 	if cfg.DatabaseURL == "" {
 		return errors.New("DATABASE_URL must be set")
 	}
@@ -60,7 +61,7 @@ func run(ctx context.Context) error {
 	// leaving in-process propagation on, so a future enable does not
 	// require a code change. The shutdown closure flushes buffered spans
 	// on a clean SIGTERM; deferred so a panic during run() still flushes.
-	traceCfg := tracing.NewConfig(string(metrics.ServiceSignald), version.Version, version.Commit)
+	traceCfg := tracing.NewConfig("signald", version.Version, version.Commit)
 	traceShutdown, err := tracing.Init(ctx, traceCfg)
 	if err != nil {
 		return fmt.Errorf("init tracing: %w", err)
@@ -79,7 +80,7 @@ func run(ctx context.Context) error {
 	// Pyroscope continuous profiling. Server address is read from
 	// PYROSCOPE_SERVER_ADDRESS; empty disables the profiler. Profiling
 	// labels are a closed set; see internal/profiling for the rationale.
-	profCfg := profiling.NewConfig(string(metrics.ServiceSignald))
+	profCfg := profiling.NewConfig("signald")
 	profStop, err := profiling.Init(profCfg, version.Version)
 	if err != nil {
 		return fmt.Errorf("init profiling: %w", err)
@@ -103,7 +104,36 @@ func run(ctx context.Context) error {
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
+
+	// Redis pub/sub for multi-replica signaling. When REDIS_URL is set,
+	// the hub publishes to a shared channel when a target device is not
+	// connected to this pod. Other pods subscribe and deliver locally.
+	var redisBridge *signaling.RedisBridge
+	if cfg.RedisURL != "" {
+		var err error
+		redisBridge, err = signaling.NewRedisBridge(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("connect redis: %w", err)
+		}
+		defer func() { _ = redisBridge.Close() }()
+		if err := redisBridge.Ping(ctx); err != nil {
+			return fmt.Errorf("redis ping: %w", err)
+		}
+		hub.SetRedis(redisBridge)
+		go hub.Run(ctx)
+		slog.Info("redis pub/sub enabled for multi-replica signaling")
+	}
+
 	tracker := calls.New(database)
+	if redisBridge != nil {
+		rc := redisBridge.Client()
+		podID := redisBridge.PodID()
+
+		hub.SetDeviceState(signaling.NewDeviceState(rc, podID))
+		tracker.SetCallState(calls.NewCallState(rc))
+		tracker.Conferences().SetConfState(calls.NewConfState(rc))
+		slog.Info("redis cluster state enabled for multi-replica operation")
+	}
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
@@ -112,14 +142,18 @@ func run(ctx context.Context) error {
 	// middleware (HTTP request count + duration) and into the signaling
 	// relay (signaling_errors_total). Live-state gauges sample the hub and
 	// tracker at scrape time so we never persist counts elsewhere.
-	mreg := metrics.New(metrics.ServiceSignald, version.Version, version.Commit)
-	mreg.RegisterDevicesGauge(func() float64 { return float64(len(hub.OnlineNumbers())) })
+	mreg := metrics.New(version.Version, version.Commit)
+	mreg.RegisterDevicesGauge(func() float64 { return float64(hub.LocalConnectionCount()) })
 	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
 
 	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
 	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
 	// counters without polling.
 	dashEvents := events.New()
+	if redisBridge != nil {
+		dashEvents.SetRedis(redisBridge.Client(), redisBridge.PodID())
+		go dashEvents.RunRedis(ctx)
+	}
 	hub.SetDashboardEvents(dashEvents)
 	tracker.SetDashboardEvents(dashEvents)
 
@@ -279,17 +313,31 @@ func run(ctx context.Context) error {
 		}
 		return fmt.Errorf("metrics listen: %w", err)
 	case <-ctx.Done():
-		slog.Info("shutdown signal received, draining")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		slog.Info("shutdown signal received, draining connections")
+
+		// 25s budget leaves 5s headroom before k8s SIGKILL at 30s.
+		drainCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 		defer cancel()
+
+		// 1. Stop accepting new WebSocket upgrades (returns 503).
+		hub.StartDraining()
+
+		// 2. Shut down HTTP server (waits for non-hijacked requests).
+		if err := srv.Shutdown(drainCtx); err != nil {
+			slog.Warn("http shutdown", "err", err)
+		}
+
+		// 3. Close remaining WebSocket connections gracefully (close frame 1001).
+		hub.DrainAndClose(drainCtx)
+
+		// 4. Shut down metrics listener.
 		if metricsSrv != nil {
-			if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+			if err := metricsSrv.Shutdown(drainCtx); err != nil {
 				slog.Warn("metrics shutdown", "err", err)
 			}
 		}
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("http shutdown: %w", err)
-		}
+
+		slog.Info("shutdown complete")
 		return nil
 	}
 }

@@ -16,20 +16,15 @@ type RunSpec struct {
 	Stdin []byte
 }
 
-type RunOutput struct {
-	Stdout []byte
-	Stderr []byte
-}
-
 type Runner interface {
-	Run(ctx context.Context, spec RunSpec) (RunOutput, error)
+	Run(ctx context.Context, spec RunSpec) error
 }
 
 type ExecRunner struct{}
 
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }
 
-func (ExecRunner) Run(ctx context.Context, spec RunSpec) (RunOutput, error) {
+func (ExecRunner) Run(ctx context.Context, spec RunSpec) error {
 	cmd := exec.CommandContext(ctx, spec.Name, spec.Args...)
 	cmd.Dir = spec.Dir
 	if len(spec.Env) > 0 {
@@ -38,13 +33,10 @@ func (ExecRunner) Run(ctx context.Context, spec RunSpec) (RunOutput, error) {
 	if len(spec.Stdin) > 0 {
 		cmd.Stdin = bytes.NewReader(spec.Stdin)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err := cmd.Run()
-	out := RunOutput{Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
-	if err != nil {
-		return out, fmt.Errorf("%s %v: %w (stderr=%q)", spec.Name, spec.Args, err, stderr.String())
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %v: %w (stderr=%q)", spec.Name, spec.Args, err, stderr.String())
 	}
-	return out, nil
+	return nil
 }

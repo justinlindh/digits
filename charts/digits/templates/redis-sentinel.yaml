@@ -1,0 +1,217 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "digits.fullname" . }}-redis-config
+  labels:
+    {{- include "digits.labels" . | nindent 4 }}
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    appendonly no
+    save ""
+    maxmemory 64mb
+    maxmemory-policy allkeys-lru
+  sentinel.conf: |
+    sentinel resolve-hostnames yes
+    sentinel announce-hostnames yes
+    sentinel monitor {{ .Values.redis.sentinelMasterName }} {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379 {{ div (add (int .Values.redis.replicas) 1) 2 }}
+    sentinel down-after-milliseconds {{ .Values.redis.sentinelMasterName }} 5000
+    sentinel failover-timeout {{ .Values.redis.sentinelMasterName }} 10000
+    sentinel parallel-syncs {{ .Values.redis.sentinelMasterName }} 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "digits.fullname" . }}-redis-headless
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: redis
+      port: 6379
+    - name: sentinel
+      port: 26379
+    - name: metrics
+      port: 9121
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "digits.fullname" . }}-redis-sentinel
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: sentinel
+      port: 26379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "digits.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "digits.fullname" . }}-redis-headless
+  replicas: {{ .Values.redis.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/part-of: {{ include "digits.name" . }}
+    spec:
+      automountServiceAccountToken: false
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          command:
+            - sh
+            - -c
+            - |
+              cp /etc/redis/redis.conf /tmp/redis.conf
+              if [ "$(hostname)" != "{{ include "digits.fullname" . }}-redis-0" ]; then
+                echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379" >> /tmp/redis.conf
+              fi
+              exec redis-server /tmp/redis.conf
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+          {{- with .Values.redis.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+        - name: sentinel
+          image: redis:7-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: sentinel
+              containerPort: 26379
+          command:
+            - sh
+            - -c
+            - |
+              cp /etc/redis/sentinel.conf /tmp/sentinel.conf
+              exec redis-sentinel /tmp/sentinel.conf
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        - name: exporter
+          image: oliver006/redis_exporter:v1.67.0-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: metrics
+              containerPort: 9121
+          args:
+            - --redis.addr=redis://localhost:6379
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "digits.fullname" . }}-redis-config
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+{{- if .Values.observability.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "digits.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+    {{- include "digits.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "digits.fullname" . }}-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: instance
+        - action: replace
+          targetLabel: job
+          replacement: digits-redis
+{{- end }}
+{{- end }}

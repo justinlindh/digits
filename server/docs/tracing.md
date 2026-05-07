@@ -1,6 +1,6 @@
 # Tracing and Continuous Profiling
 
-`signald` and `admind` emit OpenTelemetry traces and Pyroscope continuous
+`signald` emits OpenTelemetry traces and Pyroscope continuous
 profiles to a private observability stack. The stack lives in the
 homelab Kubernetes cluster (Tempo for traces, Pyroscope for profiles,
 Grafana Loki for logs); none of it is internet-reachable.
@@ -19,7 +19,7 @@ here as a privacy review, not a refactor.
 | `OTEL_EXPORTER_OTLP_INSECURE` | `false` to require TLS. The cluster collector is on the cluster network, so the default is true. | `true` |
 | `OTEL_TRACES_SAMPLER_ARG` | Head-based sample ratio, 0..1. | `1.0` |
 | `OTEL_RESOURCE_ATTRIBUTES` | k=v[,k=v...] resource attributes. The k8s deployment uses this to set `cluster=homelab` and `service.namespace=digits`. | unset |
-| `OTEL_SERVICE_NAME` | Override service name. Code-supplied (`signald` / `admind`) is the preferred path. | unset |
+| `OTEL_SERVICE_NAME` | Override service name. Code-supplied (`signald`) is the preferred path. | unset |
 | `PYROSCOPE_SERVER_ADDRESS` | Pyroscope HTTP ingest URL. Empty disables. | unset (off) |
 | `PYROSCOPE_AUTH_TOKEN` | Bearer token for Grafana Cloud Pyroscope. Empty for in-cluster (no auth). | unset |
 | `PYROSCOPE_TENANT_ID` | `X-Scope-OrgID` for multi-tenant Pyroscope. | unset |
@@ -63,24 +63,22 @@ dominate the exporter without diagnostic value.
 ### HTTP client spans
 
 One span per outbound request, emitted by
-`internal/tracing.HTTPClientTransport`. Used today for `admind`'s
-`/internal/stats` call to `signald`. Attributes:
+`internal/tracing.HTTPClientTransport`. Attributes:
 
 - `http.method`
 - `http.status_code`
 - `server.address`: destination host (configured service hostname for
   internal calls; never user-derived).
 
-`traceparent` is injected via the global propagator so the inbound span
-on `signald` becomes a child of the `admind` handler span. As with the
-server middleware, we do NOT use `otelhttp.NewTransport` because it
-records `url.full` and `url.path` raw.
+`traceparent` is injected via the global propagator so any inbound span
+on signald becomes a child of the caller's span. As with the server
+middleware, we do NOT use `otelhttp.NewTransport` because it records
+`url.full` and `url.path` raw.
 
 ### Database spans
 
 One span per SQL operation, emitted by `XSAM/otelsql` configured in
-`internal/tracing.OpenSQLDB` and used by `internal/db.Open` and
-`internal/admin.OpenAdmin`.
+`internal/tracing.OpenSQLDB` and used by `internal/db.Open`.
 
 Privacy: `otelsql` is configured with `SpanOptions.DisableQuery=true`
 which suppresses `db.statement`. The default behavior would echo the
@@ -104,7 +102,7 @@ proportional to query volume.
 
 Applied to every span as part of the OTel resource:
 
-- `service.name`: `signald` or `admind`
+- `service.name`: `signald`
 - `service.version`: build version from `internal/version`
 - `service.instance.id`: `os.Hostname()`. In k8s this is the pod name
   (e.g. `signald-7f44`); on the docker host this is the container ID.
@@ -124,7 +122,7 @@ explicit non-zero `MutexProfileFraction` / `BlockProfileRate` config.
 
 Label set is closed:
 
-- `service`: `signald` or `admind` (set by the binary, not env)
+- `service`: `signald` (set by the binary, not env)
 - `version`: build version
 - `hostname`: `os.Hostname()`
 - `environment`: from `DEPLOYMENT_ENV` (operator-supplied)

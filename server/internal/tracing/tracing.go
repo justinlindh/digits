@@ -1,4 +1,4 @@
-// Package tracing wires OpenTelemetry tracing for signald and admind.
+// Package tracing wires OpenTelemetry tracing for signald.
 // The design is bound by the same anti-surveillance policy that governs
 // internal/metrics: every span attribute, every event, every link is a
 // privacy decision, not a routine instrumentation toggle. See
@@ -37,19 +37,16 @@
 //   - Free-form user content (call SDP fragments, audio, message bodies).
 //   - Database query parameters that could echo any of the above.
 //
-// The Init function is safe to call from cmd/signald and cmd/admind
-// regardless of whether OTEL_EXPORTER_OTLP_ENDPOINT is configured: with
-// no endpoint, Init returns a no-op shutdown closure and tracing remains
-// off. The signald and admind binaries must call shutdown on graceful
-// exit so in-flight spans get flushed.
+// The Init function is safe to call from cmd/signald regardless of whether
+// OTEL_EXPORTER_OTLP_ENDPOINT is configured: with no endpoint, Init returns
+// a no-op shutdown closure and tracing remains off. The signald binary must
+// call shutdown on graceful exit so in-flight spans get flushed.
 package tracing
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -67,6 +64,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/metrics"
 )
 
@@ -75,8 +73,8 @@ import (
 // in NewConfig; an empty Endpoint disables the exporter (Init returns a
 // no-op shutdown). Protocol picks between gRPC (default) and HTTP/protobuf.
 type Config struct {
-	// ServiceName is the short identifier for this binary, e.g. "signald"
-	// or "admind". Becomes the service.name resource attribute.
+	// ServiceName is the short identifier for this binary (e.g. "signald").
+	// Becomes the service.name resource attribute.
 	ServiceName string
 	// ServiceVersion is the build-time version string from internal/version.
 	// Becomes the service.version resource attribute.
@@ -174,9 +172,9 @@ func parseResourceAttrs(s string) []attribute.KeyValue {
 }
 
 // Shutdown is a closure returned by Init that flushes any buffered spans
-// and closes the exporter. Always call this on graceful exit; signald and
-// admind do so via defer in their main goroutines. A nil return value
-// indicates Init was a no-op.
+// and closes the exporter. Always call this on graceful exit; signald does
+// so via defer in its main goroutine. A nil return value indicates Init
+// was a no-op.
 type Shutdown func(context.Context) error
 
 // noop is the Shutdown returned when tracing is disabled. Calling it is
@@ -322,9 +320,9 @@ func fallbackResource(cfg Config) *resource.Resource {
 //     client-controlled but cannot leak PII)
 //
 // Inbound traceparent headers are honored via the global propagator
-// (installed by Init), so a request from admind carrying a traceparent
-// becomes a child of admind's span. The span name format is
-// "<service>.http <route-bucket>" to match the metrics labelset shape.
+// (installed by Init), so a request carrying a traceparent becomes a
+// child span. The span name format is "<service>.http <route-bucket>"
+// to match the metrics labelset shape.
 //
 // The serviceName argument is used as the operation prefix (e.g.
 // "signald.http"); a typo there is a code-only change, not an env knob.
@@ -359,12 +357,12 @@ func HTTPServerMiddleware(serviceName string, next http.Handler) http.Handler {
 		)
 		defer span.End()
 
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		rec := &httputil.StatusRecorder{ResponseWriter: w, Status: http.StatusOK}
 		next.ServeHTTP(rec, r.WithContext(ctx))
 
-		span.SetAttributes(attribute.Int("http.status_code", rec.status))
-		if rec.status >= 500 {
-			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		span.SetAttributes(attribute.Int("http.status_code", rec.Status))
+		if rec.Status >= 500 {
+			span.SetStatus(codes.Error, http.StatusText(rec.Status))
 		}
 	})
 }
@@ -382,48 +380,6 @@ func isNoiseRoute(path string) bool {
 	return false
 }
 
-// statusRecorder captures the response status without buffering the body.
-// Mirrors the metrics package's recorder; copied (not imported) so the
-// tracing middleware does not depend on metrics' internals beyond the
-// public RouteOf bucketer.
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (s *statusRecorder) WriteHeader(code int) {
-	if s.wroteHeader {
-		return
-	}
-	s.status = code
-	s.wroteHeader = true
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if !s.wroteHeader {
-		s.status = http.StatusOK
-		s.wroteHeader = true
-	}
-	return s.ResponseWriter.Write(b)
-}
-
-// Flush and Hijack pass-through preserve SSE / WebSocket upgrade
-// behavior; without them, /api/dashboard/stream and /ws would break.
-func (s *statusRecorder) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
-}
-
 // HTTPClientTransport wraps base with a tracing transport that injects
 // W3C traceparent on outbound requests and produces one client span per
 // request. The span carries:
@@ -432,7 +388,7 @@ func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 //   - http.status_code (set after the request returns)
 //   - server.address: the destination host (already a configured
 //     service hostname for our internal calls; never a user-derived
-//     value because admind only calls signald's /internal/stats)
+//     value)
 //
 // We deliberately do NOT use otelhttp.NewTransport. That wrapper records
 // url.full and url.path as raw strings, which for any per-call outbound

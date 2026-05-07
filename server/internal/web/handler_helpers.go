@@ -66,7 +66,7 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, *household.Household, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
-		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		slog.Error("ownedLinesForUser: list households failed", "user_id", user.ID, "err", err)
 		return nil, nil, false
 	}
 	if len(households) == 0 {
@@ -76,7 +76,7 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 	for _, hh := range households {
 		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
-			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			slog.Error("ownedLinesForUser: list lines failed", "household_id", hh.ID, "err", err)
 			return nil, nil, false
 		}
 		for i := range hhLines {
@@ -242,35 +242,47 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// activeHousehold returns the household the user is currently viewing. Reads
-// active_household_id from the session; falls back to the first household
-// when unset or when the user is no longer a member.
-func (h *Handler) activeHousehold(r *http.Request) *household.Household {
+// resolveActiveHousehold returns the user's full household list along with
+// the entry currently selected as active. The active entry is the one whose
+// ID matches the session cookie's active_household_id; on any miss (cookie
+// absent, ID unset, ID not in the list) it falls back to households[0].
+// Returns (nil, nil) when the request has no authenticated user, the
+// household store is unset, GetForUser fails, or the user has no
+// households.
+func (h *Handler) resolveActiveHousehold(r *http.Request) (*household.Household, []*household.Household) {
 	if h.householdStore == nil {
-		return nil
+		return nil, nil
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return nil
+		return nil, nil
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return nil
+		return nil, nil
 	}
-
-	cookie, err := r.Cookie(auth.CookieName)
-	if err == nil && h.authStore != nil {
+	active := households[0]
+	cookie, cookieErr := r.Cookie(auth.CookieName)
+	if cookieErr == nil && h.authStore != nil {
 		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
 		if activeID != "" {
 			for _, hh := range households {
 				if hh.ID == activeID {
-					return hh
+					active = hh
+					break
 				}
 			}
 		}
 	}
+	return active, households
+}
 
-	return households[0]
+// activeHousehold returns the household the user is currently viewing. Reads
+// active_household_id from the session; falls back to the first household
+// when unset or when the user is no longer a member.
+func (h *Handler) activeHousehold(r *http.Request) *household.Household {
+	active, _ := h.resolveActiveHousehold(r)
+	return active
 }
 
 // chromeData holds the fields every protected page-data struct shares for
@@ -316,28 +328,8 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 }
 
 func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.householdStore == nil {
-		return newChromeData(page, user, nil)
-	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		return newChromeData(page, user, nil)
-	}
-	active := households[0]
-	cookie, cookieErr := r.Cookie(auth.CookieName)
-	if cookieErr == nil && h.authStore != nil {
-		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
-		if activeID != "" {
-			for _, hh := range households {
-				if hh.ID == activeID {
-					active = hh
-					break
-				}
-			}
-		}
-	}
-	cd := newChromeData(page, user, active)
+	active, households := h.resolveActiveHousehold(r)
+	cd := newChromeData(page, auth.UserFromContext(r.Context()), active)
 	cd.Households = households
 	return cd
 }
@@ -345,7 +337,9 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		slog.Error("jsonError: encode failed", "err", err)
+	}
 }
 
 func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
@@ -394,4 +388,3 @@ func partialFor(r *http.Request, intercom, am string) string {
 	}
 	return intercom
 }
-

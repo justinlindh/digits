@@ -204,22 +204,22 @@ type Handler struct {
 	healthStore *calls.HealthStore
 	dashEvents  *events.Broadcaster
 	// Per-page template sets to avoid {{define}} name conflicts
-	tmplDashboard      *template.Template
-	tmplPhones         *template.Template
-	tmplCalls          *template.Template
-	tmplSettings       *template.Template
-	tmplOnboard        *template.Template
-	tmplPhoneDetail    *template.Template
-	tmplLinks          *template.Template
-	tmplConnecting     *template.Template
-	tmplWelcome        *template.Template
-	tmplInvite         *template.Template
-	tmplCallLivePanel          *template.Template
-	tmplCallLiveDetail         *template.Template
-	tmplConferenceLivePanel    *template.Template
-	tmplConferenceLiveDetail   *template.Template
-	tmplDashboardAMStatus      *template.Template
-	cfg                HandlerConfig
+	tmplDashboard            *template.Template
+	tmplPhones               *template.Template
+	tmplCalls                *template.Template
+	tmplSettings             *template.Template
+	tmplOnboard              *template.Template
+	tmplPhoneDetail          *template.Template
+	tmplLinks                *template.Template
+	tmplConnecting           *template.Template
+	tmplWelcome              *template.Template
+	tmplInvite               *template.Template
+	tmplCallLivePanel        *template.Template
+	tmplCallLiveDetail       *template.Template
+	tmplConferenceLivePanel  *template.Template
+	tmplConferenceLiveDetail *template.Template
+	tmplDashboardAMStatus    *template.Template
+	cfg                      HandlerConfig
 	// Auth
 	authStore    *auth.Store
 	authHandlers *auth.Handlers
@@ -402,44 +402,44 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	}
 
 	return &Handler{
-		upgrader:           u,
-		lineStore:          deps.LineStore,
-		deviceStore:        deps.DeviceStore,
-		hub:                deps.Hub,
-		tracker:            deps.Tracker,
-		relay:              deps.Relay,
-		healthStore:        deps.HealthStore,
-		dashEvents:         deps.DashEvents,
-		tmplDashboard:      tmplDashboard,
-		tmplPhones:         tmplPhones,
-		tmplCalls:          tmplCalls,
-		tmplSettings:       tmplSettings,
-		tmplOnboard:        tmplOnboard,
-		tmplPhoneDetail:    tmplPhoneDetail,
-		tmplLinks:          tmplLinks,
-		tmplConnecting:     tmplConnecting,
-		tmplWelcome:        tmplWelcome,
-		tmplInvite:         tmplInvite,
-		tmplCallLivePanel:          tmplCallLivePanel,
-		tmplCallLiveDetail:         tmplCallLiveDetail,
-		tmplConferenceLivePanel:    tmplConferenceLivePanel,
-		tmplConferenceLiveDetail:   tmplConferenceLiveDetail,
-		tmplDashboardAMStatus:      tmplDashboardAMStatus,
-		cfg:                cfg,
-		authStore:          deps.AuthStore,
-		authHandlers:       deps.AuthHandlers,
-		googleAuth:         deps.GoogleAuth,
-		householdStore:     deps.HouseholdStore,
-		pairingStore:       deps.PairingStore,
-		linkStore:          deps.LinkStore,
-		inviteStore:        deps.InviteStore,
-		emailer:            deps.Emailer,
-		authLimiter:        ratelimit.New(5, time.Minute),
-		magicVerifyLimiter: ratelimit.New(10, time.Minute),
-		googleLoginLimiter: ratelimit.New(10, time.Minute),
-		pairingLimiter:     ratelimit.New(5, time.Minute),
-		inviteLimiter:      ratelimit.New(5, time.Minute),
-		metrics:            deps.Metrics,
+		upgrader:                 u,
+		lineStore:                deps.LineStore,
+		deviceStore:              deps.DeviceStore,
+		hub:                      deps.Hub,
+		tracker:                  deps.Tracker,
+		relay:                    deps.Relay,
+		healthStore:              deps.HealthStore,
+		dashEvents:               deps.DashEvents,
+		tmplDashboard:            tmplDashboard,
+		tmplPhones:               tmplPhones,
+		tmplCalls:                tmplCalls,
+		tmplSettings:             tmplSettings,
+		tmplOnboard:              tmplOnboard,
+		tmplPhoneDetail:          tmplPhoneDetail,
+		tmplLinks:                tmplLinks,
+		tmplConnecting:           tmplConnecting,
+		tmplWelcome:              tmplWelcome,
+		tmplInvite:               tmplInvite,
+		tmplCallLivePanel:        tmplCallLivePanel,
+		tmplCallLiveDetail:       tmplCallLiveDetail,
+		tmplConferenceLivePanel:  tmplConferenceLivePanel,
+		tmplConferenceLiveDetail: tmplConferenceLiveDetail,
+		tmplDashboardAMStatus:    tmplDashboardAMStatus,
+		cfg:                      cfg,
+		authStore:                deps.AuthStore,
+		authHandlers:             deps.AuthHandlers,
+		googleAuth:               deps.GoogleAuth,
+		householdStore:           deps.HouseholdStore,
+		pairingStore:             deps.PairingStore,
+		linkStore:                deps.LinkStore,
+		inviteStore:              deps.InviteStore,
+		emailer:                  deps.Emailer,
+		authLimiter:              ratelimit.New(5, time.Minute),
+		magicVerifyLimiter:       ratelimit.New(10, time.Minute),
+		googleLoginLimiter:       ratelimit.New(10, time.Minute),
+		pairingLimiter:           ratelimit.New(5, time.Minute),
+		inviteLimiter:            ratelimit.New(5, time.Minute),
+		metrics:                  deps.Metrics,
 	}, nil
 }
 
@@ -690,4 +690,3 @@ func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
 }
-

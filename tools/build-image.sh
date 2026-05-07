@@ -739,7 +739,11 @@ fi
 # OTA digitsd updates land with a different version string and a fresh hash,
 # so the runtime extractor takes over from there.
 info "Pre-writing asset-version marker..."
-ASSET_MARKER=$(python3 "$ASSET_MARKER_TOOL" "$EMBED_DIR" dev)
+# DIGITS_PI_VERSION is set by entrypoint.sh to the version string stamped into
+# digitsd (release version in release mode, git-describe result in local mode,
+# "dev" if no pi/v* tag exists). Using the real version here lets digitsd skip
+# the first-boot asset extraction when its internal marker already matches.
+ASSET_MARKER=$(python3 "$ASSET_MARKER_TOOL" "$EMBED_DIR" "${DIGITS_PI_VERSION:-dev}")
 echo "$ASSET_MARKER" > "${DATA_MNT}/digits/asset-version"
 chown 999:992 "${DATA_MNT}/digits/asset-version"
 chmod 644 "${DATA_MNT}/digits/asset-version"

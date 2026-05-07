@@ -1,5 +1,5 @@
 // Package metrics defines the privacy-respecting Prometheus metric set
-// exported by signald and admind. The design is deliberately conservative:
+// exported by signald. The design is deliberately conservative:
 // every label and every measurement is reviewed against the digits
 // anti-surveillance policy described in docs/mission.md and
 // docs/why-digits.md. Reviewers should treat any new label here as a
@@ -31,9 +31,6 @@
 package metrics
 
 import (
-	"bufio"
-	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,17 +38,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
-// Service identifies which binary the metrics belong to. Used as a
-// "service" label on shared metrics so a single Prometheus scrape config
-// can distinguish signald from admind without renaming the metric family.
-type Service string
-
-const (
-	ServiceSignald Service = "signald"
-	ServiceAdmind  Service = "admind"
-)
+const serviceName = "signald"
 
 // SignalingErrorCategory is a closed set of categories for the
 // signaling_errors_total counter. The list is intentionally small and
@@ -60,13 +51,13 @@ const (
 type SignalingErrorCategory string
 
 const (
-	ErrTURNAllocFailed     SignalingErrorCategory = "turn_alloc_failed"
-	ErrICETimeout          SignalingErrorCategory = "ice_timeout"
-	ErrPeerUnreachable     SignalingErrorCategory = "peer_unreachable"
-	ErrCallSetupFailed     SignalingErrorCategory = "call_setup_failed"
-	ErrAuthFailed          SignalingErrorCategory = "auth_failed"
-	ErrInvalidMessage      SignalingErrorCategory = "invalid_message"
-	ErrRelayDelivery       SignalingErrorCategory = "relay_delivery"
+	ErrTURNAllocFailed SignalingErrorCategory = "turn_alloc_failed"
+	ErrICETimeout      SignalingErrorCategory = "ice_timeout"
+	ErrPeerUnreachable SignalingErrorCategory = "peer_unreachable"
+	ErrCallSetupFailed SignalingErrorCategory = "call_setup_failed"
+	ErrAuthFailed      SignalingErrorCategory = "auth_failed"
+	ErrInvalidMessage  SignalingErrorCategory = "invalid_message"
+	ErrRelayDelivery   SignalingErrorCategory = "relay_delivery"
 )
 
 // Registry bundles a Prometheus registry, the metrics registered into it,
@@ -77,17 +68,17 @@ type Registry struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
 
-	ActiveDevices    prometheus.Gauge
-	ActiveCalls      prometheus.Gauge
-	SignalingErrors  *prometheus.CounterVec
-	BuildInfo        *prometheus.GaugeVec
+	ActiveDevices   prometheus.Gauge
+	ActiveCalls     prometheus.Gauge
+	SignalingErrors *prometheus.CounterVec
+	BuildInfo       *prometheus.GaugeVec
 }
 
 // New builds a Registry with all metrics registered. Callers wire live-state
 // gauges (active devices, active calls) by calling RegisterDevicesGauge and
 // RegisterCallsGauge with closures that read in-memory state. Counters are
 // driven by middleware and signaling code.
-func New(svc Service, version, commit string) *Registry {
+func New(version, commit string) *Registry {
 	reg := prometheus.NewRegistry()
 
 	// Standard process and Go runtime collectors. These provide goroutines,
@@ -103,7 +94,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.HTTPRequestsTotal = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "http_requests_total",
 			Help:      "Total HTTP requests handled, partitioned by coarse route group, method, and status code. Routes are bucketed to avoid path components that carry user identifiers.",
 		},
@@ -112,7 +103,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.HTTPRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "http_request_duration_seconds",
 			Help:      "HTTP request latency in seconds, partitioned by coarse route group, method, and status code.",
 			Buckets:   prometheus.DefBuckets,
@@ -121,20 +112,20 @@ func New(svc Service, version, commit string) *Registry {
 	)
 	r.ActiveDevices = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "digits",
-		Subsystem: string(svc),
+		Subsystem: serviceName,
 		Name:      "active_devices",
 		Help:      "Currently connected phones. Count only; no identifiers.",
 	})
 	r.ActiveCalls = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "digits",
-		Subsystem: string(svc),
+		Subsystem: serviceName,
 		Name:      "active_calls",
 		Help:      "Currently active calls. Count only; no participants or routing.",
 	})
 	r.SignalingErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "signaling_errors_total",
 			Help:      "Signaling errors observed by the server, partitioned by a fixed category set. No peer identity is recorded.",
 		},
@@ -143,7 +134,7 @@ func New(svc Service, version, commit string) *Registry {
 	r.BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "digits",
-			Subsystem: string(svc),
+			Subsystem: serviceName,
 			Name:      "build_info",
 			Help:      "Static build info. Always 1; the version and commit are carried as labels.",
 		},
@@ -222,45 +213,6 @@ func (r *Registry) ObserveSignalingErrorCategory(category string) {
 	r.SignalingErrors.WithLabelValues(category).Inc()
 }
 
-// statusRecorder captures the response status without buffering the body.
-// Flush and Hijack pass through to the underlying ResponseWriter so SSE
-// streaming (/api/dashboard/stream) and WebSocket upgrades (/ws) work.
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (s *statusRecorder) WriteHeader(code int) {
-	if s.wroteHeader {
-		return
-	}
-	s.status = code
-	s.wroteHeader = true
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if !s.wroteHeader {
-		s.status = http.StatusOK
-		s.wroteHeader = true
-	}
-	return s.ResponseWriter.Write(b)
-}
-
-func (s *statusRecorder) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, fmt.Errorf("underlying ResponseWriter does not support Hijack")
-}
-
 // Middleware returns an http.Handler middleware that records request count
 // and duration into the registry. It calls routeOf to bucket the path into
 // a coarse route group; that function is the privacy boundary, so it lives
@@ -268,11 +220,11 @@ func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (r *Registry) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		rec := &httputil.StatusRecorder{ResponseWriter: w, Status: http.StatusOK}
 		next.ServeHTTP(rec, req)
 		dur := time.Since(start).Seconds()
 		route := RouteOf(req.URL.Path)
-		status := strconv.Itoa(rec.status)
+		status := strconv.Itoa(rec.Status)
 		r.HTTPRequestsTotal.WithLabelValues(route, req.Method, status).Inc()
 		r.HTTPRequestDuration.WithLabelValues(route, req.Method, status).Observe(dur)
 	})
@@ -357,10 +309,6 @@ func RouteOf(path string) string {
 		return "/onboard"
 	case path == "/connecting":
 		return "/connecting"
-
-	// Admin routes.
-	case path == "/admin" || path == "/admin/" || strings.HasPrefix(path, "/admin/"):
-		return "/admin"
 
 	default:
 		return "other"
