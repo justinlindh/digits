@@ -1156,9 +1156,7 @@ hostside_enable_service "$ROOTFS_MNT" "digits-ap-check.service"
 hostside_enable_service "$ROOTFS_MNT" "digits-mixer.service"
 hostside_enable_service "$ROOTFS_MNT" "digitsd.service"
 
-# GPCLK0 is handled by digitsd's subsystem init (all modes) and
-# ExecStartPre=+digitsd --mode=gpclk0 in the service unit. No separate
-# service needed.
+# GPCLK0 is enabled by digitsd on startup (all modes). No separate service.
 
 # ── step 21: verify critical system files (host-side) ───────────────────────
 

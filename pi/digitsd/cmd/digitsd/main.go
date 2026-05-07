@@ -70,7 +70,7 @@ var (
 	toneDir     = flag.String("tones", "/data/digits/tones", "directory containing WAV tone files")
 	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 	showVersion = flag.Bool("version", false, "print version and exit")
-	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, gpclk0")
+	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, setup, gpclk0 (diagnostic)")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
