@@ -29,6 +29,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
+	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
@@ -2010,7 +2011,11 @@ func main() {
 	// path doesn't fire when the Pico responds.
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
-		if firmwareNeedsReflash(fwVersion, bundled) {
+		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
+		if skipReflash && firmwareNeedsReflash(fwVersion, bundled) {
+			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
+				"pico", fwVersion, "bundled", bundled)
+		} else if firmwareNeedsReflash(fwVersion, bundled) {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
