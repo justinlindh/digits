@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,16 @@ type SignalingErrorObserver interface {
 	ObserveSignalingErrorCategory(category string)
 }
 
+// activeExtension tracks a device that picked up an extension phone during
+// an active call on its line. The extension device has its own WebRTC peer
+// connection to the remote party, running in parallel with the original
+// answering device's connection.
+type activeExtension struct {
+	HardwareID string // the picking-up device
+	LineNumber string // the line the extension is on
+	PeerNumber string // the remote party's line number
+}
+
 type Relay struct {
 	Hub            *Hub
 	Tracker        CallTracker
@@ -62,6 +73,9 @@ type Relay struct {
 	// unreachable, etc). nil disables instrumentation; production wires it
 	// in cmd/signald/main.go.
 	Errors SignalingErrorObserver
+
+	extMu      sync.Mutex
+	extensions map[string]*activeExtension // hardware_id -> extension state
 }
 
 // observeError is a nil-safe pass-through to the SignalingErrorObserver.
@@ -79,6 +93,7 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 		Tracker:        tracker,
 		CallAuthorizer: authorizer,
 		LineStore:      lineStore,
+		extensions:     make(map[string]*activeExtension),
 	}
 }
 
@@ -101,6 +116,8 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		r.handleHangup(ctx, from, msg)
 	case TypeConferenceMerge:
 		r.handleConferenceMerge(ctx, from, msg)
+	case TypeExtensionPickup:
+		r.handleExtensionPickup(ctx, from, msg)
 	case TypeDTMF:
 		r.handleDTMF(ctx, from, msg)
 	case TypeRequestICE:
@@ -249,6 +266,18 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
+	// If the hangup comes from an extension device, only tear down the
+	// extension connection -- the primary call continues.
+	if msg.HardwareID != "" {
+		r.extMu.Lock()
+		_, isExt := r.extensions[msg.HardwareID]
+		r.extMu.Unlock()
+		if isExt {
+			r.clearExtension(msg.HardwareID)
+			return
+		}
+	}
+
 	if r.Tracker != nil {
 		if conf := r.Tracker.Conferences().ConferenceByPhone(from); conf != nil {
 			if conf.Host == from {
@@ -285,9 +314,13 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
 	}
+	r.clearExtensionsForCall(from)
 }
 
 func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
+	if msg.Extension && r.routeExtensionSignaling(from, msg) {
+		return
+	}
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
@@ -310,6 +343,9 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
+	if msg.Extension && r.routeExtensionSignaling(from, msg) {
+		return
+	}
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(id, from, msg.To) {
@@ -391,7 +427,13 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 // the call when the last device on that line disconnects. OnDisconnect
 // runs before Unregister (LIFO defer order in handler_ws.go), so the
 // departing conn is still counted; >1 means siblings remain.
-func (r *Relay) OnDisconnect(ctx context.Context, number string) {
+func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID string) {
+	// Clear any extension state for this specific device, regardless of
+	// whether other devices remain on the line.
+	if hardwareID != "" {
+		r.clearExtension(hardwareID)
+	}
+
 	if r.Tracker == nil {
 		return
 	}
@@ -402,6 +444,139 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string) {
 		r.endConference(ctx, conf.ID, "disconnect")
 	}
 	r.Tracker.ClearByNumber(ctx, number)
+	r.clearExtensionsForCall(number)
+}
+
+// handleExtensionPickup is the POTS extension model: a second device on the
+// same line picks up during an active call. The server establishes a parallel
+// WebRTC connection between the picking-up device and the remote peer,
+// without disrupting the original answering device's connection.
+func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Message) {
+	if msg.HardwareID == "" {
+		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "hardware_id required for extension pickup"})
+		return
+	}
+
+	if r.Tracker == nil {
+		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call on this line"})
+		return
+	}
+
+	peer := r.Tracker.PeerOf(from)
+	if peer == "" {
+		if conf := r.Tracker.Conferences().ConferenceByPhone(from); conf != nil {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "extension pickup not supported during conferences"})
+			return
+		}
+		_ = r.Hub.SendToHardware(msg.HardwareID, &Message{Type: TypeError, Error: "no active call on this line"})
+		return
+	}
+
+	r.extMu.Lock()
+	if _, exists := r.extensions[msg.HardwareID]; exists {
+		r.extMu.Unlock()
+		return
+	}
+	r.extensions[msg.HardwareID] = &activeExtension{
+		HardwareID: msg.HardwareID,
+		LineNumber: from,
+		PeerNumber: peer,
+	}
+	r.extMu.Unlock()
+
+	slog.Info("extension pickup", "line", from, "hardware_id", msg.HardwareID, "peer", peer)
+
+	_ = r.Hub.SendToHardware(msg.HardwareID, &Message{
+		Type:      TypeExtensionConnect,
+		Peer:      peer,
+		Initiator: true,
+	})
+
+	_ = r.Hub.SendTo(peer, &Message{
+		Type:      TypeExtensionConnect,
+		Peer:      from,
+		Initiator: false,
+		Extension: true,
+	})
+
+	for _, conn := range r.Hub.GetAll(from) {
+		if conn.HardwareID != msg.HardwareID {
+			_ = r.Hub.SendToHardware(conn.HardwareID, &Message{
+				Type:       TypeExtensionActive,
+				HardwareID: msg.HardwareID,
+			})
+		}
+	}
+}
+
+// routeExtensionSignaling routes SDP/ICE messages for extension connections.
+// Extension signaling is identified by the Extension flag on the message.
+// Returns true if the message was handled.
+func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
+	r.extMu.Lock()
+	ext := r.extensions[msg.HardwareID]
+	r.extMu.Unlock()
+
+	if ext != nil {
+		if msg.To == ext.PeerNumber {
+			_ = r.Hub.SendTo(ext.PeerNumber, msg)
+			return true
+		}
+	}
+
+	// The message might be from the remote peer going back to the extension device.
+	// Find which extension expects traffic from this sender.
+	r.extMu.Lock()
+	for _, e := range r.extensions {
+		if e.PeerNumber == from && e.LineNumber == msg.To {
+			r.extMu.Unlock()
+			_ = r.Hub.SendToHardware(e.HardwareID, msg)
+			return true
+		}
+	}
+	r.extMu.Unlock()
+	return false
+}
+
+// clearExtension removes a device from the active extension set and notifies
+// the remote peer that the extension has hung up. Called when the extension
+// device sends a hangup or disconnects.
+func (r *Relay) clearExtension(hardwareID string) {
+	r.extMu.Lock()
+	ext, ok := r.extensions[hardwareID]
+	if ok {
+		delete(r.extensions, hardwareID)
+	}
+	r.extMu.Unlock()
+	if ok {
+		_ = r.Hub.SendTo(ext.PeerNumber, &Message{
+			Type:      TypeHangup,
+			From:      ext.LineNumber,
+			Extension: true,
+		})
+		slog.Info("extension cleared", "hardware_id", hardwareID, "line", ext.LineNumber, "peer", ext.PeerNumber)
+	}
+}
+
+// clearExtensionsForCall removes all extensions on a line, called when the
+// main call ends. Sends hangup to each extension device.
+func (r *Relay) clearExtensionsForCall(lineNumber string) {
+	r.extMu.Lock()
+	var toRemove []string
+	for hwID, ext := range r.extensions {
+		if ext.LineNumber == lineNumber {
+			toRemove = append(toRemove, hwID)
+		}
+	}
+	for _, hwID := range toRemove {
+		delete(r.extensions, hwID)
+	}
+	r.extMu.Unlock()
+
+	for _, hwID := range toRemove {
+		_ = r.Hub.SendToHardware(hwID, &Message{Type: TypeHangup, From: lineNumber})
+		slog.Info("extension cleared (call ended)", "hardware_id", hwID, "line", lineNumber)
+	}
 }
 
 func (r *Relay) forward(msg *Message) {

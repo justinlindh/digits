@@ -335,7 +335,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// Simulate B (non-host) disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect(context.Background(), "5550002")
+	r.OnDisconnect(context.Background(), "5550002", "")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
@@ -480,7 +480,7 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// Simulate A disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect(context.Background(), "5550001")
+	r.OnDisconnect(context.Background(), "5550001", "")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
