@@ -14,12 +14,23 @@
 #include "tone.h"
 #include "uart_proto.h"
 
-// fsm_led_set wraps led_set_mode: skips FSM-driven LED changes when
-// the Pi has locked the LED (e.g. recovery/setup modes).
+// fsm_led_set resolves the LED pattern from (phase, fsm_state). When the Pi
+// has locked the LED (e.g. CONNECTING during WiFi verify), FSM changes are
+// skipped. When the FSM requests OFF (idle/on-hook), the phase determines
+// the idle pattern so each mode gets the right ambient indicator.
 static void fsm_led_set(led_mode_t mode) {
-    if (!led_is_locked()) {
-        led_set_mode(mode);
+    if (led_is_locked()) {
+        return;
     }
+    if (mode == LED_MODE_OFF) {
+        switch (phase_read()) {
+        case PHASE_UNPAIRED: led_set_mode(LED_MODE_SLOW_PULSE); return;
+        case PHASE_SETUP:    led_set_mode(LED_MODE_DOUBLE_PULSE); return;
+        case PHASE_RECOVERY: led_set_mode(LED_MODE_FAST_BLINK); return;
+        default: break;
+        }
+    }
+    led_set_mode(mode);
 }
 
 #include "hardware/watchdog.h"
