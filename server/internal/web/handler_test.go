@@ -77,7 +77,7 @@ func TestPhonesPage_HandsetNameField(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		"Handset name",
-		"Kitchen · Grandma&#39;s bedroom · Garage",
+		"Kitchen · Bedroom · Garage",
 		"Most families name handsets by where they live",
 	} {
 		if !strings.Contains(body, want) {
