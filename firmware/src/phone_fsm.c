@@ -145,7 +145,7 @@ static void set_state(phone_state_t next) {
         case PHONE_STATE_CONNECTED:
             ringer_stop();
             tone_stop();
-            fsm_led_set(LED_MODE_ON);
+            fsm_led_set(LED_MODE_BREATHING);
             break;
 
         case PHONE_STATE_BUSY:
