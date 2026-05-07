@@ -334,7 +334,7 @@ func seedUnrelatedUser(t *testing.T, env callsTestEnv, label string) *auth.User 
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: GenerateCode: %v", label, err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+label, hh.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+label, "Phone "+label, hh.ID); err != nil {
 		t.Fatalf("seedUnrelatedUser %s: ClaimDevice: %v", label, err)
 	}
 	return u

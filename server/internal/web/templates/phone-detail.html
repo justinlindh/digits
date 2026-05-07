@@ -58,8 +58,18 @@
           </div>
           {{if .Devices}}
           <div class="kv__row">
-            <dt class="kv__key">Devices</dt>
-            <dd class="kv__val">{{len .Devices}} paired</dd>
+            <dt class="kv__key">Handsets</dt>
+            <dd class="kv__val">
+              {{if gt (len .Devices) 1}}
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                {{range .Devices}}
+                <span>{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</span>
+                {{end}}
+              </div>
+              {{else}}
+              {{len .Devices}} paired
+              {{end}}
+            </dd>
           </div>
           {{end}}
         </dl>

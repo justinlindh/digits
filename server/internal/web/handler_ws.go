@@ -210,6 +210,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
+		msg.HardwareID = conn.HardwareID
 		h.relay.HandleMessage(r.Context(), number, msg)
 	}
 }

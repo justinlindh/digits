@@ -125,7 +125,7 @@ func TestSpecLines(t *testing.T) {
 	// Field label, placeholder, helper (Spec: the core pair-flow nudge).
 	for _, want := range []string{
 		"Handset name",
-		"Kitchen · Grandma&#39;s bedroom · Garage", // html/template escapes the apostrophe
+		"Kitchen · Bedroom · Garage",
 		"Most families name handsets by where they live",
 	} {
 		if !strings.Contains(body, want) {

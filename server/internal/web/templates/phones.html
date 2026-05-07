@@ -38,6 +38,7 @@
         <!-- Entry form fields -->
         <form method="POST" action="/phones/pair" id="pair-form" class="stack-md" style="min-width: 0;">
           <input type="hidden" name="code" id="pair-code-hidden" value="">
+          <input type="hidden" name="pair_mode" id="pair-mode-hidden" value="new">
 
           <div class="field">
             <label for="pair-code-manual" class="field__label">Pairing code</label>
@@ -53,17 +54,41 @@
             <p class="field__hint">Or tap the keypad.</p>
           </div>
 
+          {{if .Lines}}
           <div class="field">
-            <label for="line-number-input" class="field__label">Line number</label>
-            <input type="text"
-                   name="number"
-                   id="line-number-input"
-                   placeholder="314-0001"
-                   pattern="\d{3}-?\d{4}"
-                   maxlength="8"
-                   required
-                   class="field__input field__input--mono">
-            <p id="number-hint" class="field__hint field__hint--err hidden">Line number is already in use.</p>
+            <span class="field__label">Line</span>
+            <div class="pair-mode-tabs" style="display: flex; gap: 0; margin-bottom: 8px;">
+              <button type="button" class="btn btn--sm pair-mode-tab is-active" data-mode="new" onclick="setPairMode('new')">New line</button>
+              <button type="button" class="btn btn--sm pair-mode-tab" data-mode="existing" onclick="setPairMode('existing')">Add extension</button>
+            </div>
+          </div>
+          {{end}}
+
+          <div id="new-line-fields">
+            <div class="field">
+              <label for="line-number-input" class="field__label">Line number</label>
+              <input type="text"
+                     name="number"
+                     id="line-number-input"
+                     placeholder="314-0001"
+                     pattern="\d{3}-?\d{4}"
+                     maxlength="8"
+                     class="field__input field__input--mono">
+              <p id="number-hint" class="field__hint field__hint--err hidden">Line number is already in use.</p>
+            </div>
+          </div>
+
+          <div id="existing-line-fields" class="hidden">
+            <div class="field">
+              <label for="existing-line-select" class="field__label">Add to line</label>
+              <select name="existing_line_id" id="existing-line-select" class="field__input">
+                <option value="">Choose a line...</option>
+                {{range .Lines}}
+                <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} - {{.Line.Name}}</option>
+                {{end}}
+              </select>
+              <p class="field__hint" style="font-size: 11.5px; margin-top: 4px;">Like plugging another phone into the same wall jack. All handsets on the line ring together.</p>
+            </div>
           </div>
 
           <div class="field">
@@ -71,7 +96,7 @@
             <input type="text"
                    id="line-name-input"
                    name="name"
-                   placeholder="Kitchen · Grandma&#39;s bedroom · Garage"
+                   placeholder="Kitchen · Bedroom · Garage"
                    required
                    maxlength="50"
                    class="field__input">
@@ -213,10 +238,41 @@
     numberInput.classList.remove('is-invalid');
     numberHint.classList.add('hidden');
   }
+  var pairModeHidden = document.getElementById('pair-mode-hidden');
+  var newLineFields = document.getElementById('new-line-fields');
+  var existingLineFields = document.getElementById('existing-line-fields');
+  var existingLineSelect = document.getElementById('existing-line-select');
+  var pairMode = 'new';
+
+  window.setPairMode = function(mode) {
+    pairMode = mode;
+    pairModeHidden.value = mode;
+    var tabs = document.querySelectorAll('.pair-mode-tab');
+    tabs.forEach(function(t) { t.classList.toggle('is-active', t.dataset.mode === mode); });
+    if (mode === 'existing') {
+      newLineFields.classList.add('hidden');
+      existingLineFields.classList.remove('hidden');
+      numberInput.removeAttribute('required');
+    } else {
+      newLineFields.classList.remove('hidden');
+      existingLineFields.classList.add('hidden');
+    }
+    updateSubmit();
+  };
+
   function updateSubmit() {
-    var numDigits = numberInput.value.replace(/\D/g, '');
     var hasName = nameInput.value.trim().length > 0;
-    submitBtn.disabled = code.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+    if (pairMode === 'existing') {
+      var hasLine = existingLineSelect && existingLineSelect.value !== '';
+      submitBtn.disabled = code.length !== 6 || !hasLine || !hasName;
+    } else {
+      var numDigits = numberInput.value.replace(/\D/g, '');
+      submitBtn.disabled = code.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+    }
+  }
+
+  if (existingLineSelect) {
+    existingLineSelect.addEventListener('change', updateSubmit);
   }
   function checkNumber() {
     var digits = numberInput.value.replace(/\D/g, '');
@@ -255,7 +311,7 @@
 <div id="phones-table" class="panel">
   <header class="panel__head">
     <h2 class="panel__title">Your lines</h2>
-    <span class="panel__title-sub">{{len .Lines}} total</span>
+    <span class="panel__title-sub">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</span>
   </header>
   {{if .Lines}}
   <!-- Desktop table -->
@@ -264,7 +320,7 @@
       <thead>
         <tr>
           <th>Number</th>
-          <th>Label</th>
+          <th>Handsets</th>
           <th>Status</th>
           <th>Pi</th>
           <th>Firmware</th>
@@ -282,7 +338,16 @@
             {{end}}
           </td>
           <td>
-            <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{if gt (len .Devices) 1}}
+              <a href="/phones/{{.Line.Number}}" style="font-weight: 500;">{{.Line.Name}}</a>
+              <div style="margin-top: 4px; padding-left: 12px; border-left: 2px solid var(--rule-soft);">
+                {{range .Devices}}
+                <div style="font-size: 12px; color: var(--ink-muted); line-height: 1.6;">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</div>
+                {{end}}
+              </div>
+            {{else}}
+              <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{end}}
             {{if .Line.Settings.SilentMode}}
             <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
               <span class="phone-silent__dot" aria-hidden="true"></span>
@@ -292,7 +357,11 @@
           </td>
           <td>
             {{if .Online}}
-              <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+              {{if gt (len .Devices) 1}}
+                <span class="chip chip--on"><span class="chip__dot"></span>{{.OnlineDeviceCount}}/{{len .Devices}} online</span>
+              {{else}}
+                <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+              {{end}}
             {{else}}
               <span class="chip"><span class="chip__dot"></span>offline</span>
             {{end}}
@@ -365,9 +434,13 @@
     <li>
       <a class="lines__row" href="/phones/{{.Line.Number}}">
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
-        <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
+        <span class="lines__name">
+          {{.Line.Name}}
+          {{if gt (len .Devices) 1}}<span class="muted" style="font-size: 11px; font-weight: normal;"> ({{len .Devices}} handsets)</span>{{end}}
+          {{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}
+        </span>
         <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
-        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
+        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}{{if gt (len .Devices) 1}}{{.OnlineDeviceCount}}/{{len .Devices}}{{else}}online{{end}}{{else}}offline{{end}}</span>
       </a>
       {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
         <details class="update-details update-details--mobile">

@@ -54,7 +54,7 @@ type dashNotifier interface {
 
 type Hub struct {
 	mu           sync.RWMutex
-	conns        map[string]*Conn                 // phone number -> connection
+	conns        map[string][]*Conn               // phone number -> connections (multiple devices per line)
 	hwConns      map[string]*Conn                 // hardware ID -> connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
 	dashEvents   dashNotifier
@@ -65,7 +65,7 @@ type Hub struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		conns:        make(map[string]*Conn),
+		conns:        make(map[string][]*Conn),
 		hwConns:      make(map[string]*Conn),
 		updateStatus: make(map[string]*UpdateStatusSnapshot),
 	}
@@ -121,16 +121,16 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 
 	switch env.TargetType {
 	case "number":
-		conn := h.Get(env.Target)
-		if conn == nil {
-			return
+		h.mu.RLock()
+		for _, conn := range h.conns[env.Target] {
+			select {
+			case conn.Send <- data:
+				slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
+			default:
+				slog.Debug("redis: local send buffer full", "pod", env.PodID)
+			}
 		}
-		select {
-		case conn.Send <- data:
-			slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
-		default:
-			slog.Debug("redis: local send buffer full", "pod", env.PodID)
-		}
+		h.mu.RUnlock()
 
 	case "hardware":
 		h.mu.RLock()
@@ -148,10 +148,12 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 
 	case "broadcast":
 		h.mu.RLock()
-		for _, conn := range h.conns {
-			select {
-			case conn.Send <- data:
-			default:
+		for _, conns := range h.conns {
+			for _, conn := range conns {
+				select {
+				case conn.Send <- data:
+				default:
+				}
 			}
 		}
 		h.mu.RUnlock()
@@ -181,11 +183,11 @@ func (h *Hub) IsDraining() bool {
 // logs aggregate counts only (no per-device data).
 func (h *Hub) DrainAndClose(ctx context.Context) {
 	h.mu.RLock()
-	n := len(h.conns)
-	snapshot := make([]*Conn, 0, n)
-	for _, c := range h.conns {
-		snapshot = append(snapshot, c)
+	var snapshot []*Conn
+	for _, conns := range h.conns {
+		snapshot = append(snapshot, conns...)
 	}
+	n := len(snapshot)
 	h.mu.RUnlock()
 
 	if n == 0 {
@@ -216,7 +218,7 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 			return
 		case <-ticker.C:
 			h.mu.RLock()
-			remaining := len(h.conns)
+			remaining := h.totalConns()
 			h.mu.RUnlock()
 			if remaining == 0 {
 				slog.Info("drain: all connections closed gracefully")
@@ -226,13 +228,22 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 	}
 }
 
+// totalConns returns the total number of connections. Must be called with
+// at least a read lock held.
+func (h *Hub) totalConns() int {
+	n := 0
+	for _, conns := range h.conns {
+		n += len(conns)
+	}
+	return n
+}
+
 // forceCloseAll hard-closes every remaining WebSocket connection.
 func (h *Hub) forceCloseAll() {
 	h.mu.RLock()
-	remaining := len(h.conns)
-	conns := make([]*Conn, 0, remaining)
-	for _, c := range h.conns {
-		conns = append(conns, c)
+	var conns []*Conn
+	for _, cs := range h.conns {
+		conns = append(conns, cs...)
 	}
 	h.mu.RUnlock()
 
@@ -241,7 +252,7 @@ func (h *Hub) forceCloseAll() {
 			_ = c.WS.Close()
 		}
 	}
-	slog.Info("drain: force-closed remaining connections", "connections", remaining)
+	slog.Info("drain: force-closed remaining connections", "connections", len(conns))
 }
 
 // SetDashboardEvents registers an optional broadcaster that is signalled
@@ -253,36 +264,56 @@ func (h *Hub) SetDashboardEvents(b dashNotifier) {
 	h.mu.Unlock()
 }
 
+// Register adds a connection for the given number. Multiple devices on the
+// same line each get their own connection (POTS extension model). If a
+// connection with the same HardwareID is already registered on this number,
+// the old one is closed and replaced.
 func (h *Hub) Register(number string, conn *Conn) error {
 	h.mu.Lock()
 	if h.draining {
 		h.mu.Unlock()
 		return ErrDraining
 	}
-	_, replacing := h.conns[number]
-	if replacing {
-		old := h.conns[number]
-		if old.WS != nil {
-			_ = old.WS.Close()
-		}
-		select {
-		case _, ok := <-old.Send:
-			if ok {
+
+	conn.Number = number
+
+	// If the same hardware_id already has a connection on this number,
+	// close the old one (device reconnect).
+	existing := h.conns[number]
+	replaced := false
+	for i, old := range existing {
+		if old.HardwareID != "" && old.HardwareID == conn.HardwareID {
+			if old.WS != nil {
+				_ = old.WS.Close()
+			}
+			select {
+			case _, ok := <-old.Send:
+				if ok {
+					close(old.Send)
+				}
+			default:
 				close(old.Send)
 			}
-		default:
-			close(old.Send)
+			existing[i] = conn
+			replaced = true
+			break
 		}
 	}
-	conn.Number = number
-	h.conns[number] = conn
+	if !replaced {
+		h.conns[number] = append(existing, conn)
+	}
+
 	if conn.HardwareID != "" {
 		h.hwConns[conn.HardwareID] = conn
 	}
+
+	devCount := len(h.conns[number])
 	d := h.dashEvents
 	ds := h.state
 	h.mu.Unlock()
-	slog.Debug("hub registered", "number", number)
+
+	slog.Debug("hub registered", "number", number, "hardware_id", conn.HardwareID,
+		"devices_on_line", devCount)
 
 	if d != nil {
 		d.Notify()
@@ -301,64 +332,109 @@ func (h *Hub) Register(number string, conn *Conn) error {
 	return nil
 }
 
+// Unregister removes the specific connection from the hub. Only the exact
+// conn pointer is removed; other devices on the same line are not affected.
 func (h *Hub) Unregister(number string, conn *Conn) {
 	h.mu.Lock()
 	var changed bool
-	if existing, ok := h.conns[number]; ok && existing == conn {
-		close(conn.Send)
-		delete(h.conns, number)
-		if conn.HardwareID != "" {
-			delete(h.hwConns, conn.HardwareID)
+	conns := h.conns[number]
+	for i, c := range conns {
+		if c == conn {
+			close(conn.Send)
+			h.conns[number] = append(conns[:i], conns[i+1:]...)
+			if len(h.conns[number]) == 0 {
+				delete(h.conns, number)
+			}
+			if conn.HardwareID != "" {
+				delete(h.hwConns, conn.HardwareID)
+			}
+			changed = true
+			break
 		}
-		changed = true
 	}
+	remaining := len(h.conns[number])
 	d := h.dashEvents
 	ds := h.state
 	h.mu.Unlock()
 
 	if changed {
-		slog.Debug("hub unregistered", "number", number)
+		slog.Debug("hub unregistered", "number", number, "remaining", remaining)
 		if d != nil {
 			d.Notify()
 		}
-		if ds != nil {
+		if ds != nil && remaining == 0 {
 			ds.SetOffline(context.Background(), number)
 		}
 	}
 }
 
+// Get returns the first active connection for a number, or nil if none.
+// Used for connectivity checks (is anyone online on this line?).
 func (h *Hub) Get(number string) *Conn {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.conns[number]
-}
-
-func (h *Hub) SendTo(number string, msg *Message) error {
-	err := sendToConn(h.Get(number), msg, "phone", number)
-	if err == nil {
+	conns := h.conns[number]
+	if len(conns) == 0 {
 		return nil
 	}
+	return conns[0]
+}
 
-	// Only fall through to Redis when the device is not connected locally.
-	// Buffer-full means the connection exists on this pod but is
-	// backpressured; other pods won't have it either.
-	if !errors.Is(err, ErrNotConnected) {
+// GetAll returns all active connections for a number. Returns nil if none.
+func (h *Hub) GetAll(number string) []*Conn {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conns := h.conns[number]
+	if len(conns) == 0 {
+		return nil
+	}
+	out := make([]*Conn, len(conns))
+	copy(out, conns)
+	return out
+}
+
+// ConnectionCount returns the number of active connections for a line.
+func (h *Hub) ConnectionCount(number string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.conns[number])
+}
+
+// SendTo marshals msg and sends it to every device on the given line number.
+// This is the POTS extension model: a ring reaches all phones on the line.
+// Returns ErrNotConnected only when no devices are connected locally AND
+// Redis cannot deliver.
+func (h *Hub) SendTo(number string, msg *Message) error {
+	data, err := msg.Marshal()
+	if err != nil {
 		return err
 	}
 
 	h.mu.RLock()
+	conns := h.conns[number]
 	bridge := h.redis
-	h.mu.RUnlock()
-	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "number",
-			Target:     number,
-			Message:    msg,
-		})
-		return nil
+	if len(conns) == 0 {
+		h.mu.RUnlock()
+		if bridge != nil {
+			bridge.Publish(context.Background(), &Envelope{
+				TargetType: "number",
+				Target:     number,
+				Message:    msg,
+			})
+			return nil
+		}
+		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
-
-	return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+	for _, conn := range conns {
+		select {
+		case conn.Send <- data:
+		default:
+			slog.Warn("SendTo: send buffer full, skipping device",
+				"number", number, "hardware_id", conn.HardwareID)
+		}
+	}
+	h.mu.RUnlock()
+	return nil
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
@@ -400,11 +476,13 @@ func (h *Hub) Broadcast(msg *Message) {
 	}
 	h.mu.RLock()
 	bridge := h.redis
-	for number, conn := range h.conns {
-		select {
-		case conn.Send <- data:
-		default:
-			slog.Warn("broadcast: send buffer full, skipping", "number", number)
+	for number, conns := range h.conns {
+		for _, conn := range conns {
+			select {
+			case conn.Send <- data:
+			default:
+				slog.Warn("broadcast: send buffer full, skipping", "number", number)
+			}
 		}
 	}
 	h.mu.RUnlock()
@@ -446,6 +524,7 @@ type UpdateStatusSnapshot struct {
 
 // DeviceInfoSnapshot holds a point-in-time copy of device version info.
 type DeviceInfoSnapshot struct {
+	HardwareID      string
 	PiVersion       string
 	PiCommit        string
 	FirmwareVersion string
@@ -460,7 +539,8 @@ type DeviceInfoSnapshot struct {
 	RemoteAddr string `json:"-"`
 }
 
-// DeviceInfo returns version info for a connected phone. Returns nil if offline.
+// DeviceInfo returns version info for the first connected device on a line.
+// Returns nil if no device is online.
 func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	h.mu.RLock()
 	ds := h.state
@@ -470,16 +550,18 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	conn, ok := h.conns[number]
-	if !ok {
+	conns := h.conns[number]
+	if len(conns) == 0 {
 		return nil
 	}
+	c := conns[0]
 	return &DeviceInfoSnapshot{
-		PiVersion:       conn.PiVersion,
-		PiCommit:        conn.PiCommit,
-		FirmwareVersion: conn.FirmwareVersion,
-		FirmwareCommit:  conn.FirmwareCommit,
-		RemoteAddr:      conn.RemoteAddr,
+		HardwareID:      c.HardwareID,
+		PiVersion:       c.PiVersion,
+		PiCommit:        c.PiCommit,
+		FirmwareVersion: c.FirmwareVersion,
+		FirmwareCommit:  c.FirmwareCommit,
+		RemoteAddr:      c.RemoteAddr,
 	}
 }
 
@@ -523,7 +605,7 @@ func (h *Hub) ClearUpdateStatus(number string) {
 }
 
 // UpdateDeviceInfo sets version info and the device-reported LAN address for
-// a connected phone under the write lock. localAddr is filtered through
+// a specific device identified by hardware ID. localAddr is filtered through
 // httputil.IsPrivateAddr; non-private values (or unparseable input) are
 // stored as "" so a compromised client cannot push a public IP into the
 // owner UI.
@@ -532,11 +614,15 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 		localAddr = ""
 	}
 	h.mu.Lock()
-	conn, ok := h.conns[number]
-	if !ok {
+	// Legacy fallback: when the caller doesn't know the hardware ID,
+	// update the first (or only) device on this number. Multi-device
+	// callers should use UpdateDeviceInfoByHardware instead.
+	conns := h.conns[number]
+	if len(conns) == 0 {
 		h.mu.Unlock()
 		return false
 	}
+	conn := conns[0]
 	conn.PiVersion = piVer
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
@@ -556,11 +642,45 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 	return true
 }
 
-// TouchLastSeen updates the in-memory last-seen timestamp for a connected phone.
-func (h *Hub) TouchLastSeen(number string) {
+// UpdateDeviceInfoByHardware sets version info for a specific device by
+// hardware ID. Used when the caller knows which device sent the message.
+func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwCommit, localAddr string) bool {
+	if !httputil.IsPrivateAddr(localAddr) {
+		localAddr = ""
+	}
 	h.mu.Lock()
-	if conn, ok := h.conns[number]; ok {
-		conn.LastSeen = time.Now()
+	conn, ok := h.hwConns[hardwareID]
+	if !ok {
+		h.mu.Unlock()
+		return false
+	}
+	conn.PiVersion = piVer
+	conn.PiCommit = piCommit
+	conn.FirmwareVersion = fwVer
+	conn.FirmwareCommit = fwCommit
+	conn.RemoteAddr = localAddr
+	number := conn.Number
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.UpdateDeviceInfo(context.Background(), number, DevicePresence{
+			PiVersion:       piVer,
+			PiCommit:        piCommit,
+			FirmwareVersion: fwVer,
+			FirmwareCommit:  fwCommit,
+			RemoteAddr:      localAddr,
+		})
+	}
+	return true
+}
+
+// TouchLastSeen updates the in-memory last-seen timestamp for all devices
+// on the given number.
+func (h *Hub) TouchLastSeen(number string) {
+	now := time.Now()
+	h.mu.Lock()
+	for _, conn := range h.conns[number] {
+		conn.LastSeen = now
 	}
 	ds := h.state
 	h.mu.Unlock()
@@ -569,7 +689,8 @@ func (h *Hub) TouchLastSeen(number string) {
 	}
 }
 
-// LastSeenAt returns the last-seen timestamp for a connected phone, or nil if offline.
+// LastSeenAt returns the most recent last-seen timestamp across all
+// connected devices on a line, or nil if no device is online.
 func (h *Hub) LastSeenAt(number string) *time.Time {
 	h.mu.RLock()
 	ds := h.state
@@ -579,20 +700,20 @@ func (h *Hub) LastSeenAt(number string) *time.Time {
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	conn, ok := h.conns[number]
-	if !ok {
+	var latest time.Time
+	for _, conn := range h.conns[number] {
+		if conn.LastSeen.After(latest) {
+			latest = conn.LastSeen
+		}
+	}
+	if latest.IsZero() {
 		return nil
 	}
-	if conn.LastSeen.IsZero() {
-		return nil
-	}
-	t := conn.LastSeen
-	return &t
+	return &latest
 }
 
-// IsOnline returns true if number has an active hub connection and is not in
-// pairing mode. Unpaired devices connect under the "unpaired:<hwID>" prefix
-// and must not be presented as online in the UI.
+// IsOnline returns true if the number has at least one active hub connection
+// and is not an unpaired sentinel key.
 func (h *Hub) IsOnline(number string) bool {
 	if strings.HasPrefix(number, "unpaired:") {
 		return false
@@ -610,10 +731,11 @@ func (h *Hub) LocalConnectionCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	n := 0
-	for key := range h.conns {
-		if !strings.HasPrefix(key, "unpaired:") {
-			n++
+	for key, conns := range h.conns {
+		if strings.HasPrefix(key, "unpaired:") {
+			continue
 		}
+		n += len(conns)
 	}
 	return n
 }
@@ -628,8 +750,8 @@ func (h *Hub) OnlineNumbers() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))
-	for n := range h.conns {
-		if strings.HasPrefix(n, "unpaired:") {
+	for n, conns := range h.conns {
+		if strings.HasPrefix(n, "unpaired:") || len(conns) == 0 {
 			continue
 		}
 		nums = append(nums, n)

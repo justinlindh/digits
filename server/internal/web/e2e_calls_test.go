@@ -124,7 +124,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate code A: %v", err)
 	}
-	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeA, phoneNumA, "Phone A", hhA.ID); err != nil {
+	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeA, phoneNumA, "Phone A", "Phone A", hhA.ID); err != nil {
 		t.Fatalf("claim phone A: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestCallsPageScopedToHousehold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate code B: %v", err)
 	}
-	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeB, phoneNumB, "Phone B", hhB.ID); err != nil {
+	if _, _, err := pairingStore.ClaimDevice(context.Background(), codeB, phoneNumB, "Phone B", "Phone B", hhB.ID); err != nil {
 		t.Fatalf("claim phone B: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 		if err != nil {
 			t.Fatalf("generate code %d: %v", i, err)
 		}
-		if _, _, err := pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+num, hh.ID); err != nil {
+		if _, _, err := pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+num, "Phone "+num, hh.ID); err != nil {
 			t.Fatalf("claim phone %d: %v", i, err)
 		}
 	}

@@ -411,6 +411,26 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (26);
     END IF;
 END $$;`,
+		// v27: per-device name column. Previously line.name served double duty
+		// as both the line label and the handset label. With multiple handsets
+		// per line, each device needs its own name. Backfill copies the line
+		// name to the first paired device on each line.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 27) THEN
+
+        ALTER TABLE devices ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+
+        UPDATE devices d
+        SET name = l.name
+        FROM lines l
+        WHERE d.line_id = l.id
+          AND d.paired_at IS NOT NULL
+          AND d.name = '';
+
+        INSERT INTO schema_version (version) VALUES (27);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
