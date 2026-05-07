@@ -106,8 +106,15 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeRequestICE:
 		r.handleRequestICE(from)
 	case TypeDeviceInfo:
-		if r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr) {
+		updated := false
+		if msg.HardwareID != "" {
+			updated = r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr)
+		} else {
+			updated = r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr)
+		}
+		if updated {
 			slog.Info("device_info", "number", from,
+				"hardware_id", msg.HardwareID,
 				"pi_version", msg.PiVersion,
 				"fw_version", msg.FirmwareVersion,
 				"local_addr", msg.LocalAddr)
@@ -135,10 +142,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
-	target := r.Hub.Get(msg.To)
-	if target == nil {
-		// peer_unreachable: caller asked for a phone that isn't connected.
-		// Counted as an aggregate; no caller, callee, or call ID is recorded.
+	if r.Hub.ConnectionCount(msg.To) == 0 {
 		r.observeError("peer_unreachable")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
@@ -230,6 +234,24 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 		}
 	}
 	r.forward(msg)
+
+	// POTS extension model: when one device answers, cancel ringing on all
+	// other devices sharing the same line number. The answering device is
+	// identified by msg.HardwareID (set by the WS handler).
+	if msg.HardwareID != "" {
+		for _, conn := range r.Hub.GetAll(from) {
+			if conn.HardwareID != msg.HardwareID {
+				cancelMsg := &Message{Type: TypeHangup, From: msg.To}
+				data, err := cancelMsg.Marshal()
+				if err == nil {
+					select {
+					case conn.Send <- data:
+					default:
+					}
+				}
+			}
+		}
+	}
 }
 
 func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {

@@ -12,7 +12,7 @@ func TestUnregisterOnlyRemovesMatchingConnection(t *testing.T) {
 	oldConn := &Conn{Send: make(chan []byte, 1)}
 	newConn := &Conn{Send: make(chan []byte, 1)}
 
-	hub.conns[number] = newConn
+	hub.conns[number] = []*Conn{newConn}
 
 	hub.Unregister(number, oldConn)
 	if got := hub.Get(number); got != newConn {
@@ -24,7 +24,7 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"
 	conn := &Conn{Send: make(chan []byte, 1)}
-	hub.conns[number] = conn
+	hub.conns[number] = []*Conn{conn}
 
 	hub.Unregister(number, conn)
 	if got := hub.Get(number); got != nil {
@@ -76,11 +76,12 @@ func TestHubGetReturnsConnForOnline(t *testing.T) {
 func TestRegisterHandlesAlreadyClosedSendChannel(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"
-	oldConn := &Conn{Send: make(chan []byte)}
+	oldConn := &Conn{Send: make(chan []byte), HardwareID: "hw-001"}
 	close(oldConn.Send)
-	hub.conns[number] = oldConn
+	hub.conns[number] = []*Conn{oldConn}
+	hub.hwConns["hw-001"] = oldConn
 
-	newConn := &Conn{Send: make(chan []byte, 1)}
+	newConn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001"}
 	_ = hub.Register(number, newConn)
 
 	if got := hub.Get(number); got != newConn {
@@ -119,10 +120,10 @@ func TestDeviceInfoNilWhenOffline(t *testing.T) {
 
 func TestRegisterOverwritesRemoteAddrOnReconnect(t *testing.T) {
 	hub := NewHub()
-	first := &Conn{Send: make(chan []byte, 1), RemoteAddr: "192.168.1.42"}
+	first := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-003", RemoteAddr: "192.168.1.42"}
 	_ = hub.Register("3140003", first)
 
-	second := &Conn{Send: make(chan []byte, 1), RemoteAddr: "192.168.1.99"}
+	second := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-003", RemoteAddr: "192.168.1.99"}
 	_ = hub.Register("3140003", second)
 
 	info := hub.DeviceInfo("3140003")

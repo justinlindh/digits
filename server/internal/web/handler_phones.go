@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,6 +17,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/signaling"
 	"github.com/justinlindh/digits/server/internal/updates"
 )
+
+func parseInt64(s string) (int64, error) {
+	return strconv.ParseInt(s, 10, 64)
+}
 
 const maxLineNameRunes = 50
 
@@ -53,6 +58,8 @@ type lineRow struct {
 	OnCallElapsed       string // "mm:ss" for the Dashboard room-card callout
 	OnCallID            int64  // 0 when not on a call; otherwise the active call id
 	DeviceInfo          *signaling.DeviceInfoSnapshot
+	Devices             []device.Device
+	OnlineDeviceCount   int
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
 }
@@ -96,6 +103,17 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 	for i, l := range lines {
 		info := h.hub.DeviceInfo(l.Number)
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
+		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
+
+		if h.deviceStore != nil {
+			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
+			if err != nil {
+				slog.Error("list devices for line", "line_id", l.ID, "err", err)
+			} else {
+				row.Devices = devs
+			}
+		}
+
 		if idx != nil && info != nil {
 			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
 				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
@@ -174,15 +192,9 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
-	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
-	name := strings.TrimSpace(r.FormValue("name"))
-
-	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = "invalid phone number: " + err.Error()
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
-		return
-	}
+	deviceName := strings.TrimSpace(r.FormValue("name"))
+	pairMode := strings.TrimSpace(r.FormValue("pair_mode"))
+	existingLineID := strings.TrimSpace(r.FormValue("existing_line_id"))
 
 	if h.pairingStore == nil {
 		data := h.buildLinesData(r, hh, "")
@@ -193,7 +205,42 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 
 	householdID := hh.ID
 
-	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
+	var (
+		token  string
+		hwID   string
+		number string
+		err    error
+	)
+
+	if pairMode == "existing" && existingLineID != "" {
+		// Add device to an existing line (POTS extension)
+		lineID, parseErr := parseInt64(existingLineID)
+		if parseErr != nil {
+			data := h.buildLinesData(r, hh, "")
+			data.PairError = "invalid line selection"
+			renderWith(w, h.tmplPhones, layoutFor(r), data)
+			return
+		}
+		token, hwID, err = h.pairingStore.ClaimDeviceToLine(r.Context(), code, lineID, deviceName, householdID)
+		if err == nil {
+			ln, lnErr := h.lineStore.GetByID(r.Context(), lineID)
+			if lnErr == nil {
+				number = ln.Number
+			}
+		}
+	} else {
+		// Create a new line and pair the device
+		number = line.StripNumber(strings.TrimSpace(r.FormValue("number")))
+		if verr := line.ValidateNumber(number); verr != nil {
+			data := h.buildLinesData(r, hh, "")
+			data.PairError = "invalid phone number: " + verr.Error()
+			renderWith(w, h.tmplPhones, layoutFor(r), data)
+			return
+		}
+		lineName := deviceName
+		token, hwID, err = h.pairingStore.ClaimDevice(r.Context(), code, number, lineName, deviceName, householdID)
+	}
+
 	if err != nil {
 		data := h.buildLinesData(r, hh, "")
 		data.PairError = err.Error()
@@ -201,7 +248,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if hwID != "" {
+	if hwID != "" && number != "" {
 		if err := h.hub.SendToHardware(hwID, &signaling.Message{
 			Type:        signaling.TypePaired,
 			DeviceToken: token,
@@ -212,7 +259,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := url.Values{}
-	v.Set("paired", name)
+	v.Set("paired", deviceName)
 	http.Redirect(w, r, "/phones?"+v.Encode(), http.StatusSeeOther)
 }
 

@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -125,6 +126,7 @@ type stores struct {
 	house *household.Store
 	link  *household.LinkStore
 	line  *line.Store
+	db    *sql.DB
 }
 
 func main() {
@@ -151,6 +153,7 @@ func main() {
 		house: household.NewStore(database.DB),
 		link:  household.NewLinkStore(database.DB),
 		line:  line.NewStore(database),
+		db:    database.DB,
 	}
 
 	primaryUser, primaryHH, err := ensureUser(ctx, s, primary, *minimal)
@@ -162,6 +165,13 @@ func main() {
 		printSummary(*baseURL, []string{primary.Email}, primary.Email)
 		return
 	}
+
+	// Seed device rows with names for the primary household's lines.
+	// The Kitchen line (248-0001) gets two handsets to exercise multi-device UI.
+	ensureDeviceWithName(ctx, s.db, s.line, "2480001", "Kitchen", "dev-hw-kitchen")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480001", "Hallway", "dev-hw-hallway")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480002", "Living room", "dev-hw-living")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480003", "Garage", "dev-hw-garage")
 
 	// Add a second member to the primary household
 	secondUser, err := upsertUser(ctx, s.auth, secondMember.Email, secondMember.DisplayName)
@@ -348,6 +358,37 @@ func printSummary(baseURL string, emails []string, primaryEmail string) {
 	)
 	fmt.Println()
 	fmt.Println("The server must be running with DEV_MODE=true for the dev-session endpoint to work.")
+}
+
+// ensureDeviceWithName creates a paired device row for the given line number
+// if one with that hardware_id does not already exist. Idempotent.
+func ensureDeviceWithName(ctx context.Context, db *sql.DB, lineStore *line.Store, lineNumber, deviceName, hardwareID string) {
+	ln, err := lineStore.GetByNumber(ctx, lineNumber)
+	if err != nil {
+		log.Printf("ensureDevice: line %s not found: %v", lineNumber, err)
+		return
+	}
+	var exists bool
+	_ = db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM devices WHERE hardware_id = $1)`,
+		hardwareID,
+	).Scan(&exists)
+	if exists {
+		// Update name if it changed
+		_, _ = db.ExecContext(ctx,
+			`UPDATE devices SET name = $1 WHERE hardware_id = $2`,
+			deviceName, hardwareID,
+		)
+		return
+	}
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO devices (line_id, hardware_id, name, paired_at, device_token)
+		 VALUES ($1, $2, $3, NOW(), 'devseed-token-' || $2)`,
+		ln.ID, hardwareID, deviceName,
+	)
+	if err != nil {
+		log.Printf("ensureDevice: insert device %s on line %s: %v", hardwareID, lineNumber, err)
+	}
 }
 
 func envOr(key, fallback string) string {

@@ -68,11 +68,11 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	return newCode, nil
 }
 
-// ClaimDevice pairs a device using a pairing code, creating the line and
+// ClaimDevice pairs a device using a pairing code, creating a new line and
 // assigning the device in a single transaction. If any step fails the whole
 // operation rolls back, leaving the device claimable with a fresh code.
 // Returns (deviceToken, hardwareID, error).
-func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, householdID string) (string, string, error) {
+func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, deviceName, householdID string) (string, string, error) {
 	token, err := randomHex(32)
 	if err != nil {
 		return "", "", fmt.Errorf("generate device token: %w", err)
@@ -115,12 +115,74 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, hou
 		// Bind device to the line, mark paired, clear the pairing code.
 		res, err := tx.ExecContext(ctx, `
 			UPDATE devices
-			SET line_id = $2, device_token = $3,
+			SET line_id = $2, device_token = $3, name = $4,
 			    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
 			WHERE id = $1 AND paired_at IS NULL
-		`, deviceID, lineID, tokenHash)
+		`, deviceID, lineID, tokenHash, deviceName)
 		if err != nil {
 			return fmt.Errorf("claim device: %w", err)
+		}
+		rows, _ := res.RowsAffected()
+		if rows == 0 {
+			return ErrInvalidCode
+		}
+		return nil
+	}); err != nil {
+		return "", "", err
+	}
+	return token, hardwareID, nil
+}
+
+// ClaimDeviceToLine pairs a device to an existing line using a pairing code.
+// Unlike ClaimDevice, no new line is created. The line must exist and belong
+// to the given household. Returns (deviceToken, hardwareID, error).
+func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64, deviceName, householdID string) (string, string, error) {
+	token, err := randomHex(32)
+	if err != nil {
+		return "", "", fmt.Errorf("generate device token: %w", err)
+	}
+	tokenHash := device.HashToken(token)
+
+	var hardwareID string
+	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		var deviceRowID int64
+		var hwID sql.NullString
+		err := tx.QueryRowContext(ctx, `
+			SELECT id, hardware_id FROM devices
+			WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
+			FOR UPDATE
+		`, code).Scan(&deviceRowID, &hwID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidCode
+		}
+		if err != nil {
+			return fmt.Errorf("lookup pairing code: %w", err)
+		}
+		hardwareID = hwID.String
+
+		// Verify the line exists and belongs to this household.
+		var ownerHH string
+		err = tx.QueryRowContext(ctx,
+			`SELECT household_id FROM lines WHERE id = $1`, lineID,
+		).Scan(&ownerHH)
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("line not found")
+		}
+		if err != nil {
+			return fmt.Errorf("verify line ownership: %w", err)
+		}
+		if ownerHH != householdID {
+			return fmt.Errorf("line does not belong to this household")
+		}
+
+		res, err := tx.ExecContext(ctx, `
+			UPDATE devices
+			SET line_id = $2, device_token = $3, name = $4,
+			    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
+			WHERE id = $1 AND paired_at IS NULL
+		`, deviceRowID, lineID, tokenHash, deviceName)
+		if err != nil {
+			return fmt.Errorf("claim device to line: %w", err)
 		}
 		rows, _ := res.RowsAffected()
 		if rows == 0 {

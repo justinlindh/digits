@@ -17,6 +17,7 @@ import (
 type Device struct {
 	ID                   int64
 	LineID               *int64
+	Name                 string
 	HardwareID           string
 	DeviceID             string
 	DeviceToken          *string
@@ -43,7 +44,7 @@ func NewStore(database *db.Database) *Store {
 // ListByLine returns all devices associated with a given line.
 func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, line_id, hardware_id, device_id, device_token,
+		SELECT id, line_id, name, hardware_id, device_id, device_token,
 			pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE line_id = $1
@@ -58,7 +59,7 @@ func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) 
 	for rows.Next() {
 		var d Device
 		if err := rows.Scan(
-			&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
+			&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
 			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan device: %w", err)
@@ -130,6 +131,18 @@ func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paire
 	candidate := HashToken(token)
 	valid := subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1
 	return true, valid, nil
+}
+
+// UpdateName sets the display name for a device.
+func (s *Store) UpdateName(ctx context.Context, deviceID int64, name string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE devices SET name = $1 WHERE id = $2`,
+		name, deviceID,
+	)
+	if err != nil {
+		return fmt.Errorf("update device name: %w", err)
+	}
+	return nil
 }
 
 // BoundLineNumber returns the line number assigned to the paired device with
