@@ -175,30 +175,6 @@ func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
 	return res.RowsAffected()
 }
 
-// RegenerateCode forces a new pairing code for the given hardware ID,
-// replacing any existing (valid or expired) code.
-func (s *Store) RegenerateCode(ctx context.Context, hardwareID string) (string, error) {
-	code, err := randomCode(CodeLength)
-	if err != nil {
-		return "", fmt.Errorf("generate code: %w", err)
-	}
-	expiresAt := time.Now().Add(CodeTTL)
-
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE devices
-		SET pairing_code = $2, pairing_code_expires_at = $3
-		WHERE hardware_id = $1 AND paired_at IS NULL
-	`, hardwareID, code, expiresAt)
-	if err != nil {
-		return "", fmt.Errorf("regenerate code: %w", err)
-	}
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
-		return s.GenerateCode(ctx, hardwareID)
-	}
-	return code, nil
-}
-
 func randomHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {

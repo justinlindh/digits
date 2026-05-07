@@ -192,42 +192,6 @@ func TestCleanupExpiredCodes(t *testing.T) {
 	}
 }
 
-func TestRegenerateCode(t *testing.T) {
-	s := setupStore(t)
-	hwID := "test-hw-regen-001"
-	t.Cleanup(func() {
-		_, _ = s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
-	})
-
-	// Generate initial code
-	code1, err := s.GenerateCode(context.Background(), hwID)
-	if err != nil {
-		t.Fatalf("GenerateCode: %v", err)
-	}
-
-	// Regenerate — must return a 6-digit code
-	code2, err := s.RegenerateCode(context.Background(), hwID)
-	if err != nil {
-		t.Fatalf("RegenerateCode: %v", err)
-	}
-
-	if len(code2) != CodeLength {
-		t.Errorf("expected %d-digit code, got %q (len %d)", CodeLength, code2, len(code2))
-	}
-
-	// Statistically very unlikely to be the same; treat equality as a failure
-	if code1 == code2 {
-		t.Logf("note: regenerated code happens to match original (%q); rerunning once", code1)
-		code3, err := s.RegenerateCode(context.Background(), hwID)
-		if err != nil {
-			t.Fatalf("RegenerateCode retry: %v", err)
-		}
-		if code1 == code3 {
-			t.Errorf("regenerated code matched original twice (%q) — likely a bug", code1)
-		}
-	}
-}
-
 func TestRandomCode(t *testing.T) {
 	code, err := randomCode(6)
 	if err != nil {
