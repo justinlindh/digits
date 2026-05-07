@@ -27,7 +27,10 @@
 <footer class="page__foot">
   <span>Server</span>
   <span class="num">{{.Version}}</span>
+  <span class="page__foot-sep">&middot;</span>
+  <button type="button" class="page__foot-link" onclick="document.getElementById('changelog-dialog').showModal(); htmx.ajax('GET', '/changelog', '#changelog-body')">What's new</button>
 </footer>
+{{template "changelog-dialog-markup" .}}
 {{end}}
 {{end}}
 
