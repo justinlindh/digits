@@ -219,6 +219,7 @@ type Handler struct {
 	tmplConferenceLivePanel  *template.Template
 	tmplConferenceLiveDetail *template.Template
 	tmplDashboardAMStatus    *template.Template
+	tmplChangelog            *template.Template
 	cfg                      HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -306,6 +307,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	parsePage := func(page string) (*template.Template, error) {
 		return template.New("").Funcs(funcMap).ParseFS(templateFS,
 			"templates/_partials.html",
+			"templates/_changelog.html",
 			"templates/layout-v2.html",
 			"templates/layout-dialup.html",
 			"templates/layout-answering-machine.html",
@@ -389,6 +391,13 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if _, err := tmplConferenceLiveDetail.ParseFS(templateFS, "templates/_conference-live-panel.html"); err != nil {
 		return nil, fmt.Errorf("parse conference-live-panel partial into detail: %w", err)
 	}
+	tmplChangelog, err := template.New("changelog").Funcs(funcMap).ParseFS(templateFS,
+		"templates/_partials.html",
+		"templates/_changelog.html",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse changelog: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -425,6 +434,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplConferenceLivePanel:  tmplConferenceLivePanel,
 		tmplConferenceLiveDetail: tmplConferenceLiveDetail,
 		tmplDashboardAMStatus:    tmplDashboardAMStatus,
+		tmplChangelog:            tmplChangelog,
 		cfg:                      cfg,
 		authStore:                deps.AuthStore,
 		authHandlers:             deps.AuthHandlers,
@@ -539,6 +549,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/household/invite/{id}/cancel", h.handleHouseholdInviteCancelPost)
 	protected.HandleFunc("POST /settings/household/members/{id}/remove", h.handleHouseholdMemberRemovePost)
 	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)
+	protected.HandleFunc("GET /changelog", h.handleChangelog)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
