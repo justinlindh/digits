@@ -127,6 +127,10 @@ func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -134,11 +138,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	hh := h.activeHousehold(r)
-	var householdID string
-	if hh != nil {
-		householdID = hh.ID
-	}
+	householdID := hh.ID
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, err.Error())
@@ -165,6 +165,10 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -172,8 +176,6 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	code := strings.TrimSpace(r.FormValue("code"))
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
-
-	hh := h.activeHousehold(r)
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, "")
@@ -189,16 +191,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var householdID string
-	if hh != nil {
-		householdID = hh.ID
-	}
-	if householdID == "" {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = "no household found: please complete onboarding first"
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
-		return
-	}
+	householdID := hh.ID
 
 	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
 	if err != nil {
@@ -534,7 +527,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings, househ
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -587,7 +580,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 
@@ -601,7 +594,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -662,7 +655,7 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, hh := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
