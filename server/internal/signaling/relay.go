@@ -235,20 +235,11 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 	}
 	r.forward(msg)
 
-	// POTS extension model: when one device answers, cancel ringing on all
-	// other devices sharing the same line number. The answering device is
-	// identified by msg.HardwareID (set by the WS handler).
 	if msg.HardwareID != "" {
+		cancelMsg := &Message{Type: TypeHangup, From: msg.To}
 		for _, conn := range r.Hub.GetAll(from) {
 			if conn.HardwareID != msg.HardwareID {
-				cancelMsg := &Message{Type: TypeHangup, From: msg.To}
-				data, err := cancelMsg.Marshal()
-				if err == nil {
-					select {
-					case conn.Send <- data:
-					default:
-					}
-				}
+				_ = r.Hub.SendToHardware(conn.HardwareID, cancelMsg)
 			}
 		}
 	}

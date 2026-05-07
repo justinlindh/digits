@@ -122,9 +122,7 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 	switch env.TargetType {
 	case "number":
 		h.mu.RLock()
-		conns := h.conns[env.Target]
-		h.mu.RUnlock()
-		for _, conn := range conns {
+		for _, conn := range h.conns[env.Target] {
 			select {
 			case conn.Send <- data:
 				slog.Debug("redis: delivered to local connection", "pod", env.PodID, "delivered", true)
@@ -132,6 +130,7 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 				slog.Debug("redis: local send buffer full", "pod", env.PodID)
 			}
 		}
+		h.mu.RUnlock()
 
 	case "hardware":
 		h.mu.RLock()
@@ -308,12 +307,13 @@ func (h *Hub) Register(number string, conn *Conn) error {
 		h.hwConns[conn.HardwareID] = conn
 	}
 
+	devCount := len(h.conns[number])
 	d := h.dashEvents
 	ds := h.state
 	h.mu.Unlock()
 
 	slog.Debug("hub registered", "number", number, "hardware_id", conn.HardwareID,
-		"devices_on_line", len(h.conns[number]))
+		"devices_on_line", devCount)
 
 	if d != nil {
 		d.Notify()
@@ -413,9 +413,8 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	h.mu.RLock()
 	conns := h.conns[number]
 	bridge := h.redis
-	h.mu.RUnlock()
-
 	if len(conns) == 0 {
+		h.mu.RUnlock()
 		if bridge != nil {
 			bridge.Publish(context.Background(), &Envelope{
 				TargetType: "number",
@@ -426,7 +425,6 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 		}
 		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
-
 	for _, conn := range conns {
 		select {
 		case conn.Send <- data:
@@ -435,6 +433,7 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 				"number", number, "hardware_id", conn.HardwareID)
 		}
 	}
+	h.mu.RUnlock()
 	return nil
 }
 
@@ -566,29 +565,6 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	}
 }
 
-// DeviceInfoAll returns version info for every connected device on a line,
-// keyed by hardware ID. Returns nil if no devices are online.
-func (h *Hub) DeviceInfoAll(number string) map[string]*DeviceInfoSnapshot {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	conns := h.conns[number]
-	if len(conns) == 0 {
-		return nil
-	}
-	out := make(map[string]*DeviceInfoSnapshot, len(conns))
-	for _, c := range conns {
-		out[c.HardwareID] = &DeviceInfoSnapshot{
-			HardwareID:      c.HardwareID,
-			PiVersion:       c.PiVersion,
-			PiCommit:        c.PiCommit,
-			FirmwareVersion: c.FirmwareVersion,
-			FirmwareCommit:  c.FirmwareCommit,
-			RemoteAddr:      c.RemoteAddr,
-		}
-	}
-	return out
-}
-
 // SetUpdateStatus stores the latest update status for a phone.
 func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	h.mu.Lock()
@@ -638,28 +614,15 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 		localAddr = ""
 	}
 	h.mu.Lock()
-	// Find the specific conn. With multiple devices per line, iterate to
-	// find the one that sent this message. The caller (relay) routes by
-	// line number; we match using the hwConns index when possible, but
-	// fall back to the first conn on the number for backward compat.
-	var conn *Conn
+	// Legacy fallback: when the caller doesn't know the hardware ID,
+	// update the first (or only) device on this number. Multi-device
+	// callers should use UpdateDeviceInfoByHardware instead.
 	conns := h.conns[number]
-	if len(conns) == 1 {
-		conn = conns[0]
-	} else {
-		// Multi-device: the relay sets msg.HardwareID but
-		// UpdateDeviceInfo receives it as the number. Use hwConns.
-		for _, c := range conns {
-			if c.Number == number {
-				conn = c
-				break
-			}
-		}
-	}
-	if conn == nil {
+	if len(conns) == 0 {
 		h.mu.Unlock()
 		return false
 	}
+	conn := conns[0]
 	conn.PiVersion = piVer
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
@@ -724,16 +687,6 @@ func (h *Hub) TouchLastSeen(number string) {
 	if ds != nil {
 		ds.TouchLastSeen(context.Background(), number)
 	}
-}
-
-// TouchLastSeenByHardware updates the in-memory last-seen timestamp for
-// a specific device by hardware ID.
-func (h *Hub) TouchLastSeenByHardware(hardwareID string) {
-	h.mu.Lock()
-	if conn, ok := h.hwConns[hardwareID]; ok {
-		conn.LastSeen = time.Now()
-	}
-	h.mu.Unlock()
 }
 
 // LastSeenAt returns the most recent last-seen timestamp across all

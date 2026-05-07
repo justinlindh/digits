@@ -18,10 +18,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/updates"
 )
 
-func parseInt64(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
-}
-
 const maxLineNameRunes = 50
 
 func validateLineName(raw string) (string, error) {
@@ -214,7 +210,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 
 	if pairMode == "existing" && existingLineID != "" {
 		// Add device to an existing line (POTS extension)
-		lineID, parseErr := parseInt64(existingLineID)
+		lineID, parseErr := strconv.ParseInt(existingLineID, 10, 64)
 		if parseErr != nil {
 			data := h.buildLinesData(r, hh, "")
 			data.PairError = "invalid line selection"

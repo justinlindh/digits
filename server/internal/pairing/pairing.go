@@ -68,6 +68,45 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	return newCode, nil
 }
 
+// lookupPairingCode locks the device row for the given code within a
+// transaction and returns (deviceID, hardwareID). Returns ErrInvalidCode
+// when the code is missing, expired, or already claimed.
+func lookupPairingCode(ctx context.Context, tx *sql.Tx, code string) (int64, string, error) {
+	var deviceID int64
+	var hwID sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, hardware_id FROM devices
+		WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
+		FOR UPDATE
+	`, code).Scan(&deviceID, &hwID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, "", ErrInvalidCode
+	}
+	if err != nil {
+		return 0, "", fmt.Errorf("lookup pairing code: %w", err)
+	}
+	return deviceID, hwID.String, nil
+}
+
+// bindDeviceToLine marks a device as paired and assigns it to a line within
+// a transaction. Clears the pairing code and sets the device token.
+func bindDeviceToLine(ctx context.Context, tx *sql.Tx, deviceID, lineID int64, tokenHash, deviceName string) error {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE devices
+		SET line_id = $2, device_token = $3, name = $4,
+		    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
+		WHERE id = $1 AND paired_at IS NULL
+	`, deviceID, lineID, tokenHash, deviceName)
+	if err != nil {
+		return fmt.Errorf("bind device to line: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrInvalidCode
+	}
+	return nil
+}
+
 // ClaimDevice pairs a device using a pairing code, creating a new line and
 // assigning the device in a single transaction. If any step fails the whole
 // operation rolls back, leaving the device claimable with a fresh code.
@@ -81,24 +120,12 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, dev
 
 	var hardwareID string
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		// Lock the device row to prevent concurrent claims.
-		var deviceID int64
-		var hwID sql.NullString
-		err := tx.QueryRowContext(ctx, `
-			SELECT id, hardware_id FROM devices
-			WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
-			FOR UPDATE
-		`, code).Scan(&deviceID, &hwID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrInvalidCode
-		}
+		deviceID, hwID, err := lookupPairingCode(ctx, tx, code)
 		if err != nil {
-			return fmt.Errorf("lookup pairing code: %w", err)
+			return err
 		}
-		hardwareID = hwID.String
+		hardwareID = hwID
 
-		// Insert the line. The unique constraint on number rejects collisions
-		// without a separate SELECT + INSERT race window.
 		var lineID int64
 		err = tx.QueryRowContext(ctx, `
 			INSERT INTO lines (number, name, household_id)
@@ -112,21 +139,7 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, dev
 			return fmt.Errorf("create line: %w", err)
 		}
 
-		// Bind device to the line, mark paired, clear the pairing code.
-		res, err := tx.ExecContext(ctx, `
-			UPDATE devices
-			SET line_id = $2, device_token = $3, name = $4,
-			    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
-			WHERE id = $1 AND paired_at IS NULL
-		`, deviceID, lineID, tokenHash, deviceName)
-		if err != nil {
-			return fmt.Errorf("claim device: %w", err)
-		}
-		rows, _ := res.RowsAffected()
-		if rows == 0 {
-			return ErrInvalidCode
-		}
-		return nil
+		return bindDeviceToLine(ctx, tx, deviceID, lineID, tokenHash, deviceName)
 	}); err != nil {
 		return "", "", err
 	}
@@ -145,22 +158,12 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 
 	var hardwareID string
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		var deviceRowID int64
-		var hwID sql.NullString
-		err := tx.QueryRowContext(ctx, `
-			SELECT id, hardware_id FROM devices
-			WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
-			FOR UPDATE
-		`, code).Scan(&deviceRowID, &hwID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrInvalidCode
-		}
+		deviceID, hwID, err := lookupPairingCode(ctx, tx, code)
 		if err != nil {
-			return fmt.Errorf("lookup pairing code: %w", err)
+			return err
 		}
-		hardwareID = hwID.String
+		hardwareID = hwID
 
-		// Verify the line exists and belongs to this household.
 		var ownerHH string
 		err = tx.QueryRowContext(ctx,
 			`SELECT household_id FROM lines WHERE id = $1`, lineID,
@@ -175,20 +178,7 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 			return fmt.Errorf("line does not belong to this household")
 		}
 
-		res, err := tx.ExecContext(ctx, `
-			UPDATE devices
-			SET line_id = $2, device_token = $3, name = $4,
-			    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
-			WHERE id = $1 AND paired_at IS NULL
-		`, deviceRowID, lineID, tokenHash, deviceName)
-		if err != nil {
-			return fmt.Errorf("claim device to line: %w", err)
-		}
-		rows, _ := res.RowsAffected()
-		if rows == 0 {
-			return ErrInvalidCode
-		}
-		return nil
+		return bindDeviceToLine(ctx, tx, deviceID, lineID, tokenHash, deviceName)
 	}); err != nil {
 		return "", "", err
 	}
