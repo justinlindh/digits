@@ -2211,3 +2211,73 @@ body.am .deck-kick-confirm .deck-confirm__go {
 .am-hh-option:hover { background: var(--bezel); }
 .am-hh-option.is-active { font-weight: 700; }
 
+/* What's New footer + dialog */
+.am-shell__foot {
+  padding: 12px 16px;
+  text-align: right;
+}
+.am-shell__whats-new {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--am-font);
+  font-size: 11px;
+  color: var(--am-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.am-shell__whats-new:hover { text-decoration-color: var(--am-muted); }
+
+.changelog-dialog {
+  border: 1px solid var(--am-rule);
+  border-radius: 4px;
+  padding: 0;
+  background: var(--am-bg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  max-width: 520px;
+  width: 92vw;
+  max-height: 80vh;
+  color: var(--am-ink);
+  font-family: var(--am-font);
+}
+.changelog-dialog::backdrop { background: rgba(0,0,0,0.5); }
+.changelog-dialog__titlebar { display: none; }
+.changelog-dialog__body { padding: 20px; overflow-y: auto; max-height: 78vh; }
+.changelog-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  color: var(--am-ink);
+}
+
+.changelog__section-title {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--am-muted);
+  margin: 0 0 10px;
+}
+.changelog__section + .changelog__section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--am-rule);
+}
+.changelog__release + .changelog__release {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--am-rule);
+}
+.changelog__version {
+  font-family: var(--am-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.changelog__date { font-size: 11px; color: var(--am-muted); }
+.changelog__adoption { font-size: 11px; color: var(--am-accent); margin-left: auto; }
+.changelog__notes { font-size: 12px; line-height: 1.5; color: var(--am-ink); }
+.changelog__notes p { margin: 0 0 6px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__empty { color: var(--am-muted); font-style: italic; font-size: 12px; }
+

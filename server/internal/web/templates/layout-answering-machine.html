@@ -63,6 +63,12 @@
 
   <main class="am-shell__main">
     {{block "content" .}}{{end}}
+    {{if .Version}}
+    <footer class="am-shell__foot">
+      <button type="button" class="am-shell__whats-new" onclick="document.getElementById('changelog-dialog').showModal(); htmx.ajax('GET', '/changelog', '#changelog-body')">What's new</button>
+    </footer>
+    {{template "changelog-dialog-markup" .}}
+    {{end}}
   </main>
 </div>
 {{else}}
