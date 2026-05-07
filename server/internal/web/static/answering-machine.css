@@ -2211,3 +2211,71 @@ body.am .deck-kick-confirm .deck-confirm__go {
 .am-hh-option:hover { background: var(--bezel); }
 .am-hh-option.is-active { font-weight: 700; }
 
+/* What's New footer link + dialog */
+.page__foot-sep { color: var(--ink-muted); }
+.page__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.page__foot-link:hover { text-decoration-color: var(--ink-muted); }
+
+.changelog-dialog {
+  border: 1px solid rgba(100,80,40,0.25);
+  border-radius: 10px;
+  padding: 0;
+  background: linear-gradient(180deg, var(--case-light) 0%, var(--case) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.7),
+    0 8px 24px rgba(40,30,15,0.25);
+  max-width: 520px;
+  width: 92vw;
+  max-height: 80vh;
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+.changelog-dialog::backdrop { background: rgba(40,30,15,0.4); }
+.changelog-dialog__titlebar { display: none; }
+.changelog-dialog__body { padding: 20px; overflow-y: auto; max-height: 78vh; }
+.changelog-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  color: var(--ink);
+}
+
+.changelog__section-title {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 10px;
+}
+.changelog__section + .changelog__section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed rgba(100,80,40,0.25);
+}
+.changelog__release + .changelog__release {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(100,80,40,0.25);
+}
+.changelog__version {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+.changelog__date { font-size: 11px; color: var(--ink-muted); }
+.changelog__adoption { font-size: 11px; color: var(--chip-blue); margin-left: auto; }
+.changelog__notes { font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
+.changelog__notes p { margin: 0 0 6px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
+

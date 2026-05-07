@@ -1,0 +1,63 @@
+{{define "changelog-dialog-markup"}}
+<dialog id="changelog-dialog" class="changelog-dialog">
+  <div class="changelog-dialog__titlebar" aria-hidden="true">
+    <span class="changelog-dialog__titlebar-title">What's new</span>
+    <button type="button" class="changelog-dialog__titlebar-x" onclick="this.closest('dialog').close()" aria-label="Close">&#x2715;</button>
+  </div>
+  <div class="changelog-dialog__body">
+    <h2 class="changelog-dialog__title">What's new</h2>
+    <div id="changelog-body" class="changelog-dialog__content">
+      <p class="changelog__empty">Loading...</p>
+    </div>
+  </div>
+</dialog>
+<script>
+(function () {
+  var d = document.getElementById('changelog-dialog');
+  if (!d) return;
+  d.addEventListener('click', function (e) {
+    if (e.target === d) d.close();
+  });
+})();
+</script>
+{{end}}
+
+{{define "changelog-content"}}
+<div class="changelog">
+  {{if .Software}}
+  <section class="changelog__section">
+    <h3 class="changelog__section-title">Software</h3>
+    {{range .Software}}
+    <article class="changelog__release">
+      <div class="changelog__release-head">
+        <span class="changelog__version">{{.Version}}</span>
+        {{if .Date}}<span class="changelog__date">{{.Date}}</span>{{end}}
+        {{if .TotalCount}}<span class="changelog__adoption">{{.PhoneCount}} of {{.TotalCount}} phones</span>{{end}}
+      </div>
+      {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+    </article>
+    {{end}}
+  </section>
+  {{end}}
+
+  {{if .Firmware}}
+  <section class="changelog__section">
+    <h3 class="changelog__section-title">Firmware</h3>
+    {{range .Firmware}}
+    <article class="changelog__release">
+      <div class="changelog__release-head">
+        <span class="changelog__version">{{.Version}}</span>
+        {{if .Date}}<span class="changelog__date">{{.Date}}</span>{{end}}
+        {{if .TotalCount}}<span class="changelog__adoption">{{.PhoneCount}} of {{.TotalCount}} phones</span>{{end}}
+      </div>
+      {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+    </article>
+    {{end}}
+  </section>
+  {{end}}
+
+  {{if and (not .Software) (not .Firmware)}}
+  <p class="changelog__empty">No releases available.</p>
+  {{end}}
+</div>
+{{end}}

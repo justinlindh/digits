@@ -1602,6 +1602,100 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   margin-top: 4px;
 }
 
+/* What's New changelog dialog */
+.page__foot-sep { color: var(--ink-muted); }
+.page__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brass);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.page__foot-link:hover { text-decoration-color: var(--brass); }
+
+.changelog-dialog {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 0;
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(42,31,24,0.18), 0 2px 6px rgba(42,31,24,0.08);
+  max-width: 560px;
+  width: 92vw;
+  max-height: 80vh;
+  color: var(--ink);
+}
+.changelog-dialog::backdrop { background: rgba(42,31,24,0.35); }
+.changelog-dialog__titlebar { display: none; }
+.changelog-dialog__body { padding: 24px 26px; overflow-y: auto; max-height: 78vh; }
+.changelog-dialog__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.005em;
+  margin: 0 0 18px;
+  color: var(--ink);
+}
+.changelog-dialog__content { min-height: 60px; }
+
+.changelog__section + .changelog__section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule-soft);
+}
+.changelog__section-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 12px;
+}
+.changelog__release + .changelog__release {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+.changelog__release-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.changelog__version {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.changelog__date {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.changelog__adoption {
+  font-size: 11px;
+  color: var(--brass);
+  margin-left: auto;
+}
+.changelog__notes {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.changelog__notes p { margin: 0 0 8px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__notes ul { margin: 4px 0 8px; padding-left: 18px; }
+.changelog__notes li { margin: 2px 0; }
+.changelog__empty {
+  color: var(--ink-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
 /* =========================================================================
    Call-live observation deck — intercom theme
    ========================================================================= */
@@ -2060,6 +2154,10 @@ html[data-theme="dark"] .lines__dot--on {
    light-theme ink tone. On dark, go plain deep black. */
 html[data-theme="dark"] .confirm-dialog::backdrop { background: rgba(0,0,0,0.55); }
 html[data-theme="dark"] .confirm-dialog {
+  box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
+}
+html[data-theme="dark"] .changelog-dialog::backdrop { background: rgba(0,0,0,0.55); }
+html[data-theme="dark"] .changelog-dialog {
   box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
 }
 
