@@ -682,7 +682,7 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	}
 
 	// Simulate Phone 2 disconnecting (WebSocket drops)
-	relay.OnDisconnect(context.Background(), "3140002")
+	relay.OnDisconnect(context.Background(), "3140002", "")
 
 	// Phone 2 should no longer be busy
 	if tracker.Busy("3140002") {

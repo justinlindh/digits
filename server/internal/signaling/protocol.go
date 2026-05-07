@@ -32,6 +32,13 @@ const (
 	TypeReleaseAvailable = "release_available" // Server → All: new release detected
 )
 
+// Extension pickup types (POTS extension model: pick up a second handset mid-call)
+const (
+	TypeExtensionPickup  = "extension_pickup"  // Phone → Server: device is picking up during active call on its line
+	TypeExtensionConnect = "extension_connect" // Server → Phone: establish peer connection for the extension
+	TypeExtensionActive  = "extension_active"  // Server → Phone: notify original device that an extension joined
+)
+
 // Conference message types (three-way calling)
 const (
 	TypeConferenceMerge    = "conference_merge"    // client -> server
@@ -155,8 +162,15 @@ type Message struct {
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
 
+	// Extension pickup fields (POTS extension model).
+	// Extension is true when this SDP/ICE message belongs to an extension
+	// pickup connection rather than the primary call. The relay routes
+	// extension SDP/ICE to specific hardware IDs rather than broadcasting
+	// to all devices on the line.
+	Extension bool `json:"extension,omitempty"`
+
 	// Conference fields (party-line / three-way calling).
-	ConfID     string                 `json:"conf_id,omitempty"`
+	ConfID string `json:"conf_id,omitempty"`
 	HeldPeer   string                 `json:"held_peer,omitempty"`
 	ActivePeer string                 `json:"active_peer,omitempty"`
 	Peer       string                 `json:"peer,omitempty"`
