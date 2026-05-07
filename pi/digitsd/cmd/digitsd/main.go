@@ -2531,6 +2531,60 @@ func main() {
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
 
+	// Dev-mode web UI on :8080 (only when the flag file is present).
+	if devmode.Enabled(devmode.DefaultFlagPath) {
+		slog.Info("devmode: flag present, starting dev-mode web UI")
+		devCfg := &devModeConfig{
+			FlagPath:           devmode.DefaultFlagPath,
+			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
+			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
+			UARTLogPath:        uartLogPath,
+			StatusFunc: func() devModeStatus {
+				fwVer, fwCom := cb.getFirmwareVersion()
+				phase := "unknown"
+				if postOk {
+					if resp, err := sp.SendCommand("PHASE?", 1*time.Second); err == nil {
+						phase = resp
+					}
+				}
+				return devModeStatus{
+					DigitsdVersion:   version.Version,
+					FirmwareVersion:  fwVer,
+					FirmwareCommit:   fwCom,
+					Phase:            phase,
+					Online:           cb.paired.Load(),
+					PhoneNumber:      effectiveNumber,
+					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
+				}
+			},
+		}
+		if flashCapable.Load() {
+			devCfg.FlashFunc = func(elfPath string) error {
+				// Move the uploaded ELF to the standard firmware path, then
+				// invoke the same flash script the OTA updater uses.
+				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
+					return fmt.Errorf("stage firmware: %w", err)
+				}
+				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("flash script: %w", err)
+				}
+				slog.Info("devmode: flash script succeeded")
+				requeryFirmware()
+				return nil
+			}
+		}
+		devLn, devErr := startDevModeServer(devCfg)
+		if devErr != nil {
+			slog.Warn("devmode: failed to start web UI", "error", devErr)
+		} else {
+			defer devLn.Close()
+		}
+	}
+
 	// Start hardware watchdog (if available)
 	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
 		wd.Start(5 * time.Second)
