@@ -428,6 +428,9 @@ void phone_fsm_init(void) {
     s_state = PHONE_STATE_IDLE;
     clear_dialing_buffer();
     set_state(PHONE_STATE_IDLE);
+    if (hook_is_off_hook()) {
+        uart_proto_send("HOOK:OFF");
+    }
 }
 
 void phone_fsm_update(void) {
