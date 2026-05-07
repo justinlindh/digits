@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -528,7 +527,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings, househ
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnershipAdmin(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -581,7 +580,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnershipAdmin(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 
@@ -595,7 +594,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnershipAdmin(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -656,14 +655,8 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, hh := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
-		return
-	}
-	user := auth.UserFromContext(r.Context())
-	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
-	if err != nil || role != "admin" {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	if err := h.lineStore.Delete(r.Context(), ln.ID); err != nil {

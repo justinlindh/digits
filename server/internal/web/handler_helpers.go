@@ -30,18 +30,18 @@ func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, n
 // requireLineOwnershipAdmin is requireLineOwnership with an additional admin
 // role check. Used for destructive phone endpoints (delete, factory reset,
 // restart, update, pair, add line).
-func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Request, number string) *line.Line {
+func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Request, number string) (*line.Line, *household.Household) {
 	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
 	if ln == nil {
-		return nil
+		return nil, nil
 	}
 	user := auth.UserFromContext(r.Context())
 	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
 	if err != nil || role != "admin" {
 		http.Error(w, "forbidden", http.StatusForbidden)
-		return nil
+		return nil, nil
 	}
-	return ln
+	return ln, hh
 }
 
 // requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
