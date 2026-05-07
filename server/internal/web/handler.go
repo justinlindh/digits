@@ -242,6 +242,7 @@ type Handler struct {
 	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
 	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
 	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
+	wsLimiter          *ratelimit.Limiter // GET  /ws (WebSocket upgrade)
 	// Updates
 	Releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
@@ -449,6 +450,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		googleLoginLimiter:       ratelimit.New(10, time.Minute),
 		pairingLimiter:           ratelimit.New(5, time.Minute),
 		inviteLimiter:            ratelimit.New(5, time.Minute),
+		wsLimiter:                ratelimit.New(30, time.Minute),
 		metrics:                  deps.Metrics,
 	}, nil
 }
@@ -482,7 +484,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("POST /invite/{token}/accept", h.handleInviteAcceptPost)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
-	mux.HandleFunc("GET /ws", h.handleWS)
+	mux.Handle("GET /ws", h.wsLimiter.Middleware(http.HandlerFunc(h.handleWS)))
 
 	// Update release index endpoint (unauthenticated — phones fetch this)
 	if h.Releases != nil {

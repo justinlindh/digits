@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -590,10 +591,10 @@ func (h *Hub) LastSeenAt(number string) *time.Time {
 }
 
 // IsOnline returns true if number has an active hub connection and is not in
-// pairing mode. Unpaired devices connect under the sentinel "unpaired" number
+// pairing mode. Unpaired devices connect under the "unpaired:<hwID>" prefix
 // and must not be presented as online in the UI.
 func (h *Hub) IsOnline(number string) bool {
-	if number == "unpaired" {
+	if strings.HasPrefix(number, "unpaired:") {
 		return false
 	}
 	h.mu.RLock()
@@ -608,9 +609,11 @@ func (h *Hub) IsOnline(number string) bool {
 func (h *Hub) LocalConnectionCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	n := len(h.conns)
-	if _, ok := h.conns["unpaired"]; ok {
-		n--
+	n := 0
+	for key := range h.conns {
+		if !strings.HasPrefix(key, "unpaired:") {
+			n++
+		}
 	}
 	return n
 }
@@ -626,7 +629,7 @@ func (h *Hub) OnlineNumbers() []string {
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))
 	for n := range h.conns {
-		if n == "unpaired" {
+		if strings.HasPrefix(n, "unpaired:") {
 			continue
 		}
 		nums = append(nums, n)

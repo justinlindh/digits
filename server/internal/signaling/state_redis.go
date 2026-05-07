@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -85,7 +86,7 @@ func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 	for iter.Next(ctx) {
 		key := iter.Val()
 		number := key[prefixLen:]
-		if number == "unpaired" {
+		if strings.HasPrefix(number, "unpaired:") {
 			continue
 		}
 		numbers = append(numbers, number)
