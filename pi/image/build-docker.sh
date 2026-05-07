@@ -14,8 +14,9 @@
 # is downloaded automatically and cached in a Docker volume for reuse.
 #
 # Default: downloads pre-built binaries from the latest pi/v* GitHub release.
-# Requires a Go toolchain for `make embed` (cross-compiles digits-setup into
-# the rootfs overlay). Pin a specific release with RELEASE_TAG:
+# Requires a Go toolchain for `make embed` (stages the rootfs overlay, tones,
+# and mixer state into pi/digitsd/internal/assets/embed). Pin a specific
+# release with RELEASE_TAG:
 #
 #   RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
 #

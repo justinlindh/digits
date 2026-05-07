@@ -2237,11 +2237,12 @@ func main() {
 		slog.Info("service code: *#SETUP# (*#73887#) -> awaiting confirmation")
 		confirm("confirm_wifi_setup", func() {
 			slog.Info("service code setup confirmed: removing wifi-configured flag, rebooting")
-			// /data/wifi-configured is owned by root (digits-setup writes it
-			// as root); /data itself is mode 755 root:root. digitsd runs as
-			// the 'digits' user, which lacks write access to /data and so
-			// cannot unlink the flag directly. The digits-updater sudoers
-			// entry grants NOPASSWD on rm -f for this exact path.
+			// /data/wifi-configured is owned by root (digitsd writes it as
+			// root from --mode=setup); /data itself is mode 755 root:root.
+			// digitsd in normal mode runs as the 'digits' user, which lacks
+			// write access to /data and so cannot unlink the flag directly.
+			// The digits-updater sudoers entry grants NOPASSWD on rm -f for
+			// this exact path.
 			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
 			if err != nil {
 				slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
