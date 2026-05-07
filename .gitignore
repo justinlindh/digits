@@ -5,8 +5,6 @@ artifacts/*
 
 # Compiled binaries
 pi/digitsd/digitsd
-pi/digits-setup/digits-setup
-pi/digits-recovery/bin/
 server/bin/
 
 # rnnoise test binaries (keep lib/ and rnnoise.h)
