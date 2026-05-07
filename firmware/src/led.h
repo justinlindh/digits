@@ -11,6 +11,8 @@ typedef enum {
     LED_MODE_FAST_BLINK,
     LED_MODE_DOUBLE_PULSE,
     LED_MODE_CONNECTING,
+    LED_MODE_BREATHING,
+    LED_MODE_SLOW_PULSE,
 } led_mode_t;
 
 void led_init(void);
