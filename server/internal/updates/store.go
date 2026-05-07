@@ -12,6 +12,7 @@ import (
 const (
 	ComponentPi       = "pi"
 	ComponentFirmware = "firmware"
+	ComponentServer   = "server"
 )
 
 // Release describes a single versioned artifact (Pi binary or firmware).
@@ -29,6 +30,7 @@ type Release struct {
 type ReleaseIndex struct {
 	Pi       ComponentIndex `json:"pi"`
 	Firmware ComponentIndex `json:"firmware"`
+	Server   ComponentIndex `json:"server"`
 }
 
 // ComponentIndex holds the latest version and full history for one component.
@@ -47,6 +49,8 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 		m = idx.Pi.Releases
 	case ComponentFirmware:
 		m = idx.Firmware.Releases
+	case ComponentServer:
+		m = idx.Server.Releases
 	default:
 		return nil
 	}

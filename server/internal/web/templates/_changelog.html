@@ -24,9 +24,14 @@
 
 {{define "changelog-content"}}
 <div class="changelog">
-  {{if .Software}}
-  <section class="changelog__section">
-    <h3 class="changelog__section-title">Software</h3>
+  <div class="changelog-tabs" role="tablist">
+    <button role="tab" class="changelog-tab changelog-tab--active" aria-selected="true" data-tab="software">Software</button>
+    <button role="tab" class="changelog-tab" aria-selected="false" data-tab="firmware">Firmware</button>
+    <button role="tab" class="changelog-tab" aria-selected="false" data-tab="server">Server</button>
+  </div>
+
+  <div class="changelog-panel changelog-panel--active" data-panel="software">
+    {{if .Software}}
     {{range .Software}}
     <article class="changelog__release">
       <div class="changelog__release-head">
@@ -37,12 +42,13 @@
       {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
     </article>
     {{end}}
-  </section>
-  {{end}}
+    {{else}}
+    <p class="changelog__empty">No releases available.</p>
+    {{end}}
+  </div>
 
-  {{if .Firmware}}
-  <section class="changelog__section">
-    <h3 class="changelog__section-title">Firmware</h3>
+  <div class="changelog-panel" data-panel="firmware">
+    {{if .Firmware}}
     {{range .Firmware}}
     <article class="changelog__release">
       <div class="changelog__release-head">
@@ -53,11 +59,42 @@
       {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
     </article>
     {{end}}
-  </section>
-  {{end}}
+    {{else}}
+    <p class="changelog__empty">No releases available.</p>
+    {{end}}
+  </div>
 
-  {{if and (not .Software) (not .Firmware)}}
-  <p class="changelog__empty">No releases available.</p>
-  {{end}}
+  <div class="changelog-panel" data-panel="server">
+    {{if .Server}}
+    {{range .Server}}
+    <article class="changelog__release">
+      <div class="changelog__release-head">
+        <span class="changelog__version">{{.Version}}</span>
+        {{if .Date}}<span class="changelog__date">{{.Date}}</span>{{end}}
+      </div>
+      {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+    </article>
+    {{end}}
+    {{else}}
+    <p class="changelog__empty">No releases available.</p>
+    {{end}}
+  </div>
 </div>
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.changelog-tab');
+  var panels = document.querySelectorAll('.changelog-panel');
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var target = tab.getAttribute('data-tab');
+      tabs.forEach(function (t) { t.classList.remove('changelog-tab--active'); t.setAttribute('aria-selected', 'false'); });
+      panels.forEach(function (p) { p.classList.remove('changelog-panel--active'); });
+      tab.classList.add('changelog-tab--active');
+      tab.setAttribute('aria-selected', 'true');
+      var panel = document.querySelector('[data-panel="' + target + '"]');
+      if (panel) panel.classList.add('changelog-panel--active');
+    });
+  });
+})();
+</script>
 {{end}}

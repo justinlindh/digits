@@ -2383,13 +2383,52 @@ body.dialup .phone-silent__text {
   color: var(--dialup-ink);
 }
 
-.changelog__section-title {
-  font-size: 11px;
-  font-weight: bold;
-  text-transform: uppercase;
-  color: var(--dialup-ink);
-  margin: 0 0 8px;
+.changelog-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: -1px;
+  padding: 0 2px;
 }
+.changelog-tab {
+  background: var(--dialup-chrome);
+  border: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  padding: 3px 10px 4px;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  font-size: 11px;
+  color: var(--dialup-ink);
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+  border-radius: 3px 3px 0 0;
+}
+.changelog-tab--active {
+  background: var(--dialup-chrome);
+  border-bottom: 1px solid var(--dialup-chrome);
+  font-weight: bold;
+  z-index: 1;
+}
+.changelog-panel {
+  display: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  padding-top: 10px;
+}
+.changelog-panel--active { display: block; }
+
+.page__foot-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dialup-blue);
+  margin-left: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
 .changelog__release + .changelog__release {
   margin-top: 10px;
   padding-top: 10px;

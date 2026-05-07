@@ -2250,18 +2250,47 @@ body.am .deck-kick-confirm .deck-confirm__go {
   color: var(--ink);
 }
 
-.changelog__section-title {
+.changelog-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.changelog-tab {
+  background: rgba(100,80,40,0.08);
+  border: 1px solid rgba(100,80,40,0.15);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-family: var(--font-body);
   font-size: 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-muted);
-  margin: 0 0 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
-.changelog__section + .changelog__section {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px dashed rgba(100,80,40,0.25);
+.changelog-tab:hover { background: rgba(100,80,40,0.14); }
+.changelog-tab--active {
+  background: rgba(100,80,40,0.18);
+  color: var(--ink);
+  border-color: rgba(100,80,40,0.3);
+  font-weight: 600;
 }
+.changelog-panel { display: none; }
+.changelog-panel--active { display: block; }
+
+.page__foot-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--chip-red, #c44);
+  box-shadow: 0 0 4px rgba(200,60,60,0.5);
+  margin-left: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
 .changelog__release + .changelog__release {
   margin-top: 12px;
   padding-top: 12px;

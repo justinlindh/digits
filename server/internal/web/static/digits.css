@@ -1642,18 +1642,45 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 }
 .changelog-dialog__content { min-height: 60px; }
 
-.changelog__section + .changelog__section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid var(--rule-soft);
+.changelog-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 16px;
 }
-.changelog__section-title {
-  font-size: 11px;
-  letter-spacing: 0.08em;
+.changelog-tab {
+  background: none;
+  border: none;
+  padding: 6px 14px 8px;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-muted);
-  margin: 0 0 12px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
 }
+.changelog-tab:hover { color: var(--ink); }
+.changelog-tab--active {
+  color: var(--brass);
+  border-bottom-color: var(--brass);
+}
+.changelog-panel { display: none; }
+.changelog-panel--active { display: block; }
+
+.page__foot-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+  margin-left: 5px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
 .changelog__release + .changelog__release {
   margin-top: 14px;
   padding-top: 14px;
