@@ -873,7 +873,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 
-	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() {
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: call ended, running deferred update")
 		if d.triggerAutoUpdate != nil {
 			go d.triggerAutoUpdate()
@@ -2011,11 +2011,12 @@ func main() {
 	// path doesn't fire when the Pico responds.
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
+		needsReflash := firmwareNeedsReflash(fwVersion, bundled)
 		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
-		if skipReflash && firmwareNeedsReflash(fwVersion, bundled) {
+		if needsReflash && skipReflash {
 			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
 				"pico", fwVersion, "bundled", bundled)
-		} else if firmwareNeedsReflash(fwVersion, bundled) {
+		} else if needsReflash {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
@@ -2463,9 +2464,11 @@ func main() {
 		fwVer, _ := cb.getFirmwareVersion()
 		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
 	}
-	if cb.autoUpdateEnabled.Load() {
+	if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: enabled, checking for updates on startup")
 		go cb.triggerAutoUpdate()
+	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
 
 	// 8. Create phone Controller
@@ -3040,7 +3043,7 @@ func main() {
 
 			case sigclient.TypeReleaseAvailable:
 				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-				if cb.autoUpdateEnabled.Load() {
+				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 					go cb.triggerAutoUpdate()
 				}
 
@@ -3212,7 +3215,9 @@ func main() {
 				}
 
 				au := msg.LineSettings.AutoUpdate
-				if au != cb.autoUpdateEnabled.Load() {
+				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
+				} else if au != cb.autoUpdateEnabled.Load() {
 					cb.autoUpdateEnabled.Store(au)
 					slog.Info("line_settings applied", "auto_update", au)
 					if err := cb.setAutoUpdateConfig(au); err != nil {

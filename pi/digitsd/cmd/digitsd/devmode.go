@@ -161,17 +161,25 @@ func devModeFlashHandler(cfg *devModeConfig) http.HandlerFunc {
 			return
 		}
 
+		if !updateInProgress.CompareAndSwap(false, true) {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{"error": "another flash/update is already in progress"}) //nolint:errcheck
+			return
+		}
+
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<20) // 4 MB max
 		file, header, err := r.FormFile("firmware")
 		if err != nil {
+			updateInProgress.Store(false)
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "no firmware file in request"}) //nolint:errcheck
 			return
 		}
 		defer file.Close() //nolint:errcheck
 
-		// Write to staging area.
 		stagingDir := "/data/digits/staging"
 		if err := os.MkdirAll(stagingDir, 0755); err != nil {
+			updateInProgress.Store(false)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "create staging dir: " + err.Error()}) //nolint:errcheck
 			return
@@ -179,12 +187,14 @@ func devModeFlashHandler(cfg *devModeConfig) http.HandlerFunc {
 		destPath := filepath.Join(stagingDir, "dev-upload.elf")
 		out, err := os.Create(destPath)
 		if err != nil {
+			updateInProgress.Store(false)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "create staging file: " + err.Error()}) //nolint:errcheck
 			return
 		}
 		if _, err := io.Copy(out, file); err != nil {
 			_ = out.Close()
+			updateInProgress.Store(false)
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "write file: " + err.Error()}) //nolint:errcheck
 			return
@@ -192,14 +202,6 @@ func devModeFlashHandler(cfg *devModeConfig) http.HandlerFunc {
 		_ = out.Close()
 
 		slog.Info("devmode: firmware upload received", "filename", header.Filename, "size", header.Size, "staged", destPath)
-
-		// Guard against concurrent flash operations (shares the same
-		// atomic with the OTA updater).
-		if !updateInProgress.CompareAndSwap(false, true) {
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "another flash/update is already in progress"}) //nolint:errcheck
-			return
-		}
 
 		go func() {
 			defer updateInProgress.Store(false)
