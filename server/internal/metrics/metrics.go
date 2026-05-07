@@ -31,9 +31,6 @@
 package metrics
 
 import (
-	"bufio"
-	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,6 +38,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
 const serviceName = "signald"
@@ -214,45 +213,6 @@ func (r *Registry) ObserveSignalingErrorCategory(category string) {
 	r.SignalingErrors.WithLabelValues(category).Inc()
 }
 
-// statusRecorder captures the response status without buffering the body.
-// Flush and Hijack pass through to the underlying ResponseWriter so SSE
-// streaming (/api/dashboard/stream) and WebSocket upgrades (/ws) work.
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (s *statusRecorder) WriteHeader(code int) {
-	if s.wroteHeader {
-		return
-	}
-	s.status = code
-	s.wroteHeader = true
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if !s.wroteHeader {
-		s.status = http.StatusOK
-		s.wroteHeader = true
-	}
-	return s.ResponseWriter.Write(b)
-}
-
-func (s *statusRecorder) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, fmt.Errorf("underlying ResponseWriter does not support Hijack")
-}
-
 // Middleware returns an http.Handler middleware that records request count
 // and duration into the registry. It calls routeOf to bucket the path into
 // a coarse route group; that function is the privacy boundary, so it lives
@@ -260,11 +220,11 @@ func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (r *Registry) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		rec := &httputil.StatusRecorder{ResponseWriter: w, Status: http.StatusOK}
 		next.ServeHTTP(rec, req)
 		dur := time.Since(start).Seconds()
 		route := RouteOf(req.URL.Path)
-		status := strconv.Itoa(rec.status)
+		status := strconv.Itoa(rec.Status)
 		r.HTTPRequestsTotal.WithLabelValues(route, req.Method, status).Inc()
 		r.HTTPRequestDuration.WithLabelValues(route, req.Method, status).Observe(dur)
 	})
