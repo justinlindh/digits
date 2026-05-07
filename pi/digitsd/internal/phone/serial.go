@@ -193,6 +193,11 @@ func (sp *SerialPort) LED(mode string) {
 	sp.SendFire("LED:" + mode)
 }
 
+// StateSet sends STATE:SET:<state> to the Pico to persist the phase byte.
+func (sp *SerialPort) StateSet(state string) {
+	sp.SendFire("STATE:SET:" + state)
+}
+
 // CallConnected sends CALL:CONNECTED to the Pico.
 func (sp *SerialPort) CallConnected() {
 	sp.SendFire("CALL:CONNECTED")
