@@ -253,6 +253,8 @@ func isFireAndForgetAck(line string) bool {
 		return true
 	case "CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED":
 		return true
+	case "STATE:SET:OK":
+		return true
 	default:
 		return false
 	}
