@@ -13,15 +13,6 @@ import (
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
-// ErrNotFound is returned when a device cannot be found.
-var ErrNotFound = errors.New("device not found")
-
-// deviceColumns is the SELECT/RETURNING list for queries that scan into a
-// Device. Field order must stay aligned with the destination order in every
-// .Scan call below.
-const deviceColumns = `id, line_id, hardware_id, device_id, device_token,
-	pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at`
-
 // Device represents a physical handset paired to a line.
 type Device struct {
 	ID                   int64
@@ -36,7 +27,10 @@ type Device struct {
 	LastSeenAt           *time.Time
 }
 
-// Store provides CRUD operations for devices.
+// Store provides device queries and pairing-state mutations. Row inserts
+// happen in the pairing package (which owns the pairing-code lifecycle);
+// this package handles the read paths and the side effects pairing does
+// not own (last-seen heartbeat, repair-flow unpair).
 type Store struct {
 	db *sql.DB
 }
@@ -46,67 +40,11 @@ func NewStore(database *db.Database) *Store {
 	return &Store{db: database.DB}
 }
 
-// Create inserts a new device record for the given line and hardware ID.
-func (s *Store) Create(ctx context.Context, lineID int64, hardwareID string) (*Device, error) {
-	d := &Device{}
-	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO devices (line_id, hardware_id)
-		VALUES ($1, $2)
-		RETURNING `+deviceColumns+`
-	`, lineID, hardwareID).Scan(
-		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create device: %w", err)
-	}
-	return d, nil
-}
-
-// GetByID returns a device by its primary key.
-func (s *Store) GetByID(ctx context.Context, id int64) (*Device, error) {
-	d := &Device{}
-	err := s.db.QueryRowContext(ctx, `
-		SELECT `+deviceColumns+`
-		FROM devices
-		WHERE id = $1
-	`, id).Scan(
-		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get device by id: %w", err)
-	}
-	return d, nil
-}
-
-// GetByHardwareID returns a device by its hardware identifier.
-func (s *Store) GetByHardwareID(ctx context.Context, hwID string) (*Device, error) {
-	d := &Device{}
-	err := s.db.QueryRowContext(ctx, `
-		SELECT `+deviceColumns+`
-		FROM devices
-		WHERE hardware_id = $1
-	`, hwID).Scan(
-		&d.ID, &d.LineID, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get device by hardware id: %w", err)
-	}
-	return d, nil
-}
-
 // ListByLine returns all devices associated with a given line.
 func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT `+deviceColumns+`
+		SELECT id, line_id, hardware_id, device_id, device_token,
+			pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
 		FROM devices
 		WHERE line_id = $1
 		ORDER BY created_at
@@ -128,22 +66,6 @@ func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) 
 		devices = append(devices, d)
 	}
 	return devices, rows.Err()
-}
-
-// Delete removes a device by its primary key.
-func (s *Store) Delete(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM devices WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("delete device: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("delete device rows affected: %w", err)
-	}
-	if n == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // Unpair invalidates the device's paired_at and device_token so the next
@@ -210,23 +132,3 @@ func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paire
 	return true, valid, nil
 }
 
-// ValidateToken checks if the given plaintext token matches the stored hash
-// for the device with the given hardware ID. Uses constant-time comparison.
-func (s *Store) ValidateToken(ctx context.Context, hardwareID, token string) (bool, error) {
-	var storedHash sql.NullString
-	err := s.db.QueryRowContext(ctx,
-		`SELECT device_token FROM devices WHERE hardware_id = $1 AND paired_at IS NOT NULL`,
-		hardwareID,
-	).Scan(&storedHash)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("validate token: %w", err)
-	}
-	if !storedHash.Valid {
-		return false, nil
-	}
-	candidate := HashToken(token)
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1, nil
-}
