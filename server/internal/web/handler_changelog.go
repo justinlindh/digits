@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/justinlindh/digits/server/internal/updates"
@@ -28,6 +29,8 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 			for _, l := range ll {
 				lines = append(lines, l.Number)
 			}
+		} else {
+			slog.Error("changelog: list lines failed", "household_id", hh.ID, "err", err)
 		}
 	}
 
