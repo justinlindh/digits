@@ -231,6 +231,8 @@ func isUnsolicitedEvent(line string) bool {
 		return true
 	case line == "STATUS:READY":
 		return true
+	case strings.HasPrefix(line, "BOOT:"):
+		return true
 	case strings.HasPrefix(line, "KEY:"):
 		return true
 	case strings.HasPrefix(line, "DIAL:"):

@@ -2095,7 +2095,8 @@ func main() {
 	}
 
 	// Check if the Pico detected a held * key at boot (panic button).
-	// BOOT:PANIC arrives before POST and sits on the events channel.
+	// BOOT:PANIC is an unsolicited event (see isUnsolicitedEvent in serial.go)
+	// and sits on the events channel by the time POST completes.
 	if postOk {
 		drainDeadline := time.After(100 * time.Millisecond)
 	drainLoop:
