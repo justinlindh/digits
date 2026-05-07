@@ -3,8 +3,6 @@
 # Usage: tools/build-pi.sh <version>
 # Outputs (in artifacts/):
 #   digitsd-<version>-aarch64            (and .sha256)
-#   digits-setup-<version>-aarch64       (and .sha256)
-#   digits-recovery-<version>-aarch64    (and .sha256)
 #   digits-panic-check-<version>-aarch64 (and .sha256)
 set -euo pipefail
 
@@ -43,27 +41,6 @@ CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 go build \
     -o "${OUT_DIR}/digitsd-${VERSION}-aarch64" \
     ./cmd/digitsd/
 sha_file "${OUT_DIR}/digitsd-${VERSION}-aarch64"
-
-# digits-setup (pure Go)
-
-echo "=== Building digits-setup aarch64 v${VERSION} (commit ${GIT_COMMIT}) ==="
-
-cd "${REPO_DIR}/pi/digits-setup"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-    -trimpath -ldflags="-s -w" \
-    -o "${OUT_DIR}/digits-setup-${VERSION}-aarch64" \
-    ./cmd/digits-setup
-sha_file "${OUT_DIR}/digits-setup-${VERSION}-aarch64"
-
-# digits-recovery (pure Go)
-
-echo "=== Building digits-recovery aarch64 v${VERSION} (commit ${GIT_COMMIT}) ==="
-
-cd "${REPO_DIR}/pi/digits-recovery"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-    -o "${OUT_DIR}/digits-recovery-${VERSION}-aarch64" \
-    .
-sha_file "${OUT_DIR}/digits-recovery-${VERSION}-aarch64"
 
 # digits-panic-check (pure Go)
 
