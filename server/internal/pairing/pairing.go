@@ -55,6 +55,7 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 		VALUES (NULL, $1, $2, $3)
 		ON CONFLICT (hardware_id) DO UPDATE
 		SET pairing_code = $2, pairing_code_expires_at = $3
+		WHERE devices.paired_at IS NULL
 	`, hardwareID, newCode, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("upsert pairing code: %w", err)
