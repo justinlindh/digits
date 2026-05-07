@@ -55,6 +55,12 @@ func defaultConfig() config {
 	}
 }
 
+// lineResult is a line (or error) produced by the background scanner goroutine.
+type lineResult struct {
+	line string
+	err  error
+}
+
 // run executes the panic check. Returns true if recovery was triggered.
 func run(cfg config) (bool, error) {
 	port, err := cfg.openSerial(cfg.serialDev, cfg.baud)
@@ -65,6 +71,42 @@ func run(cfg config) (bool, error) {
 	}
 	defer port.Close()
 
+	// A single background scanner feeds every read in this function, so no
+	// goroutine silently consumes data that a later read needs.
+	lineCh := make(chan lineResult, keydumpTotalLines+1)
+	go func() {
+		sc := bufio.NewScanner(port)
+		for sc.Scan() {
+			lineCh <- lineResult{line: sc.Text()}
+		}
+		if err := sc.Err(); err != nil {
+			lineCh <- lineResult{err: err}
+		}
+		close(lineCh)
+	}()
+
+	// Wait for the Pico to be ready. It may still be booting when this
+	// service runs at sysinit.
+	ready := false
+	for attempt := 1; attempt <= 5; attempt++ {
+		if _, err := port.Write([]byte("PING\n")); err != nil {
+			log.Printf("PING write failed: %v (attempt %d)", err, attempt)
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		lines, err := collectLines(lineCh, 1, 1*time.Second)
+		if err == nil && len(lines) > 0 && lines[0] == "PONG" {
+			ready = true
+			break
+		}
+		log.Printf("PING: no PONG (attempt %d/5)", attempt)
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !ready {
+		log.Printf("Pico not responding after 5 PING attempts (continuing normal boot)")
+		return false, nil
+	}
+
 	// Send KEYDUMP command.
 	if _, err := port.Write([]byte("KEYDUMP\n")); err != nil {
 		log.Printf("cannot write KEYDUMP: %v (continuing normal boot)", err)
@@ -72,7 +114,7 @@ func run(cfg config) (bool, error) {
 	}
 
 	// Read response lines with a timeout.
-	lines, err := readLines(port, keydumpTotalLines, keydumpTimeout)
+	lines, err := collectLines(lineCh, keydumpTotalLines, keydumpTimeout)
 	if err != nil {
 		log.Printf("KEYDUMP read failed: %v (continuing normal boot)", err)
 		return false, nil
@@ -110,27 +152,8 @@ func run(cfg config) (bool, error) {
 	return true, nil
 }
 
-// readLines reads up to count newline-delimited lines from r within the
-// given timeout. Returns whatever lines were collected if the timeout fires
-// before all lines arrive.
-func readLines(r io.Reader, count int, timeout time.Duration) ([]string, error) {
-	type result struct {
-		line string
-		err  error
-	}
-
-	ch := make(chan result, count)
-	go func() {
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			ch <- result{line: scanner.Text()}
-		}
-		if err := scanner.Err(); err != nil {
-			ch <- result{err: err}
-		}
-		close(ch)
-	}()
-
+// collectLines drains up to count lines from ch within the given timeout.
+func collectLines(ch <-chan lineResult, count int, timeout time.Duration) ([]string, error) {
 	var lines []string
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -150,6 +173,24 @@ func readLines(r io.Reader, count int, timeout time.Duration) ([]string, error) 
 		}
 	}
 	return lines, nil
+}
+
+// readLines reads up to count newline-delimited lines from r within the
+// given timeout. Returns whatever lines were collected if the timeout fires
+// before all lines arrive.
+func readLines(r io.Reader, count int, timeout time.Duration) ([]string, error) {
+	ch := make(chan lineResult, count)
+	go func() {
+		sc := bufio.NewScanner(r)
+		for sc.Scan() {
+			ch <- lineResult{line: sc.Text()}
+		}
+		if err := sc.Err(); err != nil {
+			ch <- lineResult{err: err}
+		}
+		close(ch)
+	}()
+	return collectLines(ch, count, timeout)
 }
 
 // parseStarHeld checks the KEYDUMP output for the * key (row 3, col 0).
