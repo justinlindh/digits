@@ -21,9 +21,8 @@ FAILED=0
 MODULES=""
 for file in $STAGED_GO_FILES; do
     case "$file" in
-        server/*)          MODULES="$MODULES server" ;;
-        pi/digitsd/*)      MODULES="$MODULES pi/digitsd" ;;
-        pi/digits-setup/*) MODULES="$MODULES pi/digits-setup" ;;
+        server/*)     MODULES="$MODULES server" ;;
+        pi/digitsd/*) MODULES="$MODULES pi/digitsd" ;;
     esac
 done
 
