@@ -3043,12 +3043,11 @@ func main() {
 					cb.pairingCode = ""
 					sp.StateSet("PAIRED")
 					mixer.StopAll()
-					mixer.PlayOnce("tone_dial")
-					// Restart to reconnect with the assigned phone number
+					sp.SendFire("TONE:DIAL")
 					slog.Info("signal: restarting to register", "number", msg.Number)
 					go func() {
-						time.Sleep(2 * time.Second) // let dial tone play briefly
-						os.Exit(0)                  // systemd will restart us
+						time.Sleep(1 * time.Second)
+						os.Exit(0) // systemd restarts; Pico tone survives
 					}()
 				}
 

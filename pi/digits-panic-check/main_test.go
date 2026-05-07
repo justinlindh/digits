@@ -218,7 +218,7 @@ func TestRun_StarHeld(t *testing.T) {
 	tmpDir := t.TempDir()
 	flagPath := filepath.Join(tmpDir, "recovery-mode")
 
-	response := keydumpResponse([4][3]int{
+	response := "PONG\n" + keydumpResponse([4][3]int{
 		{1, 1, 1},
 		{1, 1, 1},
 		{1, 1, 1},
@@ -265,7 +265,7 @@ func TestRun_StarHeld(t *testing.T) {
 }
 
 func TestRun_NoKeyHeld(t *testing.T) {
-	response := keydumpResponse([4][3]int{
+	response := "PONG\n" + keydumpResponse([4][3]int{
 		{1, 1, 1},
 		{1, 1, 1},
 		{1, 1, 1},
@@ -372,7 +372,7 @@ func TestRun_WriteFails(t *testing.T) {
 
 func TestRun_MalformedResponse(t *testing.T) {
 	mock := &mockSerial{
-		rx: bytes.NewBufferString("garbage line 1\ngarbage line 2\ngarbage 3\ngarbage 4\ngarbage 5\ngarbage 6\n"),
+		rx: bytes.NewBufferString("PONG\ngarbage line 1\ngarbage line 2\ngarbage 3\ngarbage 4\ngarbage 5\ngarbage 6\n"),
 	}
 
 	cfg := config{
@@ -399,7 +399,7 @@ func TestRun_MalformedResponse(t *testing.T) {
 func TestRun_PartialResponse(t *testing.T) {
 	// Only 3 lines instead of 6.
 	mock := &mockSerial{
-		rx: bytes.NewBufferString("ROWS: R0/GP27=1\nCOLS: C0/GP24=1\nSCAN R0/GP27=LOW: C0=1\n"),
+		rx: bytes.NewBufferString("PONG\nROWS: R0/GP27=1\nCOLS: C0/GP24=1\nSCAN R0/GP27=LOW: C0=1\n"),
 	}
 
 	cfg := config{
@@ -429,6 +429,7 @@ func TestRun_V1FourColumns(t *testing.T) {
 	flagPath := filepath.Join(tmpDir, "recovery-mode")
 
 	var b strings.Builder
+	b.WriteString("PONG\n")
 	b.WriteString("ROWS: R0/GP2=1 R1/GP3=1 R2/GP4=1 R3/GP5=1\n")
 	b.WriteString("COLS: C0/GP6=1 C1/GP7=1 C2/GP8=1 C3/GP9=1\n")
 	b.WriteString("SCAN R0/GP2=LOW: C0=1 C1=1 C2=1 C3=1\n")
