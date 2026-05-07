@@ -154,7 +154,7 @@ func newLHEnv(t *testing.T) lhSetup {
 	if err != nil {
 		t.Fatalf("generate code A: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeA, numA, "Phone A", hhA.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeA, numA, "Phone A", "Phone A", hhA.ID); err != nil {
 		t.Fatalf("claim phone A: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func newLHEnv(t *testing.T) lhSetup {
 	if err != nil {
 		t.Fatalf("generate code B: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeB, numB, "Phone B", hhB.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeB, numB, "Phone B", "Phone B", hhB.ID); err != nil {
 		t.Fatalf("claim phone B: %v", err)
 	}
 
@@ -170,7 +170,7 @@ func newLHEnv(t *testing.T) lhSetup {
 	if err != nil {
 		t.Fatalf("generate code C: %v", err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeC, numC, "Phone C", hhC.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), codeC, numC, "Phone C", "Phone C", hhC.ID); err != nil {
 		t.Fatalf("claim phone C: %v", err)
 	}
 

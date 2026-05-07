@@ -82,7 +82,7 @@ func TestClaimDevice_Success(t *testing.T) {
 		t.Fatalf("GenerateCode: %v", err)
 	}
 
-	token, _, err := s.ClaimDevice(context.Background(), code, "5550100", "Kitchen Phone", hhID)
+	token, _, err := s.ClaimDevice(context.Background(), code, "5550100", "Kitchen Phone", "Kitchen Phone", hhID)
 	if err != nil {
 		t.Fatalf("ClaimDevice: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestClaimDevice_Success(t *testing.T) {
 func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
 	s := setupStore(t)
 	hhID := seedHousehold(t, s)
-	_, _, err := s.ClaimDevice(context.Background(), "999999", "5550101", "Bad Phone", hhID)
+	_, _, err := s.ClaimDevice(context.Background(), "999999", "5550101", "Bad Phone", "Bad Phone", hhID)
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode, got %v", err)
 	}
@@ -122,7 +122,7 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 		t.Fatalf("expire code: %v", err)
 	}
 
-	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", seedHousehold(t, s))
+	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", "Expired Phone", seedHousehold(t, s))
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
 	}

@@ -457,7 +457,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	}
 
 	// Claim the device (pairs it, sets hashed token)
-	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", hh.ID)
+	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("claim device: %v", err)
 	}
