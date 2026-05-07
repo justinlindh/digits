@@ -114,11 +114,11 @@ func (w *WiFiAPModule) initSystemd() error {
 func (w *WiFiAPModule) Teardown() error {
 	if w.cfg.UseSystemd {
 		for _, svc := range []string{"hostapd", "dnsmasq"} {
-			exec.Command("systemctl", "stop", svc).Run()
+			_ = exec.Command("systemctl", "stop", svc).Run()
 		}
 	} else {
-		exec.Command("killall", "hostapd").Run()
-		exec.Command("killall", "dnsmasq").Run()
+		_ = exec.Command("killall", "hostapd").Run()
+		_ = exec.Command("killall", "dnsmasq").Run()
 	}
 	return nil
 }
@@ -139,5 +139,5 @@ func waitForInterface(name string, timeout time.Duration) error {
 }
 
 func unblockWifi() {
-	exec.Command("rfkill", "unblock", "wifi").Run()
+	_ = exec.Command("rfkill", "unblock", "wifi").Run()
 }

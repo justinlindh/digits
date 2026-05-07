@@ -55,8 +55,8 @@ func setupCrashLog(path string) {
 		return
 	}
 	crashLogFile = f
-	fmt.Fprintf(f, "crash log opened at %s\n", time.Now().Format(time.RFC3339))
-	f.Sync()
+	_, _ = fmt.Fprintf(f, "crash log opened at %s\n", time.Now().Format(time.RFC3339))
+	_ = f.Sync()
 }
 
 // debugEntry is one timestamped event in the recovery debug log.
@@ -163,7 +163,7 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 		if r := recover(); r != nil {
 			slog.Error("recovery: panic", "panic", fmt.Sprintf("%v", r))
 			if modeLogFile != nil {
-				modeLogFile.Sync()
+				_ = modeLogFile.Sync()
 			}
 			select {}
 		}
@@ -239,7 +239,7 @@ func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.
 
 	mux.HandleFunc("/log", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>Recovery Log</title>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>Recovery Log</title>
 <style>body{background:#111;color:#0f0;font:13px/1.4 monospace;margin:1em;white-space:pre-wrap}
 #log{max-height:90vh;overflow-y:auto}</style></head><body><div id="log">Loading...</div>
 <script>async function poll(){try{const r=await fetch('/log/raw');
@@ -388,8 +388,8 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 	// Flush and close the crash log before unmounting /data.
 	slog.Info("recovery: unmounting /data (crash log will stop)")
 	if crashLogFile != nil {
-		crashLogFile.Sync()
-		crashLogFile.Close()
+		_ = crashLogFile.Sync()
+		_ = crashLogFile.Close()
 		crashLogFile = nil
 	}
 	_ = syscall.Unmount("/data", 0)
@@ -439,7 +439,7 @@ func doRecoveryFactoryReset(mixer *audio.Mixer, rs *recoveryState, dbg *debugLog
 // before the log file is flushed.
 func syncAndHalt() {
 	if modeLogFile != nil {
-		modeLogFile.Sync()
+		_ = modeLogFile.Sync()
 	}
 	select {}
 }
@@ -447,13 +447,13 @@ func syncAndHalt() {
 // clearRecoveryFlags mounts /data temporarily to clear the boot counter
 // and recovery-mode flag so the next boot proceeds normally.
 func clearRecoveryFlags() {
-	os.MkdirAll("/data", 0755)
+	_ = os.MkdirAll("/data", 0755)
 	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
 		slog.Warn("recovery: mount /data for flag cleanup failed", "error", err)
 		return
 	}
 	_ = bootcount.Clear(bootcount.DefaultPath)
-	os.Remove("/data/digits/recovery-mode")
+	_ = os.Remove("/data/digits/recovery-mode")
 	slog.Info("recovery: boot counter and recovery flag cleared")
 	syscall.Sync()
 	_ = syscall.Unmount("/data", 0)

@@ -78,7 +78,9 @@ func (k *KernModsModule) Shutdown(ctx context.Context) error { return nil }
 
 func kernelVersion() string {
 	var uname syscall.Utsname
-	syscall.Uname(&uname)
+	if err := syscall.Uname(&uname); err != nil {
+		return "unknown"
+	}
 	var buf []byte
 	for _, b := range uname.Release {
 		if b == 0 {

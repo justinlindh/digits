@@ -1743,10 +1743,10 @@ func main() {
 		// mounts module since /data might already be mounted (normal boot
 		// triggering recovery) or will be mounted by the mounts module.
 		if os.Getpid() == 1 {
-			os.MkdirAll("/tmp", 0755)
-			syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M")
-			os.MkdirAll("/data", 0755)
-			syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, "")
+			_ = os.MkdirAll("/tmp", 0755)
+			_ = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M")
+			_ = os.MkdirAll("/data", 0755)
+			_ = syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, "")
 		}
 		setupCrashLog("/data/digits/crash.log")
 		setupModeLog("/tmp/recovery.log")

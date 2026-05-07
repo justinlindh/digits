@@ -49,22 +49,22 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	// Tear down AP and hand wlan0 to NetworkManager. Mirrors do_ap_down()
 	// in digits-ap-check but without stopping digits-setup (our process).
 	slog.Info("wifi verify: tearing down AP")
-	cmd.run("systemctl", "stop", "digits-dnsmasq-ap")
-	cmd.run("systemctl", "stop", "digits-ap")
-	cmd.run("ip", "addr", "flush", "dev", "wlan0")
-	cmd.run("ip", "link", "set", "wlan0", "down")
+	_, _ = cmd.run("systemctl", "stop", "digits-dnsmasq-ap")
+	_, _ = cmd.run("systemctl", "stop", "digits-ap")
+	_, _ = cmd.run("ip", "addr", "flush", "dev", "wlan0")
+	_, _ = cmd.run("ip", "link", "set", "wlan0", "down")
 
 	// Copy the backup .nmconnection to NM's operational directory so NM
 	// knows about the network. Rootfs is read-only, so remount rw first.
 	slog.Info("wifi verify: installing connection for NM", "path", backupPath)
-	cmd.run("mount", "-o", "remount,rw", "/")
-	defer cmd.run("mount", "-o", "remount,ro", "/")
+	_, _ = cmd.run("mount", "-o", "remount,rw", "/")
+	defer func() { _, _ = cmd.run("mount", "-o", "remount,ro", "/") }()
 	filename := filepath.Base(backupPath)
 	opPath := filepath.Join("/etc/NetworkManager/system-connections", filename)
 	if out, err := cmd.run("cp", backupPath, opPath); err != nil {
 		slog.Warn("wifi verify: copy to NM dir failed", "error", err, "output", out)
 	}
-	cmd.run("chmod", "600", opPath)
+	_, _ = cmd.run("chmod", "600", opPath)
 
 	slog.Info("wifi verify: starting NetworkManager")
 	if out, err := cmd.run("systemctl", "start", "NetworkManager"); err != nil {
@@ -99,14 +99,14 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	// the service stops that would kill our own process.
 	slog.Info("wifi verify: restoring AP", "connected", connected)
 
-	cmd.run("systemctl", "stop", "NetworkManager")
-	cmd.run("systemctl", "stop", "wpa_supplicant@wlan0.service")
-	cmd.run("systemctl", "stop", "wpa_supplicant.service")
-	cmd.run("rfkill", "unblock", "wifi")
+	_, _ = cmd.run("systemctl", "stop", "NetworkManager")
+	_, _ = cmd.run("systemctl", "stop", "wpa_supplicant@wlan0.service")
+	_, _ = cmd.run("systemctl", "stop", "wpa_supplicant.service")
+	_, _ = cmd.run("rfkill", "unblock", "wifi")
 
 	// Flush wlan0 state left by NM so hostapd can reclaim it.
-	cmd.run("ip", "addr", "flush", "dev", "wlan0")
-	cmd.run("ip", "link", "set", "wlan0", "down")
+	_, _ = cmd.run("ip", "addr", "flush", "dev", "wlan0")
+	_, _ = cmd.run("ip", "link", "set", "wlan0", "down")
 	time.Sleep(time.Second)
 
 	// Reconfigure wlan0 static IP for AP mode.
@@ -125,7 +125,7 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	addrOut, _ := cmd.run("ip", "addr", "show", "dev", "wlan0")
 	if !strings.Contains(addrOut, "192.168.4.1") {
 		slog.Warn("wifi verify: AP IP lost after hostapd start, re-applying")
-		cmd.run("/usr/local/bin/digits-ap-setup")
+		_, _ = cmd.run("/usr/local/bin/digits-ap-setup")
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -136,11 +136,11 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 
 	// Delete credentials on failure so NM doesn't retry them.
 	if !connected {
-		cmd.run("rm", "-f", backupPath)
+		_, _ = cmd.run("rm", "-f", backupPath)
 		// Also remove from NM's operational dir.
-		cmd.run("mount", "-o", "remount,rw", "/")
-		cmd.run("rm", "-f", opPath)
-		cmd.run("mount", "-o", "remount,ro", "/")
+		_, _ = cmd.run("mount", "-o", "remount,rw", "/")
+		_, _ = cmd.run("rm", "-f", opPath)
+		_, _ = cmd.run("mount", "-o", "remount,ro", "/")
 	}
 
 	if connected {

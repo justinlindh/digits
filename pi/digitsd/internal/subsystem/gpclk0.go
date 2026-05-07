@@ -63,21 +63,21 @@ func enableGPCLK0() error {
 	if err != nil {
 		return fmt.Errorf("open /dev/mem: %w", err)
 	}
-	defer fd.Close()
+	defer func() { _ = fd.Close() }()
 
 	clkMem, err := syscall.Mmap(int(fd.Fd()), clkBase, 0x1000,
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return fmt.Errorf("mmap clk: %w", err)
 	}
-	defer syscall.Munmap(clkMem)
+	defer func() { _ = syscall.Munmap(clkMem) }()
 
 	gpioMem, err := syscall.Mmap(int(fd.Fd()), gpioBase, 0x1000,
 		syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return fmt.Errorf("mmap gpio: %w", err)
 	}
-	defer syscall.Munmap(gpioMem)
+	defer func() { _ = syscall.Munmap(gpioMem) }()
 
 	clk := (*[256]uint32)(unsafe.Pointer(&clkMem[0]))
 	gpio := (*[256]uint32)(unsafe.Pointer(&gpioMem[0]))
@@ -87,7 +87,7 @@ func enableGPCLK0() error {
 	fselIdx := gpfsel0Off / 4
 
 	// 1. Disable GPCLK0
-	atomic.StoreUint32(&clk[ctlIdx], passwd|0)
+	atomic.StoreUint32(&clk[ctlIdx], passwd)
 	time.Sleep(time.Millisecond)
 
 	// Wait for BUSY clear (bit 7)

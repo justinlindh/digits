@@ -39,7 +39,7 @@ func (s *SerialModule) Init(ctx context.Context) error {
 		}
 		if err = sp.Ping(); err != nil {
 			slog.Warn("subsystem serial: ping failed", "attempt", attempt, "error", err)
-			sp.Close()
+			_ = sp.Close()
 			time.Sleep(500 * time.Millisecond)
 			continue
 		}

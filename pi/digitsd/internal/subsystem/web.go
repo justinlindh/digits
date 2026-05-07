@@ -73,10 +73,10 @@ func (w *WebModule) Shutdown(ctx context.Context) error {
 func (w *WebModule) handleStatus(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
 	if w.mgr == nil {
-		json.NewEncoder(rw).Encode(map[string]string{"error": "no manager"})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"error": "no manager"})
 		return
 	}
-	json.NewEncoder(rw).Encode(w.mgr.Status())
+	_ = json.NewEncoder(rw).Encode(w.mgr.Status())
 }
 
 var logLineRe = regexp.MustCompile(`^time=\S+\s+level=(\w+)\s+msg="?([^"]*)"?\s*(.*)$`)
@@ -85,7 +85,7 @@ func (w *WebModule) handleLogRaw(rw http.ResponseWriter, r *http.Request) {
 	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	data, err := os.ReadFile(w.logPath)
 	if err != nil {
-		fmt.Fprintf(rw, "no log available")
+		_, _ = fmt.Fprintf(rw, "no log available")
 		return
 	}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -94,14 +94,14 @@ func (w *WebModule) handleLogRaw(rw http.ResponseWriter, r *http.Request) {
 		}
 		m := logLineRe.FindStringSubmatch(line)
 		if m == nil {
-			fmt.Fprintln(rw, line)
+			_, _ = fmt.Fprintln(rw, line)
 			continue
 		}
 		level, msg, extra := m[1], m[2], strings.TrimSpace(m[3])
 		if extra != "" {
-			fmt.Fprintf(rw, "%-5s %s  %s\n", level, msg, extra)
+			_, _ = fmt.Fprintf(rw, "%-5s %s  %s\n", level, msg, extra)
 		} else {
-			fmt.Fprintf(rw, "%-5s %s\n", level, msg)
+			_, _ = fmt.Fprintf(rw, "%-5s %s\n", level, msg)
 		}
 	}
 }
