@@ -10,6 +10,9 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/lib/pq"
+
+	"github.com/justinlindh/digits/server/internal/dbutil"
 	"github.com/justinlindh/digits/server/internal/device"
 )
 
@@ -17,7 +20,7 @@ const (
 	// CodeLength is the number of digits in a pairing code.
 	CodeLength = 6
 	// CodeTTL is how long a pairing code remains valid.
-	CodeTTL = 10 * time.Minute
+	CodeTTL = 3 * time.Minute
 )
 
 var (
@@ -36,24 +39,10 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
-// GenerateCode returns a 6-digit pairing code for the given hardware ID.
-// If a valid (non-expired, unpaired) code already exists, it is reused.
+// GenerateCode creates a fresh 6-digit pairing code for the given hardware ID,
+// replacing any previously issued code. A new code is generated on every call
+// so that a leaked code becomes invalid as soon as the device reconnects.
 func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, error) {
-	// Check for existing valid code
-	var code sql.NullString
-	err := s.db.QueryRowContext(ctx, `
-		SELECT pairing_code FROM devices
-		WHERE hardware_id = $1
-		  AND pairing_code IS NOT NULL
-		  AND pairing_code_expires_at > NOW()
-		  AND paired_at IS NULL
-	`, hardwareID).Scan(&code)
-
-	if err == nil && code.Valid {
-		return code.String, nil
-	}
-
-	// Generate a new code
 	newCode, err := randomCode(CodeLength)
 	if err != nil {
 		return "", fmt.Errorf("generate code: %w", err)
@@ -61,8 +50,6 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 
 	expiresAt := time.Now().Add(CodeTTL)
 
-	// Upsert: insert device row if it doesn't exist, or update the pairing code.
-	// New devices get line_id=NULL until pairing completes and a line is created.
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO devices (line_id, hardware_id, pairing_code, pairing_code_expires_at)
 		VALUES (NULL, $1, $2, $3)
@@ -76,72 +63,69 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	return newCode, nil
 }
 
-// ClaimDevice pairs a device using a pairing code, creating or looking up the
-// line and assigning the device to it.
+// ClaimDevice pairs a device using a pairing code, creating the line and
+// assigning the device in a single transaction. If any step fails the whole
+// operation rolls back, leaving the device claimable with a fresh code.
 // Returns (deviceToken, hardwareID, error).
 func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, householdID string) (string, string, error) {
-	// Check line number uniqueness
-	var count int
-	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM lines WHERE number = $1`,
-		lineNumber,
-	).Scan(&count)
-	if err != nil {
-		return "", "", fmt.Errorf("check number uniqueness: %w", err)
-	}
-	if count > 0 {
-		return "", "", ErrNumberTaken
-	}
-
-	// Find the device with this pairing code
-	var deviceID int64
-	var hardwareID sql.NullString
-	err = s.db.QueryRowContext(ctx, `
-		SELECT id, hardware_id FROM devices
-		WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
-	`, code).Scan(&deviceID, &hardwareID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", ErrInvalidCode
-	}
-	if err != nil {
-		return "", "", fmt.Errorf("lookup pairing code: %w", err)
-	}
-
-	// Create the line
-	var lineID int64
-	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO lines (number, name, household_id)
-		VALUES ($1, $2, $3)
-		RETURNING id
-	`, lineNumber, lineName, householdID).Scan(&lineID)
-	if err != nil {
-		return "", "", fmt.Errorf("create line: %w", err)
-	}
-
 	token, err := randomHex(32)
 	if err != nil {
 		return "", "", fmt.Errorf("generate device token: %w", err)
 	}
 	tokenHash := device.HashToken(token)
 
-	// Update device: set line_id, device_token (hashed), mark as paired, clear pairing code
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE devices
-		SET line_id = $2, device_token = $3,
-		    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
-		WHERE id = $1 AND paired_at IS NULL
-	`, deviceID, lineID, tokenHash)
-	if err != nil {
-		return "", "", fmt.Errorf("claim device: %w", err)
+	var hardwareID string
+	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		// Lock the device row to prevent concurrent claims.
+		var deviceID int64
+		var hwID sql.NullString
+		err := tx.QueryRowContext(ctx, `
+			SELECT id, hardware_id FROM devices
+			WHERE pairing_code = $1 AND pairing_code_expires_at > NOW() AND paired_at IS NULL
+			FOR UPDATE
+		`, code).Scan(&deviceID, &hwID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrInvalidCode
+		}
+		if err != nil {
+			return fmt.Errorf("lookup pairing code: %w", err)
+		}
+		hardwareID = hwID.String
+
+		// Insert the line. The unique constraint on number rejects collisions
+		// without a separate SELECT + INSERT race window.
+		var lineID int64
+		err = tx.QueryRowContext(ctx, `
+			INSERT INTO lines (number, name, household_id)
+			VALUES ($1, $2, $3)
+			RETURNING id
+		`, lineNumber, lineName, householdID).Scan(&lineID)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return ErrNumberTaken
+			}
+			return fmt.Errorf("create line: %w", err)
+		}
+
+		// Bind device to the line, mark paired, clear the pairing code.
+		res, err := tx.ExecContext(ctx, `
+			UPDATE devices
+			SET line_id = $2, device_token = $3,
+			    paired_at = NOW(), pairing_code = NULL, pairing_code_expires_at = NULL
+			WHERE id = $1 AND paired_at IS NULL
+		`, deviceID, lineID, tokenHash)
+		if err != nil {
+			return fmt.Errorf("claim device: %w", err)
+		}
+		rows, _ := res.RowsAffected()
+		if rows == 0 {
+			return ErrInvalidCode
+		}
+		return nil
+	}); err != nil {
+		return "", "", err
 	}
-	rows, err := res.RowsAffected()
-	if err != nil {
-		return "", "", fmt.Errorf("claim device rows: %w", err)
-	}
-	if rows == 0 {
-		return "", "", ErrInvalidCode
-	}
-	return token, hardwareID.String, nil
+	return token, hardwareID, nil
 }
 
 // IsPaired returns whether the device with the given hardware ID has been paired.
@@ -173,6 +157,11 @@ func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("cleanup expired codes: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+func isUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	return errors.As(err, &pqErr) && pqErr.Code == "23505"
 }
 
 func randomHex(n int) (string, error) {

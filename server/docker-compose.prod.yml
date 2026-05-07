@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       SIGNALD_ADDR: ":8080"
-      DATABASE_URL: "postgres://${DB_USER:-digits}:${DB_PASSWORD:-changeme}@user-db:5432/digits?sslmode=disable"
+      DATABASE_URL: "postgres://${DB_USER:-digits}:${DB_PASSWORD}@user-db:5432/digits?sslmode=disable"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_USER: "${SMTP_USER:-}"
@@ -45,7 +45,7 @@ services:
     environment:
       POSTGRES_DB: digits
       POSTGRES_USER: digits
-      POSTGRES_PASSWORD: "${DB_PASSWORD:-digits}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD}"
     volumes:
       - user_pgdata:/var/lib/postgresql/data
     healthcheck:

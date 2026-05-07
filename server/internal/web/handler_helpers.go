@@ -286,6 +286,28 @@ func (h *Handler) activeHousehold(r *http.Request) *household.Household {
 	return active
 }
 
+// requireHouseholdAdmin checks that the requesting user holds the "admin" role
+// in the active household. Returns (user, household, true) on success. On
+// failure it writes an appropriate redirect or 403 and returns (nil, nil, false).
+func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, *household.Household, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	hh := h.activeHousehold(r)
+	if hh == nil {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, nil, false
+	}
+	return user, hh, true
+}
+
 // chromeData holds the fields every protected page-data struct shares for
 // rendering the layout chrome (sidebar, nav, DND chip, version pill). The
 // HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the

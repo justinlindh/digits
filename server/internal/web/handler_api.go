@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -12,7 +13,8 @@ import (
 )
 
 func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
-	if h.cfg.AdminSecret == "" || r.Header.Get("X-Admin-Secret") != h.cfg.AdminSecret {
+	if h.cfg.AdminSecret == "" ||
+		subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Admin-Secret")), []byte(h.cfg.AdminSecret)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

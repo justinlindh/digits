@@ -11,25 +11,22 @@ import (
 
 // ClientIP returns the resolved client IP for an inbound HTTP request.
 //
-// Preference order:
-//  1. The first entry of X-Forwarded-For, trimmed.
-//  2. Host portion of r.RemoteAddr (port stripped).
-//  3. r.RemoteAddr verbatim if SplitHostPort cannot parse it.
-//
-// Assumption: a single trusted reverse proxy (nginx-proxy-manager) is the
-// only writer of X-Forwarded-For. Behind that assumption the leftmost
-// XFF entry is the original client. If the deployment grows additional
-// proxies, this function must be revisited.
+// X-Forwarded-For is only trusted when RemoteAddr is a private or loopback
+// address, meaning the request arrived through a local reverse proxy. Direct
+// connections from untrusted networks use RemoteAddr so an attacker cannot
+// rotate XFF to bypass rate limiters.
 func ClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		remoteHost = r.RemoteAddr
 	}
-	return host
+	if IsPrivateAddr(remoteHost) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.SplitN(xff, ",", 2)
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	return remoteHost
 }
 
 // IsPrivateAddr reports whether ip parses as an address we treat as

@@ -62,14 +62,8 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -88,9 +82,8 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 }
 
 func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
@@ -107,9 +100,8 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
@@ -139,9 +131,8 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request) {
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -201,14 +192,8 @@ func (h *Handler) handleSettingsAppearance(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	user, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -260,14 +245,8 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	inviteID := r.PathValue("id")
@@ -283,14 +262,8 @@ func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http
 }
 
 func (h *Handler) handleHouseholdMemberRemovePost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	hh := h.activeHousehold(r)
-	if hh == nil {
-		http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	user, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 	targetUserID := r.PathValue("id")

@@ -179,7 +179,7 @@ func run(ctx context.Context) error {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
 		}
-		relay.TURNGen = turn.NewCredentialGenerator(cfg.TURNSecret, 24*time.Hour)
+		relay.TURNGen = turn.NewCredentialGenerator(cfg.TURNSecret, 2*time.Hour)
 		relay.TURNDomain = cfg.TURNDomain
 		slog.Info("TURN credential generation enabled", "domain", cfg.TURNDomain)
 	}
