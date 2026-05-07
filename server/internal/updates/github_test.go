@@ -212,7 +212,7 @@ func TestParseTag(t *testing.T) {
 	}{
 		{"fw/v1.0.0", "firmware", "1.0.0", true},
 		{"pi/v2.3.1", "pi", "2.3.1", true},
-		{"server/v1.0.0", "", "", false},
+		{"server/v1.0.0", "server", "1.0.0", true},
 		{"v1.0.0", "", "", false},
 		{"garbage", "", "", false},
 	}

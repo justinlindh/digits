@@ -16,6 +16,7 @@ type changelogRelease struct {
 }
 
 type changelogData struct {
+	Server   []changelogRelease
 	Software []changelogRelease
 	Firmware []changelogRelease
 }
@@ -41,6 +42,7 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 
 	var data changelogData
 	if idx != nil {
+		data.Server = buildChangelogSection(idx, updates.ComponentServer, nil, h)
 		data.Software = buildChangelogSection(idx, updates.ComponentPi, lines, h)
 		data.Firmware = buildChangelogSection(idx, updates.ComponentFirmware, lines, h)
 	}
@@ -60,10 +62,13 @@ func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []
 			continue
 		}
 		var ver string
-		if component == updates.ComponentPi {
+		switch component {
+		case updates.ComponentPi:
 			ver = info.PiVersion
-		} else {
+		case updates.ComponentFirmware:
 			ver = info.FirmwareVersion
+		default:
+			continue
 		}
 		if ver != "" {
 			versionCounts[ver]++

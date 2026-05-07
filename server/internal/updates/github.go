@@ -168,6 +168,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 	idx := &ReleaseIndex{
 		Pi:       ComponentIndex{Releases: make(map[string]*Release)},
 		Firmware: ComponentIndex{Releases: make(map[string]*Release)},
+		Server:   ComponentIndex{Releases: make(map[string]*Release)},
 	}
 
 	for _, rel := range releases {
@@ -176,14 +177,18 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			continue
 		}
 
-		binaryURL, sha256URL := classifyAssets(rel.Assets)
-		if binaryURL == "" {
-			continue // no downloadable binary
-		}
-
-		var sha256 string
-		if sha256URL != "" {
-			sha256 = g.fetchSHA256(ctx, sha256URL)
+		var binaryURL, sha256 string
+		if component == ComponentServer {
+			binaryURL = fmt.Sprintf("ghcr.io/%s/%s/signald:v%s", g.owner, g.repo, version)
+		} else {
+			var sha256URL string
+			binaryURL, sha256URL = classifyAssets(rel.Assets)
+			if binaryURL == "" {
+				continue
+			}
+			if sha256URL != "" {
+				sha256 = g.fetchSHA256(ctx, sha256URL)
+			}
 		}
 
 		date := ""
@@ -205,6 +210,8 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			ci = &idx.Pi
 		case ComponentFirmware:
 			ci = &idx.Firmware
+		case ComponentServer:
+			ci = &idx.Server
 		default:
 			continue
 		}
@@ -247,7 +254,7 @@ func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
 }
 
 // parseTag parses a GitHub release tag into a component name and version.
-// Recognized prefixes: "fw/v" -> "firmware", "pi/v" -> "pi".
+// Recognized prefixes: "fw/v", "pi/v", "server/v".
 // Returns ("", "", false) for unrecognized tags.
 func parseTag(tag string) (component, version string, ok bool) {
 	parts := strings.SplitN(tag, "/v", 2)
@@ -260,6 +267,8 @@ func parseTag(tag string) (component, version string, ok bool) {
 		return ComponentFirmware, parts[1], true
 	case "pi":
 		return ComponentPi, parts[1], true
+	case "server":
+		return ComponentServer, parts[1], true
 	default:
 		return "", "", false
 	}

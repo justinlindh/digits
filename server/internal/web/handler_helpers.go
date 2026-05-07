@@ -13,6 +13,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/updates"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -295,6 +296,7 @@ type chromeData struct {
 	User       *auth.User
 	Household  *household.Household
 	Households []*household.Household
+	HasUpdates bool
 }
 
 func (c chromeData) HouseholdName() string {
@@ -331,7 +333,54 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 	active, households := h.resolveActiveHousehold(r)
 	cd := newChromeData(page, auth.UserFromContext(r.Context()), active)
 	cd.Households = households
+	if active != nil {
+		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID, nil)
+	}
 	return cd
+}
+
+// hasPhoneUpdates returns true if any phone in the household is behind the
+// latest pi or firmware release. If lineNumbers is non-nil, it skips the DB
+// lookup and uses the provided numbers directly.
+func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineNumbers []string) bool {
+	if h.Releases == nil {
+		return false
+	}
+	idx := h.Releases.ReleaseIndex()
+	if idx == nil {
+		return false
+	}
+	latestPi := idx.Pi.Latest
+	latestFw := idx.Firmware.Latest
+	if latestPi == "" && latestFw == "" {
+		return false
+	}
+	if lineNumbers == nil {
+		if h.lineStore == nil {
+			return false
+		}
+		lines, err := h.lineStore.ListByHousehold(ctx, householdID)
+		if err != nil {
+			return false
+		}
+		lineNumbers = make([]string, len(lines))
+		for i, l := range lines {
+			lineNumbers[i] = l.Number
+		}
+	}
+	for _, number := range lineNumbers {
+		info := h.hub.DeviceInfo(number)
+		if info == nil {
+			continue
+		}
+		if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+			return true
+		}
+		if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
