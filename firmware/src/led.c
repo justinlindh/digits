@@ -20,6 +20,10 @@
 #define CN_GAP_US   100000
 #define CN_PAUSE_US 400000
 
+// Slow pulse: brief flash every 1.7s
+#define SP_ON_US    200000
+#define SP_OFF_US   1500000
+
 // Breathing: 300 steps over 3s (10ms per step). LUT stores the rising half
 // (150 entries, 0 to peak). Indices 150-299 mirror the LUT for the falling half.
 // Values: round(999 * pow(sin(pi/2 * i/149), 2.2)) for i in 0..149.
@@ -173,6 +177,13 @@ void led_update(void) {
         }
         break;
     }
+    case LED_MODE_SLOW_PULSE:
+        if (absolute_time_diff_us(s_last_toggle, now) >=
+            (s_led_on ? SP_ON_US : SP_OFF_US)) {
+            set_led(!s_led_on);
+            s_last_toggle = now;
+        }
+        break;
     default:
         break;
     }
