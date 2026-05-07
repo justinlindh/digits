@@ -107,6 +107,13 @@ int main(void) {
 
     uart_proto_send("STATUS:READY");
 
+    // Scan keypad once at boot. If * is held, report it so the Pi can
+    // trigger recovery mode after it connects.
+    if (keypad_scan() == '*') {
+        led_set_mode(LED_MODE_FAST_BLINK);
+        uart_proto_send("BOOT:PANIC");
+    }
+
     while (true) {
         if (!banner_printed && stdio_usb_connected()) {
             printf("\n===========================\n");
