@@ -4,6 +4,7 @@ package device
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set — skipping DB tests")
+		t.Skip("TEST_DATABASE_URL not set, skipping DB tests")
 	}
 	database, err := db.Open(dsn)
 	if err != nil {
@@ -61,59 +62,20 @@ func createTestLine(t *testing.T, database *db.Database, number, householdID str
 	return id
 }
 
-func TestCreateAndGetByID(t *testing.T) {
-	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "Test Household")
-	lineID := createTestLine(t, database, "5551234567", hhID)
-
-	dev, err := s.Create(context.Background(), lineID, "hw-abc-123")
+// insertTestDevice inserts a device row directly so tests of read-side and
+// state-mutation methods don't depend on a Store insert API. Returns the
+// device id.
+func insertTestDevice(t *testing.T, database *db.Database, lineID int64, hardwareID string) int64 {
+	t.Helper()
+	var id int64
+	err := database.DB.QueryRow(
+		`INSERT INTO devices (line_id, hardware_id) VALUES ($1, $2) RETURNING id`,
+		lineID, hardwareID,
+	).Scan(&id)
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("insertTestDevice(%s): %v", hardwareID, err)
 	}
-	if dev.ID == 0 {
-		t.Error("expected non-zero device ID")
-	}
-	if dev.LineID == nil || *dev.LineID != lineID {
-		t.Errorf("LineID = %v, want %d", dev.LineID, lineID)
-	}
-	if dev.HardwareID != "hw-abc-123" {
-		t.Errorf("HardwareID = %q, want hw-abc-123", dev.HardwareID)
-	}
-
-	got, err := s.GetByID(context.Background(), dev.ID)
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if got.ID != dev.ID {
-		t.Errorf("GetByID.ID = %d, want %d", got.ID, dev.ID)
-	}
-	if got.HardwareID != dev.HardwareID {
-		t.Errorf("GetByID.HardwareID = %q, want %q", got.HardwareID, dev.HardwareID)
-	}
-}
-
-func TestGetByHardwareID(t *testing.T) {
-	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "HW Household")
-	lineID := createTestLine(t, database, "5559876543", hhID)
-
-	dev, err := s.Create(context.Background(), lineID, "hw-xyz-999")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	got, err := s.GetByHardwareID(context.Background(), "hw-xyz-999")
-	if err != nil {
-		t.Fatalf("GetByHardwareID: %v", err)
-	}
-	if got.ID != dev.ID {
-		t.Errorf("ID = %d, want %d", got.ID, dev.ID)
-	}
-
-	_, err = s.GetByHardwareID(context.Background(), "does-not-exist")
-	if err != ErrNotFound {
-		t.Errorf("expected ErrNotFound for missing hardware ID, got %v", err)
-	}
+	return id
 }
 
 func TestListByLine(t *testing.T) {
@@ -122,18 +84,9 @@ func TestListByLine(t *testing.T) {
 	lineA := createTestLine(t, database, "5550001111", hhID)
 	lineB := createTestLine(t, database, "5550002222", hhID)
 
-	_, err := s.Create(context.Background(), lineA, "hw-a1")
-	if err != nil {
-		t.Fatalf("Create device 1: %v", err)
-	}
-	_, err = s.Create(context.Background(), lineA, "hw-a2")
-	if err != nil {
-		t.Fatalf("Create device 2: %v", err)
-	}
-	_, err = s.Create(context.Background(), lineB, "hw-b1")
-	if err != nil {
-		t.Fatalf("Create device 3: %v", err)
-	}
+	insertTestDevice(t, database, lineA, "hw-a1")
+	insertTestDevice(t, database, lineA, "hw-a2")
+	insertTestDevice(t, database, lineB, "hw-b1")
 
 	devicesA, err := s.ListByLine(context.Background(), lineA)
 	if err != nil {
@@ -152,140 +105,101 @@ func TestListByLine(t *testing.T) {
 	}
 }
 
-func TestDelete(t *testing.T) {
-	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "Delete Household")
-	lineID := createTestLine(t, database, "5553334444", hhID)
-
-	dev, err := s.Create(context.Background(), lineID, "hw-del-001")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	if err := s.Delete(context.Background(), dev.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-
-	_, err = s.GetByID(context.Background(), dev.ID)
-	if err != ErrNotFound {
-		t.Errorf("expected ErrNotFound after delete, got %v", err)
-	}
-
-	// Deleting again should return ErrNotFound
-	err = s.Delete(context.Background(), dev.ID)
-	if err != ErrNotFound {
-		t.Errorf("expected ErrNotFound on second delete, got %v", err)
-	}
-}
-
 func TestTouchLastSeen(t *testing.T) {
 	s, database := testStore(t)
 	hhID := createTestHousehold(t, database, "LastSeen Household")
 	lineID := createTestLine(t, database, "5558880001", hhID)
 
-	dev, err := s.Create(context.Background(), lineID, "hw-lastseen-001")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	insertTestDevice(t, database, lineID, "hw-lastseen-001")
 
-	// Initially nil
-	if dev.LastSeenAt != nil {
-		t.Errorf("expected LastSeenAt to be nil initially, got %v", dev.LastSeenAt)
-	}
-
-	// Touch it
 	if err := s.TouchLastSeen(context.Background(), "hw-lastseen-001"); err != nil {
 		t.Fatalf("TouchLastSeen: %v", err)
 	}
 
-	got, err := s.GetByID(context.Background(), dev.ID)
+	var lastSeenAt sql.NullTime
+	err := database.DB.QueryRow(
+		`SELECT last_seen_at FROM devices WHERE hardware_id = $1`,
+		"hw-lastseen-001",
+	).Scan(&lastSeenAt)
 	if err != nil {
-		t.Fatalf("GetByID after touch: %v", err)
+		t.Fatalf("read last_seen_at: %v", err)
 	}
-	if got.LastSeenAt == nil {
-		t.Fatal("expected LastSeenAt to be set after TouchLastSeen")
+	if !lastSeenAt.Valid {
+		t.Fatal("expected last_seen_at to be set after TouchLastSeen")
 	}
-	if time.Since(*got.LastSeenAt) > 5*time.Second {
-		t.Errorf("LastSeenAt too old: %v", got.LastSeenAt)
+	if time.Since(lastSeenAt.Time) > 5*time.Second {
+		t.Errorf("last_seen_at too old: %v", lastSeenAt.Time)
 	}
 }
 
 func TestTouchLastSeen_UnknownHardware(t *testing.T) {
 	s, _ := testStore(t)
 
-	// Should not error for unknown hardware ID (just no rows affected)
+	// Should not error for unknown hardware ID (just no rows affected).
 	if err := s.TouchLastSeen(context.Background(), "does-not-exist"); err != nil {
 		t.Errorf("TouchLastSeen for unknown hardware: %v", err)
 	}
 }
 
-func TestValidateToken_Correct(t *testing.T) {
-	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "Token Household")
-	lineID := createTestLine(t, database, "5551110001", hhID)
-
-	dev, err := s.Create(context.Background(), lineID, "hw-token-001")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	// Simulate what pairing does: store hashed token, mark as paired
-	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
-	hashed := HashToken(plaintext)
-	_, err = database.DB.Exec(
-		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
-		hashed, dev.ID,
+// pairTestDevice marks the device row as paired with the given plaintext
+// token (stored as its sha256 hash). Used by AuthStatus tests to set up
+// the paired-with-token state directly without going through the pairing
+// package.
+func pairTestDevice(t *testing.T, database *db.Database, hardwareID, plaintextToken string) {
+	t.Helper()
+	_, err := database.DB.Exec(
+		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE hardware_id = $2`,
+		HashToken(plaintextToken), hardwareID,
 	)
 	if err != nil {
-		t.Fatalf("set hashed token: %v", err)
-	}
-
-	valid, err := s.ValidateToken(context.Background(), "hw-token-001", plaintext)
-	if err != nil {
-		t.Fatalf("ValidateToken: %v", err)
-	}
-	if !valid {
-		t.Error("expected ValidateToken to return true for correct token")
+		t.Fatalf("pairTestDevice(%s): %v", hardwareID, err)
 	}
 }
 
-func TestValidateToken_Wrong(t *testing.T) {
+func TestAuthStatus_PairedCorrectToken(t *testing.T) {
 	s, database := testStore(t)
-	hhID := createTestHousehold(t, database, "Token Wrong Household")
+	hhID := createTestHousehold(t, database, "Auth Household")
+	lineID := createTestLine(t, database, "5551110001", hhID)
+	insertTestDevice(t, database, lineID, "hw-auth-001")
+	const plaintext = "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
+	pairTestDevice(t, database, "hw-auth-001", plaintext)
+
+	paired, valid, err := s.AuthStatus(context.Background(), "hw-auth-001", plaintext)
+	if err != nil {
+		t.Fatalf("AuthStatus: %v", err)
+	}
+	if !paired || !valid {
+		t.Errorf("AuthStatus = paired=%v valid=%v, want paired=true valid=true", paired, valid)
+	}
+}
+
+func TestAuthStatus_PairedWrongToken(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Auth Wrong Household")
 	lineID := createTestLine(t, database, "5551110002", hhID)
+	insertTestDevice(t, database, lineID, "hw-auth-002")
+	pairTestDevice(t, database, "hw-auth-002", "real-token")
 
-	dev, err := s.Create(context.Background(), lineID, "hw-token-002")
+	paired, valid, err := s.AuthStatus(context.Background(), "hw-auth-002", "wrong-token")
 	if err != nil {
-		t.Fatalf("Create: %v", err)
+		t.Fatalf("AuthStatus: %v", err)
 	}
-
-	plaintext := "deadbeef01234567890abcdef01234567890abcdef01234567890abcdef012345"
-	hashed := HashToken(plaintext)
-	_, err = database.DB.Exec(
-		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE id = $2`,
-		hashed, dev.ID,
-	)
-	if err != nil {
-		t.Fatalf("set hashed token: %v", err)
-	}
-
-	valid, err := s.ValidateToken(context.Background(), "hw-token-002", "wrong-token")
-	if err != nil {
-		t.Fatalf("ValidateToken: %v", err)
+	if !paired {
+		t.Error("expected paired=true")
 	}
 	if valid {
-		t.Error("expected ValidateToken to return false for wrong token")
+		t.Error("expected valid=false for wrong token")
 	}
 }
 
-func TestValidateToken_NonExistent(t *testing.T) {
+func TestAuthStatus_NonExistent(t *testing.T) {
 	s, _ := testStore(t)
 
-	valid, err := s.ValidateToken(context.Background(), "hw-does-not-exist", "any-token")
+	paired, valid, err := s.AuthStatus(context.Background(), "hw-does-not-exist", "any-token")
 	if err != nil {
-		t.Fatalf("ValidateToken: %v", err)
+		t.Fatalf("AuthStatus: %v", err)
 	}
-	if valid {
-		t.Error("expected ValidateToken to return false for non-existent hardware ID")
+	if paired || valid {
+		t.Errorf("AuthStatus = paired=%v valid=%v, want both false", paired, valid)
 	}
 }
