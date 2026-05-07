@@ -135,7 +135,7 @@ func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paire
 // BoundLineNumber returns the line number assigned to the paired device with
 // the given hardware ID. Returns ("", nil) if the device has no bound line.
 func (s *Store) BoundLineNumber(ctx context.Context, hardwareID string) (string, error) {
-	var number sql.NullString
+	var number string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT l.number FROM devices d
 		JOIN lines l ON l.id = d.line_id
@@ -147,6 +147,6 @@ func (s *Store) BoundLineNumber(ctx context.Context, hardwareID string) (string,
 	if err != nil {
 		return "", fmt.Errorf("bound line number: %w", err)
 	}
-	return number.String, nil
+	return number, nil
 }
 

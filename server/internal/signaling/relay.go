@@ -209,9 +209,8 @@ func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
-	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
+	if !r.inCallOrConference(from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
-		// invalid_message: ICE restart received outside a call.
 		r.observeError("invalid_message")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
@@ -220,6 +219,11 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
+	if !r.inCallOrConference(from, msg.To) {
+		slog.Warn("answer without active call", "from", from, "to", msg.To)
+		r.observeError("invalid_message")
+		return
+	}
 	if r.Tracker != nil {
 		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
 			slog.Error("failed to track call answer", "err", err)
