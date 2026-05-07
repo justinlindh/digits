@@ -29,6 +29,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
+	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
@@ -872,7 +873,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 
-	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() {
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: call ended, running deferred update")
 		if d.triggerAutoUpdate != nil {
 			go d.triggerAutoUpdate()
@@ -2010,7 +2011,12 @@ func main() {
 	// path doesn't fire when the Pico responds.
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
-		if firmwareNeedsReflash(fwVersion, bundled) {
+		needsReflash := firmwareNeedsReflash(fwVersion, bundled)
+		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
+		if needsReflash && skipReflash {
+			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
+				"pico", fwVersion, "bundled", bundled)
+		} else if needsReflash {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
@@ -2458,9 +2464,11 @@ func main() {
 		fwVer, _ := cb.getFirmwareVersion()
 		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
 	}
-	if cb.autoUpdateEnabled.Load() {
+	if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: enabled, checking for updates on startup")
 		go cb.triggerAutoUpdate()
+	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
 
 	// 8. Create phone Controller
@@ -2525,6 +2533,62 @@ func main() {
 	// 11. Ready
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
+
+	// Dev-mode web UI on :8080 (only when the flag file is present).
+	if devmode.Enabled(devmode.DefaultFlagPath) {
+		slog.Info("devmode: flag present, starting dev-mode web UI")
+		// Snapshot the phase once at startup; it rarely changes during
+		// normal operation and querying UART on every HTTP poll is wasteful.
+		startupPhase := "unknown"
+		if postOk {
+			if resp, err := sp.SendCommand("PHASE?", 1*time.Second); err == nil {
+				startupPhase = resp
+			}
+		}
+		devCfg := &devModeConfig{
+			FlagPath:           devmode.DefaultFlagPath,
+			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
+			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
+			UARTLogPath:        uartLogPath,
+			StatusFunc: func() devModeStatus {
+				fwVer, fwCom := cb.getFirmwareVersion()
+				return devModeStatus{
+					DigitsdVersion:   version.Version,
+					FirmwareVersion:  fwVer,
+					FirmwareCommit:   fwCom,
+					Phase:            startupPhase,
+					Online:           cb.paired.Load(),
+					PhoneNumber:      effectiveNumber,
+					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
+				}
+			},
+		}
+		if flashCapable.Load() {
+			devCfg.FlashFunc = func(elfPath string) error {
+				// Move the uploaded ELF to the standard firmware path, then
+				// invoke the same flash script the OTA updater uses.
+				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
+					return fmt.Errorf("stage firmware: %w", err)
+				}
+				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("flash script: %w", err)
+				}
+				slog.Info("devmode: flash script succeeded")
+				requeryFirmware()
+				return nil
+			}
+		}
+		devLn, devErr := startDevModeServer(devCfg)
+		if devErr != nil {
+			slog.Warn("devmode: failed to start web UI", "error", devErr)
+		} else {
+			defer func() { _ = devLn.Close() }()
+		}
+	}
 
 	// Start hardware watchdog (if available)
 	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
@@ -2979,7 +3043,7 @@ func main() {
 
 			case sigclient.TypeReleaseAvailable:
 				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-				if cb.autoUpdateEnabled.Load() {
+				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 					go cb.triggerAutoUpdate()
 				}
 
@@ -3151,7 +3215,9 @@ func main() {
 				}
 
 				au := msg.LineSettings.AutoUpdate
-				if au != cb.autoUpdateEnabled.Load() {
+				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
+				} else if au != cb.autoUpdateEnabled.Load() {
 					cb.autoUpdateEnabled.Store(au)
 					slog.Info("line_settings applied", "auto_update", au)
 					if err := cb.setAutoUpdateConfig(au); err != nil {

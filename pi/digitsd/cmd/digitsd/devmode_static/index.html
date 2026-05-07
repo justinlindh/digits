@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Digits Dev Mode</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f1117;color:#e6edf3;min-height:100vh;display:flex;justify-content:center;padding:20px}
+.container{max-width:700px;width:100%;padding-top:12px}
+header{text-align:center;margin-bottom:20px}
+header h1{font-size:22px;font-weight:600;color:#58a6ff}
+header .subtitle{color:#8b949e;margin-top:4px;font-size:13px}
+.panel{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px 16px;margin-bottom:14px}
+.panel h2{font-size:14px;font-weight:600;margin-bottom:10px;color:#c9d1d9}
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+.status-item{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #21262d}
+.status-item .label{color:#8b949e}
+.status-item .value{color:#e6edf3;font-family:monospace;font-size:12px}
+.status-item .value.ok{color:#3fb950}
+.status-item .value.warn{color:#d29922}
+.status-item .value.error{color:#f85149}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #21262d}
+.toggle-row:last-child{border-bottom:none}
+.toggle-row .info{flex:1}
+.toggle-row .info .name{font-size:13px;color:#c9d1d9}
+.toggle-row .info .desc{font-size:11px;color:#8b949e;margin-top:2px}
+.toggle{position:relative;width:44px;height:24px;flex-shrink:0;margin-left:12px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#30363d;border-radius:12px;transition:.2s}
+.toggle .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#8b949e;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:#238636}
+.toggle input:checked+.slider:before{transform:translateX(20px);background:#fff}
+.upload-area{margin-top:8px}
+.upload-area input[type=file]{display:none}
+.upload-btn{display:inline-block;padding:6px 14px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:13px;cursor:pointer;transition:background .15s}
+.upload-btn:hover{background:#30363d}
+.upload-status{font-size:12px;color:#8b949e;margin-top:6px;min-height:16px}
+.upload-status.error{color:#f85149}
+.upload-status.ok{color:#3fb950}
+.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.log-header h2{margin-bottom:0}
+.log-controls{display:flex;gap:6px;align-items:center}
+.btn-small{background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:11px;padding:3px 8px;cursor:pointer;transition:background .15s}
+.btn-small:hover{background:#30363d;color:#e6edf3}
+.btn-small.active{background:#30363d;color:#58a6ff;border-color:#58a6ff}
+.log-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px;font:11px/1.5 monospace;color:#3fb950;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.tab-bar{display:flex;gap:4px}
+.tab{padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:12px;cursor:pointer;transition:background .15s}
+.tab:hover{background:#30363d;color:#e6edf3}
+.tab.active{background:#161b22;color:#58a6ff;border-color:#58a6ff}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Digits Dev Mode</h1>
+    <p class="subtitle">Firmware development tools</p>
+  </header>
+
+  <div class="panel">
+    <h2>Device Status</h2>
+    <div class="status-grid" id="status-grid">
+      <div class="status-item"><span class="label">digitsd</span><span class="value" id="st-digitsd">--</span></div>
+      <div class="status-item"><span class="label">firmware</span><span class="value" id="st-firmware">--</span></div>
+      <div class="status-item"><span class="label">phase</span><span class="value" id="st-phase">--</span></div>
+      <div class="status-item"><span class="label">online</span><span class="value" id="st-online">--</span></div>
+      <div class="status-item"><span class="label">phone</span><span class="value" id="st-phone">--</span></div>
+      <div class="status-item"><span class="label">auto-update</span><span class="value" id="st-autoupdate">--</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Toggles</h2>
+    <div class="toggle-row">
+      <div class="info">
+        <div class="name">Dev Mode</div>
+        <div class="desc">When off, this web UI will not start on next boot</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="tog-devmode" onchange="toggle('devmode',this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div class="info">
+        <div class="name">Skip Auto-Update</div>
+        <div class="desc">Prevent OTA updates from replacing your dev builds</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="tog-autoupdate" onchange="toggle('auto_update',this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div class="info">
+        <div class="name">Skip Firmware Reflash</div>
+        <div class="desc">Prevent bundled firmware from overwriting Pico on boot</div>
+      </div>
+      <label class="toggle"><input type="checkbox" id="tog-reflash" onchange="toggle('fw_reflash',this.checked)"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Flash Firmware ELF</h2>
+    <div class="upload-area">
+      <label class="upload-btn" for="elf-file">Choose ELF file...</label>
+      <input type="file" id="elf-file" accept=".elf" onchange="uploadELF(this)">
+      <span id="elf-name" style="font-size:12px;color:#8b949e;margin-left:8px"></span>
+    </div>
+    <div class="upload-status" id="upload-status"></div>
+  </div>
+
+  <div class="panel">
+    <div class="log-header">
+      <h2>Logs</h2>
+      <div class="log-controls">
+        <div class="tab-bar">
+          <button class="tab active" id="tab-serial" onclick="switchLog('serial')">Serial</button>
+          <button class="tab" id="tab-journal" onclick="switchLog('journal')">Journal</button>
+        </div>
+        <button class="btn-small" id="log-pause" onclick="togglePause()">Pause</button>
+      </div>
+    </div>
+    <div class="log-box" id="log">Loading...</div>
+  </div>
+</div>
+
+<script>
+var paused=false,logSource='serial',lastSerial='',lastJournal='';
+
+function pollStatus(){
+  fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+    document.getElementById('st-digitsd').textContent=d.digitsd_version||'--';
+    var fw=d.firmware_version||'--';
+    if(d.firmware_commit&&d.firmware_commit!=='unknown'&&d.firmware_commit!=='')fw+=' ('+d.firmware_commit.substring(0,7)+')';
+    document.getElementById('st-firmware').textContent=fw;
+    document.getElementById('st-phase').textContent=d.phase||'--';
+    var onEl=document.getElementById('st-online');
+    onEl.textContent=d.online?'yes':'no';
+    onEl.className='value '+(d.online?'ok':'warn');
+    document.getElementById('st-phone').textContent=d.phone_number||'--';
+    document.getElementById('st-autoupdate').textContent=d.config_auto_update?'on':'off';
+
+    document.getElementById('tog-devmode').checked=d.dev_mode;
+    document.getElementById('tog-autoupdate').checked=d.skip_auto_update;
+    document.getElementById('tog-reflash').checked=d.skip_fw_reflash;
+  }).catch(function(){}).finally(function(){setTimeout(pollStatus,3000)});
+}
+pollStatus();
+
+function toggle(name,val){
+  fetch('/api/toggle',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({name:name,enabled:val})
+  }).catch(function(e){alert('Toggle failed: '+e)});
+}
+
+function uploadELF(input){
+  var f=input.files[0];
+  if(!f)return;
+  document.getElementById('elf-name').textContent=f.name;
+  var status=document.getElementById('upload-status');
+  status.textContent='Uploading...';
+  status.className='upload-status';
+  var form=new FormData();
+  form.append('firmware',f);
+  fetch('/api/flash',{method:'POST',body:form}).then(function(r){
+    return r.json().then(function(d){return{ok:r.ok,data:d}});
+  }).then(function(res){
+    if(res.ok){
+      status.textContent=res.data.message||'Flash started';
+      status.className='upload-status ok';
+    }else{
+      status.textContent=res.data.error||'Flash failed';
+      status.className='upload-status error';
+    }
+  }).catch(function(e){
+    status.textContent='Upload failed: '+e;
+    status.className='upload-status error';
+  });
+}
+
+function switchLog(source){
+  logSource=source;
+  document.getElementById('tab-serial').className='tab'+(source==='serial'?' active':'');
+  document.getElementById('tab-journal').className='tab'+(source==='journal'?' active':'');
+  document.getElementById('log').textContent='Loading...';
+}
+
+function togglePause(){
+  paused=!paused;
+  document.getElementById('log-pause').textContent=paused?'Resume':'Pause';
+  document.getElementById('log-pause').className='btn-small'+(paused?' active':'');
+}
+
+function pollLog(){
+  if(paused){setTimeout(pollLog,1500);return}
+  var url=logSource==='serial'?'/api/log/serial':'/api/log/journal';
+  fetch(url).then(function(r){return r.text()}).then(function(t){
+    var el=document.getElementById('log');
+    var prev=logSource==='serial'?lastSerial:lastJournal;
+    if(t!==prev){
+      if(logSource==='serial')lastSerial=t;else lastJournal=t;
+      var atBottom=el.scrollTop+el.clientHeight>=el.scrollHeight-30;
+      el.textContent=t||'(empty)';
+      if(atBottom)el.scrollTop=el.scrollHeight;
+    }
+  }).catch(function(){}).finally(function(){setTimeout(pollLog,1500)});
+}
+pollLog();
+</script>
+</body>
+</html>
