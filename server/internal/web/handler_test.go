@@ -1124,12 +1124,12 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
 		Type:        signaling.TypeRegister,
-		Number:      "1001",
+		Number:      number,
 		HardwareID:  hwID,
 		DeviceToken: token,
 	})
