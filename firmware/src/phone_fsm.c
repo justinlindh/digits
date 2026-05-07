@@ -9,6 +9,7 @@
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "phase.h"
 #include "ringer.h"
 #include "tone.h"
 #include "uart_proto.h"
@@ -187,6 +188,10 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_DOUBLE_PULSE);
     } else if (strcmp(cmd, "LED:CONNECTING") == 0) {
         led_set_mode(LED_MODE_CONNECTING);
+    } else if (strcmp(cmd, "LED:BREATHING") == 0) {
+        led_set_mode(LED_MODE_BREATHING);
+    } else if (strcmp(cmd, "LED:SLOW_PULSE") == 0) {
+        led_set_mode(LED_MODE_SLOW_PULSE);
     } else if (strcmp(cmd, "LED:LOCK") == 0) {
         led_set_locked(true);
     } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
@@ -248,6 +253,18 @@ static void process_pi_command(const char *cmd) {
         // a stale prefix.
         clear_dialing_buffer();
         uart_proto_send("DIAL:RESET:OK");
+    } else if (strcmp(cmd, "STATE:SET:PAIRED") == 0) {
+        phase_write(PHASE_PAIRED);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:UNPAIRED") == 0) {
+        phase_write(PHASE_UNPAIRED);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:SETUP") == 0) {
+        phase_write(PHASE_SETUP);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:RECOVERY") == 0) {
+        phase_write(PHASE_RECOVERY);
+        uart_proto_send("STATE:SET:OK");
     } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
         // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
         // resets and stays in bootrom waiting for a USB host connection
