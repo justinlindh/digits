@@ -37,13 +37,8 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		slog.Warn("setup: failed to clear boot counter", "error", err)
 	}
 
-	// LED: signal setup mode if serial is available.
 	if serial != nil && serial.IsReady() {
-		sp := serial.Port()
-		sp.LED("LOCK")
-		time.Sleep(50 * time.Millisecond)
-		sp.LED("DOUBLE_PULSE")
-		sp.StateSet("SETUP")
+		serial.Port().StateSet("SETUP")
 	}
 
 	mux := web.Mux()
@@ -121,8 +116,8 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "verifying"}) //nolint:errcheck
 
-		// LED: fast blink during verification
 		if serial != nil && serial.IsReady() {
+			serial.Port().LED("LOCK")
 			serial.Port().LED("CONNECTING")
 		}
 
@@ -135,7 +130,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 					state.lastAttempt = &wifi.VerifyResult{Error: fmt.Sprintf("internal error: %v", r)}
 					state.mu.Unlock()
 					if serial != nil && serial.IsReady() {
-						serial.Port().LED("DOUBLE_PULSE")
+						serial.Port().LED("UNLOCK")
 					}
 				}
 			}()
@@ -161,6 +156,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 			if result.Connected && result.Error == "" {
 				slog.Info("setup: WiFi configured, rebooting")
 				if serial != nil && serial.IsReady() {
+					serial.Port().LED("UNLOCK")
 					serial.Port().LED("ON")
 				}
 				if audio != nil && audio.IsReady() {
@@ -169,9 +165,8 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 				}
 				doReboot()
 			} else {
-				// Restore LED to setup pattern
 				if serial != nil && serial.IsReady() {
-					serial.Port().LED("DOUBLE_PULSE")
+					serial.Port().LED("UNLOCK")
 				}
 			}
 		}()

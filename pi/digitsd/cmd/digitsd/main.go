@@ -1644,7 +1644,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 func resetPicoHardware(sp *phone.SerialPort) {
 	slog.Info("pico: clearing residual hardware state on startup")
 	sp.Ring(false)
-	sp.LED("OFF")
+	sp.LED("UNLOCK")
 }
 
 // playPairingAnnouncement queues one full pairing-voice sequence on mixer:
@@ -2608,6 +2608,11 @@ func main() {
 				}
 			}
 
+			if event == "HOOK:ON" && !cb.paired.Load() && pairingAnnouncementCancel != nil {
+				pairingAnnouncementCancel()
+				pairingAnnouncementCancel = nil
+			}
+
 			// Unpaired phone: play pairing voice sequence instead of dial tone,
 			// then re-play it on a timer so a user who keeps the handset off
 			// the cradle can hear the code again without hanging up. The loop
@@ -2631,7 +2636,6 @@ func main() {
 				code := cb.pairingCode
 				receivedAt := cb.pairingCodeReceivedAt
 				slog.Info("phone: playing pairing code via voice", "code", code)
-				sp.LED("ON")
 				go func() {
 					for {
 						if cb.paired.Load() || code == "" {
