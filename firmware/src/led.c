@@ -2,7 +2,10 @@
 
 #include "board.h"
 #include "hardware/gpio.h"
+#include "hardware/pwm.h"
 #include "pico/time.h"
+
+#define PWM_WRAP 999
 
 #define BLINK_INTERVAL_US       500000
 #define FAST_BLINK_INTERVAL_US  150000
@@ -22,16 +25,22 @@ static bool s_led_on = false;
 static bool s_locked = false;
 static absolute_time_t s_last_toggle;
 static uint8_t s_step;
+static uint s_pwm_slice;
+static uint s_pwm_chan;
 
 void led_init(void) {
-    gpio_init(board->led_pin);
-    gpio_set_dir(board->led_pin, GPIO_OUT);
+    gpio_set_function(board->led_pin, GPIO_FUNC_PWM);
+    s_pwm_slice = pwm_gpio_to_slice_num(board->led_pin);
+    s_pwm_chan = pwm_gpio_to_channel(board->led_pin);
+    pwm_set_clkdiv(s_pwm_slice, 125.0f);
+    pwm_set_wrap(s_pwm_slice, PWM_WRAP);
+    pwm_set_chan_level(s_pwm_slice, s_pwm_chan, 0);
+    pwm_set_enabled(s_pwm_slice, true);
 
     s_mode = LED_MODE_OFF;
     s_led_on = false;
     s_locked = false;
     s_step = 0;
-    gpio_put(board->led_pin, 0);
     s_last_toggle = get_absolute_time();
 }
 
@@ -49,18 +58,20 @@ void led_set_mode(led_mode_t mode) {
 
     if (mode == LED_MODE_OFF) {
         s_led_on = false;
-        gpio_put(board->led_pin, 0);
+        pwm_set_gpio_level(board->led_pin, 0);
     } else if (mode == LED_MODE_ON) {
         s_led_on = true;
-        gpio_put(board->led_pin, 1);
+        pwm_set_gpio_level(board->led_pin, PWM_WRAP);
     } else {
+        s_led_on = true;
+        pwm_set_gpio_level(board->led_pin, PWM_WRAP);
         s_last_toggle = get_absolute_time();
     }
 }
 
 static void set_led(bool on) {
     s_led_on = on;
-    gpio_put(board->led_pin, on ? 1 : 0);
+    pwm_set_gpio_level(board->led_pin, on ? PWM_WRAP : 0);
 }
 
 // Pattern step machine for multi-phase patterns.
