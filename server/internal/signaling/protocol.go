@@ -170,7 +170,7 @@ type Message struct {
 	Extension bool `json:"extension,omitempty"`
 
 	// Conference fields (party-line / three-way calling).
-	ConfID string `json:"conf_id,omitempty"`
+	ConfID     string                 `json:"conf_id,omitempty"`
 	HeldPeer   string                 `json:"held_peer,omitempty"`
 	ActivePeer string                 `json:"active_peer,omitempty"`
 	Peer       string                 `json:"peer,omitempty"`

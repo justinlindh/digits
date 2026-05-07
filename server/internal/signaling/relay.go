@@ -287,7 +287,17 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 			r.dropMemberFromConference(ctx, conf.ID, from, "hangup")
 			return
 		}
+		// NOTE: If a member previously left and a 2-party continuation call was
+		// created (dropMemberFromConference ended the conference and left the
+		// remaining two in the active-call map), the conference is already gone
+		// by the time the host hangs up. ConferenceByPhone(from) returns nil here,
+		// so we fall through to the normal 2-party hangup path below, which
+		// correctly calls OnCallEnded and forwards Hangup to the peer. No special
+		// handling needed.
 	}
+	// Resolve the set of peers to notify. In pre-merge ADD_* flows the host
+	// may have multiple active 2-party calls (A-B held and A-C active); a
+	// single hook-on ends both. For the normal 2-party case this is one peer.
 	var peers []string
 	if r.Tracker != nil {
 		peers = r.Tracker.AllPeersOf(from)
@@ -539,6 +549,11 @@ func (r *Relay) clearExtension(hardwareID string) {
 	}
 	r.extMu.Unlock()
 	if ok {
+		_ = r.Hub.SendTo(ext.PeerNumber, &Message{
+			Type:      TypeHangup,
+			From:      ext.LineNumber,
+			Extension: true,
+		})
 		slog.Info("extension cleared", "hardware_id", hardwareID, "line", ext.LineNumber, "peer", ext.PeerNumber)
 	}
 }
