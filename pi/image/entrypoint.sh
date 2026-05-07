@@ -14,7 +14,7 @@
 #     If FIRMWARE_TAG is not set, the latest fw/v* release is used.
 #
 #   Local build mode (BUILD_LOCAL=1):
-#     Cross-compiles digitsd and digits-panic-check from the mounted repo.
+#     Cross-compiles digitsd from the mounted repo.
 #     Use this to test unreleased code changes.
 #
 #     Example: BUILD_LOCAL=1 ./pi/image/build-docker.sh --pcb
@@ -139,13 +139,6 @@ if [[ -z "${BUILD_LOCAL:-}" ]]; then
         --output /digits/tools/build/digitsd
     chmod +x /digits/tools/build/digitsd
 
-    info "  Downloading digits-panic-check-${PI_VERSION}-aarch64..."
-    gh release download "${PI_TAG}" \
-        --repo justinlindh/digits \
-        --pattern "digits-panic-check-${PI_VERSION}-aarch64" \
-        --output /digits/tools/build/digits-panic-check
-    chmod +x /digits/tools/build/digits-panic-check
-
     info "Pi binaries downloaded from ${PI_TAG}."
 else
     # Local build mode: cross-compile from the mounted repo.
@@ -179,11 +172,6 @@ else
                   -X github.com/justinlindh/digits/pi/digitsd/internal/version.Commit=$DIGITSD_COMMIT" \
         -o /digits/tools/build/digitsd \
         ./cmd/digitsd/
-
-    # Cross-compile digits-panic-check (pure Go + golang.org/x/sys, no CGO).
-    info "Cross-compiling digits-panic-check for aarch64..."
-    cd /digits/pi/digits-panic-check
-    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o /digits/tools/build/digits-panic-check .
 
     info "Binaries ready in tools/build/"
 fi
