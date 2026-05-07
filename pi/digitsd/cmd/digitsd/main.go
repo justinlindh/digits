@@ -2581,7 +2581,7 @@ func main() {
 		if devErr != nil {
 			slog.Warn("devmode: failed to start web UI", "error", devErr)
 		} else {
-			defer devLn.Close()
+			defer func() { _ = devLn.Close() }()
 		}
 	}
 
