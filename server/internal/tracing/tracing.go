@@ -44,11 +44,9 @@
 package tracing
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -66,6 +64,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/metrics"
 )
 
@@ -358,12 +357,12 @@ func HTTPServerMiddleware(serviceName string, next http.Handler) http.Handler {
 		)
 		defer span.End()
 
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		rec := &httputil.StatusRecorder{ResponseWriter: w, Status: http.StatusOK}
 		next.ServeHTTP(rec, r.WithContext(ctx))
 
-		span.SetAttributes(attribute.Int("http.status_code", rec.status))
-		if rec.status >= 500 {
-			span.SetStatus(codes.Error, http.StatusText(rec.status))
+		span.SetAttributes(attribute.Int("http.status_code", rec.Status))
+		if rec.Status >= 500 {
+			span.SetStatus(codes.Error, http.StatusText(rec.Status))
 		}
 	})
 }
@@ -379,48 +378,6 @@ func isNoiseRoute(path string) bool {
 		return true
 	}
 	return false
-}
-
-// statusRecorder captures the response status without buffering the body.
-// Mirrors the metrics package's recorder; copied (not imported) so the
-// tracing middleware does not depend on metrics' internals beyond the
-// public RouteOf bucketer.
-type statusRecorder struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (s *statusRecorder) WriteHeader(code int) {
-	if s.wroteHeader {
-		return
-	}
-	s.status = code
-	s.wroteHeader = true
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusRecorder) Write(b []byte) (int, error) {
-	if !s.wroteHeader {
-		s.status = http.StatusOK
-		s.wroteHeader = true
-	}
-	return s.ResponseWriter.Write(b)
-}
-
-// Flush and Hijack pass-through preserve SSE / WebSocket upgrade
-// behavior; without them, /api/dashboard/stream and /ws would break.
-func (s *statusRecorder) Flush() {
-	if f, ok := s.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (s *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	if h, ok := s.ResponseWriter.(http.Hijacker); ok {
-		return h.Hijack()
-	}
-	return nil, nil, http.ErrNotSupported
 }
 
 // HTTPClientTransport wraps base with a tracing transport that injects
