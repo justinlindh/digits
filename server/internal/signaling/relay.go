@@ -102,7 +102,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeConferenceMerge:
 		r.handleConferenceMerge(ctx, from, msg)
 	case TypeDTMF:
-		r.forward(msg)
+		r.handleDTMF(ctx, from, msg)
 	case TypeRequestICE:
 		r.handleRequestICE(from)
 	case TypeDeviceInfo:
@@ -182,10 +182,35 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 	})
 }
 
+// inCallOrConference returns true if from and to are in an active 2-party
+// call or are co-members of the same conference. When the tracker is nil
+// (tests), all traffic is allowed.
+func (r *Relay) inCallOrConference(from, to string) bool {
+	if r.Tracker == nil {
+		return true
+	}
+	if r.Tracker.InCall(from, to) {
+		return true
+	}
+	ct := r.Tracker.Conferences()
+	if conf := ct.ConferenceByPhone(from); conf != nil {
+		return ct.ConferenceContains(conf.ID, from, to)
+	}
+	return false
+}
+
+func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
+	if !r.inCallOrConference(from, msg.To) {
+		slog.Warn("dtmf without active call", "from", from, "to", msg.To)
+		r.observeError("invalid_message")
+		return
+	}
+	r.forward(msg)
+}
+
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
-	if r.Tracker != nil && !r.Tracker.InCall(from, msg.To) {
+	if !r.inCallOrConference(from, msg.To) {
 		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
-		// invalid_message: ICE restart received outside a call.
 		r.observeError("invalid_message")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
@@ -194,6 +219,11 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
+	if !r.inCallOrConference(from, msg.To) {
+		slog.Warn("answer without active call", "from", from, "to", msg.To)
+		r.observeError("invalid_message")
+		return
+	}
 	if r.Tracker != nil {
 		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
 			slog.Error("failed to track call answer", "err", err)
@@ -227,8 +257,9 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil {
 		peers = r.Tracker.AllPeersOf(from)
 	}
-	if len(peers) == 0 && msg.To != "" {
-		peers = []string{msg.To}
+	if len(peers) == 0 {
+		slog.Debug("hangup from phone not in any active call", "from", from)
+		return
 	}
 	for _, peer := range peers {
 		if r.Tracker != nil {
@@ -254,6 +285,11 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 			return
 		}
 	}
+	if !r.inCallOrConference(from, msg.To) {
+		slog.Warn("sdp without active call", "from", from, "to", msg.To)
+		r.observeError("invalid_message")
+		return
+	}
 	r.forward(msg)
 }
 
@@ -270,6 +306,11 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 			})
 			return
 		}
+	}
+	if !r.inCallOrConference(from, msg.To) {
+		slog.Warn("ice without active call", "from", from, "to", msg.To)
+		r.observeError("invalid_message")
+		return
 	}
 	r.forward(msg)
 }

@@ -56,7 +56,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check pairing and token status
+	// Check pairing and token status. For paired devices, the server-side
+	// bound line number is authoritative: a device cannot register as a
+	// line it is not paired to.
+	isPaired := false
 	if h.pairingStore != nil {
 		paired, tokenValid, err := h.deviceStore.AuthStatus(r.Context(), msg.HardwareID, msg.DeviceToken)
 		if err != nil {
@@ -74,7 +77,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 					PairingCode: code,
 				}))
 			}
-			// Continue to register so the device can receive the TypePaired message
+			// Unpaired devices register under their hardware ID (not a line
+			// number) so they can receive the TypePaired message via
+			// SendToHardware without displacing a real line's connection.
+			msg.Number = "unpaired:" + msg.HardwareID
 		} else if msg.DeviceToken == "" {
 			slog.Warn("ws register without device_token", "hardware_id", msg.HardwareID)
 			wsReject(ws, "device_token required")
@@ -83,6 +89,27 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("ws invalid device_token", "hardware_id", msg.HardwareID)
 			wsReject(ws, "invalid device_token")
 			return
+		} else {
+			isPaired = true
+			boundNumber, err := h.deviceStore.BoundLineNumber(r.Context(), msg.HardwareID)
+			if err != nil {
+				slog.Error("bound line lookup failed", "hardware_id", msg.HardwareID, "err", err)
+				wsReject(ws, "internal error")
+				return
+			}
+			if boundNumber == "" {
+				slog.Warn("paired device has no bound line", "hardware_id", msg.HardwareID)
+				wsReject(ws, "device has no assigned line")
+				return
+			}
+			if boundNumber != msg.Number {
+				slog.Warn("ws register number mismatch",
+					"hardware_id", msg.HardwareID,
+					"claimed", msg.Number,
+					"bound", boundNumber)
+				wsReject(ws, "number does not match paired line")
+				return
+			}
 		}
 	}
 
@@ -102,7 +129,9 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		wsReject(ws, "server shutting down")
 		return
 	}
-	h.relay.OnRegistered(r.Context(), msg.Number)
+	if isPaired {
+		h.relay.OnRegistered(r.Context(), msg.Number)
+	}
 	number := msg.Number
 
 	// Configure pong handler to extend read deadline on each pong

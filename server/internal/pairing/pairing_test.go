@@ -59,7 +59,7 @@ func TestGenerateCode_Returns6Digits(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_ReusesBeforeExpiry(t *testing.T) {
+func TestGenerateCode_RotatesOnEveryCall(t *testing.T) {
 	s := setupStore(t)
 	code1, err := s.GenerateCode(context.Background(), "test-hw-002")
 	if err != nil {
@@ -69,8 +69,8 @@ func TestGenerateCode_ReusesBeforeExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateCode 2: %v", err)
 	}
-	if code1 != code2 {
-		t.Errorf("expected same code before expiry, got %q and %q", code1, code2)
+	if code1 == code2 {
+		t.Errorf("expected rotated code on second call, got same %q both times", code1)
 	}
 }
 

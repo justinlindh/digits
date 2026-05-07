@@ -603,7 +603,7 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
-	wrapped := rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+	wrapped := rootDomainRedirect(h.cfg.BaseURL, csrfOriginCheck(h.cfg.BaseURL, securityHeadersMiddleware(h.cfg.BaseURL, mux)))
 	// Metrics middleware sits outside redirect/security headers so it
 	// sees the actual response code and duration including any redirect
 	// header work above. RouteOf bucket is computed from the request
@@ -646,15 +646,45 @@ func isGateExempt(path string, extra ...string) bool {
 	return false
 }
 
-func securityHeadersMiddleware(next http.Handler) http.Handler {
+func securityHeadersMiddleware(baseURL string, next http.Handler) http.Handler {
+	connectSrc := "'self' wss:"
+	if baseURL != "" {
+		wssOrigin := strings.Replace(baseURL, "https://", "wss://", 1)
+		wssOrigin = strings.Replace(wssOrigin, "http://", "ws://", 1)
+		connectSrc = "'self' " + wssOrigin
+	}
+	csp := fmt.Sprintf("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src %s; frame-ancestors 'none'", connectSrc)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", csp)
 		if r.TLS != nil {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// csrfOriginCheck rejects state-changing requests (POST/PUT/DELETE/PATCH)
+// whose Origin header does not match the configured base URL. GET/HEAD/OPTIONS
+// are safe methods and pass through. Requests with no Origin header are allowed
+// because non-browser clients (CLI tools, the Pi daemon) legitimately omit it.
+func csrfOriginCheck(baseURL string, next http.Handler) http.Handler {
+	if baseURL == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin != "" && origin != baseURL {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }

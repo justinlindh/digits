@@ -83,14 +83,8 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	myHousehold := h.activeHousehold(r)
-	if myHousehold == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	user, myHousehold, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
 
@@ -177,15 +171,18 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	owned := false
+	isAdmin := false
 	for _, hh := range households {
 		if hh.ID == link.HouseholdAID || (link.HouseholdBID != nil && hh.ID == *link.HouseholdBID) {
-			owned = true
-			break
+			role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
+			if err == nil && role == "admin" {
+				isAdmin = true
+				break
+			}
 		}
 	}
-	if !owned {
-		http.NotFound(w, r)
+	if !isAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
