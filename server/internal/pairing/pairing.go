@@ -50,7 +50,7 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 
 	expiresAt := time.Now().Add(CodeTTL)
 
-	_, err = s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO devices (line_id, hardware_id, pairing_code, pairing_code_expires_at)
 		VALUES (NULL, $1, $2, $3)
 		ON CONFLICT (hardware_id) DO UPDATE
@@ -59,6 +59,10 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	`, hardwareID, newCode, expiresAt)
 	if err != nil {
 		return "", fmt.Errorf("upsert pairing code: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return "", ErrAlreadyPaired
 	}
 
 	return newCode, nil

@@ -34,16 +34,16 @@ void uart_proto_send(const char *msg) {
 }
 
 void uart_proto_inject(const char *cmd) {
-    if (cmd == NULL || atomic_load_explicit(&inject_pending, memory_order_relaxed)) return;
+    if (cmd == NULL || atomic_load_explicit(&inject_pending, memory_order_acquire)) return;
     strncpy(inject_buf, cmd, PROTO_MAX_LINE - 1);
     inject_buf[PROTO_MAX_LINE - 1] = '\0';
-    atomic_store_explicit(&inject_pending, true, memory_order_relaxed);
+    atomic_store_explicit(&inject_pending, true, memory_order_release);
 }
 
 const char *uart_proto_recv(void) {
     // Return injected command first (from USB console)
-    if (atomic_load_explicit(&inject_pending, memory_order_relaxed)) {
-        atomic_store_explicit(&inject_pending, false, memory_order_relaxed);
+    if (atomic_load_explicit(&inject_pending, memory_order_acquire)) {
+        atomic_store_explicit(&inject_pending, false, memory_order_release);
         return inject_buf;
     }
 
