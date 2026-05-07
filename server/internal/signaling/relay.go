@@ -228,13 +228,9 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 		r.observeError("invalid_message")
 		return
 	}
-	if r.Tracker != nil {
-		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
-			slog.Error("failed to track call answer", "err", err)
-		}
-	}
-	r.forward(msg)
 
+	// Cancel ringing on sibling devices BEFORE forwarding the answer so
+	// a near-simultaneous second answer doesn't reach the caller.
 	if msg.HardwareID != "" {
 		cancelMsg := &Message{Type: TypeHangup, From: msg.To}
 		for _, conn := range r.Hub.GetAll(from) {
@@ -243,6 +239,13 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 			}
 		}
 	}
+
+	if r.Tracker != nil {
+		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
+			slog.Error("failed to track call answer", "err", err)
+		}
+	}
+	r.forward(msg)
 }
 
 func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
@@ -384,14 +387,17 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 }
 
 // OnDisconnect cleans up any active calls or conference membership for a
-// phone that disconnected.
+// phone that disconnected. With multiple devices per line, only tear down
+// the call when the last device on that line disconnects. OnDisconnect
+// runs before Unregister (LIFO defer order in handler_ws.go), so the
+// departing conn is still counted; >1 means siblings remain.
 func (r *Relay) OnDisconnect(ctx context.Context, number string) {
 	if r.Tracker == nil {
 		return
 	}
-	// If the phone was in a conference, end the conference cleanly: persist
-	// the end, notify remaining members. This runs BEFORE ClearByNumber so
-	// the conference cleanup happens through the structured path.
+	if r.Hub.ConnectionCount(number) > 1 {
+		return
+	}
 	if conf := r.Tracker.Conferences().ConferenceByPhone(number); conf != nil {
 		r.endConference(ctx, conf.ID, "disconnect")
 	}

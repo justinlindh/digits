@@ -540,7 +540,7 @@ type DeviceInfoSnapshot struct {
 }
 
 // DeviceInfo returns version info for the first connected device on a line.
-// Returns nil if no device is online. For per-device info use DeviceInfoAll.
+// Returns nil if no device is online.
 func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	h.mu.RLock()
 	ds := h.state
