@@ -223,7 +223,7 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
-func TestRefreshSession(t *testing.T) {
+func TestValidateAndRefreshSession(t *testing.T) {
 	s := testDB(t)
 	u, err := s.CreateUser(context.Background(), "refresh@test.com", "Refresh User", nil)
 	if err != nil {
@@ -235,16 +235,35 @@ func TestRefreshSession(t *testing.T) {
 	}
 	originalExpiry := sess.ExpiresAt
 
-	if err := s.RefreshSession(context.Background(), token, 48*time.Hour); err != nil {
-		t.Fatalf("RefreshSession: %v", err)
-	}
-
-	got, err := s.ValidateSession(context.Background(), token)
+	got, err := s.ValidateAndRefreshSession(context.Background(), token, 48*time.Hour)
 	if err != nil {
-		t.Fatalf("ValidateSession after refresh: %v", err)
+		t.Fatalf("ValidateAndRefreshSession: %v", err)
+	}
+	if got.UserID != u.ID {
+		t.Errorf("user ID = %s, want %s", got.UserID, u.ID)
 	}
 	if !got.ExpiresAt.After(originalExpiry) {
 		t.Errorf("refreshed expiry %v should be after original %v", got.ExpiresAt, originalExpiry)
+	}
+}
+
+func TestValidateAndRefreshSession_Expired(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser(context.Background(), "expired-refresh@test.com", "Expired Refresh User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	token, _, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	// Force-expire the session.
+	hash := device.HashToken(token)
+	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
+
+	_, err = s.ValidateAndRefreshSession(context.Background(), token, 48*time.Hour)
+	if err == nil {
+		t.Error("expected error for expired session, got nil")
 	}
 }
 

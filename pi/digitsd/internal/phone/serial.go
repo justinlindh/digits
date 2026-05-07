@@ -12,7 +12,7 @@ import (
 )
 
 // SerialPort owns /dev/serial0 and provides thread-safe read/write.
-// Owns the serial port to the Pico — reads UART events, sends commands.
+// Owns the serial port to the Pico: reads UART events, sends commands.
 type SerialPort struct {
 	port   serial.Port
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
@@ -20,6 +20,7 @@ type SerialPort struct {
 	mu           sync.Mutex
 	respCh       atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	flashEnabled atomic.Bool                 // whether HOOK:FLASH should be forwarded (requires firmware v1.5.0+)
+	droppedLines atomic.Int64                // count of unrecognized UART lines dropped
 	stop         chan struct{}
 	logger       *slog.Logger
 
@@ -179,6 +180,11 @@ func (sp *SerialPort) flashEnabledNow() bool {
 	return sp.flashEnabled.Load()
 }
 
+// DroppedLines returns the number of unrecognized UART lines that were dropped.
+func (sp *SerialPort) DroppedLines() int64 {
+	return sp.droppedLines.Load()
+}
+
 // Ring sends RING:START or RING:STOP to the Pico.
 func (sp *SerialPort) Ring(start bool) {
 	if start {
@@ -262,6 +268,37 @@ func isFireAndForgetAck(line string) bool {
 	}
 }
 
+// isKnownResponsePrefix returns true for lines that are valid command
+// responses from the Pico. Lines that reach the fallthrough path (no pending
+// command consumer) are checked against this allowlist. Anything unrecognized
+// is dropped with a debug log rather than forwarded to the events channel.
+func isKnownResponsePrefix(line string) bool {
+	switch {
+	case line == "PONG":
+		return true
+	case line == "RST:OK", line == "REBOOT:OK", line == "DIAL:RESET:OK":
+		return true
+	case line == "RING:ACK", line == "RING:TEST:ACK", line == "RING:DONE":
+		return true
+	case strings.HasPrefix(line, "VERSION:"):
+		return true
+	case strings.HasPrefix(line, "BOARD:"):
+		return true
+	case strings.HasPrefix(line, "CONFIG:PCB_REV="):
+		return true
+	case strings.HasPrefix(line, "STATE:"):
+		return true
+	case strings.HasPrefix(line, "HOOK:"):
+		return true
+	case strings.HasPrefix(line, "MODE:"):
+		return true
+	case strings.HasPrefix(line, "ROWS:"), strings.HasPrefix(line, "COLS:"), strings.HasPrefix(line, "SCAN "):
+		return true
+	default:
+		return false
+	}
+}
+
 func (sp *SerialPort) readLoop() {
 	buf := make([]byte, 256)
 	var lineBuf strings.Builder
@@ -279,7 +316,7 @@ func (sp *SerialPort) readLoop() {
 			case <-sp.stop:
 				return
 			default:
-				// Read timeout — normal, just retry
+				// Read timeout, normal, just retry
 				continue
 			}
 		}
@@ -330,7 +367,16 @@ func (sp *SerialPort) readLoop() {
 					continue
 				}
 
-				// No pending command — deliver as event (shouldn't normally happen).
+				// Unrecognized line: drop with a debug log and bump the counter
+				// so operators can spot noisy or rogue UART traffic.
+				if !isKnownResponsePrefix(line) {
+					sp.droppedLines.Add(1)
+					sp.logger.Debug("serial: dropping unrecognized UART line",
+						"line", line, "total_dropped", sp.droppedLines.Load())
+					continue
+				}
+
+				// Known response with no pending command. Deliver as event.
 				select {
 				case sp.events <- line:
 				default:

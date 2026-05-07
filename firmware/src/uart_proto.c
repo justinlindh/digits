@@ -1,5 +1,6 @@
 #include "uart_proto.h"
 
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,7 +10,7 @@
 #include "board.h"
 
 static char inject_buf[PROTO_MAX_LINE];
-static bool inject_pending = false;
+static atomic_bool inject_pending = false;
 
 void uart_proto_init(void) {
     uart_init(PROTO_UART_ID, PROTO_UART_BAUD);
@@ -33,16 +34,16 @@ void uart_proto_send(const char *msg) {
 }
 
 void uart_proto_inject(const char *cmd) {
-    if (cmd == NULL || inject_pending) return;
+    if (cmd == NULL || atomic_load_explicit(&inject_pending, memory_order_acquire)) return;
     strncpy(inject_buf, cmd, PROTO_MAX_LINE - 1);
     inject_buf[PROTO_MAX_LINE - 1] = '\0';
-    inject_pending = true;
+    atomic_store_explicit(&inject_pending, true, memory_order_release);
 }
 
 const char *uart_proto_recv(void) {
     // Return injected command first (from USB console)
-    if (inject_pending) {
-        inject_pending = false;
+    if (atomic_load_explicit(&inject_pending, memory_order_acquire)) {
+        atomic_store_explicit(&inject_pending, false, memory_order_release);
         return inject_buf;
     }
 
