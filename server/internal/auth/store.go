@@ -209,14 +209,25 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
-// RefreshSession extends the expiry of an active session.
-func (s *Store) RefreshSession(ctx context.Context, token string, ttl time.Duration) error {
+// ValidateAndRefreshSession atomically validates a session and extends its
+// expiry in a single UPDATE ... RETURNING query, eliminating the TOCTOU window
+// between a separate validate-then-refresh pair.
+func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl time.Duration) (*Session, error) {
 	hash := device.HashToken(token)
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET expires_at = $1 WHERE token_hash = $2 AND expires_at > NOW()`,
+	sess := &Session{}
+	err := s.db.QueryRowContext(ctx,
+		`UPDATE sessions SET expires_at = $1
+		 WHERE token_hash = $2 AND expires_at > NOW()
+		 RETURNING id, user_id, expires_at, created_at`,
 		time.Now().Add(ttl), hash,
-	)
-	return err
+	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("invalid or expired session")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sess, nil
 }
 
 // CreateMagicLink generates a single-use login token for passwordless email auth.
