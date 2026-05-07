@@ -2123,6 +2123,8 @@ func main() {
 		resetPicoHardware(sp)
 		if cfg.DeviceToken == "" {
 			sp.StateSet("UNPAIRED")
+		} else {
+			sp.StateSet("PAIRED")
 		}
 	}
 
