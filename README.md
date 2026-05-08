@@ -30,21 +30,22 @@
 
 Each phone is a gutted vintage desk phone with two processors inside: an RP2040 handling real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a Raspberry Pi Zero 2 W running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and call signaling. A Go server handles call routing, device pairing, and household management. There's a free public instance at [app.digits.family](https://app.digits.family), or you can run your own.
 
-<p align="center">
-  <a href="#architecture">Architecture</a> &middot;
-  <a href="#hardware">Hardware</a> &middot;
-  <a href="#project-structure">Project Structure</a> &middot;
-  <a href="#quick-start">Quick Start</a> &middot;
-  <a href="#hosting">Hosting</a> &middot;
-  <a href="#web-app">Web App</a> &middot;
-  <a href="#service-codes">Service Codes</a> &middot;
-  <a href="#party-line-three-way-calling">Party Line</a> &middot;
-  <a href="#easter-eggs">Easter Eggs</a> &middot;
-  <a href="#privacy">Privacy</a> &middot;
-  <a href="#contributing">Contributing</a> &middot;
-  <a href="#documentation">Docs</a> &middot;
-  <a href="#license">License</a>
-</p>
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Hardware](#hardware)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Hosting](#hosting)
+- [Web App](#web-app)
+- [Service Codes](#service-codes)
+  - [Confirmation feedback](#confirmation-feedback)
+- [Party Line](#party-line-three-way-calling)
+- [Easter Eggs](#easter-eggs)
+- [Privacy](#privacy)
+- [Contributing](#contributing)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## Architecture
 
