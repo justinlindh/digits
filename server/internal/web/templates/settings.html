@@ -368,10 +368,12 @@
       <p class="muted" style="font-size: 13px; margin: 0 0 14px; line-height: 1.55;">
         Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
       </p>
-      <form action="/settings/account/delete" method="POST"
-            onsubmit="return confirm('This will permanently delete your account, remove you from all households, and unpair all devices in households where you are the only member. This cannot be undone.\n\nAre you sure?')">
-        <button type="submit" class="btn btn--danger">Delete my account</button>
-      </form>
+      <button type="button" class="btn btn--danger"
+              data-confirm
+              data-confirm-action="/settings/account/delete"
+              data-confirm-title="Delete your account?"
+              data-confirm-body="This will permanently delete your account, remove you from all households, and unpair all devices in households where you are the only member. This cannot be undone."
+              data-confirm-submit="Delete my account">Delete my account</button>
     </div>
   </section>
 
@@ -819,13 +821,15 @@
         <p class="am-hint am-settings__hint" style="margin-bottom: 10px;">
           Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
         </p>
-        <form action="/settings/account/delete" method="POST"
-              onsubmit="return confirm('This will permanently delete your account, remove you from all households, and unpair all devices in households where you are the only member. This cannot be undone.\n\nAre you sure?')">
-          <button type="submit" class="am-key am-key--red am-settings__signout">
-            <span class="am-key__symbol">&#x2716;</span>
-            <span class="am-key__label">Delete my account</span>
-          </button>
-        </form>
+        <button type="button" class="am-key am-key--red am-settings__signout"
+                data-confirm
+                data-confirm-action="/settings/account/delete"
+                data-confirm-title="Delete your account?"
+                data-confirm-body="This will permanently delete your account, remove you from all households, and unpair all devices in households where you are the only member. This cannot be undone."
+                data-confirm-submit="Delete my account">
+          <span class="am-key__symbol">&#x2716;</span>
+          <span class="am-key__label">Delete my account</span>
+        </button>
       </section>
 
     </div>
