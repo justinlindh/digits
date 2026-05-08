@@ -349,7 +349,7 @@ func (c *Controller) onKey(digit string) {
 			c.digits = ""
 			c.callReturnNumber = ""
 			c.state = StateCALL_RETURN
-			c.cb.OnCallReturn()
+			go c.cb.OnCallReturn()
 			return
 		}
 	case StateCALL_RETURN:

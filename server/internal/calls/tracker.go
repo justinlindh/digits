@@ -755,7 +755,7 @@ func (t *Tracker) LastInboundCaller(ctx context.Context, number string) (string,
 		 LIMIT 1`,
 		number,
 	).Scan(&caller)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	if err != nil {

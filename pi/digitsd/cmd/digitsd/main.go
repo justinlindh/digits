@@ -3286,6 +3286,9 @@ func main() {
 					cb.mixer.PlayOnce("call_return_none")
 					go func() {
 						time.Sleep(3 * time.Second)
+						if ctrl.State() != phone.StateCALL_RETURN {
+							return
+						}
 						ctrl.ResetToDialtone()
 						cb.mixer.PlayLoop("tone_dial")
 					}()
