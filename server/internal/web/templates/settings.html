@@ -28,6 +28,7 @@
       <a href="#privacy" class="settings-nav__item">Privacy</a>
       <a href="#do-not-disturb" class="settings-nav__item">Do Not Disturb</a>
       {{end}}
+      <a href="#danger" class="settings-nav__item">Danger zone</a>
       <a href="#session" class="settings-nav__item">Session</a>
     </nav>
     <div class="settings-sections">
@@ -347,7 +348,7 @@
   {{end}}
 
   <!-- Session -->
-  <section id="session" class="panel" style="border-color: rgba(160,90,58,0.25);">
+  <section id="session" class="panel" style="margin-bottom: 18px; border-color: rgba(160,90,58,0.25);">
     <header class="panel__head">
       <h2 class="panel__title" style="color: var(--rust);">Session</h2>
     </header>
@@ -355,6 +356,24 @@
       <form action="/auth/logout" method="POST">
         <button type="submit" class="btn btn--danger">Sign out</button>
       </form>
+    </div>
+  </section>
+
+  <!-- Delete Account -->
+  <section id="danger" class="panel" style="margin-bottom: 18px; border-color: rgba(160,90,58,0.25);">
+    <header class="panel__head">
+      <h2 class="panel__title" style="color: var(--rust);">Delete account</h2>
+    </header>
+    <div class="panel__body">
+      <p class="muted" style="font-size: 13px; margin: 0 0 14px; line-height: 1.55;">
+        Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
+      </p>
+      <button type="button" class="btn btn--danger"
+              data-confirm
+              data-confirm-action="/settings/account/delete"
+              data-confirm-title="Are you sure?"
+              data-confirm-body="This is permanent and cannot be undone."
+              data-confirm-submit="Delete my account">Delete my account</button>
     </div>
   </section>
 
@@ -579,6 +598,7 @@
       <a href="#theme" class="settings-nav__item">Theme</a>
       <a href="#privacy" class="settings-nav__item">Privacy</a>
       {{end}}
+      <a href="#danger" class="settings-nav__item">Danger zone</a>
       <a href="#session" class="settings-nav__item">Session</a>
     </nav>
 
@@ -794,6 +814,22 @@
             <span class="am-key__label">Sign out</span>
           </button>
         </form>
+      </section>
+
+      <section id="danger" class="am-plate am-settings__section am-settings__section--danger">
+        <div class="am-plate__label">Delete account</div>
+        <p class="am-hint am-settings__hint" style="margin-bottom: 10px;">
+          Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
+        </p>
+        <button type="button" class="am-key am-key--red am-settings__signout"
+                data-confirm
+                data-confirm-action="/settings/account/delete"
+                data-confirm-title="Are you sure?"
+                data-confirm-body="This is permanent and cannot be undone."
+                data-confirm-submit="Delete my account">
+          <span class="am-key__symbol">&#x2716;</span>
+          <span class="am-key__label">Delete my account</span>
+        </button>
       </section>
 
     </div>

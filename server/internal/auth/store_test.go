@@ -366,6 +366,46 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 	}
 }
 
+func TestStore_DeleteUser(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser(context.Background(), "deleteuser@test.com", "Delete Me", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	_, _, err = s.CreateSession(context.Background(), u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := s.DeleteUser(context.Background(), u.ID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	// User should be gone.
+	_, err = s.GetUserByEmail(context.Background(), "deleteuser@test.com")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("expected ErrUserNotFound after DeleteUser, got %v", err)
+	}
+
+	// Sessions should have cascaded.
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, u.ID).Scan(&count); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 sessions after DeleteUser cascade, got %d", count)
+	}
+}
+
+func TestStore_DeleteUser_NotFound(t *testing.T) {
+	s := testDB(t)
+	err := s.DeleteUser(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if err == nil {
+		t.Error("expected error for non-existent user, got nil")
+	}
+}
+
 func TestSetAndLoadAppearance(t *testing.T) {
 	s := testDB(t)
 

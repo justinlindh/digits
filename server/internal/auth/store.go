@@ -209,6 +209,20 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+// DeleteUser deletes the user row. FK CASCADE handles sessions and household_members.
+// The v28 migration SET NULL handles household_links, household_invites, calls, and conference_kicks.
+func (s *Store) DeleteUser(ctx context.Context, userID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // ValidateAndRefreshSession atomically validates a session and extends its
 // expiry in a single UPDATE ... RETURNING query, eliminating the TOCTOU window
 // between a separate validate-then-refresh pair.

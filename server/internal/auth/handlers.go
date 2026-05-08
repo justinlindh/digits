@@ -222,6 +222,12 @@ func safeReturnTo(returnTo string, user *User) string {
 	return LoginRedirectFor(user)
 }
 
+// ClearSessionCookie removes the session cookie from the response, handling
+// both domain-scoped and host-scoped variants.
+func (h *Handlers) ClearSessionCookie(w http.ResponseWriter) {
+	clearSessionCookie(w, h.cookieDomain)
+}
+
 // HandleLogout destroys the session and clears the cookie.
 // An optional "redirect" form parameter (must be a relative path) overrides
 // the default redirect to /auth/login, which the invite page uses to send the

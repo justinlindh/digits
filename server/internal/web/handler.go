@@ -556,6 +556,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/household/invite/{id}/cancel", h.handleHouseholdInviteCancelPost)
 	protected.HandleFunc("POST /settings/household/members/{id}/remove", h.handleHouseholdMemberRemovePost)
 	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)
+	protected.HandleFunc("POST /settings/account/delete", h.handleAccountDeletePost)
 	protected.HandleFunc("GET /changelog", h.handleChangelog)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
