@@ -138,7 +138,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
-		h.hub.TouchLastSeen(number)
+		h.hub.TouchLastSeen(number, conn.HardwareID)
 		return nil
 	})
 

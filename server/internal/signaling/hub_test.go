@@ -197,6 +197,55 @@ func TestBroadcastSkipsFullBuffers(t *testing.T) {
 	}
 }
 
+func TestAllDeviceInfoMultipleDevices(t *testing.T) {
+	hub := NewHub()
+	c1 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001", PiVersion: "1.0.0", FirmwareVersion: "0.5.0"}
+	c2 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-002", PiVersion: "1.2.0", FirmwareVersion: "0.8.0"}
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140001", c2)
+
+	infos := hub.AllDeviceInfo("3140001")
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(infos))
+	}
+	versions := map[string]string{}
+	for _, info := range infos {
+		versions[info.HardwareID] = info.PiVersion
+	}
+	if versions["hw-001"] != "1.0.0" {
+		t.Errorf("hw-001 PiVersion = %q, want 1.0.0", versions["hw-001"])
+	}
+	if versions["hw-002"] != "1.2.0" {
+		t.Errorf("hw-002 PiVersion = %q, want 1.2.0", versions["hw-002"])
+	}
+}
+
+func TestAllDeviceInfoReturnsNilForOffline(t *testing.T) {
+	hub := NewHub()
+	infos := hub.AllDeviceInfo("3140099")
+	if infos != nil {
+		t.Errorf("expected nil for unregistered number, got %d items", len(infos))
+	}
+}
+
+func TestAllDeviceInfoAfterUnregister(t *testing.T) {
+	hub := NewHub()
+	c1 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001", PiVersion: "1.0.0"}
+	c2 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-002", PiVersion: "1.2.0"}
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140001", c2)
+
+	hub.Unregister("3140001", c1)
+
+	infos := hub.AllDeviceInfo("3140001")
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 device after unregister, got %d", len(infos))
+	}
+	if infos[0].HardwareID != "hw-002" {
+		t.Errorf("remaining device = %q, want hw-002", infos[0].HardwareID)
+	}
+}
+
 func TestDeviceInfoSnapshotJSONOmitsRemoteAddr(t *testing.T) {
 	snap := DeviceInfoSnapshot{
 		PiVersion:       "1.2.3",

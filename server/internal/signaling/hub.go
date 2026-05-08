@@ -362,8 +362,8 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 		if d != nil {
 			d.Notify()
 		}
-		if ds != nil && remaining == 0 {
-			ds.SetOffline(context.Background(), number)
+		if ds != nil {
+			ds.SetOffline(context.Background(), number, conn.HardwareID)
 		}
 	}
 }
@@ -542,11 +542,20 @@ type DeviceInfoSnapshot struct {
 // DeviceInfo returns version info for the first connected device on a line.
 // Returns nil if no device is online.
 func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
+	all := h.AllDeviceInfo(number)
+	if len(all) == 0 {
+		return nil
+	}
+	return &all[0]
+}
+
+// AllDeviceInfo returns version info for all connected devices on a line.
+func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
 	h.mu.RLock()
 	ds := h.state
 	h.mu.RUnlock()
 	if ds != nil {
-		return ds.DeviceInfo(context.Background(), number)
+		return ds.AllDeviceInfo(context.Background(), number)
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -554,15 +563,18 @@ func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
 	if len(conns) == 0 {
 		return nil
 	}
-	c := conns[0]
-	return &DeviceInfoSnapshot{
-		HardwareID:      c.HardwareID,
-		PiVersion:       c.PiVersion,
-		PiCommit:        c.PiCommit,
-		FirmwareVersion: c.FirmwareVersion,
-		FirmwareCommit:  c.FirmwareCommit,
-		RemoteAddr:      c.RemoteAddr,
+	snapshots := make([]DeviceInfoSnapshot, len(conns))
+	for i, c := range conns {
+		snapshots[i] = DeviceInfoSnapshot{
+			HardwareID:      c.HardwareID,
+			PiVersion:       c.PiVersion,
+			PiCommit:        c.PiCommit,
+			FirmwareVersion: c.FirmwareVersion,
+			FirmwareCommit:  c.FirmwareCommit,
+			RemoteAddr:      c.RemoteAddr,
+		}
 	}
+	return snapshots
 }
 
 // SetUpdateStatus stores the latest update status for a phone.
@@ -628,10 +640,11 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
+	hwID := conn.HardwareID
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), number, DevicePresence{
+		ds.UpdateDeviceInfo(context.Background(), hwID, DevicePresence{
 			PiVersion:       piVer,
 			PiCommit:        piCommit,
 			FirmwareVersion: fwVer,
@@ -659,11 +672,10 @@ func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwC
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
-	number := conn.Number
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), number, DevicePresence{
+		ds.UpdateDeviceInfo(context.Background(), hardwareID, DevicePresence{
 			PiVersion:       piVer,
 			PiCommit:        piCommit,
 			FirmwareVersion: fwVer,
@@ -674,18 +686,20 @@ func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwC
 	return true
 }
 
-// TouchLastSeen updates the in-memory last-seen timestamp for all devices
-// on the given number.
-func (h *Hub) TouchLastSeen(number string) {
+// TouchLastSeen updates the last-seen timestamp for a specific device on a
+// line. If hardwareID is empty, all devices on the line are touched.
+func (h *Hub) TouchLastSeen(number, hardwareID string) {
 	now := time.Now()
 	h.mu.Lock()
-	for _, conn := range h.conns[number] {
-		conn.LastSeen = now
+	for _, c := range h.conns[number] {
+		if hardwareID == "" || c.HardwareID == hardwareID {
+			c.LastSeen = now
+		}
 	}
 	ds := h.state
 	h.mu.Unlock()
-	if ds != nil {
-		ds.TouchLastSeen(context.Background(), number)
+	if ds != nil && hardwareID != "" {
+		ds.TouchLastSeen(context.Background(), number, hardwareID)
 	}
 }
 

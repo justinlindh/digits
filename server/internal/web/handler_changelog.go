@@ -52,26 +52,26 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 
 func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []string, h *Handler) []changelogRelease {
 	releases := idx.SortedReleases(component)
-	total := len(lines)
 	out := make([]changelogRelease, 0, len(releases))
 
+	var totalDevices int
 	versionCounts := make(map[string]int)
 	for _, number := range lines {
-		info := h.hub.DeviceInfo(number)
-		if info == nil {
-			continue
-		}
-		var ver string
-		switch component {
-		case updates.ComponentPi:
-			ver = info.PiVersion
-		case updates.ComponentFirmware:
-			ver = info.FirmwareVersion
-		default:
-			continue
-		}
-		if ver != "" {
-			versionCounts[ver]++
+		infos := h.hub.AllDeviceInfo(number)
+		for _, info := range infos {
+			var ver string
+			switch component {
+			case updates.ComponentPi:
+				ver = info.PiVersion
+			case updates.ComponentFirmware:
+				ver = info.FirmwareVersion
+			default:
+				continue
+			}
+			if ver != "" {
+				versionCounts[ver]++
+				totalDevices++
+			}
 		}
 	}
 
@@ -81,7 +81,7 @@ func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []
 			Notes:      r.Notes,
 			Date:       r.Date,
 			PhoneCount: versionCounts[r.Version],
-			TotalCount: total,
+			TotalCount: totalDevices,
 		})
 	}
 	return out
