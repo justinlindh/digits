@@ -22,12 +22,17 @@
 //     environment, plus the static cluster=homelab label.
 //   - Span events for signaling errors using the closed-set category
 //     identifiers from internal/metrics.SignalingErrorCategory.
+//   - Relay signaling spans: message type, internal line numbers
+//     (signaling.from, signaling.to), and call_id. These are opaque
+//     internal identifiers, not real telephone numbers or PII. They
+//     enable filtering traces in Tempo for a specific line or call
+//     without requiring a Loki cross-reference. Allowed because Tempo
+//     runs on the same self-hosted cluster with the same access controls
+//     as Loki and Postgres, which already store these values.
 //
 // What is NEVER collected (do not add attributes for these):
 //
-//   - Per-user identity: user_id, email, household_id, line/number, etc.
-//   - Call identifiers that map back to participants, conference IDs that
-//     could correlate with member phone numbers, magic-link tokens.
+//   - Per-user identity: user_id, email, household_id.
 //   - Authentication material: session cookies, OAuth tokens, password
 //     hashes, magic-link tokens.
 //   - IP addresses (even hashed), geographic data, or anything derivable

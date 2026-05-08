@@ -125,6 +125,8 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("signaling.type", string(msg.Type)),
+			attribute.String("signaling.from", from),
+			attribute.String("signaling.to", msg.To),
 		),
 	)
 	defer span.End()
