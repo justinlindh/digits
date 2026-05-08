@@ -8,9 +8,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/turn"
 )
+
+var relayTracer = otel.Tracer("github.com/justinlindh/digits/server/internal/signaling")
 
 type CallTracker interface {
 	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
@@ -114,7 +120,16 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 
 func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	msg.From = from
-	slog.Debug("relay message", "from", from, "to", msg.To, "type", msg.Type)
+
+	ctx, span := relayTracer.Start(ctx, "relay."+string(msg.Type),
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("signaling.type", string(msg.Type)),
+		),
+	)
+	defer span.End()
+
+	slog.DebugContext(ctx, "relay message", "from", from, "to", msg.To, "type", msg.Type)
 
 	switch msg.Type {
 	case TypeCall:
@@ -136,7 +151,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeDTMF:
 		r.handleDTMF(ctx, from, msg)
 	case TypeRequestICE:
-		r.handleRequestICE(from)
+		r.handleRequestICE(ctx, from)
 	case TypeDeviceInfo:
 		updated := false
 		if msg.HardwareID != "" {
@@ -145,7 +160,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 			updated = r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr)
 		}
 		if updated {
-			slog.Info("device_info", "number", from,
+			slog.InfoContext(ctx, "device_info", "number", from,
 				"hardware_id", msg.HardwareID,
 				"pi_version", msg.PiVersion,
 				"fw_version", msg.FirmwareVersion,
@@ -154,12 +169,12 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		// If device reconnects after a rebooting update, mark it as success
 		if status := r.Hub.GetUpdateStatus(from); status != nil && status.Status == "rebooting" {
 			r.Hub.SetUpdateStatus(from, "success", "Updated to "+msg.PiVersion)
-			slog.Info("update_status", "number", from, "status", "success",
+			slog.InfoContext(ctx, "update_status", "number", from, "status", "success",
 				"detail", "device reconnected with "+msg.PiVersion)
 		}
 		return // No relay — server consumes this
 	case TypeUpdateStatus:
-		slog.Info("update_status", "number", from,
+		slog.InfoContext(ctx, "update_status", "number", from,
 			"status", msg.UpdateStatus, "detail", msg.UpdateDetail)
 		r.Hub.SetUpdateStatus(from, msg.UpdateStatus, msg.UpdateDetail)
 		return // No relay — server consumes this
@@ -169,7 +184,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		r.handleLinkHealth(ctx, from, msg)
 		return
 	default:
-		slog.Warn("unknown message type", "type", msg.Type, "from", from)
+		slog.WarnContext(ctx, "unknown message type", "type", msg.Type, "from", from)
 	}
 }
 
@@ -185,7 +200,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 		allowed, err := r.CallAuthorizer.CanCall(ctx, from, msg.To)
 		if err != nil || !allowed {
 			if err != nil {
-				slog.Error("call authorization failed", "from", from, "to", msg.To, "err", err)
+				slog.ErrorContext(ctx, "call authorization failed", "from", from, "to", msg.To, "err", err)
 			}
 			r.observeError("auth_failed")
 			_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "not_authorized"})
@@ -208,12 +223,12 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 		}
 		callID, err := r.Tracker.OnCallInitiated(ctx, from, msg.To)
 		if err != nil {
-			slog.Error("failed to track call initiation", "err", err)
+			slog.ErrorContext(ctx, "failed to track call initiation", "err", err)
 			r.observeError("call_setup_failed")
 		} else {
 			attrs := []any{"call_id", callID, "from", from, "to", msg.To}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
-			slog.Info("call initiated", attrs...)
+			slog.InfoContext(ctx, "call initiated", attrs...)
 		}
 	}
 
@@ -242,26 +257,26 @@ func (r *Relay) inCallOrConference(from, to string) bool {
 
 func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(from, msg.To) {
-		slog.Warn("dtmf without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, "dtmf without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(from, msg.To) {
-		slog.Warn("ice_restart without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(from, msg.To) {
-		slog.Warn("answer without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, "answer without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
@@ -279,15 +294,15 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 
 	if r.Tracker != nil {
 		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
-			slog.Error("failed to track call answer", "err", err)
+			slog.ErrorContext(ctx, "failed to track call answer", "err", err)
 		}
 		if callID := r.Tracker.CallIDForPair(msg.To, from); callID != 0 {
 			attrs := []any{"call_id", callID, "from", msg.To, "to", from}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
-			slog.Info("call answered", attrs...)
+			slog.InfoContext(ctx, "call answered", attrs...)
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
 func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
@@ -328,19 +343,19 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 		peers = r.Tracker.AllPeersOf(from)
 	}
 	if len(peers) == 0 {
-		slog.Debug("hangup from phone not in any active call", "from", from)
+		slog.DebugContext(ctx, "hangup from phone not in any active call", "from", from)
 		return
 	}
 	for _, peer := range peers {
 		if r.Tracker != nil {
 			callID := r.Tracker.CallIDForPair(from, peer)
 			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
-				slog.Error("failed to track call end", "err", err)
+				slog.ErrorContext(ctx, "failed to track call end", "err", err)
 			}
 			if callID != 0 {
 				attrs := []any{"call_id", callID, "from", from, "to", peer}
 				attrs = append(attrs, r.lineAttrs(ctx, from)...)
-				slog.Info("call ended", attrs...)
+				slog.InfoContext(ctx, "call ended", attrs...)
 			}
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
@@ -366,16 +381,16 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 		}
 	}
 	if !r.inCallOrConference(from, msg.To) {
-		slog.Warn("sdp without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, "sdp without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
-			slog.Debug("sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
+			slog.DebugContext(ctx, "sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
 func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
@@ -396,19 +411,19 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 		}
 	}
 	if !r.inCallOrConference(from, msg.To) {
-		slog.Warn("ice without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, "ice without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
-			slog.Debug("ice forwarded", "call_id", callID, "from", from, "to", msg.To)
+			slog.DebugContext(ctx, "ice forwarded", "call_id", callID, "from", from, "to", msg.To)
 		}
 	}
-	r.forward(msg)
+	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleRequestICE(from string) {
+func (r *Relay) handleRequestICE(ctx context.Context, from string) {
 	resp := &Message{Type: TypeICEServers}
 
 	// Always include a STUN server
@@ -433,7 +448,7 @@ func (r *Relay) handleRequestICE(from string) {
 	}
 
 	if err := r.Hub.SendTo(from, resp); err != nil {
-		slog.Error("send ice-servers failed", "to", from, "err", err)
+		slog.ErrorContext(ctx, "send ice-servers failed", "to", from, "err", err)
 	}
 }
 
@@ -448,7 +463,7 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 	}
 	settings, err := r.LineStore.EffectiveLineSettings(ctx, number)
 	if err != nil {
-		slog.Debug("line settings lookup on register skipped", "number", number, "err", err)
+		slog.DebugContext(ctx, "line settings lookup on register skipped", "number", number, "err", err)
 		return
 	}
 	if settings == nil {
@@ -459,7 +474,7 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 		To:           number,
 		LineSettings: settings,
 	}); err != nil {
-		slog.Warn("push line settings on register failed", "number", number, "err", err)
+		slog.WarnContext(ctx, "push line settings on register failed", "number", number, "err", err)
 	}
 }
 
@@ -530,7 +545,7 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 		pickupAttrs = append(pickupAttrs, "call_id", callID)
 	}
 	pickupAttrs = append(pickupAttrs, r.lineAttrs(ctx, from)...)
-	slog.Info("extension pickup", pickupAttrs...)
+	slog.InfoContext(ctx, "extension pickup", pickupAttrs...)
 
 	_ = r.Hub.SendToHardware(msg.HardwareID, &Message{
 		Type:      TypeExtensionConnect,
@@ -607,7 +622,7 @@ func (r *Relay) clearExtension(ctx context.Context, hardwareID string) {
 			}
 		}
 		attrs = append(attrs, r.lineAttrs(ctx, ext.LineNumber)...)
-		slog.Info("extension cleared", attrs...)
+		slog.InfoContext(ctx, "extension cleared", attrs...)
 	}
 }
 
@@ -642,18 +657,18 @@ func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 			}
 		}
 		attrs = append(attrs, lineAttrs...)
-		slog.Info("extension cleared (call ended)", attrs...)
+		slog.InfoContext(ctx, "extension cleared (call ended)", attrs...)
 	}
 }
 
-func (r *Relay) forward(msg *Message) {
+func (r *Relay) forward(ctx context.Context, msg *Message) {
 	if msg.To == "" {
-		slog.Warn("no destination for message", "type", msg.Type, "from", msg.From)
+		slog.WarnContext(ctx, "no destination for message", "type", msg.Type, "from", msg.From)
 		r.observeError("invalid_message")
 		return
 	}
 	if err := r.Hub.SendTo(msg.To, msg); err != nil {
-		slog.Error("forward failed", "to", msg.To, "err", err)
+		slog.ErrorContext(ctx, "forward failed", "to", msg.To, "err", err)
 		r.observeError("relay_delivery")
 	}
 }
@@ -664,10 +679,10 @@ func (r *Relay) forward(msg *Message) {
 func (r *Relay) ForceHangup(ctx context.Context, caller, callee string) {
 	msg := &Message{Type: TypeHangup}
 	if err := r.Hub.SendTo(caller, msg); err != nil {
-		slog.Debug("ForceHangup: send to caller failed", "number", caller, "err", err)
+		slog.DebugContext(ctx, "ForceHangup: send to caller failed", "number", caller, "err", err)
 	}
 	if err := r.Hub.SendTo(callee, msg); err != nil {
-		slog.Debug("ForceHangup: send to callee failed", "number", callee, "err", err)
+		slog.DebugContext(ctx, "ForceHangup: send to callee failed", "number", callee, "err", err)
 	}
 }
 
@@ -694,7 +709,7 @@ func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message)
 	if p.Peer == "" {
 		callID, ok := r.Tracker.CallIDFor(from)
 		if !ok {
-			slog.Debug("link_health for endpoint not in active call", "endpoint", from)
+			slog.DebugContext(ctx, "link_health for endpoint not in active call", "endpoint", from)
 			return
 		}
 		r.HealthStore.Record(callID, from, sample)
@@ -704,12 +719,12 @@ func (r *Relay) handleLinkHealth(ctx context.Context, from string, msg *Message)
 	ct := r.Tracker.Conferences()
 	conf := ct.ConferenceByPhone(from)
 	if conf == nil {
-		slog.Debug("link_health peer set but endpoint not in an active conference",
+		slog.DebugContext(ctx, "link_health peer set but endpoint not in an active conference",
 			"endpoint", from, "peer", p.Peer)
 		return
 	}
 	if !ct.ConferenceContains(conf.ID, from, p.Peer) {
-		slog.Debug("link_health peer not a co-member (phantom edge, dropping)",
+		slog.DebugContext(ctx, "link_health peer not a co-member (phantom edge, dropping)",
 			"endpoint", from, "peer", p.Peer, "conf_id", conf.ID)
 		return
 	}
