@@ -128,8 +128,10 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 			break
 		}
 	}
+	cd := h.newChromeDataWithHouseholds(r, "phones")
+	cd.allSilent = allSilent
 	return linesData{
-		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
+		chromeData:            cd,
 		Lines:                 rows,
 		AllSilent:             allSilent,
 		Error:                 errMsg,

@@ -326,9 +326,7 @@ func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) 
 }
 
 // chromeData holds the fields every protected page-data struct shares for
-// rendering the layout chrome (sidebar, nav, DND chip, version pill). The
-// HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
-// Household pointer so templates hit one source of truth per request.
+// rendering the layout chrome (sidebar, nav, DND chip, version pill).
 type chromeData struct {
 	Page       string
 	Version    string
