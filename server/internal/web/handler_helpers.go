@@ -411,15 +411,13 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineN
 		}
 	}
 	for _, number := range lineNumbers {
-		info := h.hub.DeviceInfo(number)
-		if info == nil {
-			continue
-		}
-		if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-			return true
-		}
-		if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-			return true
+		for _, info := range h.hub.AllDeviceInfo(number) {
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				return true
+			}
+			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
+				return true
+			}
 		}
 	}
 	return false

@@ -20,6 +20,18 @@ import (
 
 const maxLineNameRunes = 50
 
+func oldestVersions(infos []signaling.DeviceInfoSnapshot) (fw, pi string) {
+	for _, info := range infos {
+		if info.FirmwareVersion != "" && (fw == "" || updates.CompareSemver(info.FirmwareVersion, fw) < 0) {
+			fw = info.FirmwareVersion
+		}
+		if info.PiVersion != "" && (pi == "" || updates.CompareSemver(info.PiVersion, pi) < 0) {
+			pi = info.PiVersion
+		}
+	}
+	return
+}
+
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
@@ -98,7 +110,11 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
-		info := h.hub.DeviceInfo(l.Number)
+		infos := h.hub.AllDeviceInfo(l.Number)
+		var info *signaling.DeviceInfoSnapshot
+		if len(infos) > 0 {
+			info = &infos[0]
+		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
 
@@ -111,12 +127,13 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 			}
 		}
 
-		if idx != nil && info != nil {
-			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+		if idx != nil {
+			oldestFw, oldestPi := oldestVersions(infos)
+			if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
 			}
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
+			if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 			}
 		}
 		rows[i] = row
@@ -335,15 +352,20 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		lastSeenAt = &t
 	}
 
-	devInfo := h.hub.DeviceInfo(number)
+	allInfos := h.hub.AllDeviceInfo(number)
+	var devInfo *signaling.DeviceInfoSnapshot
+	if len(allInfos) > 0 {
+		devInfo = &allInfos[0]
+	}
 
 	var piUpdateNotes, firmwareUpdateNotes []updates.Release
-	if idx != nil && devInfo != nil {
-		if latestPi != "" && devInfo.PiVersion != "" && updates.CompareSemver(devInfo.PiVersion, latestPi) < 0 {
-			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, devInfo.PiVersion, latestPi)
+	if idx != nil {
+		oldestFw, oldestPi := oldestVersions(allInfos)
+		if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 		}
-		if latestFw != "" && devInfo.FirmwareVersion != "" && updates.CompareSemver(devInfo.FirmwareVersion, latestFw) < 0 {
-			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, devInfo.FirmwareVersion, latestFw)
+		if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
 		}
 	}
 
