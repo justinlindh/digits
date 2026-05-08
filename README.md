@@ -174,6 +174,14 @@ The hook switch physically disconnects the microphone circuit when the handset i
 
 The server is designed to be self-hosted. If you do not want to use the public instance at [app.digits.family](https://app.digits.family), you can run the same code on your own infrastructure. See [Self-hosting](docs/hosting/self-hosting.md).
 
+## Contributing
+
+This is a personal project, not a company. Contributions to both the software and the hardware are welcome.
+
+On the software side, the server is vanilla Go with htmx and Tailwind, the Pi daemon is Go with WebRTC, and the firmware is C on the Pico SDK. Standard open source workflow: fork, branch, PR.
+
+On the hardware side, I am not an electrical engineer. I learned KiCad, read datasheets, and iterated until the board worked. The result is a functional PCB with minimal errata, which I'm genuinely proud of, but there is a lot of room for someone with real PCB design experience to improve the layout, power integrity, signal routing, and DFM. If you have those skills and this project interests you, I would particularly welcome that kind of help. The schematics and board files are all KiCad and licensed CC BY-SA 4.0.
+
 ## Documentation
 
 - [Why Digits?](https://digits.family/why)
