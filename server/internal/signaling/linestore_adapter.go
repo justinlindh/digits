@@ -30,3 +30,11 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 		AutoUpdate: settings.AutoUpdate,
 	}, nil
 }
+
+func (a *lineStoreAdapter) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
+	l, err := a.inner.GetByNumber(ctx, number)
+	if err != nil {
+		return 0, "", err
+	}
+	return l.ID, l.HouseholdID, nil
+}

@@ -12,4 +12,10 @@ type LineStore interface {
 	// OR. Callers receive the value the device should treat as authoritative
 	// at ring time, with no further composition required.
 	EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error)
+
+	// LineIdentifiers resolves a phone number to its line_id and
+	// household_id. Used by relay logging so production logs can be
+	// filtered by line or household. Returns (0, "", err) when the
+	// number is not found.
+	LineIdentifiers(ctx context.Context, number string) (lineID int64, householdID string, err error)
 }
