@@ -11,12 +11,13 @@ import (
 )
 
 type mockTracker struct {
-	initiated   []string
-	answered    []string
-	ended       []string
-	calls       map[string]bool  // "a→b" keys for active calls
-	callIDs     map[string]int64 // "a→b" keys for active call IDs
-	conferences *calls.ConferenceTracker
+	initiated          []string
+	answered           []string
+	ended              []string
+	calls              map[string]bool  // "a→b" keys for active calls
+	callIDs            map[string]int64 // "a→b" keys for active call IDs
+	conferences        *calls.ConferenceTracker
+	lastInboundCaller  string
 }
 
 func newMockTracker() *mockTracker {
@@ -154,6 +155,10 @@ func (m *mockTracker) EndConferencePersistent(ctx context.Context, id uuid.UUID,
 
 func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, bool, error) {
 	return m.conferences.DropMember(id, phone, reason)
+}
+
+func (m *mockTracker) LastInboundCaller(ctx context.Context, number string) (string, error) {
+	return m.lastInboundCaller, nil
 }
 
 // fakeHealthRecorder records calls for assertion in tests.
@@ -1114,4 +1119,54 @@ func TestRelayNilObserverIsSafe(t *testing.T) {
 	_ = hub.Register("3140001", conn1)
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
 	// No assertion: the test passes if it didn't panic.
+}
+
+func TestRelayCallReturn(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+
+	tracker.lastInboundCaller = "3140002"
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCallReturn})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnResult {
+			t.Fatalf("expected call_return_result, got %q", msg.Type)
+		}
+		if msg.Number != "3140002" {
+			t.Fatalf("expected number 3140002, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_result")
+	}
+}
+
+func TestRelayCallReturnNoCalls(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCallReturn})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnResult {
+			t.Fatalf("expected call_return_result, got %q", msg.Type)
+		}
+		if msg.Number != "" {
+			t.Fatalf("expected empty number, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_result")
+	}
 }

@@ -34,6 +34,7 @@ type CallTracker interface {
 	CallIDFor(number string) (int64, bool)
 	EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error
 	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
+	LastInboundCaller(ctx context.Context, number string) (string, error)
 }
 
 // CallAuthorizer determines whether a call from one number to another is permitted.
@@ -195,6 +196,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		return // Server → device only; ignore if echoed back
 	case TypeLinkHealth:
 		r.handleLinkHealth(ctx, from, msg)
+		return
+	case TypeCallReturn:
+		r.handleCallReturn(ctx, from)
 		return
 	default:
 		slog.WarnContext(ctx, "unknown message type", "type", msg.Type, "from", from)
@@ -705,6 +709,18 @@ func (r *Relay) ForceHangup(ctx context.Context, caller, callee string) {
 	if err := r.Hub.SendTo(callee, msg); err != nil {
 		slog.DebugContext(ctx, "ForceHangup: send to callee failed", "number", callee, "err", err)
 	}
+}
+
+func (r *Relay) handleCallReturn(ctx context.Context, from string) {
+	var number string
+	if r.Tracker != nil {
+		var err error
+		number, err = r.Tracker.LastInboundCaller(ctx, from)
+		if err != nil {
+			slog.ErrorContext(ctx, "call_return query failed", "from", from, "err", err)
+		}
+	}
+	_ = r.Hub.SendTo(from, &Message{Type: TypeCallReturnResult, Number: number})
 }
 
 // handleLinkHealth records a telemetry sample. 2-party calls route through
