@@ -26,6 +26,7 @@ type DevicePresence struct {
 	FirmwareVersion string
 	FirmwareCommit  string
 	RemoteAddr      string
+	DevMode         bool
 }
 
 type DeviceState struct {
@@ -49,6 +50,7 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 		"fw_version":  p.FirmwareVersion,
 		"fw_commit":   p.FirmwareCommit,
 		"remote_addr": p.RemoteAddr,
+		"dev_mode":    p.DevMode,
 		"last_seen":   now,
 	}
 
@@ -113,6 +115,7 @@ func (s *DeviceState) DeviceInfo(ctx context.Context, number string) *DeviceInfo
 		FirmwareVersion: vals["fw_version"],
 		FirmwareCommit:  vals["fw_commit"],
 		RemoteAddr:      vals["remote_addr"],
+		DevMode:         vals["dev_mode"] == "1",
 	}
 }
 
@@ -141,10 +144,7 @@ func (s *DeviceState) UpdateDeviceInfo(ctx context.Context, number string, p Dev
 	if p.RemoteAddr != "" {
 		fields["remote_addr"] = p.RemoteAddr
 	}
-
-	if len(fields) == 0 {
-		return
-	}
+	fields["dev_mode"] = p.DevMode
 
 	if err := s.client.HSet(ctx, key, fields).Err(); err != nil {
 		slog.Error("redis: UpdateDeviceInfo failed", "number", number, "err", err)

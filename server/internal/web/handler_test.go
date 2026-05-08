@@ -1646,7 +1646,7 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", "")
+	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", "", false)
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
