@@ -431,6 +431,48 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (27);
     END IF;
 END $$;`,
+
+		// v28: allow user deletion by relaxing FK constraints that reference users(id)
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 28) THEN
+
+        -- household_links.invited_by: drop NOT NULL, swap FK to SET NULL
+        ALTER TABLE household_links ALTER COLUMN invited_by DROP NOT NULL;
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_invited_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_invited_by_fkey
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_links.accepted_by: already nullable, swap FK
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_accepted_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_accepted_by_fkey
+            FOREIGN KEY (accepted_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_links.revoked_by: already nullable, swap FK
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_revoked_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_revoked_by_fkey
+            FOREIGN KEY (revoked_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_invites.invited_by: drop NOT NULL, swap FK
+        ALTER TABLE household_invites ALTER COLUMN invited_by DROP NOT NULL;
+        ALTER TABLE household_invites DROP CONSTRAINT IF EXISTS household_invites_invited_by_fkey;
+        ALTER TABLE household_invites ADD CONSTRAINT household_invites_invited_by_fkey
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- calls.force_ended_by: already nullable, swap FK
+        ALTER TABLE calls DROP CONSTRAINT IF EXISTS calls_force_ended_by_fkey;
+        ALTER TABLE calls ADD CONSTRAINT calls_force_ended_by_fkey
+            FOREIGN KEY (force_ended_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- conference_kicks.kicked_by_user_id: drop NOT NULL, swap FK
+        ALTER TABLE conference_kicks ALTER COLUMN kicked_by_user_id DROP NOT NULL;
+        ALTER TABLE conference_kicks DROP CONSTRAINT IF EXISTS conference_kicks_kicked_by_user_id_fkey;
+        ALTER TABLE conference_kicks ADD CONSTRAINT conference_kicks_kicked_by_user_id_fkey
+            FOREIGN KEY (kicked_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+        INSERT INTO schema_version (version) VALUES (28);
+    END IF;
+END $$;`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
