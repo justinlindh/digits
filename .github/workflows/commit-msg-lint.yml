@@ -1,0 +1,34 @@
+name: commit-msg-lint
+
+on:
+  pull_request:
+
+jobs:
+  check-trailers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reject Co-Authored-By trailers
+        run: |
+          MESSAGES=$(git log --format=%B origin/${{ github.base_ref }}..HEAD)
+
+          if echo "$MESSAGES" | grep -qi 'Co-Authored-By'; then
+            echo ""
+            echo "FAILED: one or more commits contain a Co-Authored-By trailer."
+            echo ""
+            echo "Offending commits:"
+            git log --format="%h %s" origin/${{ github.base_ref }}..HEAD | while read -r line; do
+              HASH=$(echo "$line" | cut -d' ' -f1)
+              if git log --format=%B -1 "$HASH" | grep -qi 'Co-Authored-By'; then
+                echo "  $line"
+              fi
+            done
+            echo ""
+            echo "Remove the trailers before merging."
+            exit 1
+          fi
+
+          echo "No Co-Authored-By trailers found."
