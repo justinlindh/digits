@@ -69,6 +69,14 @@ const (
 	// hardware ID is rejected as "device_token required" because the server
 	// still thinks the device is paired. Phone → Server only.
 	TypeRepair = "repair"
+
+	// TypeCallReturn is sent by the phone to request the last inbound caller
+	// for *69 (Call Return). Server replies with TypeCallReturnResult.
+	TypeCallReturn = "call_return"
+
+	// TypeCallReturnResult is sent by the server with the last inbound caller's
+	// number (in the Number field), or empty string if no eligible call exists.
+	TypeCallReturnResult = "call_return_result"
 )
 
 // Conference message types (three-way calling)
