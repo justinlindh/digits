@@ -252,6 +252,23 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 }
 
+// RenameNumber updates all call history records from oldNumber to newNumber.
+func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string) error {
+	queries := []string{
+		`UPDATE calls SET caller = $1 WHERE caller = $2`,
+		`UPDATE calls SET callee = $1 WHERE callee = $2`,
+		`UPDATE conferences SET host_phone = $1 WHERE host_phone = $2`,
+		`UPDATE conference_members SET phone = $1 WHERE phone = $2`,
+		`UPDATE conference_kicks SET kicked_phone = $1 WHERE kicked_phone = $2`,
+	}
+	for _, q := range queries {
+		if _, err := t.db.DB.ExecContext(ctx, q, newNumber, oldNumber); err != nil {
+			return fmt.Errorf("rename number in call history: %w", err)
+		}
+	}
+	return nil
+}
+
 func (t *Tracker) Busy(number string) bool {
 	if t.conferences.IsBusy(number) {
 		return true
