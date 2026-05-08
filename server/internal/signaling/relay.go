@@ -159,7 +159,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 }
 
 func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
-	if r.Hub.ConnectionCount(msg.To) == 0 {
+	if !r.Hub.IsOnline(msg.To) {
 		r.observeError("peer_unreachable")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
