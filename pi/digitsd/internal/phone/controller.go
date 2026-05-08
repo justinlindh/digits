@@ -170,6 +170,11 @@ func (c *Controller) IsCallActive() bool {
 	}
 }
 
+// IsDialPhase reports whether s is a dialing state (DIALTONE or DIALING).
+func (s State) IsDialPhase() bool {
+	return s == StateDIALTONE || s == StateDIALING
+}
+
 // Reset forces the controller back to IDLE with no pending digits.
 // Used after terminal service codes (shutdown, reboot, etc.) where the
 // daemon is going down and the FSM state no longer matters.

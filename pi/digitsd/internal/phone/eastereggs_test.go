@@ -126,20 +126,53 @@ func TestEasterEggNoFalsePositive(t *testing.T) {
 }
 
 func TestEasterEggAfterOtherDigits(t *testing.T) {
-	played := make(chan string, 1)
 	d := NewEasterEggDetector([]EasterEgg{
 		{Name: "Funky Town", Trigger: "5542", Clip: "funkytown"},
-	}, func(clip string) { played <- clip })
+	}, func(clip string) { t.Errorf("should not trigger after prefix digits, got %s", clip) })
 	d.MinGap = 0
 
 	for _, k := range "123" {
 		d.AddKey(string(k))
 	}
 	for _, k := range "5542" {
+		if d.AddKey(string(k)) {
+			t.Error("should not trigger when other digits were pressed first")
+		}
+	}
+}
+
+func TestEasterEggSuffixNoFalsePositive(t *testing.T) {
+	d := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { t.Errorf("should not trigger on suffix match, got %s", clip) })
+	d.MinGap = 0
+
+	for _, k := range "5550000" {
+		if d.AddKey(string(k)) {
+			t.Error("5550000 should not trigger 0000 easter egg")
+		}
+	}
+}
+
+func TestEasterEggResetClearsTaint(t *testing.T) {
+	played := make(chan string, 1)
+	d := NewEasterEggDetector([]EasterEgg{
+		{Name: "Rick Roll", Trigger: "0000", Clip: "rickroll"},
+	}, func(clip string) { played <- clip })
+	d.MinGap = 0
+
+	for _, k := range "555" {
 		d.AddKey(string(k))
 	}
-	if got := waitForClip(t, played); got != "funkytown" {
-		t.Errorf("expected 'funkytown' after prefix, got %q", got)
+	d.Reset()
+	for _, k := range "000" {
+		d.AddKey(string(k))
+	}
+	if !d.AddKey("0") {
+		t.Error("0000 should trigger after Reset clears taint")
+	}
+	if got := waitForClip(t, played); got != "rickroll" {
+		t.Errorf("expected 'rickroll', got %q", got)
 	}
 }
 

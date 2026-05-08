@@ -107,9 +107,12 @@ int main(void) {
 
     uart_proto_send("STATUS:READY");
 
-    // Scan keypad once at boot. If * is held, report it so the Pi can
-    // trigger recovery mode after it connects.
-    if (keypad_scan() == '*') {
+    // Scan keypad once at boot. If * is held, persist RECOVERY phase to
+    // flash so the Pi can detect it after it finishes booting (the Pi
+    // boots 15-30s after the Pico). The phase byte survives the boot
+    // gap; digitsd queries it with PHASE? after POST.
+    if (keypad_scan_raw() == '*') {
+        phase_write(PHASE_RECOVERY);
         led_set_mode(LED_MODE_FAST_BLINK);
         uart_proto_send("BOOT:PANIC");
     }

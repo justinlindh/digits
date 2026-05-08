@@ -472,11 +472,12 @@ func doReboot() {
 			slog.Error("recovery: reboot syscall failed", "error", err)
 		}
 	} else {
-		cmd := exec.Command("systemctl", "reboot")
+		cmd := exec.Command("sudo", "/usr/sbin/reboot")
 		if err := cmd.Run(); err != nil {
-			slog.Warn("recovery: systemctl reboot failed, trying raw syscall", "error", err)
-			if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART); err != nil {
-				slog.Error("recovery: reboot syscall failed", "error", err)
+			slog.Warn("recovery: sudo reboot failed, trying systemctl", "error", err)
+			cmd2 := exec.Command("systemctl", "reboot")
+			if err := cmd2.Run(); err != nil {
+				slog.Error("recovery: all reboot methods failed", "error", err)
 			}
 		}
 	}
