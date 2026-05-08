@@ -516,6 +516,100 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
+// numberSectionData carries the prefilled input value and any validation error
+// when re-rendering the edit partial after a failed POST, so the user's draft
+// and the reason for rejection survive the round-trip.
+type numberSectionData struct {
+	Line  line.Line
+	Value string
+	Error string
+}
+
+func (h *Handler) handlePhoneNumberGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section", "am-number-section"), numberSectionData{Line: *ln})
+}
+
+func (h *Handler) handlePhoneNumberEditGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+	renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"), numberSectionData{Line: *ln, Value: ln.Number})
+}
+
+func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
+	oldNumber := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	newNumber := line.StripNumber(r.FormValue("number"))
+
+	ln, _ := h.requireLineOwnershipAdmin(w, r, oldNumber)
+	if ln == nil {
+		return
+	}
+
+	if h.tracker != nil && h.tracker.Busy(oldNumber) {
+		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
+			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: "cannot change number while on an active call"},
+			http.StatusConflict)
+		return
+	}
+
+	if err := line.ValidateNumber(newNumber); err != nil {
+		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
+			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: err.Error()},
+			http.StatusBadRequest)
+		return
+	}
+
+	if newNumber == oldNumber {
+		renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section", "am-number-section"), numberSectionData{Line: *ln})
+		return
+	}
+
+	ctx := r.Context()
+	taken, err := h.lineStore.NumberExistsExcluding(ctx, newNumber, ln.ID)
+	if err != nil {
+		slog.Error("number uniqueness check failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if taken {
+		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
+			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: "that number is already in use"},
+			http.StatusConflict)
+		return
+	}
+
+	if err := h.lineStore.Update(ctx, ln.ID, newNumber, ln.Name); err != nil {
+		slog.Error("line number update failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if h.tracker != nil {
+		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
+			slog.Error("call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
+		}
+	}
+
+	h.hub.RekeyNumber(oldNumber, newNumber)
+
+	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
+		slog.Warn("push line settings after number change failed", "number", newNumber, "err", err)
+	}
+
+	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
+}
+
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
