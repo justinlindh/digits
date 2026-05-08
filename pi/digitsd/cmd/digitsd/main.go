@@ -2120,7 +2120,18 @@ func main() {
 		if phaseErr != nil {
 			slog.Error("phase query: all retries exhausted, proceeding without phase check", "error", phaseErr)
 		} else {
-			cachedPhase = fmt.Sprintf("PHASE:0x%02X", phase)
+			switch phase {
+			case phone.PhasePaired:
+				cachedPhase = "paired"
+			case phone.PhaseUnpaired:
+				cachedPhase = "unpaired"
+			case phone.PhaseSetup:
+				cachedPhase = "setup"
+			case phone.PhaseRecovery:
+				cachedPhase = "recovery"
+			default:
+				cachedPhase = fmt.Sprintf("0x%02X", phase)
+			}
 			slog.Info("pico phase", "phase", fmt.Sprintf("0x%02X", phase))
 			if phase == phone.PhaseRecovery {
 				slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")

@@ -241,9 +241,9 @@ func devModeJournalLogHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		cmd := exec.Command("sudo", "journalctl", "-u", "digitsd", "-n", "200", "--no-pager")
-		out, err := cmd.Output()
+		out, err := cmd.CombinedOutput()
 		if err != nil {
-			fmt.Fprintf(w, "(journalctl failed: %v)", err) //nolint:errcheck
+			fmt.Fprintf(w, "(journalctl failed: %v)\n%s", err, out) //nolint:errcheck
 			return
 		}
 		_, _ = w.Write(out)
