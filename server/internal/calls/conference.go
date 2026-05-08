@@ -14,14 +14,14 @@ type ConferenceRole int
 
 const (
 	ConferenceRoleHost  ConferenceRole = iota
-	ConferenceRoleAdded ConferenceRole = iota
+	ConferenceRoleAdded
 )
 
 type ConferenceState int
 
 const (
 	ConferenceStateActive ConferenceState = iota
-	ConferenceStateEnded  ConferenceState = iota
+	ConferenceStateEnded
 )
 
 type ConferenceMember struct {
