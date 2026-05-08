@@ -2346,8 +2346,7 @@ body.dialup .phone-silent__text {
   margin: 0;
   letter-spacing: 0;
 }
-.line-editor-dialog .stack-md,
-.line-editor-dialog .line-editor-dialog__form {
+.line-editor-dialog__body {
   padding: 14px 16px 12px;
 }
 .line-editor-dialog__actions {

@@ -358,6 +358,7 @@
 
   <dialog id="line-editor" class="line-editor-dialog">
     <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
 
     {{if .NumberError}}
     <p class="line-editor-dialog__error">{{.NumberError}}</p>
@@ -426,6 +427,7 @@
     </div>
     {{end}}
 
+    </div>
     <script>
     function setLineEditMode(mode) {
       document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
@@ -1091,6 +1093,7 @@
 
   <dialog id="line-editor" class="line-editor-dialog">
     <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
 
     {{if .NumberError}}
     <p class="line-editor-dialog__error">{{.NumberError}}</p>
@@ -1110,7 +1113,7 @@
     </div>
 
     <div id="line-edit-number">
-      <form method="POST" action="/phones/{{.Line.Number}}/number" class="line-editor-dialog__form">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
         <div class="field">
           <label for="edit-number" class="am-label">Number</label>
           <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
@@ -1126,8 +1129,7 @@
     {{if .OtherLines}}
     <div id="line-edit-move" class="hidden">
       <form method="POST" action="/phones/{{.Line.Number}}/convert"
-            onsubmit="return confirm('Move this handset to the selected line?')"
-            class="line-editor-dialog__form">
+            onsubmit="return confirm('Move this handset to the selected line?')">
         {{if gt (len .Devices) 1}}
         <div class="field">
           <label for="move-device" class="am-label">Handset</label>
@@ -1162,6 +1164,7 @@
     </div>
     {{end}}
 
+    </div>
     <script>
     function setLineEditMode(mode) {
       document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
