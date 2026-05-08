@@ -282,7 +282,7 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 			slog.Error("failed to track call answer", "err", err)
 		}
 		if callID := r.Tracker.CallIDForPair(msg.To, from); callID != 0 {
-			attrs := []any{"call_id", callID, "caller", msg.To, "callee", from}
+			attrs := []any{"call_id", callID, "from", msg.To, "to", from}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
 			slog.Info("call answered", attrs...)
 		}
@@ -332,16 +332,15 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 		return
 	}
 	for _, peer := range peers {
-		var callID int64
 		if r.Tracker != nil {
-			callID = r.Tracker.CallIDForPair(from, peer)
+			callID := r.Tracker.CallIDForPair(from, peer)
 			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
 				slog.Error("failed to track call end", "err", err)
 			}
+			attrs := []any{"call_id", callID, "from", from, "to", peer}
+			attrs = append(attrs, r.lineAttrs(ctx, from)...)
+			slog.Info("call ended", attrs...)
 		}
-		attrs := []any{"call_id", callID, "from", from, "peer", peer}
-		attrs = append(attrs, r.lineAttrs(ctx, from)...)
-		slog.Info("call ended", attrs...)
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
 	}
 	r.clearExtensionsForCall(from)
