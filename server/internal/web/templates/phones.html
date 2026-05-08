@@ -421,6 +421,10 @@
           <td class="r">
             <button class="btn btn--quiet btn--sm"
                     hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML">Edit</button>
+            {{if gt (len $.Lines) 1}}
+            <button class="btn btn--quiet btn--sm"
+                    hx-get="/phones/{{.Line.Number}}/convert" hx-target="closest tr" hx-swap="outerHTML">Make extension</button>
+            {{end}}
             <button class="btn btn--quiet btn--sm"
                     style="color: var(--rust);"
                     hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML"
@@ -494,6 +498,27 @@
 </tr>
 {{end}}
 
+{{define "phone-convert-row"}}
+<tr>
+  <td class="num">{{fmtPhone .Source.Line.Number}}</td>
+  <td colspan="5">
+    <form hx-post="/phones/{{.Source.Line.Number}}/convert" hx-target="#phones-table" hx-swap="outerHTML"
+          hx-confirm="This will merge {{fmtPhone .Source.Line.Number}} into the selected line. The number {{fmtPhone .Source.Line.Number}} will be removed."
+          class="hstack hstack--wrap" style="gap: 8px; align-items: center;">
+      <span style="font-size: 13px;">Make extension of</span>
+      <select name="target_line_id" required class="field__input" style="width: auto; min-width: 180px;">
+        {{range .Others}}
+        <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} &mdash; {{.Line.Name}}</option>
+        {{end}}
+      </select>
+      <button type="submit" class="btn btn--primary btn--sm">Convert</button>
+      <a href="/phones" class="btn btn--quiet btn--sm">Cancel</a>
+    </form>
+  </td>
+  <td></td>
+</tr>
+{{end}}
+
 {{define "am-phones-table"}}
 <div class="am-plate am-roster am-phones__roster" id="phones-table">
   <div class="am-roster__head"><span class="am-label">Handsets</span></div>
@@ -521,6 +546,9 @@
     </div>
     <div class="am-roster__actions">
       <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/edit" hx-target="closest .am-phones__row" hx-swap="outerHTML">Edit</button>
+      {{if gt (len $.Lines) 1}}
+      <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/convert" hx-target="closest .am-phones__row" hx-swap="outerHTML">Make extension</button>
+      {{end}}
       <button class="am-tab" hx-post="/phones/{{$l.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{$l.Line.Name}}?">Delete</button>
     </div>
   </div>
@@ -537,6 +565,23 @@
   <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML" class="am-phones__edit-form">
     <input type="text" name="name" value="{{.Line.Name}}" required maxlength="50" class="am-phones__edit-input" autofocus>
     <button type="submit" class="am-tab">Save</button>
+    <a href="/phones" class="am-tab">Cancel</a>
+  </form>
+</div>
+{{end}}
+
+{{define "am-phone-convert-row"}}
+<div class="am-roster__row am-phones__row">
+  <form hx-post="/phones/{{.Source.Line.Number}}/convert" hx-target="#phones-table" hx-swap="outerHTML"
+        hx-confirm="This will merge {{fmtPhone .Source.Line.Number}} into the selected line. The number {{fmtPhone .Source.Line.Number}} will be removed."
+        style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 8px 12px;">
+    <span class="am-phones__pair-field-label" style="white-space: nowrap;">Make extension of</span>
+    <select name="target_line_id" required style="flex: 1; min-width: 120px;">
+      {{range .Others}}
+      <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} &mdash; {{.Line.Name}}</option>
+      {{end}}
+    </select>
+    <button type="submit" class="am-tab">Convert</button>
     <a href="/phones" class="am-tab">Cancel</a>
   </form>
 </div>
