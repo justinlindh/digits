@@ -742,6 +742,28 @@ func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
 	return c, nil
 }
 
+// LastInboundCaller returns the caller number of the most recent call delivered
+// to number, excluding conference-merge bookkeeping rows. Returns ("", nil) if
+// no qualifying call exists.
+func (t *Tracker) LastInboundCaller(ctx context.Context, number string) (string, error) {
+	var caller string
+	err := t.db.DB.QueryRowContext(ctx,
+		`SELECT caller FROM calls
+		 WHERE callee = $1
+		   AND end_reason IS DISTINCT FROM 'merged_to_conference'
+		 ORDER BY started_at DESC
+		 LIMIT 1`,
+		number,
+	).Scan(&caller)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("last inbound caller: %w", err)
+	}
+	return caller, nil
+}
+
 // RecentForPhones returns the most recent calls where either caller or callee
 // matches one of the given phone numbers.
 func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, limit int) ([]Call, error) {
