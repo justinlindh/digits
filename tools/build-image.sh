@@ -894,8 +894,13 @@ fi
 
 # Copy tones to recovery partition so recovery is fully self-contained.
 info "  Copying tones to recovery partition..."
+[[ -d "$TONES_DIR" ]] || die "Tones directory not found: $TONES_DIR"
+TONE_COUNT=$(find "$TONES_DIR" -name '*.wav' | wc -l)
+[[ "$TONE_COUNT" -gt 0 ]] || die "No WAV files found in $TONES_DIR"
 mkdir -p "${RECOVERY_MNT}/tones"
-rsync -a --include="*.wav" --include="*/" --exclude="*" "$TONES_DIR/" "${RECOVERY_MNT}/tones/"
+find "$TONES_DIR" -name '*.wav' -exec cp {} "${RECOVERY_MNT}/tones/" \;
+RECOVERY_TONE_COUNT=$(ls "${RECOVERY_MNT}/tones/"*.wav 2>/dev/null | wc -l)
+info "  Copied $RECOVERY_TONE_COUNT tones to recovery partition (from $TONE_COUNT source)"
 
 # Install initramfs hooks
 info "  Installing initramfs hooks..."
@@ -1044,6 +1049,18 @@ brcmfmac.ko: brcmutil.ko cfg80211.ko rfkill.ko
 cfg80211.ko: rfkill.ko
 brcmutil.ko:
 rfkill.ko:
+snd-soc-simple-card.ko: snd-soc-simple-card-utils.ko snd-soc-core.ko snd-pcm.ko snd-timer.ko snd.ko
+snd-soc-simple-card-utils.ko: snd-soc-core.ko
+snd-soc-tlv320aic3x-i2c.ko: snd-soc-tlv320aic3x.ko regmap-i2c.ko snd-soc-core.ko
+snd-soc-tlv320aic3x.ko: snd-soc-core.ko
+snd-soc-bcm2835-i2s.ko: snd-soc-core.ko snd-pcm-dmaengine.ko
+snd-soc-core.ko: snd-pcm.ko snd-compress.ko snd.ko
+snd-pcm-dmaengine.ko: snd-pcm.ko
+snd-pcm.ko: snd-timer.ko snd.ko
+snd-compress.ko: snd.ko
+snd-timer.ko: snd.ko
+snd.ko:
+regmap-i2c.ko:
 MODDEP
 
 cat > "${RECOVERY_KDIR}/modules.alias" << 'MODALIAS'
@@ -1052,6 +1069,33 @@ alias brcmfmac-bca brcmfmac-bca
 alias brcmfmac_wcc brcmfmac-wcc
 alias brcmfmac_bca brcmfmac-bca
 MODALIAS
+
+# Copy audio kernel modules (decompressed) so recovery mode can play
+# voice prompts through the TLV320AIC3104 codec. The kernel binds
+# device-tree overlays during early boot; without these modules on the
+# recovery rootfs, the codec device never probes.
+info "  Copying audio kernel modules..."
+for mod_path in \
+    kernel/sound/core/snd.ko.xz \
+    kernel/sound/core/snd-timer.ko.xz \
+    kernel/sound/core/snd-pcm.ko.xz \
+    kernel/sound/core/snd-pcm-dmaengine.ko.xz \
+    kernel/sound/core/snd-compress.ko.xz \
+    kernel/sound/soc/snd-soc-core.ko.xz \
+    kernel/sound/soc/bcm/snd-soc-bcm2835-i2s.ko.xz \
+    kernel/sound/soc/codecs/snd-soc-tlv320aic3x.ko.xz \
+    kernel/sound/soc/codecs/snd-soc-tlv320aic3x-i2c.ko.xz \
+    kernel/sound/soc/generic/snd-soc-simple-card.ko.xz \
+    kernel/sound/soc/generic/snd-soc-simple-card-utils.ko.xz \
+    kernel/drivers/base/regmap/regmap-i2c.ko.xz; do
+    NAME=$(basename "${mod_path%.xz}")
+    if [[ -f "${KDIR}/${mod_path}" ]]; then
+        xz -dk -c "${KDIR}/${mod_path}" > "${RECOVERY_KDIR}/${NAME}"
+        info "    ${NAME}"
+    else
+        warn "    Audio module not found: ${mod_path}"
+    fi
+done
 
 touch "${RECOVERY_KDIR}/modules.dep.bin" \
       "${RECOVERY_KDIR}/modules.alias.bin" \
