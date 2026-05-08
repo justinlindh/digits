@@ -150,6 +150,11 @@ func baseTemplateFuncs() template.FuncMap {
 	}
 }
 
+const (
+	cacheControlImmutable = "public, max-age=31536000, immutable"
+	hstsHeader            = "max-age=31536000; includeSubDomains"
+)
+
 // devStaticDirDefault is the disk path (relative to the process CWD) used
 // for /static/ when DevMode is on and no explicit override is supplied.
 // It matches the Makefile's dev-up target, which runs signald with CWD
@@ -188,7 +193,7 @@ func staticFileServer(devMode bool, diskDir string) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("Cache-Control", cacheControlImmutable)
 		}
 		base.ServeHTTP(w, r)
 	})
@@ -660,7 +665,7 @@ func securityHeadersMiddleware(baseURL string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", csp)
 		if r.TLS != nil {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			w.Header().Set("Strict-Transport-Security", hstsHeader)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

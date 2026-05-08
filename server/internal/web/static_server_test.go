@@ -105,7 +105,7 @@ func TestStaticFileServer_VersionedAssetSetsImmutableCacheControl(t *testing.T) 
 		t.Fatalf("GET versioned asset: got %d, want 200", rec.Code)
 	}
 	got := rec.Header().Get("Cache-Control")
-	want := "public, max-age=31536000, immutable"
+	want := cacheControlImmutable
 	if got != want {
 		t.Errorf("Cache-Control on versioned asset: got %q, want %q", got, want)
 	}
