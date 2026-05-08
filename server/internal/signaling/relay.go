@@ -87,6 +87,21 @@ func (r *Relay) observeError(category string) {
 	}
 }
 
+// lineAttrs resolves the line_id and household_id for a phone number and
+// returns them as slog key-value pairs suitable for appending to a log call.
+// Returns nil when the LineStore is unavailable or the number is not found,
+// so callers can always append unconditionally.
+func (r *Relay) lineAttrs(ctx context.Context, number string) []any {
+	if r.LineStore == nil {
+		return nil
+	}
+	lineID, householdID, err := r.LineStore.LineIdentifiers(ctx, number)
+	if err != nil {
+		return nil
+	}
+	return []any{"line_id", lineID, "household_id", householdID}
+}
+
 func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
 	return &Relay{
 		Hub:            hub,
@@ -191,9 +206,14 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		if _, err := r.Tracker.OnCallInitiated(ctx, from, msg.To); err != nil {
+		callID, err := r.Tracker.OnCallInitiated(ctx, from, msg.To)
+		if err != nil {
 			slog.Error("failed to track call initiation", "err", err)
 			r.observeError("call_setup_failed")
+		} else {
+			attrs := []any{"call_id", callID, "from", from, "to", msg.To}
+			attrs = append(attrs, r.lineAttrs(ctx, from)...)
+			slog.Info("call initiated", attrs...)
 		}
 	}
 
@@ -261,6 +281,11 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
 			slog.Error("failed to track call answer", "err", err)
 		}
+		if callID := r.Tracker.CallIDForPair(msg.To, from); callID != 0 {
+			attrs := []any{"call_id", callID, "from", msg.To, "to", from}
+			attrs = append(attrs, r.lineAttrs(ctx, from)...)
+			slog.Info("call answered", attrs...)
+		}
 	}
 	r.forward(msg)
 }
@@ -308,8 +333,14 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	}
 	for _, peer := range peers {
 		if r.Tracker != nil {
+			callID := r.Tracker.CallIDForPair(from, peer)
 			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
 				slog.Error("failed to track call end", "err", err)
+			}
+			if callID != 0 {
+				attrs := []any{"call_id", callID, "from", from, "to", peer}
+				attrs = append(attrs, r.lineAttrs(ctx, from)...)
+				slog.Info("call ended", attrs...)
 			}
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
@@ -339,6 +370,11 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 		r.observeError("invalid_message")
 		return
 	}
+	if r.Tracker != nil {
+		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
+			slog.Debug("sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
+		}
+	}
 	r.forward(msg)
 }
 
@@ -363,6 +399,11 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 		slog.Warn("ice without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
+	}
+	if r.Tracker != nil {
+		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
+			slog.Debug("ice forwarded", "call_id", callID, "from", from, "to", msg.To)
+		}
 	}
 	r.forward(msg)
 }

@@ -12,12 +12,19 @@ import (
 // silent and household DND is the production adapter's job (and is pinned by
 // line.TestEffectiveSilent), so this fake stays a plain pass-through.
 type fakeLineStore struct {
-	settings map[string]*LineSettings
+	settings    map[string]*LineSettings
+	identifiers map[string]fakeLineID
+}
+
+type fakeLineID struct {
+	lineID      int64
+	householdID string
 }
 
 func newFakeLineStore() *fakeLineStore {
 	return &fakeLineStore{
-		settings: make(map[string]*LineSettings),
+		settings:    make(map[string]*LineSettings),
+		identifiers: make(map[string]fakeLineID),
 	}
 }
 
@@ -32,6 +39,14 @@ func (f *fakeLineStore) EffectiveLineSettings(ctx context.Context, number string
 	}
 	out := *s
 	return &out, nil
+}
+
+func (f *fakeLineStore) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
+	id, ok := f.identifiers[number]
+	if !ok {
+		return 0, "", line.ErrNotFound
+	}
+	return id.lineID, id.householdID, nil
 }
 
 // TestOnRegisteredPushesSilentMode verifies that when OnRegistered is called
