@@ -136,6 +136,10 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 			}()
 
 			slog.Info("setup: verifying WiFi credentials", "ssid", req.SSID)
+			if audio != nil && audio.IsReady() {
+				audio.Mixer().PlayOnce("wifi_connecting")
+				waitForOnceComplete(audio.Mixer(), 5*time.Second)
+			}
 			result := wifi.Verify(req.SSID, backupPath, req.Hidden)
 
 			if result.Connected {
@@ -160,13 +164,16 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 					serial.Port().LED("ON")
 				}
 				if audio != nil && audio.IsReady() {
-					audio.Mixer().PlayOnce("confirm_wifi_setup")
+					audio.Mixer().PlayOnce("wifi_connected")
 					waitForOnceComplete(audio.Mixer(), 10*time.Second)
 				}
 				doReboot()
 			} else {
 				if serial != nil && serial.IsReady() {
 					serial.Port().LED("UNLOCK")
+				}
+				if audio != nil && audio.IsReady() {
+					audio.Mixer().PlayOnce("wifi_failed")
 				}
 			}
 		}()
