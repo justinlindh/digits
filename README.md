@@ -53,7 +53,7 @@ Each phone is a gutted vintage desk phone with two processors inside: an RP2040 
 |-----------|------|
 | **RP2040** (firmware, C) | Real-time phone I/O: keypad matrix, hook switch, bell driver, DTMF/tone generation, status LED. Communicates with the Pi over UART. V0/V1 use a Pico H module; V2 has the RP2040 onboard. |
 | **Pi Zero 2 W** (digitsd, Go) | VoIP daemon: WebRTC media, Opus codec, DTLS-SRTP, signaling client, call state machine, Wi-Fi setup, OTA updates. |
-| **Audio codec** | Mic input and earpiece output. DA7212 HAT on V0/V1, onboard TLV320AIC3104 on V2. |
+| **Audio codec** | Mic input and earpiece output. Codec Zero HAT (DA7212) on V0/V1, onboard TLV320AIC3104 on V2. |
 | **Signaling server** (Go) | WebSocket relay for SDP/ICE exchange, PostgreSQL persistence, device pairing, household management, web dashboard. |
 
 Calls are peer-to-peer WebRTC sessions between two phones (or three, for party-line calls). The server brokers the signaling handshake but never handles media.
@@ -84,8 +84,10 @@ pi/digitsd/     Pi-side VoIP daemon (Go, cross-compiled to arm64)
 pi/image/       Raspberry Pi OS image builder
 server/         Signaling server + web dashboard (Go, htmx, Tailwind)
 hardware/pcb/   KiCad schematics, PCB layouts, Gerbers, BOMs
+charts/digits/  Helm chart for Kubernetes deployment
+tools/          Build scripts for firmware, Pi binaries, and OS images
 docs/           Architecture notes, build guides, self-hosting
-scripts/        Build and flash helpers
+scripts/        Firmware build and flash helpers
 ```
 
 ## Quick Start
@@ -95,7 +97,7 @@ scripts/        Build and flash helpers
 ```bash
 cd server
 make build     # builds bin/signald
-make run       # build + run (defaults to :8080)
+make run       # build + run (defaults to :8443)
 make test      # go test ./...
 ```
 
@@ -143,6 +145,7 @@ Hidden codes entered on the keypad while the handset is off-hook.
 | `*##*` | Reboot | Immediate reboot. |
 | `*#0*` | Force re-pair | Clears device token, reboots into pairing mode. |
 | `*#73887#` | Wi-Fi setup | Reboots into AP mode for Wi-Fi reconfiguration. (`*#SETUP#` on keypad.) |
+| `*#873283#` | Update check | Checks for OTA firmware and daemon updates. (`*#UPDATE#` on keypad.) |
 | `*#00000#` | Factory reset | Wipes config, Wi-Fi, contacts. Fresh AP + pairing mode. |
 
 ### Confirmation feedback
@@ -183,7 +186,7 @@ Hidden sequences that play audio clips through the earpiece. Each keypress must 
 
 Calls use WebRTC with DTLS-SRTP. Voice data is encrypted end-to-end between the two devices on the call. The signaling server facilitates connection setup but never has access to the audio stream. Even if the server were compromised, there would be no voice data to extract.
 
-The hook switch physically disconnects the microphone circuit when the handset is on the cradle. This is an electrical disconnect, not a software mute.
+A dedicated hardware kill switch (separate from the hook switch) physically disconnects the microphone circuit when the handset is on the cradle. This is an electrical disconnect, not a software mute.
 
 **What the server stores:** user accounts (email, name), household membership, phone line assignments, device pairing tokens, session data, call metadata (caller, callee, timestamps, duration), and connection quality telemetry (packet loss, jitter, bandwidth).
 
