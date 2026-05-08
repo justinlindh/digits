@@ -104,7 +104,7 @@ make test
 
 The server is a single Go binary (`signald`) backed by Postgres. Docker Compose is the straightforward way to run it: clone the repo, fill in an `.env` file, `docker compose up -d`. The [self-hosting guide](docs/hosting/self-hosting.md) covers TLS, SMTP for magic-link auth, phone pairing, backups, and troubleshooting.
 
-There is also a [Helm chart](charts/digits/) if you happen to have a Kubernetes cluster. There is no good reason for a three-phone family network to run on k8s, but I over-engineered almost everything in this project and it would have felt wrong to stop at the deployment layer. The chart supports CNPG Postgres, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics. It is what runs in production. Completely unnecessary, but it works and it is there if you want it.
+There is also a [Helm chart](charts/digits/) if you happen to have a Kubernetes cluster. There is no good reason for a family phone network to run on k8s, but I over-engineered almost everything in this project and it would have felt wrong to stop at the deployment layer. The chart supports CNPG Postgres, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics. It is what runs in production. Completely unnecessary, but it works and it is there if you want it.
 
 ## Web App
 
