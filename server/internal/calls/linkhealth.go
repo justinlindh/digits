@@ -303,11 +303,11 @@ func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample)
 }
 
-// Latest returns the most recent samples for caller and callee on a 2-party
+// latest returns the most recent samples for caller and callee on a 2-party
 // call, captured under a single lock so the two values are consistent. nil
 // pointers if no sample has been recorded for that endpoint yet. nil/nil if
-// the call is unknown.
-func (s *HealthStore) Latest(callID int64, caller, callee string) (*Sample, *Sample) {
+// the call is unknown. Test-only; production reads use Window/Readback.
+func (s *HealthStore) latest(callID int64, caller, callee string) (*Sample, *Sample) {
 	key := SessionKey{CallID: callID}
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
@@ -362,8 +362,9 @@ func (s *HealthStore) WindowEdge(confID uuid.UUID, from, peer string) []Sample {
 	return s.windowSession(SessionKey{ConfID: confID}, from, peer)
 }
 
-// LatestEdge returns the most recent sample for a conference edge or nil.
-func (s *HealthStore) LatestEdge(confID uuid.UUID, from, peer string) *Sample {
+// latestEdge returns the most recent sample for a conference edge or nil.
+// Test-only; production reads use WindowEdge/ReadbackEdge.
+func (s *HealthStore) latestEdge(confID uuid.UUID, from, peer string) *Sample {
 	return s.latestSession(SessionKey{ConfID: confID}, from, peer)
 }
 

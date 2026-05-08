@@ -21,7 +21,7 @@ func TestHealthStoreRecordAndLatest(t *testing.T) {
 	s.Record(1, "A", sample(200, 0.7))
 	s.Record(1, "B", sample(150, 0.2))
 
-	callerLatest, calleeLatest := s.Latest(1, "A", "B")
+	callerLatest, calleeLatest := s.latest(1, "A", "B")
 	if callerLatest == nil || *callerLatest.LossPct != 0.7 {
 		t.Fatalf("Latest A: got %+v want 0.7", callerLatest)
 	}
@@ -57,7 +57,7 @@ func TestHealthStoreEvict(t *testing.T) {
 	if win := s.Window(1, "A"); len(win) != 0 {
 		t.Fatalf("post-evict window: got %d want 0", len(win))
 	}
-	a, b := s.Latest(1, "A", "B")
+	a, b := s.latest(1, "A", "B")
 	if a != nil || b != nil {
 		t.Fatalf("post-evict latest: got (%v,%v)", a, b)
 	}
@@ -88,7 +88,7 @@ func TestHealthStoreConcurrentWritersSameRing(t *testing.T) {
 	if len(win) != RingCapacity {
 		t.Fatalf("window size: got %d want %d", len(win), RingCapacity)
 	}
-	a, _ := s.Latest(1, "A", "B")
+	a, _ := s.latest(1, "A", "B")
 	if a == nil {
 		t.Fatalf("Latest returned nil after %d concurrent samples", writers*samplesPerWriter)
 	}
@@ -119,7 +119,7 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 	}
 	wg.Wait()
 	for id := int64(1); id <= 4; id++ {
-		if a, b := s.Latest(id, "A", "B"); a == nil || b == nil {
+		if a, b := s.latest(id, "A", "B"); a == nil || b == nil {
 			t.Fatalf("call %d missing samples: %v %v", id, a, b)
 		}
 	}
@@ -134,7 +134,7 @@ func TestHealthStoreRecordIsNoOpAfterEvict(t *testing.T) {
 	if win := s.Window(1, "A"); len(win) != 0 {
 		t.Fatalf("post-evict Record must not create entry; got window len %d", len(win))
 	}
-	a, b := s.Latest(1, "A", "B")
+	a, b := s.latest(1, "A", "B")
 	if a != nil || b != nil {
 		t.Fatalf("post-evict Record must not resurrect rings; got (%v,%v)", a, b)
 	}
@@ -394,7 +394,7 @@ func TestHealthStoreConferenceRoundTrip(t *testing.T) {
 		t.Fatalf("sample LossPct not preserved")
 	}
 
-	latest := s.LatestEdge(confID, "A", "B")
+	latest := s.latestEdge(confID, "A", "B")
 	if latest == nil {
 		t.Fatal("LatestEdge nil")
 	}
