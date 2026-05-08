@@ -24,6 +24,16 @@
 // This plugin expands such squash commits into virtual commits so both the
 // release-decision and changelog-generation steps see the original per-
 // commit messages. Non-squash commits pass through unchanged.
+//
+// Path-based scope inference (pathScopes):
+//
+// When a commit's scope doesn't match the release rules but its changed
+// files fall under a configured path prefix, the plugin injects a synthetic
+// commit with the inferred scope. This catches cross-component PRs where
+// the squash subject uses one component's scope but the diff touches
+// another. Configure via pluginConfig.pathScopes:
+//
+//   pathScopes: { 'pi/': 'digitsd', 'firmware/': 'firmware' }
 
 // A bullet's first line must look like a conventional-commit subject
 // (type, optional scope, optional !, colon, space, then text). We only
@@ -65,6 +75,53 @@ function expandCommits(commits) {
     });
 }
 
+const SCOPE_RE = /^([a-z]+)\(([^)]+)\)(!?:.*)$/;
+const TYPE_RE = /^([a-z]+)(!?:.*)$/;
+
+function inferPathScopes(commits, pathScopes) {
+    if (!pathScopes || Object.keys(pathScopes).length === 0) return commits;
+
+    const { execSync } = require("child_process");
+    const result = [];
+
+    for (const commit of commits) {
+        result.push(commit);
+
+        const subject = commit.subject || commit.header || "";
+        const scopeMatch = subject.match(SCOPE_RE);
+        const existingScopes = scopeMatch ? scopeMatch[2].split(",") : [];
+
+        let changedFiles;
+        try {
+            changedFiles = execSync(
+                `git diff-tree --no-commit-id --name-only -r ${commit.hash}`,
+                { encoding: "utf8" },
+            ).trim().split("\n").filter(Boolean);
+        } catch {
+            continue;
+        }
+
+        for (const [prefix, scope] of Object.entries(pathScopes)) {
+            if (existingScopes.some((s) => s === scope)) continue;
+            if (!changedFiles.some((f) => f.startsWith(prefix))) continue;
+
+            const typeMatch = subject.match(SCOPE_RE) || subject.match(TYPE_RE);
+            const type = typeMatch ? typeMatch[1] : "fix";
+            const rest = scopeMatch ? scopeMatch[3] : (subject.match(TYPE_RE) || [])[2] || ": path-inferred release";
+            const syntheticSubject = `${type}(${scope})${rest}`;
+
+            result.push({
+                ...commit,
+                header: syntheticSubject,
+                subject: syntheticSubject,
+                body: `Path-inferred from files matching ${prefix}`,
+                message: `${syntheticSubject}\n\nPath-inferred from files matching ${prefix}`,
+            });
+        }
+    }
+    return result;
+}
+
 // The wrapped plugins are passed in via pluginConfig._wrapped because this
 // file lives outside any project's node_modules: a bare require() from
 // here walks up only as far as repo-root, which is empty (semantic-release
@@ -86,16 +143,20 @@ function unwrap(pluginConfig, key) {
 module.exports = {
     async analyzeCommits(pluginConfig, context) {
         const commitAnalyzer = unwrap(pluginConfig, "commitAnalyzer");
+        const expanded = expandCommits(context.commits);
+        const withPaths = inferPathScopes(expanded, pluginConfig.pathScopes);
         return commitAnalyzer.analyzeCommits(pluginConfig, {
             ...context,
-            commits: expandCommits(context.commits),
+            commits: withPaths,
         });
     },
     async generateNotes(pluginConfig, context) {
         const releaseNotesGenerator = unwrap(pluginConfig, "releaseNotesGenerator");
+        const expanded = expandCommits(context.commits);
+        const withPaths = inferPathScopes(expanded, pluginConfig.pathScopes);
         return releaseNotesGenerator.generateNotes(pluginConfig, {
             ...context,
-            commits: expandCommits(context.commits),
+            commits: withPaths,
         });
     },
 };
@@ -103,3 +164,4 @@ module.exports = {
 // Exposed for unit testing.
 module.exports._expandCommits = expandCommits;
 module.exports._splitSquashBullets = splitSquashBullets;
+module.exports._inferPathScopes = inferPathScopes;
