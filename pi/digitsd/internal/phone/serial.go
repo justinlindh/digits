@@ -194,6 +194,32 @@ func (sp *SerialPort) Ring(start bool) {
 	}
 }
 
+// QueryPhase sends PHASE? and returns the raw phase byte as a uint8.
+// Response format: PHASE:0xNN
+func (sp *SerialPort) QueryPhase() (uint8, error) {
+	resp, err := sp.SendCommand("PHASE?", 1*time.Second)
+	if err != nil {
+		return 0, err
+	}
+	parts := strings.SplitN(resp, ":", 2)
+	if len(parts) != 2 || parts[0] != "PHASE" {
+		return 0, fmt.Errorf("unexpected phase response: %q", resp)
+	}
+	var val uint8
+	if _, err := fmt.Sscanf(parts[1], "0x%02X", &val); err != nil {
+		return 0, fmt.Errorf("parse phase byte: %w (raw=%q)", err, parts[1])
+	}
+	return val, nil
+}
+
+// Phase byte constants matching firmware/src/phase.h.
+const (
+	PhasePaired   uint8 = 0x01
+	PhaseUnpaired uint8 = 0x02
+	PhaseSetup    uint8 = 0x03
+	PhaseRecovery uint8 = 0x04
+)
+
 // LED sends LED:<mode> to the Pico.
 func (sp *SerialPort) LED(mode string) {
 	sp.SendFire("LED:" + mode)

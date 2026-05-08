@@ -1,4 +1,4 @@
-FROM golang:1.26
+FROM golang:1.26-bookworm
 
 RUN dpkg --add-architecture arm64 \
     && apt-get update -qq \

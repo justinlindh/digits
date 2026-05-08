@@ -240,7 +240,7 @@ func devModeSerialLogHandler(cfg *devModeConfig) http.HandlerFunc {
 func devModeJournalLogHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		cmd := exec.Command("journalctl", "-u", "digitsd", "-n", "200", "--no-pager")
+		cmd := exec.Command("sudo", "journalctl", "-u", "digitsd", "-n", "200", "--no-pager")
 		out, err := cmd.Output()
 		if err != nil {
 			fmt.Fprintf(w, "(journalctl failed: %v)", err) //nolint:errcheck
