@@ -296,9 +296,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx := r.Context()
-
-	households, err := h.householdStore.GetForUser(ctx, user.ID)
+	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil {
 		slog.Error("get households for account deletion failed", "user_id", user.ID, "err", err)
 		http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
@@ -306,7 +304,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 	}
 
 	for _, hh := range households {
-		count, err := h.householdStore.MemberCount(ctx, hh.ID)
+		count, err := h.householdStore.MemberCount(r.Context(), hh.ID)
 		if err != nil {
 			slog.Error("member count failed during account deletion", "household_id", hh.ID, "err", err)
 			http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
@@ -314,47 +312,39 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 		}
 
 		if count <= 1 {
-			// Sole member: tear down the household.
-			lines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
+			lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 			if err != nil {
 				slog.Error("list lines for deletion failed", "household_id", hh.ID, "err", err)
+				http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
+				return
 			}
 			for _, ln := range lines {
-				h.tracker.ClearByNumber(ctx, ln.Number)
+				h.tracker.ClearByNumber(r.Context(), ln.Number)
 				for _, conn := range h.hub.GetAll(ln.Number) {
 					h.hub.Unregister(ln.Number, conn)
 				}
 			}
-			if err := h.householdStore.Delete(ctx, hh.ID); err != nil {
+			if err := h.householdStore.Delete(r.Context(), hh.ID); err != nil {
 				slog.Error("delete household failed", "household_id", hh.ID, "err", err)
 				http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 				return
 			}
 		} else {
-			// Multi-member: just remove this user.
-			if err := h.householdStore.RemoveMember(ctx, user.ID, hh.ID); err != nil {
+			// CASCADE on household_members.user_id will clean this up even if
+			// RemoveMember fails, but we attempt the explicit remove first.
+			if err := h.householdStore.RemoveMember(r.Context(), user.ID, hh.ID); err != nil {
 				slog.Error("remove member during account deletion failed", "user_id", user.ID, "household_id", hh.ID, "err", err)
 			}
 		}
 	}
 
-	if err := h.authStore.DeleteUser(ctx, user.ID); err != nil {
+	if err := h.authStore.DeleteUser(r.Context(), user.ID); err != nil {
 		slog.Error("delete user failed", "user_id", user.ID, "err", err)
 		http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 		return
 	}
 
-	// Clear session cookie. The auth package's clearSessionCookie is unexported,
-	// so we inline the cookie clearing here. The user and all their sessions are
-	// already deleted, so even if a subdomain cookie lingers it won't resolve.
-	http.SetCookie(w, &http.Cookie{
-		Name:     auth.CookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-	})
+	h.authHandlers.ClearSessionCookie(w)
 	http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 }
 

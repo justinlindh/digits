@@ -185,6 +185,11 @@ func TestHandleAccountDeletePost(t *testing.T) {
 	if count != 0 {
 		t.Error("line still exists after household deletion")
 	}
+
+	// Hub connection unregistered.
+	if h.hub.ConnectionCount(ln.Number) != 0 {
+		t.Error("hub connection still registered after deletion")
+	}
 }
 
 func TestHandleAccountDeletePost_MultiMemberHousehold(t *testing.T) {
