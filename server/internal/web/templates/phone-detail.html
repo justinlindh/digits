@@ -73,6 +73,22 @@
           </div>
           {{end}}
         </dl>
+        {{if .OtherLines}}
+        <div class="panel__body" style="padding-top: 12px;">
+          <form method="POST" action="/phones/{{.Line.Number}}/convert"
+                onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <button type="submit" class="btn">Make extension of</button>
+              <select name="target_line_id" required class="field__input" style="width: auto; min-width: 160px;">
+                {{range .OtherLines}}
+                <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+            <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Moves all handsets to the selected line and removes this number.</p>
+          </form>
+        </div>
+        {{end}}
         <div class="panel__body" style="padding-top: 12px;">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
@@ -977,6 +993,27 @@
           </div>
         </div>
       </div>
+    </section>
+    {{end}}
+
+    {{if .OtherLines}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Convert</span>
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')"
+            style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px;">
+        <span class="am-phones__pair-field-label" style="white-space: nowrap;">Make extension of</span>
+        <select name="target_line_id" required style="flex: 1; min-width: 120px;">
+          {{range .OtherLines}}
+          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+          {{end}}
+        </select>
+        <button type="submit" class="am-key">
+          <span class="am-key__symbol">&#x25B6;</span>
+          <span class="am-key__label">Convert</span>
+        </button>
+      </form>
+      <p class="am-hint" style="margin: 0 12px 8px;">Moves all handsets to the selected line and removes this number.</p>
     </section>
     {{end}}
 

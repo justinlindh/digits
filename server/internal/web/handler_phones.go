@@ -300,6 +300,7 @@ type lineDetailData struct {
 	FWReleases            []updates.Release
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
+	OtherLines            []line.Line
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -369,6 +370,16 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var otherLines []line.Line
+	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
+	if err == nil {
+		for _, ol := range allLines {
+			if ol.ID != ln.ID {
+				otherLines = append(otherLines, ol)
+			}
+		}
+	}
+
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
@@ -382,6 +393,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FWReleases:            fwReleases,
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
+		OtherLines:            otherLines,
 	})
 }
 
@@ -742,30 +754,6 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
-type convertRowData struct {
-	Source lineRow
-	Others []lineRow
-}
-
-func (h *Handler) handlePhoneConvertGet(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
-	if ln == nil {
-		return
-	}
-	data := h.buildLinesData(r, hh, "")
-	var source lineRow
-	var others []lineRow
-	for _, row := range data.Lines {
-		if row.Line.ID == ln.ID {
-			source = row
-		} else {
-			others = append(others, row)
-		}
-	}
-	renderWith(w, h.tmplPhones, partialFor(r, "phone-convert-row", "am-phone-convert-row"), convertRowData{Source: source, Others: others})
-}
-
 func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	if err := r.ParseForm(); err != nil {
@@ -783,7 +771,7 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	srcLn, hh := h.requireLineOwnershipAdmin(w, r, number)
+	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
 	if srcLn == nil {
 		return
 	}
@@ -814,10 +802,5 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := h.buildLinesData(r, hh, "")
-	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
-		return
-	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
