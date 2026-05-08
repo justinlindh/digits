@@ -337,9 +337,11 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
 				slog.Error("failed to track call end", "err", err)
 			}
-			attrs := []any{"call_id", callID, "from", from, "to", peer}
-			attrs = append(attrs, r.lineAttrs(ctx, from)...)
-			slog.Info("call ended", attrs...)
+			if callID != 0 {
+				attrs := []any{"call_id", callID, "from", from, "to", peer}
+				attrs = append(attrs, r.lineAttrs(ctx, from)...)
+				slog.Info("call ended", attrs...)
+			}
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
 	}
