@@ -30,6 +30,8 @@
 
 Each phone is a gutted vintage desk phone with two processors inside: an RP2040 handling real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a Raspberry Pi Zero 2 W running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and call signaling. A Go server handles call routing, device pairing, and household management. There's a free public instance at [app.digits.family](https://app.digits.family), or you can run your own.
 
+[Architecture](#architecture) · [Hardware](#hardware) · [Project Structure](#project-structure) · [Quick Start](#quick-start) · [Hosting](#hosting) · [Web App](#web-app) · [Service Codes](#service-codes) · [Party Line](#party-line-three-way-calling) · [Easter Eggs](#easter-eggs) · [Privacy](#privacy) · [Contributing](#contributing) · [Docs](#documentation) · [License](#license)
+
 ## Architecture
 
 | Component | Role |
