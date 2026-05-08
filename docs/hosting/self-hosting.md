@@ -54,18 +54,18 @@ This starts signald (the Go server), PostgreSQL, and Caddy for TLS. Phones on th
                        |  Caddy  |  :443  (TLS termination, reverse proxy)
                        +----+----+
                             |
-                     +------v------+         +-------------+
-                     |   signald   |         |   coturn    |
-                     |   :8080     |         |   :3478     |
-                     |             |         |             |
-                     | WebRTC sig  |         | TURN relay  |
-                     | Auth/magic  |         | STUN/ICE    |
-                     | Web app     |         |             |
-                     +------+------+         +-------------+
-                            |
-                     +------v------+
-                     |   user-db   |
-                     |  PostgreSQL |
+                     +------v------+  shared secret  +-------------+
+                     |   signald   | - - - - - - - > |   coturn    |
+                     |   :8080     |  (HMAC creds)   |   :3478     |
+                     |             |                  |             |
+                     | WebRTC sig  |                  | TURN relay  |
+                     | Auth/magic  |                  | STUN/ICE    |
+                     | Web app     |                  |             |
+                     +------+------+                  +-------------+
+                            |                               ^
+                     +------v------+                phones connect
+                     |   user-db   |                directly for
+                     |  PostgreSQL |                media relay
                      |             |
                      | users,      |
                      | households, |
@@ -167,7 +167,7 @@ The simplest way to add TURN to your deployment. Add a coturn service to your `d
 
 ```yaml
   coturn:
-    image: coturn/coturn:4.6.3
+    image: coturn/coturn:4.6.3  # check hub.docker.com/r/coturn/coturn for latest
     restart: unless-stopped
     network_mode: host
     volumes:
@@ -333,7 +333,7 @@ Caddy handles zero-downtime for its own config reloads. signald will have a brie
 
 Docker Compose handles the vast majority of deployments. If you have a Kubernetes cluster and want to deploy there, there is a [Helm chart](../../charts/digits/) for signald that supports CNPG PostgreSQL, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics.
 
-For TURN on Kubernetes, coturn runs well as a Deployment with `hostNetwork: true` (it needs direct access to the host network for the relay port range). A Cilium or MetalLB LoadBalancer service provides a stable VIP. Redis can be used as a shared stats database (`--redis-statsdb`) for multi-replica HA, and Prometheus metrics are available via `--prometheus`. See the project's `homelab-k8s` repo for a working example of this setup with 2-replica HA, PodDisruptionBudget, and ServiceMonitor.
+For TURN on Kubernetes, coturn runs well as a Deployment with `hostNetwork: true` (it needs direct access to the host network for the relay port range). A Cilium or MetalLB LoadBalancer service provides a stable VIP. For HA, run 2 replicas with pod anti-affinity (mandatory with hostNetwork to avoid port collisions), a PodDisruptionBudget (`minAvailable: 1`), and Redis as a shared stats database (`--redis-statsdb`) so both replicas have visibility into all active allocations. Prometheus metrics are available via `--prometheus`.
 
 See the [Helm chart README](../../charts/digits/README.md) for signald installation and configuration.
 
