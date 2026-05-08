@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 )
@@ -47,6 +48,10 @@ type devModeConfig struct {
 
 	// UARTLogPath is the UART log file path (same as the serial logger).
 	UARTLogPath string
+
+	// CaptureDevice is the ALSA device name for mic capture (e.g.
+	// "digits_capture" on V2 or "plughw:CARD=Zero,DEV=0" on V1).
+	CaptureDevice string
 }
 
 // startDevModeServer starts the dev-mode web UI on :8080.
@@ -63,6 +68,8 @@ func startDevModeServer(cfg *devModeConfig) (net.Listener, error) {
 	mux.HandleFunc("/api/status", devModeStatusHandler(cfg))
 	mux.HandleFunc("/api/toggle", devModeToggleHandler(cfg))
 	mux.HandleFunc("/api/flash", devModeFlashHandler(cfg))
+	mux.HandleFunc("/api/mic-test", devModeMicTestHandler(cfg))
+	mux.HandleFunc("/api/mic-test/download", devModeMicTestDownloadHandler())
 	mux.HandleFunc("/api/log/serial", devModeSerialLogHandler(cfg))
 	mux.HandleFunc("/api/log/journal", devModeJournalLogHandler())
 
@@ -247,5 +254,88 @@ func devModeJournalLogHandler() http.HandlerFunc {
 			return
 		}
 		_, _ = w.Write(out)
+	}
+}
+
+const micTestPath = "/tmp/mic-test.wav"
+
+var (
+	micRecording atomic.Bool
+	micLastErr   atomic.Value // stores string; empty means no error
+)
+
+func devModeMicTestHandler(cfg *devModeConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.Method {
+		case http.MethodPost:
+			if !micRecording.CompareAndSwap(false, true) {
+				w.WriteHeader(http.StatusConflict)
+				json.NewEncoder(w).Encode(map[string]string{"error": "recording already in progress"}) //nolint:errcheck
+				return
+			}
+			micLastErr.Store("")
+
+			device := cfg.CaptureDevice
+			if device == "" {
+				device = "default"
+			}
+
+			go func() {
+				defer micRecording.Store(false)
+				cmd := exec.Command("arecord",
+					"-D", device,
+					"-f", "S16_LE",
+					"-r", "48000",
+					"-c", "2",
+					"-d", "5",
+					micTestPath)
+				out, err := cmd.CombinedOutput()
+				if err != nil {
+					msg := fmt.Sprintf("arecord: %v: %s", err, out)
+					slog.Error("devmode: mic test failed", "error", msg)
+					micLastErr.Store(msg)
+				} else {
+					slog.Info("devmode: mic test recording completed")
+				}
+			}()
+
+			json.NewEncoder(w).Encode(map[string]any{"status": "recording", "duration": 5}) //nolint:errcheck
+
+		case http.MethodGet:
+			if micRecording.Load() {
+				json.NewEncoder(w).Encode(map[string]string{"status": "recording"}) //nolint:errcheck
+				return
+			}
+			if v := micLastErr.Load(); v != nil {
+				if errStr, _ := v.(string); errStr != "" {
+					json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": errStr}) //nolint:errcheck
+					return
+				}
+			}
+			if _, err := os.Stat(micTestPath); err != nil {
+				json.NewEncoder(w).Encode(map[string]string{"status": "idle"}) //nolint:errcheck
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ready"}) //nolint:errcheck
+
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+func devModeMicTestDownloadHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if micRecording.Load() {
+			http.Error(w, "recording in progress", http.StatusConflict)
+			return
+		}
+		http.ServeFile(w, r, micTestPath)
 	}
 }

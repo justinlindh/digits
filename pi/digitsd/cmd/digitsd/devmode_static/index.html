@@ -49,6 +49,14 @@ header .subtitle{color:#8b949e;margin-top:4px;font-size:13px}
 .tab{padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:12px;cursor:pointer;transition:background .15s}
 .tab:hover{background:#30363d;color:#e6edf3}
 .tab.active{background:#161b22;color:#58a6ff;border-color:#58a6ff}
+.mic-desc{font-size:12px;color:#8b949e;margin-bottom:10px;line-height:1.5}
+.mic-controls{display:flex;align-items:center;gap:10px}
+.mic-status{font-size:12px;color:#8b949e;min-height:16px}
+.mic-status.error{color:#f85149}
+.mic-status.ok{color:#3fb950}
+.mic-playback{margin-top:10px;display:flex;align-items:center;gap:10px}
+.mic-playback audio{height:32px;flex:1}
+.mic-countdown{font-family:monospace;font-size:13px;color:#d29922}
 </style>
 </head>
 <body>
@@ -92,6 +100,19 @@ header .subtitle{color:#8b949e;margin-top:4px;font-size:13px}
         <div class="desc">Prevent bundled firmware from overwriting Pico on boot</div>
       </div>
       <label class="toggle"><input type="checkbox" id="tog-reflash" onchange="toggle('fw_reflash',this.checked)"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Mic Kill Switch Test</h2>
+    <p class="mic-desc">Records 5 seconds from the mic to verify the hardware kill switch. Lift the handset and speak to confirm the mic is active, then place it back on the cradle and record again to confirm silence.</p>
+    <div class="mic-controls">
+      <button class="upload-btn" id="mic-record" onclick="startMicTest()">Record 5 seconds</button>
+      <span class="mic-status" id="mic-status"></span>
+    </div>
+    <div class="mic-playback" id="mic-playback" style="display:none">
+      <audio id="mic-audio" controls></audio>
+      <a class="btn-small" href="/api/mic-test/download" download="mic-test.wav">Download</a>
     </div>
   </div>
 
@@ -147,6 +168,67 @@ function toggle(name,val){
   fetch('/api/toggle',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({name:name,enabled:val})
   }).catch(function(e){alert('Toggle failed: '+e)});
+}
+
+function startMicTest(){
+  var btn=document.getElementById('mic-record');
+  var status=document.getElementById('mic-status');
+  var playback=document.getElementById('mic-playback');
+  btn.disabled=true;
+  playback.style.display='none';
+  status.textContent='Starting...';
+  status.className='mic-status';
+  fetch('/api/mic-test',{method:'POST'}).then(function(r){return r.json()}).then(function(d){
+    if(d.error){
+      status.textContent=d.error;
+      status.className='mic-status error';
+      btn.disabled=false;
+      return;
+    }
+    var dur=d.duration||5;
+    var left=dur;
+    status.textContent='Recording... '+left+'s';
+    status.className='mic-status mic-countdown';
+    var iv=setInterval(function(){
+      left--;
+      if(left>0){status.textContent='Recording... '+left+'s'}
+      else{clearInterval(iv);status.textContent='Finishing...';status.className='mic-status'}
+    },1000);
+    setTimeout(function(){pollMicDone(btn,status,playback,0)},((dur)+0.5)*1000);
+  }).catch(function(e){
+    status.textContent='Failed: '+e;
+    status.className='mic-status error';
+    btn.disabled=false;
+  });
+}
+
+function pollMicDone(btn,status,playback,attempts){
+  if(attempts>=20){
+    btn.disabled=false;
+    status.textContent='Timed out waiting for recording';
+    status.className='mic-status error';
+    return;
+  }
+  fetch('/api/mic-test').then(function(r){return r.json()}).then(function(d){
+    if(d.status==='recording'){
+      setTimeout(function(){pollMicDone(btn,status,playback,attempts+1)},500);
+      return;
+    }
+    btn.disabled=false;
+    if(d.status==='error'){
+      status.textContent=d.error;
+      status.className='mic-status error';
+    }else if(d.status==='ready'){
+      status.textContent='Done';
+      status.className='mic-status ok';
+      playback.style.display='flex';
+      var audio=document.getElementById('mic-audio');
+      audio.src='/api/mic-test/download?t='+Date.now();
+      audio.load();
+    }
+  }).catch(function(){
+    setTimeout(function(){pollMicDone(btn,status,playback,attempts+1)},500);
+  });
 }
 
 function uploadELF(input){

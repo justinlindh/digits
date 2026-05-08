@@ -859,6 +859,11 @@ if [[ "$DEV_MODE" == true ]]; then
     mkdir -p "${DATA_MNT}/ssh"
     ssh-keygen -t rsa -b 4096 -f "${DATA_MNT}/ssh/ssh_host_rsa_key" -N '' -q
     ssh-keygen -t ed25519 -f "${DATA_MNT}/ssh/ssh_host_ed25519_key" -N '' -q
+
+    # Enable the dev-mode web UI (port 8080). Placed before the skeleton
+    # tar so the flag survives factory reset on dev images.
+    touch "${DATA_MNT}/digits/dev-mode"
+    chown 999:992 "${DATA_MNT}/digits/dev-mode"
 fi
 
 # Create compressed data skeleton archive
@@ -1370,7 +1375,7 @@ SSHDEV
     # race with sshd or pollute /etc/ssh.
     hostside_mask_service "$ROOTFS_MNT" "regenerate_ssh_host_keys.service"
 
-    info "DEV MODE: SSH enabled, user 'dev', password 'digits', passwordless sudo"
+    info "DEV MODE: SSH enabled, user 'dev', password 'digits', passwordless sudo, dev web UI on :8080"
 fi
 
 # ── step 23: final cleanup (host-side) ──────────────────────────────────────
