@@ -108,6 +108,17 @@ func (r *Relay) lineAttrs(ctx context.Context, number string) []any {
 	return []any{"line_id", lineID, "household_id", householdID}
 }
 
+// setSpanCallID attaches signaling.call_id to the current span when known.
+// HandleMessage starts the span before the call is resolved, so this fills
+// in the attribute once the tracker has it. Listed as a relay-span
+// attribute by the tracing package privacy contract.
+func setSpanCallID(ctx context.Context, callID int64) {
+	if callID == 0 {
+		return
+	}
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("signaling.call_id", callID))
+}
+
 func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
 	return &Relay{
 		Hub:            hub,
@@ -231,6 +242,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			attrs := []any{"call_id", callID, "from", from, "to", msg.To}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
 			slog.InfoContext(ctx, "call initiated", attrs...)
+			setSpanCallID(ctx, callID)
 		}
 	}
 
@@ -302,6 +314,7 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 			attrs := []any{"call_id", callID, "from", msg.To, "to", from}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
 			slog.InfoContext(ctx, "call answered", attrs...)
+			setSpanCallID(ctx, callID)
 		}
 	}
 	r.forward(ctx, msg)
@@ -358,6 +371,7 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 				attrs := []any{"call_id", callID, "from", from, "to", peer}
 				attrs = append(attrs, r.lineAttrs(ctx, from)...)
 				slog.InfoContext(ctx, "call ended", attrs...)
+				setSpanCallID(ctx, callID)
 			}
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
@@ -390,6 +404,7 @@ func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
 			slog.DebugContext(ctx, "sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
+			setSpanCallID(ctx, callID)
 		}
 	}
 	r.forward(ctx, msg)
@@ -420,6 +435,7 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(from, msg.To); callID != 0 {
 			slog.DebugContext(ctx, "ice forwarded", "call_id", callID, "from", from, "to", msg.To)
+			setSpanCallID(ctx, callID)
 		}
 	}
 	r.forward(ctx, msg)
@@ -545,6 +561,7 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 	pickupAttrs := []any{"line", from, "hardware_id", msg.HardwareID, "peer", peer}
 	if callID := r.Tracker.CallIDForPair(from, peer); callID != 0 {
 		pickupAttrs = append(pickupAttrs, "call_id", callID)
+		setSpanCallID(ctx, callID)
 	}
 	pickupAttrs = append(pickupAttrs, r.lineAttrs(ctx, from)...)
 	slog.InfoContext(ctx, "extension pickup", pickupAttrs...)
@@ -621,6 +638,7 @@ func (r *Relay) clearExtension(ctx context.Context, hardwareID string) {
 		if r.Tracker != nil {
 			if callID := r.Tracker.CallIDForPair(ext.LineNumber, ext.PeerNumber); callID != 0 {
 				attrs = append(attrs, "call_id", callID)
+				setSpanCallID(ctx, callID)
 			}
 		}
 		attrs = append(attrs, r.lineAttrs(ctx, ext.LineNumber)...)
@@ -656,6 +674,7 @@ func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 		if r.Tracker != nil {
 			if callID := r.Tracker.CallIDForPair(lineNumber, c.peer); callID != 0 {
 				attrs = append(attrs, "call_id", callID)
+				setSpanCallID(ctx, callID)
 			}
 		}
 		attrs = append(attrs, lineAttrs...)
