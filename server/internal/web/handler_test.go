@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
@@ -162,6 +164,85 @@ func TestDeletePhone(t *testing.T) {
 	// Line should be gone
 	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
 		t.Error("line should have been deleted")
+	}
+}
+
+func TestConvertLineToExtension(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	srcLn, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add src line: %v", err)
+	}
+	tgtLn, err := lineStore.Add(context.Background(), "3140002", "Bedroom", hh.ID)
+	if err != nil {
+		t.Fatalf("add tgt line: %v", err)
+	}
+	var devID int64
+	err = database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-kitchen', 'dev-kitchen', 'Kitchen Phone', NOW())
+		RETURNING id
+	`, srcLn.ID).Scan(&devID)
+	if err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140002')")
+	})
+
+	form := url.Values{
+		"target_line_id": {strconv.FormatInt(tgtLn.ID, 10)},
+		"device_id":      {strconv.FormatInt(devID, 10)},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/convert", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
+		t.Error("source line should have been deleted")
+	}
+
+	devStore := device.NewStore(database)
+	devices, err := devStore.ListByLine(context.Background(), tgtLn.ID)
+	if err != nil {
+		t.Fatalf("list target devices: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Errorf("expected 1 device on target, got %d", len(devices))
+	}
+}
+
+func TestConvertLineToSelfRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	ln, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	form := url.Values{"target_line_id": {strconv.FormatInt(ln.ID, 10)}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/convert", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for self-convert, got %d", w.Code)
 	}
 }
 
@@ -2442,5 +2523,82 @@ func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "192.168.77.77") {
 		t.Errorf("dashboard rendered LAN IP %q in body; this surface must not surface device IPs", "192.168.77.77")
+	}
+}
+
+func TestChangePhoneNumber(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140099')")
+	})
+
+	form := url.Values{"number": {"314-0099"}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/number", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if loc != "/phones/3140099" {
+		t.Errorf("expected redirect to /phones/3140099, got %s", loc)
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
+		t.Error("old number should not exist")
+	}
+	newLn, err := lineStore.GetByNumber(context.Background(), "3140099")
+	if err != nil {
+		t.Fatalf("new number should exist: %v", err)
+	}
+	if newLn.Name != "Kitchen" {
+		t.Errorf("name should be unchanged, got %q", newLn.Name)
+	}
+}
+
+func TestChangePhoneNumberDuplicate(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line 1: %v", err)
+	}
+	_, err = lineStore.Add(context.Background(), "3140002", "Bedroom", hh.ID)
+	if err != nil {
+		t.Fatalf("add line 2: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140002')")
+	})
+
+	form := url.Values{"number": {"314-0002"}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/number", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "number_error=") {
+		t.Errorf("expected redirect with number_error param, got %s", loc)
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err != nil {
+		t.Error("original line should still exist")
 	}
 }

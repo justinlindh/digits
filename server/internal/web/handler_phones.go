@@ -300,6 +300,8 @@ type lineDetailData struct {
 	FWReleases            []updates.Release
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
+	OtherLines            []line.Line
+	NumberError           string
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -369,6 +371,16 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var otherLines []line.Line
+	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
+	if err == nil {
+		for _, ol := range allLines {
+			if ol.ID != ln.ID {
+				otherLines = append(otherLines, ol)
+			}
+		}
+	}
+
 	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
@@ -382,6 +394,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FWReleases:            fwReleases,
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
+		OtherLines:            otherLines,
+		NumberError:           r.URL.Query().Get("number_error"),
 	})
 }
 
@@ -502,6 +516,67 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
+	oldNumber := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	newNumber := line.StripNumber(r.FormValue("number"))
+
+	ln, _ := h.requireLineOwnershipAdmin(w, r, oldNumber)
+	if ln == nil {
+		return
+	}
+
+	if h.tracker != nil && h.tracker.Busy(oldNumber) {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+		return
+	}
+
+	if err := line.ValidateNumber(newNumber); err != nil {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	if newNumber == oldNumber {
+		http.Redirect(w, r, "/phones/"+oldNumber, http.StatusSeeOther)
+		return
+	}
+
+	ctx := r.Context()
+	taken, err := h.lineStore.NumberExistsExcluding(ctx, newNumber, ln.ID)
+	if err != nil {
+		slog.Error("number uniqueness check failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if taken {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("that number is already in use"), http.StatusSeeOther)
+		return
+	}
+
+	if err := h.lineStore.Update(ctx, ln.ID, newNumber, ln.Name); err != nil {
+		slog.Error("line number update failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if h.tracker != nil {
+		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
+			slog.Error("call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
+		}
+	}
+
+	h.hub.RekeyNumber(oldNumber, newNumber)
+
+	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
+		slog.Warn("push line settings after number change failed", "number", newNumber, "err", err)
+	}
+
+	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
@@ -740,4 +815,99 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	targetLineIDStr := strings.TrimSpace(r.FormValue("target_line_id"))
+	if targetLineIDStr == "" {
+		http.Error(w, "target line required", http.StatusBadRequest)
+		return
+	}
+	targetLineID, err := strconv.ParseInt(targetLineIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid target line", http.StatusBadRequest)
+		return
+	}
+
+	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
+	if srcLn == nil {
+		return
+	}
+	if srcLn.ID == targetLineID {
+		http.Error(w, "cannot move to the same line", http.StatusBadRequest)
+		return
+	}
+
+	// Verify target line belongs to same household.
+	tgtLn, err := h.lineStore.GetByID(r.Context(), targetLineID)
+	if err != nil {
+		http.Error(w, "target line not found", http.StatusNotFound)
+		return
+	}
+	if tgtLn.HouseholdID != srcLn.HouseholdID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if listErr != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	deviceIDStr := strings.TrimSpace(r.FormValue("device_id"))
+	var deviceID int64
+	if deviceIDStr != "" {
+		deviceID, err = strconv.ParseInt(deviceIDStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid device", http.StatusBadRequest)
+			return
+		}
+		owned := false
+		for _, d := range devices {
+			if d.ID == deviceID {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			http.Error(w, "device does not belong to this line", http.StatusBadRequest)
+			return
+		}
+	} else {
+		if len(devices) != 1 {
+			http.Error(w, "device_id required for multi-device lines", http.StatusBadRequest)
+			return
+		}
+		deviceID = devices[0].ID
+	}
+
+	// Move the device.
+	if err := h.deviceStore.Reassign(r.Context(), deviceID, targetLineID); err != nil {
+		slog.Error("move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if err != nil {
+		slog.Error("list remaining devices failed", "line_id", srcLn.ID, "err", err)
+		http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+		return
+	}
+	if len(remaining) == 0 {
+		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
+			slog.Error("delete empty line failed", "line_id", srcLn.ID, "err", err)
+		}
+		http.Redirect(w, r, "/phones", http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }

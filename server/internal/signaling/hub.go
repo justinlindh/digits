@@ -370,6 +370,21 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 	}
 }
 
+// RekeyNumber moves all connections and state from oldNumber to newNumber.
+// Safe to call even if oldNumber has no entries.
+func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if cs, ok := h.conns[oldNumber]; ok {
+		h.conns[newNumber] = cs
+		delete(h.conns, oldNumber)
+	}
+	if us, ok := h.updateStatus[oldNumber]; ok {
+		h.updateStatus[newNumber] = us
+		delete(h.updateStatus, oldNumber)
+	}
+}
+
 // Get returns the first active connection for a number, or nil if none.
 // Used for connectivity checks (is anyone online on this line?).
 func (h *Hub) Get(number string) *Conn {
