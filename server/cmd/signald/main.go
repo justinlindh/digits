@@ -235,10 +235,11 @@ func run(ctx context.Context) error {
 		Emailer:        emailSender,
 		Metrics:        mreg,
 	}, web.HandlerConfig{
-		Addr:        cfg.Addr,
-		BaseURL:     cfg.BaseURL,
-		AdminSecret: cfg.AdminSecret,
-		DevMode:     cfg.DevMode,
+		Addr:              cfg.Addr,
+		BaseURL:           cfg.BaseURL,
+		AdminSecret:       cfg.AdminSecret,
+		DevMode:           cfg.DevMode,
+		WSRateLimitPerMin: cfg.WSRateLimitPerMin,
 	})
 	if err != nil {
 		return fmt.Errorf("create handler: %w", err)

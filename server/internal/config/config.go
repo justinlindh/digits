@@ -35,6 +35,10 @@ type Config struct {
 	// the local pod. Empty disables Redis (single-instance mode).
 	RedisURL string
 
+	// WSRateLimitPerMin overrides the default WebSocket upgrade rate limit
+	// (per IP, per minute). Default is 30. Set higher for load testing.
+	WSRateLimitPerMin int
+
 	// Release index source. Exactly one of FakeUpdates or GitHubRepo (owner/repo)
 	// should be set. FakeUpdates wins if both are set and is intended for e2e
 	// tests. An unset GitHubRepo disables the release endpoint entirely.
@@ -81,6 +85,9 @@ func Load() *Config {
 	}
 	// Redis
 	StringEnv("REDIS_URL", &c.RedisURL)
+	// Rate limits
+	c.WSRateLimitPerMin = 30
+	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
 	// Release index
 	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
 		c.FakeUpdates = true
