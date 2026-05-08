@@ -372,3 +372,88 @@ func TestGetHouseholdIDByNumber(t *testing.T) {
 		t.Error("expected error for non-existent number, got nil")
 	}
 }
+
+func TestSetAllSilentByHousehold(t *testing.T) {
+	store, cleanup := newTestStoreWithHousehold(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	l1, err := store.store.Add(ctx, "555-0201", "Kitchen", store.householdID)
+	if err != nil {
+		t.Fatalf("add l1: %v", err)
+	}
+	l2, err := store.store.Add(ctx, "555-0202", "Bedroom", store.householdID)
+	if err != nil {
+		t.Fatalf("add l2: %v", err)
+	}
+
+	// Batch-set all to silent.
+	if err := store.store.SetAllSilentByHousehold(ctx, store.householdID, true); err != nil {
+		t.Fatalf("SetAllSilentByHousehold(true): %v", err)
+	}
+	got1, _ := store.store.GetByID(ctx, l1.ID)
+	got2, _ := store.store.GetByID(ctx, l2.ID)
+	if !got1.Settings.SilentMode {
+		t.Error("l1 SilentMode should be true after batch-set")
+	}
+	if !got2.Settings.SilentMode {
+		t.Error("l2 SilentMode should be true after batch-set")
+	}
+
+	// Batch-set all to not silent.
+	if err := store.store.SetAllSilentByHousehold(ctx, store.householdID, false); err != nil {
+		t.Fatalf("SetAllSilentByHousehold(false): %v", err)
+	}
+	got1, _ = store.store.GetByID(ctx, l1.ID)
+	got2, _ = store.store.GetByID(ctx, l2.ID)
+	if got1.Settings.SilentMode {
+		t.Error("l1 SilentMode should be false after batch-unset")
+	}
+	if got2.Settings.SilentMode {
+		t.Error("l2 SilentMode should be false after batch-unset")
+	}
+}
+
+func TestAllSilentByHousehold(t *testing.T) {
+	store, cleanup := newTestStoreWithHousehold(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// No lines: should return false.
+	got, err := store.store.AllSilentByHousehold(ctx, store.householdID)
+	if err != nil {
+		t.Fatalf("AllSilentByHousehold (no lines): %v", err)
+	}
+	if got {
+		t.Error("expected false when household has no lines")
+	}
+
+	l1, err := store.store.Add(ctx, "555-0301", "Kitchen", store.householdID)
+	if err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, err := store.store.Add(ctx, "555-0302", "Bedroom", store.householdID); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	// Default: both not silent.
+	got, _ = store.store.AllSilentByHousehold(ctx, store.householdID)
+	if got {
+		t.Error("expected false when no lines are silent")
+	}
+
+	// Silence one: still false.
+	_ = store.store.UpdateSettings(ctx, l1.ID, Settings{VoiceStyle: VoiceStyleCopper, SilentMode: true})
+	got, _ = store.store.AllSilentByHousehold(ctx, store.householdID)
+	if got {
+		t.Error("expected false when only one of two lines is silent")
+	}
+
+	// Silence all: true.
+	_ = store.store.SetAllSilentByHousehold(ctx, store.householdID, true)
+	got, _ = store.store.AllSilentByHousehold(ctx, store.householdID)
+	if !got {
+		t.Error("expected true when all lines are silent")
+	}
+}

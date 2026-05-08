@@ -20,6 +20,18 @@ import (
 
 const maxLineNameRunes = 50
 
+func oldestVersions(infos []signaling.DeviceInfoSnapshot) (fw, pi string) {
+	for _, info := range infos {
+		if info.FirmwareVersion != "" && (fw == "" || updates.CompareSemver(info.FirmwareVersion, fw) < 0) {
+			fw = info.FirmwareVersion
+		}
+		if info.PiVersion != "" && (pi == "" || updates.CompareSemver(info.PiVersion, pi) < 0) {
+			pi = info.PiVersion
+		}
+	}
+	return
+}
+
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
@@ -39,6 +51,7 @@ type pairSuccess struct {
 type linesData struct {
 	chromeData
 	Lines                 []lineRow
+	AllSilent             bool
 	Error                 string
 	PairError             string
 	PairSuccess           *pairSuccess
@@ -97,7 +110,11 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
-		info := h.hub.DeviceInfo(l.Number)
+		infos := h.hub.AllDeviceInfo(l.Number)
+		var info *signaling.DeviceInfoSnapshot
+		if len(infos) > 0 {
+			info = &infos[0]
+		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
 
@@ -110,19 +127,30 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 			}
 		}
 
-		if idx != nil && info != nil {
-			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+		if idx != nil {
+			oldestFw, oldestPi := oldestVersions(infos)
+			if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
 			}
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
+			if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 			}
 		}
 		rows[i] = row
 	}
+	allSilent := len(rows) > 0
+	for _, row := range rows {
+		if !row.Line.Settings.SilentMode {
+			allSilent = false
+			break
+		}
+	}
+	cd := h.newChromeDataWithHouseholds(r, "phones")
+	cd.allSilent = allSilent
 	return linesData{
-		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
+		chromeData:            cd,
 		Lines:                 rows,
+		AllSilent:             allSilent,
 		Error:                 errMsg,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
@@ -324,15 +352,20 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		lastSeenAt = &t
 	}
 
-	devInfo := h.hub.DeviceInfo(number)
+	allInfos := h.hub.AllDeviceInfo(number)
+	var devInfo *signaling.DeviceInfoSnapshot
+	if len(allInfos) > 0 {
+		devInfo = &allInfos[0]
+	}
 
 	var piUpdateNotes, firmwareUpdateNotes []updates.Release
-	if idx != nil && devInfo != nil {
-		if latestPi != "" && devInfo.PiVersion != "" && updates.CompareSemver(devInfo.PiVersion, latestPi) < 0 {
-			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, devInfo.PiVersion, latestPi)
+	if idx != nil {
+		oldestFw, oldestPi := oldestVersions(allInfos)
+		if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 		}
-		if latestFw != "" && devInfo.FirmwareVersion != "" && updates.CompareSemver(devInfo.FirmwareVersion, latestFw) < 0 {
-			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, devInfo.FirmwareVersion, latestFw)
+		if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
 		}
 	}
 
@@ -515,7 +548,7 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 // ParseForm and extracted the field they need before invoking this helper.
 func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -528,11 +561,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		dnd := false
-		if hh != nil {
-			dnd = hh.DoNotDisturb
-		}
-		if err := h.pushLineSettings(number, next, dnd); err != nil {
+		if err := h.pushLineSettings(number, next); err != nil {
 			slog.Warn("push line settings failed", "number", number, "err", err)
 		}
 		ln.Settings = next
@@ -546,19 +575,17 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
-// pushLineSettings sends the updated effective settings to the device
-// currently registered as the given number, if any. The household-DND flag
-// is OR'd into SilentMode before sending so the device sees one
-// authoritative bool. A missing device is not an error; the next time that
-// device reconnects it will receive the latest effective settings via the
-// registration push in relay.OnRegistered.
-func (h *Handler) pushLineSettings(number string, settings line.Settings, householdDND bool) error {
+// pushLineSettings sends the updated settings to the device currently
+// registered as the given number, if any. A missing device is not an error;
+// the next time that device reconnects it will receive the latest effective
+// settings via the registration push in relay.OnRegistered.
+func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
 	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
-			SilentMode: line.EffectiveSilent(settings, householdDND),
+			SilentMode: settings.SilentMode,
 			AutoUpdate: settings.AutoUpdate,
 		},
 	})

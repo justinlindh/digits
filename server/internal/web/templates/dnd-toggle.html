@@ -8,7 +8,7 @@
       style="display: flex; align-items: center; gap: 8px;">
   <label class="toggle toggle--sm">
     <input type="checkbox" name="enabled" value="true"
-           {{if .HouseholdDND}}checked{{end}}
+           {{if .AllSilent}}checked{{end}}
            onchange="this.form.requestSubmit()">
     <span class="toggle__track"></span>
   </label>
@@ -39,7 +39,7 @@
         class="am-settings__toggle-row" style="gap: 10px; margin: 0;">
     <label class="am-settings__dip" aria-label="Do Not Disturb">
       <input type="checkbox" name="enabled" value="true"
-             {{if .HouseholdDND}}checked{{end}}
+             {{if .AllSilent}}checked{{end}}
              onchange="this.form.requestSubmit()"
              class="am-settings__dip-input">
       <span class="am-settings__dip-body" aria-hidden="true">

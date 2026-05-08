@@ -26,9 +26,11 @@ func TestDeviceStateIntegrationTwoPods(t *testing.T) {
 	defer func() { _ = client.Close() }()
 
 	t.Cleanup(func() {
-		iter := client.Scan(ctx, 0, "digits:device:test-*", 100).Iterator()
-		for iter.Next(ctx) {
-			_ = client.Del(ctx, iter.Val())
+		for _, pattern := range []string{"digits:device:*", "digits:line-devices:test-*"} {
+			iter := client.Scan(ctx, 0, pattern, 100).Iterator()
+			for iter.Next(ctx) {
+				_ = client.Del(ctx, iter.Val())
+			}
 		}
 	})
 
@@ -53,7 +55,7 @@ func TestDeviceStateIntegrationTwoPods(t *testing.T) {
 		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "2.0.0")
 	}
 
-	dsA.SetOffline(ctx, "test-5551234")
+	dsA.SetOffline(ctx, "test-5551234", "hw-int-1")
 	if dsB.IsOnline(ctx, "test-5551234") {
 		t.Fatal("pod B should see device as offline after unregister")
 	}
@@ -74,13 +76,14 @@ func TestDeviceStateTTLExpiryIntegration(t *testing.T) {
 	defer func() { _ = client.Close() }()
 
 	t.Cleanup(func() {
-		_ = client.Del(ctx, "digits:device:test-ttl-5551234")
+		_ = client.Del(ctx, "digits:device:hw-ttl-1")
+		_ = client.Del(ctx, "digits:line-devices:test-ttl-5551234")
 	})
 
 	ds := NewDeviceState(client, "pod-ttl")
-	ds.SetOnline(ctx, "test-ttl-5551234", DevicePresence{})
+	ds.SetOnline(ctx, "test-ttl-5551234", DevicePresence{HardwareID: "hw-ttl-1"})
 
-	ttl, err := client.TTL(ctx, "digits:device:test-ttl-5551234").Result()
+	ttl, err := client.TTL(ctx, "digits:device:hw-ttl-1").Result()
 	if err != nil {
 		t.Fatal(err)
 	}

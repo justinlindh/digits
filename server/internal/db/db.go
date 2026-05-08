@@ -479,6 +479,9 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (28);
     END IF;
 END $$;`,
+		// v29: remove household-level do_not_disturb flag. "Silence All" is
+		// now derived from per-line silent_mode settings.
+		`ALTER TABLE households DROP COLUMN IF EXISTS do_not_disturb`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

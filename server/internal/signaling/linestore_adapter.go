@@ -19,14 +19,13 @@ func NewLineStoreAdapter(s *line.Store) LineStore {
 }
 
 func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error) {
-	settings, householdDND, err := a.inner.EffectiveSettingsByNumber(ctx, number)
+	settings, err := a.inner.EffectiveSettingsByNumber(ctx, number)
 	if err != nil {
 		return nil, err
 	}
-	silent := line.EffectiveSilent(settings, householdDND)
 	return &LineSettings{
 		VoiceStyle: settings.VoiceStyle,
-		SilentMode: silent,
+		SilentMode: settings.SilentMode,
 		AutoUpdate: settings.AutoUpdate,
 	}, nil
 }

@@ -50,7 +50,7 @@ func TestDeviceStateSetOffline(t *testing.T) {
 		HardwareID: "hw-abc",
 	})
 
-	ds.SetOffline(ctx, "5551234")
+	ds.SetOffline(ctx, "5551234", "hw-abc")
 
 	if ds.IsOnline(ctx, "5551234") {
 		t.Fatal("expected device to be offline after SetOffline")
@@ -136,7 +136,7 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 		FirmwareVersion: "0.5.0",
 	})
 
-	ds.UpdateDeviceInfo(ctx, "5551234", DevicePresence{
+	ds.UpdateDeviceInfo(ctx, "hw-abc", DevicePresence{
 		PiVersion:  "1.1.0",
 		RemoteAddr: "192.168.1.50",
 	})
@@ -167,7 +167,7 @@ func TestDeviceStateTouchLastSeen(t *testing.T) {
 
 	mr.FastForward(60 * time.Second)
 
-	ds.TouchLastSeen(ctx, "5551234")
+	ds.TouchLastSeen(ctx, "5551234", "hw-abc")
 
 	ts := ds.LastSeenAt(ctx, "5551234")
 	if ts == nil {
@@ -183,7 +183,7 @@ func TestDeviceStateTouchLastSeen(t *testing.T) {
 		t.Errorf("LastSeenAt too far from now: %v", diff)
 	}
 
-	ttl := mr.TTL("digits:device:5551234")
+	ttl := mr.TTL("digits:device:hw-abc")
 	if ttl < 80*time.Second || ttl > 91*time.Second {
 		t.Errorf("TTL after TouchLastSeen = %v, want ~90s", ttl)
 	}
@@ -235,4 +235,77 @@ func TestDeviceStateTTLExpiry(t *testing.T) {
 	if ds.IsOnline(ctx, "5551234") {
 		t.Fatal("expected offline after TTL expiry")
 	}
+}
+
+func TestDeviceStateAllDeviceInfoMultiDevice(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{
+		PodID:           "pod-1",
+		HardwareID:      "hw-aaa",
+		PiVersion:       "1.0.0",
+		FirmwareVersion: "0.5.0",
+	})
+	ds.SetOnline(ctx, "5551234", DevicePresence{
+		PodID:           "pod-1",
+		HardwareID:      "hw-bbb",
+		PiVersion:       "1.2.0",
+		FirmwareVersion: "0.8.0",
+	})
+
+	infos := ds.AllDeviceInfo(ctx, "5551234")
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(infos))
+	}
+
+	versions := map[string]string{}
+	for _, info := range infos {
+		versions[info.HardwareID] = info.PiVersion
+	}
+	if versions["hw-aaa"] != "1.0.0" || versions["hw-bbb"] != "1.2.0" {
+		t.Errorf("unexpected versions: %v", versions)
+	}
+}
+
+func TestDeviceStateSetOfflineRemovesOneDevice(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{
+		PodID: "pod-1", HardwareID: "hw-aaa", PiVersion: "1.0.0",
+	})
+	ds.SetOnline(ctx, "5551234", DevicePresence{
+		PodID: "pod-1", HardwareID: "hw-bbb", PiVersion: "1.2.0",
+	})
+
+	ds.SetOffline(ctx, "5551234", "hw-aaa")
+
+	if !ds.IsOnline(ctx, "5551234") {
+		t.Fatal("line should still be online with one remaining device")
+	}
+
+	infos := ds.AllDeviceInfo(ctx, "5551234")
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 device after removing one, got %d", len(infos))
+	}
+	if infos[0].HardwareID != "hw-bbb" {
+		t.Errorf("remaining device = %q, want hw-bbb", infos[0].HardwareID)
+	}
+}
+
+func TestDeviceStateEmptyHardwareIDSkipped(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-1"})
+
+	if ds.IsOnline(ctx, "5551234") {
+		t.Fatal("device with empty hardware ID should not register in Redis")
+	}
+
+	ds.SetOffline(ctx, "5551234", "")
+
+	ds.TouchLastSeen(ctx, "5551234", "")
+	ds.UpdateDeviceInfo(ctx, "", DevicePresence{PiVersion: "1.0.0"})
 }
