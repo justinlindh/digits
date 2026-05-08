@@ -282,6 +282,9 @@ type HandlerConfig struct {
 	// which matches the layout the Makefile's dev-up target runs from.
 	// The field exists mainly so tests can point at a temp directory.
 	DevStaticDir string
+	// WSRateLimitPerMin overrides the default WebSocket upgrade rate limit
+	// (per IP, per minute). Zero uses the default (30).
+	WSRateLimitPerMin int
 }
 
 // Deps bundles the stores, hub, and other collaborators the web Handler
@@ -304,6 +307,13 @@ type Deps struct {
 	InviteStore    *household.InviteStore
 	Emailer        email.Sender
 	Metrics        *metrics.Registry
+}
+
+func wsRateLimit(cfg HandlerConfig) int {
+	if cfg.WSRateLimitPerMin > 0 {
+		return cfg.WSRateLimitPerMin
+	}
+	return 30
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
@@ -455,7 +465,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		googleLoginLimiter:       ratelimit.New(10, time.Minute),
 		pairingLimiter:           ratelimit.New(5, time.Minute),
 		inviteLimiter:            ratelimit.New(5, time.Minute),
-		wsLimiter:                ratelimit.New(30, time.Minute),
+		wsLimiter:                ratelimit.New(wsRateLimit(cfg), time.Minute),
 		metrics:                  deps.Metrics,
 	}, nil
 }
