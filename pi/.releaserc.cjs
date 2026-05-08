@@ -17,6 +17,7 @@ module.exports = {
   plugins: [
     [squashExpander, {
       _wrapped: wrapped,
+      pathScopes: { 'pi/': 'digitsd' },
       releaseRules: [
         // Scope globs use micromatch substring patterns so multi-scope commits
         // like fix(digitsd,firmware,server) trigger this release too.
