@@ -488,6 +488,45 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 
 .btn--sm { padding: 5px 10px; font-size: 12.5px; border-radius: 6px; }
 
+/* --------- Segmented radio --------- */
+
+.seg-radio {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+.seg-radio__opt {
+  cursor: pointer;
+  margin: 0;
+}
+.seg-radio__opt + .seg-radio__opt { border-left: 1px solid var(--rule); }
+.seg-radio__opt input { position: absolute; opacity: 0; pointer-events: none; }
+.seg-radio__label {
+  display: block;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--paper);
+  transition: background-color 0.12s, color 0.12s;
+}
+.seg-radio__opt:hover .seg-radio__label { background: var(--paper-2); }
+.seg-radio__opt input:checked + .seg-radio__label {
+  background: var(--ink);
+  color: var(--paper);
+}
+.seg-radio__opt input:focus-visible + .seg-radio__label {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+.pair-mode-field {
+  border: none;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.pair-mode-field legend { padding: 0; }
+
 /* --------- Forms --------- */
 
 .field { margin-bottom: 14px; }
