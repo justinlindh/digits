@@ -169,9 +169,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeDeviceInfo:
 		updated := false
 		if msg.HardwareID != "" {
-			updated = r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr)
+			updated = r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
 		} else {
-			updated = r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr)
+			updated = r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
 		}
 		if updated {
 			slog.InfoContext(ctx, "device_info", "number", from,

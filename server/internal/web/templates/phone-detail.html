@@ -49,7 +49,11 @@
         <dl class="kv">
           <div class="kv__row">
             <dt class="kv__key">Number</dt>
-            <dd class="kv__val kv__val--mono">{{fmtPhone .Line.Number}}</dd>
+            <dd class="kv__val spread">
+              <span class="num">{{fmtPhone .Line.Number}}</span>
+              <button type="button" class="btn btn--quiet btn--sm"
+                      onclick="document.getElementById('line-editor').showModal()">Edit</button>
+            </dd>
           </div>
           {{template "name-section" .}}
           <div class="kv__row">
@@ -180,6 +184,14 @@
                 <span class="num" style="font-size: 13.5px; color: var(--ink);">{{.DeviceInfo.RemoteAddr}}</span>
               </div>
             </div>
+            {{if .DeviceInfo.DevMode}}
+            <div>
+              <div class="field__label" style="margin-bottom: 4px;">Dev mode</div>
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="chip chip--live" style="text-decoration: none;">
+                <span class="chip__dot"></span>Admin panel &#x2197;
+              </a>
+            </div>
+            {{end}}
             {{end}}
             {{if $.LastSeenAt}}
             <div>
@@ -343,6 +355,91 @@
       {{end}}
     </div>
   </div>
+
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
+        <div class="field">
+          <label for="edit-number" class="field__label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric"
+                 class="field__input field__input--mono">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    {{if .OtherLines}}
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="field__label">Handset</label>
+          <select id="move-device" name="device_id" required class="field__input">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
+          {{end}}
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="field__label">Move to</label>
+          <select id="move-target" name="target_line_id" required class="field__input">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="field__hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--danger">Move handset</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+
+    </div>
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
 
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -832,9 +929,13 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Details</span>
       <dl class="am-settings__kv">
-        <div class="am-settings__kv-row">
+        <div class="am-settings__kv-row" id="number-section">
           <dt class="am-settings__kv-key am-label">Number</dt>
-          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{fmtPhone .Line.Number}}</span></dd>
+          <dd class="am-settings__kv-val">
+            <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
+            <button type="button" class="am-tab"
+                    onclick="document.getElementById('line-editor').showModal()">Edit</button>
+          </dd>
         </div>
         {{template "am-name-section" .}}
         <div class="am-settings__kv-row">
@@ -865,6 +966,17 @@
             <dt class="am-settings__kv-key am-label">LAN IP</dt>
             <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.RemoteAddr}}</span></dd>
           </div>
+          {{if .DeviceInfo.DevMode}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">Dev mode</dt>
+            <dd class="am-settings__kv-val">
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="am-key am-key--accent" style="text-decoration: none;">
+                <span class="am-key__symbol">&#x2699;</span>
+                <span class="am-key__label">Admin panel</span>
+              </a>
+            </dd>
+          </div>
+          {{end}}
           {{end}}
         {{end}}
         {{if .LastSeenAt}}
@@ -978,6 +1090,93 @@
     </section>
 
   </div>
+
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
+        <div class="field">
+          <label for="edit-number" class="am-label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-tab">Save</button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    {{if .OtherLines}}
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="am-label">Handset</label>
+          <select id="move-device" name="device_id" required style="width: 100%; min-width: 120px;">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
+          {{end}}
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="am-label">Move to</label>
+          <select id="move-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="am-hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Move handset</span>
+          </button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+
+    </div>
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
 
   <script>
   (function() {

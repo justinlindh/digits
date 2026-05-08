@@ -190,6 +190,9 @@ type Message struct {
 	// Flash capability (device_info messages)
 	FlashCapable bool `json:"flash_capable,omitempty"`
 
+	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	DevMode bool `json:"dev_mode,omitempty"`
+
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"
 

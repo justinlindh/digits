@@ -298,6 +298,8 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 	number := r.URL.Query().Get("number")
 	fw := r.URL.Query().Get("fw")
 	pi := r.URL.Query().Get("pi")
+	ip := r.URL.Query().Get("ip")
+	dm := r.URL.Query().Get("dev_mode") == "1"
 	if number == "" || fw == "" {
 		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
 		return
@@ -313,7 +315,7 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 		return
 	}
-	h.hub.UpdateDeviceInfo(number, pi, "", fw, "", "")
+	h.hub.UpdateDeviceInfo(number, pi, "", fw, "", ip, dm)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)
 }

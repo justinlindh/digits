@@ -203,3 +203,40 @@ func TestAuthStatus_NonExistent(t *testing.T) {
 		t.Errorf("AuthStatus = paired=%v valid=%v, want both false", paired, valid)
 	}
 }
+
+func TestReassign(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Reassign Household")
+	lineA := createTestLine(t, database, "5550010001", hhID)
+	lineB := createTestLine(t, database, "5550010002", hhID)
+	devID := insertTestDevice(t, database, lineA, "hw-reassign-001")
+
+	if err := s.Reassign(context.Background(), devID, lineB); err != nil {
+		t.Fatalf("Reassign: %v", err)
+	}
+
+	devicesA, err := s.ListByLine(context.Background(), lineA)
+	if err != nil {
+		t.Fatalf("ListByLine(A): %v", err)
+	}
+	if len(devicesA) != 0 {
+		t.Errorf("expected 0 devices on line A, got %d", len(devicesA))
+	}
+
+	devicesB, err := s.ListByLine(context.Background(), lineB)
+	if err != nil {
+		t.Fatalf("ListByLine(B): %v", err)
+	}
+	if len(devicesB) != 1 {
+		t.Errorf("expected 1 device on line B, got %d", len(devicesB))
+	}
+}
+
+func TestReassign_NotFound(t *testing.T) {
+	s, _ := testStore(t)
+
+	err := s.Reassign(context.Background(), 999999, 1)
+	if err == nil {
+		t.Error("expected error for non-existent device")
+	}
+}
