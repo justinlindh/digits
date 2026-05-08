@@ -46,7 +46,7 @@ func NewEasterEggDetector(eggs []EasterEgg, play func(clip string)) *EasterEggDe
 		eggs:   eggs,
 		maxLen: maxLen,
 		play:   play,
-		MaxGap: 1500 * time.Millisecond,
+		MaxGap: 5 * time.Second,
 		MinGap: 100 * time.Millisecond,
 	}
 }
