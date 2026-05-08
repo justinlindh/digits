@@ -158,30 +158,25 @@ func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
 	return &l, nil
 }
 
-// EffectiveSettingsByNumber returns the line's settings plus the household's
-// do_not_disturb flag in a single query. Used by the signaling layer to push
-// effective silent state without two round-trips.
-func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, bool, error) {
+// EffectiveSettingsByNumber returns the line's settings for the given number.
+// Used by the signaling layer to push settings on device registration.
+func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, error) {
 	var settingsRaw []byte
-	var householdDND bool
 	err := s.db.QueryRowContext(ctx,
-		`SELECT l.settings, h.do_not_disturb
-		 FROM lines l
-		 JOIN households h ON h.id = l.household_id
-		 WHERE l.number = $1`,
+		`SELECT settings FROM lines WHERE number = $1`,
 		number,
-	).Scan(&settingsRaw, &householdDND)
+	).Scan(&settingsRaw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Settings{}, false, ErrNotFound
+		return Settings{}, ErrNotFound
 	}
 	if err != nil {
-		return Settings{}, false, fmt.Errorf("effective settings by number %s: %w", number, err)
+		return Settings{}, fmt.Errorf("effective settings by number %s: %w", number, err)
 	}
 	settings, err := scanSettings(settingsRaw)
 	if err != nil {
-		return Settings{}, false, err
+		return Settings{}, err
 	}
-	return settings, householdDND, nil
+	return settings, nil
 }
 
 // List returns all lines ordered by number.
