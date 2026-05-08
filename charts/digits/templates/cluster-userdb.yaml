@@ -50,6 +50,10 @@ spec:
   postgresql:
     shared_preload_libraries:
       {{- toYaml .Values.cnpg.userdb.sharedPreloadLibraries | nindent 6 }}
+    {{- if .Values.cnpg.userdb.parameters }}
+    parameters:
+      {{- toYaml .Values.cnpg.userdb.parameters | nindent 6 }}
+    {{- end }}
   {{- end }}
   {{- if .Values.observability.enabled }}
   monitoring:
