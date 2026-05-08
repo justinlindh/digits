@@ -1218,8 +1218,6 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .show-sm { display: block; }
 }
 
-/* Ringer panel: checkbox-with-label row. Distinct from the .toggle pill-switch
-   used elsewhere; this is a plain native checkbox paired with text. */
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -1228,10 +1226,35 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   user-select: none;
 }
 .checkbox-row input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--ink-muted);
+  border-radius: 4px;
+  background: transparent;
   cursor: pointer;
-  accent-color: var(--ink);
+  flex-shrink: 0;
+  position: relative;
+}
+.checkbox-row input[type="checkbox"]:checked {
+  background: var(--brass);
+  border-color: var(--brass);
+}
+.checkbox-row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--paper);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+.checkbox-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
 }
 .checkbox-row__label {
   font-size: 14px;
@@ -2124,7 +2147,6 @@ html[data-theme="dark"] .keypad-wrap__strip {
 html[data-theme="dark"] .toggle__track::after {
   box-shadow: 0 1px 2px rgba(0,0,0,0.5), inset 0 1px 0 rgba(221,168,103,0.08);
 }
-
 /* Primary button flips: ink-on-paper in light mode becomes
    parchment-on-walnut; hover raises toward pure parchment. */
 html[data-theme="dark"] .btn--primary {
