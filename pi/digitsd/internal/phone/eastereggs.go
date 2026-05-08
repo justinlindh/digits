@@ -19,13 +19,16 @@ type EasterEgg struct {
 }
 
 // EasterEggDetector watches keypress timing to detect easter egg sequences.
-// Each key must arrive within MinGap–MaxGap of the previous one.
+// Each key must arrive within MinGap–MaxGap of the previous one, and the
+// sequence must be the very first keys pressed in a dialing session (no
+// suffix matching).
 type EasterEggDetector struct {
-	mu     sync.Mutex
-	eggs   []EasterEgg
-	maxLen int // longest trigger length, computed once at construction
-	buf    []timedKey
-	play   func(clip string) // callback to play a clip
+	mu      sync.Mutex
+	eggs    []EasterEgg
+	maxLen  int // longest trigger length, computed once at construction
+	buf     []timedKey
+	tainted bool // set when non-egg keys precede; cleared by Reset
+	play    func(clip string)
 
 	MaxGap time.Duration
 	MinGap time.Duration
@@ -49,33 +52,39 @@ func NewEasterEggDetector(eggs []EasterEgg, play func(clip string)) *EasterEggDe
 }
 
 // AddKey processes a keypress. Returns true if an easter egg was triggered.
+// The sequence must be the very first keys pressed in a dialing session:
+// typing any non-matching prefix taints the detector until the next Reset.
 func (d *EasterEggDetector) AddKey(key string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	if d.tainted {
+		return false
+	}
+
 	now := time.Now()
 
-	// Check timing against last entry
 	if len(d.buf) > 0 {
 		gap := now.Sub(d.buf[len(d.buf)-1].when)
 		if gap > d.MaxGap || gap < d.MinGap {
+			d.tainted = true
 			d.buf = d.buf[:0]
+			return false
 		}
 	}
 
 	d.buf = append(d.buf, timedKey{key: key, when: now})
 
-	// Keep buffer trimmed to longest trigger.
 	if len(d.buf) > d.maxLen {
-		d.buf = d.buf[len(d.buf)-d.maxLen:]
+		d.tainted = true
+		d.buf = d.buf[:0]
+		return false
 	}
 
 	seq := d.sequence()
 
-	// Check each egg (longest triggers first to avoid partial false matches)
 	for _, e := range d.eggs {
-		tLen := len(e.Trigger)
-		if len(seq) >= tLen && seq[len(seq)-tLen:] == e.Trigger {
+		if seq == e.Trigger {
 			d.buf = d.buf[:0]
 			slog.Info("phone: easter egg detected", "name", e.Name)
 			if d.play != nil {
@@ -89,10 +98,11 @@ func (d *EasterEggDetector) AddKey(key string) bool {
 	return false
 }
 
-// Reset clears the buffer (e.g., on hang-up).
+// Reset clears the buffer and tainted flag (e.g., on hang-up).
 func (d *EasterEggDetector) Reset() {
 	d.mu.Lock()
 	d.buf = d.buf[:0]
+	d.tainted = false
 	d.mu.Unlock()
 }
 
