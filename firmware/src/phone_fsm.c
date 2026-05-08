@@ -280,6 +280,10 @@ static void process_pi_command(const char *cmd) {
         phase_write(PHASE_RECOVERY);
         if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
         uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "PHASE?") == 0) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "PHASE:0x%02X", phase_read());
+        uart_proto_send(buf);
     } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
         // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
         // resets and stays in bootrom waiting for a USB host connection

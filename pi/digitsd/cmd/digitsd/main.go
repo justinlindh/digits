@@ -2100,27 +2100,52 @@ func main() {
 		}
 	}
 
-	// Check if the Pico detected a held * key at boot (panic button).
-	// BOOT:PANIC is an unsolicited event (see isUnsolicitedEvent in serial.go)
-	// and sits on the events channel by the time POST completes.
+	// Query the Pico's persisted phase byte. If the user held * during
+	// power-on, the Pico wrote PHASE_RECOVERY to flash before the Pi
+	// even started booting. We read it here, act on it, then clear it
+	// so the device doesn't loop back into recovery on every boot.
+	cachedPhase := "unknown"
 	if postOk {
-		drainDeadline := time.After(100 * time.Millisecond)
-	drainLoop:
-		for {
-			select {
-			case ev := <-sp.Events():
-				if ev == "BOOT:PANIC" {
-					slog.Info("panic button: * key held at boot, entering recovery mode")
-					if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
-						slog.Warn("panic button: failed to set boot counter", "error", err)
-					}
-					_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
-					sp.StateSet("RECOVERY")
-					time.Sleep(500 * time.Millisecond)
-					doReboot()
+		const phaseRetries = 5
+		var phase uint8
+		var phaseErr error
+		for i := 1; i <= phaseRetries; i++ {
+			phase, phaseErr = sp.QueryPhase()
+			if phaseErr == nil {
+				break
+			}
+			slog.Warn("phase query failed", "attempt", i, "max", phaseRetries, "error", phaseErr)
+			time.Sleep(500 * time.Millisecond)
+		}
+		if phaseErr != nil {
+			slog.Error("phase query: all retries exhausted, proceeding without phase check", "error", phaseErr)
+		} else {
+			switch phase {
+			case phone.PhasePaired:
+				cachedPhase = "paired"
+			case phone.PhaseUnpaired:
+				cachedPhase = "unpaired"
+			case phone.PhaseSetup:
+				cachedPhase = "setup"
+			case phone.PhaseRecovery:
+				cachedPhase = "recovery"
+			default:
+				cachedPhase = fmt.Sprintf("0x%02X", phase)
+			}
+			slog.Info("pico phase", "phase", fmt.Sprintf("0x%02X", phase))
+			if phase == phone.PhaseRecovery {
+				slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")
+				if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+					slog.Warn("panic button: failed to set boot counter", "error", err)
 				}
-			case <-drainDeadline:
-				break drainLoop
+				_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
+				if cfg.DeviceToken == "" {
+					sp.StateSet("UNPAIRED")
+				} else {
+					sp.StateSet("PAIRED")
+				}
+				time.Sleep(500 * time.Millisecond)
+				doReboot()
 			}
 		}
 	}
@@ -2539,12 +2564,7 @@ func main() {
 		slog.Info("devmode: flag present, starting dev-mode web UI")
 		// Snapshot the phase once at startup; it rarely changes during
 		// normal operation and querying UART on every HTTP poll is wasteful.
-		startupPhase := "unknown"
-		if postOk {
-			if resp, err := sp.SendCommand("PHASE?", 1*time.Second); err == nil {
-				startupPhase = resp
-			}
-		}
+		startupPhase := cachedPhase
 		devCfg := &devModeConfig{
 			FlagPath:           devmode.DefaultFlagPath,
 			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,

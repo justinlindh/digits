@@ -17,3 +17,4 @@ digits ALL=(root) NOPASSWD: /usr/bin/rm -f /data/wifi-configured
 digits ALL=(root) NOPASSWD: /usr/bin/openocd
 digits ALL=(root) NOPASSWD: /usr/bin/systemctl stop digitsd.service, /usr/bin/systemctl start digitsd.service, /usr/bin/systemctl daemon-reload
 digits ALL=(root) NOPASSWD: /usr/sbin/reboot
+digits ALL=(root) NOPASSWD: /usr/bin/journalctl -u digitsd *

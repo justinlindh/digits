@@ -176,6 +176,7 @@ function uploadELF(input){
 
 function switchLog(source){
   logSource=source;
+  lastSerial='';lastJournal='';
   document.getElementById('tab-serial').className='tab'+(source==='serial'?' active':'');
   document.getElementById('tab-journal').className='tab'+(source==='journal'?' active':'');
   document.getElementById('log').textContent='Loading...';
