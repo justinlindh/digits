@@ -8,9 +8,7 @@ import (
 )
 
 // fakeLineStore is an in-memory LineStore for unit tests. It returns whatever
-// LineSettings the caller wires in, keyed by phone number. The OR of per-line
-// silent and household DND is the production adapter's job (and is pinned by
-// line.TestEffectiveSilent), so this fake stays a plain pass-through.
+// LineSettings the caller wires in, keyed by phone number.
 type fakeLineStore struct {
 	settings    map[string]*LineSettings
 	identifiers map[string]fakeLineID

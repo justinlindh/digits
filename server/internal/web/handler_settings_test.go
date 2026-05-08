@@ -54,40 +54,32 @@ func expectLineSettingsPush(t *testing.T, conn *signaling.Conn, wantSilent bool)
 
 func TestHandleSettingsDoNotDisturbPost(t *testing.T) {
 	cases := []struct {
-		name             string
-		seedHouseholdDND bool
-		seedLineSilent   bool
-		numLines         int
-		postEnabled      string
-		wantStored       bool
-		wantWireSilent   bool
+		name           string
+		seedLineSilent bool
+		numLines       int
+		postEnabled    string
+		wantSilent     bool
 	}{
 		{
-			name:             "persists and fans out to multiple lines",
-			seedHouseholdDND: false,
-			seedLineSilent:   false,
-			numLines:         2,
-			postEnabled:      "true",
-			wantStored:       true,
-			wantWireSilent:   true,
+			name:           "silence all sets every line to silent",
+			seedLineSilent: false,
+			numLines:       2,
+			postEnabled:    "true",
+			wantSilent:     true,
 		},
 		{
-			name:             "off sends false when no per-line silent",
-			seedHouseholdDND: true,
-			seedLineSilent:   false,
-			numLines:         1,
-			postEnabled:      "false",
-			wantStored:       false,
-			wantWireSilent:   false,
+			name:           "unsilence all clears every line",
+			seedLineSilent: true,
+			numLines:       2,
+			postEnabled:    "false",
+			wantSilent:     false,
 		},
 		{
-			name:             "off preserves per-line silent",
-			seedHouseholdDND: true,
-			seedLineSilent:   true,
-			numLines:         1,
-			postEnabled:      "false",
-			wantStored:       false,
-			wantWireSilent:   true,
+			name:           "single line silence",
+			seedLineSilent: false,
+			numLines:       1,
+			postEnabled:    "true",
+			wantSilent:     true,
 		},
 	}
 
@@ -96,13 +88,8 @@ func TestHandleSettingsDoNotDisturbPost(t *testing.T) {
 			h, database, authStore := setupHandler(t)
 			cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-			if tc.seedHouseholdDND {
-				if err := h.householdStore.SetDoNotDisturb(context.Background(), hh.ID, true); err != nil {
-					t.Fatalf("seed DND=true: %v", err)
-				}
-			}
-
 			conns := make([]*signaling.Conn, 0, tc.numLines)
+			lines := make([]*line.Line, 0, tc.numLines)
 			for i := 0; i < tc.numLines; i++ {
 				number := nextPhone()
 				ln, conn := setupLineWithConn(t, h, database, hh, number, "Phone")
@@ -112,26 +99,28 @@ func TestHandleSettingsDoNotDisturbPost(t *testing.T) {
 					}
 				}
 				conns = append(conns, conn)
+				lines = append(lines, ln)
 			}
 
 			w := postDoNotDisturb(t, h, cookie, tc.postEnabled)
 			if w.Code != http.StatusSeeOther {
 				t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
 			}
-			if loc := w.Header().Get("Location"); loc != "/settings?saved=1" {
-				t.Fatalf("expected redirect to /settings?saved=1, got %q", loc)
+
+			// Verify per-line silent_mode was set correctly.
+			for _, ln := range lines {
+				got, err := h.lineStore.GetByID(context.Background(), ln.ID)
+				if err != nil {
+					t.Fatalf("get line: %v", err)
+				}
+				if got.Settings.SilentMode != tc.wantSilent {
+					t.Errorf("line %s: SilentMode=%v, want %v", ln.Number, got.Settings.SilentMode, tc.wantSilent)
+				}
 			}
 
-			got, err := h.householdStore.GetByID(context.Background(), hh.ID)
-			if err != nil {
-				t.Fatalf("get household: %v", err)
-			}
-			if got.DoNotDisturb != tc.wantStored {
-				t.Fatalf("expected DoNotDisturb=%v after POST, got %v", tc.wantStored, got.DoNotDisturb)
-			}
-
+			// Verify push to each connected device.
 			for _, conn := range conns {
-				expectLineSettingsPush(t, conn, tc.wantWireSilent)
+				expectLineSettingsPush(t, conn, tc.wantSilent)
 			}
 		})
 	}

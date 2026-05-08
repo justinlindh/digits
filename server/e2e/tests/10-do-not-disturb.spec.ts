@@ -1,19 +1,23 @@
 /**
- * 10-do-not-disturb.spec.ts -- Household Do Not Disturb toggle.
+ * 10-do-not-disturb.spec.ts -- Household "Silence All" toggle.
  *
  * Tests:
- *   - Toggling DND on the Settings page surfaces the household chip on every
- *     primary surface (overview, lines, calls, links, settings).
- *   - The per-line silent-mode badge counts on /phones do not change when the
- *     household DND flag flips on or off (the two settings are independent).
- *   - Toggling DND off removes the chip everywhere.
+ *   - Toggling "Silence All" on the Settings page surfaces the DND chip on
+ *     every primary surface (overview, lines, calls, links, settings).
+ *   - Toggling it off removes the chip everywhere and clears per-line
+ *     silent badges.
  *   - Same flow under both the intercom and dialup themes.
+ *
+ * "Silence All" is derived state: it batch-writes silent_mode on every line
+ * in the household. The chip appears when all lines are silent.
  *
  * Skips when the dev server is not reachable.
  */
 
 import { test, expect, Page } from '@playwright/test';
 import { isServerUp, setTheme, Theme } from './helpers';
+
+const DND_TEST_LINE = '5550199';
 
 test.beforeEach(async ({ page }, testInfo) => {
   const up = await isServerUp();
@@ -25,8 +29,23 @@ function isAuthOrOnboard(url: string): boolean {
 }
 
 /**
+ * Ensure the household has at least one phone line so "Silence All" can
+ * derive its state. Idempotent: a second call for the same number is a
+ * harmless no-op (the server returns 303 either way).
+ */
+async function ensureLine(page: Page): Promise<void> {
+  const resp = await page.request.post('/phones', {
+    form: { number: DND_TEST_LINE, name: 'DND Test' },
+    maxRedirects: 0,
+  });
+  if (resp.status() >= 500) {
+    test.skip(true, 'Could not seed phone line for DND test');
+  }
+}
+
+/**
  * Returns the chip selector for the given theme. Both layouts render the chip
- * inside the page chrome only when the household DND flag is on.
+ * inside the page chrome only when all lines are silent.
  */
 function chipSelector(theme: Theme): string {
   return theme === 'dialup'
@@ -35,19 +54,7 @@ function chipSelector(theme: Theme): string {
 }
 
 /**
- * Counts the per-line silent badges on /phones. Returns 0 when the page is
- * unreachable (auth/onboard) so callers can short-circuit gracefully.
- */
-async function countSilentBadges(page: Page): Promise<number> {
-  await page.goto('/phones');
-  if (isAuthOrOnboard(page.url())) {
-    return 0;
-  }
-  return await page.locator('.phone-silent').count();
-}
-
-/**
- * Sets the household DND flag via the settings form. The toggle auto-submits
+ * Sets the "Silence All" toggle via the settings form. The toggle auto-submits
  * via onchange; we wait for the POST so the redirect to /settings?saved=1 has
  * landed before the next assertion.
  */
@@ -97,18 +104,14 @@ function runDNDFlow(theme: Theme): void {
       }
     });
 
-    test('chip appears across pages, per-line badges unchanged', async ({
+    test('chip appears across pages when silenced', async ({
       page,
     }) => {
-      // Baseline: count per-line silent badges before any DND change.
-      const before = await countSilentBadges(page);
-      if (isAuthOrOnboard(page.url())) {
-        test.skip(true, '/phones not reachable -- auth or onboard required');
-        return;
-      }
+      // The household needs at least one line for "Silence All" to have
+      // any effect (derived state requires lines to exist).
+      await ensureLine(page);
 
-      // Make sure the household DND flag starts off so the on/off transition
-      // is real, not a no-op.
+      // Make sure silence starts off so the on/off transition is real.
       await setDoNotDisturb(page, 'off');
 
       // Confirm the chip is absent before we toggle.
@@ -144,11 +147,6 @@ function runDNDFlow(theme: Theme): void {
       ) {
         await expect(page.locator(sel)).toBeVisible();
       }
-
-      // The per-line silent badge count must not have shifted: household DND
-      // and per-line silent are independent dimensions.
-      const after = await countSilentBadges(page);
-      expect(after).toBe(before);
 
       // Toggle off and confirm the chip disappears from the overview.
       await setDoNotDisturb(page, 'off');
