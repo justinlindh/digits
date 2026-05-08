@@ -2858,3 +2858,54 @@ body.dialup .phone-silent__text {
 }
 .dialup-hh-option:hover { background: var(--dialup-blue); color: #fff; }
 .dialup-hh-option.is-active { font-weight: 700; }
+
+/* Segmented radio: Win95 beveled variant */
+.seg-radio {
+  display: inline-flex;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.seg-radio__opt { cursor: pointer; margin: 0; }
+.seg-radio__opt + .seg-radio__opt { border-left: none; }
+.seg-radio__opt input { position: absolute; opacity: 0; pointer-events: none; }
+.seg-radio__label {
+  font-family: var(--dialup-font, 'Tahoma', system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 0;
+  padding: 3px 10px;
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+}
+.seg-radio__opt:hover .seg-radio__label { background: var(--dialup-chrome-l); }
+.seg-radio__opt input:checked + .seg-radio__label {
+  background: var(--dialup-white);
+  color: var(--dialup-ink);
+  border-top: 2px solid var(--dialup-bevel-ll);
+  border-left: 2px solid var(--dialup-bevel-ll);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+.seg-radio__opt input:focus-visible + .seg-radio__label {
+  outline: 1px dotted var(--dialup-ink);
+  outline-offset: -4px;
+}
+.pair-mode-field {
+  border: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.pair-mode-field legend {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 0;
+  margin-bottom: 3px;
+}

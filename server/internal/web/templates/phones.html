@@ -55,13 +55,19 @@
           </div>
 
           {{if .Lines}}
-          <div class="field">
-            <span class="field__label">Line</span>
-            <div class="pair-mode-tabs" style="display: flex; gap: 0; margin-bottom: 8px;">
-              <button type="button" class="btn btn--sm pair-mode-tab is-active" data-mode="new" onclick="setPairMode('new')">New line</button>
-              <button type="button" class="btn btn--sm pair-mode-tab" data-mode="existing" onclick="setPairMode('existing')">Add extension</button>
+          <fieldset class="field pair-mode-field">
+            <legend class="field__label">Line</legend>
+            <div class="seg-radio">
+              <label class="seg-radio__opt">
+                <input type="radio" name="pair_mode_radio" value="new" checked onchange="setPairMode('new')">
+                <span class="seg-radio__label">New line</span>
+              </label>
+              <label class="seg-radio__opt">
+                <input type="radio" name="pair_mode_radio" value="existing" onchange="setPairMode('existing')">
+                <span class="seg-radio__label">Add extension</span>
+              </label>
             </div>
-          </div>
+          </fieldset>
           {{end}}
 
           <div id="new-line-fields">
@@ -247,8 +253,6 @@
   window.setPairMode = function(mode) {
     pairMode = mode;
     pairModeHidden.value = mode;
-    var tabs = document.querySelectorAll('.pair-mode-tab');
-    tabs.forEach(function(t) { t.classList.toggle('is-active', t.dataset.mode === mode); });
     if (mode === 'existing') {
       newLineFields.classList.add('hidden');
       existingLineFields.classList.remove('hidden');
@@ -640,16 +644,48 @@
 
       <form class="am-phones__pair-form" action="/phones/pair" method="POST" id="pair-form">
         <input type="hidden" name="code" id="pair-code-hidden" value="">
+        <input type="hidden" name="pair_mode" id="pair-mode-hidden" value="new">
 
         <div class="am-phones__pair-field">
           <label class="am-phones__pair-field-label" for="pair-code-manual">Or type the code</label>
           <input type="text" id="pair-code-manual" name="code_manual" placeholder="123456" pattern="\d{6}" maxlength="6" inputmode="numeric" autocomplete="off">
         </div>
 
-        <div class="am-phones__pair-field">
-          <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
-          <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8" required>
-          <span id="number-hint" class="am-phones__pair-field-hint am-phones__pair-field-hint--err hidden">Line number is already in use.</span>
+        {{if .Lines}}
+        <fieldset class="pair-mode-field">
+          <legend class="am-phones__pair-field-label">Line</legend>
+          <div class="seg-radio">
+            <label class="seg-radio__opt">
+              <input type="radio" name="pair_mode_radio" value="new" checked onchange="setPairMode('new')">
+              <span class="seg-radio__label">New line</span>
+            </label>
+            <label class="seg-radio__opt">
+              <input type="radio" name="pair_mode_radio" value="existing" onchange="setPairMode('existing')">
+              <span class="seg-radio__label">Add extension</span>
+            </label>
+          </div>
+        </fieldset>
+        {{end}}
+
+        <div id="new-line-fields">
+          <div class="am-phones__pair-field">
+            <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
+            <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8">
+            <span id="number-hint" class="am-phones__pair-field-hint am-phones__pair-field-hint--err hidden">Line number is already in use.</span>
+          </div>
+        </div>
+
+        <div id="existing-line-fields" class="hidden">
+          <div class="am-phones__pair-field">
+            <label class="am-phones__pair-field-label" for="existing-line-select">Add to line</label>
+            <select name="existing_line_id" id="existing-line-select">
+              <option value="">Choose a line...</option>
+              {{range .Lines}}
+              <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} - {{.Line.Name}}</option>
+              {{end}}
+            </select>
+            <span class="am-phones__pair-field-hint" style="font-size: 10px;">All handsets on the line ring together.</span>
+          </div>
         </div>
 
         <div class="am-phones__pair-field">
