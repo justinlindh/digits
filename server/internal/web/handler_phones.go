@@ -741,3 +741,83 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
+
+type convertRowData struct {
+	Source lineRow
+	Others []lineRow
+}
+
+func (h *Handler) handlePhoneConvertGet(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	if ln == nil {
+		return
+	}
+	data := h.buildLinesData(r, hh, "")
+	var source lineRow
+	var others []lineRow
+	for _, row := range data.Lines {
+		if row.Line.ID == ln.ID {
+			source = row
+		} else {
+			others = append(others, row)
+		}
+	}
+	renderWith(w, h.tmplPhones, partialFor(r, "phone-convert-row", "am-phone-convert-row"), convertRowData{Source: source, Others: others})
+}
+
+func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	targetLineIDStr := strings.TrimSpace(r.FormValue("target_line_id"))
+	if targetLineIDStr == "" {
+		http.Error(w, "target line required", http.StatusBadRequest)
+		return
+	}
+	targetLineID, err := strconv.ParseInt(targetLineIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid target line", http.StatusBadRequest)
+		return
+	}
+
+	srcLn, hh := h.requireLineOwnershipAdmin(w, r, number)
+	if srcLn == nil {
+		return
+	}
+	if srcLn.ID == targetLineID {
+		http.Error(w, "cannot convert a line into itself", http.StatusBadRequest)
+		return
+	}
+
+	tgtLn, err := h.lineStore.GetByID(r.Context(), targetLineID)
+	if err != nil {
+		http.Error(w, "target line not found", http.StatusNotFound)
+		return
+	}
+	if tgtLn.HouseholdID != srcLn.HouseholdID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if _, err := h.deviceStore.ReassignLine(r.Context(), srcLn.ID, targetLineID); err != nil {
+		slog.Error("convert line failed: reassign", "src", srcLn.ID, "tgt", targetLineID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
+		slog.Error("convert line failed: delete source", "line_id", srcLn.ID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	data := h.buildLinesData(r, hh, "")
+	if isHTMX(r) {
+		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		return
+	}
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+}
