@@ -28,7 +28,7 @@
 
 ---
 
-Each phone is a gutted vintage desk phone with two processors inside: a **Pico H** running C firmware for real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a **Raspberry Pi Zero 2 W** running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and signaling. A self-hosted **Go server** handles call routing, device pairing, household management, and a web dashboard.
+Each phone is a gutted vintage desk phone with two processors inside: a **Pico H** running C firmware for real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a **Raspberry Pi Zero 2 W** running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and signaling. A **Go server** handles call routing, device pairing, household management, and a web dashboard. There's a free public instance at [app.digits.family](https://app.digits.family), or you can self-host.
 
 Lift the handset, hear a dial tone, punch in a number. The bell rings on the other end. Calls are encrypted, the server never touches media, and when the handset goes back on the cradle the mic is physically disconnected.
 
@@ -42,7 +42,7 @@ When the handset is on the cradle, the hook switch physically disconnects the mi
 
 **What the server never stores:** voice audio, call recordings, transcripts, location data, or anything about what was said on a call. There is no mechanism to record calls; the architecture makes it impossible. The server doesn't even know what was said.
 
-If you don't want to trust anyone else's server, the whole thing is designed to self-host. The signaling server is a single Go binary with a Postgres database. Run it on a VPS, a home server, whatever. Your network is yours.
+The public server at [app.digits.family](https://app.digits.family) is free and runs the same code that's in this repo. If you'd rather not trust anyone else's infrastructure, the whole thing is designed to self-host. The signaling server is a single Go binary with a Postgres database. Run it on a VPS, a home server, whatever. Your network is yours either way.
 
 ## Hardware
 
