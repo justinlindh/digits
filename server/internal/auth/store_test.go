@@ -366,35 +366,6 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 	}
 }
 
-func TestStore_DeleteAllSessions(t *testing.T) {
-	s := testDB(t)
-	u, err := s.CreateUser(context.Background(), "delallsess@test.com", "Del All Sessions", nil)
-	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
-
-	_, _, err = s.CreateSession(context.Background(), u.ID, 24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession 1: %v", err)
-	}
-	_, _, err = s.CreateSession(context.Background(), u.ID, 24*time.Hour)
-	if err != nil {
-		t.Fatalf("CreateSession 2: %v", err)
-	}
-
-	if err := s.DeleteAllSessions(context.Background(), u.ID); err != nil {
-		t.Fatalf("DeleteAllSessions: %v", err)
-	}
-
-	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, u.ID).Scan(&count); err != nil {
-		t.Fatalf("count sessions: %v", err)
-	}
-	if count != 0 {
-		t.Errorf("expected 0 sessions after DeleteAllSessions, got %d", count)
-	}
-}
-
 func TestStore_DeleteUser(t *testing.T) {
 	s := testDB(t)
 	u, err := s.CreateUser(context.Background(), "deleteuser@test.com", "Delete Me", nil)

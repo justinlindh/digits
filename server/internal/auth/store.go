@@ -209,18 +209,8 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
-// DeleteAllSessions removes all sessions for a user (e.g. on account deletion or forced logout).
-func (s *Store) DeleteAllSessions(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
-	if err != nil {
-		return fmt.Errorf("delete all sessions: %w", err)
-	}
-	return nil
-}
-
 // DeleteUser deletes the user row. FK CASCADE handles sessions and household_members.
 // The v28 migration SET NULL handles household_links, household_invites, calls, and conference_kicks.
-// Returns an error if the user does not exist.
 func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, userID)
 	if err != nil {
@@ -228,7 +218,7 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("user not found")
+		return ErrUserNotFound
 	}
 	return nil
 }
