@@ -328,6 +328,39 @@ func (s *Store) UpdateSettings(ctx context.Context, id int64, settings Settings)
 	return nil
 }
 
+// SetAllSilentByHousehold batch-updates silent_mode in the JSONB settings
+// column for every line in the household. Other settings fields are preserved.
+func (s *Store) SetAllSilentByHousehold(ctx context.Context, householdID string, silent bool) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE lines
+		 SET settings = jsonb_set(COALESCE(settings, '{}'), '{silent_mode}', $1::jsonb),
+		     updated_at = NOW()
+		 WHERE household_id = $2`,
+		fmt.Sprintf("%t", silent), householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("set all silent by household: %w", err)
+	}
+	return nil
+}
+
+// AllSilentByHousehold returns true when the household has at least one line
+// and every line has silent_mode set to true. Returns false for households
+// with no lines.
+func (s *Store) AllSilentByHousehold(ctx context.Context, householdID string) (bool, error) {
+	var total, silentCount int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*),
+		        COUNT(*) FILTER (WHERE COALESCE(settings->>'silent_mode', 'false') = 'true')
+		 FROM lines WHERE household_id = $1`,
+		householdID,
+	).Scan(&total, &silentCount)
+	if err != nil {
+		return false, fmt.Errorf("all silent by household: %w", err)
+	}
+	return total > 0 && total == silentCount, nil
+}
+
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.
 func (s *Store) GetHouseholdIDByNumber(ctx context.Context, number string) (string, error) {
 	var householdID string
