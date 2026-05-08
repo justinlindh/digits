@@ -137,6 +137,105 @@ func TestHandleSettingsDoNotDisturbPost(t *testing.T) {
 	}
 }
 
+func TestHandleAccountDeletePost(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Add a line so we can verify it's cleaned up.
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "555-0099", "Delete Test", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+
+	// Register a connection on the hub.
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	_ = h.hub.Register(ln.Number, conn)
+
+	// POST to delete account.
+	req := httptest.NewRequest(http.MethodPost, "/settings/account/delete", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/auth/login" {
+		t.Errorf("expected redirect to /auth/login, got %s", loc)
+	}
+
+	// User gone.
+	_, err = authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err == nil {
+		t.Error("user still exists after account deletion")
+	}
+
+	// Household gone (sole member).
+	var count int
+	database.DB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM households WHERE id = $1", hh.ID).Scan(&count)
+	if count != 0 {
+		t.Error("household still exists after sole-member account deletion")
+	}
+
+	// Line gone.
+	database.DB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM lines WHERE id = $1", ln.ID).Scan(&count)
+	if count != 0 {
+		t.Error("line still exists after household deletion")
+	}
+}
+
+func TestHandleAccountDeletePost_MultiMemberHousehold(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	// Add a second member.
+	var otherUserID string
+	err := database.DB.QueryRowContext(context.Background(),
+		`INSERT INTO users (email, name) VALUES ('other-del@test.com', 'Other') RETURNING id`,
+	).Scan(&otherUserID)
+	if err != nil {
+		t.Fatalf("seed second user: %v", err)
+	}
+	t.Cleanup(func() { _, _ = database.DB.Exec("DELETE FROM users WHERE id = $1", otherUserID) })
+
+	if err := h.householdStore.AddMember(context.Background(), otherUserID, hh.ID, "admin"); err != nil {
+		t.Fatalf("add second member: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/settings/account/delete", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
+	}
+
+	// User gone.
+	_, err = authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err == nil {
+		t.Error("user still exists")
+	}
+
+	// Household survives.
+	var count int
+	database.DB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM households WHERE id = $1", hh.ID).Scan(&count)
+	if count != 1 {
+		t.Errorf("expected household to survive, got count=%d", count)
+	}
+
+	// Other member still present.
+	database.DB.QueryRowContext(context.Background(),
+		"SELECT COUNT(*) FROM household_members WHERE household_id = $1", hh.ID).Scan(&count)
+	if count != 1 {
+		t.Errorf("expected 1 remaining member, got %d", count)
+	}
+}
+
 func TestHandleSettingsDoNotDisturbPost_NoHouseholdRedirects(t *testing.T) {
 	h, _, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
