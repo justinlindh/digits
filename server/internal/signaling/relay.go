@@ -298,7 +298,7 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 		_, isExt := r.extensions[msg.HardwareID]
 		r.extMu.Unlock()
 		if isExt {
-			r.clearExtension(msg.HardwareID)
+			r.clearExtension(ctx, msg.HardwareID)
 			return
 		}
 	}
@@ -345,7 +345,7 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 		}
 		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
 	}
-	r.clearExtensionsForCall(from)
+	r.clearExtensionsForCall(ctx, from)
 }
 
 func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
@@ -472,7 +472,7 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID stri
 	// Clear any extension state for this specific device, regardless of
 	// whether other devices remain on the line.
 	if hardwareID != "" {
-		r.clearExtension(hardwareID)
+		r.clearExtension(ctx, hardwareID)
 	}
 
 	if r.Tracker == nil {
@@ -485,7 +485,7 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID stri
 		r.endConference(ctx, conf.ID, "disconnect")
 	}
 	r.Tracker.ClearByNumber(ctx, number)
-	r.clearExtensionsForCall(number)
+	r.clearExtensionsForCall(ctx, number)
 }
 
 // handleExtensionPickup is the POTS extension model: a second device on the
@@ -525,7 +525,12 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 	}
 	r.extMu.Unlock()
 
-	slog.Info("extension pickup", "line", from, "hardware_id", msg.HardwareID, "peer", peer)
+	pickupAttrs := []any{"line", from, "hardware_id", msg.HardwareID, "peer", peer}
+	if callID := r.Tracker.CallIDForPair(from, peer); callID != 0 {
+		pickupAttrs = append(pickupAttrs, "call_id", callID)
+	}
+	pickupAttrs = append(pickupAttrs, r.lineAttrs(ctx, from)...)
+	slog.Info("extension pickup", pickupAttrs...)
 
 	_ = r.Hub.SendToHardware(msg.HardwareID, &Message{
 		Type:      TypeExtensionConnect,
@@ -582,7 +587,7 @@ func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
 // clearExtension removes a device from the active extension set and notifies
 // the remote peer that the extension has hung up. Called when the extension
 // device sends a hangup or disconnects.
-func (r *Relay) clearExtension(hardwareID string) {
+func (r *Relay) clearExtension(ctx context.Context, hardwareID string) {
 	r.extMu.Lock()
 	ext, ok := r.extensions[hardwareID]
 	if ok {
@@ -595,28 +600,49 @@ func (r *Relay) clearExtension(hardwareID string) {
 			From:      ext.LineNumber,
 			Extension: true,
 		})
-		slog.Info("extension cleared", "hardware_id", hardwareID, "line", ext.LineNumber, "peer", ext.PeerNumber)
+		attrs := []any{"hardware_id", hardwareID, "line", ext.LineNumber, "peer", ext.PeerNumber}
+		if r.Tracker != nil {
+			if callID := r.Tracker.CallIDForPair(ext.LineNumber, ext.PeerNumber); callID != 0 {
+				attrs = append(attrs, "call_id", callID)
+			}
+		}
+		attrs = append(attrs, r.lineAttrs(ctx, ext.LineNumber)...)
+		slog.Info("extension cleared", attrs...)
 	}
 }
 
 // clearExtensionsForCall removes all extensions on a line, called when the
-// main call ends. Sends hangup to each extension device.
-func (r *Relay) clearExtensionsForCall(lineNumber string) {
+// main call ends. Sends hangup to each extension device. Note: callers
+// invoke this after the tracker has already cleared the call, so call_id
+// is captured before the extension is removed and may already be zero.
+func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 	r.extMu.Lock()
-	var toRemove []string
+	type cleared struct {
+		hwID string
+		peer string
+	}
+	var toRemove []cleared
 	for hwID, ext := range r.extensions {
 		if ext.LineNumber == lineNumber {
-			toRemove = append(toRemove, hwID)
+			toRemove = append(toRemove, cleared{hwID: hwID, peer: ext.PeerNumber})
 		}
 	}
-	for _, hwID := range toRemove {
-		delete(r.extensions, hwID)
+	for _, c := range toRemove {
+		delete(r.extensions, c.hwID)
 	}
 	r.extMu.Unlock()
 
-	for _, hwID := range toRemove {
-		_ = r.Hub.SendToHardware(hwID, &Message{Type: TypeHangup, From: lineNumber})
-		slog.Info("extension cleared (call ended)", "hardware_id", hwID, "line", lineNumber)
+	lineAttrs := r.lineAttrs(ctx, lineNumber)
+	for _, c := range toRemove {
+		_ = r.Hub.SendToHardware(c.hwID, &Message{Type: TypeHangup, From: lineNumber})
+		attrs := []any{"hardware_id", c.hwID, "line", lineNumber, "peer", c.peer}
+		if r.Tracker != nil {
+			if callID := r.Tracker.CallIDForPair(lineNumber, c.peer); callID != 0 {
+				attrs = append(attrs, "call_id", callID)
+			}
+		}
+		attrs = append(attrs, lineAttrs...)
+		slog.Info("extension cleared (call ended)", attrs...)
 	}
 }
 
