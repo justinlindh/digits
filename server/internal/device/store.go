@@ -87,23 +87,6 @@ func (s *Store) Unpair(ctx context.Context, hardwareID string) error {
 	return nil
 }
 
-// ReassignLine moves all devices from srcLineID to tgtLineID.
-// Returns the number of devices moved.
-func (s *Store) ReassignLine(ctx context.Context, srcLineID, tgtLineID int64) (int64, error) {
-	res, err := s.db.ExecContext(ctx,
-		`UPDATE devices SET line_id = $1 WHERE line_id = $2`,
-		tgtLineID, srcLineID,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("reassign line: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("reassign line rows: %w", err)
-	}
-	return n, nil
-}
-
 // Reassign moves a single device to a different line.
 func (s *Store) Reassign(ctx context.Context, deviceID, newLineID int64) error {
 	res, err := s.db.ExecContext(ctx,
