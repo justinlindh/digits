@@ -414,7 +414,7 @@
           <label for="move-target" class="field__label">Move to</label>
           <select id="move-target" name="target_line_id" required class="field__input">
             {{range .OtherLines}}
-            <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
             {{end}}
           </select>
           <p class="field__hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
@@ -1148,7 +1148,7 @@
           <label for="move-target" class="am-label">Move to</label>
           <select id="move-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
             {{range .OtherLines}}
-            <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
             {{end}}
           </select>
           <p class="am-hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>

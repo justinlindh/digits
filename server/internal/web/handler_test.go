@@ -2586,16 +2586,16 @@ func TestChangePhoneNumberDuplicate(t *testing.T) {
 	form := url.Values{"number": {"314-0002"}}
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/number", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 
-	if w.Code != http.StatusConflict {
-		t.Fatalf("expected 409 (edit form with error), got %d", w.Code)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "already in use") {
-		t.Error("response should contain duplicate number error")
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "number_error=") {
+		t.Errorf("expected redirect with number_error param, got %s", loc)
 	}
 
 	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err != nil {

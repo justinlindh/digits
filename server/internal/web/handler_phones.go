@@ -855,7 +855,12 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine which device to move.
+	devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if listErr != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	deviceIDStr := strings.TrimSpace(r.FormValue("device_id"))
 	var deviceID int64
 	if deviceIDStr != "" {
@@ -864,10 +869,19 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid device", http.StatusBadRequest)
 			return
 		}
+		owned := false
+		for _, d := range devices {
+			if d.ID == deviceID {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			http.Error(w, "device does not belong to this line", http.StatusBadRequest)
+			return
+		}
 	} else {
-		// If no device_id provided, the line must have exactly 1 device.
-		devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
-		if listErr != nil || len(devices) != 1 {
+		if len(devices) != 1 {
 			http.Error(w, "device_id required for multi-device lines", http.StatusBadRequest)
 			return
 		}
@@ -881,10 +895,11 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If source line is now empty, delete it.
 	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
 	if err != nil {
 		slog.Error("list remaining devices failed", "line_id", srcLn.ID, "err", err)
+		http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+		return
 	}
 	if len(remaining) == 0 {
 		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
