@@ -162,6 +162,70 @@ test("missing _wrapped throws a helpful error", async () => {
     );
 });
 
+// ── inferPathScopes tests ───────────────────────────────────────────
+
+const { _inferPathScopes } = require("./semantic-release-squash-expander.cjs");
+const { execSync } = require("child_process");
+
+// These tests need a real git repo. If we're not in one, skip them.
+let inGitRepo = false;
+try {
+    execSync("git rev-parse --git-dir", { encoding: "utf8" });
+    inGitRepo = true;
+} catch {}
+
+if (inGitRepo) {
+    test("inferPathScopes injects synthetic commit when files match but scope does not", () => {
+        // Use the actual HEAD commit and a pathScopes map that will match
+        // something in the repo. We don't know what files HEAD touched, so
+        // use a prefix that matches the test file itself.
+        const head = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+        const files = execSync(`git diff-tree --no-commit-id --name-only -r ${head}`, {
+            encoding: "utf8",
+        }).trim().split("\n").filter(Boolean);
+
+        if (files.length === 0) {
+            console.log("SKIP inferPathScopes inject (HEAD has no files)");
+            return;
+        }
+
+        // Pick a prefix from the first file
+        const prefix = files[0].split("/")[0] + "/";
+        const commits = [{
+            hash: head,
+            subject: "feat(unrelated): something",
+            header: "feat(unrelated): something",
+            message: "feat(unrelated): something",
+        }];
+
+        const result = _inferPathScopes(commits, { [prefix]: "testscope" });
+        assert.strictEqual(result.length, 2, "should have original + synthetic");
+        assert.strictEqual(result[0].subject, "feat(unrelated): something");
+        assert.ok(result[1].subject.includes("testscope"), "synthetic has inferred scope");
+        assert.ok(result[1].subject.startsWith("feat("), "preserves original type");
+    });
+
+    test("inferPathScopes does not inject when scope already matches", () => {
+        const head = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+        const commits = [{
+            hash: head,
+            subject: "feat(digitsd): something",
+            header: "feat(digitsd): something",
+            message: "feat(digitsd): something",
+        }];
+
+        const result = _inferPathScopes(commits, { "pi/": "digitsd" });
+        assert.strictEqual(result.length, 1, "no synthetic when scope already present");
+    });
+
+    test("inferPathScopes is a no-op when pathScopes is empty or absent", () => {
+        const commits = [{ hash: "abc", subject: "feat: x", header: "feat: x", message: "feat: x" }];
+        assert.deepStrictEqual(_inferPathScopes(commits, {}), commits);
+        assert.deepStrictEqual(_inferPathScopes(commits, undefined), commits);
+        assert.deepStrictEqual(_inferPathScopes(commits, null), commits);
+    });
+}
+
 if (process.exitCode) {
     process.exit(process.exitCode);
 }

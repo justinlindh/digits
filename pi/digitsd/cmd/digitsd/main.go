@@ -3325,7 +3325,11 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 	}); err != nil {
 		slog.Warn("device_info: send failed", "error", err)
 	} else {
-		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable, "local_addr", localAddr, "dev_mode", devModeOn)
+		slog.Info("device_info sent",
+			"pi_version", version.Version, "pi_commit", version.Commit,
+			"fw_version", fwVersion, "fw_commit", fwCommit,
+			"flash_capable", flashCapable, "local_addr", localAddr,
+			"dev_mode", devModeOn)
 	}
 }
 

@@ -22,6 +22,7 @@ module.exports = {
   plugins: [
     [squashExpander, {
       _wrapped: wrapped,
+      pathScopes: { 'firmware/': 'firmware' },
       // Wrapped commit-analyzer options.
       releaseRules: [
         // Scope globs use micromatch substring patterns so multi-scope commits
