@@ -470,6 +470,12 @@ BEGIN
         ALTER TABLE conference_kicks ADD CONSTRAINT conference_kicks_kicked_by_user_id_fkey
             FOREIGN KEY (kicked_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
 
+        -- sessions.active_household_id: swap FK to SET NULL so household
+        -- deletion does not fail when a session points at the household.
+        ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_active_household_id_fkey;
+        ALTER TABLE sessions ADD CONSTRAINT sessions_active_household_id_fkey
+            FOREIGN KEY (active_household_id) REFERENCES households(id) ON DELETE SET NULL;
+
         INSERT INTO schema_version (version) VALUES (28);
     END IF;
 END $$;`,

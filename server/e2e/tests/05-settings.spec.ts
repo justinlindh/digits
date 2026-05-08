@@ -33,7 +33,7 @@ test.describe('Settings', () => {
       return;
     }
 
-    await expect(page.locator('h2', { hasText: 'Account' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Account', exact: true })).toBeVisible();
   });
 
   test('settings shows Household section', async ({ page }) => {
