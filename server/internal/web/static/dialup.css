@@ -2318,6 +2318,55 @@ body.dialup .phone-silent__text {
   min-width: 88px;
 }
 
+/* Line editor dialog, dialup theme */
+.line-editor-dialog {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  max-width: 380px;
+  width: 92vw;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+.line-editor-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.line-editor-dialog__title {
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  font-style: normal;
+  font-weight: bold;
+  font-size: 12px;
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 55%, var(--dialup-blue-light) 100%);
+  color: #ffffff;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+  padding: 3px 6px;
+  margin: 0;
+  letter-spacing: 0;
+}
+.line-editor-dialog .stack-md,
+.line-editor-dialog .line-editor-dialog__form {
+  padding: 14px 16px 12px;
+}
+.line-editor-dialog__actions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.line-editor-dialog__actions .btn { min-width: 88px; }
+.line-editor-dialog__divider {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.line-editor-dialog__error {
+  padding: 0 16px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
 /* What's New changelog dialog, dialup theme */
 .page__foot-link {
   background: none;

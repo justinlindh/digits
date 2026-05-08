@@ -47,7 +47,14 @@
           <img src="/static/images/phone-silhouette.png" alt="Desk phone" style="width: 220px; height: auto; display: block;">
         </div>
         <dl class="kv">
-          {{template "number-section" .}}
+          <div class="kv__row">
+            <dt class="kv__key">Number</dt>
+            <dd class="kv__val spread">
+              <span class="num">{{fmtPhone .Line.Number}}</span>
+              <button type="button" class="btn btn--quiet btn--sm"
+                      onclick="document.getElementById('line-editor').showModal()">Edit</button>
+            </dd>
+          </div>
           {{template "name-section" .}}
           <div class="kv__row">
             <dt class="kv__key">Added</dt>
@@ -70,22 +77,6 @@
           </div>
           {{end}}
         </dl>
-        {{if .OtherLines}}
-        <div class="panel__body" style="padding-top: 12px;">
-          <form method="POST" action="/phones/{{.Line.Number}}/convert"
-                onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <button type="submit" class="btn">Make extension of</button>
-              <select name="target_line_id" required class="field__input" style="width: auto; min-width: 160px;">
-                {{range .OtherLines}}
-                <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
-                {{end}}
-              </select>
-            </div>
-            <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Moves all handsets to the selected line and removes this number.</p>
-          </form>
-        </div>
-        {{end}}
         <div class="panel__body" style="padding-top: 12px;">
           <form method="POST" action="/phones/{{.Line.Number}}/delete"
                 onsubmit="return confirm('Delete line {{.Line.Name}} ({{fmtPhone .Line.Number}})? This cannot be undone.')">
@@ -364,6 +355,50 @@
       {{end}}
     </div>
   </div>
+
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <form method="POST" action="/phones/{{.Line.Number}}/number" class="stack-md">
+      <div class="field">
+        <label for="edit-number" class="field__label">Number</label>
+        <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+               required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric"
+               class="field__input field__input--mono">
+      </div>
+      <div class="line-editor-dialog__actions">
+        <button type="submit" class="btn btn--primary">Save</button>
+        <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+      </div>
+    </form>
+
+    {{if .OtherLines}}
+    <hr class="line-editor-dialog__divider">
+    <form method="POST" action="/phones/{{.Line.Number}}/convert"
+          onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')">
+      <div class="field">
+        <label for="convert-target" class="field__label">Make extension of</label>
+        <select id="convert-target" name="target_line_id" required class="field__input">
+          {{range .OtherLines}}
+          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+          {{end}}
+        </select>
+        <p class="field__hint" style="margin-top: 4px;">Moves all handsets to the selected line and removes this number.</p>
+      </div>
+      <div class="line-editor-dialog__actions">
+        <button type="submit" class="btn btn--danger">Convert</button>
+      </div>
+    </form>
+    {{end}}
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
 
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -730,39 +765,6 @@
 </div>
 {{end}}
 
-{{define "number-section"}}
-<div class="kv__row" id="number-section">
-  <dt class="kv__key">Number</dt>
-  <dd class="kv__val spread">
-    <span class="num">{{fmtPhone .Line.Number}}</span>
-    <button type="button" class="btn btn--quiet btn--sm"
-            hx-get="/phones/{{.Line.Number}}/number/edit"
-            hx-target="#number-section"
-            hx-swap="outerHTML">Edit</button>
-  </dd>
-</div>
-{{end}}
-
-{{define "number-section-edit"}}
-<div class="kv__row" id="number-section">
-  <dt class="kv__key">Number</dt>
-  <dd class="kv__val">
-    <form method="POST" action="/phones/{{.Line.Number}}/number"
-          class="hstack hstack--wrap">
-      <input type="text" name="number" value="{{.Value}}" required
-             pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric" autofocus
-             class="field__input field__input--mono" style="flex: 1; min-width: 0; max-width: 160px;">
-      <button type="submit" class="btn btn--primary btn--sm">Save</button>
-      <button type="button" class="btn btn--quiet btn--sm"
-              hx-get="/phones/{{.Line.Number}}/number"
-              hx-target="#number-section"
-              hx-swap="outerHTML">Cancel</button>
-    </form>
-    {{if .Error}}<p style="color: var(--rust); font-size: 12px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
-  </dd>
-</div>
-{{end}}
-
 {{define "name-section"}}
 <div class="kv__row" id="name-section">
   <dt class="kv__key">Name</dt>
@@ -793,39 +795,6 @@
               hx-swap="outerHTML">Cancel</button>
     </form>
     {{if .Error}}<p style="color: var(--rust); font-size: 12px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
-  </dd>
-</div>
-{{end}}
-
-{{define "am-number-section"}}
-<div class="am-settings__kv-row" id="number-section">
-  <dt class="am-settings__kv-key am-label">Number</dt>
-  <dd class="am-settings__kv-val">
-    <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
-    <button type="button" class="am-tab"
-            hx-get="/phones/{{.Line.Number}}/number/edit"
-            hx-target="#number-section"
-            hx-swap="outerHTML">Edit</button>
-  </dd>
-</div>
-{{end}}
-
-{{define "am-number-section-edit"}}
-<div class="am-settings__kv-row" id="number-section">
-  <dt class="am-settings__kv-key am-label">Number</dt>
-  <dd class="am-settings__kv-val">
-    <form method="POST" action="/phones/{{.Line.Number}}/number"
-          style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
-      <input type="text" name="number" value="{{.Value}}" required
-             pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric" autofocus
-             style="flex: 1; min-width: 0; max-width: 140px;">
-      <button type="submit" class="am-tab">Save</button>
-      <button type="button" class="am-tab"
-              hx-get="/phones/{{.Line.Number}}/number"
-              hx-target="#number-section"
-              hx-swap="outerHTML">Cancel</button>
-    </form>
-    {{if .Error}}<p style="color: var(--chip-red-dk); font-size: 10px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
   </dd>
 </div>
 {{end}}
@@ -919,7 +888,14 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Details</span>
       <dl class="am-settings__kv">
-        {{template "am-number-section" .}}
+        <div class="am-settings__kv-row" id="number-section">
+          <dt class="am-settings__kv-key am-label">Number</dt>
+          <dd class="am-settings__kv-val">
+            <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
+            <button type="button" class="am-tab"
+                    onclick="document.getElementById('line-editor').showModal()">Edit</button>
+          </dd>
+        </div>
         {{template "am-name-section" .}}
         <div class="am-settings__kv-row">
           <dt class="am-settings__kv-key am-label">Added</dt>
@@ -1056,27 +1032,6 @@
     </section>
     {{end}}
 
-    {{if .OtherLines}}
-    <section class="am-plate am-handset__plate am-handset__plate--wide">
-      <span class="am-plate__label">Convert</span>
-      <form method="POST" action="/phones/{{.Line.Number}}/convert"
-            onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')"
-            style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 12px;">
-        <span class="am-phones__pair-field-label" style="white-space: nowrap;">Make extension of</span>
-        <select name="target_line_id" required style="flex: 1; min-width: 120px;">
-          {{range .OtherLines}}
-          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
-          {{end}}
-        </select>
-        <button type="submit" class="am-key">
-          <span class="am-key__symbol">&#x25B6;</span>
-          <span class="am-key__label">Convert</span>
-        </button>
-      </form>
-      <p class="am-hint" style="margin: 0 12px 8px;">Moves all handsets to the selected line and removes this number.</p>
-    </section>
-    {{end}}
-
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
       <span class="am-plate__label">Actions</span>
       <p class="am-hint am-handset__action-desc">Removing a handset is permanent. The device will need to be re-paired to come back online.</p>
@@ -1094,6 +1049,53 @@
     </section>
 
   </div>
+
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <form method="POST" action="/phones/{{.Line.Number}}/number" class="line-editor-dialog__form">
+      <div class="field">
+        <label for="edit-number" class="am-label">Number</label>
+        <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+               required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric">
+      </div>
+      <div class="line-editor-dialog__actions">
+        <button type="submit" class="am-tab">Save</button>
+        <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+      </div>
+    </form>
+
+    {{if .OtherLines}}
+    <hr class="line-editor-dialog__divider">
+    <form method="POST" action="/phones/{{.Line.Number}}/convert"
+          onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')"
+          class="line-editor-dialog__form">
+      <div class="field">
+        <label for="convert-target" class="am-label">Make extension of</label>
+        <select id="convert-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
+          {{range .OtherLines}}
+          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+          {{end}}
+        </select>
+        <p class="am-hint" style="margin-top: 4px;">Moves all handsets to the selected line and removes this number.</p>
+      </div>
+      <div class="line-editor-dialog__actions">
+        <button type="submit" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x25B6;</span>
+          <span class="am-key__label">Convert</span>
+        </button>
+      </div>
+    </form>
+    {{end}}
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
 
   <script>
   (function() {

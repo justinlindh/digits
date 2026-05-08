@@ -301,6 +301,7 @@ type lineDetailData struct {
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
 	OtherLines            []line.Line
+	NumberError           string
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -394,6 +395,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		OtherLines:            otherLines,
+		NumberError:           r.URL.Query().Get("number_error"),
 	})
 }
 
@@ -516,33 +518,6 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
-// numberSectionData carries the prefilled input value and any validation error
-// when re-rendering the edit partial after a failed POST, so the user's draft
-// and the reason for rejection survive the round-trip.
-type numberSectionData struct {
-	Line  line.Line
-	Value string
-	Error string
-}
-
-func (h *Handler) handlePhoneNumberGet(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section", "am-number-section"), numberSectionData{Line: *ln})
-}
-
-func (h *Handler) handlePhoneNumberEditGet(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"), numberSectionData{Line: *ln, Value: ln.Number})
-}
-
 func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
 	oldNumber := r.PathValue("number")
 	if err := r.ParseForm(); err != nil {
@@ -557,21 +532,17 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.tracker != nil && h.tracker.Busy(oldNumber) {
-		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
-			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: "cannot change number while on an active call"},
-			http.StatusConflict)
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
 		return
 	}
 
 	if err := line.ValidateNumber(newNumber); err != nil {
-		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
-			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: err.Error()},
-			http.StatusBadRequest)
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
 	if newNumber == oldNumber {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "number-section", "am-number-section"), numberSectionData{Line: *ln})
+		http.Redirect(w, r, "/phones/"+oldNumber, http.StatusSeeOther)
 		return
 	}
 
@@ -583,9 +554,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if taken {
-		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "number-section-edit", "am-number-section-edit"),
-			numberSectionData{Line: *ln, Value: r.FormValue("number"), Error: "that number is already in use"},
-			http.StatusConflict)
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("that number is already in use"), http.StatusSeeOther)
 		return
 	}
 
