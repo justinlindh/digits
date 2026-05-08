@@ -162,6 +162,9 @@ type Message struct {
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
 
+	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	DevMode bool `json:"dev_mode,omitempty"`
+
 	// Extension pickup fields (POTS extension model).
 	// Extension is true when this SDP/ICE message belongs to an extension
 	// pickup connection rather than the primary call. The relay routes

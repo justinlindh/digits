@@ -43,6 +43,7 @@ type Conn struct {
 	PiCommit        string
 	FirmwareVersion string
 	FirmwareCommit  string
+	DevMode         bool
 }
 
 // dashNotifier is the subset of *dashboard/events.Broadcaster the Hub uses
@@ -327,6 +328,7 @@ func (h *Hub) Register(number string, conn *Conn) error {
 			FirmwareVersion: conn.FirmwareVersion,
 			FirmwareCommit:  conn.FirmwareCommit,
 			RemoteAddr:      conn.RemoteAddr,
+			DevMode:         conn.DevMode,
 		})
 	}
 	return nil
@@ -537,6 +539,8 @@ type DeviceInfoSnapshot struct {
 	// downstream code that copies the field into another type must apply
 	// the same care.
 	RemoteAddr string `json:"-"`
+
+	DevMode bool `json:"-"`
 }
 
 // DeviceInfo returns version info for the first connected device on a line.
@@ -572,6 +576,7 @@ func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
 			FirmwareVersion: c.FirmwareVersion,
 			FirmwareCommit:  c.FirmwareCommit,
 			RemoteAddr:      c.RemoteAddr,
+			DevMode:         c.DevMode,
 		}
 	}
 	return snapshots
@@ -621,7 +626,7 @@ func (h *Hub) ClearUpdateStatus(number string) {
 // httputil.IsPrivateAddr; non-private values (or unparseable input) are
 // stored as "" so a compromised client cannot push a public IP into the
 // owner UI.
-func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAddr string) bool {
+func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAddr string, devMode bool) bool {
 	if !httputil.IsPrivateAddr(localAddr) {
 		localAddr = ""
 	}
@@ -640,6 +645,7 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
+	conn.DevMode = devMode
 	hwID := conn.HardwareID
 	ds := h.state
 	h.mu.Unlock()
@@ -650,6 +656,7 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 			FirmwareVersion: fwVer,
 			FirmwareCommit:  fwCommit,
 			RemoteAddr:      localAddr,
+			DevMode:         devMode,
 		})
 	}
 	return true
@@ -657,7 +664,7 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 
 // UpdateDeviceInfoByHardware sets version info for a specific device by
 // hardware ID. Used when the caller knows which device sent the message.
-func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwCommit, localAddr string) bool {
+func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwCommit, localAddr string, devMode bool) bool {
 	if !httputil.IsPrivateAddr(localAddr) {
 		localAddr = ""
 	}
@@ -672,6 +679,7 @@ func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwC
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
+	conn.DevMode = devMode
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
@@ -681,6 +689,7 @@ func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwC
 			FirmwareVersion: fwVer,
 			FirmwareCommit:  fwCommit,
 			RemoteAddr:      localAddr,
+			DevMode:         devMode,
 		})
 	}
 	return true
