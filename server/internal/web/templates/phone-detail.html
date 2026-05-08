@@ -47,10 +47,7 @@
           <img src="/static/images/phone-silhouette.png" alt="Desk phone" style="width: 220px; height: auto; display: block;">
         </div>
         <dl class="kv">
-          <div class="kv__row">
-            <dt class="kv__key">Number</dt>
-            <dd class="kv__val kv__val--mono">{{fmtPhone .Line.Number}}</dd>
-          </div>
+          {{template "number-section" .}}
           {{template "name-section" .}}
           <div class="kv__row">
             <dt class="kv__key">Added</dt>
@@ -733,6 +730,39 @@
 </div>
 {{end}}
 
+{{define "number-section"}}
+<div class="kv__row" id="number-section">
+  <dt class="kv__key">Number</dt>
+  <dd class="kv__val spread">
+    <span class="num">{{fmtPhone .Line.Number}}</span>
+    <button type="button" class="btn btn--quiet btn--sm"
+            hx-get="/phones/{{.Line.Number}}/number/edit"
+            hx-target="#number-section"
+            hx-swap="outerHTML">Edit</button>
+  </dd>
+</div>
+{{end}}
+
+{{define "number-section-edit"}}
+<div class="kv__row" id="number-section">
+  <dt class="kv__key">Number</dt>
+  <dd class="kv__val">
+    <form method="POST" action="/phones/{{.Line.Number}}/number"
+          class="hstack hstack--wrap">
+      <input type="text" name="number" value="{{.Value}}" required
+             pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric" autofocus
+             class="field__input field__input--mono" style="flex: 1; min-width: 0; max-width: 160px;">
+      <button type="submit" class="btn btn--primary btn--sm">Save</button>
+      <button type="button" class="btn btn--quiet btn--sm"
+              hx-get="/phones/{{.Line.Number}}/number"
+              hx-target="#number-section"
+              hx-swap="outerHTML">Cancel</button>
+    </form>
+    {{if .Error}}<p style="color: var(--rust); font-size: 12px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
+  </dd>
+</div>
+{{end}}
+
 {{define "name-section"}}
 <div class="kv__row" id="name-section">
   <dt class="kv__key">Name</dt>
@@ -763,6 +793,39 @@
               hx-swap="outerHTML">Cancel</button>
     </form>
     {{if .Error}}<p style="color: var(--rust); font-size: 12px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
+  </dd>
+</div>
+{{end}}
+
+{{define "am-number-section"}}
+<div class="am-settings__kv-row" id="number-section">
+  <dt class="am-settings__kv-key am-label">Number</dt>
+  <dd class="am-settings__kv-val">
+    <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
+    <button type="button" class="am-tab"
+            hx-get="/phones/{{.Line.Number}}/number/edit"
+            hx-target="#number-section"
+            hx-swap="outerHTML">Edit</button>
+  </dd>
+</div>
+{{end}}
+
+{{define "am-number-section-edit"}}
+<div class="am-settings__kv-row" id="number-section">
+  <dt class="am-settings__kv-key am-label">Number</dt>
+  <dd class="am-settings__kv-val">
+    <form method="POST" action="/phones/{{.Line.Number}}/number"
+          style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
+      <input type="text" name="number" value="{{.Value}}" required
+             pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric" autofocus
+             style="flex: 1; min-width: 0; max-width: 140px;">
+      <button type="submit" class="am-tab">Save</button>
+      <button type="button" class="am-tab"
+              hx-get="/phones/{{.Line.Number}}/number"
+              hx-target="#number-section"
+              hx-swap="outerHTML">Cancel</button>
+    </form>
+    {{if .Error}}<p style="color: var(--chip-red-dk); font-size: 10px; margin: 4px 0 0;">{{.Error}}</p>{{end}}
   </dd>
 </div>
 {{end}}
@@ -856,10 +919,7 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Details</span>
       <dl class="am-settings__kv">
-        <div class="am-settings__kv-row">
-          <dt class="am-settings__kv-key am-label">Number</dt>
-          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{fmtPhone .Line.Number}}</span></dd>
-        </div>
+        {{template "am-number-section" .}}
         {{template "am-name-section" .}}
         <div class="am-settings__kv-row">
           <dt class="am-settings__kv-key am-label">Added</dt>
