@@ -258,6 +258,20 @@ func (s *Store) SetDoNotDisturb(ctx context.Context, householdID string, enabled
 	return nil
 }
 
+// Delete removes a household and all its associated records (members, invites,
+// links, lines, and devices) via CASCADE foreign keys.
+func (s *Store) Delete(ctx context.Context, householdID string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM households WHERE id = $1`, householdID)
+	if err != nil {
+		return fmt.Errorf("delete household: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("household not found")
+	}
+	return nil
+}
+
 // SetTimezone updates the IANA timezone for a household.
 func (s *Store) SetTimezone(ctx context.Context, householdID, tz string) error {
 	if _, err := time.LoadLocation(tz); err != nil {
