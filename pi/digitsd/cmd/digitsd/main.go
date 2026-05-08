@@ -2570,6 +2570,7 @@ func main() {
 			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
 			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
 			UARTLogPath:        uartLogPath,
+			CaptureDevice:      audio.CodecCaptureDevice(),
 			StatusFunc: func() devModeStatus {
 				fwVer, fwCom := cb.getFirmwareVersion()
 				return devModeStatus{
