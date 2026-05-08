@@ -328,6 +328,10 @@ func devModeMicTestHandler(cfg *devModeConfig) http.HandlerFunc {
 
 func devModeMicTestDownloadHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		if micRecording.Load() {
 			http.Error(w, "recording in progress", http.StatusConflict)
 			return
