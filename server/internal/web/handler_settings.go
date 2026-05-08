@@ -105,24 +105,25 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
-	if err := h.householdStore.SetDoNotDisturb(r.Context(), hh.ID, enabled); err != nil {
-		slog.Error("set do not disturb failed", "err", err, "household_id", hh.ID)
+	if err := h.lineStore.SetAllSilentByHousehold(r.Context(), hh.ID, enabled); err != nil {
+		slog.Error("set all silent failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
-		slog.Error("list lines for DND fan-out failed", "err", err, "household_id", hh.ID)
+		slog.Error("list lines for silence fan-out failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 		return
 	}
 	for _, ln := range lines {
-		if pushErr := h.pushLineSettings(ln.Number, ln.Settings, enabled); pushErr != nil {
-			slog.Warn("DND fan-out push failed", "number", ln.Number, "err", pushErr)
+		updated := ln.Settings
+		updated.SilentMode = enabled
+		if pushErr := h.pushLineSettings(ln.Number, updated); pushErr != nil {
+			slog.Warn("silence fan-out push failed", "number", ln.Number, "err", pushErr)
 		}
 	}
 	if isHTMX(r) {
-		hh.DoNotDisturb = enabled
 		data := h.buildLinesData(r, hh, "")
 		renderWith(w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
 		return

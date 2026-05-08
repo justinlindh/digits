@@ -336,6 +336,7 @@ type chromeData struct {
 	Household  *household.Household
 	Households []*household.Household
 	HasUpdates bool
+	allSilent  bool
 }
 
 func (c chromeData) HouseholdName() string {
@@ -346,10 +347,7 @@ func (c chromeData) HouseholdName() string {
 }
 
 func (c chromeData) HouseholdDND() bool {
-	if c.Household == nil {
-		return false
-	}
-	return c.Household.DoNotDisturb
+	return c.allSilent
 }
 
 func (c chromeData) CallHistoryEnabled() bool {
@@ -374,6 +372,13 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 	cd.Households = households
 	if active != nil {
 		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID, nil)
+		if h.lineStore != nil {
+			silent, err := h.lineStore.AllSilentByHousehold(r.Context(), active.ID)
+			if err != nil {
+				slog.Error("check all-silent failed", "household_id", active.ID, "err", err)
+			}
+			cd.allSilent = silent
+		}
 	}
 	return cd
 }

@@ -39,6 +39,7 @@ type pairSuccess struct {
 type linesData struct {
 	chromeData
 	Lines                 []lineRow
+	AllSilent             bool
 	Error                 string
 	PairError             string
 	PairSuccess           *pairSuccess
@@ -120,9 +121,17 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		}
 		rows[i] = row
 	}
+	allSilent := len(rows) > 0
+	for _, row := range rows {
+		if !row.Line.Settings.SilentMode {
+			allSilent = false
+			break
+		}
+	}
 	return linesData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Lines:                 rows,
+		AllSilent:             allSilent,
 		Error:                 errMsg,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
@@ -515,7 +524,7 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 // ParseForm and extracted the field they need before invoking this helper.
 func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -528,11 +537,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		dnd := false
-		if hh != nil {
-			dnd = hh.DoNotDisturb
-		}
-		if err := h.pushLineSettings(number, next, dnd); err != nil {
+		if err := h.pushLineSettings(number, next); err != nil {
 			slog.Warn("push line settings failed", "number", number, "err", err)
 		}
 		ln.Settings = next
@@ -546,19 +551,17 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
-// pushLineSettings sends the updated effective settings to the device
-// currently registered as the given number, if any. The household-DND flag
-// is OR'd into SilentMode before sending so the device sees one
-// authoritative bool. A missing device is not an error; the next time that
-// device reconnects it will receive the latest effective settings via the
-// registration push in relay.OnRegistered.
-func (h *Handler) pushLineSettings(number string, settings line.Settings, householdDND bool) error {
+// pushLineSettings sends the updated settings to the device currently
+// registered as the given number, if any. A missing device is not an error;
+// the next time that device reconnects it will receive the latest effective
+// settings via the registration push in relay.OnRegistered.
+func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
 	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
-			SilentMode: line.EffectiveSilent(settings, householdDND),
+			SilentMode: settings.SilentMode,
 			AutoUpdate: settings.AutoUpdate,
 		},
 	})
