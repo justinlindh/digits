@@ -1,6 +1,6 @@
 # Self-Hosting Digits
 
-This guide walks you through running your own Digits signaling server. If you can run Docker, you can run this.
+This guide walks you through running your own Digits signaling server and TURN relay. If you can run Docker, you can run this.
 
 ---
 
@@ -12,7 +12,6 @@ This guide walks you through running your own Digits signaling server. If you ca
 - **Domain name** -- pointed at your server's public IP (A record). Caddy handles TLS automatically.
 - **SMTP credentials** -- for sending magic-link login emails. Any provider works (Postmark, Mailgun, Gmail SMTP, etc.)
 - **Google OAuth (optional)** -- if you want Google sign-in alongside magic links
-- **TURN server (optional)** -- required if phones need to call across different networks behind NAT. See [TURN / NAT Traversal](#turn--nat-traversal).
 
 ---
 
@@ -42,6 +41,8 @@ docker compose logs --follow
 
 Once running, the app is at `https://your-domain.com`.
 
+This starts signald (the Go server), PostgreSQL, and Caddy for TLS. Phones on the same local network can call each other immediately. For calls across different networks, you also need a TURN relay. See [TURN / NAT Traversal](#turn--nat-traversal).
+
 ---
 
 ## Architecture
@@ -53,14 +54,14 @@ Once running, the app is at `https://your-domain.com`.
                        |  Caddy  |  :443  (TLS termination, reverse proxy)
                        +----+----+
                             |
-                     +------v------+
-                     |   signald   |
-                     |   :8080     |
-                     |             |
-                     | WebRTC sig  |
-                     | Auth/magic  |
-                     | Web app     |
-                     +------+------+
+                     +------v------+         +-------------+
+                     |   signald   |         |   coturn    |
+                     |   :8080     |         |   :3478     |
+                     |             |         |             |
+                     | WebRTC sig  |         | TURN relay  |
+                     | Auth/magic  |         | STUN/ICE    |
+                     | Web app     |         |             |
+                     +------+------+         +-------------+
                             |
                      +------v------+
                      |   user-db   |
@@ -73,9 +74,9 @@ Once running, the app is at `https://your-domain.com`.
                      +-------------+
 ```
 
-Caddy terminates TLS and proxies to signald. signald is the single Go binary that handles everything: WebSocket signaling, authentication, the web dashboard, and the REST API. PostgreSQL stores all persistent state.
+Caddy terminates TLS and proxies to signald. signald is the single Go binary that handles everything: WebSocket signaling, authentication, the web dashboard, and the REST API. PostgreSQL stores all persistent state. coturn handles TURN relay and STUN for NAT traversal.
 
-Voice audio never passes through the server. Calls are peer-to-peer WebRTC sessions between phones; the server only brokers the signaling handshake.
+Voice audio never passes through signald. Calls are peer-to-peer WebRTC sessions between phones. signald only brokers the signaling handshake. When direct peer-to-peer is not possible (phones behind different NATs), coturn relays the encrypted media.
 
 ---
 
@@ -103,9 +104,14 @@ All configuration lives in `server/.env`. Copy `server/.env.example` and fill it
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URL` | OAuth callback URL, e.g. `https://digits.example.com/auth/google/callback` |
-| `SIGNALD_TURN_ENABLED` | Set to `true` to enable TURN credential generation. See [TURN / NAT Traversal](#turn--nat-traversal). |
-| `SIGNALD_TURN_SECRET` | Shared secret for HMAC-SHA1 TURN credentials. Must match your TURN server's `static-auth-secret`. |
-| `SIGNALD_TURN_DOMAIN` | TURN server domain, e.g. `turn.example.com` |
+
+### TURN (required for cross-network calls)
+
+| Variable | Description |
+|---|---|
+| `SIGNALD_TURN_ENABLED` | Set to `true` to enable TURN credential generation. |
+| `SIGNALD_TURN_SECRET` | Shared secret for HMAC-SHA1 TURN credentials. Must match coturn's `static-auth-secret`. Generate with `openssl rand -hex 32`. |
+| `SIGNALD_TURN_DOMAIN` | TURN server hostname or IP, e.g. `turn.example.com` or the server's public IP. |
 
 ---
 
@@ -151,38 +157,104 @@ Caddy will obtain and renew a Let's Encrypt certificate automatically.
 
 WebRTC tries to establish a direct peer-to-peer connection between two phones. When both phones are on the same local network, this works without any extra infrastructure. When phones are behind different NATs (the common case for a distributed family network), they need a TURN relay to connect.
 
-Without TURN, calls between phones on different networks will fail to connect. If all your phones are on the same LAN, you can skip this.
+Without TURN, calls between phones on different networks will fail to connect. If all your phones are on the same LAN, you can skip this section.
 
 signald generates time-limited HMAC-SHA1 credentials for the TURN server. You supply the shared secret and domain; the phones receive fresh credentials with each call setup.
 
-### Setting up coturn
+### Running coturn with Docker Compose
 
-[coturn](https://github.com/coturn/coturn) is the standard open-source TURN server. It can run on the same box as signald or on a separate machine.
+The simplest way to add TURN to your deployment. Add a coturn service to your `docker-compose.yml`:
 
-```bash
-# Install
-apt install coturn
-
-# /etc/turnserver.conf
-realm=digits.example.com
-listening-port=3478
-tls-listening-port=5349
-use-auth-secret
-static-auth-secret=YOUR_SECRET_HERE    # must match SIGNALD_TURN_SECRET
-cert=/etc/letsencrypt/live/turn.example.com/fullchain.pem
-pkey=/etc/letsencrypt/live/turn.example.com/privkey.pem
-no-cli
+```yaml
+  coturn:
+    image: coturn/coturn:4.6.3
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./docker/turnserver.conf:/etc/turnserver.conf:ro
+    command: >-
+      turnserver
+      -c /etc/turnserver.conf
+      --static-auth-secret=${SIGNALD_TURN_SECRET}
 ```
 
-Then set the matching env vars in your `.env`:
+Create `server/docker/turnserver.conf`:
+
+```
+listening-port=3478
+listening-ip=0.0.0.0
+external-ip=YOUR_PUBLIC_IP
+relay-ip=0.0.0.0
+min-port=49152
+max-port=65535
+use-auth-secret
+realm=digits.example.com
+log-file=stdout
+no-multicast-peers
+no-cli
+fingerprint
+```
+
+Replace `YOUR_PUBLIC_IP` with your server's public IP address. If you are behind NAT (e.g. a home server), use the format `PUBLIC_IP/PRIVATE_IP` (e.g. `68.224.37.131/192.168.1.199`).
+
+Then set the TURN env vars in your `.env`:
 
 ```
 SIGNALD_TURN_ENABLED=true
-SIGNALD_TURN_SECRET=YOUR_SECRET_HERE
-SIGNALD_TURN_DOMAIN=turn.example.com
+SIGNALD_TURN_SECRET=<generate with: openssl rand -hex 32>
+SIGNALD_TURN_DOMAIN=<your server's public IP or a DNS name that resolves to it>
 ```
 
-Open UDP ports 3478 and 49152-65535 (the default relay port range) on the TURN server's firewall.
+Open these ports on your firewall:
+
+```bash
+ufw allow 3478/udp
+ufw allow 3478/tcp
+ufw allow 49152:65535/udp
+```
+
+The `network_mode: host` is important. TURN relays UDP on dynamically allocated ports from the relay range. Docker's port mapping cannot handle this; the container needs direct access to the host network.
+
+Restart the stack:
+
+```bash
+docker compose up -d
+```
+
+### Running coturn standalone
+
+If you prefer to run coturn outside Docker (on the same box or a separate machine):
+
+```bash
+apt install coturn
+
+# /etc/turnserver.conf
+listening-port=3478
+listening-ip=0.0.0.0
+external-ip=YOUR_PUBLIC_IP
+relay-ip=0.0.0.0
+min-port=49152
+max-port=65535
+use-auth-secret
+static-auth-secret=YOUR_SECRET_HERE
+realm=digits.example.com
+log-file=stdout
+no-multicast-peers
+no-cli
+fingerprint
+```
+
+The `static-auth-secret` must match `SIGNALD_TURN_SECRET` in your `.env`.
+
+### Verifying TURN is working
+
+After starting coturn, make a call between two phones on different networks. If the call connects, TURN is working. If it fails, check:
+
+1. coturn logs: `docker compose logs coturn` (or `journalctl -u coturn`)
+2. Firewall: UDP 3478 and the relay range (49152-65535) must be open
+3. `SIGNALD_TURN_ENABLED=true` in your `.env`
+4. The shared secret matches between signald and coturn
+5. `SIGNALD_TURN_DOMAIN` resolves to an IP that reaches coturn's listening port
 
 ---
 
@@ -259,9 +331,11 @@ Caddy handles zero-downtime for its own config reloads. signald will have a brie
 
 ## Kubernetes
 
-Docker Compose handles the vast majority of deployments. If you have a Kubernetes cluster and want to deploy there, there is a [Helm chart](../../charts/digits/) that supports CNPG PostgreSQL, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics.
+Docker Compose handles the vast majority of deployments. If you have a Kubernetes cluster and want to deploy there, there is a [Helm chart](../../charts/digits/) for signald that supports CNPG PostgreSQL, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics.
 
-See the [Helm chart README](../../charts/digits/README.md) for installation and configuration.
+For TURN on Kubernetes, coturn runs well as a Deployment with `hostNetwork: true` (it needs direct access to the host network for the relay port range). A Cilium or MetalLB LoadBalancer service provides a stable VIP. Redis can be used as a shared stats database (`--redis-statsdb`) for multi-replica HA, and Prometheus metrics are available via `--prometheus`. See the project's `homelab-k8s` repo for a working example of this setup with 2-replica HA, PodDisruptionBudget, and ServiceMonitor.
+
+See the [Helm chart README](../../charts/digits/README.md) for signald installation and configuration.
 
 ---
 
@@ -273,6 +347,7 @@ See the [Helm chart README](../../charts/digits/README.md) for installation and 
 | "Link expired" on login | Token TTL passed (15 min) | Request a new magic link. If this happens constantly, check server clock (`timedatectl`). |
 | Phone won't connect | Wrong WebSocket URL or TLS error | Verify `-signald` flag on the Pi points to `wss://your-domain.com/ws`. Check `journalctl -u digitsd` on the Pi. |
 | Calls fail across networks | No TURN server | Set up coturn and configure `SIGNALD_TURN_*` env vars. See [TURN / NAT Traversal](#turn--nat-traversal). |
+| Calls fail even with TURN | Firewall blocking relay ports | Ensure UDP 3478 and 49152-65535 are open on the TURN server. Check `docker compose logs coturn` for errors. |
 | Google OAuth "redirect_uri mismatch" | Callback URL not registered | Add `https://your-domain.com/auth/google/callback` to authorized redirect URIs in Google Cloud Console. Verify `GOOGLE_REDIRECT_URL` in `.env` matches exactly. |
 | Caddy returns 502 | Backend not ready | `docker compose ps` -- check signald is healthy. `docker compose logs caddy` for upstream errors. |
 | Database migration fails on startup | Dirty schema state | Check `docker compose logs signald` for migration errors. Usually safe to re-run after fixing the underlying issue. |
@@ -286,9 +361,9 @@ Voice calls are low-bandwidth and the server is stateless between calls.
 | Resource | Minimum | Notes |
 |---|---|---|
 | CPU | 1 vCPU | A $5/mo VPS handles dozens of simultaneous calls |
-| RAM | 1 GB | 2 GB comfortable; Postgres + Go are lean |
+| RAM | 1 GB | 2 GB comfortable; Postgres + Go + coturn are lean |
 | Storage | 10 GB | 1 GB is plenty for years of data; extra for logs and backups |
-| Bandwidth | ~100 kbps per active call | WebRTC audio only, no video |
+| Bandwidth | ~100 kbps per active call | WebRTC audio only, no video. TURN-relayed calls double this on the server. |
 | OS | Linux x86_64 | Tested on Debian 12, Ubuntu 22.04+ |
 
 A Raspberry Pi 4 (2 GB) works fine as a local server on a home network. For remote access you need a VPS with a stable IP and a domain.
