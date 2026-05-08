@@ -28,63 +28,41 @@
 
 ---
 
-Each phone is a gutted vintage desk phone with two processors inside: a **Pico H** running C firmware for real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a **Raspberry Pi Zero 2 W** running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and signaling. A **Go server** handles call routing, device pairing, household management, and a web dashboard. There's a free public instance at [app.digits.family](https://app.digits.family), or you can self-host.
-
-Lift the handset, hear a dial tone, punch in a number. The bell rings on the other end. Calls are encrypted, the server never touches media, and when the handset goes back on the cradle the mic is physically disconnected.
-
-## Privacy
-
-Calls use WebRTC with DTLS-SRTP encryption, the same standard used by Signal and FaceTime. Voice data is encrypted end-to-end between the two phones on the call. The server handles connection setup only: it brokers the signaling handshake (who's calling whom), but it never has access to the audio stream. We can't listen to your calls. We designed the system so that it's technically impossible for us to even if we tried.
-
-When the handset is on the cradle, the hook switch physically disconnects the microphone circuit. Not muted in software. Electrically disconnected. You can trust physics.
-
-**What the server does store:** user accounts (email, name), household membership, phone line assignments, device pairing tokens, and session data. Call metadata is logged: who called whom, when, and for how long. Connection quality telemetry (packet loss, jitter, bandwidth) is collected during calls for diagnostics.
-
-**What the server never stores:** voice audio, call recordings, transcripts, location data, or anything about what was said on a call. There is no mechanism to record calls; the architecture makes it impossible. The server doesn't even know what was said.
-
-The public server at [app.digits.family](https://app.digits.family) is free and runs the same code that's in this repo. If you'd rather not trust anyone else's infrastructure, the whole thing is designed to self-host. The signaling server is a single Go binary with a Postgres database. Run it on a VPS, a home server, whatever. Your network is yours either way.
-
-## Hardware
-
-The project has gone through three hardware iterations, each a different build strategy for the same phone:
-
-| Rev | Construction | Audio | Ringer | Status |
-|-----|-------------|-------|--------|--------|
-| [V0](docs/build/components.md) | Perfboard, off-the-shelf modules | Codec Zero HAT (DA7212) | L298N + step-up transformer | Done, documented end-to-end |
-| [V1](hardware/pcb/v1/) | Hand-assembled PCB | Codec Zero HAT (DA7212) | L298N + step-up transformer | Fabricated, has [errata](hardware/pcb/v1/ERRATA.md) |
-| [V2](hardware/pcb/v2/) | Contract-assembled (JLCPCB) | Onboard TLV320AIC3104 | Onboard DRV8871 | Deployed, ~10 units in use |
-
-**V1** is a bench-build target: single-sided, mostly through-hole, hand-solderable. External modules handle audio (Codec Zero HAT) and bell ringing (L298N H-bridge plus a step-up transformer).
-
-**V2** is a fab-service target: onboard audio codec (TLV320AIC3104, 32-pin QFN) and ringer driver (DRV8871). Arrives pre-assembled from JLCPCB. Cleaner result, no internal wiring, but not practical to hand-solder.
-
-Both use KiCad. Schematics, PCB layouts, Gerbers, and BOMs are in [`hardware/pcb/`](hardware/pcb/). The firmware abstracts board differences at runtime, so the same binary runs on V1 and V2.
+Each phone is a gutted vintage desk phone with two processors inside: an RP2040 handling real-time phone hardware (keypad scanning, hook switch, bell ringer, DTMF tones) and a Raspberry Pi Zero 2 W running a Go daemon for VoIP, end-to-end encrypted media (DTLS-SRTP), and call signaling. A Go server handles call routing, device pairing, and household management. There's a free public instance at [app.digits.family](https://app.digits.family), or you can run your own.
 
 ## Architecture
 
 | Component | Role |
 |-----------|------|
-| **Pico H** (firmware, C) | Real-time phone I/O: keypad matrix, hook switch, bell driver, DTMF/tone generation, status LED. Communicates with the Pi over UART. |
-| **Pi Zero 2 W** (digitsd, Go) | VoIP daemon: WebRTC media (Opus codec, DTLS-SRTP), signaling client, call state machine, Wi-Fi setup, OTA updates. |
+| **RP2040** (firmware, C) | Real-time phone I/O: keypad matrix, hook switch, bell driver, DTMF/tone generation, status LED. Communicates with the Pi over UART. V0/V1 use a Pico H module; V2 has the RP2040 onboard. |
+| **Pi Zero 2 W** (digitsd, Go) | VoIP daemon: WebRTC media, Opus codec, DTLS-SRTP, signaling client, call state machine, Wi-Fi setup, OTA updates. |
 | **Audio codec** | Mic input and earpiece output. DA7212 HAT on V0/V1, onboard TLV320AIC3104 on V2. |
 | **Signaling server** (Go) | WebSocket relay for SDP/ICE exchange, PostgreSQL persistence, device pairing, household management, web dashboard. |
 
-The server never sees call audio. Each call is a direct peer-to-peer WebRTC session between two phones (or three, for party-line calls), with the server only brokering the initial signaling handshake.
+Calls are peer-to-peer WebRTC sessions between two phones (or three, for party-line calls). The server brokers the signaling handshake but never handles media.
 
 See [Architecture deep-dive](docs/architecture/overview.md) for the full call path, data model, and NAT traversal.
 
-## Web App
+## Hardware
 
-The server includes a web dashboard for managing your network: pairing phones, organizing households, viewing call history, and configuring per-line settings like voice style and Do Not Disturb schedules.
+Three hardware iterations, each a different build strategy:
 
-<p align="center">
-  <img src="https://digits.family/images/screenshots/dashboard.png" width="720" alt="Digits web dashboard">
-</p>
+| Rev | Construction | Audio | Ringer | Status |
+|-----|-------------|-------|--------|--------|
+| [V0](docs/build/components.md) | Perfboard, off-the-shelf modules | Codec Zero HAT (DA7212) | L298N + step-up transformer | Done, documented end-to-end |
+| [V1](hardware/pcb/v1/) | Hand-assembled PCB, Pico H module | Codec Zero HAT (DA7212) | L298N + step-up transformer | Fabricated, has [errata](hardware/pcb/v1/ERRATA.md) |
+| [V2](hardware/pcb/v2/) | Contract-assembled (JLCPCB), onboard RP2040 | Onboard TLV320AIC3104 | Onboard DRV8871 | Deployed, ~10 units in use |
+
+**V1** is a bench-build target: single-sided, mostly through-hole, hand-solderable. External modules handle audio (Codec Zero HAT) and bell ringing (L298N H-bridge plus a step-up transformer).
+
+**V2** is a fab-service target: onboard RP2040, audio codec (TLV320AIC3104, 32-pin QFN), and ringer driver (DRV8871). Arrives pre-assembled from JLCPCB. Not practical to hand-solder.
+
+Schematics, PCB layouts, Gerbers, and BOMs are in [`hardware/pcb/`](hardware/pcb/). All designed in KiCad. The firmware abstracts board differences at runtime, so the same binary runs on V1 and V2.
 
 ## Project Structure
 
 ```text
-firmware/       Pico H firmware (C, CMake, Pico SDK)
+firmware/       RP2040 firmware (C, CMake, Pico SDK)
 pi/digitsd/     Pi-side VoIP daemon (Go, cross-compiled to arm64)
 pi/image/       Raspberry Pi OS image builder
 server/         Signaling server + web dashboard (Go, htmx, Tailwind)
@@ -124,9 +102,17 @@ make test
 
 ## Hosting
 
-The server is a single Go binary (`signald`) backed by Postgres. Docker Compose is the straightforward way to run it: clone the repo, fill in an `.env` file, `docker compose up -d`, done. The [self-hosting guide](docs/hosting/self-hosting.md) walks through the full setup including TLS, SMTP for magic-link auth, phone pairing, backups, and troubleshooting.
+The server is a single Go binary (`signald`) backed by Postgres. Docker Compose is the straightforward way to run it: clone the repo, fill in an `.env` file, `docker compose up -d`. The [self-hosting guide](docs/hosting/self-hosting.md) covers TLS, SMTP for magic-link auth, phone pairing, backups, and troubleshooting.
 
-There is also a [Helm chart](charts/digits/) if you happen to have a Kubernetes cluster. There's no good reason for a three-phone family network to run on k8s, but I over-engineered almost everything in this project and it would have felt wrong to stop at the deployment layer. The chart supports CNPG Postgres, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics. It's what runs in production. Again, completely unnecessary, but it works and it's there if you want it.
+There is also a [Helm chart](charts/digits/) if you happen to have a Kubernetes cluster. There is no good reason for a three-phone family network to run on k8s, but I over-engineered almost everything in this project and it would have felt wrong to stop at the deployment layer. The chart supports CNPG Postgres, Redis Sentinel for multi-replica signaling, OpenTelemetry tracing, Pyroscope profiling, and Prometheus metrics. It is what runs in production. Completely unnecessary, but it works and it is there if you want it.
+
+## Web App
+
+The server includes a web dashboard for pairing phones, organizing households, viewing call history, and configuring per-line settings.
+
+<p align="center">
+  <img src="https://digits.family/images/screenshots/dashboard.png" width="720" alt="Digits web dashboard">
+</p>
 
 ## Service Codes
 
@@ -151,7 +137,7 @@ Hidden codes entered on the keypad while the handset is off-hook.
 
 ## Party Line (Three-Way Calling)
 
-Classic 90s residential three-way calling. During an active call, press and briefly release the hook switch (a "flash", 100-600 ms on-hook) and you'll hear a second dial tone. Dial a third number, talk to them privately, then flash again to merge all three into a single call. Everyone hears everyone.
+Classic 90s residential three-way calling. During an active call, press and briefly release the hook switch (a "flash", 100-600 ms on-hook) to get a second dial tone. Dial a third number, talk to them privately, then flash again to merge all three into a single call.
 
 | Gesture | What happens |
 |---------|--------------|
@@ -175,6 +161,18 @@ Hidden sequences that play audio clips through the earpiece. Each keypress must 
 | `5-5-4-2` | Towelie: *"That's it! That's the melody to Funky Town!"* |
 | `0-0-0-0` | Rick Astley: *"Never gonna give you up..."* |
 | `8-6-7-5-3-0-9` | Tommy Tutone: *"Jenny I got your number... 867-5309!"* (intercepts the dial) |
+
+## Privacy
+
+Calls use WebRTC with DTLS-SRTP. Voice data is encrypted end-to-end between the two devices on the call. The signaling server facilitates connection setup but never has access to the audio stream. Even if the server were compromised, there would be no voice data to extract.
+
+The hook switch physically disconnects the microphone circuit when the handset is on the cradle. This is an electrical disconnect, not a software mute.
+
+**What the server stores:** user accounts (email, name), household membership, phone line assignments, device pairing tokens, session data, call metadata (caller, callee, timestamps, duration), and connection quality telemetry (packet loss, jitter, bandwidth).
+
+**What the server does not store:** voice audio, call recordings, transcripts, or location data. There is no mechanism in the server to capture call audio.
+
+The server is designed to be self-hosted. If you do not want to use the public instance at [app.digits.family](https://app.digits.family), you can run the same code on your own infrastructure. See [Self-hosting](docs/hosting/self-hosting.md).
 
 ## Documentation
 
