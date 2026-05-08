@@ -363,37 +363,76 @@
     <p class="line-editor-dialog__error">{{.NumberError}}</p>
     {{end}}
 
-    <form method="POST" action="/phones/{{.Line.Number}}/number" class="stack-md">
-      <div class="field">
-        <label for="edit-number" class="field__label">Number</label>
-        <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
-               required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric"
-               class="field__input field__input--mono">
-      </div>
-      <div class="line-editor-dialog__actions">
-        <button type="submit" class="btn btn--primary">Save</button>
-        <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
-      </div>
-    </form>
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
+        <div class="field">
+          <label for="edit-number" class="field__label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric"
+                 class="field__input field__input--mono">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
 
     {{if .OtherLines}}
-    <hr class="line-editor-dialog__divider">
-    <form method="POST" action="/phones/{{.Line.Number}}/convert"
-          onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')">
-      <div class="field">
-        <label for="convert-target" class="field__label">Make extension of</label>
-        <select id="convert-target" name="target_line_id" required class="field__input">
-          {{range .OtherLines}}
-          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="field__label">Handset</label>
+          <select id="move-device" name="device_id" required class="field__input">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
           {{end}}
-        </select>
-        <p class="field__hint" style="margin-top: 4px;">Moves all handsets to the selected line and removes this number.</p>
-      </div>
-      <div class="line-editor-dialog__actions">
-        <button type="submit" class="btn btn--danger">Convert</button>
-      </div>
-    </form>
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="field__label">Move to</label>
+          <select id="move-target" name="target_line_id" required class="field__input">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="field__hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--danger">Move handset</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
     {{end}}
+
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
   </dialog>
 
   {{if .NumberError}}
@@ -1057,40 +1096,79 @@
     <p class="line-editor-dialog__error">{{.NumberError}}</p>
     {{end}}
 
-    <form method="POST" action="/phones/{{.Line.Number}}/number" class="line-editor-dialog__form">
-      <div class="field">
-        <label for="edit-number" class="am-label">Number</label>
-        <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
-               required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric">
-      </div>
-      <div class="line-editor-dialog__actions">
-        <button type="submit" class="am-tab">Save</button>
-        <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
-      </div>
-    </form>
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number" class="line-editor-dialog__form">
+        <div class="field">
+          <label for="edit-number" class="am-label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-tab">Save</button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
 
     {{if .OtherLines}}
-    <hr class="line-editor-dialog__divider">
-    <form method="POST" action="/phones/{{.Line.Number}}/convert"
-          onsubmit="return confirm('This will merge {{fmtPhone .Line.Number}} into the selected line. The number {{fmtPhone .Line.Number}} will be removed.')"
-          class="line-editor-dialog__form">
-      <div class="field">
-        <label for="convert-target" class="am-label">Make extension of</label>
-        <select id="convert-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
-          {{range .OtherLines}}
-          <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')"
+            class="line-editor-dialog__form">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="am-label">Handset</label>
+          <select id="move-device" name="device_id" required style="width: 100%; min-width: 120px;">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
           {{end}}
-        </select>
-        <p class="am-hint" style="margin-top: 4px;">Moves all handsets to the selected line and removes this number.</p>
-      </div>
-      <div class="line-editor-dialog__actions">
-        <button type="submit" class="am-key am-key--red">
-          <span class="am-key__symbol">&#x25B6;</span>
-          <span class="am-key__label">Convert</span>
-        </button>
-      </div>
-    </form>
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="am-label">Move to</label>
+          <select id="move-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &mdash; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="am-hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Move handset</span>
+          </button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
     {{end}}
+
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
   </dialog>
 
   {{if .NumberError}}

@@ -823,6 +823,7 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+
 	targetLineIDStr := strings.TrimSpace(r.FormValue("target_line_id"))
 	if targetLineIDStr == "" {
 		http.Error(w, "target line required", http.StatusBadRequest)
@@ -839,10 +840,11 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if srcLn.ID == targetLineID {
-		http.Error(w, "cannot convert a line into itself", http.StatusBadRequest)
+		http.Error(w, "cannot move to the same line", http.StatusBadRequest)
 		return
 	}
 
+	// Verify target line belongs to same household.
 	tgtLn, err := h.lineStore.GetByID(r.Context(), targetLineID)
 	if err != nil {
 		http.Error(w, "target line not found", http.StatusNotFound)
@@ -853,17 +855,44 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.deviceStore.ReassignLine(r.Context(), srcLn.ID, targetLineID); err != nil {
-		slog.Error("convert line failed: reassign", "src", srcLn.ID, "tgt", targetLineID, "err", err)
+	// Determine which device to move.
+	deviceIDStr := strings.TrimSpace(r.FormValue("device_id"))
+	var deviceID int64
+	if deviceIDStr != "" {
+		deviceID, err = strconv.ParseInt(deviceIDStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid device", http.StatusBadRequest)
+			return
+		}
+	} else {
+		// If no device_id provided, the line must have exactly 1 device.
+		devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+		if listErr != nil || len(devices) != 1 {
+			http.Error(w, "device_id required for multi-device lines", http.StatusBadRequest)
+			return
+		}
+		deviceID = devices[0].ID
+	}
+
+	// Move the device.
+	if err := h.deviceStore.Reassign(r.Context(), deviceID, targetLineID); err != nil {
+		slog.Error("move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
-		slog.Error("convert line failed: delete source", "line_id", srcLn.ID, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	// If source line is now empty, delete it.
+	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if err != nil {
+		slog.Error("list remaining devices failed", "line_id", srcLn.ID, "err", err)
+	}
+	if len(remaining) == 0 {
+		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
+			slog.Error("delete empty line failed", "line_id", srcLn.ID, "err", err)
+		}
+		http.Redirect(w, r, "/phones", http.StatusSeeOther)
 		return
 	}
 
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }

@@ -180,10 +180,12 @@ func TestConvertLineToExtension(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add tgt line: %v", err)
 	}
-	_, err = database.DB.Exec(`
+	var devID int64
+	err = database.DB.QueryRow(`
 		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
 		VALUES ($1, 'hw-kitchen', 'dev-kitchen', 'Kitchen Phone', NOW())
-	`, srcLn.ID)
+		RETURNING id
+	`, srcLn.ID).Scan(&devID)
 	if err != nil {
 		t.Fatalf("seed device: %v", err)
 	}
@@ -191,16 +193,18 @@ func TestConvertLineToExtension(t *testing.T) {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140002')")
 	})
 
-	form := url.Values{"target_line_id": {strconv.FormatInt(tgtLn.ID, 10)}}
+	form := url.Values{
+		"target_line_id": {strconv.FormatInt(tgtLn.ID, 10)},
+		"device_id":      {strconv.FormatInt(devID, 10)},
+	}
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/convert", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d: %s", w.Code, w.Body.String())
 	}
 
 	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {

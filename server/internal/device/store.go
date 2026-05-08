@@ -104,6 +104,22 @@ func (s *Store) ReassignLine(ctx context.Context, srcLineID, tgtLineID int64) (i
 	return n, nil
 }
 
+// Reassign moves a single device to a different line.
+func (s *Store) Reassign(ctx context.Context, deviceID, newLineID int64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE devices SET line_id = $1 WHERE id = $2`,
+		newLineID, deviceID,
+	)
+	if err != nil {
+		return fmt.Errorf("reassign device: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("reassign device: device %d not found", deviceID)
+	}
+	return nil
+}
+
 // TouchLastSeen updates last_seen_at to NOW() for the device with the given hardware ID.
 func (s *Store) TouchLastSeen(ctx context.Context, hardwareID string) error {
 	_, err := s.db.ExecContext(ctx,
