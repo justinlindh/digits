@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if grep -qi 'Co-Authored-By' "$1"; then
+if grep -qiP '^Co-Authored-By:' "$1"; then
     echo ""
     echo "commit rejected: Co-Authored-By trailer detected"
     echo ""
