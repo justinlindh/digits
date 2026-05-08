@@ -22,6 +22,7 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	callReturns        int
 	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
@@ -119,6 +120,11 @@ func (m *mockCallbacks) MigrateToMesh(phone string) {
 	}
 	m.migratedToMesh[phone] = true
 }
+func (m *mockCallbacks) OnCallReturn() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callReturns++
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -151,6 +157,11 @@ func (m *mockCallbacks) Answers() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.answers
+}
+func (m *mockCallbacks) CallReturns() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callReturns
 }
 func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
