@@ -182,8 +182,9 @@
             </div>
             {{if .DeviceInfo.DevMode}}
             <div>
-              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="btn btn--quiet btn--sm" style="gap: 6px; display: inline-flex; align-items: center;">
-                <span style="font-size: 11px;">&#x2699;</span> Device admin panel
+              <div class="field__label" style="margin-bottom: 4px;">Dev mode</div>
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="chip chip--live" style="text-decoration: none;">
+                <span class="chip__dot"></span>Admin panel &#x2197;
               </a>
             </div>
             {{end}}
@@ -874,9 +875,12 @@
           </div>
           {{if .DeviceInfo.DevMode}}
           <div class="am-settings__kv-row">
-            <dt class="am-settings__kv-key am-label">Dev</dt>
+            <dt class="am-settings__kv-key am-label">Dev mode</dt>
             <dd class="am-settings__kv-val">
-              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="am-tab">Admin panel</a>
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="am-key am-key--accent" style="text-decoration: none;">
+                <span class="am-key__symbol">&#x2699;</span>
+                <span class="am-key__label">Admin panel</span>
+              </a>
             </dd>
           </div>
           {{end}}
