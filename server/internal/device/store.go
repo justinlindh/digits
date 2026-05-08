@@ -133,18 +133,6 @@ func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paire
 	return true, valid, nil
 }
 
-// UpdateName sets the display name for a device.
-func (s *Store) UpdateName(ctx context.Context, deviceID int64, name string) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE devices SET name = $1 WHERE id = $2`,
-		name, deviceID,
-	)
-	if err != nil {
-		return fmt.Errorf("update device name: %w", err)
-	}
-	return nil
-}
-
 // BoundLineNumber returns the line number assigned to the paired device with
 // the given hardware ID. Returns ("", nil) if the device has no bound line.
 func (s *Store) BoundLineNumber(ctx context.Context, hardwareID string) (string, error) {
