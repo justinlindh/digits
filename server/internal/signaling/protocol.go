@@ -28,6 +28,8 @@ const (
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
 	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
+	TypeCallReturn       = "call_return"        // Phone → Server: request last inbound caller
+	TypeCallReturnResult = "call_return_result" // Server → Phone: last inbound caller number
 
 	TypeReleaseAvailable = "release_available" // Server → All: new release detected
 )

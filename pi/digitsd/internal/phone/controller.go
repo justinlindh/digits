@@ -26,6 +26,7 @@ const (
 	StateADD_PRIVATE     State = "ADD_PRIVATE"     // A↔C connected; B on hold
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
+	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -67,6 +68,7 @@ type Callbacks interface {
 	AddMeshPeer(phone string, initiator bool)             // Open a WebRTC peer connection to a conference member
 	RemoveMeshPeer(phone string)                          // Tear down the WebRTC connection to a conference member
 	TearDownAllMeshPeers()                                // Tear down all conference WebRTC connections
+	OnCallReturn()                                        // *69 detected: query server for last inbound caller
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -92,6 +94,8 @@ type Controller struct {
 	// their sleeps when it fires so daemon shutdown isn't blocked.
 	done      chan struct{}
 	closeOnce sync.Once
+
+	callReturnNumber string // number to dial when user presses 1 in CALL_RETURN state
 
 	// Conference / call-waiting state.
 	confID     string // non-empty when part of a conference (Member message received)
@@ -151,6 +155,15 @@ func (c *Controller) SetSilentMode(silent bool) {
 	if silent && c.state == StateRINGING {
 		c.cb.SendRing(false)
 	}
+}
+
+// SetCallReturnNumber sets the number to dial when the user presses "1" in
+// CALL_RETURN state. Called by the daemon after the server responds to the
+// *69 query with the last inbound caller's number. Thread-safe.
+func (c *Controller) SetCallReturnNumber(number string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callReturnNumber = number
 }
 
 // State returns the current FSM state (thread-safe).
@@ -218,7 +231,7 @@ func (c *Controller) HandleEvent(event string) {
 	case evType == "TIMEOUT" && evVal == "DIAL_TONE":
 		c.onTimeoutDialTone()
 	case evType == "RING" && (evVal == "ACK" || evVal == "DONE"):
-		// Informational — ring ack/done from Pico, no action needed
+		// Informational: ring ack/done from Pico, no action needed
 	case event == "PONG":
 		// Keepalive response, ignore
 	default:
@@ -296,6 +309,7 @@ func (c *Controller) onHookOn() {
 
 	c.state = StateIDLE
 	c.digits = ""
+	c.callReturnNumber = ""
 	c.heldPeer = ""
 	c.addingPeer = ""
 	c.confID = ""
@@ -328,7 +342,38 @@ func (c *Controller) onKey(digit string) {
 			slog.Debug("phone: service code handled by bridge, resetting", "code", c.digits)
 			c.digits = ""
 			c.state = StateDIALTONE
-			// Service code detected — reset to dial tone without re-sending tone
+			// Service code detected: reset to dial tone without re-sending tone
+		}
+		if c.digits == "*69" {
+			slog.Info("phone: *69 detected, entering CALL_RETURN")
+			c.digits = ""
+			c.callReturnNumber = ""
+			c.state = StateCALL_RETURN
+			go c.cb.OnCallReturn()
+			return
+		}
+	case StateCALL_RETURN:
+		if digit == "1" && c.callReturnNumber != "" {
+			number := c.callReturnNumber
+			c.callReturnNumber = ""
+			slog.Info("phone: CALL_RETURN -> CALLING", "number", number)
+			c.state = StateCALLING
+			go func() {
+				time.Sleep(800 * time.Millisecond)
+				c.mu.Lock()
+				if c.state != StateCALLING {
+					c.mu.Unlock()
+					return
+				}
+				c.cb.SendTone(ToneRingback)
+				err := c.cb.InitiateCall(number)
+				c.mu.Unlock()
+
+				if err != nil {
+					slog.Info("phone: call return failed, server unreachable", "number", number, "error", err)
+					c.playRejectSequence(StateCALLING)
+				}
+			}()
 		}
 	case StateADD_DIALTONE:
 		// First key during add-dial: stop the second dial tone, start collecting.
@@ -382,7 +427,7 @@ func (c *Controller) onDial(number string) {
 		return
 	}
 	c.state = StateCALLING
-	// Brief silence before ringback — simulates PSTN call setup delay.
+	// Brief silence before ringback: simulates PSTN call setup delay.
 	// Old rotary phones had a variable pause between last digit and first ring.
 	go func() {
 		time.Sleep(800 * time.Millisecond)
@@ -463,7 +508,7 @@ func (c *Controller) dialThirdParty(number string) {
 	c.addingPeer = number
 	c.digits = ""
 	c.state = StateADD_CALLING
-	// Brief silence before ringback — mirrors the 2-party outgoing call setup delay.
+	// Brief silence before ringback: mirrors the 2-party outgoing call setup delay.
 	go func() {
 		time.Sleep(800 * time.Millisecond)
 		c.mu.Lock()

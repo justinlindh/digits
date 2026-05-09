@@ -326,6 +326,15 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	return nil
 }
 
+func (d *daemonCallbacks) OnCallReturn() {
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
+		slog.Error("call_return: server unreachable", "error", err)
+		d.mixer.PlayOnce("disconnected")
+		d.ctrl.ResetToDialtone()
+		d.mixer.PlayLoop("tone_dial")
+	}
+}
+
 func (d *daemonCallbacks) AnswerCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -3269,6 +3278,29 @@ func main() {
 				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
 			case sigclient.TypeConferenceRejected:
 				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
+
+			case sigclient.TypeCallReturnResult:
+				number := msg.Number
+				if number == "" {
+					slog.Info("call_return: no calls available")
+					cb.mixer.PlayOnce("call_return_none")
+					go func() {
+						time.Sleep(3 * time.Second)
+						if ctrl.State() != phone.StateCALL_RETURN {
+							return
+						}
+						ctrl.ResetToDialtone()
+						cb.mixer.PlayLoop("tone_dial")
+					}()
+				} else {
+					slog.Info("call_return: announcing last caller", "number", number)
+					ctrl.SetCallReturnNumber(number)
+					cb.mixer.PlayOnce("call_return_prefix")
+					for _, ch := range number {
+						cb.mixer.PlayOnce("spoken_" + string(ch))
+					}
+					cb.mixer.PlayOnce("call_return_suffix")
+				}
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
