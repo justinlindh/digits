@@ -116,7 +116,11 @@
       activeAudio = null;
       activeBtn = null;
     });
-    audio.play();
+    audio.play().catch(function () {
+      btn.innerHTML = '&#9654; Listen';
+      activeAudio = null;
+      activeBtn = null;
+    });
     btn.innerHTML = '&#9724; Stop';
     activeAudio = audio;
     activeBtn = btn;
