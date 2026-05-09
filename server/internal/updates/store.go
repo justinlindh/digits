@@ -23,6 +23,7 @@ type Release struct {
 	URL        string    `json:"url"`
 	Date       string    `json:"date"`
 	Notes      string    `json:"notes,omitempty"`
+	AudioURL   string    `json:"audio_url,omitempty"`
 	ReleasedAt time.Time `json:"-"`
 }
 

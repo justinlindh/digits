@@ -40,6 +40,7 @@
         {{if .TotalCount}}<span class="changelog__adoption">{{.PhoneCount}} of {{.TotalCount}} phones</span>{{end}}
       </div>
       {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+      {{if .AudioURL}}<button type="button" class="changelog__play" data-audio-url="{{.AudioURL}}" aria-label="Play release notes">&#9654; Listen</button>{{end}}
     </article>
     {{end}}
     {{else}}
@@ -57,6 +58,7 @@
         {{if .TotalCount}}<span class="changelog__adoption">{{.PhoneCount}} of {{.TotalCount}} phones</span>{{end}}
       </div>
       {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+      {{if .AudioURL}}<button type="button" class="changelog__play" data-audio-url="{{.AudioURL}}" aria-label="Play release notes">&#9654; Listen</button>{{end}}
     </article>
     {{end}}
     {{else}}
@@ -73,6 +75,7 @@
         {{if .Date}}<span class="changelog__date">{{.Date}}</span>{{end}}
       </div>
       {{if .Notes}}<div class="changelog__notes">{{renderNotes .Notes}}</div>{{else}}<p class="changelog__empty">Notes not available yet.</p>{{end}}
+      {{if .AudioURL}}<button type="button" class="changelog__play" data-audio-url="{{.AudioURL}}" aria-label="Play release notes">&#9654; Listen</button>{{end}}
     </article>
     {{end}}
     {{else}}
@@ -94,6 +97,33 @@
       var panel = document.querySelector('[data-panel="' + target + '"]');
       if (panel) panel.classList.add('changelog-panel--active');
     });
+  });
+
+  var activeAudio = null;
+  var activeBtn = null;
+  document.querySelector('.changelog').addEventListener('click', function (e) {
+    var btn = e.target.closest('.changelog__play');
+    if (!btn) return;
+    if (activeAudio) {
+      activeAudio.pause();
+      activeAudio = null;
+      if (activeBtn) activeBtn.innerHTML = '&#9654; Listen';
+      if (activeBtn === btn) { activeBtn = null; return; }
+    }
+    var audio = new Audio(btn.dataset.audioUrl);
+    audio.addEventListener('ended', function () {
+      btn.innerHTML = '&#9654; Listen';
+      activeAudio = null;
+      activeBtn = null;
+    });
+    audio.play().catch(function () {
+      btn.innerHTML = '&#9654; Listen';
+      activeAudio = null;
+      activeBtn = null;
+    });
+    btn.innerHTML = '&#9724; Stop';
+    activeAudio = audio;
+    activeBtn = btn;
   });
 })();
 </script>

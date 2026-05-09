@@ -1816,6 +1816,22 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .changelog__notes p:last-child { margin: 0; }
 .changelog__notes ul { margin: 4px 0 8px; padding-left: 18px; }
 .changelog__notes li { margin: 2px 0; }
+.changelog__play {
+  background: none;
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--brass);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.changelog__play:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
 .changelog__empty {
   color: var(--ink-muted);
   font-style: italic;
