@@ -172,6 +172,11 @@ static void process_pi_command(const char *cmd) {
         // to prevent the on-hook event from immediately reverting us to IDLE.
         hook_get_event();
         set_state(PHONE_STATE_RINGING);
+    } else if (strncmp(cmd, "RING:PATTERN:", 13) == 0) {
+        uint8_t pat = (uint8_t)(cmd[13] - '0');
+        hook_get_event();
+        set_state(PHONE_STATE_RINGING);
+        ringer_start_pattern(pat);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
         // Direct hardware test — bypass FSM entirely.
         // Drives ringer + LED regardless of hook state.
