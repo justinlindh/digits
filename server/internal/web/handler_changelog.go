@@ -77,11 +77,15 @@ func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []
 	}
 
 	for _, r := range releases {
+		var audioURL string
+		if r.AudioURL != "" {
+			audioURL = "/api/release-audio/" + component + "/" + r.Version
+		}
 		out = append(out, changelogRelease{
 			Version:    r.Version,
 			Notes:      r.Notes,
 			Date:       r.Date,
-			AudioURL:   r.AudioURL,
+			AudioURL:   audioURL,
 			PhoneCount: versionCounts[r.Version],
 			TotalCount: totalDevices,
 		})
