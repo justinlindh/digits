@@ -1223,7 +1223,7 @@ func TestRelayCallReturnRetryBusyThenFree(t *testing.T) {
 	}
 
 	delete(tracker.calls, "3140002→3140003")
-	relay.OnCallEndedNotify("3140002", "3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
 
 	select {
 	case data := <-conn1.Send:
@@ -1266,7 +1266,7 @@ func TestRelayCallReturnCancel(t *testing.T) {
 	}
 
 	delete(tracker.calls, "3140002→3140003")
-	relay.OnCallEndedNotify("3140002", "3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
 
 	select {
 	case <-conn1.Send:
@@ -1297,7 +1297,7 @@ func TestRelayCallReturnExpiry(t *testing.T) {
 	relay.pendingReturnsMu.Unlock()
 
 	delete(tracker.calls, "3140002→3140003")
-	relay.OnCallEndedNotify("3140002", "3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
 
 	select {
 	case <-conn1.Send:
