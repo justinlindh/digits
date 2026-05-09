@@ -23,6 +23,8 @@ type mockCallbacks struct {
 	answers            int
 	callConnectedCalls int
 	callReturns        int
+	ringPatterns       []int
+	callReturnCancels  int
 	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
@@ -125,6 +127,16 @@ func (m *mockCallbacks) OnCallReturn() {
 	defer m.mu.Unlock()
 	m.callReturns++
 }
+func (m *mockCallbacks) SendRingPattern(id int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ringPatterns = append(m.ringPatterns, id)
+}
+func (m *mockCallbacks) OnCallReturnCancel() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callReturnCancels++
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -162,6 +174,16 @@ func (m *mockCallbacks) CallReturns() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callReturns
+}
+func (m *mockCallbacks) RingPatterns() []int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]int(nil), m.ringPatterns...)
+}
+func (m *mockCallbacks) CallReturnCancels() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callReturnCancels
 }
 func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()

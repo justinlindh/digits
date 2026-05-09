@@ -749,9 +749,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	mode := strings.TrimSpace(r.FormValue("mode"))
 
 	if mode != "service" && mode != "reboot" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "mode must be 'service' or 'reboot'"})
+		jsonError(w, "mode must be 'service' or 'reboot'", http.StatusBadRequest)
 		return
 	}
 

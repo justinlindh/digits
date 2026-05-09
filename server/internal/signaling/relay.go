@@ -67,6 +67,13 @@ type activeExtension struct {
 	PeerNumber string // the remote party's line number
 }
 
+// pendingCallReturn tracks a *69 busy-retry request: the requester wants to
+// be notified when target becomes free so it can ring back automatically.
+type pendingCallReturn struct {
+	Target    string
+	ExpiresAt time.Time
+}
+
 type Relay struct {
 	Hub            *Hub
 	Tracker        CallTracker
@@ -83,6 +90,9 @@ type Relay struct {
 
 	extMu      sync.Mutex
 	extensions map[string]*activeExtension // hardware_id -> extension state
+
+	pendingReturnsMu sync.Mutex
+	pendingReturns   map[string]*pendingCallReturn // requester number -> pending retry
 }
 
 // observeError is a nil-safe pass-through to the SignalingErrorObserver.
@@ -127,6 +137,7 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 		CallAuthorizer: authorizer,
 		LineStore:      lineStore,
 		extensions:     make(map[string]*activeExtension),
+		pendingReturns: make(map[string]*pendingCallReturn),
 	}
 }
 
@@ -199,6 +210,12 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 		return
 	case TypeCallReturn:
 		r.handleCallReturn(ctx, from)
+		return
+	case TypeCallReturnRetry:
+		r.handleCallReturnRetry(ctx, from, msg)
+		return
+	case TypeCallReturnCancel:
+		r.handleCallReturnCancel(ctx, from)
 		return
 	default:
 		slog.WarnContext(ctx, "unknown message type", "type", msg.Type, "from", from)
@@ -721,6 +738,91 @@ func (r *Relay) handleCallReturn(ctx context.Context, from string) {
 		}
 	}
 	_ = r.Hub.SendTo(from, &Message{Type: TypeCallReturnResult, Number: number})
+}
+
+func (r *Relay) handleCallReturnRetry(ctx context.Context, from string, msg *Message) {
+	target := msg.Number
+	if target == "" {
+		return
+	}
+	r.pendingReturnsMu.Lock()
+	r.pendingReturns[from] = &pendingCallReturn{
+		Target:    target,
+		ExpiresAt: time.Now().Add(30 * time.Minute),
+	}
+	r.pendingReturnsMu.Unlock()
+	slog.InfoContext(ctx, "call_return: retry registered", "requester", from, "target", target)
+	r.checkPendingReturn(from)
+}
+
+func (r *Relay) handleCallReturnCancel(ctx context.Context, from string) {
+	r.pendingReturnsMu.Lock()
+	_, had := r.pendingReturns[from]
+	delete(r.pendingReturns, from)
+	r.pendingReturnsMu.Unlock()
+	if had {
+		slog.InfoContext(ctx, "call_return: retry cancelled", "requester", from)
+	}
+	_ = r.Hub.SendTo(from, &Message{Type: TypeCallReturnCancelled})
+}
+
+func (r *Relay) checkPendingReturn(requester string) {
+	r.pendingReturnsMu.Lock()
+	pending, ok := r.pendingReturns[requester]
+	if !ok {
+		r.pendingReturnsMu.Unlock()
+		return
+	}
+	if time.Now().After(pending.ExpiresAt) {
+		delete(r.pendingReturns, requester)
+		r.pendingReturnsMu.Unlock()
+		return
+	}
+	target := pending.Target
+	r.pendingReturnsMu.Unlock()
+
+	if r.Tracker != nil && !r.Tracker.Busy(target) && !r.Tracker.Busy(requester) &&
+		r.Hub.IsOnline(requester) && r.Hub.IsOnline(target) {
+		r.pendingReturnsMu.Lock()
+		_, stillPending := r.pendingReturns[requester]
+		if stillPending {
+			delete(r.pendingReturns, requester)
+		}
+		r.pendingReturnsMu.Unlock()
+		if !stillPending {
+			return
+		}
+		slog.Info("call_return: target free, ringing requester", "requester", requester, "target", target)
+		_ = r.Hub.SendTo(requester, &Message{Type: TypeCallReturnRing, Number: target})
+	}
+}
+
+// OnCallEndedNotify is called by the tracker when a 2-party call ends.
+// It checks if any pending call-return retries should now fire.
+func (r *Relay) OnCallEndedNotify(caller, callee string) {
+	r.pendingReturnsMu.Lock()
+	var toCheck []string
+	for requester, pending := range r.pendingReturns {
+		if time.Now().After(pending.ExpiresAt) {
+			delete(r.pendingReturns, requester)
+			continue
+		}
+		if pending.Target == caller || pending.Target == callee ||
+			requester == caller || requester == callee {
+			toCheck = append(toCheck, requester)
+		}
+	}
+	r.pendingReturnsMu.Unlock()
+
+	for _, requester := range toCheck {
+		r.checkPendingReturn(requester)
+	}
+
+	if callee == "" {
+		r.pendingReturnsMu.Lock()
+		delete(r.pendingReturns, caller)
+		r.pendingReturnsMu.Unlock()
+	}
 }
 
 // handleLinkHealth records a telemetry sample. 2-party calls route through

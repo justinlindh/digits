@@ -166,6 +166,23 @@ Dial `*#*` followed by any digit `0`–`9` to set the volume level. The setting 
 
 > **Tip:** The `*#SETUP#` and `*#TEST#` labels are mnemonics -- `SETUP` = `73887` and `TEST` = `8378` on a phone keypad. The shutdown (`*#*#`) and reboot (`*##*`) codes use `*` and `#` keys only.
 
+### Call Return (*69 / *89)
+
+These codes are dialed from dial tone without the `*#` prefix, matching the original 1990s telephone behavior.
+
+| Code | What it does |
+|------|-------------|
+| `*69` | **Call return.** Tells you who last called and lets you call them back. |
+| `*89` | **Cancel call return.** Cancels a pending busy-retry request. |
+
+**How *69 works:**
+
+1. Pick up the phone and dial `*69`.
+2. You hear: "The last call you received was from [number]."
+3. Press `1` to call them back, or hang up to cancel.
+4. If the line is busy, the system keeps trying for 30 minutes. Your phone rings with a short-short-long pattern when the line is free. Pick up and you are connected automatically.
+5. To cancel the retry, pick up and dial `*89`.
+
 ---
 
 ## 8. LED Indicator

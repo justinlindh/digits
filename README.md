@@ -148,6 +148,15 @@ Hidden codes entered on the keypad while the handset is off-hook.
 | `*#873283#` | Update check | Checks for OTA firmware and daemon updates. (`*#UPDATE#` on keypad.) |
 | `*#00000#` | Factory reset | Wipes config, Wi-Fi, contacts. Fresh AP + pairing mode. |
 
+### Call Return (*69 / *89)
+
+| Code | Action | Details |
+|------|--------|---------|
+| `*69` | Call return | Announces who last called you. Press `1` to call them back. If the line is busy, the system retries for 30 minutes and rings you with a distinctive pattern when the line is free. |
+| `*89` | Cancel call return | Cancels any pending *69 busy-retry. Voice confirmation plays. |
+
+These are dialed from dial tone (not prefixed with `*#`), matching the original 1990s POTS behavior.
+
 ### Confirmation feedback
 
 - **Volume change.** 1 beep, then dial tone resumes.

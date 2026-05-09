@@ -105,9 +105,10 @@ type daemonCallbacks struct {
 	paired           atomic.Bool
 	pairingCode          string    // current pairing code from server
 	pairingCodeReceivedAt time.Time // when the current pairing code was received
-	callPeer         string   // number of the remote party during an active call
-	isCaller         bool     // true if we initiated the current call
-	isRestartingICE  bool     // true while an ICE restart is in progress
+	callPeer             string // number of the remote party during an active call
+	isCaller             bool   // true if we initiated the current call
+	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
+	isRestartingICE      bool   // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
@@ -201,6 +202,10 @@ func (d *daemonCallbacks) OncePlaying() bool {
 
 func (d *daemonCallbacks) SendRing(start bool) {
 	d.serial.Ring(start)
+}
+
+func (d *daemonCallbacks) SendRingPattern(id int) {
+	d.serial.RingPattern(id)
 }
 
 func (d *daemonCallbacks) SendLED(mode string) {
@@ -327,11 +332,19 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 }
 
 func (d *daemonCallbacks) OnCallReturn() {
+	d.callReturnOrigin.Store(true)
 	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
 		slog.Error("call_return: server unreachable", "error", err)
+		d.callReturnOrigin.Store(false)
 		d.mixer.PlayOnce("disconnected")
 		d.ctrl.ResetToDialtone()
 		d.mixer.PlayLoop("tone_dial")
+	}
+}
+
+func (d *daemonCallbacks) OnCallReturnCancel() {
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
+		slog.Error("call_return_cancel: server unreachable", "error", err)
 	}
 }
 
@@ -844,6 +857,7 @@ func (d *daemonCallbacks) HangupCall() {
 	peer := d.callPeer
 	d.callPeer = ""
 	d.isCaller = false
+	d.callReturnOrigin.Store(false)
 	d.isRestartingICE = false
 	if d.restartTimer != nil {
 		d.restartTimer.Stop()
@@ -2908,7 +2922,26 @@ func main() {
 			case sigclient.TypeHangup:
 				ctrl.HandleSignal("hangup", msg.From)
 			case sigclient.TypeBusy:
-				ctrl.HandleSignal("busy", msg.From)
+				if cb.callReturnOrigin.Load() {
+					cb.callReturnOrigin.Store(false)
+					target := msg.From
+					slog.Info("call_return: target busy, registering retry", "target", target)
+					ctrl.HandleSignal("busy", msg.From)
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						if ctrl.State() != phone.StateCALLING {
+							return
+						}
+						cb.mixer.StopTone()
+						cb.mixer.PlayOnce("call_return_retry")
+						sendSignal(sig, &sigclient.Message{
+							Type:   sigclient.TypeCallReturnRetry,
+							Number: target,
+						})
+					}()
+				} else {
+					ctrl.HandleSignal("busy", msg.From)
+				}
 			case sigclient.TypeDTMF:
 				// Remote peer pressed a digit during the call. Play the local
 				// DTMF sample so the user hears what their peer is pressing,
@@ -3301,6 +3334,23 @@ func main() {
 					}
 					cb.mixer.PlayOnce("call_return_suffix")
 				}
+
+			case sigclient.TypeCallReturnRing:
+				target := msg.Number
+				slog.Info("call_return: target free, ringing", "target", target)
+				ctrl.HandleCallReturnRing(target)
+
+			case sigclient.TypeCallReturnCancelled:
+				slog.Info("call_return: retry cancelled by server")
+				cb.mixer.PlayOnce("call_return_cancel")
+				go func() {
+					time.Sleep(3 * time.Second)
+					if ctrl.State() != phone.StateCALL_RETURN {
+						return
+					}
+					ctrl.ResetToDialtone()
+					cb.mixer.PlayLoop("tone_dial")
+				}()
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)

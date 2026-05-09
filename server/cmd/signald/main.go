@@ -175,6 +175,7 @@ func run(ctx context.Context) error {
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
 	relay.Errors = mreg
+	tracker.SetCallEndObserver(relay)
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")

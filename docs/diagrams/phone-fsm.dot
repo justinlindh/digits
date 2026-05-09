@@ -25,7 +25,7 @@ digraph DigitsPhoneFSM {
     DIALING -> BUSY [label="30s timeout\n(partial digits)", color="#8d6e63"];
 
     // Incoming call — RING:START is unconditional
-    IDLE -> RINGING [label="RING:START", color="#e53935"];
+    IDLE -> RINGING [label="RING:START\nor RING:PATTERN:<id>", color="#e53935"];
     DIAL_TONE -> RINGING [label="RING:START", color="#e53935", style=dashed];
     DIALING -> RINGING [label="RING:START", color="#e53935", style=dashed];
     CONNECTED -> RINGING [label="RING:START", color="#e53935", style=dashed];
