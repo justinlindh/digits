@@ -66,7 +66,7 @@ type dashNotifier interface {
 // OnCallEnded or ClearByNumber). Used by the relay to trigger pending
 // call-return retries.
 type callEndObserver interface {
-	OnCallEndedNotify(caller, callee string)
+	OnCallEndedNotify(ctx context.Context, caller, callee string)
 }
 
 type Tracker struct {
@@ -220,7 +220,7 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		caller, callee, callee, caller,
 	)
 	if obs != nil {
-		obs.OnCallEndedNotify(caller, callee)
+		obs.OnCallEndedNotify(ctx, caller, callee)
 	}
 	return err
 }
@@ -272,7 +272,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		slog.Warn("clear calls on disconnect failed", "number", number, "err", err)
 	}
 	if obs != nil {
-		obs.OnCallEndedNotify(number, "")
+		obs.OnCallEndedNotify(ctx, number, "")
 	}
 }
 

@@ -752,7 +752,7 @@ func (r *Relay) handleCallReturnRetry(ctx context.Context, from string, msg *Mes
 	}
 	r.pendingReturnsMu.Unlock()
 	slog.InfoContext(ctx, "call_return: retry registered", "requester", from, "target", target)
-	r.checkPendingReturn(from)
+	r.checkPendingReturn(ctx, from)
 }
 
 func (r *Relay) handleCallReturnCancel(ctx context.Context, from string) {
@@ -766,7 +766,7 @@ func (r *Relay) handleCallReturnCancel(ctx context.Context, from string) {
 	_ = r.Hub.SendTo(from, &Message{Type: TypeCallReturnCancelled})
 }
 
-func (r *Relay) checkPendingReturn(requester string) {
+func (r *Relay) checkPendingReturn(ctx context.Context, requester string) {
 	r.pendingReturnsMu.Lock()
 	pending, ok := r.pendingReturns[requester]
 	if !ok {
@@ -792,14 +792,14 @@ func (r *Relay) checkPendingReturn(requester string) {
 		if !stillPending {
 			return
 		}
-		slog.Info("call_return: target free, ringing requester", "requester", requester, "target", target)
+		slog.InfoContext(ctx, "call_return: target free, ringing requester", "requester", requester, "target", target)
 		_ = r.Hub.SendTo(requester, &Message{Type: TypeCallReturnRing, Number: target})
 	}
 }
 
 // OnCallEndedNotify is called by the tracker when a 2-party call ends.
 // It checks if any pending call-return retries should now fire.
-func (r *Relay) OnCallEndedNotify(caller, callee string) {
+func (r *Relay) OnCallEndedNotify(ctx context.Context, caller, callee string) {
 	r.pendingReturnsMu.Lock()
 	var toCheck []string
 	for requester, pending := range r.pendingReturns {
@@ -815,7 +815,7 @@ func (r *Relay) OnCallEndedNotify(caller, callee string) {
 	r.pendingReturnsMu.Unlock()
 
 	for _, requester := range toCheck {
-		r.checkPendingReturn(requester)
+		r.checkPendingReturn(ctx, requester)
 	}
 
 	if callee == "" {
