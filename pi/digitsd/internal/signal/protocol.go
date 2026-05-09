@@ -77,6 +77,11 @@ const (
 	// TypeCallReturnResult is sent by the server with the last inbound caller's
 	// number (in the Number field), or empty string if no eligible call exists.
 	TypeCallReturnResult = "call_return_result"
+
+	TypeCallReturnRetry     = "call_return_retry"
+	TypeCallReturnRing      = "call_return_ring"
+	TypeCallReturnCancel    = "call_return_cancel"
+	TypeCallReturnCancelled = "call_return_cancelled"
 )
 
 // Conference message types (three-way calling)

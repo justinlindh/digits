@@ -165,3 +165,87 @@ func TestController_Star69IsNotDialPhase(t *testing.T) {
 		t.Fatal("CALL_RETURN should not be a dial phase")
 	}
 }
+
+func TestController_CallReturnRing(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleCallReturnRing("3140002")
+
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", ctrl.State())
+	}
+	pats := cb.RingPatterns()
+	if len(pats) != 1 || pats[0] != 1 {
+		t.Fatalf("expected ring pattern [1], got %v", pats)
+	}
+}
+
+func TestController_CallReturnRingIgnoredWhenBusy(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleEvent("HOOK:OFF")
+	ctrl.HandleCallReturnRing("3140002")
+
+	if ctrl.State() != StateDIALTONE {
+		t.Fatalf("expected DIAL_TONE (ring ignored), got %s", ctrl.State())
+	}
+}
+
+func TestController_CallReturnPickupAutoDials(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleCallReturnRing("3140002")
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", ctrl.State())
+	}
+
+	ctrl.HandleEvent("HOOK:OFF")
+
+	if ctrl.State() != StateCALLING {
+		t.Fatalf("expected CALLING (auto-dial), got %s", ctrl.State())
+	}
+
+	time.Sleep(1 * time.Second)
+	calls := cb.Calls()
+	if len(calls) != 1 || calls[0] != "3140002" {
+		t.Fatalf("expected call to 3140002, got %v", calls)
+	}
+}
+
+func TestController_CallReturnRingHangup(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleCallReturnRing("3140002")
+	ctrl.HandleSignal("hangup", "")
+
+	if ctrl.State() != StateIDLE {
+		t.Fatalf("expected IDLE after ring hangup, got %s", ctrl.State())
+	}
+}
+
+func TestController_Star89DetectedInDialing(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleEvent("HOOK:OFF")
+	ctrl.HandleEvent("KEY:*")
+	ctrl.HandleEvent("KEY:8")
+	ctrl.HandleEvent("KEY:9")
+
+	if ctrl.State() != StateCALL_RETURN {
+		t.Fatalf("expected CALL_RETURN (for *89 cancel), got %s", ctrl.State())
+	}
+
+	// OnCallReturnCancel is dispatched asynchronously; give it a moment.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for cb.CallReturnCancels() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.CallReturnCancels() != 1 {
+		t.Fatalf("expected 1 cancel callback, got %d", cb.CallReturnCancels())
+	}
+}

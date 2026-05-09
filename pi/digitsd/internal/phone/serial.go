@@ -194,6 +194,11 @@ func (sp *SerialPort) Ring(start bool) {
 	}
 }
 
+// RingPattern sends RING:PATTERN:<id> to the Pico for distinctive ring cadences.
+func (sp *SerialPort) RingPattern(id int) {
+	sp.SendFire(fmt.Sprintf("RING:PATTERN:%d", id))
+}
+
 // QueryPhase sends PHASE? and returns the raw phase byte as a uint8.
 // Response format: PHASE:0xNN
 func (sp *SerialPort) QueryPhase() (uint8, error) {

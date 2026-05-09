@@ -2,6 +2,7 @@
 #define RINGER_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // Ringer H-bridge control pins, driven in anti-phase at 20Hz. Pin
 // assignments come from the active board profile (see board.h).
@@ -12,6 +13,7 @@
 
 void ringer_init(void);
 void ringer_start(void);
+void ringer_start_pattern(uint8_t pattern_id);
 void ringer_stop(void);
 bool ringer_is_active(void);
 void ringer_update(void);

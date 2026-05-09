@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
@@ -1168,5 +1169,139 @@ func TestRelayCallReturnNoCalls(t *testing.T) {
 		}
 	default:
 		t.Fatal("phone did not receive call_return_result")
+	}
+}
+
+func TestRelayCallReturnRetryAndTrigger(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.lastInboundCaller = "3140002"
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnRing {
+			t.Fatalf("expected call_return_ring, got %q", msg.Type)
+		}
+		if msg.Number != "3140002" {
+			t.Fatalf("expected number 3140002, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_ring")
+	}
+}
+
+func TestRelayCallReturnRetryBusyThenFree(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire while target busy")
+	default:
+	}
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify("3140002", "3140003")
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnRing {
+			t.Fatalf("expected call_return_ring, got %q", msg.Type)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_ring after target freed")
+	}
+}
+
+func TestRelayCallReturnCancel(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnCancel,
+	})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnCancelled {
+			t.Fatalf("expected call_return_cancelled, got %q", msg.Type)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_cancelled")
+	}
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify("3140002", "3140003")
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire after cancel")
+	default:
+	}
+}
+
+func TestRelayCallReturnExpiry(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	relay.pendingReturnsMu.Lock()
+	if p, ok := relay.pendingReturns["3140001"]; ok {
+		p.ExpiresAt = time.Now().Add(-1 * time.Second)
+	}
+	relay.pendingReturnsMu.Unlock()
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify("3140002", "3140003")
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire after expiry")
+	default:
 	}
 }

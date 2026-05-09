@@ -26,7 +26,8 @@ Commands use colon-separated tokens (no spaces). All uppercase.
 
 | Command         | Response       | Description                                       |
 |-----------------|----------------|---------------------------------------------------|
-| `RING:START`    | `RING:ACK`     | Start ringing (enters RINGING state). Flushes any pending hook event first. |
+| `RING:START`    | `RING:ACK`     | Start ringing with standard cadence (2s on, 4s off). Enters RINGING state. Flushes any pending hook event first. |
+| `RING:PATTERN:<id>` | `RING:ACK` | Start ringing with a named cadence pattern. Pattern 0 = standard (2s on, 4s off). Pattern 1 = distinctive (short-short-long: 0.4s/0.2s/0.4s/0.2s/0.8s/4s off). Used for *69 callback notifications. |
 | `RING:STOP`     | `RING:DONE`    | Stop ringing. Works from any state -- always stops ringer hardware. Cleans up LED. |
 | `RING:TEST`     | `RING:TEST:ACK`| **Bypass FSM entirely.** Drives ringer + blinks LED regardless of hook state. Use `RING:STOP` to stop. For bench testing. |
 | `TONE:DIAL`     | --              | Play dial tone                                    |
@@ -90,7 +91,7 @@ MODE:KEYTEST           (only if keytest mode is active)
 
 | Message        | Description                            |
 |----------------|----------------------------------------|
-| `FSM:<state>`  | State transition occurred. Printed to USB console and sent over UART. States: `IDLE`, `DIAL_TONE`, `DIALING`, `RINGING`, `CONNECTED`, `BUSY`. |
+| `FSM:<state>`  | State transition occurred. Printed to USB console and sent over UART. States: `IDLE`, `DIAL_TONE`, `DIALING`, `RINGING`, `CONNECTED`, `BUSY`. (The Pi daemon adds higher-level states like `CALL_RETURN` that do not appear in the firmware FSM.) |
 
 ### Boot
 
