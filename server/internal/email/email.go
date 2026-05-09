@@ -2,6 +2,7 @@ package email
 
 import (
 	"errors"
+	"log/slog"
 	"mime"
 	"net/mail"
 	"net/smtp"
@@ -60,7 +61,9 @@ func (s *SMTPSender) Send(to, subject, htmlBody string) error {
 	return smtp.SendMail(s.host+":"+s.port, auth, fromAddr.Address, []string{toAddr.Address}, []byte(msg))
 }
 
-// NoopSender captures emails for testing.
+// NoopSender captures emails in memory for test inspection. Not safe for
+// production: Sent grows unboundedly. Use LogSender as the production
+// fallback when SMTP is not configured.
 type NoopSender struct {
 	Sent []SentEmail
 }
@@ -78,5 +81,21 @@ func NewNoopSender() *NoopSender {
 
 func (s *NoopSender) Send(to, subject, htmlBody string) error {
 	s.Sent = append(s.Sent, SentEmail{To: to, Subject: subject, Body: htmlBody})
+	return nil
+}
+
+// LogSender writes each outbound email to the structured logger and drops
+// it. Intended as the production fallback when SMTP is intentionally
+// unconfigured (single-tenant deployments, local demos), so the operator
+// sees magic-link URLs in journalctl rather than silently losing them.
+// Bodies can be long; only the subject and recipient are logged.
+type LogSender struct{}
+
+func NewLogSender() *LogSender {
+	return &LogSender{}
+}
+
+func (s *LogSender) Send(to, subject, _ string) error {
+	slog.Warn("email dropped (no SMTP configured)", "to", to, "subject", subject)
 	return nil
 }

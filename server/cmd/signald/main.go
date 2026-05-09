@@ -194,7 +194,7 @@ func run(ctx context.Context) error {
 		emailSender = email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom)
 		slog.Info("SMTP sender configured", "host", cfg.SMTPHost)
 	} else {
-		emailSender = email.NewNoopSender()
+		emailSender = email.NewLogSender()
 		slog.Warn("no SMTP configured, magic link emails will be logged only")
 	}
 
