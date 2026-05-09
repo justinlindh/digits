@@ -51,3 +51,14 @@ func TestSMTPSenderImplementsSender(t *testing.T) {
 func TestNoopSenderImplementsSender(t *testing.T) {
 	var _ Sender = NewNoopSender()
 }
+
+func TestLogSenderImplementsSender(t *testing.T) {
+	var _ Sender = NewLogSender()
+}
+
+func TestLogSenderSendReturnsNil(t *testing.T) {
+	s := NewLogSender()
+	if err := s.Send("to@example.com", "subj", "body"); err != nil {
+		t.Errorf("LogSender.Send: %v", err)
+	}
+}
