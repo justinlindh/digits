@@ -33,14 +33,22 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for register message
-	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
+	if err := ws.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		slog.Error("ws set register deadline failed", "err", err)
+		_ = ws.Close()
+		return
+	}
 	_, data, err := ws.ReadMessage()
 	if err != nil {
 		slog.Error("websocket no register message", "err", err)
 		_ = ws.Close()
 		return
 	}
-	_ = ws.SetReadDeadline(time.Time{})
+	if err := ws.SetReadDeadline(time.Time{}); err != nil {
+		slog.Error("ws clear register deadline failed", "err", err)
+		_ = ws.Close()
+		return
+	}
 
 	msg, err := signaling.ParseMessage(data)
 	if err != nil || msg.Type != signaling.TypeRegister || msg.Number == "" {
