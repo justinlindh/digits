@@ -62,6 +62,13 @@ type dashNotifier interface {
 	Notify()
 }
 
+// callEndObserver is notified after a 2-party call ends (either via
+// OnCallEnded or ClearByNumber). Used by the relay to trigger pending
+// call-return retries.
+type callEndObserver interface {
+	OnCallEndedNotify(caller, callee string)
+}
+
 type Tracker struct {
 	db          *db.Database
 	mu          sync.Mutex
@@ -69,6 +76,7 @@ type Tracker struct {
 	conferences *ConferenceTracker
 	health      healthLifecycle
 	dashEvents  dashNotifier
+	callEndObs  callEndObserver
 	state       *CallState
 }
 
@@ -108,6 +116,14 @@ func (t *Tracker) SetDashboardEvents(b dashNotifier) {
 func (t *Tracker) SetCallState(cs *CallState) {
 	t.mu.Lock()
 	t.state = cs
+	t.mu.Unlock()
+}
+
+// SetCallEndObserver registers an optional observer that is notified when a
+// 2-party call ends. Safe to call once at startup; subsequent calls overwrite.
+func (t *Tracker) SetCallEndObserver(obs callEndObserver) {
+	t.mu.Lock()
+	t.callEndObs = obs
 	t.mu.Unlock()
 }
 
@@ -179,6 +195,7 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	h := t.health
 	d := t.dashEvents
 	s := t.state
+	obs := t.callEndObs
 	t.mu.Unlock()
 
 	if s != nil {
@@ -202,6 +219,9 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		 )`,
 		caller, callee, callee, caller,
 	)
+	if obs != nil {
+		obs.OnCallEndedNotify(caller, callee)
+	}
 	return err
 }
 
@@ -223,6 +243,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	h := t.health
 	d := t.dashEvents
 	s := t.state
+	obs := t.callEndObs
 	removedAny := len(toDelete) > 0
 	t.mu.Unlock()
 
@@ -249,6 +270,9 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		number,
 	); err != nil {
 		slog.Warn("clear calls on disconnect failed", "number", number, "err", err)
+	}
+	if obs != nil {
+		obs.OnCallEndedNotify(number, "")
 	}
 }
 
