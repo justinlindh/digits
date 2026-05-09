@@ -213,14 +213,19 @@ func (s State) IsDialPhase() bool {
 	return s == StateDIALTONE || s == StateDIALING
 }
 
-// Reset forces the controller back to IDLE with no pending digits.
-// Used after terminal service codes (shutdown, reboot, etc.) where the
-// daemon is going down and the FSM state no longer matters.
+// Reset forces the controller back to IDLE with no pending digits or
+// per-call state. Used after terminal service codes (shutdown, reboot)
+// and from the WebSocket reconnect teardown, where leaving the *69
+// callback-ring fields populated would mis-route the next unrelated
+// incoming call's pickup into an auto-dial of the stale callback target.
 func (c *Controller) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = StateIDLE
 	c.digits = ""
+	c.callReturnNumber = ""
+	c.callReturnRinging = false
+	c.callReturnTarget = ""
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
