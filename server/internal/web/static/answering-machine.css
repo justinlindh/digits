@@ -2389,5 +2389,18 @@ body.am .pair-mode-field legend {
 .changelog__notes { font-size: 12px; line-height: 1.5; color: var(--ink-soft); }
 .changelog__notes p { margin: 0 0 6px; }
 .changelog__notes p:last-child { margin: 0; }
+.changelog__play {
+  background: none;
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--chip-blue);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.changelog__play:hover { border-color: var(--chip-blue); color: var(--ink); }
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 

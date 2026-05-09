@@ -197,11 +197,12 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 		}
 
 		r := &Release{
-			Version: version,
-			SHA256:  sha256,
-			URL:     binaryURL,
-			Date:    date,
-			Notes:   StripGroomedSentinel(rel.Body),
+			Version:  version,
+			SHA256:   sha256,
+			URL:      binaryURL,
+			Date:     date,
+			Notes:    StripGroomedSentinel(rel.Body),
+			AudioURL: findAudioAsset(rel.Assets),
 		}
 
 		var ci *ComponentIndex
@@ -300,6 +301,17 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 		}
 	}
 	return
+}
+
+// findAudioAsset returns the download URL of the first release-notes mp3
+// asset, or "" if none is attached.
+func findAudioAsset(assets []ghAsset) string {
+	for _, a := range assets {
+		if strings.HasPrefix(a.Name, "release-notes") && strings.HasSuffix(a.Name, ".mp3") {
+			return a.BrowserDownloadURL
+		}
+	}
+	return ""
 }
 
 // NewGitHubReleasesWithIndex returns a GitHubReleases prepopulated with

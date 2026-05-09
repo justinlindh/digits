@@ -2492,6 +2492,19 @@ body.dialup .phone-silent__text {
 .changelog__notes { font-size: 12px; line-height: 1.5; }
 .changelog__notes p { margin: 0 0 6px; }
 .changelog__notes p:last-child { margin: 0; }
+.changelog__play {
+  background: none;
+  border: 1px solid var(--dialup-border);
+  border-radius: 0;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dialup-blue-dark);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: background 0.15s;
+}
+.changelog__play:hover { background: var(--dialup-hover); }
 .changelog__empty { color: gray; font-style: italic; font-size: 12px; }
 
 /* =========================================================================

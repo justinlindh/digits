@@ -11,6 +11,7 @@ type changelogRelease struct {
 	Version    string
 	Notes      string
 	Date       string
+	AudioURL   string
 	PhoneCount int
 	TotalCount int
 }
@@ -80,6 +81,7 @@ func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []
 			Version:    r.Version,
 			Notes:      r.Notes,
 			Date:       r.Date,
+			AudioURL:   r.AudioURL,
 			PhoneCount: versionCounts[r.Version],
 			TotalCount: totalDevices,
 		})
