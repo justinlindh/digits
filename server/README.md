@@ -4,7 +4,7 @@ Central WebRTC signaling relay for the Digits phone network. Brokers SDP/ICE exc
 
 ## What It Does
 
-- **Call signaling** -- relays `ring`, `sdp`, `ice`, `answer`, `hangup` messages between phones via WebSocket
+- **Call signaling** -- relays `ring`, `sdp`, `ice`, `answer`, `hangup`, and `call_return` messages between phones via WebSocket
 - **Household management** -- users belong to households; phones within the same or linked households can call each other
 - **Device pairing** -- pairs physical phone hardware to a phone number via time-limited pairing codes
 - **Authentication** -- magic link emails and optional Google OAuth with session cookies
