@@ -348,6 +348,10 @@ func (d *daemonCallbacks) OnCallReturnCancel() {
 	}
 }
 
+func (d *daemonCallbacks) OnCallReturnAbandon() {
+	d.callReturnOrigin.Store(false)
+}
+
 func (d *daemonCallbacks) AnswerCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
