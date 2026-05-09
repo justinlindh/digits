@@ -781,10 +781,17 @@ func (r *Relay) checkPendingReturn(requester string) {
 	target := pending.Target
 	r.pendingReturnsMu.Unlock()
 
-	if r.Tracker != nil && !r.Tracker.Busy(target) && !r.Tracker.Busy(requester) && r.Hub.IsOnline(requester) {
+	if r.Tracker != nil && !r.Tracker.Busy(target) && !r.Tracker.Busy(requester) &&
+		r.Hub.IsOnline(requester) && r.Hub.IsOnline(target) {
 		r.pendingReturnsMu.Lock()
-		delete(r.pendingReturns, requester)
+		_, stillPending := r.pendingReturns[requester]
+		if stillPending {
+			delete(r.pendingReturns, requester)
+		}
 		r.pendingReturnsMu.Unlock()
+		if !stillPending {
+			return
+		}
 		slog.Info("call_return: target free, ringing requester", "requester", requester, "target", target)
 		_ = r.Hub.SendTo(requester, &Message{Type: TypeCallReturnRing, Number: target})
 	}
@@ -816,13 +823,6 @@ func (r *Relay) OnCallEndedNotify(caller, callee string) {
 		delete(r.pendingReturns, caller)
 		r.pendingReturnsMu.Unlock()
 	}
-}
-
-// ClearPendingReturn removes any pending call-return retry for number.
-func (r *Relay) ClearPendingReturn(number string) {
-	r.pendingReturnsMu.Lock()
-	delete(r.pendingReturns, number)
-	r.pendingReturnsMu.Unlock()
 }
 
 // handleLinkHealth records a telemetry sample. 2-party calls route through
