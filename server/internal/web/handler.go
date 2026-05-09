@@ -504,6 +504,7 @@ func (h *Handler) Router() http.Handler {
 	// Update release index endpoint (unauthenticated — phones fetch this)
 	if h.Releases != nil {
 		mux.HandleFunc("GET /api/updates/releases", h.Releases.ServeReleases())
+		mux.HandleFunc("GET /api/release-audio/{component}/{version}", h.Releases.ServeAudio())
 		slog.Info("updates: serving release index from GitHub")
 	}
 	// /test is a legacy alias for the dev test client. The file now lives in

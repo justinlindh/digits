@@ -303,6 +303,73 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 	return
 }
 
+// ServeAudio returns an HTTP handler that proxies a release's audio asset
+// with the correct Content-Type. GitHub's release asset CDN serves files as
+// application/octet-stream with Content-Disposition: attachment, which
+// prevents browser audio playback. This endpoint re-serves the bytes as
+// audio/mpeg so the <audio> element works.
+//
+// Route: GET /api/release-audio/{component}/{version}
+func (g *GitHubReleases) ServeAudio() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		component := r.PathValue("component")
+		version := r.PathValue("version")
+
+		idx := g.ReleaseIndex()
+		if idx == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		var m map[string]*Release
+		switch component {
+		case ComponentPi:
+			m = idx.Pi.Releases
+		case ComponentFirmware:
+			m = idx.Firmware.Releases
+		case ComponentServer:
+			m = idx.Server.Releases
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+		rel, ok := m[version]
+		if !ok || rel.AudioURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rel.AudioURL, nil)
+		if err != nil {
+			http.Error(w, "bad upstream URL", http.StatusBadGateway)
+			return
+		}
+		if g.token != "" {
+			req.Header.Set("Authorization", "Bearer "+g.token)
+		}
+
+		resp, err := g.client.Do(req)
+		if err != nil {
+			http.Error(w, "upstream fetch failed", http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "upstream returned "+resp.Status, resp.StatusCode)
+			return
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			w.Header().Set("Content-Length", cl)
+		}
+		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
 // findAudioAsset returns the download URL of the first release-notes mp3
 // asset, or "" if none is attached.
 func findAudioAsset(assets []ghAsset) string {
@@ -318,7 +385,9 @@ func findAudioAsset(assets []ghAsset) string {
 // the given index. Intended for tests that do not want to hit the real
 // API. The returned instance does not poll.
 func NewGitHubReleasesWithIndex(idx *ReleaseIndex) *GitHubReleases {
-	g := &GitHubReleases{}
+	g := &GitHubReleases{
+		client: &http.Client{Timeout: 15 * time.Second},
+	}
 	g.mu.Lock()
 	g.cached = idx
 	g.mu.Unlock()
