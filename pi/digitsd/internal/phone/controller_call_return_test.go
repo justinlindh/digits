@@ -249,3 +249,50 @@ func TestController_Star89DetectedInDialing(t *testing.T) {
 		t.Fatalf("expected 1 cancel callback, got %d", cb.CallReturnCancels())
 	}
 }
+
+func TestController_Star69AbandonedFiresAbandon(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleEvent("HOOK:OFF")
+	ctrl.HandleEvent("KEY:*")
+	ctrl.HandleEvent("KEY:6")
+	ctrl.HandleEvent("KEY:9")
+	if ctrl.State() != StateCALL_RETURN {
+		t.Fatalf("expected CALL_RETURN, got %s", ctrl.State())
+	}
+
+	ctrl.HandleEvent("HOOK:ON")
+	if ctrl.State() != StateIDLE {
+		t.Fatalf("expected IDLE after hangup, got %s", ctrl.State())
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for cb.CallReturnAbandons() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.CallReturnAbandons() != 1 {
+		t.Fatalf("expected 1 abandon callback, got %d", cb.CallReturnAbandons())
+	}
+}
+
+func TestController_OnHookFromConnectedDoesNotFireAbandon(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleSignal("ring", "3140002")
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", ctrl.State())
+	}
+	ctrl.HandleEvent("HOOK:OFF")
+	if ctrl.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED, got %s", ctrl.State())
+	}
+
+	ctrl.HandleEvent("HOOK:ON")
+
+	time.Sleep(50 * time.Millisecond)
+	if cb.CallReturnAbandons() != 0 {
+		t.Fatalf("abandon callback should not fire from CONNECTED, got %d", cb.CallReturnAbandons())
+	}
+}

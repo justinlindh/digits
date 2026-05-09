@@ -71,6 +71,7 @@ type Callbacks interface {
 	OnCallReturn()                                        // *69 detected: query server for last inbound caller
 	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
 	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
+	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -341,6 +342,7 @@ func (c *Controller) onHookOn() {
 		return
 	}
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -371,6 +373,12 @@ func (c *Controller) onHookOn() {
 	c.cb.SendLED("OFF")
 	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
+	} else if wasCallReturn {
+		// Abandoning the *69 announcement (or *89 cancel announcement) by
+		// hanging up never triggers HangupCall, so the daemon's
+		// callReturnOrigin flag would otherwise persist and steer the next
+		// unrelated busy response into the call-return retry path.
+		go c.cb.OnCallReturnAbandon()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
