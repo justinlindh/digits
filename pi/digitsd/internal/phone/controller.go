@@ -629,9 +629,10 @@ func (c *Controller) onSignalAnswer(sender string) {
 func (c *Controller) onSignalHangup(sender string) {
 	switch c.state {
 	case StateRINGING:
-		// Caller hung up before we answered - stop ringing and return to idle.
 		slog.Info("phone: caller hung up during ring - stopping ring")
 		c.state = StateIDLE
+		c.callReturnRinging = false
+		c.callReturnTarget = ""
 		c.cb.SendRing(false)
 		c.cb.SendLED("OFF")
 	case StateCONNECTED:

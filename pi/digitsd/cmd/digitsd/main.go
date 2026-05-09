@@ -107,7 +107,7 @@ type daemonCallbacks struct {
 	pairingCodeReceivedAt time.Time // when the current pairing code was received
 	callPeer             string // number of the remote party during an active call
 	isCaller             bool   // true if we initiated the current call
-	callReturnOrigin     bool   // true when the current call was initiated via *69
+	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
 	isRestartingICE      bool   // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
 
@@ -332,10 +332,10 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 }
 
 func (d *daemonCallbacks) OnCallReturn() {
-	d.callReturnOrigin = true
+	d.callReturnOrigin.Store(true)
 	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
 		slog.Error("call_return: server unreachable", "error", err)
-		d.callReturnOrigin = false
+		d.callReturnOrigin.Store(false)
 		d.mixer.PlayOnce("disconnected")
 		d.ctrl.ResetToDialtone()
 		d.mixer.PlayLoop("tone_dial")
@@ -857,7 +857,7 @@ func (d *daemonCallbacks) HangupCall() {
 	peer := d.callPeer
 	d.callPeer = ""
 	d.isCaller = false
-	d.callReturnOrigin = false
+	d.callReturnOrigin.Store(false)
 	d.isRestartingICE = false
 	if d.restartTimer != nil {
 		d.restartTimer.Stop()
@@ -2922,8 +2922,8 @@ func main() {
 			case sigclient.TypeHangup:
 				ctrl.HandleSignal("hangup", msg.From)
 			case sigclient.TypeBusy:
-				if cb.callReturnOrigin {
-					cb.callReturnOrigin = false
+				if cb.callReturnOrigin.Load() {
+					cb.callReturnOrigin.Store(false)
 					target := msg.From
 					slog.Info("call_return: target busy, registering retry", "target", target)
 					ctrl.HandleSignal("busy", msg.From)
