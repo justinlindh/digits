@@ -69,6 +69,8 @@ type Callbacks interface {
 	RemoveMeshPeer(phone string)                          // Tear down the WebRTC connection to a conference member
 	TearDownAllMeshPeers()                                // Tear down all conference WebRTC connections
 	OnCallReturn()                                        // *69 detected: query server for last inbound caller
+	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
+	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -95,7 +97,9 @@ type Controller struct {
 	done      chan struct{}
 	closeOnce sync.Once
 
-	callReturnNumber string // number to dial when user presses 1 in CALL_RETURN state
+	callReturnNumber  string // number to dial when user presses 1 in CALL_RETURN state
+	callReturnRinging bool   // true when ringing with distinctive pattern for *69 callback
+	callReturnTarget  string // target number to auto-dial on pickup during callback ring
 
 	// Conference / call-waiting state.
 	confID     string // non-empty when part of a conference (Member message received)
@@ -164,6 +168,26 @@ func (c *Controller) SetCallReturnNumber(number string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.callReturnNumber = number
+}
+
+// HandleCallReturnRing transitions the phone from IDLE to RINGING with a
+// distinctive ring pattern, signaling that the *69 target is now free. When
+// the user picks up, the controller auto-dials target instead of answering an
+// incoming call. Thread-safe.
+func (c *Controller) HandleCallReturnRing(target string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateIDLE {
+		slog.Info("phone: call_return_ring ignored (not idle)", "state", c.state)
+		return
+	}
+	c.callReturnRinging = true
+	c.callReturnTarget = target
+	c.state = StateRINGING
+	if !c.silentMode {
+		c.cb.SendRingPattern(1)
+	}
+	c.cb.SendLED("BLINK")
 }
 
 // State returns the current FSM state (thread-safe).
@@ -274,13 +298,39 @@ func (c *Controller) onHookOff() {
 		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
-		// Incoming: answer the call; activePeer was set when the ring arrived.
-		c.state = StateCONNECTED
-		c.cb.SendRing(false)
-		c.cb.SendTone(ToneStop)
-		c.cb.SendLED("ON")
-		c.cb.SetFlashEnabled(true)
-		c.cb.AnswerCall()
+		if c.callReturnRinging {
+			number := c.callReturnTarget
+			c.callReturnRinging = false
+			c.callReturnTarget = ""
+			c.cb.SendRing(false)
+			c.cb.SendTone(ToneStop)
+			c.cb.SendLED("ON")
+			slog.Info("phone: callback pickup, auto-dialing", "target", number)
+			c.state = StateCALLING
+			go func() {
+				time.Sleep(800 * time.Millisecond)
+				c.mu.Lock()
+				if c.state != StateCALLING {
+					c.mu.Unlock()
+					return
+				}
+				c.cb.SendTone(ToneRingback)
+				err := c.cb.InitiateCall(number)
+				c.mu.Unlock()
+				if err != nil {
+					slog.Info("phone: callback auto-dial failed", "number", number, "error", err)
+					c.playRejectSequence(StateCALLING)
+				}
+			}()
+		} else {
+			// Incoming: answer the call; activePeer was set when the ring arrived.
+			c.state = StateCONNECTED
+			c.cb.SendRing(false)
+			c.cb.SendTone(ToneStop)
+			c.cb.SendLED("ON")
+			c.cb.SetFlashEnabled(true)
+			c.cb.AnswerCall()
+		}
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
 	}
@@ -310,6 +360,8 @@ func (c *Controller) onHookOn() {
 	c.state = StateIDLE
 	c.digits = ""
 	c.callReturnNumber = ""
+	c.callReturnRinging = false
+	c.callReturnTarget = ""
 	c.heldPeer = ""
 	c.addingPeer = ""
 	c.confID = ""
@@ -350,6 +402,13 @@ func (c *Controller) onKey(digit string) {
 			c.callReturnNumber = ""
 			c.state = StateCALL_RETURN
 			go c.cb.OnCallReturn()
+			return
+		}
+		if c.digits == "*89" {
+			slog.Info("phone: *89 detected, cancelling call return")
+			c.digits = ""
+			c.state = StateCALL_RETURN
+			go c.cb.OnCallReturnCancel()
 			return
 		}
 	case StateCALL_RETURN:
