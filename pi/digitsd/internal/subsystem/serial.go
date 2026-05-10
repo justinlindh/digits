@@ -54,7 +54,6 @@ func (s *SerialModule) Init(ctx context.Context) error {
 }
 
 func (s *SerialModule) Port() *phone.SerialPort { return s.port }
-func (s *SerialModule) IsReady() bool           { return s.status.State == StateReady }
 func (s *SerialModule) Status() ModuleStatus    { return s.status }
 
 func (s *SerialModule) Shutdown(ctx context.Context) error {

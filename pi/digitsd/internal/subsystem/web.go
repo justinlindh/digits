@@ -59,8 +59,7 @@ func (w *WebModule) Init(ctx context.Context) error {
 	return nil
 }
 
-func (w *WebModule) Mux() *http.ServeMux { return w.mux }
-func (w *WebModule) IsReady() bool       { return w.status.State == StateReady }
+func (w *WebModule) Mux() *http.ServeMux  { return w.mux }
 func (w *WebModule) Status() ModuleStatus { return w.status }
 
 func (w *WebModule) Shutdown(ctx context.Context) error {

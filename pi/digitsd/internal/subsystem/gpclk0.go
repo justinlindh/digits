@@ -50,7 +50,6 @@ func (g *GPCLK0Module) Retrigger() error {
 	return enableGPCLK0()
 }
 
-func (g *GPCLK0Module) IsReady() bool                      { return g.status.State == StateReady }
 func (g *GPCLK0Module) Status() ModuleStatus               { return g.status }
 func (g *GPCLK0Module) Shutdown(ctx context.Context) error { return nil }
 

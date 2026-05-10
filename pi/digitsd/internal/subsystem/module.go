@@ -44,9 +44,14 @@ type ModuleStatus struct {
 type Module interface {
 	Name() string
 	Init(ctx context.Context) error
-	IsReady() bool
 	Status() ModuleStatus
 	Shutdown(ctx context.Context) error
+}
+
+// IsReady reports whether m has finished its Init successfully and has not
+// since failed or been disabled.
+func IsReady(m Module) bool {
+	return m.Status().State == StateReady
 }
 
 type HealthChecker interface {

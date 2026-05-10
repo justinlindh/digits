@@ -34,6 +34,5 @@ func (m *MountsModule) Init(ctx context.Context) error {
 	return nil
 }
 
-func (m *MountsModule) IsReady() bool                      { return m.status.State == StateReady }
 func (m *MountsModule) Status() ModuleStatus               { return m.status }
 func (m *MountsModule) Shutdown(ctx context.Context) error { return nil }
