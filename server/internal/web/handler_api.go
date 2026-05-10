@@ -23,8 +23,8 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	if h.lineStore != nil {
 		lines, err := h.lineStore.List(r.Context())
 		if err != nil {
-			slog.Error("stats: list lines failed", "err", err)
-			jsonError(w, "internal server error", http.StatusInternalServerError)
+			slog.ErrorContext(r.Context(), "stats: list lines failed", "err", err)
+			jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		lineCount = len(lines)
@@ -45,8 +45,8 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		var err error
 		totalUsers, err = h.authStore.CountUsers(r.Context())
 		if err != nil {
-			slog.Error("stats: count users failed", "err", err)
-			jsonError(w, "internal server error", http.StatusInternalServerError)
+			slog.ErrorContext(r.Context(), "stats: count users failed", "err", err)
+			jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -56,8 +56,8 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		var err error
 		totalHouseholds, err = h.householdStore.CountHouseholds(r.Context())
 		if err != nil {
-			slog.Error("stats: count households failed", "err", err)
-			jsonError(w, "internal server error", http.StatusInternalServerError)
+			slog.ErrorContext(r.Context(), "stats: count households failed", "err", err)
+			jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -67,8 +67,8 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		var err error
 		totalLinks, err = h.linkStore.CountActiveLinks(r.Context())
 		if err != nil {
-			slog.Error("stats: count active links failed", "err", err)
-			jsonError(w, "internal server error", http.StatusInternalServerError)
+			slog.ErrorContext(r.Context(), "stats: count active links failed", "err", err)
+			jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -82,7 +82,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		"active_calls":     activeCallCount,
 		"total_links":      totalLinks,
 	}); err != nil {
-		slog.Error("stats: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "stats: json encode failed", "err", err)
 	}
 }
 
@@ -113,7 +113,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		"online_lines": onlineCount,
 		"active_calls": activeCount,
 	}); err != nil {
-		slog.Error("api status: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "api status: json encode failed", "err", err)
 	}
 }
 
@@ -145,25 +145,25 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(pairs); err != nil {
-		slog.Error("active calls: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "active calls: json encode failed", "err", err)
 	}
 }
 
 func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(r.URL.Query().Get("number"))
 	if err := line.ValidateNumber(number); err != nil {
-		jsonError(w, err.Error(), http.StatusBadRequest)
+		jsonError(r.Context(), w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	exists, err := h.lineStore.NumberExists(r.Context(), number)
 	if err != nil {
-		slog.Error("number available check failed", "err", err)
-		jsonError(w, "internal server error", http.StatusInternalServerError)
+		slog.ErrorContext(r.Context(), "number available check failed", "err", err)
+		jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]bool{"available": !exists}); err != nil {
-		slog.Error("number available: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "number available: json encode failed", "err", err)
 	}
 }
 
@@ -173,6 +173,6 @@ func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 		"version": version.Version,
 		"commit":  version.Commit,
 	}); err != nil {
-		slog.Error("api version: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "api version: json encode failed", "err", err)
 	}
 }

@@ -82,7 +82,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		var err error
 		lines, err = h.lineStore.ListByHousehold(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("list lines by household failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "list lines by household failed", "household_id", hh.ID, "err", err)
 		}
 	}
 	// On error or nil household, show empty list rather than leaking all lines.
@@ -121,7 +121,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		if h.deviceStore != nil {
 			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
 			if err != nil {
-				slog.Error("list devices for line", "line_id", l.ID, "err", err)
+				slog.ErrorContext(r.Context(), "list devices for line", "line_id", l.ID, "err", err)
 			} else {
 				row.Devices = devs
 			}
@@ -165,7 +165,7 @@ func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
 			FirmwareVersion: r.URL.Query().Get("fw"),
 		}
 	}
-	renderWith(w, h.tmplPhones, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +184,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, err.Error())
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -196,11 +196,11 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	data := h.buildLinesData(r, hh, msg)
 
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	if err != nil {
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -223,7 +223,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if h.pairingStore == nil {
 		data := h.buildLinesData(r, hh, "")
 		data.PairError = "pairing is not enabled"
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -242,7 +242,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		if parseErr != nil {
 			data := h.buildLinesData(r, hh, "")
 			data.PairError = "invalid line selection"
-			renderWith(w, h.tmplPhones, layoutFor(r), data)
+			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 			return
 		}
 		token, hwID, err = h.pairingStore.ClaimDeviceToLine(r.Context(), code, lineID, deviceName, householdID)
@@ -258,7 +258,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		if verr := line.ValidateNumber(number); verr != nil {
 			data := h.buildLinesData(r, hh, "")
 			data.PairError = "invalid phone number: " + verr.Error()
-			renderWith(w, h.tmplPhones, layoutFor(r), data)
+			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 			return
 		}
 		lineName := deviceName
@@ -268,7 +268,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data := h.buildLinesData(r, hh, "")
 		data.PairError = err.Error()
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -278,7 +278,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 			DeviceToken: token,
 			Number:      number,
 		}); err != nil {
-			slog.Warn("could not notify device of pairing", "hardware_id", hwID, "err", err)
+			slog.WarnContext(r.Context(), "could not notify device of pairing", "hardware_id", hwID, "err", err)
 		}
 	}
 
@@ -317,7 +317,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		var err error
 		devices, err = h.deviceStore.ListByLine(r.Context(), ln.ID)
 		if err != nil {
-			slog.Error("failed to list devices by line", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "failed to list devices by line", "err", err, "line_id", ln.ID)
 		}
 	}
 
@@ -381,7 +381,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
+	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
 		Online:                online,
@@ -406,14 +406,14 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	}
 	online := h.hub.IsOnline(number)
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
 			Online bool
 		}{online})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]bool{"online": online}); err != nil {
-		slog.Error("encode online status failed", "err", err)
+		slog.ErrorContext(r.Context(), "encode online status failed", "err", err)
 	}
 }
 
@@ -424,7 +424,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	online := h.hub.IsOnline(number)
-	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
+	renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
@@ -446,7 +446,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 	if name != ln.Name {
 		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "line update failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -454,7 +454,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -475,7 +475,7 @@ func (h *Handler) handlePhoneNameGet(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
 }
 
 func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request) {
@@ -484,7 +484,7 @@ func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request)
 	if ln == nil {
 		return
 	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
+	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
 }
 
 func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
@@ -500,19 +500,19 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	}
 	name, verr := validateLineName(raw)
 	if verr != nil {
-		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
+		renderWithStatus(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
 		return
 	}
 	if name != ln.Name {
 		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "line update failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		ln.Name = name
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
@@ -549,7 +549,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	taken, err := h.lineStore.NumberExistsExcluding(ctx, newNumber, ln.ID)
 	if err != nil {
-		slog.Error("number uniqueness check failed", "err", err, "line_id", ln.ID)
+		slog.ErrorContext(ctx, "number uniqueness check failed", "err", err, "line_id", ln.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -559,21 +559,21 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.lineStore.Update(ctx, ln.ID, newNumber, ln.Name); err != nil {
-		slog.Error("line number update failed", "err", err, "line_id", ln.ID)
+		slog.ErrorContext(ctx, "line number update failed", "err", err, "line_id", ln.ID)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	if h.tracker != nil {
 		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
-			slog.Error("call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
+			slog.ErrorContext(ctx, "call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
 		}
 	}
 
 	h.hub.RekeyNumber(oldNumber, newNumber)
 
 	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
-		slog.Warn("push line settings after number change failed", "number", newNumber, "err", err)
+		slog.WarnContext(ctx, "push line settings after number change failed", "number", newNumber, "err", err)
 	}
 
 	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
@@ -632,17 +632,17 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	next = next.Normalize()
 	if next != ln.Settings {
 		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
-			slog.Error("update line settings failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "update line settings failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		if err := h.pushLineSettings(number, next); err != nil {
-			slog.Warn("push line settings failed", "number", number, "err", err)
+			slog.WarnContext(r.Context(), "push line settings failed", "number", number, "err", err)
 		}
 		ln.Settings = next
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
 			Line line.Line
 		}{Line: *ln})
 		return
@@ -702,12 +702,12 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
 		if err := json.NewEncoder(w).Encode(map[string]string{"status": ""}); err != nil {
-			slog.Error("update status: json encode failed", "err", err)
+			slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 		}
 		return
 	}
 	if err := json.NewEncoder(w).Encode(status); err != nil {
-		slog.Error("update status: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 	}
 }
 
@@ -749,7 +749,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	mode := strings.TrimSpace(r.FormValue("mode"))
 
 	if mode != "service" && mode != "reboot" {
-		jsonError(w, "mode must be 'service' or 'reboot'", http.StatusBadRequest)
+		jsonError(r.Context(), w, "mode must be 'service' or 'reboot'", http.StatusBadRequest)
 		return
 	}
 
@@ -768,10 +768,10 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) sendPhoneCommandAndRespond(w http.ResponseWriter, r *http.Request, number string, msg *signaling.Message, opName string, extraInfo ...any) {
 	var sendErr string
 	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn(opName+" failed", append([]any{"number", number, "err", err}, extraInfo...)...)
+		slog.WarnContext(r.Context(), opName+" failed", append([]any{"number", number, "err", err}, extraInfo...)...)
 		sendErr = err.Error()
 	} else {
-		slog.Info(opName+" sent", append([]any{"number", number}, extraInfo...)...)
+		slog.InfoContext(r.Context(), opName+" sent", append([]any{"number", number}, extraInfo...)...)
 	}
 	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
@@ -789,7 +789,7 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 			payload = map[string]string{"error": sendErr}
 		}
 		if err := json.NewEncoder(w).Encode(payload); err != nil {
-			slog.Error("phone command response: json encode failed", "number", number, "err", err)
+			slog.ErrorContext(r.Context(), "phone command response: json encode failed", "number", number, "err", err)
 		}
 		return
 	}
@@ -803,13 +803,13 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.lineStore.Delete(r.Context(), ln.ID); err != nil {
-		slog.Error("delete line failed", "line_id", ln.ID, "err", err)
+		slog.ErrorContext(r.Context(), "delete line failed", "line_id", ln.ID, "err", err)
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return
 	}
 	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -888,20 +888,20 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 
 	// Move the device.
 	if err := h.deviceStore.Reassign(r.Context(), deviceID, targetLineID); err != nil {
-		slog.Error("move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
+		slog.ErrorContext(r.Context(), "move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
 	if err != nil {
-		slog.Error("list remaining devices failed", "line_id", srcLn.ID, "err", err)
+		slog.ErrorContext(r.Context(), "list remaining devices failed", "line_id", srcLn.ID, "err", err)
 		http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 		return
 	}
 	if len(remaining) == 0 {
 		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
-			slog.Error("delete empty line failed", "line_id", srcLn.ID, "err", err)
+			slog.ErrorContext(r.Context(), "delete empty line failed", "line_id", srcLn.ID, "err", err)
 		}
 		http.Redirect(w, r, "/phones", http.StatusSeeOther)
 		return

@@ -188,7 +188,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			Now:            now,
 		},
 	}
-	renderWith(w, h.tmplDashboard, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplDashboard, layoutFor(r), data)
 }
 
 // buildLinkedFamilies fetches the list of linked households and their lines
@@ -200,7 +200,7 @@ func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) [
 	}
 	activeLinks, err := h.linkStore.GetLinkedHouseholds(ctx, householdID)
 	if err != nil {
-		slog.Error("buildLinkedFamilies: get linked households failed", "err", err)
+		slog.ErrorContext(ctx, "buildLinkedFamilies: get linked households failed", "err", err)
 		return nil
 	}
 	otherIDs := make([]string, 0, len(activeLinks))
@@ -213,7 +213,7 @@ func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) [
 	}
 	linesByHousehold, err := h.lineStore.ListByHouseholds(ctx, otherIDs)
 	if err != nil {
-		slog.Error("buildLinkedFamilies: batch list lines failed", "err", err)
+		slog.ErrorContext(ctx, "buildLinkedFamilies: batch list lines failed", "err", err)
 	}
 	var families []linkedFamilyRow
 	for i, l := range activeLinks {
@@ -290,7 +290,7 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
+	renderWith(r.Context(), w, h.tmplConnecting, "connecting.html", connectingData{
 		chromeData: h.newChromeDataWithHouseholds(r, "connecting"),
 	})
 }
