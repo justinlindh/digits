@@ -50,8 +50,7 @@ func (r *ReaperModule) Init(ctx context.Context) error {
 	return nil
 }
 
-func (r *ReaperModule) IsReady() bool                      { return r.status.State == StateReady }
-func (r *ReaperModule) Status() ModuleStatus               { return r.status }
+func (r *ReaperModule) Status() ModuleStatus { return r.status }
 func (r *ReaperModule) Shutdown(ctx context.Context) error {
 	close(r.stop)
 	return nil

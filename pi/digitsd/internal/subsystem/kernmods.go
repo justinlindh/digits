@@ -72,7 +72,6 @@ func (k *KernModsModule) Init(ctx context.Context) error {
 	return nil
 }
 
-func (k *KernModsModule) IsReady() bool                      { return k.status.State == StateReady }
 func (k *KernModsModule) Status() ModuleStatus               { return k.status }
 func (k *KernModsModule) Shutdown(ctx context.Context) error { return nil }
 

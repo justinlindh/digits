@@ -32,12 +32,6 @@ func (s *stubModule) Init(_ context.Context) error {
 	return nil
 }
 
-func (s *stubModule) IsReady() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.ready
-}
-
 func (s *stubModule) Status() ModuleStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
