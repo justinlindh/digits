@@ -35,12 +35,12 @@ func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, c
 
 	callerEntry, err := json.Marshal(callEntry{ID: callID, Role: "caller", StartedAt: now})
 	if err != nil {
-		slog.Error("redis: marshal caller entry failed", "err", err)
+		slog.ErrorContext(ctx, "redis: marshal caller entry failed", "err", err)
 		return
 	}
 	calleeEntry, err := json.Marshal(callEntry{ID: callID, Role: "callee", StartedAt: now})
 	if err != nil {
-		slog.Error("redis: marshal callee entry failed", "err", err)
+		slog.ErrorContext(ctx, "redis: marshal callee entry failed", "err", err)
 		return
 	}
 
@@ -52,7 +52,7 @@ func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, c
 	pipe.Expire(ctx, callerKey, callTTL)
 	pipe.Expire(ctx, calleeKey, callTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: OnCallInitiated failed", "callID", callID, "err", err)
+		slog.ErrorContext(ctx, "redis: OnCallInitiated failed", "callID", callID, "err", err)
 	}
 }
 
@@ -61,7 +61,7 @@ func (s *CallState) OnCallEnded(ctx context.Context, caller, callee string) {
 	pipe.HDel(ctx, callKeyPrefix+caller, callee)
 	pipe.HDel(ctx, callKeyPrefix+callee, caller)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: OnCallEnded failed", "caller", caller, "callee", callee, "err", err)
+		slog.ErrorContext(ctx, "redis: OnCallEnded failed", "caller", caller, "callee", callee, "err", err)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 	key := callKeyPrefix + number
 	entries, err := s.client.HGetAll(ctx, key).Result()
 	if err != nil {
-		slog.Error("redis: ClearByNumber HGetAll failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: ClearByNumber HGetAll failed", "number", number, "err", err)
 		return
 	}
 	if len(entries) == 0 {
@@ -87,7 +87,7 @@ func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 		pipe.HDel(ctx, callKeyPrefix+peer, number)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: ClearByNumber pipeline failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: ClearByNumber pipeline failed", "number", number, "err", err)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 func (s *CallState) Busy(ctx context.Context, number string) bool {
 	n, err := s.client.Exists(ctx, callKeyPrefix+number).Result()
 	if err != nil {
-		slog.Error("redis: Busy failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: Busy failed", "number", number, "err", err)
 		return false
 	}
 	return n > 0
@@ -109,7 +109,7 @@ func (s *CallState) Busy(ctx context.Context, number string) bool {
 func (s *CallState) PeerOf(ctx context.Context, number string) string {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
-		slog.Error("redis: PeerOf failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: PeerOf failed", "number", number, "err", err)
 		return ""
 	}
 	for peer := range entries {
@@ -121,7 +121,7 @@ func (s *CallState) PeerOf(ctx context.Context, number string) string {
 func (s *CallState) AllPeersOf(ctx context.Context, number string) []string {
 	keys, err := s.client.HKeys(ctx, callKeyPrefix+number).Result()
 	if err != nil {
-		slog.Error("redis: AllPeersOf failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: AllPeersOf failed", "number", number, "err", err)
 		return nil
 	}
 	return keys
@@ -130,7 +130,7 @@ func (s *CallState) AllPeersOf(ctx context.Context, number string) []string {
 func (s *CallState) InCall(ctx context.Context, a, b string) bool {
 	exists, err := s.client.HExists(ctx, callKeyPrefix+a, b).Result()
 	if err != nil {
-		slog.Error("redis: InCall failed", "a", a, "b", b, "err", err)
+		slog.ErrorContext(ctx, "redis: InCall failed", "a", a, "b", b, "err", err)
 		return false
 	}
 	return exists
@@ -139,7 +139,7 @@ func (s *CallState) InCall(ctx context.Context, a, b string) bool {
 func (s *CallState) CallIDFor(ctx context.Context, number string) (int64, bool) {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
-		slog.Error("redis: CallIDFor failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: CallIDFor failed", "number", number, "err", err)
 		return 0, false
 	}
 	for _, raw := range entries {
@@ -175,7 +175,7 @@ func (s *CallState) CallIDForPair(ctx context.Context, a, b string) int64 {
 func (s *CallState) CanAddAsHost(ctx context.Context, number string) bool {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
-		slog.Error("redis: CanAddAsHost failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: CanAddAsHost failed", "number", number, "err", err)
 		return false
 	}
 	if len(entries) != 1 {
@@ -233,7 +233,7 @@ func (s *CallState) Active(ctx context.Context) []activeCall {
 		}
 	}
 	if err := iter.Err(); err != nil {
-		slog.Error("redis: Active scan failed", "err", err)
+		slog.ErrorContext(ctx, "redis: Active scan failed", "err", err)
 	}
 	return calls
 }

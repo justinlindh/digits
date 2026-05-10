@@ -269,7 +269,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		 AND status IN ('initiated', 'ringing', 'connected')`,
 		number,
 	); err != nil {
-		slog.Warn("clear calls on disconnect failed", "number", number, "err", err)
+		slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
 	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, number, "")
@@ -571,7 +571,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 	if h != nil {
 		h.InitConference(conf.ID)
 	}
-	slog.Info("conference: persisted", "conf_id", conf.ID.String(), "host", host, "originating_call_id", originatingCallID, "added_members", addedMembers)
+	slog.InfoContext(ctx, "conference: persisted", "conf_id", conf.ID.String(), "host", host, "originating_call_id", originatingCallID, "added_members", addedMembers)
 	return conf, nil
 }
 
@@ -607,7 +607,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	if h != nil {
 		h.EvictConference(confID)
 	}
-	slog.Info("conference: end persisted", "conf_id", confID.String(), "reason", reason)
+	slog.InfoContext(ctx, "conference: end persisted", "conf_id", confID.String(), "reason", reason)
 	return nil
 }
 
@@ -626,7 +626,7 @@ func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone,
 	if err != nil {
 		return fmt.Errorf("record kick: %w", err)
 	}
-	slog.Info("conference: kick audited", "conf_id", confID.String(), "kicked", kickedPhone, "by_user", userID)
+	slog.InfoContext(ctx, "conference: kick audited", "conf_id", confID.String(), "kicked", kickedPhone, "by_user", userID)
 	return nil
 }
 
@@ -748,7 +748,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	if h != nil && ended {
 		h.EvictConference(confID)
 	}
-	slog.Info("conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
+	slog.InfoContext(ctx, "conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
 	return remaining, ended, nil
 }
 

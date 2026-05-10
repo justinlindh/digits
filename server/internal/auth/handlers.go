@@ -48,7 +48,7 @@ func (h *Handlers) HandleLoginPage(w http.ResponseWriter, r *http.Request) {
 		"Success":       r.URL.Query().Get("success"),
 	}
 	if err := h.loginTmpl.ExecuteTemplate(w, "layout-v2.html", data); err != nil {
-		slog.Error("login template render failed", "err", err)
+		slog.ErrorContext(r.Context(), "login template render failed", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
 }
@@ -68,7 +68,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 
 	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, 15*time.Minute, returnTo)
 	if err != nil {
-		slog.Error("magic link creation failed", "err", err)
+		slog.ErrorContext(r.Context(), "magic link creation failed", "err", err)
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
 		return
 	}
@@ -76,12 +76,12 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 	link := fmt.Sprintf("%s/auth/magic/%s", h.baseURL, token)
 
 	if h.devMode {
-		slog.Warn("dev magic link", "email", emailAddr, "link", link)
+		slog.WarnContext(r.Context(), "dev magic link", "email", emailAddr, "link", link)
 	}
 
 	subject, body := email.MagicLinkEmail(link)
 	if err := h.emailer.Send(emailAddr, subject, body); err != nil {
-		slog.Error("magic link email failed", "err", err)
+		slog.ErrorContext(r.Context(), "magic link email failed", "err", err)
 	}
 
 	http.Redirect(w, r, "/auth/login?success=check+your+email", http.StatusSeeOther)
@@ -105,13 +105,13 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	} else if err != nil {
-		slog.Error("magic link verify: lookup user", "err", err)
+		slog.ErrorContext(r.Context(), "magic link verify: lookup user", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
-		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
+		slog.ErrorContext(r.Context(), "failed to update last login", "user_id", user.ID, "err", err)
 	}
 
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
@@ -147,7 +147,7 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		emailAddr = "e2e@example.com"
 	}
 
-	slog.Info("dev-session requested", "email", emailAddr)
+	slog.InfoContext(r.Context(), "dev-session requested", "email", emailAddr)
 
 	// Find or create user (same pattern as HandleMagicLinkVerify)
 	user, err := h.store.GetUserByEmail(r.Context(), emailAddr)
@@ -161,18 +161,18 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		// click through the theme picker on every run. The picker can still be
 		// exercised locally by flipping theme_chosen back to false in SQL.
 		if err := h.store.MarkThemeChosen(r.Context(), user.ID); err != nil {
-			slog.Error("dev-session: mark theme chosen", "err", err, "user_id", user.ID)
+			slog.ErrorContext(r.Context(), "dev-session: mark theme chosen", "err", err, "user_id", user.ID)
 		} else {
 			user.ThemeChosen = true
 		}
 	} else if err != nil {
-		slog.Error("dev-session: lookup user", "err", err)
+		slog.ErrorContext(r.Context(), "dev-session: lookup user", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
 	}
 
 	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
-		slog.Error("failed to update last login", "user_id", user.ID, "err", err)
+		slog.ErrorContext(r.Context(), "failed to update last login", "user_id", user.ID, "err", err)
 	}
 
 	sessionToken, _, err := h.store.CreateSession(r.Context(), user.ID, SessionTTL)
@@ -236,7 +236,7 @@ func (h *Handlers) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(CookieName)
 	if err == nil {
 		if err := h.store.DeleteSession(r.Context(), cookie.Value); err != nil {
-			slog.Error("failed to delete session", "err", err)
+			slog.ErrorContext(r.Context(), "failed to delete session", "err", err)
 		}
 	}
 	clearSessionCookie(w, h.cookieDomain)

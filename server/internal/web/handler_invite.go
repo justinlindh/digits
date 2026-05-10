@@ -38,7 +38,7 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 
 	inv, err := h.inviteStore.GetByToken(r.Context(), token)
 	if err != nil || inv.Status != household.InviteStatusPending || inv.ExpiresAt.Before(time.Now()) {
-		renderWith(w, h.tmplInvite, "layout-v2.html", inviteData{
+		renderWith(r.Context(), w, h.tmplInvite, "layout-v2.html", inviteData{
 			chromeData: newChromeData("invite", nil, nil),
 			State:      "invalid",
 		})
@@ -47,8 +47,8 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 
 	hh, err := h.householdStore.GetByID(r.Context(), inv.HouseholdID)
 	if err != nil {
-		slog.Error("invite: household lookup failed", "err", err)
-		renderWith(w, h.tmplInvite, "layout-v2.html", inviteData{
+		slog.ErrorContext(r.Context(), "invite: household lookup failed", "err", err)
+		renderWith(r.Context(), w, h.tmplInvite, "layout-v2.html", inviteData{
 			chromeData: newChromeData("invite", nil, nil),
 			State:      "invalid",
 		})
@@ -81,7 +81,7 @@ func (h *Handler) handleInviteGet(w http.ResponseWriter, r *http.Request) {
 		data.CurrentEmail = user.Email
 	}
 
-	renderWith(w, h.tmplInvite, "layout-v2.html", data)
+	renderWith(r.Context(), w, h.tmplInvite, "layout-v2.html", data)
 }
 
 func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request) {
@@ -105,17 +105,17 @@ func (h *Handler) handleInviteAcceptPost(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.householdStore.AddMember(r.Context(), user.ID, inv.HouseholdID, "admin"); err != nil {
-		slog.Error("add member failed", "err", err)
+		slog.ErrorContext(r.Context(), "add member failed", "err", err)
 		http.Redirect(w, r, "/invite/"+token, http.StatusSeeOther)
 		return
 	}
 
 	if _, err := h.inviteStore.AcceptInvite(r.Context(), token); err != nil {
-		slog.Error("accept invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "accept invite failed", "err", err)
 	}
 
 	if err := h.authStore.SetActiveHousehold(r.Context(), sessionToken, inv.HouseholdID); err != nil {
-		slog.Error("set active household failed", "err", err)
+		slog.ErrorContext(r.Context(), "set active household failed", "err", err)
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)

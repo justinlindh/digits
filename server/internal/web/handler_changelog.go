@@ -32,7 +32,7 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 				lines = append(lines, l.Number)
 			}
 		} else {
-			slog.Error("changelog: list lines failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "changelog: list lines failed", "household_id", hh.ID, "err", err)
 		}
 	}
 
@@ -48,7 +48,7 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 		data.Firmware = buildChangelogSection(idx, updates.ComponentFirmware, lines, h)
 	}
 
-	renderWith(w, h.tmplChangelog, "changelog-content", data)
+	renderWith(r.Context(), w, h.tmplChangelog, "changelog-content", data)
 }
 
 func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []string, h *Handler) []changelogRelease {

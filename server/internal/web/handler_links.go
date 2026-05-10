@@ -68,7 +68,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	// Pending invites sent by this household
 	pending, err := h.linkStore.GetPendingForHousehold(r.Context(), myHousehold.ID)
 	if err != nil {
-		slog.Error("get pending links failed", "err", err)
+		slog.ErrorContext(r.Context(), "get pending links failed", "err", err)
 	}
 	for _, l := range pending {
 		data.PendingInvites = append(data.PendingInvites, linkRow{
@@ -79,7 +79,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	renderWith(w, h.tmplLinks, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplLinks, layoutFor(r), data)
 }
 
 func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +90,7 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 
 	link, err := h.linkStore.CreateInvite(r.Context(), myHousehold.ID, user.ID)
 	if err != nil {
-		slog.Error("create invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "create invite failed", "err", err)
 		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -122,7 +122,7 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 
 	link, err := h.linkStore.AcceptInvite(r.Context(), code, user.ID, myHousehold.ID)
 	if err != nil {
-		slog.Error("accept invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "accept invite failed", "err", err)
 		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
@@ -138,7 +138,7 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 		for _, c := range conflicts {
 			names = append(names, c.Number)
 		}
-		slog.Warn("number conflicts on link accept", "conflicts", names)
+		slog.WarnContext(r.Context(), "number conflicts on link accept", "conflicts", names)
 		http.Redirect(w, r, "/links?accepted=1&conflicts="+strings.Join(names, ","), http.StatusSeeOther)
 		return
 	}
@@ -189,7 +189,7 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	wasPending := link.Status == "pending"
 
 	if err := h.linkStore.RevokeLink(r.Context(), id, user.ID); err != nil {
-		slog.Error("revoke link failed", "link_id", id, "err", err)
+		slog.ErrorContext(r.Context(), "revoke link failed", "link_id", id, "err", err)
 		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}

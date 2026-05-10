@@ -82,13 +82,13 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
 	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
-		slog.Error("link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "link_health: build caller endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
 	if err != nil {
-		slog.Error("link_health: build callee endpoint failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "link_health: build callee endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -97,7 +97,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		slog.Error("link_health encode failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "link_health encode failed", "call_id", callID, "err", err)
 	}
 }
 
@@ -170,7 +170,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		slog.Error("SSE stream: ResponseWriter does not implement Flusher")
+		slog.ErrorContext(r.Context(), "SSE stream: ResponseWriter does not implement Flusher")
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -189,7 +189,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
 
 	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
-		slog.Debug("SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
+		slog.DebugContext(r.Context(), "SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
 		return
 	}
 
@@ -211,7 +211,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 				return
 			}
 			if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
-				slog.Debug("SSE stream: write failed; client gone", "call_id", callID, "err", err)
+				slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
 				return
 			}
 		case <-heartbeat.C:
@@ -378,7 +378,7 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 	// Record who force-ended the call BEFORE the teardown fires, so the
 	// audit row is in place even if we crash mid-teardown.
 	if err := h.tracker.MarkForceEnded(r.Context(), callID, user.ID); err != nil {
-		slog.Error("force-disconnect audit write failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "force-disconnect audit write failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -394,7 +394,7 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 	// Close the DB row deterministically. OnCallEnded is idempotent; a
 	// peer-initiated hangup arriving later is a safe no-op.
 	if err := h.tracker.OnCallEnded(r.Context(), call.Caller, call.Callee); err != nil {
-		slog.Error("force-disconnect OnCallEnded failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "force-disconnect OnCallEnded failed", "call_id", callID, "err", err)
 		// Phones are hung up regardless; the status transition will happen
 		// when the next peer hangup arrives or during the daily cleanup.
 	}

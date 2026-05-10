@@ -125,7 +125,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		case err == nil:
 			// Link Google ID to existing account
 			if err := g.store.LinkGoogleID(r.Context(), user.ID, info.ID); err != nil {
-				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
+				slog.WarnContext(r.Context(), "auth: failed to link google ID for user", "user_id", user.ID, "error", err)
 			}
 		case errors.Is(err, ErrUserNotFound):
 			// New user
@@ -136,18 +136,18 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		default:
-			slog.Error("auth: google callback lookup by email", "err", err)
+			slog.ErrorContext(r.Context(), "auth: google callback lookup by email", "err", err)
 			http.Error(w, "failed to look up user", http.StatusInternalServerError)
 			return
 		}
 	default:
-		slog.Error("auth: google callback lookup by google id", "err", err)
+		slog.ErrorContext(r.Context(), "auth: google callback lookup by google id", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
 	}
 
 	if err := g.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
-		slog.Warn("auth: failed to update last login for user", "user_id", user.ID, "error", err)
+		slog.WarnContext(r.Context(), "auth: failed to update last login for user", "user_id", user.ID, "error", err)
 	}
 
 	// Create session
