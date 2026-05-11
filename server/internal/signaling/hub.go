@@ -637,42 +637,26 @@ func (h *Hub) ClearUpdateStatus(number string) {
 }
 
 // UpdateDeviceInfo sets version info and the device-reported LAN address for
-// a specific device identified by hardware ID. localAddr is filtered through
+// the first (or only) device on number. localAddr is filtered through
 // httputil.IsPrivateAddr; non-private values (or unparseable input) are
 // stored as "" so a compromised client cannot push a public IP into the
-// owner UI.
+// owner UI. Multi-device callers that already know the hardware ID should
+// use UpdateDeviceInfoByHardware instead.
 func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAddr string, devMode bool) bool {
-	if !httputil.IsPrivateAddr(localAddr) {
-		localAddr = ""
-	}
+	localAddr = sanitizeLocalAddr(localAddr)
 	h.mu.Lock()
-	// Legacy fallback: when the caller doesn't know the hardware ID,
-	// update the first (or only) device on this number. Multi-device
-	// callers should use UpdateDeviceInfoByHardware instead.
 	conns := h.conns[number]
 	if len(conns) == 0 {
 		h.mu.Unlock()
 		return false
 	}
 	conn := conns[0]
-	conn.PiVersion = piVer
-	conn.PiCommit = piCommit
-	conn.FirmwareVersion = fwVer
-	conn.FirmwareCommit = fwCommit
-	conn.RemoteAddr = localAddr
-	conn.DevMode = devMode
+	presence := applyDeviceInfo(conn, piVer, piCommit, fwVer, fwCommit, localAddr, devMode)
 	hwID := conn.HardwareID
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), hwID, DevicePresence{
-			PiVersion:       piVer,
-			PiCommit:        piCommit,
-			FirmwareVersion: fwVer,
-			FirmwareCommit:  fwCommit,
-			RemoteAddr:      localAddr,
-			DevMode:         devMode,
-		})
+		ds.UpdateDeviceInfo(context.Background(), hwID, presence)
 	}
 	return true
 }
@@ -680,34 +664,49 @@ func (h *Hub) UpdateDeviceInfo(number, piVer, piCommit, fwVer, fwCommit, localAd
 // UpdateDeviceInfoByHardware sets version info for a specific device by
 // hardware ID. Used when the caller knows which device sent the message.
 func (h *Hub) UpdateDeviceInfoByHardware(hardwareID, piVer, piCommit, fwVer, fwCommit, localAddr string, devMode bool) bool {
-	if !httputil.IsPrivateAddr(localAddr) {
-		localAddr = ""
-	}
+	localAddr = sanitizeLocalAddr(localAddr)
 	h.mu.Lock()
 	conn, ok := h.hwConns[hardwareID]
 	if !ok {
 		h.mu.Unlock()
 		return false
 	}
+	presence := applyDeviceInfo(conn, piVer, piCommit, fwVer, fwCommit, localAddr, devMode)
+	ds := h.state
+	h.mu.Unlock()
+	if ds != nil {
+		ds.UpdateDeviceInfo(context.Background(), hardwareID, presence)
+	}
+	return true
+}
+
+// sanitizeLocalAddr keeps only addresses that parse as private (RFC1918 /
+// loopback / link-local). See Hub.UpdateDeviceInfo for rationale.
+func sanitizeLocalAddr(localAddr string) string {
+	if !httputil.IsPrivateAddr(localAddr) {
+		return ""
+	}
+	return localAddr
+}
+
+// applyDeviceInfo writes the device-reported fields onto conn and returns a
+// matching DevicePresence to publish to the cluster-shared store. Caller
+// must hold h.mu.
+func applyDeviceInfo(conn *Conn, piVer, piCommit, fwVer, fwCommit, localAddr string, devMode bool) DevicePresence {
 	conn.PiVersion = piVer
 	conn.PiCommit = piCommit
 	conn.FirmwareVersion = fwVer
 	conn.FirmwareCommit = fwCommit
 	conn.RemoteAddr = localAddr
 	conn.DevMode = devMode
-	ds := h.state
-	h.mu.Unlock()
-	if ds != nil {
-		ds.UpdateDeviceInfo(context.Background(), hardwareID, DevicePresence{
-			PiVersion:       piVer,
-			PiCommit:        piCommit,
-			FirmwareVersion: fwVer,
-			FirmwareCommit:  fwCommit,
-			RemoteAddr:      localAddr,
-			DevMode:         devMode,
-		})
+	return DevicePresence{
+		PiVersion:       piVer,
+		PiCommit:        piCommit,
+		FirmwareVersion: fwVer,
+		FirmwareCommit:  fwCommit,
+		RemoteAddr:      localAddr,
+		DevMode:         devMode,
 	}
-	return true
 }
 
 // TouchLastSeen updates the last-seen timestamp for a specific device on a
