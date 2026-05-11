@@ -819,7 +819,7 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 		`SELECT `+callColumns+
 			` FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
-	args := make([]interface{}, 0, n+1)
+	args := make([]any, 0, n+1)
 	for _, num := range phoneNumbers {
 		args = append(args, num)
 	}

@@ -139,7 +139,7 @@ func TestHandleMagicLinkVerify_InvalidToken(t *testing.T) {
 func TestHandleMagicLinkVerify_ValidToken_NewUser(t *testing.T) {
 	h, s, _ := newTestHandlers(t)
 
-	token, err := s.CreateMagicLink(context.Background(), "newuser@test.com", 15*time.Minute, "")
+	token, err := s.CreateMagicLink(context.Background(), "newuser@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestHandleMagicLinkVerify_ValidToken_ExistingUser(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	token, err := s.CreateMagicLink(context.Background(), "existing@test.com", 15*time.Minute, "")
+	token, err := s.CreateMagicLink(context.Background(), "existing@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestHandleMagicLinkVerify_DialupThemeRedirectsToConnecting(t *testing.T) {
 		t.Fatalf("SetTheme: %v", err)
 	}
 
-	token, err := s.CreateMagicLink(context.Background(), "dialup@test.com", 15*time.Minute, "")
+	token, err := s.CreateMagicLink(context.Background(), "dialup@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}

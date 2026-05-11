@@ -11,8 +11,9 @@ type contextKey string
 const UserContextKey contextKey = "user"
 
 const (
-	CookieName = "digits_session"
-	SessionTTL = 30 * 24 * time.Hour // 30 days
+	CookieName   = "digits_session"
+	SessionTTL   = 30 * 24 * time.Hour // 30 days
+	MagicLinkTTL = 15 * time.Minute
 )
 
 // RequireAuth middleware redirects to /auth/login if no valid session.
