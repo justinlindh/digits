@@ -270,7 +270,7 @@ func TestValidateAndRefreshSession_Expired(t *testing.T) {
 func TestCreateAndValidateMagicLink(t *testing.T) {
 	s := testDB(t)
 
-	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", 15*time.Minute, "")
+	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestCleanupExpired(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
-	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", 15*time.Minute, "")
+	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}

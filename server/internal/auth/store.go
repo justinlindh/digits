@@ -343,14 +343,20 @@ func (s *Store) SetActiveHousehold(ctx context.Context, sessionToken string, hou
 
 // ActiveHouseholdID returns the active_household_id from the current session,
 // or empty string if not set.
-func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) string {
+func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) (string, error) {
 	hash := device.HashToken(sessionToken)
 	var id sql.NullString
-	_ = s.db.QueryRowContext(ctx,
+	err := s.db.QueryRowContext(ctx,
 		`SELECT active_household_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()`,
 		hash,
 	).Scan(&id)
-	return id.String
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return id.String, nil
 }
 
 // randomToken generates a cryptographically random hex string of the given byte length.

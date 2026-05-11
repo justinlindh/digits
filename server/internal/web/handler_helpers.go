@@ -282,8 +282,10 @@ func (h *Handler) resolveActiveHousehold(r *http.Request) (*household.Household,
 	active := households[0]
 	cookie, cookieErr := r.Cookie(auth.CookieName)
 	if cookieErr == nil && h.authStore != nil {
-		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
-		if activeID != "" {
+		activeID, err := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if err != nil {
+			slog.WarnContext(r.Context(), "active household lookup failed", "user", user.ID, "err", err)
+		} else if activeID != "" {
 			for _, hh := range households {
 				if hh.ID == activeID {
 					active = hh

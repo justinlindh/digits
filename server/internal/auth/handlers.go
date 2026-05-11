@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/version"
@@ -66,7 +65,7 @@ func (h *Handlers) HandleMagicLinkRequest(w http.ResponseWriter, r *http.Request
 	}
 	returnTo := r.FormValue("return_to")
 
-	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, 15*time.Minute, returnTo)
+	token, err := h.store.CreateMagicLink(r.Context(), emailAddr, MagicLinkTTL, returnTo)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "magic link creation failed", "err", err)
 		http.Redirect(w, r, "/auth/login?error=try+again", http.StatusSeeOther)
