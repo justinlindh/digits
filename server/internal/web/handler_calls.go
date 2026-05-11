@@ -36,7 +36,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 	if h.lineStore != nil {
 		lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("list lines for household failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "list lines for household failed", "household_id", hh.ID, "err", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -47,7 +47,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 			}
 			hist, err := h.tracker.RecentHistoryForPhones(r.Context(), numbers, cursor, callsPageSize)
 			if err != nil {
-				slog.Error("query recent history failed", "err", err)
+				slog.ErrorContext(r.Context(), "query recent history failed", "err", err)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 				return
 			}
@@ -75,7 +75,7 @@ func (h *Handler) handleCalls(w http.ResponseWriter, r *http.Request) {
 		entries[i].SortTime = entries[i].SortTime.In(loc)
 	}
 
-	renderWith(w, h.tmplCalls, layoutFor(r), callsData{
+	renderWith(r.Context(), w, h.tmplCalls, layoutFor(r), callsData{
 		chromeData:  h.newChromeDataWithHouseholds(r, "calls"),
 		Entries:     entries,
 		OlderCursor: olderCursor,
@@ -111,13 +111,13 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
 	callerEp, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
-		slog.Error("call-live: build caller endpoint failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "call-live: build caller endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	calleeEp, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
 	if err != nil {
-		slog.Error("call-live: build callee endpoint failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "call-live: build callee endpoint failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -131,7 +131,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		ForceEndedBy: h.forceEndedLabel(r.Context(), call),
 	}
 
-	renderWith(w, h.tmplCallLiveDetail, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplCallLiveDetail, layoutFor(r), data)
 }
 
 // forceEndedLabel returns the display label for who force-ended a call.

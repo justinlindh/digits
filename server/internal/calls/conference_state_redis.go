@@ -47,7 +47,7 @@ func (cs *ConfState) Create(ctx context.Context, confID uuid.UUID, host string, 
 	}
 	data, err := json.Marshal(rc)
 	if err != nil {
-		slog.Error("redis: marshal conference failed", "confID", confID, "err", err)
+		slog.ErrorContext(ctx, "redis: marshal conference failed", "confID", confID, "err", err)
 		return
 	}
 
@@ -57,7 +57,7 @@ func (cs *ConfState) Create(ctx context.Context, confID uuid.UUID, host string, 
 		pipe.Set(ctx, confMemberPrefix+m, confID.String(), confTTL)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: ConfState.Create failed", "confID", confID, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.Create failed", "confID", confID, "err", err)
 	}
 }
 
@@ -65,7 +65,7 @@ func (cs *ConfState) Create(ctx context.Context, confID uuid.UUID, host string, 
 func (cs *ConfState) IsBusy(ctx context.Context, phone string) bool {
 	n, err := cs.client.Exists(ctx, confMemberPrefix+phone).Result()
 	if err != nil {
-		slog.Error("redis: ConfState.IsBusy failed", "phone", phone, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.IsBusy failed", "phone", phone, "err", err)
 		return false
 	}
 	return n > 0
@@ -80,7 +80,7 @@ func (cs *ConfState) ConferenceByPhone(ctx context.Context, phone string) *Confe
 	}
 	confID, err := uuid.Parse(idStr)
 	if err != nil {
-		slog.Error("redis: ConfState.ConferenceByPhone bad UUID", "raw", idStr, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.ConferenceByPhone bad UUID", "raw", idStr, "err", err)
 		return nil
 	}
 	return cs.loadConference(ctx, confID)
@@ -95,7 +95,7 @@ func (cs *ConfState) Contains(ctx context.Context, confID uuid.UUID, phoneA, pho
 	}
 	var rc redisConference
 	if err := json.Unmarshal([]byte(data), &rc); err != nil {
-		slog.Error("redis: ConfState.Contains unmarshal failed", "confID", confID, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.Contains unmarshal failed", "confID", confID, "err", err)
 		return false
 	}
 	hasA, hasB := false, false
@@ -113,7 +113,7 @@ func (cs *ConfState) Contains(ctx context.Context, confID uuid.UUID, phoneA, pho
 // RemoveMember deletes a single member's key from Redis.
 func (cs *ConfState) RemoveMember(ctx context.Context, confID uuid.UUID, phone string) {
 	if err := cs.client.Del(ctx, confMemberPrefix+phone).Err(); err != nil {
-		slog.Error("redis: ConfState.RemoveMember failed", "confID", confID, "phone", phone, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.RemoveMember failed", "confID", confID, "phone", phone, "err", err)
 	}
 }
 
@@ -125,7 +125,7 @@ func (cs *ConfState) End(ctx context.Context, confID uuid.UUID, members []string
 		keys = append(keys, confMemberPrefix+m)
 	}
 	if err := cs.client.Del(ctx, keys...).Err(); err != nil {
-		slog.Error("redis: ConfState.End failed", "confID", confID, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.End failed", "confID", confID, "err", err)
 	}
 }
 
@@ -136,7 +136,7 @@ func (cs *ConfState) loadConference(ctx context.Context, confID uuid.UUID) *Conf
 	}
 	var rc redisConference
 	if err := json.Unmarshal([]byte(data), &rc); err != nil {
-		slog.Error("redis: ConfState.loadConference unmarshal failed", "confID", confID, "err", err)
+		slog.ErrorContext(ctx, "redis: ConfState.loadConference unmarshal failed", "confID", confID, "err", err)
 		return nil
 	}
 

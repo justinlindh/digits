@@ -40,7 +40,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if hh != nil && user != nil {
 		members, err := h.householdStore.GetMembersWithUsers(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("get household members failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "get household members failed", "household_id", hh.ID, "err", err)
 		}
 		for _, m := range members {
 			data.Members = append(data.Members, settingsMember{
@@ -53,12 +53,12 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if h.inviteStore != nil {
 			data.PendingInvites, err = h.inviteStore.GetPendingForHousehold(r.Context(), hh.ID)
 			if err != nil {
-				slog.Error("get pending invites failed", "household_id", hh.ID, "err", err)
+				slog.ErrorContext(r.Context(), "get pending invites failed", "household_id", hh.ID, "err", err)
 			}
 		}
 	}
 
-	renderWith(w, h.tmplSettings, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplSettings, layoutFor(r), data)
 }
 
 func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +73,7 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name != "" {
 		if err := h.householdStore.UpdateName(r.Context(), hh.ID, name); err != nil {
-			slog.Error("update household name failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "update household name failed", "household_id", hh.ID, "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
 		}
@@ -88,7 +88,7 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	}
 	enabled := r.FormValue("enabled") == "true"
 	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), hh.ID, enabled); err != nil {
-		slog.Error("set call history failed", "err", err)
+		slog.ErrorContext(r.Context(), "set call history failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -106,13 +106,13 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 	}
 	enabled := r.FormValue("enabled") == "true"
 	if err := h.lineStore.SetAllSilentByHousehold(r.Context(), hh.ID, enabled); err != nil {
-		slog.Error("set all silent failed", "err", err, "household_id", hh.ID)
+		slog.ErrorContext(r.Context(), "set all silent failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
-		slog.Error("list lines for silence fan-out failed", "err", err, "household_id", hh.ID)
+		slog.ErrorContext(r.Context(), "list lines for silence fan-out failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 		return
 	}
@@ -120,12 +120,12 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		updated := ln.Settings
 		updated.SilentMode = enabled
 		if pushErr := h.pushLineSettings(ln.Number, updated); pushErr != nil {
-			slog.Warn("silence fan-out push failed", "number", ln.Number, "err", pushErr)
+			slog.WarnContext(r.Context(), "silence fan-out push failed", "number", ln.Number, "err", pushErr)
 		}
 	}
 	if isHTMX(r) {
 		data := h.buildLinesData(r, hh, "")
-		renderWith(w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
@@ -143,7 +143,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
 		if err := h.householdStore.SetTimezone(r.Context(), hh.ID, tz); err != nil {
-			slog.Warn("set timezone failed", "err", err)
+			slog.WarnContext(r.Context(), "set timezone failed", "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
 		}
@@ -167,7 +167,7 @@ func (h *Handler) handleUserPrefPost(w http.ResponseWriter, r *http.Request, fie
 	}
 	value := r.FormValue(field)
 	if err := save(r.Context(), user.ID, value); err != nil {
-		slog.Error("set "+field+" failed", "err", err, field, value)
+		slog.ErrorContext(r.Context(), "set "+field+" failed", "err", err, field, value)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -209,7 +209,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 
 	isMember, err := h.householdStore.IsMemberByEmail(r.Context(), hh.ID, inviteEmail)
 	if err != nil {
-		slog.Error("check member email failed", "err", err)
+		slog.ErrorContext(r.Context(), "check member email failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -220,7 +220,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 
 	pending, err := h.inviteStore.IsPendingForHouseholdEmail(r.Context(), hh.ID, inviteEmail)
 	if err != nil {
-		slog.Error("check pending invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "check pending invite failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -231,7 +231,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 
 	inv, err := h.inviteStore.CreateInvite(r.Context(), hh.ID, inviteEmail, user.ID)
 	if err != nil {
-		slog.Error("create invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "create invite failed", "err", err)
 		http.Redirect(w, r, "/settings?error=invite+failed", http.StatusSeeOther)
 		return
 	}
@@ -239,7 +239,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 	link := fmt.Sprintf("%s/invite/%s", h.cfg.BaseURL, inv.Token)
 	subject, body := emailpkg.HouseholdInviteEmail(hh.Name, userDisplayLabel(user), link)
 	if err := h.emailer.Send(inviteEmail, subject, body); err != nil {
-		slog.Error("invite email failed", "email", inviteEmail, "err", err)
+		slog.ErrorContext(r.Context(), "invite email failed", "email", inviteEmail, "err", err)
 	}
 
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
@@ -257,7 +257,7 @@ func (h *Handler) handleHouseholdInviteCancelPost(w http.ResponseWriter, r *http
 		return
 	}
 	if err := h.inviteStore.CancelInvite(r.Context(), inviteID); err != nil {
-		slog.Error("cancel invite failed", "err", err)
+		slog.ErrorContext(r.Context(), "cancel invite failed", "err", err)
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
@@ -271,7 +271,7 @@ func (h *Handler) handleHouseholdMemberRemovePost(w http.ResponseWriter, r *http
 
 	count, err := h.householdStore.MemberCount(r.Context(), hh.ID)
 	if err != nil {
-		slog.Error("member count failed", "err", err)
+		slog.ErrorContext(r.Context(), "member count failed", "err", err)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
@@ -281,7 +281,7 @@ func (h *Handler) handleHouseholdMemberRemovePost(w http.ResponseWriter, r *http
 	}
 
 	if err := h.householdStore.RemoveMember(r.Context(), targetUserID, hh.ID); err != nil {
-		slog.Error("remove member failed", "err", err)
+		slog.ErrorContext(r.Context(), "remove member failed", "err", err)
 	}
 	if targetUserID == user.ID {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -299,7 +299,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil {
-		slog.Error("get households for account deletion failed", "user_id", user.ID, "err", err)
+		slog.ErrorContext(r.Context(), "get households for account deletion failed", "user_id", user.ID, "err", err)
 		http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 		return
 	}
@@ -307,7 +307,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 	for _, hh := range households {
 		count, err := h.householdStore.MemberCount(r.Context(), hh.ID)
 		if err != nil {
-			slog.Error("member count failed during account deletion", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(r.Context(), "member count failed during account deletion", "household_id", hh.ID, "err", err)
 			http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 			return
 		}
@@ -315,7 +315,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 		if count <= 1 {
 			lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 			if err != nil {
-				slog.Error("list lines for deletion failed", "household_id", hh.ID, "err", err)
+				slog.ErrorContext(r.Context(), "list lines for deletion failed", "household_id", hh.ID, "err", err)
 				http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 				return
 			}
@@ -326,7 +326,7 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 				}
 			}
 			if err := h.householdStore.Delete(r.Context(), hh.ID); err != nil {
-				slog.Error("delete household failed", "household_id", hh.ID, "err", err)
+				slog.ErrorContext(r.Context(), "delete household failed", "household_id", hh.ID, "err", err)
 				http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 				return
 			}
@@ -334,13 +334,13 @@ func (h *Handler) handleAccountDeletePost(w http.ResponseWriter, r *http.Request
 			// CASCADE on household_members.user_id will clean this up even if
 			// RemoveMember fails, but we attempt the explicit remove first.
 			if err := h.householdStore.RemoveMember(r.Context(), user.ID, hh.ID); err != nil {
-				slog.Error("remove member during account deletion failed", "user_id", user.ID, "household_id", hh.ID, "err", err)
+				slog.ErrorContext(r.Context(), "remove member during account deletion failed", "user_id", user.ID, "household_id", hh.ID, "err", err)
 			}
 		}
 	}
 
 	if err := h.authStore.DeleteUser(r.Context(), user.ID); err != nil {
-		slog.Error("delete user failed", "user_id", user.ID, "err", err)
+		slog.ErrorContext(r.Context(), "delete user failed", "user_id", user.ID, "err", err)
 		http.Redirect(w, r, "/settings?error=deletion+failed", http.StatusSeeOther)
 		return
 	}
@@ -373,7 +373,7 @@ func (h *Handler) handleHouseholdSwitchPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := h.authStore.SetActiveHousehold(r.Context(), cookie.Value, householdID); err != nil {
-		slog.Error("switch household failed", "err", err)
+		slog.ErrorContext(r.Context(), "switch household failed", "err", err)
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)

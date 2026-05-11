@@ -19,7 +19,7 @@ func (h *Handler) handleOnboardGet(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.Name != "" {
 		suggested = user.Name + "'s Family"
 	}
-	renderWith(w, h.tmplOnboard, layoutFor(r), onboardData{
+	renderWith(r.Context(), w, h.tmplOnboard, layoutFor(r), onboardData{
 		chromeData:    h.newChromeDataWithHouseholds(r, "onboard"),
 		SuggestedName: suggested,
 	})
@@ -45,7 +45,7 @@ func (h *Handler) handleOnboardPost(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err := h.householdStore.Create(r.Context(), name, user.ID)
 	if err != nil {
-		slog.Error("create household failed", "err", err)
+		slog.ErrorContext(r.Context(), "create household failed", "err", err)
 		http.Error(w, "failed to create household", http.StatusInternalServerError)
 		return
 	}

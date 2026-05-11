@@ -171,11 +171,11 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 
 	var sp *phone.SerialPort
 	var mixer *audio.Mixer
-	if serial != nil && serial.IsReady() {
+	if serial != nil && subsystem.IsReady(serial) {
 		sp = serial.Port()
 		sp.StateSet("RECOVERY")
 	}
-	if audioMod != nil && audioMod.IsReady() {
+	if audioMod != nil && subsystem.IsReady(audioMod) {
 		mixer = audioMod.Mixer()
 	}
 

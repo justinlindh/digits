@@ -89,102 +89,75 @@ func (h *ServiceCodeHandler) InCode() bool {
 	return len(h.buffer) >= 2 && h.buffer[0] == '*' && h.buffer[1] == '#'
 }
 
+// fixedCode describes one of the static service codes recognized by check().
+// Variable-pattern codes (volume *#*N) are handled separately.
+type fixedCode struct {
+	code string
+	// logMsg is emitted at slog.Info whenever the buffer matches this code,
+	// regardless of whether the callback is registered.
+	logMsg string
+	// missingMsg, when non-empty, is emitted at slog.Info if the callback
+	// is nil at match time. Lets ops see the keypress took effect even
+	// when the daemon hasn't wired the action yet.
+	missingMsg string
+	// cbFor returns the handler field to invoke (nil = unregistered).
+	cbFor  func(*ServiceCodeHandler) func()
+	result ServiceCodeResult
+}
+
+// fixedCodes is the dispatch table for static service codes. Order matters:
+// entries are walked top to bottom and each is suffix-matched against the
+// rolling buffer, so longer codes must come first to avoid being eaten by
+// shorter codes that share their final characters.
+var fixedCodes = []fixedCode{
+	{"*#873283#", "service code: *#873283# (*#UPDATE#) -> check for updates", "",
+		func(h *ServiceCodeHandler) func() { return h.OnUpdate }, ServiceCodeTerminal},
+	{"*#00000#", "service code: *#00000# -> factory reset", "",
+		func(h *ServiceCodeHandler) func() { return h.OnFactoryReset }, ServiceCodeTerminal},
+	{"*#73887#", "service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning",
+		"service code: *#73887# triggered but no setup callback registered -- ignoring",
+		func(h *ServiceCodeHandler) func() { return h.OnSetup }, ServiceCodeTerminal},
+	{"*#8378#", "service code: *#8378# (*#TEST#) -> audio test", "",
+		func(h *ServiceCodeHandler) func() { return h.OnAudioTest }, ServiceCodeNonTerminal},
+	{"*#0*", "service code: *#0* -> force re-pair", "",
+		func(h *ServiceCodeHandler) func() { return h.OnRepair }, ServiceCodeTerminal},
+	{"*#*#", "service code: *#*# -> shutdown", "",
+		func(h *ServiceCodeHandler) func() { return h.OnShutdown }, ServiceCodeTerminal},
+	{"*##*", "service code: *##* -> reboot", "",
+		func(h *ServiceCodeHandler) func() { return h.OnReboot }, ServiceCodeTerminal},
+}
+
 func (h *ServiceCodeHandler) check() ServiceCodeResult {
-	// --- 9-character codes ---
-	if len(h.buffer) >= 9 {
-		last9 := h.buffer[len(h.buffer)-9:]
-		if last9 == "*#873283#" {
-			slog.Info("service code: *#873283# (*#UPDATE#) -> check for updates")
-			if h.OnUpdate != nil {
-				go h.OnUpdate()
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
+	for _, c := range fixedCodes {
+		if !strings.HasSuffix(h.buffer, c.code) {
+			continue
 		}
-	}
-
-	// --- 8-character codes (checked before 4-char to avoid false positives) ---
-
-	if len(h.buffer) >= 8 {
-		last8 := h.buffer[len(h.buffer)-8:]
-		switch last8 {
-		case "*#00000#":
-			slog.Info("service code: *#00000# -> factory reset")
-			if h.OnFactoryReset != nil {
-				go h.OnFactoryReset()
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
-		}
-		if last8 == "*#73887#" {
-			slog.Info("service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning")
-			if h.OnSetup != nil {
-				go h.OnSetup()
-			} else {
-				slog.Info("service code: *#73887# triggered but no setup callback registered -- ignoring")
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
-		}
-	}
-
-
-	// --- 7-character codes ---
-
-	if len(h.buffer) >= 7 {
-		last7 := h.buffer[len(h.buffer)-7:]
-		if last7 == "*#8378#" {
-			slog.Info("service code: *#8378# (*#TEST#) -> audio test")
-			if h.OnAudioTest != nil {
-				go h.OnAudioTest()
-			}
-			h.buffer = ""
-			return ServiceCodeNonTerminal
-		}
-	}
-
-	// --- 4-character codes ---
-
-	if len(h.buffer) < 4 {
-		return ServiceCodeNone
-	}
-	last4 := h.buffer[len(h.buffer)-4:]
-
-	switch last4 {
-	case "*#0*":
-		slog.Info("service code: *#0* -> force re-pair")
-		if h.OnRepair != nil {
-			go h.OnRepair()
+		slog.Info(c.logMsg)
+		cb := c.cbFor(h)
+		if cb != nil {
+			go cb()
+		} else if c.missingMsg != "" {
+			slog.Info(c.missingMsg)
 		}
 		h.buffer = ""
-		return ServiceCodeTerminal
-	case "*#*#":
-		slog.Info("service code: *#*# -> shutdown")
-		if h.OnShutdown != nil {
-			go h.OnShutdown()
-		}
-		h.buffer = ""
-		return ServiceCodeTerminal
-	case "*##*":
-		slog.Info("service code: *##* -> reboot")
-		if h.OnReboot != nil {
-			go h.OnReboot()
-		}
-		h.buffer = ""
-		return ServiceCodeTerminal
+		return c.result
 	}
 
-	// Volume codes: *#*N where N is 0-9
-	if strings.HasPrefix(last4, "*#*") {
-		ch := last4[3]
-		if ch >= '0' && ch <= '9' {
-			level := int(ch - '0')
-			if h.OnVolume != nil {
-				slog.Info("service code: volume", "level", level)
-				h.OnVolume(level)
+	// Volume codes: *#*N where N is 0-9. Pattern-matched, not table-driven,
+	// because the trailing digit is the parameter rather than a literal.
+	if len(h.buffer) >= 4 {
+		last4 := h.buffer[len(h.buffer)-4:]
+		if strings.HasPrefix(last4, "*#*") {
+			ch := last4[3]
+			if ch >= '0' && ch <= '9' {
+				level := int(ch - '0')
+				if h.OnVolume != nil {
+					slog.Info("service code: volume", "level", level)
+					h.OnVolume(level)
+				}
+				h.buffer = ""
+				return ServiceCodeNonTerminal
 			}
-			h.buffer = ""
-			return ServiceCodeNonTerminal
 		}
 	}
 

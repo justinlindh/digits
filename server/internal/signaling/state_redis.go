@@ -16,7 +16,7 @@ const (
 	updateStatusPrefix = "digits:update-status:"
 
 	deviceTTL       = 90 * time.Second
-	updateStatusTTL = 1 * time.Hour
+	updateStatusTTL = time.Hour
 )
 
 type DevicePresence struct {
@@ -47,7 +47,7 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 	setKey := lineDevicesPrefix + number
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"pod_id":      p.PodID,
 		"number":      number,
 		"hardware_id": p.HardwareID,
@@ -164,7 +164,7 @@ func (s *DeviceState) AllDeviceInfo(ctx context.Context, number string) []Device
 	}
 
 	if len(stale) > 0 {
-		staleIfaces := make([]interface{}, len(stale))
+		staleIfaces := make([]any, len(stale))
 		for i, id := range stale {
 			staleIfaces[i] = id
 		}
@@ -181,7 +181,7 @@ func (s *DeviceState) UpdateDeviceInfo(ctx context.Context, hardwareID string, p
 		return
 	}
 	key := deviceKeyPrefix + hardwareID
-	fields := make(map[string]interface{})
+	fields := make(map[string]any)
 
 	if p.PodID != "" {
 		fields["pod_id"] = p.PodID
@@ -271,7 +271,7 @@ func (s *DeviceState) SetUpdateStatus(ctx context.Context, number, status, detai
 	key := updateStatusPrefix + number
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 
-	fields := map[string]interface{}{
+	fields := map[string]any{
 		"status":     status,
 		"detail":     detail,
 		"updated_at": now,
@@ -316,7 +316,6 @@ func (s *DeviceState) ClearUpdateStatus(ctx context.Context, number string) {
 		slog.Error("redis: ClearUpdateStatus failed", "number", number, "err", err)
 	}
 }
-
 
 // PodID returns the pod identifier this state instance was created with.
 func (s *DeviceState) PodID() string {

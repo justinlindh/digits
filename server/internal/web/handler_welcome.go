@@ -23,7 +23,7 @@ type welcomeData struct {
 
 func (h *Handler) handleWelcomeGet(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFromContext(r.Context())
-	renderWith(w, h.tmplWelcome, "welcome.html", welcomeData{
+	renderWith(r.Context(), w, h.tmplWelcome, "welcome.html", welcomeData{
 		Version:       version.Version,
 		User:          user,
 		ThemeIntercom: auth.ThemeIntercom,
@@ -49,7 +49,7 @@ func (h *Handler) handleWelcomePost(w http.ResponseWriter, r *http.Request) {
 	}
 	updated, err := h.authStore.SetThemeAndMarkChosen(r.Context(), user.ID, theme)
 	if err != nil {
-		slog.Error("welcome: set theme and mark chosen failed", "err", err, "theme", theme, "user_id", user.ID)
+		slog.ErrorContext(r.Context(), "welcome: set theme and mark chosen failed", "err", err, "theme", theme, "user_id", user.ID)
 		http.Error(w, "failed to save theme", http.StatusInternalServerError)
 		return
 	}

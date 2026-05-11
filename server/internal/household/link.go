@@ -14,9 +14,28 @@ const inviteCodeLength = 8
 
 // linkColumns is the SELECT/RETURNING list for queries that scan into a
 // HouseholdLink. Field order must stay aligned with the destination order in
-// every .Scan call (and inside scanLinks) below.
+// scanLink below.
 const linkColumns = `id, household_a_id, household_b_id, status, invite_code, invited_by,
 	accepted_by, created_at, accepted_at, revoked_at, revoked_by`
+
+// rowScanner is the subset of *sql.Row / *sql.Rows that matters here.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanLink materializes a HouseholdLink from any row whose columns match
+// linkColumns in order.
+func scanLink(row rowScanner) (*HouseholdLink, error) {
+	l := &HouseholdLink{}
+	if err := row.Scan(
+		&l.ID, &l.HouseholdAID, &l.HouseholdBID, &l.Status, &l.InviteCode,
+		&l.InvitedBy, &l.AcceptedBy, &l.CreatedAt, &l.AcceptedAt,
+		&l.RevokedAt, &l.RevokedBy,
+	); err != nil {
+		return nil, err
+	}
+	return l, nil
+}
 
 // HouseholdLink represents a link (invitation or active connection) between two households.
 type HouseholdLink struct {
@@ -65,16 +84,11 @@ func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedBy
 		return nil, err
 	}
 
-	link := &HouseholdLink{}
-	err = s.db.QueryRowContext(ctx, `
+	link, err := scanLink(s.db.QueryRowContext(ctx, `
 		INSERT INTO household_links (household_a_id, invited_by, invite_code, status)
 		VALUES ($1, $2, $3, 'pending')
 		RETURNING `+linkColumns+`
-	`, fromHouseholdID, invitedByUserID, code).Scan(
-		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
-		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
-		&link.RevokedAt, &link.RevokedBy,
-	)
+	`, fromHouseholdID, invitedByUserID, code))
 	if err != nil {
 		return nil, fmt.Errorf("create invite: %w", err)
 	}
@@ -85,16 +99,11 @@ func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedBy
 // normalizes ordering (a_id < b_id), and marks it active.
 func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acceptingHouseholdID string) (*HouseholdLink, error) {
 	// Fetch the pending invite
-	link := &HouseholdLink{}
-	err := s.db.QueryRowContext(ctx, `
+	link, err := scanLink(s.db.QueryRowContext(ctx, `
 		SELECT `+linkColumns+`
 		FROM household_links
 		WHERE invite_code = $1 AND status = 'pending'
-	`, code).Scan(
-		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
-		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
-		&link.RevokedAt, &link.RevokedBy,
-	)
+	`, code))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("invite code not found or already used")
 	}
@@ -124,7 +133,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 	}
 
 	now := time.Now()
-	err = s.db.QueryRowContext(ctx, `
+	link, err = scanLink(s.db.QueryRowContext(ctx, `
 		UPDATE household_links
 		SET household_a_id = $1,
 		    household_b_id = $2,
@@ -133,11 +142,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 		    accepted_at = $4
 		WHERE id = $5
 		RETURNING `+linkColumns+`
-	`, aID, bID, acceptingUserID, now, link.ID).Scan(
-		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
-		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
-		&link.RevokedAt, &link.RevokedBy,
-	)
+	`, aID, bID, acceptingUserID, now, link.ID))
 	if err != nil {
 		return nil, fmt.Errorf("accept invite: %w", err)
 	}
@@ -198,15 +203,10 @@ func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID stri
 
 // GetByID returns a link by its ID.
 func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, error) {
-	link := &HouseholdLink{}
-	err := s.db.QueryRowContext(ctx, `
+	link, err := scanLink(s.db.QueryRowContext(ctx, `
 		SELECT `+linkColumns+`
 		FROM household_links WHERE id = $1
-	`, id).Scan(
-		&link.ID, &link.HouseholdAID, &link.HouseholdBID, &link.Status, &link.InviteCode,
-		&link.InvitedBy, &link.AcceptedBy, &link.CreatedAt, &link.AcceptedAt,
-		&link.RevokedAt, &link.RevokedBy,
-	)
+	`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errors.New("link not found")
 	}
@@ -233,15 +233,11 @@ func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID stri
 func scanLinks(rows *sql.Rows) ([]HouseholdLink, error) {
 	var links []HouseholdLink
 	for rows.Next() {
-		var l HouseholdLink
-		if err := rows.Scan(
-			&l.ID, &l.HouseholdAID, &l.HouseholdBID, &l.Status, &l.InviteCode,
-			&l.InvitedBy, &l.AcceptedBy, &l.CreatedAt, &l.AcceptedAt,
-			&l.RevokedAt, &l.RevokedBy,
-		); err != nil {
+		l, err := scanLink(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan link: %w", err)
 		}
-		links = append(links, l)
+		links = append(links, *l)
 	}
 	return links, rows.Err()
 }

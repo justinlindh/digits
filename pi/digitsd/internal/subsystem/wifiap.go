@@ -123,7 +123,6 @@ func (w *WiFiAPModule) Teardown() error {
 	return nil
 }
 
-func (w *WiFiAPModule) IsReady() bool                      { return w.status.State == StateReady }
 func (w *WiFiAPModule) Status() ModuleStatus               { return w.status }
 func (w *WiFiAPModule) Shutdown(ctx context.Context) error { return w.Teardown() }
 

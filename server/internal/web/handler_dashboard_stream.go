@@ -42,7 +42,7 @@ func (h *Handler) handleDashboardStream(w http.ResponseWriter, r *http.Request) 
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		slog.Error("dashboard SSE: ResponseWriter does not implement Flusher")
+		slog.ErrorContext(r.Context(), "dashboard SSE: ResponseWriter does not implement Flusher")
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -81,7 +81,7 @@ func (h *Handler) writeDashStatus(w http.ResponseWriter, flusher http.Flusher, r
 	vm := h.computeDashStatus(r, hh)
 	fragment, err := h.renderDashStatus(vm)
 	if err != nil {
-		slog.Error("dashboard SSE: render failed", "err", err)
+		slog.ErrorContext(r.Context(), "dashboard SSE: render failed", "err", err)
 		return err
 	}
 	if err := writeSSE(w, "status", fragment); err != nil {

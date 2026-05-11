@@ -50,6 +50,11 @@ const (
 // so the controller self-fires here once it has the full number.
 const addDialDigitsRequired = 7
 
+// autoDialDelay is the brief silence between the last digit and the first
+// ringback tone on outgoing calls. Mimics the variable PSTN setup pause that
+// rotary phones produced between dial-pulse train end and first ring.
+const autoDialDelay = 800 * time.Millisecond
+
 // Callbacks is the interface the controller uses to drive hardware and network.
 type Callbacks interface {
 	SendTone(name string)       // Play a tone (use one of the Tone* constants)
@@ -71,6 +76,7 @@ type Callbacks interface {
 	OnCallReturn()                                        // *69 detected: query server for last inbound caller
 	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
 	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
+	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -212,14 +218,19 @@ func (s State) IsDialPhase() bool {
 	return s == StateDIALTONE || s == StateDIALING
 }
 
-// Reset forces the controller back to IDLE with no pending digits.
-// Used after terminal service codes (shutdown, reboot, etc.) where the
-// daemon is going down and the FSM state no longer matters.
+// Reset forces the controller back to IDLE with no pending digits or
+// per-call state. Used after terminal service codes (shutdown, reboot)
+// and from the WebSocket reconnect teardown, where leaving the *69
+// callback-ring fields populated would mis-route the next unrelated
+// incoming call's pickup into an auto-dial of the stale callback target.
 func (c *Controller) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = StateIDLE
 	c.digits = ""
+	c.callReturnNumber = ""
+	c.callReturnRinging = false
+	c.callReturnTarget = ""
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
@@ -307,21 +318,8 @@ func (c *Controller) onHookOff() {
 			c.cb.SendLED("ON")
 			slog.Info("phone: callback pickup, auto-dialing", "target", number)
 			c.state = StateCALLING
-			go func() {
-				time.Sleep(800 * time.Millisecond)
-				c.mu.Lock()
-				if c.state != StateCALLING {
-					c.mu.Unlock()
-					return
-				}
-				c.cb.SendTone(ToneRingback)
-				err := c.cb.InitiateCall(number)
-				c.mu.Unlock()
-				if err != nil {
-					slog.Info("phone: callback auto-dial failed", "number", number, "error", err)
-					c.playRejectSequence(StateCALLING)
-				}
-			}()
+			c.initiateCallAfterDelay(number, StateCALLING, "phone: callback auto-dial failed",
+				func() { c.playRejectSequence(StateCALLING) })
 		} else {
 			// Incoming: answer the call; activePeer was set when the ring arrived.
 			c.state = StateCONNECTED
@@ -341,6 +339,7 @@ func (c *Controller) onHookOn() {
 		return
 	}
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -371,6 +370,12 @@ func (c *Controller) onHookOn() {
 	c.cb.SendLED("OFF")
 	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
+	} else if wasCallReturn {
+		// Abandoning the *69 announcement (or *89 cancel announcement) by
+		// hanging up never triggers HangupCall, so the daemon's
+		// callReturnOrigin flag would otherwise persist and steer the next
+		// unrelated busy response into the call-return retry path.
+		go c.cb.OnCallReturnAbandon()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
@@ -417,22 +422,8 @@ func (c *Controller) onKey(digit string) {
 			c.callReturnNumber = ""
 			slog.Info("phone: CALL_RETURN -> CALLING", "number", number)
 			c.state = StateCALLING
-			go func() {
-				time.Sleep(800 * time.Millisecond)
-				c.mu.Lock()
-				if c.state != StateCALLING {
-					c.mu.Unlock()
-					return
-				}
-				c.cb.SendTone(ToneRingback)
-				err := c.cb.InitiateCall(number)
-				c.mu.Unlock()
-
-				if err != nil {
-					slog.Info("phone: call return failed, server unreachable", "number", number, "error", err)
-					c.playRejectSequence(StateCALLING)
-				}
-			}()
+			c.initiateCallAfterDelay(number, StateCALLING, "phone: call return failed, server unreachable",
+				func() { c.playRejectSequence(StateCALLING) })
 		}
 	case StateADD_DIALTONE:
 		// First key during add-dial: stop the second dial tone, start collecting.
@@ -486,22 +477,31 @@ func (c *Controller) onDial(number string) {
 		return
 	}
 	c.state = StateCALLING
-	// Brief silence before ringback: simulates PSTN call setup delay.
-	// Old rotary phones had a variable pause between last digit and first ring.
+	c.initiateCallAfterDelay(number, StateCALLING, "phone: call failed, server unreachable",
+		func() { c.playRejectSequence(StateCALLING) })
+}
+
+// initiateCallAfterDelay simulates the PSTN call-setup pause and then starts
+// the outgoing call to number. After autoDialDelay it acquires the controller
+// lock; if the FSM has moved out of expectedState (e.g., the caller hung up
+// during the pause) it returns silently. Otherwise it plays ringback, calls
+// InitiateCall, and on error logs errLogMsg with number+error attrs and runs
+// onErr (unlocked) so the caller can drive whatever local treatment the
+// failed leg requires.
+func (c *Controller) initiateCallAfterDelay(number string, expectedState State, errLogMsg string, onErr func()) {
 	go func() {
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(autoDialDelay)
 		c.mu.Lock()
-		if c.state != StateCALLING {
+		if c.state != expectedState {
 			c.mu.Unlock()
 			return
 		}
 		c.cb.SendTone(ToneRingback)
 		err := c.cb.InitiateCall(number)
 		c.mu.Unlock()
-
 		if err != nil {
-			slog.Info("phone: call failed, server unreachable", "number", number, "error", err)
-			c.playRejectSequence(StateCALLING)
+			slog.Info(errLogMsg, "number", number, "error", err)
+			onErr()
 		}
 	}()
 }
@@ -567,31 +567,17 @@ func (c *Controller) dialThirdParty(number string) {
 	c.addingPeer = number
 	c.digits = ""
 	c.state = StateADD_CALLING
-	// Brief silence before ringback: mirrors the 2-party outgoing call setup delay.
-	go func() {
-		time.Sleep(800 * time.Millisecond)
+	c.initiateCallAfterDelay(number, StateADD_CALLING, "phone: add-call failed, server unreachable", func() {
 		c.mu.Lock()
 		if c.state != StateADD_CALLING {
 			c.mu.Unlock()
 			return
 		}
-		c.cb.SendTone(ToneRingback)
-		err := c.cb.InitiateCall(number)
+		c.state = StateADD_INTERCEPT
 		c.mu.Unlock()
-
-		if err != nil {
-			slog.Info("phone: add-call failed, server unreachable", "number", number, "error", err)
-			c.mu.Lock()
-			if c.state != StateADD_CALLING {
-				c.mu.Unlock()
-				return
-			}
-			c.state = StateADD_INTERCEPT
-			c.mu.Unlock()
-			c.cb.SendTone(ToneStop)
-			c.cb.SendTone(ToneIntercept)
-		}
-	}()
+		c.cb.SendTone(ToneStop)
+		c.cb.SendTone(ToneIntercept)
+	})
 }
 
 func (c *Controller) onSignalRing() {
@@ -1005,43 +991,4 @@ func (c *Controller) IsConferenceHost() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.isConfHost
-}
-
-// --- test-only setters (internal: test only) ---
-
-// setStateForTest directly sets the FSM state for unit test setup.
-func (c *Controller) setStateForTest(s State) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.state = s
-}
-
-// setHeldPeerForTest sets the held peer for unit test setup.
-func (c *Controller) setHeldPeerForTest(peer string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.heldPeer = peer
-}
-
-// setAddingPeerForTest sets the adding peer for unit test setup.
-func (c *Controller) setAddingPeerForTest(peer string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.addingPeer = peer
-}
-
-// heldPeerForTest returns the current held-peer phone number for unit test
-// assertions.
-func (c *Controller) heldPeerForTest() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.heldPeer
-}
-
-// addingPeerForTest returns the current adding-peer phone number for unit
-// test assertions.
-func (c *Controller) addingPeerForTest() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.addingPeer
 }

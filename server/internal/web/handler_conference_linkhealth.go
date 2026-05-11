@@ -67,7 +67,7 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		slog.Error("conference_link_health encode failed", "conf_id", confID, "err", err)
+		slog.ErrorContext(r.Context(), "conference_link_health encode failed", "conf_id", confID, "err", err)
 	}
 }
 
@@ -129,7 +129,7 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 	// DB fallback.
 	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
 	if err != nil {
-		slog.Warn("ReadbackEdge failed; serving empty window",
+		slog.WarnContext(ctx, "ReadbackEdge failed; serving empty window",
 			"conf_id", confID, "from", from, "peer", peer, "err", err)
 		return out
 	}
@@ -167,7 +167,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		slog.Error("SSE conference stream: ResponseWriter does not implement Flusher")
+		slog.ErrorContext(r.Context(), "SSE conference stream: ResponseWriter does not implement Flusher")
 		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
@@ -193,7 +193,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
 	if err != nil {
-		slog.Error("SSE conference stream: initial render failed", "conf_id", confID, "err", err)
+		slog.ErrorContext(r.Context(), "SSE conference stream: initial render failed", "conf_id", confID, "err", err)
 		return
 	}
 	if werr := writeSSE(w, "sample", fragment); werr != nil {
@@ -215,7 +215,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 				return
 			}
 			if err := h.writeConferenceEvent(r.Context(), w, flusher, conf, ownedLines, linkedIndex, ev); err != nil {
-				slog.Debug("SSE conference stream: write failed", "conf_id", confID, "err", err)
+				slog.DebugContext(r.Context(), "SSE conference stream: write failed", "conf_id", confID, "err", err)
 				return
 			}
 		case <-heartbeat.C:
@@ -292,7 +292,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 		Resp:            resp,
 		IsHostHousehold: isHostHH,
 	}
-	renderWith(w, h.tmplConferenceLiveDetail, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplConferenceLiveDetail, layoutFor(r), data)
 }
 
 // handleConferenceKick force-ends a conference on behalf of the host
@@ -338,7 +338,7 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 
 	// Audit first: if downstream teardown fails, the record still lands.
 	if err := h.tracker.RecordKick(r.Context(), confID, kickedPhone, user.ID); err != nil {
-		slog.Error("conference_kick: audit write failed", "conf_id", confID, "err", err)
+		slog.ErrorContext(r.Context(), "conference_kick: audit write failed", "conf_id", confID, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

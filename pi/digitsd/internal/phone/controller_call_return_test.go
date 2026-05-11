@@ -249,3 +249,92 @@ func TestController_Star89DetectedInDialing(t *testing.T) {
 		t.Fatalf("expected 1 cancel callback, got %d", cb.CallReturnCancels())
 	}
 }
+
+func TestController_Star69AbandonedFiresAbandon(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleEvent("HOOK:OFF")
+	ctrl.HandleEvent("KEY:*")
+	ctrl.HandleEvent("KEY:6")
+	ctrl.HandleEvent("KEY:9")
+	if ctrl.State() != StateCALL_RETURN {
+		t.Fatalf("expected CALL_RETURN, got %s", ctrl.State())
+	}
+
+	ctrl.HandleEvent("HOOK:ON")
+	if ctrl.State() != StateIDLE {
+		t.Fatalf("expected IDLE after hangup, got %s", ctrl.State())
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for cb.CallReturnAbandons() == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.CallReturnAbandons() != 1 {
+		t.Fatalf("expected 1 abandon callback, got %d", cb.CallReturnAbandons())
+	}
+}
+
+func TestController_OnHookFromConnectedDoesNotFireAbandon(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	ctrl.HandleSignal("ring", "3140002")
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", ctrl.State())
+	}
+	ctrl.HandleEvent("HOOK:OFF")
+	if ctrl.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED, got %s", ctrl.State())
+	}
+
+	ctrl.HandleEvent("HOOK:ON")
+
+	time.Sleep(50 * time.Millisecond)
+	if cb.CallReturnAbandons() != 0 {
+		t.Fatalf("abandon callback should not fire from CONNECTED, got %d", cb.CallReturnAbandons())
+	}
+}
+
+// TestController_ResetClearsCallbackRingState is the regression guard for the
+// WebSocket-reconnect teardown path. The reconnect code in cmd/digitsd/main.go
+// calls ctrl.Reset() to force the FSM back to IDLE; before this fix Reset()
+// only cleared state and digits, so the *69 callback-ring fields
+// (callReturnRinging / callReturnTarget) survived the teardown. A subsequent
+// unrelated incoming call would then auto-dial the stale callback target on
+// pickup instead of answering the new caller.
+func TestController_ResetClearsCallbackRingState(t *testing.T) {
+	cb := &mockCallbacks{}
+	ctrl := NewController(cb, "3140001")
+
+	// Server detected the *69 retry target free, so the controller is ringing
+	// the requester with the distinctive callback pattern.
+	ctrl.HandleCallReturnRing("3140002")
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("setup: expected RINGING, got %s", ctrl.State())
+	}
+
+	// WebSocket drops and reconnects mid-callback-ring. The reconnect code
+	// path calls Reset to drop the FSM back to IDLE.
+	ctrl.Reset()
+	if ctrl.State() != StateIDLE {
+		t.Fatalf("expected IDLE after Reset, got %s", ctrl.State())
+	}
+
+	// Now an unrelated incoming call rings. Pickup must answer it, not
+	// auto-dial the stale 3140002 callback target.
+	ctrl.HandleSignal("ring", "3140003")
+	if ctrl.State() != StateRINGING {
+		t.Fatalf("expected RINGING for unrelated incoming call, got %s", ctrl.State())
+	}
+	ctrl.HandleEvent("HOOK:OFF")
+	if ctrl.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED on pickup, got %s", ctrl.State())
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	if calls := cb.Calls(); len(calls) != 0 {
+		t.Fatalf("expected no auto-dial after Reset cleared callback fields, got %v", calls)
+	}
+}

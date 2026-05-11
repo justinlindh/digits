@@ -51,27 +51,42 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
+// userColumns lists every users-table column scanned into User. Kept in
+// one place so adding or renaming a column does not require chasing three
+// SELECT/RETURNING lists and three Scan argument lists.
+const userColumns = `id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`
+
+// rowScanner is the subset of *sql.Row / *sql.Rows that matters here.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanUser materializes a User from any row whose columns match userColumns
+// in order.
+func scanUser(row rowScanner) (*User, error) {
+	u := &User{}
+	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 // CreateUser inserts a new user record and returns it.
 func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *string) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3)
-		 RETURNING id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`,
+	row := s.db.QueryRowContext(ctx,
+		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3) RETURNING `+userColumns,
 		email, name, googleID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	)
+	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 	return u, nil
 }
 
-const userSelectBase = `SELECT id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at FROM users WHERE `
-
 func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*User, error) {
-	u := &User{}
-	err := s.db.QueryRowContext(ctx, userSelectBase+whereClause, arg).Scan(
-		&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt,
-	)
+	row := s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE `+whereClause, arg)
+	u, err := scanUser(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -133,12 +148,11 @@ func (s *Store) SetThemeAndMarkChosen(ctx context.Context, userID string, theme 
 	if !theme.Valid() {
 		return nil, fmt.Errorf("invalid theme: %q", theme)
 	}
-	u := &User{}
-	err := s.db.QueryRowContext(ctx,
-		`UPDATE users SET theme = $1, theme_chosen = TRUE WHERE id = $2
-		 RETURNING id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`,
+	row := s.db.QueryRowContext(ctx,
+		`UPDATE users SET theme = $1, theme_chosen = TRUE WHERE id = $2 RETURNING `+userColumns,
 		theme, userID,
-	).Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt)
+	)
+	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("set theme and mark chosen: %w", err)
 	}
@@ -163,6 +177,19 @@ func (s *Store) SetAppearance(ctx context.Context, userID string, appearance App
 	return err
 }
 
+// sessionColumns lists every sessions-table column scanned into Session.
+const sessionColumns = `id, user_id, expires_at, created_at`
+
+// scanSession materializes a Session from any row whose columns match
+// sessionColumns in order.
+func scanSession(row rowScanner) (*Session, error) {
+	sess := &Session{}
+	if err := row.Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt); err != nil {
+		return nil, err
+	}
+	return sess, nil
+}
+
 // CreateSession generates a random token, stores its SHA-256 hash, and returns
 // the raw token (which must be given to the client) and the session record.
 func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Duration) (string, *Session, error) {
@@ -171,13 +198,13 @@ func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Durat
 		return "", nil, err
 	}
 	hash := device.HashToken(token)
-	sess := &Session{}
-	err = s.db.QueryRowContext(ctx,
+	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO sessions (user_id, token_hash, expires_at)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, user_id, expires_at, created_at`,
+		 RETURNING `+sessionColumns,
 		userID, hash, time.Now().Add(ttl),
-	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
+	)
+	sess, err := scanSession(row)
 	if err != nil {
 		return "", nil, fmt.Errorf("create session: %w", err)
 	}
@@ -187,12 +214,12 @@ func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Durat
 // ValidateSession looks up a session by its raw token and checks it hasn't expired.
 func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, error) {
 	hash := device.HashToken(token)
-	sess := &Session{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, expires_at, created_at FROM sessions
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+sessionColumns+` FROM sessions
 		 WHERE token_hash = $1 AND expires_at > NOW()`,
 		hash,
-	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
+	)
+	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("invalid or expired session")
 	}
@@ -228,13 +255,13 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 // between a separate validate-then-refresh pair.
 func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl time.Duration) (*Session, error) {
 	hash := device.HashToken(token)
-	sess := &Session{}
-	err := s.db.QueryRowContext(ctx,
+	row := s.db.QueryRowContext(ctx,
 		`UPDATE sessions SET expires_at = $1
 		 WHERE token_hash = $2 AND expires_at > NOW()
-		 RETURNING id, user_id, expires_at, created_at`,
+		 RETURNING `+sessionColumns,
 		time.Now().Add(ttl), hash,
-	).Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt)
+	)
+	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("invalid or expired session")
 	}
@@ -316,14 +343,20 @@ func (s *Store) SetActiveHousehold(ctx context.Context, sessionToken string, hou
 
 // ActiveHouseholdID returns the active_household_id from the current session,
 // or empty string if not set.
-func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) string {
+func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) (string, error) {
 	hash := device.HashToken(sessionToken)
 	var id sql.NullString
-	_ = s.db.QueryRowContext(ctx,
+	err := s.db.QueryRowContext(ctx,
 		`SELECT active_household_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()`,
 		hash,
 	).Scan(&id)
-	return id.String
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return id.String, nil
 }
 
 // randomToken generates a cryptographically random hex string of the given byte length.

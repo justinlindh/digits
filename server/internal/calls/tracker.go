@@ -269,7 +269,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 		 AND status IN ('initiated', 'ringing', 'connected')`,
 		number,
 	); err != nil {
-		slog.Warn("clear calls on disconnect failed", "number", number, "err", err)
+		slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
 	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, number, "")
@@ -299,16 +299,24 @@ func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string)
 	return tx.Commit()
 }
 
+// callStateSnapshot returns the configured CallState (Redis-backed cluster
+// view) or nil. Read under the lock so query methods see SetCallState's write
+// per the standard memory model. Reads after the snapshot do not need the
+// lock because t.state is only assigned once at startup.
+func (t *Tracker) callStateSnapshot() *CallState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state
+}
+
 func (t *Tracker) Busy(number string) bool {
 	if t.conferences.IsBusy(number) {
 		return true
 	}
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.Busy(context.Background(), number)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -330,12 +338,10 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 	if t.conferences.IsBusy(number) {
 		return false
 	}
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.CanAddAsHost(context.Background(), number)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	callerCount := 0
 	for _, c := range t.active {
@@ -352,12 +358,10 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 // AllPeersOf returns all remote parties that number has active 2-party calls
 // with. Empty if number has no active calls.
 func (t *Tracker) AllPeersOf(number string) []string {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.AllPeersOf(context.Background(), number)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	var peers []string
 	for _, c := range t.active {
@@ -373,12 +377,10 @@ func (t *Tracker) AllPeersOf(number string) []string {
 // PeerOf returns the other party in an active call involving number,
 // or "" if number is not in any active call.
 func (t *Tracker) PeerOf(number string) string {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.PeerOf(context.Background(), number)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number {
@@ -395,12 +397,10 @@ func (t *Tracker) PeerOf(number string) string {
 // b, or 0 if no such call exists. Used by conference setup to find the
 // originating 2-party call id before migrating to mesh.
 func (t *Tracker) CallIDForPair(a, b string) int64 {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.CallIDForPair(context.Background(), a, b)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	if c, ok := t.active[callKey(a, b)]; ok {
 		return c.ID
@@ -414,12 +414,10 @@ func (t *Tracker) CallIDForPair(a, b string) int64 {
 // CallIDFor returns the active call id for an endpoint phone number.
 // Returns (0, false) if the number is not currently in a call.
 func (t *Tracker) CallIDFor(number string) (int64, bool) {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.CallIDFor(context.Background(), number)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, c := range t.active {
 		if c.Caller == number || c.Callee == number {
@@ -430,12 +428,10 @@ func (t *Tracker) CallIDFor(number string) (int64, bool) {
 }
 
 func (t *Tracker) InCall(a, b string) bool {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.InCall(context.Background(), a, b)
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	_, fwd := t.active[callKey(a, b)]
 	_, rev := t.active[callKey(b, a)]
@@ -443,12 +439,10 @@ func (t *Tracker) InCall(a, b string) bool {
 }
 
 func (t *Tracker) Active() []activeCall {
-	t.mu.Lock()
-	s := t.state
-	if s != nil {
-		t.mu.Unlock()
+	if s := t.callStateSnapshot(); s != nil {
 		return s.Active(context.Background())
 	}
+	t.mu.Lock()
 	defer t.mu.Unlock()
 	calls := make([]activeCall, 0, len(t.active))
 	for _, c := range t.active {
@@ -577,7 +571,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 	if h != nil {
 		h.InitConference(conf.ID)
 	}
-	slog.Info("conference: persisted", "conf_id", conf.ID.String(), "host", host, "originating_call_id", originatingCallID, "added_members", addedMembers)
+	slog.InfoContext(ctx, "conference: persisted", "conf_id", conf.ID.String(), "host", host, "originating_call_id", originatingCallID, "added_members", addedMembers)
 	return conf, nil
 }
 
@@ -613,7 +607,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	if h != nil {
 		h.EvictConference(confID)
 	}
-	slog.Info("conference: end persisted", "conf_id", confID.String(), "reason", reason)
+	slog.InfoContext(ctx, "conference: end persisted", "conf_id", confID.String(), "reason", reason)
 	return nil
 }
 
@@ -632,7 +626,7 @@ func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone,
 	if err != nil {
 		return fmt.Errorf("record kick: %w", err)
 	}
-	slog.Info("conference: kick audited", "conf_id", confID.String(), "kicked", kickedPhone, "by_user", userID)
+	slog.InfoContext(ctx, "conference: kick audited", "conf_id", confID.String(), "kicked", kickedPhone, "by_user", userID)
 	return nil
 }
 
@@ -754,7 +748,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	if h != nil && ended {
 		h.EvictConference(confID)
 	}
-	slog.Info("conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
+	slog.InfoContext(ctx, "conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
 	return remaining, ended, nil
 }
 
@@ -825,7 +819,7 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 		`SELECT `+callColumns+
 			` FROM calls WHERE caller IN (%s) OR callee IN (%s) ORDER BY started_at DESC LIMIT $%d`,
 		ph, ph, n+1)
-	args := make([]interface{}, 0, n+1)
+	args := make([]any, 0, n+1)
 	for _, num := range phoneNumbers {
 		args = append(args, num)
 	}

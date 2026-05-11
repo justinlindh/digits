@@ -76,9 +76,8 @@ func (a *AudioModule) Init(ctx context.Context) error {
 	return nil
 }
 
-func (a *AudioModule) Mixer() *audio.Mixer    { return a.mixer }
-func (a *AudioModule) IsReady() bool          { return a.status.State == StateReady }
-func (a *AudioModule) Status() ModuleStatus   { return a.status }
+func (a *AudioModule) Mixer() *audio.Mixer  { return a.mixer }
+func (a *AudioModule) Status() ModuleStatus { return a.status }
 
 func (a *AudioModule) Shutdown(ctx context.Context) error {
 	if a.mixer != nil {

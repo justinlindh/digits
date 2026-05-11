@@ -84,7 +84,7 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, *household.Household, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
-		slog.Error("ownedLinesForUser: list households failed", "user_id", user.ID, "err", err)
+		slog.ErrorContext(ctx, "ownedLinesForUser: list households failed", "user_id", user.ID, "err", err)
 		return nil, nil, false
 	}
 	if len(households) == 0 {
@@ -94,7 +94,7 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 	for _, hh := range households {
 		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
-			slog.Error("ownedLinesForUser: list lines failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(ctx, "ownedLinesForUser: list lines failed", "household_id", hh.ID, "err", err)
 			return nil, nil, false
 		}
 		for i := range hhLines {
@@ -127,7 +127,7 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	call, callErr := h.tracker.GetCall(r.Context(), callID)
 
 	if callErr != nil {
-		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		slog.ErrorContext(r.Context(), "link_health: get call failed", "call_id", callID, "err", callErr)
 		http.NotFound(w, r)
 		return calls.Call{}, nil, nil, false
 	}
@@ -158,7 +158,7 @@ func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, 
 	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
 	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
 	if confErr != nil {
-		slog.Error(errLog+": get conference failed", "conf_id", confID, "err", confErr)
+		slog.ErrorContext(r.Context(), errLog+": get conference failed", "conf_id", confID, "err", confErr)
 		http.NotFound(w, r)
 		return nil, nil, nil, false
 	}
@@ -282,8 +282,10 @@ func (h *Handler) resolveActiveHousehold(r *http.Request) (*household.Household,
 	active := households[0]
 	cookie, cookieErr := r.Cookie(auth.CookieName)
 	if cookieErr == nil && h.authStore != nil {
-		activeID := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
-		if activeID != "" {
+		activeID, err := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if err != nil {
+			slog.WarnContext(r.Context(), "active household lookup failed", "user", user.ID, "err", err)
+		} else if activeID != "" {
 			for _, hh := range households {
 				if hh.ID == activeID {
 					active = hh
@@ -373,7 +375,7 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 		if h.lineStore != nil {
 			silent, err := h.lineStore.AllSilentByHousehold(r.Context(), active.ID)
 			if err != nil {
-				slog.Error("check all-silent failed", "household_id", active.ID, "err", err)
+				slog.ErrorContext(r.Context(), "check all-silent failed", "household_id", active.ID, "err", err)
 			}
 			cd.allSilent = silent
 		}
@@ -423,18 +425,18 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineN
 	return false
 }
 
-func jsonError(w http.ResponseWriter, msg string, code int) {
+func jsonError(ctx context.Context, w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
-		slog.Error("jsonError: encode failed", "err", err)
+		slog.ErrorContext(ctx, "jsonError: encode failed", "err", err)
 	}
 }
 
-func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
+func renderWith(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("template render failed", "template", name, "err", err)
+		slog.ErrorContext(ctx, "template render failed", "template", name, "err", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -442,11 +444,11 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 // renderWithStatus is renderWith with an explicit non-200 status. Headers must
 // be set before WriteHeader, so we can't reuse renderWith after the caller has
 // already written the status line.
-func renderWithStatus(w http.ResponseWriter, t *template.Template, name string, data any, status int) {
+func renderWithStatus(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("template render failed", "template", name, "err", err)
+		slog.ErrorContext(ctx, "template render failed", "template", name, "err", err)
 	}
 }
 
