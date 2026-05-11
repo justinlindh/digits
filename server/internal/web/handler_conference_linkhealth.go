@@ -42,6 +42,7 @@ type ConferenceLinkHealthResp struct {
 	ConfID    uuid.UUID                  `json:"conf_id"`
 	CreatedAt time.Time                  `json:"created_at"`
 	Ended     bool                       `json:"ended"`
+	DurationS int                        `json:"duration_s"`
 	Members   []ConferenceMemberInfo     `json:"members"`
 	Edges     []ConferenceLinkHealthEdge `json:"edges"`
 }
@@ -96,6 +97,7 @@ func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls
 		ConfID:    conf.ID,
 		CreatedAt: conf.CreatedAt,
 		Ended:     conf.EndedAt != nil,
+		DurationS: conf.DurationS,
 		Members:   members,
 		Edges:     edges,
 	}

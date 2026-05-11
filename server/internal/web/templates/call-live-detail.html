@@ -7,7 +7,11 @@
       <span class="deck-kicker label">live session</span>
       <h1 class="deck-title">{{.Caller.DisplayName}} <span class="deck-arrow">&harr;</span> {{.Callee.DisplayName}}</h1>
       <div class="deck-meta">
-        <span class="deck-duration" data-duration-since="{{.Call.StartedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        {{if .Ended}}
+          <span class="deck-duration">{{fmtDurationClock .Call.DurationS}}</span>
+        {{else}}
+          <span class="deck-duration" data-duration-since="{{.Call.StartedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        {{end}}
         {{with .Caller.Latest}}
           {{if .ConnType}}<span class="deck-conn">via {{.ConnType}}</span>{{end}}
         {{end}}
