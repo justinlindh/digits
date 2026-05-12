@@ -192,7 +192,7 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 	h.mu.RUnlock()
 
 	if n == 0 {
-		slog.Info("drain: no connections to close")
+		slog.InfoContext(ctx, "drain: no connections to close")
 		return
 	}
 
@@ -201,7 +201,7 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 	if !ok {
 		deadline = time.Now().Add(5 * time.Second)
 	}
-	slog.Info("drain: sending close frames", "connections", n, "remaining", time.Until(deadline).Round(time.Millisecond))
+	slog.InfoContext(ctx, "drain: sending close frames", "connections", n, "remaining", time.Until(deadline).Round(time.Millisecond))
 	closeMsg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
 	for _, c := range snapshot {
 		if c.WS != nil {
@@ -222,7 +222,7 @@ func (h *Hub) DrainAndClose(ctx context.Context) {
 			remaining := h.totalConns()
 			h.mu.RUnlock()
 			if remaining == 0 {
-				slog.Info("drain: all connections closed gracefully")
+				slog.InfoContext(ctx, "drain: all connections closed gracefully")
 				return
 			}
 		}
