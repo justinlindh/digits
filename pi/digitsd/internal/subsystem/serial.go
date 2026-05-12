@@ -62,10 +62,3 @@ func (s *SerialModule) Shutdown(ctx context.Context) error {
 	}
 	return nil
 }
-
-func (s *SerialModule) HealthCheck() error {
-	if s.port == nil {
-		return fmt.Errorf("not initialized")
-	}
-	return s.port.Ping()
-}
