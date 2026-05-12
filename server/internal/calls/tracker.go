@@ -279,24 +279,21 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 // RenameNumber updates all call history records from oldNumber to newNumber
 // in a single transaction.
 func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string) error {
-	tx, err := t.db.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("rename number: begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	queries := []string{
-		`UPDATE calls SET caller = $1 WHERE caller = $2`,
-		`UPDATE calls SET callee = $1 WHERE callee = $2`,
-		`UPDATE conferences SET host_phone = $1 WHERE host_phone = $2`,
-		`UPDATE conference_members SET phone = $1 WHERE phone = $2`,
-		`UPDATE conference_kicks SET kicked_phone = $1 WHERE kicked_phone = $2`,
-	}
-	for _, q := range queries {
-		if _, err := tx.ExecContext(ctx, q, newNumber, oldNumber); err != nil {
-			return fmt.Errorf("rename number in call history: %w", err)
+	return dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+		queries := []string{
+			`UPDATE calls SET caller = $1 WHERE caller = $2`,
+			`UPDATE calls SET callee = $1 WHERE callee = $2`,
+			`UPDATE conferences SET host_phone = $1 WHERE host_phone = $2`,
+			`UPDATE conference_members SET phone = $1 WHERE phone = $2`,
+			`UPDATE conference_kicks SET kicked_phone = $1 WHERE kicked_phone = $2`,
 		}
-	}
-	return tx.Commit()
+		for _, q := range queries {
+			if _, err := tx.ExecContext(ctx, q, newNumber, oldNumber); err != nil {
+				return fmt.Errorf("rename number in call history: %w", err)
+			}
+		}
+		return nil
+	})
 }
 
 // callStateSnapshot returns the configured CallState (Redis-backed cluster
