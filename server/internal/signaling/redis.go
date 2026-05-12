@@ -95,15 +95,15 @@ func (b *RedisBridge) Publish(ctx context.Context, env *Envelope) {
 	env.PodID = b.podID
 	data, err := json.Marshal(env)
 	if err != nil {
-		slog.Error("redis: marshal envelope failed", "err", err)
+		slog.ErrorContext(ctx, "redis: marshal envelope failed", "err", err)
 		return
 	}
 	if err := b.client.Publish(ctx, redisChannel, data).Err(); err != nil {
-		slog.Error("redis: publish failed", "err", err)
+		slog.ErrorContext(ctx, "redis: publish failed", "err", err)
 		return
 	}
 	b.published.Add(1)
-	slog.Debug("redis: published message", "pod", b.podID)
+	slog.DebugContext(ctx, "redis: published message", "pod", b.podID)
 }
 
 // Subscribe returns a channel that yields envelopes from other pods.
@@ -128,7 +128,7 @@ func (b *RedisBridge) Subscribe(ctx context.Context) <-chan *Envelope {
 				}
 				var env Envelope
 				if err := json.Unmarshal([]byte(redisMsg.Payload), &env); err != nil {
-					slog.Warn("redis: unmarshal envelope failed", "err", err)
+					slog.WarnContext(ctx, "redis: unmarshal envelope failed", "err", err)
 					continue
 				}
 				// Skip messages from this pod to avoid echo.
