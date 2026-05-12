@@ -66,7 +66,7 @@ func (s *DeviceState) SetOnline(ctx context.Context, number string, p DevicePres
 	pipe.SAdd(ctx, setKey, p.HardwareID)
 	pipe.Expire(ctx, setKey, deviceTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: SetOnline failed", "number", number, "hardware_id", p.HardwareID, "err", err)
+		slog.ErrorContext(ctx, "redis: SetOnline failed", "number", number, "hardware_id", p.HardwareID, "err", err)
 	}
 }
 
@@ -81,7 +81,7 @@ func (s *DeviceState) SetOffline(ctx context.Context, number, hardwareID string)
 	pipe.Del(ctx, devKey)
 	pipe.SRem(ctx, setKey, hardwareID)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: SetOffline failed", "number", number, "hardware_id", hardwareID, "err", err)
+		slog.ErrorContext(ctx, "redis: SetOffline failed", "number", number, "hardware_id", hardwareID, "err", err)
 	}
 }
 
@@ -89,7 +89,7 @@ func (s *DeviceState) IsOnline(ctx context.Context, number string) bool {
 	key := lineDevicesPrefix + number
 	n, err := s.client.SCard(ctx, key).Result()
 	if err != nil {
-		slog.Error("redis: IsOnline failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: IsOnline failed", "number", number, "err", err)
 		return false
 	}
 	return n > 0
@@ -110,7 +110,7 @@ func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 		numbers = append(numbers, number)
 	}
 	if err := iter.Err(); err != nil {
-		slog.Error("redis: OnlineNumbers scan failed", "err", err)
+		slog.ErrorContext(ctx, "redis: OnlineNumbers scan failed", "err", err)
 	}
 	return numbers
 }
@@ -127,7 +127,7 @@ func (s *DeviceState) AllDeviceInfo(ctx context.Context, number string) []Device
 	setKey := lineDevicesPrefix + number
 	hwIDs, err := s.client.SMembers(ctx, setKey).Result()
 	if err != nil {
-		slog.Error("redis: AllDeviceInfo SMembers failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: AllDeviceInfo SMembers failed", "number", number, "err", err)
 		return nil
 	}
 	if len(hwIDs) == 0 {
@@ -140,7 +140,7 @@ func (s *DeviceState) AllDeviceInfo(ctx context.Context, number string) []Device
 		cmds[i] = pipe.HGetAll(ctx, deviceKeyPrefix+hwID)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: AllDeviceInfo pipeline failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: AllDeviceInfo pipeline failed", "number", number, "err", err)
 		return nil
 	}
 
@@ -169,7 +169,7 @@ func (s *DeviceState) AllDeviceInfo(ctx context.Context, number string) []Device
 			staleIfaces[i] = id
 		}
 		if err := s.client.SRem(ctx, setKey, staleIfaces...).Err(); err != nil {
-			slog.Error("redis: AllDeviceInfo stale cleanup failed", "number", number, "err", err)
+			slog.ErrorContext(ctx, "redis: AllDeviceInfo stale cleanup failed", "number", number, "err", err)
 		}
 	}
 
@@ -204,7 +204,7 @@ func (s *DeviceState) UpdateDeviceInfo(ctx context.Context, hardwareID string, p
 	fields["dev_mode"] = p.DevMode
 
 	if err := s.client.HSet(ctx, key, fields).Err(); err != nil {
-		slog.Error("redis: UpdateDeviceInfo failed", "hardware_id", hardwareID, "err", err)
+		slog.ErrorContext(ctx, "redis: UpdateDeviceInfo failed", "hardware_id", hardwareID, "err", err)
 	}
 }
 
@@ -222,7 +222,7 @@ func (s *DeviceState) TouchLastSeen(ctx context.Context, number, hardwareID stri
 		pipe.Expire(ctx, lineDevicesPrefix+number, deviceTTL)
 	}
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: TouchLastSeen failed", "hardware_id", hardwareID, "err", err)
+		slog.ErrorContext(ctx, "redis: TouchLastSeen failed", "hardware_id", hardwareID, "err", err)
 	}
 }
 
@@ -231,7 +231,7 @@ func (s *DeviceState) LastSeenAt(ctx context.Context, number string) *time.Time 
 	hwIDs, err := s.client.SMembers(ctx, setKey).Result()
 	if err != nil || len(hwIDs) == 0 {
 		if err != nil {
-			slog.Error("redis: LastSeenAt SMembers failed", "number", number, "err", err)
+			slog.ErrorContext(ctx, "redis: LastSeenAt SMembers failed", "number", number, "err", err)
 		}
 		return nil
 	}
@@ -242,7 +242,7 @@ func (s *DeviceState) LastSeenAt(ctx context.Context, number string) *time.Time 
 		cmds[i] = pipe.HGet(ctx, deviceKeyPrefix+hwID, "last_seen")
 	}
 	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
-		slog.Error("redis: LastSeenAt pipeline failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: LastSeenAt pipeline failed", "number", number, "err", err)
 		return nil
 	}
 
@@ -281,7 +281,7 @@ func (s *DeviceState) SetUpdateStatus(ctx context.Context, number, status, detai
 	pipe.HSet(ctx, key, fields)
 	pipe.Expire(ctx, key, updateStatusTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.Error("redis: SetUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: SetUpdateStatus failed", "number", number, "err", err)
 	}
 }
 
@@ -289,7 +289,7 @@ func (s *DeviceState) GetUpdateStatus(ctx context.Context, number string) *Updat
 	key := updateStatusPrefix + number
 	vals, err := s.client.HGetAll(ctx, key).Result()
 	if err != nil {
-		slog.Error("redis: GetUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: GetUpdateStatus failed", "number", number, "err", err)
 		return nil
 	}
 	if len(vals) == 0 {
@@ -313,7 +313,7 @@ func (s *DeviceState) GetUpdateStatus(ctx context.Context, number string) *Updat
 func (s *DeviceState) ClearUpdateStatus(ctx context.Context, number string) {
 	key := updateStatusPrefix + number
 	if err := s.client.Del(ctx, key).Err(); err != nil {
-		slog.Error("redis: ClearUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: ClearUpdateStatus failed", "number", number, "err", err)
 	}
 }
 

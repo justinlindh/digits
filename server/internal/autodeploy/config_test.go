@@ -110,6 +110,9 @@ ALERT_TO=alert@example
 }
 
 func TestLoadConfigOptionalTokenFileUnreadable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root bypasses file permissions")
+	}
 	// A file that exists but cannot be read (permission denied, etc) is a
 	// real config problem, not an "optional unset" — must still error.
 	dir := t.TempDir()
