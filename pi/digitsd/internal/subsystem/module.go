@@ -54,10 +54,6 @@ func IsReady(m Module) bool {
 	return m.Status().State == StateReady
 }
 
-type HealthChecker interface {
-	HealthCheck() error
-}
-
 type Registration struct {
 	Module   Module
 	Deps     []string
