@@ -16,16 +16,16 @@ const (
 	DefaultSkipAutoUpdatePath = "/data/digits/skip-auto-update"
 )
 
-// FlagSet reports whether a flag file exists at path.
-func FlagSet(path string) bool {
+// flagSet reports whether a flag file exists at path.
+func flagSet(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
-// SetFlag creates or removes a flag file. When set is true the file is
+// setFlag creates or removes a flag file. When set is true the file is
 // created (parent dirs included); when false the file is removed. Removing
 // a file that does not exist is not an error.
-func SetFlag(path string, set bool) error {
+func setFlag(path string, set bool) error {
 	if set {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			return err
@@ -39,12 +39,14 @@ func SetFlag(path string, set bool) error {
 	return err
 }
 
-// Convenience aliases -- keep call sites readable and grep-friendly.
+// Public API -- each flag gets its own named accessor so call sites are
+// grep-friendly. The underlying check is identical (presence of a flat file
+// at the given path).
 
-func Enabled(path string) bool                    { return FlagSet(path) }
-func Enable(path string) error                    { return SetFlag(path, true) }
-func Disable(path string) error                   { return SetFlag(path, false) }
-func SkipFWReflash(path string) bool              { return FlagSet(path) }
-func SetSkipFWReflash(path string, skip bool) error  { return SetFlag(path, skip) }
-func SkipAutoUpdate(path string) bool             { return FlagSet(path) }
-func SetSkipAutoUpdate(path string, skip bool) error { return SetFlag(path, skip) }
+func Enabled(path string) bool                       { return flagSet(path) }
+func Enable(path string) error                       { return setFlag(path, true) }
+func Disable(path string) error                      { return setFlag(path, false) }
+func SkipFWReflash(path string) bool                 { return flagSet(path) }
+func SetSkipFWReflash(path string, skip bool) error  { return setFlag(path, skip) }
+func SkipAutoUpdate(path string) bool                { return flagSet(path) }
+func SetSkipAutoUpdate(path string, skip bool) error { return setFlag(path, skip) }
