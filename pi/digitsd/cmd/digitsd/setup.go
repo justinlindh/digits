@@ -56,9 +56,8 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		})
 	}
 
-	scanner := &wifi.SystemScanner{}
 	mux.HandleFunc("/api/networks", func(w http.ResponseWriter, r *http.Request) {
-		networks, err := scanner.Scan()
+		networks, err := wifi.Scan()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

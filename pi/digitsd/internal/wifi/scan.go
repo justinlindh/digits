@@ -14,15 +14,8 @@ type Network struct {
 	Signal int    `json:"signal"` // dBm
 }
 
-// Scanner discovers nearby Wi-Fi networks.
-type Scanner interface {
-	Scan() ([]Network, error)
-}
-
-// SystemScanner uses `iw dev wlan0 scan` on the host.
-type SystemScanner struct{}
-
-func (s *SystemScanner) Scan() ([]Network, error) {
+// Scan discovers nearby Wi-Fi networks via `iw dev wlan0 scan` on the host.
+func Scan() ([]Network, error) {
 	cmd := exec.Command("iw", "dev", "wlan0", "scan", "-u")
 	out, err := cmd.Output()
 	if err != nil {
