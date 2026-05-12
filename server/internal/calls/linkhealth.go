@@ -492,7 +492,7 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 			continue
 		}
 		if err := s.flushSession(ctx, k, sr); err != nil {
-			slog.Error("link-health flush failed", "session_key", k, "err", err)
+			slog.ErrorContext(ctx, "link-health flush failed", "session_key", k, "err", err)
 			errs = append(errs, fmt.Errorf("session %v: %w", k, err))
 		}
 	}

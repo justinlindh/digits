@@ -113,7 +113,7 @@ func (g *GitHubReleases) SetIndex(idx *ReleaseIndex) {
 func (g *GitHubReleases) refresh(ctx context.Context) {
 	idx, err := g.fetch(ctx)
 	if err != nil {
-		slog.Error("failed to fetch GitHub releases", "error", err)
+		slog.ErrorContext(ctx, "failed to fetch GitHub releases", "error", err)
 		return
 	}
 	g.SetIndex(idx)
@@ -369,7 +369,6 @@ func (g *GitHubReleases) ServeAudio() http.HandlerFunc {
 		_, _ = io.Copy(w, resp.Body)
 	}
 }
-
 
 // findAudioAsset returns the download URL of the first release-notes mp3
 // asset, or "" if none is attached.

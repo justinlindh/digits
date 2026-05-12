@@ -369,16 +369,20 @@ func ensureDeviceWithName(ctx context.Context, db *sql.DB, lineStore *line.Store
 		return
 	}
 	var exists bool
-	_ = db.QueryRowContext(ctx,
+	if err := db.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM devices WHERE hardware_id = $1)`,
 		hardwareID,
-	).Scan(&exists)
+	).Scan(&exists); err != nil {
+		log.Printf("ensureDevice: existence check for %s: %v", hardwareID, err)
+		return
+	}
 	if exists {
-		// Update name if it changed
-		_, _ = db.ExecContext(ctx,
+		if _, err := db.ExecContext(ctx,
 			`UPDATE devices SET name = $1 WHERE hardware_id = $2`,
 			deviceName, hardwareID,
-		)
+		); err != nil {
+			log.Printf("ensureDevice: update name for %s: %v", hardwareID, err)
+		}
 		return
 	}
 	_, err = db.ExecContext(ctx,
