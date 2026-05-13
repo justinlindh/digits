@@ -132,7 +132,10 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 	if link.HouseholdBID != nil {
 		bID = *link.HouseholdBID
 	}
-	conflicts, _ := h.linkStore.FindNumberConflicts(r.Context(), link.HouseholdAID, bID)
+	conflicts, err := h.linkStore.FindNumberConflicts(r.Context(), link.HouseholdAID, bID)
+	if err != nil {
+		slog.WarnContext(r.Context(), "find number conflicts failed", "err", err)
+	}
 	if len(conflicts) > 0 {
 		var names []string
 		for _, c := range conflicts {
