@@ -3,7 +3,7 @@ package subsystem
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -68,7 +68,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		}
 	}
 
-	m.logSummary()
+	m.logSummary(ctx)
 	return nil
 }
 
@@ -101,16 +101,16 @@ func (m *Manager) runLayer(ctx context.Context, layer []Registration) error {
 			msg := res.err.Error()
 			m.setStateDetails(name, StateFailed, msg, res.dur)
 			if res.reg.Required {
-				log.Printf("subsystem: module %s failed: %v", name, res.err)
+				slog.ErrorContext(ctx, "subsystem: module failed", "module", name, "err", res.err)
 				if firstRequiredErr == nil {
 					firstRequiredErr = fmt.Errorf("required module %s failed: %w", name, res.err)
 				}
 			} else {
-				log.Printf("subsystem: module %s failed (optional, continuing): %v", name, res.err)
+				slog.WarnContext(ctx, "subsystem: module failed (optional, continuing)", "module", name, "err", res.err)
 			}
 		} else {
 			m.setStateDetails(name, StateReady, "", res.dur)
-			log.Printf("subsystem: module %s ready (%s)", name, res.dur.Round(time.Millisecond))
+			slog.InfoContext(ctx, "subsystem: module ready", "module", name, "duration", res.dur.Round(time.Millisecond))
 		}
 	}
 
@@ -135,7 +135,7 @@ func (m *Manager) Shutdown(ctx context.Context) {
 			go func() {
 				defer wg.Done()
 				if err := r.Module.Shutdown(ctx); err != nil {
-					log.Printf("subsystem: module %s shutdown error: %v", r.Module.Name(), err)
+					slog.ErrorContext(ctx, "subsystem: module shutdown error", "module", r.Module.Name(), "err", err)
 				}
 			}()
 		}
@@ -174,7 +174,7 @@ func (m *Manager) setStateDetails(name string, state State, msg string, dur time
 	}
 }
 
-func (m *Manager) logSummary() {
+func (m *Manager) logSummary(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -191,7 +191,7 @@ func (m *Manager) logSummary() {
 			degraded++
 		}
 	}
-	log.Printf("subsystem: init complete: %d/%d ready, %d degraded", ready, total, degraded)
+	slog.InfoContext(ctx, "subsystem: init complete", "ready", ready, "total", total, "degraded", degraded)
 }
 
 // topoLayers sorts regs into dependency-ordered layers using Kahn's algorithm.
