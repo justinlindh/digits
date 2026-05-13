@@ -28,11 +28,11 @@ const (
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
 	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
-	TypeCallReturn       = "call_return"        // Phone → Server: request last inbound caller
-	TypeCallReturnResult = "call_return_result" // Server → Phone: last inbound caller number
-	TypeCallReturnRetry  = "call_return_retry"  // Phone → Server: register busy-retry for *69
-	TypeCallReturnRing   = "call_return_ring"   // Server → Phone: target is free, ring with distinctive pattern
-	TypeCallReturnCancel = "call_return_cancel" // Phone → Server: cancel pending retry (*89)
+	TypeCallReturn          = "call_return"           // Phone → Server: request last inbound caller
+	TypeCallReturnResult    = "call_return_result"    // Server → Phone: last inbound caller number
+	TypeCallReturnRetry     = "call_return_retry"     // Phone → Server: register busy-retry for *69
+	TypeCallReturnRing      = "call_return_ring"      // Server → Phone: target is free, ring with distinctive pattern
+	TypeCallReturnCancel    = "call_return_cancel"    // Phone → Server: cancel pending retry (*89)
 	TypeCallReturnCancelled = "call_return_cancelled" // Server → Phone: confirm cancellation
 
 	TypeReleaseAvailable = "release_available" // Server → All: new release detected

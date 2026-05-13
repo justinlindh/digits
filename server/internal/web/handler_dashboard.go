@@ -142,7 +142,10 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	var callsTodayRecent []callRow
 	var callsTodayTotalSec int
 	if callHistoryEnabled && len(ownNumbers) > 0 {
-		recent, _ := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
+		recent, err := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
+		if err != nil {
+			slog.WarnContext(ctx, "dashboard: recent calls lookup failed", "err", err)
+		}
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		for _, c := range recent {
 			if !c.StartedAt.After(today) {
