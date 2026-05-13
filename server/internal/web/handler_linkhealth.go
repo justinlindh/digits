@@ -402,5 +402,3 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte("{}"))
 }
-
-// userDisplayLabel returns the preferred name for an audit/display context:
