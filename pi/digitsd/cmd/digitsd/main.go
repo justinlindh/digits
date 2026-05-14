@@ -1934,12 +1934,25 @@ func (d *daemonCallbacks) HangupCall() {
 	// Finalize any active voicemail recording so a hangup (local, remote,
 	// or driven by VoicemailRecordEnded) never leaves an orphan .tmp file.
 	// recorderMu is independent of d.mu, so no deadlock with the FSM lock.
+	//
+	// finalizedVoicemail captures whether we actually advanced the unheard
+	// count. On the caller-hangup-during-recording path the controller has
+	// already issued LED:OFF before HangupCall ran; the wrapper resolved
+	// that against the count from BEFORE this message was finalized, so
+	// the LED would stay off. We re-emit the LED state below (after the
+	// lock is released) when this flag is set so a freshly recorded
+	// message lights the indicator immediately. The at-cap path
+	// (VoicemailRecordEnded) already cleared d.recorder before invoking
+	// HangupCall, so this flag stays false there and the explicit
+	// evaluateLED in VoicemailRecordEnded is what fires.
+	var finalizedVoicemail bool
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if _, err := d.recorder.Finalize(); err != nil {
 			slog.Error("hangup: voicemail finalize failed", "error", err)
 		}
 		d.recorder = nil
+		finalizedVoicemail = true
 	}
 	d.recorderMu.Unlock()
 
@@ -2011,6 +2024,16 @@ func (d *daemonCallbacks) HangupCall() {
 
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+
+	if finalizedVoicemail {
+		// A caller-hung-up-mid-recording finalize just bumped the unheard
+		// count. The controller's SendLED("OFF") already ran before this
+		// HangupCall, against the pre-finalize count. Re-emit so the
+		// indicator catches up. Targeted: non-voicemail hangups leave the
+		// LED state untouched here so the off-hook treatment (remote
+		// hangup, line lockout) keeps its existing visuals.
+		d.evaluateLED()
+	}
 
 	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: call ended, running deferred update")
