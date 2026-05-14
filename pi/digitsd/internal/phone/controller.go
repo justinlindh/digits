@@ -86,7 +86,7 @@ type Callbacks interface {
 	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
 	VoicemailRecordGreeting()                                     // *97: user is recording their custom outgoing greeting
 	VoicemailRecordGreetingKey(digit string)                      // DTMF key during *97 recording (e.g. "#" to finish)
-	VoicemailDeleteGreeting()                                     // *970: clear the custom greeting and revert to default
+	VoicemailDeleteGreeting()                                     // *99: clear the custom greeting and revert to default
 }
 
 // ContactChecker determines whether a number is in the local contact list.
