@@ -128,6 +128,10 @@ func (s *Store) listLocked() ([]Message, error) {
 			continue
 		}
 		framesPath := filepath.Join(s.dir, name)
+		// Finalize renames .frames before acquiring s.mu to write .meta, so a
+		// List() racing that gap sees a present .frames with no .meta yet.
+		// Tolerate that here: missing meta yields a zero-value record and the
+		// ID-based RecordedAt fallback below.
 		meta, err := s.readMeta(id)
 		if err != nil {
 			slog.Warn("voicemail: meta read failed", "id", id, "error", err)
@@ -298,7 +302,7 @@ func (r *Recorder) Finalize() (Message, error) {
 	}
 
 	duration := time.Duration(r.frames) * opusFrameMs * time.Millisecond
-	recordedAt := r.store.opts.Now()
+	recordedAt := time.UnixMilli(r.id)
 	meta := metaFile{
 		Heard:      false,
 		DurationMs: duration.Milliseconds(),
@@ -412,7 +416,22 @@ func (s *Store) writeMeta(id int64, m metaFile) error {
 		return err
 	}
 	tmp := s.metaPath(id) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, s.metaPath(id))
