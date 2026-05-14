@@ -53,7 +53,7 @@ func TestRecordAndPlayRoundTrip(t *testing.T) {
 		t.Errorf("duration = %v, want 60ms", m.Duration)
 	}
 
-	p, err := s.Open(m.ID)
+	p, err := s.OpenPlayer(m.ID)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestPlayerHandlesTruncatedTrailer(t *testing.T) {
 	}
 	f.Close() //nolint:errcheck
 
-	p, err := s.Open(m.ID)
+	p, err := s.OpenPlayer(m.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

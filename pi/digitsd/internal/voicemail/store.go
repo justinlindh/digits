@@ -346,8 +346,8 @@ type Player struct {
 	file *os.File
 }
 
-// Open returns a Player for the given message ID.
-func (s *Store) Open(id int64) (*Player, error) {
+// OpenPlayer returns a Player for the given message ID.
+func (s *Store) OpenPlayer(id int64) (*Player, error) {
 	path := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
 	f, err := os.Open(path)
 	if err != nil {
