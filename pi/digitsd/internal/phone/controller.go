@@ -234,7 +234,8 @@ func (c *Controller) State() State {
 func (c *Controller) IsCallActive() bool {
 	switch c.State() {
 	case StateCALLING, StateRINGING, StateCONNECTED,
-		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING,
+		StateVOICEMAIL_RECORD_GREETING:
 		return true
 	default:
 		return false

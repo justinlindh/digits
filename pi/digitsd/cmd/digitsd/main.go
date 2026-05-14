@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -859,22 +860,12 @@ func (d *daemonCallbacks) VoicemailDeleteGreeting() {
 	}
 }
 
-// hasCustomGreeting reports whether the user has recorded a custom outgoing
-// greeting on this phone. False also when the voicemail store hasn't been
-// opened (voicemail disabled at startup).
-func (d *daemonCallbacks) hasCustomGreeting() bool {
-	if d.voicemailStore == nil {
-		return false
-	}
-	return d.voicemailStore.HasGreeting()
-}
-
 // playVoicemailGreeting blocks the caller goroutine until the outgoing
-// greeting has finished playing. Dispatches to the user's recorded greeting
-// when one exists, falls back to the embedded default WAV otherwise.
+// greeting has finished playing. Tries the user's recorded greeting first;
+// falls back to the embedded default WAV on os.ErrNotExist (no custom
+// recorded) or any decode error.
 func (d *daemonCallbacks) playVoicemailGreeting(pipeline *audio.Pipeline) {
-	if d.hasCustomGreeting() {
-		d.playCustomGreeting(pipeline)
+	if d.playCustomGreeting(pipeline) {
 		return
 	}
 	d.playDefaultGreeting(pipeline)
@@ -886,9 +877,7 @@ func (d *daemonCallbacks) playVoicemailGreeting(pipeline *audio.Pipeline) {
 // a warning and returns immediately so the auto-answer path still proceeds
 // to the beep + recording.
 func (d *daemonCallbacks) playDefaultGreeting(pipeline *audio.Pipeline) {
-	d.mu.Lock()
 	samples := d.mixer.ToneSamples("voicemail_greeting")
-	d.mu.Unlock()
 	if samples == nil {
 		slog.Warn("voicemail: default greeting tone not loaded, skipping")
 		return
@@ -897,39 +886,40 @@ func (d *daemonCallbacks) playDefaultGreeting(pipeline *audio.Pipeline) {
 	// Pipeline drains the buffer at 48kHz regardless of the WAV's authored
 	// sample rate. Sleep matches that drain so the subsequent beep doesn't
 	// step on the greeting tail.
-	durationMs := len(samples) * 1000 / 48000
-	time.Sleep(time.Duration(durationMs)*time.Millisecond + 100*time.Millisecond)
+	time.Sleep(greetingPlaybackDuration(len(samples)))
 }
 
 // playCustomGreeting opens the user's recorded greeting, decodes every Opus
 // frame into a flat PCM buffer, injects it into the pipeline's beep slot, and
-// sleeps for the playback duration. Falls back to the default greeting on any
-// error (open failure, decoder init failure, empty buffer).
-func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) {
+// sleeps for the playback duration. Returns true when a custom greeting played
+// to completion; false on no-greeting (caller should fall back to default),
+// decoder init failure, or empty buffer.
+func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
 	d.mu.Lock()
 	store := d.voicemailStore
 	d.mu.Unlock()
 	if store == nil {
-		return
+		return false
 	}
 
 	player, err := store.OpenGreeting()
 	if err != nil {
-		slog.Warn("voicemail: failed to open custom greeting, falling back to default", "error", err)
-		d.playDefaultGreeting(pipeline)
-		return
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("voicemail: failed to open custom greeting, falling back to default", "error", err)
+		}
+		return false
 	}
 	defer player.Close() //nolint:errcheck
 
 	dec, err := codec.NewDecoder(48000, 1)
 	if err != nil {
 		slog.Error("voicemail: decoder for greeting failed", "error", err)
-		return
+		return false
 	}
 
-	// Decode every frame into a single PCM buffer. Decode returns a slice
-	// of the decoder's internal buffer, valid only until the next Decode
-	// call, so each frame is copied before appending.
+	// Decode every frame into a single PCM buffer. append copies pcm into
+	// allSamples' backing array, so the decoder's internal buffer (valid
+	// only until the next Decode call) is consumed safely each iteration.
 	var allSamples []int16
 	for {
 		frame, err := player.NextFrame()
@@ -941,20 +931,28 @@ func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) {
 			slog.Warn("voicemail: greeting decode error", "error", err)
 			continue
 		}
-		samples := make([]int16, len(pcm))
-		copy(samples, pcm)
-		allSamples = append(allSamples, samples...)
+		allSamples = append(allSamples, pcm...)
 	}
 
 	if len(allSamples) == 0 {
 		slog.Warn("voicemail: custom greeting is empty, falling back to default")
-		d.playDefaultGreeting(pipeline)
-		return
+		return false
 	}
 
 	pipeline.PlayGreetingSamples(allSamples)
-	durationMs := len(allSamples) * 1000 / 48000
-	time.Sleep(time.Duration(durationMs)*time.Millisecond + 100*time.Millisecond)
+	time.Sleep(greetingPlaybackDuration(len(allSamples)))
+	return true
+}
+
+// greetingPlaybackDuration returns how long the given PCM sample count will
+// take to drain through the 48 kHz pipeline, plus a 100ms tail so the next
+// stage (beep) does not step on the greeting end.
+func greetingPlaybackDuration(samples int) time.Duration {
+	const (
+		sampleRate = 48000
+		tail       = 100 * time.Millisecond
+	)
+	return time.Duration(samples)*time.Second/time.Duration(sampleRate) + tail
 }
 
 func (d *daemonCallbacks) AnswerCall() {
