@@ -221,6 +221,16 @@ func (m *Mixer) LoadTone(name string, samples []int16) {
 	m.tones[name] = samples
 }
 
+// ToneSamples returns the loaded PCM samples for a tone, or nil if the name
+// is not registered. The returned slice is the mixer's internal buffer; the
+// caller must not mutate it. Used by the voicemail greeting path to inject
+// the default greeting WAV into the outbound stream via the pipeline.
+func (m *Mixer) ToneSamples(name string) []int16 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tones[name]
+}
+
 // LoadTonesFromDir loads all .wav files from a directory into the mixer.
 // Reuses loadWAV from tones.go. Expects S16_LE mono 48kHz WAV files.
 func (m *Mixer) LoadTonesFromDir(dir string) error {

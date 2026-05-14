@@ -27,8 +27,9 @@ const (
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
-	StateVOICEMAIL_GREETING  State = "VOICEMAIL_GREETING"  // auto-answered; playing beep
-	StateVOICEMAIL_RECORDING State = "VOICEMAIL_RECORDING" // recording caller audio
+	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing beep
+	StateVOICEMAIL_RECORDING       State = "VOICEMAIL_RECORDING"       // recording caller audio
+	StateVOICEMAIL_RECORD_GREETING State = "VOICEMAIL_RECORD_GREETING" // user is recording their custom outgoing greeting (*97)
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -83,6 +84,9 @@ type Callbacks interface {
 	VoicemailPickup()                                     // User picked up during voicemail greeting/recording
 	VoicemailRecordEnded()                                // Recording completed or stopped
 	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
+	VoicemailRecordGreeting()                                     // *97: user is recording their custom outgoing greeting
+	VoicemailRecordGreetingKey(digit string)                      // DTMF key during *97 recording (e.g. "#" to finish)
+	VoicemailDeleteGreeting()                                     // *99: clear the custom greeting and revert to default
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -230,7 +234,8 @@ func (c *Controller) State() State {
 func (c *Controller) IsCallActive() bool {
 	switch c.State() {
 	case StateCALLING, StateRINGING, StateCONNECTED,
-		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING,
+		StateVOICEMAIL_RECORD_GREETING:
 		return true
 	default:
 		return false
@@ -374,8 +379,12 @@ func (c *Controller) onHookOn() {
 	if c.state == StateIDLE {
 		return
 	}
+	// Greeting record holds an open Recorder + audio pipeline on the daemon
+	// side; routing through HangupCall on hook-on is what gives the daemon
+	// the chance to finalize the partial greeting and stop the pipeline.
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING ||
-		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING
+		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING ||
+		c.state == StateVOICEMAIL_RECORD_GREETING
 	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
@@ -453,6 +462,29 @@ func (c *Controller) onKey(digit string) {
 			go c.cb.OnCallReturnCancel()
 			return
 		}
+		if c.digits == "*97" {
+			enabled, _ := c.cb.VoicemailEnabled()
+			if enabled {
+				slog.Info("phone: *97 detected, entering greeting record")
+				c.digits = ""
+				c.state = StateVOICEMAIL_RECORD_GREETING
+				go c.cb.VoicemailRecordGreeting()
+				return
+			}
+		}
+		if c.digits == "*99" {
+			enabled, _ := c.cb.VoicemailEnabled()
+			if enabled {
+				slog.Info("phone: *99 detected, deleting custom greeting")
+				c.digits = ""
+				c.state = StateDIALTONE
+				c.cb.SendTone(ToneDial)
+				go c.cb.VoicemailDeleteGreeting()
+				return
+			}
+		}
+	case StateVOICEMAIL_RECORD_GREETING:
+		go c.cb.VoicemailRecordGreetingKey(digit)
 	case StateCALL_RETURN:
 		if digit == "1" && c.callReturnNumber != "" {
 			number := c.callReturnNumber

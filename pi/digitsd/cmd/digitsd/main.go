@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/assets"
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
+	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
@@ -149,6 +151,14 @@ type daemonCallbacks struct {
 	recorder          *voicemail.Recorder
 	recorderMu        sync.Mutex
 	voicemailWebRTCCh chan []int16
+
+	// Greeting recording (separate from message recording above). Active
+	// only between *97 entry and either # / hook-on / max-duration. Lives
+	// under its own mutex so it doesn't contend with the message recorder
+	// path. The encoder is paired with the recorder: cleared together.
+	greetingRecorder   *voicemail.Recorder
+	greetingEncoder    *codec.Encoder
+	greetingRecorderMu sync.Mutex
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -381,9 +391,9 @@ func (d *daemonCallbacks) VoicemailPickup() {
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if msg, err := d.recorder.Finalize(); err != nil {
-			slog.Error("voicemail pickup: finalize failed", "error", err)
+			slog.Error("voicemail pickup: finalize failed", "peer", d.callPeer, "error", err)
 		} else if msg.ID != 0 {
-			slog.Info("voicemail pickup: saved partial recording", "id", msg.ID, "duration", msg.Duration)
+			slog.Info("voicemail pickup: saved partial recording", "peer", d.callPeer, "id", msg.ID, "duration", msg.Duration)
 		}
 		d.recorder = nil
 	}
@@ -400,6 +410,15 @@ func (d *daemonCallbacks) VoicemailPickup() {
 
 	d.mixer.ImportWebRTCSource(d.callPeer, d.voicemailWebRTCCh)
 	d.voicemailWebRTCCh = nil
+
+	// VoicemailAutoAnswer mutes the local mic just before transitioning into
+	// recording so the caller's outbound stream is DTX comfort noise instead
+	// of room audio. On pickup we are bridging back to a live two-way call,
+	// so the mute has to come back off or the caller can't hear the
+	// homeowner. Holding d.mu is safe; SetMuted is its own atomic.
+	if d.pipeline != nil {
+		d.pipeline.SetMuted(false)
+	}
 
 	slog.Info("voicemail pickup: bridged to live call", "peer", d.callPeer)
 }
@@ -423,18 +442,22 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Snapshot caller up front so the early-return logs and the OnRemoteTrack
+	// closure all carry the identifier.
+	caller := d.pendingCaller
+
 	if d.pendingOffer == "" {
-		slog.Warn("voicemail: no pending offer, aborting auto-answer")
+		slog.Warn("voicemail: no pending offer, aborting auto-answer", "caller", caller)
 		return
 	}
 	if d.voicemailStore == nil {
-		slog.Warn("voicemail: store not available, aborting auto-answer")
+		slog.Warn("voicemail: store not available, aborting auto-answer", "caller", caller)
 		return
 	}
 
+	t0 := time.Now()
 	d.mixer.StopTone()
 
-	caller := d.pendingCaller
 	offerSDP := d.pendingOffer
 	d.pendingOffer = ""
 	d.pendingCaller = ""
@@ -447,7 +470,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
-		slog.Error("voicemail: new peer manager failed", "error", err)
+		slog.Error("voicemail: new peer manager failed", "caller", caller, "error", err)
 		return
 	}
 
@@ -473,19 +496,19 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 			// still called to keep the Opus decoder's internal state in sync;
 			// raw payloads are NOT teed into the recorder yet because the
 			// recorder may not be open until BeginRecording returns below.
-			slog.Info("voicemail: remote track active, waiting for pipeline")
+			slog.Info("voicemail: remote track active, waiting for pipeline", "caller", caller)
 			var discarded int
 			for {
 				d.mu.Lock()
 				pip := d.pipeline
 				d.mu.Unlock()
 				if pip != nil {
-					slog.Info("voicemail: pipeline ready", "discarded", discarded)
+					slog.Info("voicemail: pipeline ready", "caller", caller, "discarded", discarded)
 					break
 				}
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Info("voicemail: remote track ended waiting for pipeline", "discarded", discarded)
+					slog.Info("voicemail: remote track ended waiting for pipeline", "caller", caller, "discarded", discarded)
 					return
 				}
 				vmPM.Decode(pkt.Payload) //nolint:errcheck
@@ -503,14 +526,14 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				pkt, _, err := track.ReadRTP()
 				readTime := time.Since(start)
 				if err != nil {
-					slog.Info("voicemail: remote track ended during drain")
+					slog.Info("voicemail: remote track ended during drain", "caller", caller)
 					return
 				}
 				vmPM.Decode(pkt.Payload) //nolint:errcheck
 				drained++
 				lastSeq = pkt.SequenceNumber
 				if readTime > 5*time.Millisecond {
-					slog.Info("voicemail: drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					slog.Info("voicemail: drain complete", "caller", caller, "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
 					break
 				}
 			}
@@ -522,13 +545,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Info("voicemail: remote track ended", "frames", frameCount)
+					slog.Info("voicemail: remote track ended", "caller", caller, "frames", frameCount)
 					return
 				}
 
 				pcm, decErr := vmPM.Decode(pkt.Payload)
 				if decErr != nil {
-					slog.Warn("voicemail: decode error", "error", decErr, "pkt_bytes", len(pkt.Payload))
+					slog.Warn("voicemail: decode error", "caller", caller, "error", decErr, "pkt_bytes", len(pkt.Payload))
 					continue
 				}
 
@@ -538,13 +561,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				if rec != nil {
 					atCap, err := rec.AppendFrame(pkt.Payload)
 					if err != nil {
-						slog.Warn("voicemail: append frame failed", "error", err)
+						slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
 					} else if atCap {
-						slog.Info("voicemail: max duration reached")
+						slog.Info("voicemail: max duration reached", "caller", caller)
 						d.recorderMu.Lock()
 						if d.recorder != nil {
 							if _, err := d.recorder.Finalize(); err != nil {
-								slog.Error("voicemail: finalize on cap failed", "error", err)
+								slog.Error("voicemail: finalize on cap failed", "caller", caller, "error", err)
 							}
 							d.recorder = nil
 						}
@@ -581,14 +604,14 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
 	if err != nil {
-		slog.Error("voicemail: accept offer failed", "error", err)
+		slog.Error("voicemail: accept offer failed", "caller", caller, "error", err)
 		close(sdpSent)
 		return
 	}
 
 	for _, candidate := range d.pendingICE {
 		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
-			slog.Warn("voicemail: add queued ICE candidate failed", "error", err)
+			slog.Warn("voicemail: add queued ICE candidate failed", "caller", caller, "error", err)
 		}
 	}
 	d.pendingICE = nil
@@ -602,7 +625,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
-		slog.Error("voicemail: begin recording failed", "error", err)
+		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
 		d.mu.Unlock()
 		d.ctrl.Reset()
 		d.HangupCall()
@@ -616,7 +639,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
-			slog.Error("voicemail: pipeline start failed", "error", err)
+			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
 			d.mu.Unlock()
 			d.ctrl.Reset()
 			d.HangupCall()
@@ -626,21 +649,27 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		d.startEncodeLoop()
 	}
 
-	// Beep playback runs off the main goroutine so the daemon stays
-	// responsive. After the beep, transition the controller into the
-	// recording state.
+	// Greeting + beep playback runs off the main goroutine so the daemon
+	// stays responsive. The flow: 500ms lead-in silence so the caller's
+	// audio path is up and decoded, then the greeting (custom .frames or
+	// the default WAV), then the 500ms beep, a 500ms tail before muting
+	// the local mic (so the caller's mic doesn't bleed into the outbound
+	// stream), then transition to recording.
 	pipeline := d.pipeline
 	ctrl := d.ctrl
 	go func() {
-		defer recoverGoroutine("voicemail-beep")
+		defer recoverGoroutine("voicemail-greeting")
 		time.Sleep(500 * time.Millisecond)
+		d.playVoicemailGreeting(pipeline)
 		pipeline.PlayGreetingBeep(500 * time.Millisecond)
 		time.Sleep(500 * time.Millisecond)
-		pipeline.SetMuted(true)
-		ctrl.SetVoicemailRecording()
+		if ctrl.State() == phone.StateVOICEMAIL_GREETING {
+			pipeline.SetMuted(true)
+			ctrl.SetVoicemailRecording()
+		}
 	}()
 
-	slog.Info("voicemail: auto-answered", "caller", caller)
+	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 }
 
 // VoicemailRecordEnded is invoked when the recorder finalizes itself (max
@@ -648,6 +677,12 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 // call. HangupCall handles any remaining recorder cleanup defensively, so a
 // late finalize during teardown is a no-op.
 func (d *daemonCallbacks) VoicemailRecordEnded() {
+	// d.callPeer is still set here; HangupCall (called below) is what clears it.
+	d.mu.Lock()
+	peer := d.callPeer
+	d.mu.Unlock()
+	slog.Info("voicemail: recording ended", "peer", peer)
+
 	d.ctrl.Reset()
 	d.HangupCall()
 }
@@ -657,6 +692,269 @@ func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
 		return false, 0
 	}
 	return d.cfg.Voicemail.Enabled, d.cfg.Voicemail.RingTimeout
+}
+
+// VoicemailRecordGreeting is invoked by the controller when the user dials
+// *97 to record a custom outgoing greeting. It brings up the audio pipeline
+// (without a WebRTC peer; mic capture only), plays a short prompt beep,
+// opens a greeting recorder, and starts a goroutine that encodes mic frames
+// to Opus and appends them. Recording ends on # (VoicemailRecordGreetingKey),
+// hook-on (HangupCall path), or duration cap (atCap branch in the loop).
+//
+// On any error before the recording goroutine starts, the FSM is reset to
+// DIALTONE with dial tone re-armed so the user lands somewhere coherent.
+func (d *daemonCallbacks) VoicemailRecordGreeting() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	if store == nil {
+		slog.Warn("voicemail: store not available for greeting record")
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	d.mu.Lock()
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("voicemail: greeting pipeline start failed", "error", err)
+			d.pipeline = nil
+			d.mu.Unlock()
+			d.ctrl.ResetToDialtone()
+			d.SendTone(phone.ToneDial)
+			return
+		}
+	}
+	pipeline := d.pipeline
+	d.mu.Unlock()
+
+	rec, err := store.BeginGreetingRecording()
+	if err != nil {
+		slog.Error("voicemail: begin greeting recording failed", "error", err)
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	enc, err := codec.NewEncoder(48000, 1, 24000)
+	if err != nil {
+		slog.Error("voicemail: greeting encoder failed", "error", err)
+		rec.Discard()
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	d.greetingRecorderMu.Lock()
+	d.greetingRecorder = rec
+	d.greetingEncoder = enc
+	d.greetingRecorderMu.Unlock()
+
+	// Prompt beep so the user knows the recorder is hot. 400ms tail keeps
+	// the beep out of the recording itself.
+	pipeline.PlayGreetingBeep(300 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
+
+	slog.Info("voicemail: recording custom greeting")
+
+	// Mic -> Opus -> Recorder loop. Exits when the recorder/encoder pair is
+	// cleared (finalize, hangup) or the pipeline's OutFrames channel closes.
+	go func() {
+		defer recoverGoroutine("greeting-record")
+		slog.Info("voicemail: greeting record started")
+		for frame := range pipeline.OutFrames() {
+			d.greetingRecorderMu.Lock()
+			rec := d.greetingRecorder
+			enc := d.greetingEncoder
+			d.greetingRecorderMu.Unlock()
+			if rec == nil || enc == nil {
+				return
+			}
+
+			payload, err := enc.Encode(frame)
+			if err != nil {
+				slog.Warn("voicemail: greeting encode error", "error", err)
+				continue
+			}
+
+			atCap, err := rec.AppendFrame(payload)
+			if err != nil {
+				slog.Warn("voicemail: greeting append failed", "error", err)
+				continue
+			}
+			if atCap {
+				slog.Info("voicemail: greeting max duration reached")
+				d.finalizeGreetingRecording()
+				return
+			}
+		}
+	}()
+}
+
+// finalizeGreetingRecording closes the active greeting recorder, stops the
+// audio pipeline (no live call to keep it open), resets the FSM to DIALTONE,
+// and re-arms dial tone. Idempotent: safe to call from any of the three
+// terminator paths (#, hook-on, max-duration). The first caller wins; the
+// rest see a nil recorder and return early.
+func (d *daemonCallbacks) finalizeGreetingRecording() {
+	d.greetingRecorderMu.Lock()
+	rec := d.greetingRecorder
+	d.greetingRecorder = nil
+	d.greetingEncoder = nil
+	d.greetingRecorderMu.Unlock()
+
+	if rec == nil {
+		return
+	}
+
+	if _, err := rec.Finalize(); err != nil {
+		slog.Error("voicemail: greeting finalize failed", "error", err)
+	} else {
+		slog.Info("voicemail: custom greeting saved")
+	}
+
+	// Stop the pipeline asynchronously: pion's Stop can take a noticeable
+	// fraction of a second and there's no live call holding it open.
+	d.mu.Lock()
+	pipeline := d.pipeline
+	d.pipeline = nil
+	d.mu.Unlock()
+	if pipeline != nil {
+		go func() {
+			defer recoverGoroutine("greeting-pipeline-stop")
+			pipeline.Stop()
+		}()
+	}
+
+	d.ctrl.ResetToDialtone()
+	d.mixer.StopTone()
+	d.SendTone(phone.ToneDial)
+}
+
+// VoicemailRecordGreetingKey routes DTMF keys received while the FSM is in
+// VOICEMAIL_RECORD_GREETING. Only "#" terminates the session today; other
+// digits are ignored so a user typing into the recording doesn't accidentally
+// kill it.
+func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {
+	if digit == "#" {
+		d.finalizeGreetingRecording()
+	}
+}
+
+// VoicemailDeleteGreeting removes the on-disk custom greeting (if any). The
+// next voicemail auto-answer will fall back to the embedded default WAV.
+// Idempotent on missing file (Store.DeleteGreeting handles the not-exist case).
+func (d *daemonCallbacks) VoicemailDeleteGreeting() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	if store == nil {
+		return
+	}
+
+	if err := store.DeleteGreeting(); err != nil {
+		slog.Error("voicemail: delete greeting failed", "error", err)
+	} else {
+		slog.Info("voicemail: custom greeting deleted")
+	}
+}
+
+// playVoicemailGreeting blocks the caller goroutine until the outgoing
+// greeting has finished playing. Tries the user's recorded greeting first;
+// falls back to the embedded default WAV on os.ErrNotExist (no custom
+// recorded) or any decode error.
+func (d *daemonCallbacks) playVoicemailGreeting(pipeline *audio.Pipeline) {
+	if d.playCustomGreeting(pipeline) {
+		return
+	}
+	d.playDefaultGreeting(pipeline)
+}
+
+// playDefaultGreeting injects the embedded "voicemail_greeting" WAV samples
+// into the pipeline's beep slot and sleeps for the playback duration plus a
+// small tail. If the tone failed to load (e.g. asset missing on disk), logs
+// a warning and returns immediately so the auto-answer path still proceeds
+// to the beep + recording.
+func (d *daemonCallbacks) playDefaultGreeting(pipeline *audio.Pipeline) {
+	samples := d.mixer.ToneSamples("voicemail_greeting")
+	if samples == nil {
+		slog.Warn("voicemail: default greeting tone not loaded, skipping")
+		return
+	}
+	pipeline.PlayGreetingSamples(samples)
+	// Pipeline drains the buffer at 48kHz regardless of the WAV's authored
+	// sample rate. Sleep matches that drain so the subsequent beep doesn't
+	// step on the greeting tail.
+	time.Sleep(greetingPlaybackDuration(len(samples)))
+}
+
+// playCustomGreeting opens the user's recorded greeting, decodes every Opus
+// frame into a flat PCM buffer, injects it into the pipeline's beep slot, and
+// sleeps for the playback duration. Returns true when a custom greeting played
+// to completion; false on no-greeting (caller should fall back to default),
+// decoder init failure, or empty buffer.
+func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+	if store == nil {
+		return false
+	}
+
+	player, err := store.OpenGreeting()
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("voicemail: failed to open custom greeting, falling back to default", "error", err)
+		}
+		return false
+	}
+	defer player.Close() //nolint:errcheck
+
+	dec, err := codec.NewDecoder(48000, 1)
+	if err != nil {
+		slog.Error("voicemail: decoder for greeting failed", "error", err)
+		return false
+	}
+
+	// Decode every frame into a single PCM buffer. append copies pcm into
+	// allSamples' backing array, so the decoder's internal buffer (valid
+	// only until the next Decode call) is consumed safely each iteration.
+	var allSamples []int16
+	for {
+		frame, err := player.NextFrame()
+		if err != nil {
+			break
+		}
+		pcm, err := dec.Decode(frame)
+		if err != nil {
+			slog.Warn("voicemail: greeting decode error", "error", err)
+			continue
+		}
+		allSamples = append(allSamples, pcm...)
+	}
+
+	if len(allSamples) == 0 {
+		slog.Warn("voicemail: custom greeting is empty, falling back to default")
+		return false
+	}
+
+	pipeline.PlayGreetingSamples(allSamples)
+	time.Sleep(greetingPlaybackDuration(len(allSamples)))
+	return true
+}
+
+// greetingPlaybackDuration returns how long the given PCM sample count will
+// take to drain through the 48 kHz pipeline, plus a 100ms tail so the next
+// stage (beep) does not step on the greeting end.
+func greetingPlaybackDuration(samples int) time.Duration {
+	const (
+		sampleRate = 48000
+		tail       = 100 * time.Millisecond
+	)
+	return time.Duration(samples)*time.Second/time.Duration(sampleRate) + tail
 }
 
 func (d *daemonCallbacks) AnswerCall() {
@@ -1168,6 +1466,21 @@ func (d *daemonCallbacks) HangupCall() {
 		d.recorder = nil
 	}
 	d.recorderMu.Unlock()
+
+	// Finalize any active custom-greeting recording. Hangup during *97
+	// preserves what the user spoke up to that point (answering-machine
+	// convention). The encoder is paired with the recorder; clear both.
+	// finalizeGreetingRecording may have already run via the # path, in
+	// which case greetingRecorder is nil and this block no-ops.
+	d.greetingRecorderMu.Lock()
+	if d.greetingRecorder != nil {
+		if _, err := d.greetingRecorder.Finalize(); err != nil {
+			slog.Error("hangup: greeting finalize failed", "error", err)
+		}
+		d.greetingRecorder = nil
+		d.greetingEncoder = nil
+	}
+	d.greetingRecorderMu.Unlock()
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.

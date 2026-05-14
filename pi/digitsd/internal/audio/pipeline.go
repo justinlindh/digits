@@ -156,6 +156,21 @@ func (p *Pipeline) PlayGreetingBeep(d time.Duration) {
 	p.beepBuf.Store(&buf)
 }
 
+// PlayGreetingSamples arms a pre-computed PCM buffer for injection into the
+// capture loop. The buffer replaces real mic frames for its duration so the
+// caller hears it in the outbound stream. Reuses the beep injection slot;
+// calling this while a beep or prior greeting is still draining replaces it.
+// A zero-length buffer is a no-op.
+func (p *Pipeline) PlayGreetingSamples(samples []int16) {
+	if len(samples) == 0 {
+		return
+	}
+	buf := make([]int16, len(samples))
+	copy(buf, samples)
+	p.beepPos.Store(0)
+	p.beepBuf.Store(&buf)
+}
+
 // nextBeepFrame returns the next frame of beep audio, or nil if no beep is
 // active. The returned slice is always frameSize samples long (zero-padded at
 // the end of the buffer).

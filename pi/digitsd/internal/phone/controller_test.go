@@ -35,10 +35,13 @@ type mockCallbacks struct {
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 	initiateCallErr    error             // injected error for InitiateCall
-	voicemailAutoAnswers int
-	voicemailPickups     int
-	voicemailRecordEnded int
-	voicemailEnabled     func() (bool, time.Duration) // nil = (false, 0)
+	voicemailAutoAnswers     int
+	voicemailPickups         int
+	voicemailRecordEnded     int
+	voicemailEnabled         func() (bool, time.Duration) // nil = (false, 0)
+	voicemailRecordGreetings int
+	voicemailRecordKeys      []string
+	voicemailDeleteGreetings int
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -170,6 +173,21 @@ func (m *mockCallbacks) VoicemailEnabled() (bool, time.Duration) {
 	}
 	return false, 0
 }
+func (m *mockCallbacks) VoicemailRecordGreeting() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailRecordGreetings++
+}
+func (m *mockCallbacks) VoicemailRecordGreetingKey(digit string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailRecordKeys = append(m.voicemailRecordKeys, digit)
+}
+func (m *mockCallbacks) VoicemailDeleteGreeting() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailDeleteGreetings++
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -237,6 +255,21 @@ func (m *mockCallbacks) VoicemailPickups() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.voicemailPickups
+}
+func (m *mockCallbacks) VoicemailRecordGreetings() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailRecordGreetings
+}
+func (m *mockCallbacks) VoicemailDeleteGreetings() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailDeleteGreetings
+}
+func (m *mockCallbacks) VoicemailRecordKeys() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.voicemailRecordKeys...)
 }
 
 // peerMuted returns whether the given peer is currently muted.
@@ -912,6 +945,9 @@ func TestIsCallActive(t *testing.T) {
 		{"connected", StateCONNECTED, true},
 		{"remote hangup", StateREMOTE_HANGUP, false},
 		{"offhook timeout", StateOFFHOOK_TIMEOUT, false},
+		{"voicemail greeting", StateVOICEMAIL_GREETING, true},
+		{"voicemail recording", StateVOICEMAIL_RECORDING, true},
+		{"voicemail record greeting", StateVOICEMAIL_RECORD_GREETING, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2069,5 +2105,124 @@ func TestController_SecondRingNewTimeout(t *testing.T) {
 	}
 	if c.State() != StateVOICEMAIL_GREETING {
 		t.Errorf("expected VOICEMAIL_GREETING, got %s", c.State())
+	}
+}
+
+// TestController_Star97EntersRecordGreeting verifies that dialing *97 from
+// DIALTONE enters StateVOICEMAIL_RECORD_GREETING and fires the
+// VoicemailRecordGreeting callback.
+func TestController_Star97EntersRecordGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:7")
+
+	if c.State() != StateVOICEMAIL_RECORD_GREETING {
+		t.Fatalf("expected VOICEMAIL_RECORD_GREETING, got %s", c.State())
+	}
+	// Callback fires from a goroutine; give it a moment.
+	for i := 0; i < 20; i++ {
+		if cb.VoicemailRecordGreetings() == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.VoicemailRecordGreetings() != 1 {
+		t.Errorf("expected 1 VoicemailRecordGreeting call, got %d", cb.VoicemailRecordGreetings())
+	}
+}
+
+// TestController_Star99DeletesGreeting verifies that dialing *99 from
+// DIALTONE returns to DIALTONE (with dial tone restored) and fires the
+// VoicemailDeleteGreeting callback. Delete uses *99 (not *970) because *97
+// would prefix-conflict with the record code, which fires immediately on the
+// third digit.
+func TestController_Star99DeletesGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:9")
+
+	if c.State() != StateDIALTONE {
+		t.Fatalf("expected DIALTONE after *99, got %s", c.State())
+	}
+	for i := 0; i < 20; i++ {
+		if cb.VoicemailDeleteGreetings() == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.VoicemailDeleteGreetings() != 1 {
+		t.Errorf("expected 1 VoicemailDeleteGreeting call, got %d", cb.VoicemailDeleteGreetings())
+	}
+}
+
+// TestController_HashFinishesGreetingRecord verifies that DTMF keys pressed
+// while in VOICEMAIL_RECORD_GREETING are forwarded to VoicemailRecordGreetingKey.
+// The "#" key in particular is the convention to end the recording, but the
+// FSM just forwards all digits and lets the daemon decide which one terminates.
+func TestController_HashFinishesGreetingRecord(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:7")
+
+	if c.State() != StateVOICEMAIL_RECORD_GREETING {
+		t.Fatalf("expected VOICEMAIL_RECORD_GREETING, got %s", c.State())
+	}
+
+	c.HandleEvent("KEY:#")
+	for i := 0; i < 20; i++ {
+		if len(cb.VoicemailRecordKeys()) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	keys := cb.VoicemailRecordKeys()
+	if len(keys) != 1 || keys[0] != "#" {
+		t.Errorf("expected VoicemailRecordGreetingKey(#), got %v", keys)
+	}
+}
+
+// TestController_HookOnDuringGreetingRecord verifies that hanging up while
+// recording the greeting returns the FSM to IDLE and calls HangupCall, which
+// the daemon side uses to finalize the partial greeting recording and stop
+// the audio pipeline.
+func TestController_HookOnDuringGreetingRecord(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:7")
+
+	c.HandleEvent("HOOK:ON")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after hook-on, got %s", c.State())
+	}
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall (so daemon can finalize partial greeting), got %d", cb.Hangups())
 	}
 }
