@@ -390,9 +390,9 @@ func (d *daemonCallbacks) VoicemailPickup() {
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if msg, err := d.recorder.Finalize(); err != nil {
-			slog.Error("voicemail pickup: finalize failed", "error", err)
+			slog.Error("voicemail pickup: finalize failed", "peer", d.callPeer, "error", err)
 		} else if msg.ID != 0 {
-			slog.Info("voicemail pickup: saved partial recording", "id", msg.ID, "duration", msg.Duration)
+			slog.Info("voicemail pickup: saved partial recording", "peer", d.callPeer, "id", msg.ID, "duration", msg.Duration)
 		}
 		d.recorder = nil
 	}
@@ -441,18 +441,22 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Snapshot caller up front so the early-return logs and the OnRemoteTrack
+	// closure all carry the identifier.
+	caller := d.pendingCaller
+
 	if d.pendingOffer == "" {
-		slog.Warn("voicemail: no pending offer, aborting auto-answer")
+		slog.Warn("voicemail: no pending offer, aborting auto-answer", "caller", caller)
 		return
 	}
 	if d.voicemailStore == nil {
-		slog.Warn("voicemail: store not available, aborting auto-answer")
+		slog.Warn("voicemail: store not available, aborting auto-answer", "caller", caller)
 		return
 	}
 
+	t0 := time.Now()
 	d.mixer.StopTone()
 
-	caller := d.pendingCaller
 	offerSDP := d.pendingOffer
 	d.pendingOffer = ""
 	d.pendingCaller = ""
@@ -465,7 +469,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
-		slog.Error("voicemail: new peer manager failed", "error", err)
+		slog.Error("voicemail: new peer manager failed", "caller", caller, "error", err)
 		return
 	}
 
@@ -491,19 +495,19 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 			// still called to keep the Opus decoder's internal state in sync;
 			// raw payloads are NOT teed into the recorder yet because the
 			// recorder may not be open until BeginRecording returns below.
-			slog.Info("voicemail: remote track active, waiting for pipeline")
+			slog.Info("voicemail: remote track active, waiting for pipeline", "caller", caller)
 			var discarded int
 			for {
 				d.mu.Lock()
 				pip := d.pipeline
 				d.mu.Unlock()
 				if pip != nil {
-					slog.Info("voicemail: pipeline ready", "discarded", discarded)
+					slog.Info("voicemail: pipeline ready", "caller", caller, "discarded", discarded)
 					break
 				}
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Info("voicemail: remote track ended waiting for pipeline", "discarded", discarded)
+					slog.Info("voicemail: remote track ended waiting for pipeline", "caller", caller, "discarded", discarded)
 					return
 				}
 				vmPM.Decode(pkt.Payload) //nolint:errcheck
@@ -521,14 +525,14 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				pkt, _, err := track.ReadRTP()
 				readTime := time.Since(start)
 				if err != nil {
-					slog.Info("voicemail: remote track ended during drain")
+					slog.Info("voicemail: remote track ended during drain", "caller", caller)
 					return
 				}
 				vmPM.Decode(pkt.Payload) //nolint:errcheck
 				drained++
 				lastSeq = pkt.SequenceNumber
 				if readTime > 5*time.Millisecond {
-					slog.Info("voicemail: drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					slog.Info("voicemail: drain complete", "caller", caller, "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
 					break
 				}
 			}
@@ -540,13 +544,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
-					slog.Info("voicemail: remote track ended", "frames", frameCount)
+					slog.Info("voicemail: remote track ended", "caller", caller, "frames", frameCount)
 					return
 				}
 
 				pcm, decErr := vmPM.Decode(pkt.Payload)
 				if decErr != nil {
-					slog.Warn("voicemail: decode error", "error", decErr, "pkt_bytes", len(pkt.Payload))
+					slog.Warn("voicemail: decode error", "caller", caller, "error", decErr, "pkt_bytes", len(pkt.Payload))
 					continue
 				}
 
@@ -556,13 +560,13 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				if rec != nil {
 					atCap, err := rec.AppendFrame(pkt.Payload)
 					if err != nil {
-						slog.Warn("voicemail: append frame failed", "error", err)
+						slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
 					} else if atCap {
-						slog.Info("voicemail: max duration reached")
+						slog.Info("voicemail: max duration reached", "caller", caller)
 						d.recorderMu.Lock()
 						if d.recorder != nil {
 							if _, err := d.recorder.Finalize(); err != nil {
-								slog.Error("voicemail: finalize on cap failed", "error", err)
+								slog.Error("voicemail: finalize on cap failed", "caller", caller, "error", err)
 							}
 							d.recorder = nil
 						}
@@ -599,14 +603,14 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
 	if err != nil {
-		slog.Error("voicemail: accept offer failed", "error", err)
+		slog.Error("voicemail: accept offer failed", "caller", caller, "error", err)
 		close(sdpSent)
 		return
 	}
 
 	for _, candidate := range d.pendingICE {
 		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
-			slog.Warn("voicemail: add queued ICE candidate failed", "error", err)
+			slog.Warn("voicemail: add queued ICE candidate failed", "caller", caller, "error", err)
 		}
 	}
 	d.pendingICE = nil
@@ -620,7 +624,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
-		slog.Error("voicemail: begin recording failed", "error", err)
+		slog.Error("voicemail: begin recording failed", "caller", caller, "error", err)
 		d.mu.Unlock()
 		d.ctrl.Reset()
 		d.HangupCall()
@@ -634,7 +638,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
-			slog.Error("voicemail: pipeline start failed", "error", err)
+			slog.Error("voicemail: pipeline start failed", "caller", caller, "error", err)
 			d.mu.Unlock()
 			d.ctrl.Reset()
 			d.HangupCall()
@@ -662,7 +666,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		ctrl.SetVoicemailRecording()
 	}()
 
-	slog.Info("voicemail: auto-answered", "caller", caller)
+	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 }
 
 // VoicemailRecordEnded is invoked when the recorder finalizes itself (max
@@ -670,6 +674,12 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 // call. HangupCall handles any remaining recorder cleanup defensively, so a
 // late finalize during teardown is a no-op.
 func (d *daemonCallbacks) VoicemailRecordEnded() {
+	// d.callPeer is still set here; HangupCall (called below) is what clears it.
+	d.mu.Lock()
+	peer := d.callPeer
+	d.mu.Unlock()
+	slog.Info("voicemail: recording ended", "peer", peer)
+
 	d.ctrl.Reset()
 	d.HangupCall()
 }
@@ -750,6 +760,7 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 	// cleared (finalize, hangup) or the pipeline's OutFrames channel closes.
 	go func() {
 		defer recoverGoroutine("greeting-record")
+		slog.Info("voicemail: greeting record started")
 		for frame := range pipeline.OutFrames() {
 			d.greetingRecorderMu.Lock()
 			rec := d.greetingRecorder
