@@ -24,6 +24,13 @@
 #define SP_ON_US    200000
 #define SP_OFF_US   1500000
 
+// Slower pulse: short wink every ~3.15s. Used as the voicemail
+// message-waiting indicator so it's visually distinct from SLOW_PULSE
+// (boot-unpaired). Shorter ON + longer OFF keeps it from being mistaken
+// for either BREATHING or the unpaired pulse.
+#define SLOWER_ON_US    150000
+#define SLOWER_OFF_US   3000000
+
 // Breathing: 300 steps over 3s (10ms per step). LUT stores the rising half
 // (150 entries, 0 to peak). Indices 150-299 mirror the LUT for the falling half.
 // Values: round(999 * pow(sin(pi/2 * i/149), 2.2)) for i in 0..149.
@@ -180,6 +187,13 @@ void led_update(void) {
     case LED_MODE_SLOW_PULSE:
         if (absolute_time_diff_us(s_last_toggle, now) >=
             (s_led_on ? SP_ON_US : SP_OFF_US)) {
+            set_led(!s_led_on);
+            s_last_toggle = now;
+        }
+        break;
+    case LED_MODE_SLOWER_PULSE:
+        if (absolute_time_diff_us(s_last_toggle, now) >=
+            (s_led_on ? SLOWER_ON_US : SLOWER_OFF_US)) {
             set_led(!s_led_on);
             s_last_toggle = now;
         }

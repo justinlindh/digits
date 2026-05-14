@@ -13,6 +13,7 @@ typedef enum {
     LED_MODE_CONNECTING,
     LED_MODE_BREATHING,
     LED_MODE_SLOW_PULSE,
+    LED_MODE_SLOWER_PULSE,
 } led_mode_t;
 
 void led_init(void);

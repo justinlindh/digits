@@ -208,6 +208,8 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_BREATHING);
     } else if (strcmp(cmd, "LED:SLOW_PULSE") == 0) {
         led_set_mode(LED_MODE_SLOW_PULSE);
+    } else if (strcmp(cmd, "LED:SLOWER_PULSE") == 0) {
+        led_set_mode(LED_MODE_SLOWER_PULSE);
     } else if (strcmp(cmd, "LED:LOCK") == 0) {
         led_set_locked(true);
     } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
