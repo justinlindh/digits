@@ -45,22 +45,31 @@ func IsValidRetrievalCode(code string) bool {
 // Wire field names match what the digitsd receiver expects. The integer
 // time fields use seconds on the wire; the daemon converts to time.Duration
 // when applying to its internal config.
+//
+// Inner fields deliberately omit omitempty to match the wire contract: a
+// stored row carries every field literally so a future read can tell
+// "Enabled was explicitly false" apart from "field was absent". Empty /
+// out-of-range values are still healed by Normalize on read.
 type Voicemail struct {
-	Enabled            bool   `json:"enabled,omitempty"`
-	RingTimeoutSeconds int    `json:"ring_timeout_seconds,omitempty"`
-	MaxMessageSeconds  int    `json:"max_message_seconds,omitempty"`
-	MaxStoredMessages  int    `json:"max_stored_messages,omitempty"`
-	RetrievalCode      string `json:"retrieval_code,omitempty"`
+	Enabled            bool   `json:"enabled"`
+	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
+	MaxMessageSeconds  int    `json:"max_message_seconds"`
+	MaxStoredMessages  int    `json:"max_stored_messages"`
+	RetrievalCode      string `json:"retrieval_code"`
 }
 
 // Settings holds per-line configuration that a household owner can change in
 // the web UI. Stored as a single JSONB column on the lines table so new
 // fields can be added without schema changes.
+//
+// Voicemail intentionally has no omitempty: encoding/json's omitempty has
+// no effect on value-typed structs anyway, and dropping it documents the
+// "always carry the full block" contract.
 type Settings struct {
 	VoiceStyle string    `json:"voice_style,omitempty"`
 	SilentMode bool      `json:"silent_mode,omitempty"`
 	AutoUpdate bool      `json:"auto_update,omitempty"`
-	Voicemail  Voicemail `json:"voicemail,omitempty"`
+	Voicemail  Voicemail `json:"voicemail"`
 }
 
 // DefaultVoicemail returns the voicemail configuration a newly created line

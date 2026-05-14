@@ -83,15 +83,23 @@ type LineSettings struct {
 // "settings push from a pre-voicemail server" (nil pointer) from "voicemail
 // explicitly disabled" (non-nil with Enabled=false).
 //
+// Inner fields deliberately omit omitempty: when the server sends an
+// authoritative voicemail block, we want explicit `enabled: false` and
+// `ring_timeout_seconds: 0` to round-trip literally rather than disappear
+// into the zero-value hole. Otherwise the daemon receiver can't tell
+// "server didn't set this" from "server set it to zero". The outer
+// pointer's omitempty handles the optional-on-the-envelope semantics on
+// its own.
+//
 // Field names mirror the daemon config keys exactly. The daemon's local
 // config holds RingTimeout/MaxMessageDuration as time.Duration; the wire
 // uses integer seconds and the daemon converts on receipt.
 type Voicemail struct {
-	Enabled            bool   `json:"enabled,omitempty"`
-	RingTimeoutSeconds int    `json:"ring_timeout_seconds,omitempty"`
-	MaxMessageSeconds  int    `json:"max_message_seconds,omitempty"`
-	MaxStoredMessages  int    `json:"max_stored_messages,omitempty"`
-	RetrievalCode      string `json:"retrieval_code,omitempty"`
+	Enabled            bool   `json:"enabled"`
+	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
+	MaxMessageSeconds  int    `json:"max_message_seconds"`
+	MaxStoredMessages  int    `json:"max_stored_messages"`
+	RetrievalCode      string `json:"retrieval_code"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.

@@ -93,3 +93,36 @@ func TestLineSettingsVoicemailOmittedWhenNil(t *testing.T) {
 		t.Errorf("nil Voicemail should be omitted from JSON, got %s", b)
 	}
 }
+
+// TestLineSettingsVoicemailZeroValuesRoundTrip pins the contract that
+// inner Voicemail fields have no omitempty: a non-nil pointer to a
+// zero-value Voicemail must serialize every key with its zero value so
+// the daemon can distinguish "server didn't set this" (nil outer) from
+// "server set this to zero" (outer present with explicit zero). Regresses
+// against a future hand that tries to re-add omitempty to "tidy up" the
+// wire.
+func TestLineSettingsVoicemailZeroValuesRoundTrip(t *testing.T) {
+	in := &Message{
+		Type: TypeLineSettings,
+		LineSettings: &LineSettings{
+			VoiceStyle: "copper",
+			Voicemail:  &Voicemail{}, // all zero values
+		},
+	}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	wire := string(b)
+	for _, key := range []string{
+		`"enabled":false`,
+		`"ring_timeout_seconds":0`,
+		`"max_message_seconds":0`,
+		`"max_stored_messages":0`,
+		`"retrieval_code":""`,
+	} {
+		if !strings.Contains(wire, key) {
+			t.Errorf("expected zero-value %q in wire, got %s", key, wire)
+		}
+	}
+}
