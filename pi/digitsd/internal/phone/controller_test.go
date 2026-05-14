@@ -35,6 +35,10 @@ type mockCallbacks struct {
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 	initiateCallErr    error             // injected error for InitiateCall
+	voicemailAutoAnswers int
+	voicemailPickups     int
+	voicemailRecordEnded int
+	voicemailEnabled     func() (bool, time.Duration) // nil = (false, 0)
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -143,6 +147,29 @@ func (m *mockCallbacks) OnCallReturnAbandon() {
 	defer m.mu.Unlock()
 	m.callReturnAbandons++
 }
+func (m *mockCallbacks) VoicemailAutoAnswer() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailAutoAnswers++
+}
+func (m *mockCallbacks) VoicemailPickup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailPickups++
+}
+func (m *mockCallbacks) VoicemailRecordEnded() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailRecordEnded++
+}
+func (m *mockCallbacks) VoicemailEnabled() (bool, time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.voicemailEnabled != nil {
+		return m.voicemailEnabled()
+	}
+	return false, 0
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -200,6 +227,16 @@ func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callConnectedCalls
+}
+func (m *mockCallbacks) VoicemailAutoAnswers() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailAutoAnswers
+}
+func (m *mockCallbacks) VoicemailPickups() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailPickups
 }
 
 // peerMuted returns whether the given peer is currently muted.

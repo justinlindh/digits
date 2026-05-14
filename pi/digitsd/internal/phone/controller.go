@@ -27,6 +27,8 @@ const (
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
+	StateVOICEMAIL_GREETING  State = "VOICEMAIL_GREETING"  // auto-answered; playing beep
+	StateVOICEMAIL_RECORDING State = "VOICEMAIL_RECORDING" // recording caller audio
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -77,6 +79,10 @@ type Callbacks interface {
 	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
 	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
 	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
+	VoicemailAutoAnswer()                                 // Voicemail auto-answered an incoming call
+	VoicemailPickup()                                     // User picked up during voicemail greeting/recording
+	VoicemailRecordEnded()                                // Recording completed or stopped
+	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -98,6 +104,10 @@ type Controller struct {
 	// hook-flap that re-enters off-hook treatment within ~4 min won't let the
 	// previous goroutine step the new session forward.
 	treatmentGen uint64
+	// ringTimeoutGen is incremented each time a voicemail ring-timeout goroutine
+	// starts. The spawned goroutine captures the value and aborts on mismatch,
+	// so a hang-up or answer during the ring window cancels the auto-answer.
+	ringTimeoutGen uint64
 	// done is closed by Close(); long-lived goroutines (off-hook treatment) abort
 	// their sleeps when it fires so daemon shutdown isn't blocked.
 	done      chan struct{}
@@ -991,4 +1001,13 @@ func (c *Controller) IsConferenceHost() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.isConfHost
+}
+
+// RingTimeoutGenForTest returns the current ringTimeoutGen counter. For use in
+// tests only; production code uses the generation counter to cancel superseded
+// voicemail ring-timeout goroutines.
+func (c *Controller) RingTimeoutGenForTest() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ringTimeoutGen
 }

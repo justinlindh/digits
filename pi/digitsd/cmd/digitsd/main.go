@@ -352,6 +352,11 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 	d.callReturnOrigin.Store(false)
 }
 
+func (d *daemonCallbacks) VoicemailAutoAnswer() {}
+func (d *daemonCallbacks) VoicemailPickup()     {}
+func (d *daemonCallbacks) VoicemailRecordEnded() {}
+func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) { return false, 0 }
+
 func (d *daemonCallbacks) AnswerCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
