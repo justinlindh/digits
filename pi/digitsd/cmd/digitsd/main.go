@@ -659,6 +659,14 @@ func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
 	return d.cfg.Voicemail.Enabled, d.cfg.Voicemail.RingTimeout
 }
 
+// VoicemailRecordGreeting, VoicemailRecordGreetingKey, and VoicemailDeleteGreeting
+// are stubs filled in by Task 6 of the voicemail-greeting plan. They satisfy the
+// Callbacks interface so the FSM can transition into the *97 / *970 service
+// codes without a real handler yet.
+func (d *daemonCallbacks) VoicemailRecordGreeting()                {}
+func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {}
+func (d *daemonCallbacks) VoicemailDeleteGreeting()                {}
+
 func (d *daemonCallbacks) AnswerCall() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
