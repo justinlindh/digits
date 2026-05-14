@@ -186,6 +186,16 @@ func (c *Controller) SetCallReturnNumber(number string) {
 	c.callReturnNumber = number
 }
 
+// SetVoicemailRecording transitions from VOICEMAIL_GREETING to VOICEMAIL_RECORDING.
+// Called by the daemon when the greeting finishes and recording begins. Thread-safe.
+func (c *Controller) SetVoicemailRecording() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == StateVOICEMAIL_GREETING {
+		c.state = StateVOICEMAIL_RECORDING
+	}
+}
+
 // HandleCallReturnRing transitions the phone from IDLE to RINGING with a
 // distinctive ring pattern, signaling that the *69 target is now free. When
 // the user picks up, the controller auto-dials target instead of answering an
@@ -340,6 +350,12 @@ func (c *Controller) onHookOff() {
 			c.cb.SetFlashEnabled(true)
 			c.cb.AnswerCall()
 		}
+	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		c.state = StateCONNECTED
+		c.cb.SendTone(ToneStop)
+		c.cb.SendLED("ON")
+		c.cb.SetFlashEnabled(true)
+		c.cb.VoicemailPickup()
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
 	}
@@ -349,7 +365,8 @@ func (c *Controller) onHookOn() {
 	if c.state == StateIDLE {
 		return
 	}
-	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING ||
+		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING
 	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
@@ -660,6 +677,12 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.callReturnTarget = ""
 		c.cb.SendRing(false)
 		c.cb.SendLED("OFF")
+	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		slog.Info("phone: caller hung up during voicemail")
+		c.state = StateIDLE
+		c.cb.SendTone(ToneStop)
+		c.cb.SendLED("OFF")
+		c.cb.HangupCall()
 	case StateCONNECTED:
 		c.state = StateREMOTE_HANGUP
 		c.cb.HangupCall()

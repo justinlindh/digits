@@ -1961,6 +1961,82 @@ func TestController_VoicemailDisabledNoTimeout(t *testing.T) {
 	}
 }
 
+// TestController_VoicemailPickupDuringGreeting verifies that picking up the
+// handset during VOICEMAIL_GREETING transitions to CONNECTED and calls VoicemailPickup
+// without calling AnswerCall (voicemail already answered the call).
+func TestController_VoicemailPickupDuringGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Fatalf("expected VOICEMAIL_GREETING, got %s", c.State())
+	}
+
+	c.HandleEvent("HOOK:OFF")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED after pickup, got %s", c.State())
+	}
+	if cb.VoicemailPickups() != 1 {
+		t.Errorf("expected 1 VoicemailPickup, got %d", cb.VoicemailPickups())
+	}
+	if cb.Answers() != 0 {
+		t.Errorf("expected 0 AnswerCall (voicemail already answered), got %d", cb.Answers())
+	}
+}
+
+// TestController_VoicemailPickupDuringRecording verifies that picking up the
+// handset during VOICEMAIL_RECORDING also transitions to CONNECTED and calls VoicemailPickup.
+func TestController_VoicemailPickupDuringRecording(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+
+	c.SetVoicemailRecording()
+	if c.State() != StateVOICEMAIL_RECORDING {
+		t.Fatalf("expected VOICEMAIL_RECORDING, got %s", c.State())
+	}
+
+	c.HandleEvent("HOOK:OFF")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED after pickup during recording, got %s", c.State())
+	}
+	if cb.VoicemailPickups() != 1 {
+		t.Errorf("expected 1 VoicemailPickup, got %d", cb.VoicemailPickups())
+	}
+}
+
+// TestController_VoicemailCallerHangupDuringRecording verifies that a hangup
+// signal during VOICEMAIL_RECORDING transitions to IDLE and calls HangupCall.
+func TestController_VoicemailCallerHangupDuringRecording(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+	c.SetVoicemailRecording()
+
+	c.HandleSignal("hangup", "")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after caller hangup, got %s", c.State())
+	}
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall, got %d", cb.Hangups())
+	}
+}
+
 // TestController_SecondRingNewTimeout verifies that after a hangup cancels the
 // first ring-timeout goroutine, a second incoming ring spawns a fresh one that
 // fires exactly once.
