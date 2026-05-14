@@ -262,8 +262,45 @@ func (d *daemonCallbacks) SendRingPattern(id int) {
 	d.serial.RingPattern(id)
 }
 
+// SendLED forwards the controller's LED command to the firmware. The
+// "OFF" mode is rewritten to "SLOW_PULSE" when voicemail is enabled and
+// there are unheard messages, so the idle LED also serves as a
+// message-waiting indicator. Other modes (ON, BLINK, FAST_PULSE, etc.)
+// pass through untouched: when the phone rings or is connected, those
+// states take precedence over the message-waiting hint.
 func (d *daemonCallbacks) SendLED(mode string) {
-	d.serial.LED(mode)
+	d.serial.LED(d.ledModeWithVoicemailHint(mode))
+}
+
+// ledModeWithVoicemailHint returns "SLOW_PULSE" instead of "OFF" when
+// voicemail is enabled and at least one message is unheard; otherwise
+// returns mode unchanged. Shared by SendLED (controller-driven
+// transitions) and evaluateLED (background mutations that the controller
+// would not otherwise re-emit).
+//
+// UnheardCount() reads ~50 small files. On the SLOW_PULSE path the file
+// system traffic happens every time the controller transitions to idle,
+// which is not a hot path. Cache later if profiling shows it.
+func (d *daemonCallbacks) ledModeWithVoicemailHint(mode string) string {
+	if mode != "OFF" {
+		return mode
+	}
+	d.mu.Lock()
+	store := d.voicemailStore
+	enabled := d.cfg != nil && d.cfg.Voicemail.Enabled
+	d.mu.Unlock()
+	if store == nil || !enabled {
+		return mode
+	}
+	n, err := store.UnheardCount()
+	if err != nil {
+		slog.Warn("voicemail: unheard count failed, leaving LED off", "error", err)
+		return mode
+	}
+	if n > 0 {
+		return "SLOW_PULSE"
+	}
+	return mode
 }
 
 func (d *daemonCallbacks) NotifyCallConnected() {
@@ -705,6 +742,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 // duration cap reached). It resets the controller to IDLE and tears down the
 // call. HangupCall handles any remaining recorder cleanup defensively, so a
 // late finalize during teardown is a no-op.
+//
+// After teardown we re-emit the LED state: a freshly finalized message bumps
+// the unheard count, and the controller's HangupCall flow already issued
+// LED:OFF before the file landed on disk, so without this explicit kick the
+// indicator would not light up until the next idle transition.
 func (d *daemonCallbacks) VoicemailRecordEnded() {
 	// d.callPeer is still set here; HangupCall (called below) is what clears it.
 	d.mu.Lock()
@@ -714,6 +756,7 @@ func (d *daemonCallbacks) VoicemailRecordEnded() {
 
 	d.ctrl.Reset()
 	d.HangupCall()
+	d.evaluateLED()
 }
 
 func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
@@ -1282,14 +1325,17 @@ func (d *daemonCallbacks) voicemailExitToDialtoneAsync() {
 	d.ctrl.ResetToDialtone()
 }
 
-// evaluateLED resends the appropriate LED state given current voicemail
-// store + config state. Filled in by the message-waiting-indicator
-// commit. For now it is a no-op so playback paths can call it
-// unconditionally without forcing the LED wrapper to land first.
+// evaluateLED re-emits the LED state appropriate for an idle phone with
+// the current unheard-message count. Used by background mutations where
+// the controller will not issue a fresh LED:OFF on its own: a recording
+// that finalizes while idle, or a delete during playback that drops the
+// count to zero just before the playback exit path runs.
+//
+// We deliberately use the same OFF -> SLOW_PULSE rewrite the SendLED
+// wrapper performs, so the two paths cannot disagree about what idle
+// looks like. The wrapper is the source of truth.
 func (d *daemonCallbacks) evaluateLED() {
-	// TODO(message-waiting-indicator): re-emit SLOW_PULSE when idle and
-	// UnheardCount > 0, OFF otherwise. Lives in this file alongside the
-	// SendLED wrapper.
+	d.serial.LED(d.ledModeWithVoicemailHint("OFF"))
 }
 
 // playVoicemailGreeting blocks the caller goroutine until the outgoing

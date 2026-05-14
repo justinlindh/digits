@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/justinlindh/digits/pi/digitsd/internal/config"
+	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 )
 
 func TestPollPing_Immediate(t *testing.T) {
@@ -142,5 +145,111 @@ func TestWritePCMWav(t *testing.T) {
 		if got != s {
 			t.Errorf("sample %d: got %d, want %d", i, got, s)
 		}
+	}
+}
+
+// TestLEDModeWithVoicemailHint exercises the OFF-to-SLOW_PULSE rewrite that
+// powers the message-waiting indicator. The function is pure relative to
+// d.serial (no I/O), so the test asserts return values directly without a
+// fake serial port.
+func TestLEDModeWithVoicemailHint(t *testing.T) {
+	mustStoreWithMessages := func(t *testing.T, unheard, heard int) *voicemail.Store {
+		t.Helper()
+		s, err := voicemail.Open(t.TempDir(), voicemail.Options{})
+		if err != nil {
+			t.Fatalf("voicemail.Open: %v", err)
+		}
+		for i := 0; i < unheard+heard; i++ {
+			r, err := s.BeginRecording()
+			if err != nil {
+				t.Fatalf("BeginRecording[%d]: %v", i, err)
+			}
+			// One frame is enough; Finalize promotes any non-empty recording.
+			if _, err := r.AppendFrame([]byte{0xff, 0x00}); err != nil {
+				t.Fatalf("AppendFrame[%d]: %v", i, err)
+			}
+			m, err := r.Finalize()
+			if err != nil {
+				t.Fatalf("Finalize[%d]: %v", i, err)
+			}
+			if i < heard {
+				if err := s.MarkHeard(m.ID); err != nil {
+					t.Fatalf("MarkHeard[%d]: %v", i, err)
+				}
+			}
+			// Recordings share their ID with UnixMilli; sleep a touch to keep IDs unique.
+			time.Sleep(2 * time.Millisecond)
+		}
+		return s
+	}
+
+	tests := []struct {
+		name           string
+		mode           string
+		voicemailOn    bool
+		store          func(*testing.T) *voicemail.Store
+		want           string
+	}{
+		{
+			name:        "off with feature disabled passes through",
+			mode:        "OFF",
+			voicemailOn: false,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 3, 0) },
+			want:        "OFF",
+		},
+		{
+			name:        "off with feature enabled and no store passes through",
+			mode:        "OFF",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return nil },
+			want:        "OFF",
+		},
+		{
+			name:        "off with no messages passes through",
+			mode:        "OFF",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 0, 0) },
+			want:        "OFF",
+		},
+		{
+			name:        "off with one unheard rewrites to slow pulse",
+			mode:        "OFF",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 1, 0) },
+			want:        "SLOW_PULSE",
+		},
+		{
+			name:        "off with all heard passes through",
+			mode:        "OFF",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 0, 2) },
+			want:        "OFF",
+		},
+		{
+			name:        "blink is never rewritten even with unheard",
+			mode:        "BLINK",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 5, 0) },
+			want:        "BLINK",
+		},
+		{
+			name:        "on is never rewritten even with unheard",
+			mode:        "ON",
+			voicemailOn: true,
+			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 1, 0) },
+			want:        "ON",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &daemonCallbacks{
+				cfg: &config.Config{Voicemail: config.Voicemail{Enabled: tt.voicemailOn}},
+			}
+			d.voicemailStore = tt.store(t)
+			if got := d.ledModeWithVoicemailHint(tt.mode); got != tt.want {
+				t.Errorf("ledModeWithVoicemailHint(%q) = %q, want %q", tt.mode, got, tt.want)
+			}
+		})
 	}
 }
