@@ -375,6 +375,9 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 // already decoding and feeding voicemailWebRTCCh; once the mixer registers it
 // as an active source, audio flows immediately.
 func (d *daemonCallbacks) VoicemailPickup() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if msg, err := d.recorder.Finalize(); err != nil {
@@ -385,9 +388,6 @@ func (d *daemonCallbacks) VoicemailPickup() {
 		d.recorder = nil
 	}
 	d.recorderMu.Unlock()
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	if d.callPeer == "" {
 		slog.Warn("voicemail pickup: no call peer")
@@ -603,6 +603,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
 		slog.Error("voicemail: begin recording failed", "error", err)
+		d.mu.Unlock()
+		d.ctrl.Reset()
+		d.HangupCall()
+		d.mu.Lock()
 		return
 	}
 	d.recorderMu.Lock()
@@ -613,6 +617,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("voicemail: pipeline start failed", "error", err)
+			d.mu.Unlock()
+			d.ctrl.Reset()
+			d.HangupCall()
+			d.mu.Lock()
 			return
 		}
 		d.startEncodeLoop()
@@ -628,6 +636,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		time.Sleep(500 * time.Millisecond)
 		pipeline.PlayGreetingBeep(500 * time.Millisecond)
 		time.Sleep(500 * time.Millisecond)
+		pipeline.SetMuted(true)
 		ctrl.SetVoicemailRecording()
 	}()
 
