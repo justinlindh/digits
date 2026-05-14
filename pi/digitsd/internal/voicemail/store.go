@@ -31,6 +31,13 @@ import (
 // Frame size constant matches internal/codec/opus.go (20ms at 48kHz).
 const opusFrameMs = 20
 
+// greetingFile is the on-disk filename for the user's custom outgoing greeting.
+// A single greeting is supported per phone, overwritten in place when re-recorded.
+const greetingFile = "greeting.frames"
+
+// greetingMaxDuration caps how long a greeting recording can run.
+const greetingMaxDuration = 60 * time.Second
+
 // Options controls store retention.
 type Options struct {
 	// MaxMessages caps the number of stored messages. When exceeded, the
@@ -302,6 +309,17 @@ func (r *Recorder) Finalize() (Message, error) {
 	}
 
 	duration := time.Duration(r.frames) * opusFrameMs * time.Millisecond
+
+	// Greeting recordings (id == 0) live alongside messages but have no
+	// metadata and are not subject to retention. The rename above is the
+	// only durable side-effect they need.
+	if r.id == 0 {
+		return Message{
+			Path:     r.finalPath,
+			Duration: duration,
+		}, nil
+	}
+
 	recordedAt := time.UnixMilli(r.id)
 	meta := metaFile{
 		Heard:      false,
@@ -387,6 +405,70 @@ func (p *Player) NextFrame() ([]byte, error) {
 // Close releases the underlying file handle.
 func (p *Player) Close() error {
 	return p.file.Close()
+}
+
+// --- greeting (custom outgoing message) ---
+
+// greetingPath returns the absolute path to the greeting frames file.
+func (s *Store) greetingPath() string {
+	return filepath.Join(s.dir, greetingFile)
+}
+
+// HasGreeting reports whether a custom greeting has been recorded.
+func (s *Store) HasGreeting() bool {
+	_, err := os.Stat(s.greetingPath())
+	return err == nil
+}
+
+// GreetingPath returns the absolute path where the greeting is (or would be) stored.
+func (s *Store) GreetingPath() string {
+	return s.greetingPath()
+}
+
+// OpenGreeting returns a Player for the recorded greeting. Returns an
+// os.ErrNotExist-wrapped error when no greeting has been recorded.
+func (s *Store) OpenGreeting() (*Player, error) {
+	f, err := os.Open(s.greetingPath())
+	if err != nil {
+		return nil, err
+	}
+	return &Player{file: f}, nil
+}
+
+// DeleteGreeting removes the recorded greeting if present. Returns nil if
+// no greeting exists (idempotent).
+func (s *Store) DeleteGreeting() error {
+	err := os.Remove(s.greetingPath())
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+// BeginGreetingRecording opens a fresh Recorder for a custom outgoing
+// greeting. The recorder writes to a temp file and renames over any prior
+// greeting on Finalize. Greeting recordings are identified by id == 0:
+// Finalize skips metadata and retention for them. Recording is capped at
+// greetingMaxDuration.
+func (s *Store) BeginGreetingRecording() (*Recorder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	finalPath := s.greetingPath()
+	tmpPath := finalPath + ".tmp"
+
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("voicemail: open greeting tmp: %w", err)
+	}
+	return &Recorder{
+		store:     s,
+		id:        0,
+		tmpPath:   tmpPath,
+		finalPath: finalPath,
+		file:      f,
+		maxFrames: framesForDuration(greetingMaxDuration),
+	}, nil
 }
 
 // --- internal helpers ---
