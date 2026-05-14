@@ -319,6 +319,7 @@ func (c *Controller) onHookOff() {
 		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
+		c.ringTimeoutGen++
 		if c.callReturnRinging {
 			number := c.callReturnTarget
 			c.callReturnRinging = false
@@ -600,6 +601,33 @@ func (c *Controller) onSignalRing() {
 		c.cb.SendRing(true)
 	}
 	c.cb.SendLED("BLINK")
+	enabled, timeout := c.cb.VoicemailEnabled()
+	if enabled && timeout > 0 {
+		c.ringTimeoutGen++
+		gen := c.ringTimeoutGen
+		go c.ringTimeoutWatcher(gen, timeout)
+	}
+}
+
+// ringTimeoutWatcher sleeps for d, then auto-answers into voicemail if the
+// phone is still in RINGING with the same generation counter. Mirrors the
+// runPermanentSignalTreatment generation pattern: a hangup or pickup increments
+// ringTimeoutGen, causing any in-flight watcher to abort on mismatch. Caller
+// must NOT hold c.mu.
+func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
+	if !c.sleepOrDone(d) {
+		return
+	}
+	c.mu.Lock()
+	if c.state != StateRINGING || c.ringTimeoutGen != gen {
+		c.mu.Unlock()
+		return
+	}
+	c.state = StateVOICEMAIL_GREETING
+	c.cb.SendRing(false)
+	c.cb.SendTone(ToneStop)
+	c.mu.Unlock()
+	c.cb.VoicemailAutoAnswer()
 }
 
 func (c *Controller) onSignalAnswer(sender string) {
@@ -626,6 +654,7 @@ func (c *Controller) onSignalHangup(sender string) {
 	switch c.state {
 	case StateRINGING:
 		slog.Info("phone: caller hung up during ring - stopping ring")
+		c.ringTimeoutGen++
 		c.state = StateIDLE
 		c.callReturnRinging = false
 		c.callReturnTarget = ""

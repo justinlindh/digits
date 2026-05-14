@@ -1865,3 +1865,133 @@ func TestController_ResetToDialtone_NextKeyStopsTone(t *testing.T) {
 		t.Errorf("expected digits=%q after key, got %q", "7", c.digits)
 	}
 }
+
+// TestController_RingTimeoutFiresAutoAnswer verifies that when voicemail is
+// enabled and the ring-timeout expires, the controller transitions to
+// VOICEMAIL_GREETING and calls VoicemailAutoAnswer.
+func TestController_RingTimeoutFiresAutoAnswer(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 50 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", c.State())
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Errorf("expected VOICEMAIL_GREETING after timeout, got %s", c.State())
+	}
+	if cb.VoicemailAutoAnswers() != 1 {
+		t.Errorf("expected 1 VoicemailAutoAnswer, got %d", cb.VoicemailAutoAnswers())
+	}
+}
+
+// TestController_RingTimeoutCanceledByHookOff verifies that picking up the
+// handset during ringing cancels the voicemail auto-answer goroutine.
+func TestController_RingTimeoutCanceledByHookOff(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 100 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	c.HandleEvent("HOOK:OFF")
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer after hookoff cancel, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateCONNECTED {
+		t.Errorf("expected CONNECTED after HOOK:OFF, got %s", c.State())
+	}
+}
+
+// TestController_RingTimeoutCanceledByHangup verifies that a hangup signal
+// during ringing cancels the voicemail auto-answer goroutine.
+func TestController_RingTimeoutCanceledByHangup(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 100 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	c.HandleSignal("hangup", "")
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer after hangup cancel, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE after hangup, got %s", c.State())
+	}
+}
+
+// TestController_VoicemailDisabledNoTimeout verifies that when voicemail is
+// disabled, the ring-timeout goroutine is never spawned and the phone stays
+// in RINGING after the timeout window passes.
+func TestController_VoicemailDisabledNoTimeout(t *testing.T) {
+	cb := &mockCallbacks{} // voicemailEnabled is nil -> returns false, 0
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+
+	time.Sleep(150 * time.Millisecond)
+
+	if c.State() != StateRINGING {
+		t.Errorf("expected still RINGING with voicemail disabled, got %s", c.State())
+	}
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer with voicemail disabled, got %d", cb.VoicemailAutoAnswers())
+	}
+}
+
+// TestController_SecondRingNewTimeout verifies that after a hangup cancels the
+// first ring-timeout goroutine, a second incoming ring spawns a fresh one that
+// fires exactly once.
+func TestController_SecondRingNewTimeout(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 80 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	// First ring: let it start then cancel via hangup.
+	c.HandleSignal("ring", "")
+	c.HandleSignal("hangup", "")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after first hangup, got %s", c.State())
+	}
+
+	// Second ring: should spawn a fresh goroutine.
+	c.HandleSignal("ring", "")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING after second ring signal, got %s", c.State())
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 1 {
+		t.Errorf("expected exactly 1 VoicemailAutoAnswer, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Errorf("expected VOICEMAIL_GREETING, got %s", c.State())
+	}
+}
