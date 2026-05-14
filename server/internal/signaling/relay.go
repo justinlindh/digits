@@ -18,6 +18,8 @@ import (
 
 var relayTracer = otel.Tracer("github.com/justinlindh/digits/server/internal/signaling")
 
+// CallTracker is the subset of *calls.Tracker that the Relay needs to track
+// call lifecycle events and query in-flight call state.
 type CallTracker interface {
 	OnCallInitiated(ctx context.Context, from, to string) (int64, error)
 	OnCallAnswered(ctx context.Context, caller, callee string) error
@@ -74,6 +76,10 @@ type pendingCallReturn struct {
 	ExpiresAt time.Time
 }
 
+// Relay routes signaling messages between connected devices. It sits above the
+// Hub (which manages raw WebSocket connections) and owns call-lifecycle logic:
+// ringing, answering, hanging up, DTMF, ICE restart, three-way merges, and
+// extension pickup.
 type Relay struct {
 	Hub            *Hub
 	Tracker        CallTracker
@@ -130,6 +136,9 @@ func setSpanCallID(ctx context.Context, callID int64) {
 	trace.SpanFromContext(ctx).SetAttributes(attribute.Int64("signaling.call_id", callID))
 }
 
+// NewRelay constructs a Relay wired to the given hub and tracker. TURN,
+// HealthStore, and Errors are optional; set them on the returned struct before
+// the server begins accepting connections.
 func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStore LineStore) *Relay {
 	return &Relay{
 		Hub:            hub,

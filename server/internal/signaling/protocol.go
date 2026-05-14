@@ -124,6 +124,10 @@ type ICEServer struct {
 	Credential string   `json:"credential,omitempty"`
 }
 
+// Message is the JSON wire format exchanged between signald and devices over
+// WebSocket. Fields are tagged omitempty so each message type carries only
+// the fields relevant to its Type constant; unused fields are omitted from
+// the encoded payload.
 type Message struct {
 	Type        string      `json:"type"`
 	From        string      `json:"from,omitempty"`
@@ -191,6 +195,7 @@ type Message struct {
 	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
 }
 
+// ParseMessage decodes a JSON-encoded signaling message from the wire.
 func ParseMessage(data []byte) (*Message, error) {
 	var m Message
 	if err := json.Unmarshal(data, &m); err != nil {
@@ -199,6 +204,7 @@ func ParseMessage(data []byte) (*Message, error) {
 	return &m, nil
 }
 
+// Marshal encodes the message to JSON for transmission over WebSocket.
 func (m *Message) Marshal() ([]byte, error) {
 	return json.Marshal(m)
 }

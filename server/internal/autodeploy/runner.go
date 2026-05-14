@@ -8,6 +8,7 @@ import (
 	"os/exec"
 )
 
+// RunSpec describes a child process invocation for Runner.Run.
 type RunSpec struct {
 	Name  string
 	Args  []string
@@ -16,10 +17,13 @@ type RunSpec struct {
 	Stdin []byte
 }
 
+// Runner executes shell commands on behalf of the Deployer. The interface
+// allows tests to inject a fake without spawning real processes.
 type Runner interface {
 	Run(ctx context.Context, spec RunSpec) error
 }
 
+// ExecRunner is the production Runner that delegates to os/exec.
 type ExecRunner struct{}
 
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }

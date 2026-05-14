@@ -12,6 +12,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/email"
 )
 
+// Action describes the outcome of one autodeploy Run cycle.
 type Action string
 
 const (
@@ -61,6 +62,7 @@ func stepOf(err error) Step {
 	return ""
 }
 
+// Result summarises what a single Run cycle did.
 type Result struct {
 	Action Action
 	Tag    string
@@ -70,10 +72,14 @@ type Result struct {
 // wantVersion. Production wires this to PollHealth; tests substitute a stub.
 type HealthPoller func(ctx context.Context, url, wantVersion string, interval time.Duration) error
 
+// GitHubReleases is the subset of the GitHub releases API that Deployer needs.
+// Production wires this to GitHubClient; tests substitute a stub.
 type GitHubReleases interface {
 	LatestReleaseWithETag(ctx context.Context, repo, prefix, etag string) (Release, error)
 }
 
+// Deployer orchestrates a poll-detect-deploy-verify cycle against a Docker
+// Compose stack, emailing the operator on failure and reverting when possible.
 type Deployer struct {
 	Cfg    Config
 	GH     GitHubReleases

@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// Config holds runtime knobs for the autodeploy daemon, parsed from the
+// key=value config file by LoadConfig.
 type Config struct {
 	Repo                string
 	TagPrefix           string
@@ -34,6 +36,8 @@ type Config struct {
 	PollInterval        time.Duration
 }
 
+// LoadConfig reads the autodeploy config file at path (key=value format,
+// lines starting with # are ignored) and returns a populated Config.
 func LoadConfig(path string) (Config, error) {
 	f, err := os.Open(path)
 	if err != nil {

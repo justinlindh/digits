@@ -22,10 +22,13 @@ type callEntry struct {
 	StartedAt time.Time `json:"started_at"`
 }
 
+// CallState mirrors active-call membership in Redis so that every pod in a
+// cluster can determine which calls a phone is currently participating in.
 type CallState struct {
 	client redis.UniversalClient
 }
 
+// NewCallState returns a CallState backed by the given Redis client.
 func NewCallState(client redis.UniversalClient) *CallState {
 	return &CallState{client: client}
 }

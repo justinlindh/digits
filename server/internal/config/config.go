@@ -2,6 +2,9 @@ package config
 
 import "os"
 
+// Config holds all runtime configuration for signald, populated by Load from
+// environment variables. Zero values are overridden by Load's defaults where
+// appropriate.
 type Config struct {
 	Addr        string // HTTP listen address (public app port)
 	MetricsAddr string // Prometheus metrics listen address (separate listener; empty disables)
@@ -47,6 +50,8 @@ type Config struct {
 	GitHubToken string
 }
 
+// Load reads environment variables and returns a populated Config. Fields not
+// present in the environment retain their defaults (e.g. Addr ":8443").
 func Load() *Config {
 	c := &Config{
 		Addr:        ":8443",

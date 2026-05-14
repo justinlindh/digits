@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// ConferenceRole classifies a participant's position within a three-way call.
 type ConferenceRole int
 
 const (
@@ -17,6 +18,7 @@ const (
 	ConferenceRoleAdded
 )
 
+// ConferenceState represents the lifecycle stage of a conference.
 type ConferenceState int
 
 const (
@@ -24,6 +26,8 @@ const (
 	ConferenceStateEnded
 )
 
+// ConferenceMember describes one participant in a conference, including when
+// they joined and, if applicable, when and why they left.
 type ConferenceMember struct {
 	Phone      string
 	Role       ConferenceRole
@@ -32,6 +36,8 @@ type ConferenceMember struct {
 	LeftReason string
 }
 
+// Conference is the in-memory record of an active or recently ended three-way
+// call. Members maps phone number to participant state.
 type Conference struct {
 	ID                uuid.UUID
 	Host              string
@@ -43,6 +49,9 @@ type Conference struct {
 	EndReason         string
 }
 
+// ConferenceTracker manages the set of active conferences in memory. The
+// memberIndex enforces the invariant that a phone can only be in one active
+// conference at a time.
 type ConferenceTracker struct {
 	mu          sync.Mutex
 	active      map[uuid.UUID]*Conference

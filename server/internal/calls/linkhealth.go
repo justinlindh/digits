@@ -135,6 +135,9 @@ func WithFlushDisabled(disabled bool) HealthStoreOption {
 	return func(s *HealthStore) { s.flushDisabled = disabled }
 }
 
+// NewHealthStore creates a HealthStore. Pass a nil database to operate in
+// memory-only mode (no DB flushes). Functional options adjust behavior; see
+// WithFlushDisabled.
 func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	s := &HealthStore{
 		db:       d,

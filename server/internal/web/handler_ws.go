@@ -225,7 +225,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func mustMarshal(msg *signaling.Message) []byte {
-	data, _ := msg.Marshal()
+	data, err := msg.Marshal()
+	if err != nil {
+		panic(fmt.Sprintf("mustMarshal: %v", err))
+	}
 	return data
 }
 
