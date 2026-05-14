@@ -27,7 +27,7 @@ const (
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
-	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing beep
+	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing outgoing greeting then beep
 	StateVOICEMAIL_RECORDING       State = "VOICEMAIL_RECORDING"       // recording caller audio
 	StateVOICEMAIL_RECORD_GREETING State = "VOICEMAIL_RECORD_GREETING" // user is recording their custom outgoing greeting (*97)
 	StateVOICEMAIL_PLAYBACK        State = "VOICEMAIL_PLAYBACK"        // user dialed retrieval code; playing back stored messages
@@ -233,9 +233,12 @@ func (c *Controller) State() State {
 }
 
 // IsCallActive reports whether the phone is currently in a call or actively
-// ringing. Voicemail greeting/recording also count as active: the WebRTC peer
-// connection is up, the recorder is open, and any teardown path (e.g. WebSocket
-// reconnect) must run the full HangupCall flow to finalize cleanly.
+// ringing. All three voicemail states also count as active: an inbound-call
+// voicemail (VOICEMAIL_GREETING, VOICEMAIL_RECORDING) holds an open WebRTC
+// peer and a message recorder, and a custom-greeting recording session
+// (VOICEMAIL_RECORD_GREETING) holds an open audio pipeline and greeting
+// recorder with no WebRTC peer. Any teardown path (e.g. WebSocket reconnect)
+// must run the full HangupCall flow so these resources finalize cleanly.
 func (c *Controller) IsCallActive() bool {
 	switch c.State() {
 	case StateCALLING, StateRINGING, StateCONNECTED,
