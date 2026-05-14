@@ -1,0 +1,26 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.ingress.signald.host }}
+{{- fail "ingress.signald.host is required when ingress is enabled" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: signald
+  labels:
+    {{- include "digits.signald.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.signald.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: signald
+                port:
+                  number: 80
+{{- end }}

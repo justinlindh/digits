@@ -18,12 +18,24 @@
   <div class="rail__brand">
     <svg class="rail__brand-icon" viewBox="0 0 36 48" fill="currentColor" aria-hidden="true">{{template "keypad-icon"}}</svg>
     <span class="rail__mark">Digits</span>
-    {{if .HouseholdName}}<span class="rail__household">{{.HouseholdName}}</span>{{end}}
-    {{if .HouseholdDND}}
-    <a href="/settings#do-not-disturb" class="chip chip--err" title="Household Do Not Disturb is on">
-      <span class="chip__dot"></span>Do Not Disturb
-    </a>
+    {{if .HouseholdName}}
+    {{if and .Households (gt (len .Households) 1)}}
+    <details class="rail__hh-switcher">
+      <summary class="rail__household">{{.HouseholdName}} <span class="rail__hh-arrow">&#9660;</span></summary>
+      <div class="rail__hh-menu">
+        {{range .Households}}
+        <form action="/settings/household/switch" method="POST">
+          <input type="hidden" name="household_id" value="{{.ID}}">
+          <button type="submit" class="rail__hh-option{{if eq .ID $.Household.ID}} is-active{{end}}">{{.Name}}</button>
+        </form>
+        {{end}}
+      </div>
+    </details>
+    {{else}}
+    <span class="rail__household">{{.HouseholdName}}</span>
     {{end}}
+    {{end}}
+    <span id="dnd-indicator">{{template "dnd-indicator-content" .}}</span>
   </div>
 
   <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>

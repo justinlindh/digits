@@ -48,18 +48,26 @@ stage-firmware: firmware ## Build firmware and stage it at tools/build/firmware.
 	@echo "==> staged firmware $(DIGITS_FW_VERSION) -> tools/build/firmware.elf"
 
 # ── Pi SD Card Image ─────────────────────────────────────────────────────────
+#
+# Default (make image / make image-v2): downloads pre-built binaries and
+# firmware from the latest GitHub release. Requires Go (for `make embed`).
+# To build from local source instead: BUILD_LOCAL=1 make image
+# (run `git fetch --tags` first so version stamps are accurate).
+#
+# Dev targets (make image-dev / make image-v2-dev) imply BUILD_LOCAL=1 and
+# stage firmware from the local build before invoking the container.
 
-image: stage-firmware ## Build Pi SD card image for V1/prototype hardware (Codec Zero HAT)
+image: ## Build Pi SD card image for V1/prototype hardware (release artifacts by default)
 	./pi/image/build-docker.sh
 
-image-dev: stage-firmware ## Build V1/prototype image with SSH enabled (Docker)
-	./pi/image/build-docker.sh --dev
+image-dev: stage-firmware ## Build V1/prototype image with SSH enabled (local build)
+	BUILD_LOCAL=1 ./pi/image/build-docker.sh --dev
 
-image-v2: stage-firmware ## Build Pi SD card image for V2 carrier board (onboard codec)
+image-v2: ## Build Pi SD card image for V2 carrier board (release artifacts by default)
 	./pi/image/build-docker.sh --pcb
 
-image-v2-dev: stage-firmware ## Build V2 carrier board image with SSH enabled (Docker)
-	./pi/image/build-docker.sh --dev --pcb
+image-v2-dev: stage-firmware ## Build V2 carrier board image with SSH enabled (local build)
+	BUILD_LOCAL=1 ./pi/image/build-docker.sh --dev --pcb
 
 # Default flash glob: newest of any variant. flash-v1 / flash-v2 narrow it.
 # Override with IMAGE=<path> to flash a specific file regardless of glob.

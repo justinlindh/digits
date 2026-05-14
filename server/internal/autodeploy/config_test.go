@@ -21,8 +21,8 @@ COMPOSE_DIR=/opt/digits/server
 COMPOSE_FILE=docker-compose.prod.yml
 COMPOSE_PROJECT=digits-prod
 COMPOSE_ENV_FILE=/opt/digits/server/.env.prod
-SERVICES=signald admind
-HEALTH_URLS=http://localhost:8090/healthz http://localhost:9094/healthz
+SERVICES=signald
+HEALTH_URLS=http://localhost:8090/healthz
 GHCR_USERNAME=justinlindh
 GHCR_TOKEN_FILE=` + tokenPath + `
 STATE_FILE=/var/lib/digits-autodeploy/state.json
@@ -51,10 +51,10 @@ POLL_INTERVAL=60s
 	if got.GHCRToken != "ghp_abc" {
 		t.Errorf("GHCRToken=%q (want ghp_abc, trailing newline must be stripped)", got.GHCRToken)
 	}
-	if len(got.Services) != 2 || got.Services[0] != "signald" || got.Services[1] != "admind" {
+	if len(got.Services) != 1 || got.Services[0] != "signald" {
 		t.Errorf("Services=%v", got.Services)
 	}
-	if len(got.HealthURLs) != 2 {
+	if len(got.HealthURLs) != 1 {
 		t.Errorf("HealthURLs=%v", got.HealthURLs)
 	}
 	if got.HealthTimeout != 90*time.Second {
@@ -110,6 +110,9 @@ ALERT_TO=alert@example
 }
 
 func TestLoadConfigOptionalTokenFileUnreadable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping: root bypasses file permissions")
+	}
 	// A file that exists but cannot be read (permission denied, etc) is a
 	// real config problem, not an "optional unset" — must still error.
 	dir := t.TempDir()

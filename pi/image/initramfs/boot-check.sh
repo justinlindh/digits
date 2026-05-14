@@ -15,12 +15,34 @@ PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case "$1" in prereqs) prereqs; exit 0;; esac
 
+ROOTFS_DEV="/dev/mmcblk0p2"
 DATA_DEV="/dev/mmcblk0p4"
 DATA_MNT="/tmp/data-check"
 COUNTER_FILE="digits/boot-counter"
 THRESHOLD=3
 
 RECOVERY_FLAG="/run/digits-recovery-mode"
+
+# Quick rootfs health check before anything else. A corrupted rootfs that
+# the kernel can still mount will hang systemd, and the boot counter never
+# increments because the device never reboots. Catch it here and attempt
+# repair; only fall through to recovery if repair fails.
+if command -v e2fsck >/dev/null 2>&1; then
+    e2fsck -n "$ROOTFS_DEV" >/dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "boot-check: rootfs has filesystem errors, attempting repair"
+        e2fsck -y "$ROOTFS_DEV" 2>&1
+        if [ $? -le 1 ]; then
+            echo "boot-check: rootfs repaired successfully"
+        else
+            echo "boot-check: rootfs repair failed, flagging for recovery mode"
+            touch "$RECOVERY_FLAG"
+            exit 0
+        fi
+    fi
+else
+    echo "boot-check: e2fsck not available in initramfs, skipping rootfs check"
+fi
 
 # Mount data partition
 mkdir -p "$DATA_MNT"
@@ -31,7 +53,11 @@ if [ $? -ne 0 ]; then
     exit 0
 fi
 
-# Check for persistent recovery flag (set by service code or web UI factory reset)
+# Check for persistent recovery flag. Writers:
+#   - digitsd (detects BOOT:PANIC from Pico when * is held at power-on)
+#   - this script itself (below) once the boot counter reaches threshold
+# Note: the *#00000# service code and web UI factory reset use the boot counter
+# instead of this flag (see bootcount.SetThreshold).
 if [ -f "$DATA_MNT/digits/recovery-mode" ]; then
     echo "boot-check: persistent recovery flag found, entering recovery mode"
     touch "$RECOVERY_FLAG"

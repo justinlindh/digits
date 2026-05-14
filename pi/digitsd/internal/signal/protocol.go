@@ -48,9 +48,16 @@ const (
 	// TypeRestart is sent by the server to restart the service or reboot the device.
 	TypeRestart = "restart"
 
+	// TypeRingTest is sent by the server to briefly ring the bell for hardware verification.
+	TypeRingTest = "ring_test"
+
 	// TypeLineSettings is sent by the server to push an updated Settings blob
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
+
+	// TypeReleaseAvailable is sent by the server to notify the device that a
+	// new release is available. Carries LatestPiVersion and LatestFWVersion.
+	TypeReleaseAvailable = "release_available"
 
 	// TypeLinkHealth is sent by the phone to the server with a per-call
 	// quality telemetry snapshot. Phone → Server only.
@@ -62,6 +69,19 @@ const (
 	// hardware ID is rejected as "device_token required" because the server
 	// still thinks the device is paired. Phone → Server only.
 	TypeRepair = "repair"
+
+	// TypeCallReturn is sent by the phone to request the last inbound caller
+	// for *69 (Call Return). Server replies with TypeCallReturnResult.
+	TypeCallReturn = "call_return"
+
+	// TypeCallReturnResult is sent by the server with the last inbound caller's
+	// number (in the Number field), or empty string if no eligible call exists.
+	TypeCallReturnResult = "call_return_result"
+
+	TypeCallReturnRetry     = "call_return_retry"
+	TypeCallReturnRing      = "call_return_ring"
+	TypeCallReturnCancel    = "call_return_cancel"
+	TypeCallReturnCancelled = "call_return_cancelled"
 )
 
 // Conference message types (three-way calling)
@@ -116,6 +136,7 @@ type ContactEntry struct {
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+	AutoUpdate bool   `json:"auto_update,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.
@@ -153,9 +174,19 @@ type Message struct {
 	FirmwareVersion string `json:"firmware_version,omitempty"`
 	FirmwareCommit  string `json:"firmware_commit,omitempty"`
 
+	// LocalAddr is the device's primary LAN address as the device sees
+	// itself, reported in device_info so the server can display it on the
+	// owner's /phones page. The path through CF or NPM strips the source
+	// IP, so the device is the authoritative source.
+	LocalAddr string `json:"local_addr,omitempty"`
+
 	// Update trigger fields (update_trigger messages)
 	TargetPiVersion string `json:"target_pi_version,omitempty"`
 	TargetFWVersion string `json:"target_fw_version,omitempty"`
+
+	// Release notification fields (release_available messages)
+	LatestPiVersion string `json:"latest_pi_version,omitempty"`
+	LatestFWVersion string `json:"latest_fw_version,omitempty"`
 
 	// Update status fields (update_status messages)
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
@@ -163,6 +194,9 @@ type Message struct {
 
 	// Flash capability (device_info messages)
 	FlashCapable bool `json:"flash_capable,omitempty"`
+
+	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	DevMode bool `json:"dev_mode,omitempty"`
 
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"

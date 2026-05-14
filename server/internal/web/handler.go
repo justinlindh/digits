@@ -21,9 +21,11 @@ import (
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/httputil"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/ratelimit"
 	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/tracing"
 	"github.com/justinlindh/digits/server/internal/updates"
 	"github.com/justinlindh/digits/server/internal/version"
 )
@@ -54,6 +56,15 @@ func baseTemplateFuncs() template.FuncMap {
 				return fmt.Sprintf("%ds", seconds)
 			}
 			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
+		},
+		"fmtDurationClock": func(seconds int) string {
+			h := seconds / 3600
+			m := (seconds % 3600) / 60
+			s := seconds % 60
+			if h > 0 {
+				return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+			}
+			return fmt.Sprintf("%02d:%02d", m, s)
 		},
 		"derefFloat32": func(p *float32) float32 {
 			if p == nil {
@@ -148,6 +159,11 @@ func baseTemplateFuncs() template.FuncMap {
 	}
 }
 
+const (
+	cacheControlImmutable = "public, max-age=31536000, immutable"
+	hstsHeader            = "max-age=31536000; includeSubDomains"
+)
+
 // devStaticDirDefault is the disk path (relative to the process CWD) used
 // for /static/ when DevMode is on and no explicit override is supplied.
 // It matches the Makefile's dev-up target, which runs signald with CWD
@@ -186,7 +202,7 @@ func staticFileServer(devMode bool, diskDir string) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("Cache-Control", cacheControlImmutable)
 		}
 		base.ServeHTTP(w, r)
 	})
@@ -202,21 +218,23 @@ type Handler struct {
 	healthStore *calls.HealthStore
 	dashEvents  *events.Broadcaster
 	// Per-page template sets to avoid {{define}} name conflicts
-	tmplDashboard      *template.Template
-	tmplPhones         *template.Template
-	tmplCalls          *template.Template
-	tmplSettings       *template.Template
-	tmplOnboard        *template.Template
-	tmplPhoneDetail    *template.Template
-	tmplLinks          *template.Template
-	tmplConnecting     *template.Template
-	tmplWelcome        *template.Template
-	tmplCallLivePanel          *template.Template
-	tmplCallLiveDetail         *template.Template
-	tmplConferenceLivePanel    *template.Template
-	tmplConferenceLiveDetail   *template.Template
-	tmplDashboardAMStatus      *template.Template
-	cfg                HandlerConfig
+	tmplDashboard            *template.Template
+	tmplPhones               *template.Template
+	tmplCalls                *template.Template
+	tmplSettings             *template.Template
+	tmplOnboard              *template.Template
+	tmplPhoneDetail          *template.Template
+	tmplLinks                *template.Template
+	tmplConnecting           *template.Template
+	tmplWelcome              *template.Template
+	tmplInvite               *template.Template
+	tmplCallLivePanel        *template.Template
+	tmplCallLiveDetail       *template.Template
+	tmplConferenceLivePanel  *template.Template
+	tmplConferenceLiveDetail *template.Template
+	tmplDashboardAMStatus    *template.Template
+	tmplChangelog            *template.Template
+	cfg                      HandlerConfig
 	// Auth
 	authStore    *auth.Store
 	authHandlers *auth.Handlers
@@ -226,9 +244,9 @@ type Handler struct {
 	// Pairing
 	pairingStore *pairing.Store
 	// Household links
-	linkStore *household.LinkStore
-	// Email
-	emailSender email.Sender
+	linkStore   *household.LinkStore
+	inviteStore *household.InviteStore
+	emailer     email.Sender
 	// Rate limiters. All four are Handler fields so Router() has a single
 	// construction pattern; previously the magic-link verify and Google
 	// login limiters were instantiated inline inside Router(), which made
@@ -237,8 +255,14 @@ type Handler struct {
 	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
 	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
 	pairingLimiter     *ratelimit.Limiter // POST /phones/pair
+	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
+	wsLimiter          *ratelimit.Limiter // GET  /ws (WebSocket upgrade)
 	// Updates
 	Releases *updates.GitHubReleases
+	// Metrics is the optional Prometheus registry. When set, a request
+	// timing/count middleware is wrapped around the public mux. nil disables
+	// HTTP instrumentation entirely (useful for tests that don't care).
+	metrics *metrics.Registry
 }
 
 // segDesc drives bar segment rendering. Lit is the count (0..10) of
@@ -267,6 +291,9 @@ type HandlerConfig struct {
 	// which matches the layout the Makefile's dev-up target runs from.
 	// The field exists mainly so tests can point at a temp directory.
 	DevStaticDir string
+	// WSRateLimitPerMin overrides the default WebSocket upgrade rate limit
+	// (per IP, per minute). Zero uses the default (30).
+	WSRateLimitPerMin int
 }
 
 // Deps bundles the stores, hub, and other collaborators the web Handler
@@ -286,7 +313,16 @@ type Deps struct {
 	HouseholdStore *household.Store
 	PairingStore   *pairing.Store
 	LinkStore      *household.LinkStore
-	EmailSender    email.Sender
+	InviteStore    *household.InviteStore
+	Emailer        email.Sender
+	Metrics        *metrics.Registry
+}
+
+func wsRateLimit(cfg HandlerConfig) int {
+	if cfg.WSRateLimitPerMin > 0 {
+		return cfg.WSRateLimitPerMin
+	}
+	return 30
 }
 
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
@@ -296,6 +332,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	parsePage := func(page string) (*template.Template, error) {
 		return template.New("").Funcs(funcMap).ParseFS(templateFS,
 			"templates/_partials.html",
+			"templates/_changelog.html",
 			"templates/layout-v2.html",
 			"templates/layout-dialup.html",
 			"templates/layout-answering-machine.html",
@@ -319,6 +356,9 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
 		return nil, err
+	}
+	if _, err := tmplPhones.ParseFS(templateFS, "templates/dnd-toggle.html"); err != nil {
+		return nil, fmt.Errorf("parse dnd-toggle partial into phones: %w", err)
 	}
 	tmplCalls, err := parsePage("calls.html")
 	if err != nil {
@@ -348,6 +388,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	tmplInvite, err := parsePage("invite.html")
+	if err != nil {
+		return nil, err
+	}
 	tmplCallLivePanel, err := template.New("call-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_call-live-panel.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse call-live-panel: %w", err)
@@ -372,6 +416,13 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if _, err := tmplConferenceLiveDetail.ParseFS(templateFS, "templates/_conference-live-panel.html"); err != nil {
 		return nil, fmt.Errorf("parse conference-live-panel partial into detail: %w", err)
 	}
+	tmplChangelog, err := template.New("changelog").Funcs(funcMap).ParseFS(templateFS,
+		"templates/_partials.html",
+		"templates/_changelog.html",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("parse changelog: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -385,41 +436,53 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	}
 
 	return &Handler{
-		upgrader:           u,
-		lineStore:          deps.LineStore,
-		deviceStore:        deps.DeviceStore,
-		hub:                deps.Hub,
-		tracker:            deps.Tracker,
-		relay:              deps.Relay,
-		healthStore:        deps.HealthStore,
-		dashEvents:         deps.DashEvents,
-		tmplDashboard:      tmplDashboard,
-		tmplPhones:         tmplPhones,
-		tmplCalls:          tmplCalls,
-		tmplSettings:       tmplSettings,
-		tmplOnboard:        tmplOnboard,
-		tmplPhoneDetail:    tmplPhoneDetail,
-		tmplLinks:          tmplLinks,
-		tmplConnecting:     tmplConnecting,
-		tmplWelcome:        tmplWelcome,
-		tmplCallLivePanel:          tmplCallLivePanel,
-		tmplCallLiveDetail:         tmplCallLiveDetail,
-		tmplConferenceLivePanel:    tmplConferenceLivePanel,
-		tmplConferenceLiveDetail:   tmplConferenceLiveDetail,
-		tmplDashboardAMStatus:      tmplDashboardAMStatus,
-		cfg:                cfg,
-		authStore:          deps.AuthStore,
-		authHandlers:       deps.AuthHandlers,
-		googleAuth:         deps.GoogleAuth,
-		householdStore:     deps.HouseholdStore,
-		pairingStore:       deps.PairingStore,
-		linkStore:          deps.LinkStore,
-		emailSender:        deps.EmailSender,
-		authLimiter:        ratelimit.New(5, time.Minute),
-		magicVerifyLimiter: ratelimit.New(10, time.Minute),
-		googleLoginLimiter: ratelimit.New(10, time.Minute),
-		pairingLimiter:     ratelimit.New(5, time.Minute),
+		upgrader:                 u,
+		lineStore:                deps.LineStore,
+		deviceStore:              deps.DeviceStore,
+		hub:                      deps.Hub,
+		tracker:                  deps.Tracker,
+		relay:                    deps.Relay,
+		healthStore:              deps.HealthStore,
+		dashEvents:               deps.DashEvents,
+		tmplDashboard:            tmplDashboard,
+		tmplPhones:               tmplPhones,
+		tmplCalls:                tmplCalls,
+		tmplSettings:             tmplSettings,
+		tmplOnboard:              tmplOnboard,
+		tmplPhoneDetail:          tmplPhoneDetail,
+		tmplLinks:                tmplLinks,
+		tmplConnecting:           tmplConnecting,
+		tmplWelcome:              tmplWelcome,
+		tmplInvite:               tmplInvite,
+		tmplCallLivePanel:        tmplCallLivePanel,
+		tmplCallLiveDetail:       tmplCallLiveDetail,
+		tmplConferenceLivePanel:  tmplConferenceLivePanel,
+		tmplConferenceLiveDetail: tmplConferenceLiveDetail,
+		tmplDashboardAMStatus:    tmplDashboardAMStatus,
+		tmplChangelog:            tmplChangelog,
+		cfg:                      cfg,
+		authStore:                deps.AuthStore,
+		authHandlers:             deps.AuthHandlers,
+		googleAuth:               deps.GoogleAuth,
+		householdStore:           deps.HouseholdStore,
+		pairingStore:             deps.PairingStore,
+		linkStore:                deps.LinkStore,
+		inviteStore:              deps.InviteStore,
+		emailer:                  deps.Emailer,
+		authLimiter:              ratelimit.New(5, time.Minute),
+		magicVerifyLimiter:       ratelimit.New(10, time.Minute),
+		googleLoginLimiter:       ratelimit.New(10, time.Minute),
+		pairingLimiter:           ratelimit.New(5, time.Minute),
+		inviteLimiter:            ratelimit.New(5, time.Minute),
+		wsLimiter:                ratelimit.New(wsRateLimit(cfg), time.Minute),
+		metrics:                  deps.Metrics,
 	}, nil
+}
+
+// Hub returns the signaling Hub. Used by callers (e.g. main) that wire
+// external callbacks and need to broadcast messages to connected devices.
+func (h *Handler) Hub() *signaling.Hub {
+	return h.hub
 }
 
 func (h *Handler) Router() http.Handler {
@@ -441,13 +504,16 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("GET /auth/dev-session", h.authHandlers.HandleDevSession)
 	mux.Handle("GET /auth/google/login", h.googleLoginLimiter.Middleware(http.HandlerFunc(h.googleAuth.HandleLogin)))
 	mux.HandleFunc("GET /auth/google/callback", h.googleAuth.HandleCallback)
+	mux.HandleFunc("GET /invite/{token}", h.handleInviteGet)
+	mux.HandleFunc("POST /invite/{token}/accept", h.handleInviteAcceptPost)
 	mux.HandleFunc("GET /api/version", h.handleAPIVersion)
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
-	mux.HandleFunc("GET /ws", h.handleWS)
+	mux.Handle("GET /ws", h.wsLimiter.Middleware(http.HandlerFunc(h.handleWS)))
 
 	// Update release index endpoint (unauthenticated — phones fetch this)
 	if h.Releases != nil {
 		mux.HandleFunc("GET /api/updates/releases", h.Releases.ServeReleases())
+		mux.HandleFunc("GET /api/release-audio/{component}/{version}", h.Releases.ServeAudio())
 		slog.Info("updates: serving release index from GitHub")
 	}
 	// /test is a legacy alias for the dev test client. The file now lives in
@@ -487,14 +553,18 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /phones/{number}/name", h.handlePhoneNameGet)
 	protected.HandleFunc("GET /phones/{number}/name/edit", h.handlePhoneNameEditGet)
 	protected.HandleFunc("POST /phones/{number}/name", h.handlePhoneNamePost)
+	protected.HandleFunc("POST /phones/{number}/number", h.handlePhoneNumberPost)
 	protected.HandleFunc("POST /phones/{number}/voice-style", h.handlePhoneVoiceStylePost)
 	protected.HandleFunc("POST /phones/{number}/silent-mode", h.handlePhoneSilentModePost)
+	protected.HandleFunc("POST /phones/{number}/auto-update", h.handlePhoneAutoUpdatePost)
+	protected.HandleFunc("POST /phones/{number}/convert", h.handlePhoneConvert)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)
 	protected.HandleFunc("GET /phones/{number}/online", h.handlePhoneOnline)
 	protected.HandleFunc("GET /phones/{number}/update-status", h.handlePhoneUpdateStatus)
 	protected.HandleFunc("POST /phones/{number}/factory-reset", h.handlePhoneFactoryReset)
 	protected.HandleFunc("POST /phones/{number}/restart", h.handlePhoneRestart)
+	protected.HandleFunc("POST /phones/{number}/ring-test", h.handlePhoneRingTest)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)
@@ -504,6 +574,12 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /settings/theme", h.handleSettingsTheme)
 	protected.HandleFunc("POST /settings/crt-mode", h.handleSettingsCRTMode)
 	protected.HandleFunc("POST /settings/appearance", h.handleSettingsAppearance)
+	protected.Handle("POST /settings/household/invite", h.inviteLimiter.Middleware(http.HandlerFunc(h.handleHouseholdInvitePost)))
+	protected.HandleFunc("POST /settings/household/invite/{id}/cancel", h.handleHouseholdInviteCancelPost)
+	protected.HandleFunc("POST /settings/household/members/{id}/remove", h.handleHouseholdMemberRemovePost)
+	protected.HandleFunc("POST /settings/household/switch", h.handleHouseholdSwitchPost)
+	protected.HandleFunc("POST /settings/account/delete", h.handleAccountDeletePost)
+	protected.HandleFunc("GET /changelog", h.handleChangelog)
 	protected.HandleFunc("GET /links", h.handleLinksGet)
 	protected.HandleFunc("POST /links/invite", h.handleLinksInvitePost)
 	protected.HandleFunc("POST /links/accept", h.handleLinksAcceptPost)
@@ -557,7 +633,22 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("/", protectedHandler)
 
 	// Wrap with root-domain redirect before security headers.
-	return rootDomainRedirect(h.cfg.BaseURL, securityHeadersMiddleware(mux))
+	wrapped := rootDomainRedirect(h.cfg.BaseURL, csrfOriginCheck(h.cfg.BaseURL, securityHeadersMiddleware(h.cfg.BaseURL, mux)))
+	// Metrics middleware sits outside redirect/security headers so it
+	// sees the actual response code and duration including any redirect
+	// header work above. RouteOf bucket is computed from the request
+	// path, never from a route name read off the matched handler, so the
+	// labels can't pick up an internal name.
+	if h.metrics != nil {
+		wrapped = h.metrics.Middleware(wrapped)
+	}
+	// Tracing middleware sits outermost so the server span covers the
+	// full request lifetime and so an inbound traceparent header is
+	// honored before any other middleware runs. The middleware uses the
+	// same metrics.RouteOf bucketer for span names, so a phone number in
+	// the URL never reaches a span attribute or span name.
+	wrapped = tracing.HTTPServerMiddleware("signald", wrapped)
+	return wrapped
 }
 
 // isGateExempt reports whether a request path should bypass the welcome and
@@ -585,15 +676,45 @@ func isGateExempt(path string, extra ...string) bool {
 	return false
 }
 
-func securityHeadersMiddleware(next http.Handler) http.Handler {
+func securityHeadersMiddleware(baseURL string, next http.Handler) http.Handler {
+	connectSrc := "'self' wss:"
+	if baseURL != "" {
+		wssOrigin := strings.Replace(baseURL, "https://", "wss://", 1)
+		wssOrigin = strings.Replace(wssOrigin, "http://", "ws://", 1)
+		connectSrc = "'self' " + wssOrigin
+	}
+	csp := fmt.Sprintf("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src %s; frame-ancestors 'none'", connectSrc)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", csp)
 		if r.TLS != nil {
-			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			w.Header().Set("Strict-Transport-Security", hstsHeader)
 		}
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// csrfOriginCheck rejects state-changing requests (POST/PUT/DELETE/PATCH)
+// whose Origin header does not match the configured base URL. GET/HEAD/OPTIONS
+// are safe methods and pass through. Requests with no Origin header are allowed
+// because non-browser clients (CLI tools, the Pi daemon) legitimately omit it.
+func csrfOriginCheck(baseURL string, next http.Handler) http.Handler {
+	if baseURL == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		origin := r.Header.Get("Origin")
+		if origin != "" && origin != baseURL {
+			http.Error(w, "origin not allowed", http.StatusForbidden)
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -640,4 +761,3 @@ func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
 		http.Redirect(w, r, target, http.StatusMovedPermanently)
 	})
 }
-

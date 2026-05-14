@@ -18,8 +18,7 @@ These override default behavior and apply to every output: chat, code, commits, 
 
 ```
 firmware/       Pico H firmware (C, CMake, Pico SDK)
-pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64)
-pi/digits-setup/ First-boot setup tool (Go)
+pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64); handles all modes: normal, recovery, setup, gpclk0
 pi/image/       Pi OS image builder
 server/         Signaling server + web UI (Go, htmx, Tailwind)
 tools/          Build scripts for firmware, Pi binaries, and OS images
@@ -61,10 +60,10 @@ make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
 
 Pi OS image and SD card flash (from repo root):
 ```
-make image            # build V1 (Codec Zero HAT) image via Docker
-make image-dev        # V1 image with SSH enabled
-make image-v2         # build V2 (carrier board) image
-make image-v2-dev     # V2 image with SSH enabled
+make image            # build V1 (Codec Zero HAT) image: release-mode by default
+make image-dev        # V1 image with SSH enabled (BUILD_LOCAL=1, cross-compiles from working tree)
+make image-v2         # build V2 (carrier board) image: release-mode by default
+make image-v2-dev     # V2 image with SSH enabled (BUILD_LOCAL=1)
 
 make flash            # flash newest image to auto-detected SD (override SD=/dev/sdX)
 make flash-v1         # flash newest V1 image
@@ -73,6 +72,8 @@ make flash-v2         # flash newest V2 image
 make image-flash      # build V1 dev image AND flash in one shot
 make image-v2-flash   # build V2 dev image AND flash
 ```
+
+The plain `make image` / `make image-v2` targets default to release mode: the Docker builder downloads pre-built `pi/v*` binaries and the latest `fw/v*` firmware from GitHub Releases, so a `GITHUB_TOKEN` env var with read-access to `justinlindh/digits` is required. Pin a specific Pi release with `RELEASE_TAG=pi/v1.21.0 make image` and a specific firmware with `FIRMWARE_TAG=fw/v0.9.0 make image`. Use `BUILD_LOCAL=1 make image` (or the `*-dev` targets, which set it for you) to cross-compile from the working tree instead, no token needed.
 
 The flash targets refuse to write to anything that isn't a block device. Override SD detection with `make flash-v2 SD=/dev/sdX`. `make help` lists every target with a one-line description.
 

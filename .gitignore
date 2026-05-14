@@ -5,8 +5,6 @@ artifacts/*
 
 # Compiled binaries
 pi/digitsd/digitsd
-pi/digits-setup/digits-setup
-pi/digits-recovery/bin/
 server/bin/
 
 # rnnoise test binaries (keep lib/ and rnnoise.h)
@@ -65,3 +63,4 @@ __pycache__/
 # STL preview renders for the keypad badges: kept so the GitHub file
 # browser shows what each printable mesh looks like.
 !hardware/badges/*.png
+sd-backup-pre-factory-reset.img.zst

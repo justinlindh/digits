@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -42,9 +43,14 @@ func (g *GoogleAuth) Enabled() bool {
 // HandleLogin redirects to Google consent screen.
 func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	state, _ := randomToken(16)
+	returnTo := r.URL.Query().Get("return_to")
+	cookieVal := state
+	if returnTo != "" {
+		cookieVal = state + "|" + returnTo
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
-		Value:    state,
+		Value:    cookieVal,
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
@@ -59,7 +65,17 @@ func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Verify state
 	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil || stateCookie.Value != r.URL.Query().Get("state") {
+	if err != nil {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	cookieVal := stateCookie.Value
+	var returnTo string
+	if idx := strings.Index(cookieVal, "|"); idx >= 0 {
+		returnTo = cookieVal[idx+1:]
+		cookieVal = cookieVal[:idx]
+	}
+	if cookieVal != r.URL.Query().Get("state") {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
 	}
@@ -109,7 +125,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		case err == nil:
 			// Link Google ID to existing account
 			if err := g.store.LinkGoogleID(r.Context(), user.ID, info.ID); err != nil {
-				slog.Warn("auth: failed to link google ID for user", "user_id", user.ID, "error", err)
+				slog.WarnContext(r.Context(), "auth: failed to link google ID for user", "user_id", user.ID, "error", err)
 			}
 		case errors.Is(err, ErrUserNotFound):
 			// New user
@@ -120,18 +136,18 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		default:
-			slog.Error("auth: google callback lookup by email", "err", err)
+			slog.ErrorContext(r.Context(), "auth: google callback lookup by email", "err", err)
 			http.Error(w, "failed to look up user", http.StatusInternalServerError)
 			return
 		}
 	default:
-		slog.Error("auth: google callback lookup by google id", "err", err)
+		slog.ErrorContext(r.Context(), "auth: google callback lookup by google id", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
 	}
 
 	if err := g.store.UpdateLastLogin(r.Context(), user.ID); err != nil {
-		slog.Warn("auth: failed to update last login for user", "user_id", user.ID, "error", err)
+		slog.WarnContext(r.Context(), "auth: failed to update last login for user", "user_id", user.ID, "error", err)
 	}
 
 	// Create session
@@ -152,5 +168,5 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 	})
 
-	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
+	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
 }

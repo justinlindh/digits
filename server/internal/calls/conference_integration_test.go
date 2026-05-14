@@ -30,7 +30,7 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if !tr.Busy(context.Background(), "5550001") {
+	if !tr.Busy("5550001") {
 		t.Fatalf("expected 5550001 busy from 2-party call")
 	}
 
@@ -39,7 +39,7 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err := tr.OnCallEnded(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
-	if tr.Busy(context.Background(), "5550001") {
+	if tr.Busy("5550001") {
 		t.Fatalf("expected 5550001 NOT busy after call ended")
 	}
 
@@ -47,13 +47,13 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}
-	if !tr.Busy(context.Background(), "5550001") {
+	if !tr.Busy("5550001") {
 		t.Fatalf("expected 5550001 busy via conference")
 	}
-	if !tr.Busy(context.Background(), "5550010") {
+	if !tr.Busy("5550010") {
 		t.Fatalf("expected 5550010 busy via conference")
 	}
-	if tr.Busy(context.Background(), "5550099") {
+	if tr.Busy("5550099") {
 		t.Fatalf("unexpected busy for 5550099")
 	}
 }
@@ -143,12 +143,12 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 
 	// Verify surviving members are busy via tr.active and Tracker.Busy reports them so.
 	for _, p := range remaining {
-		if !tr.Busy(context.Background(), p) {
+		if !tr.Busy(p) {
 			t.Fatalf("expected surviving member %s to be busy after continuation", p)
 		}
 	}
 	// The dropped member is not busy.
-	if tr.Busy(context.Background(), "5550101") {
+	if tr.Busy("5550101") {
 		t.Fatalf("dropped member should not be busy")
 	}
 }
@@ -174,7 +174,7 @@ func TestConferenceLifecycleHooks(t *testing.T) {
 		}
 	}
 
-	originatingCallID := tr.CallIDForPair(ctx, hostNum, m2)
+	originatingCallID := tr.CallIDForPair(hostNum, m2)
 	if originatingCallID == 0 {
 		t.Fatal("CallIDForPair returned 0 for originating pair")
 	}
@@ -228,7 +228,7 @@ func TestDropMemberFiresEvictConference(t *testing.T) {
 			t.Fatalf("OnCallAnswered: %v", err)
 		}
 	}
-	originatingCallID := tr.CallIDForPair(ctx, hostNum, m2)
+	originatingCallID := tr.CallIDForPair(hostNum, m2)
 	conf, err := tr.CreateConferencePersistent(ctx, hostNum, originatingCallID, []string{m2, m3})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
@@ -257,11 +257,11 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	}
 
 	// Pre-condition: 2-party call is active, both phones busy, InCall true.
-	if !tr.InCall(context.Background(), "5550200", "5550201") {
+	if !tr.InCall("5550200", "5550201") {
 		t.Fatalf("expected InCall true before conference")
 	}
 	for _, p := range []string{"5550200", "5550201"} {
-		if !tr.Busy(context.Background(), p) {
+		if !tr.Busy(p) {
 			t.Fatalf("expected %s busy before conference", p)
 		}
 	}
@@ -282,16 +282,16 @@ func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	}
 
 	// After merge: the 2-party A<->B entry must be gone from the active map.
-	if tr.InCall(context.Background(), "5550200", "5550201") {
+	if tr.InCall("5550200", "5550201") {
 		t.Fatalf("expected 2-party A<->B entry evicted from active map")
 	}
 	// Unrelated 2-party call must still be present.
-	if !tr.InCall(context.Background(), "5550300", "5550301") {
+	if !tr.InCall("5550300", "5550301") {
 		t.Fatalf("expected unrelated 2-party call to survive")
 	}
 	// All three conference members should be Busy (via conference).
 	for _, p := range []string{"5550200", "5550201", "5550202"} {
-		if !tr.Busy(context.Background(), p) {
+		if !tr.Busy(p) {
 			t.Fatalf("expected conference member %s busy", p)
 		}
 	}
@@ -390,7 +390,7 @@ func TestRecordKick_Integration(t *testing.T) {
 	}
 	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550102")
 	_ = tr.OnCallAnswered(ctx, "+15555550101", "+15555550103")
-	originatingCallID := tr.CallIDForPair(ctx, "+15555550101", "+15555550102")
+	originatingCallID := tr.CallIDForPair("+15555550101", "+15555550102")
 	conf, err := tr.CreateConferencePersistent(ctx, "+15555550101", originatingCallID, []string{"+15555550102", "+15555550103"})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)
@@ -450,7 +450,7 @@ func TestGetConferenceByID_Integration(t *testing.T) {
 	if err := tr.OnCallAnswered(ctx, "+15555550001", "+15555550003"); err != nil {
 		t.Fatalf("answer call 2: %v", err)
 	}
-	originatingCallID := tr.CallIDForPair(ctx, "+15555550001", "+15555550002")
+	originatingCallID := tr.CallIDForPair("+15555550001", "+15555550002")
 	conf, err := tr.CreateConferencePersistent(ctx, "+15555550001", originatingCallID, []string{"+15555550002", "+15555550003"})
 	if err != nil {
 		t.Fatalf("create conference: %v", err)

@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
@@ -23,10 +25,14 @@ import (
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/logging"
+	"github.com/justinlindh/digits/server/internal/metrics"
 	"github.com/justinlindh/digits/server/internal/pairing"
+	"github.com/justinlindh/digits/server/internal/profiling"
 	"github.com/justinlindh/digits/server/internal/signaling"
+	"github.com/justinlindh/digits/server/internal/tracing"
 	"github.com/justinlindh/digits/server/internal/turn"
 	"github.com/justinlindh/digits/server/internal/updates"
+	"github.com/justinlindh/digits/server/internal/version"
 	"github.com/justinlindh/digits/server/internal/web"
 )
 
@@ -45,8 +51,47 @@ func main() {
 // through slog instead of bypassing it via log.Fatal.
 func run(ctx context.Context) error {
 	cfg := config.Load()
+	slog.Info("starting signald", "version", version.Version, "commit", version.Commit, "pid", os.Getpid())
 	if cfg.DatabaseURL == "" {
 		return errors.New("DATABASE_URL must be set")
+	}
+
+	// OpenTelemetry tracing. Endpoint is read from
+	// OTEL_EXPORTER_OTLP_ENDPOINT; empty disables the exporter while
+	// leaving in-process propagation on, so a future enable does not
+	// require a code change. The shutdown closure flushes buffered spans
+	// on a clean SIGTERM; deferred so a panic during run() still flushes.
+	traceCfg := tracing.NewConfig("signald", version.Version, version.Commit)
+	traceShutdown, err := tracing.Init(ctx, traceCfg)
+	if err != nil {
+		return fmt.Errorf("init tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := traceShutdown(shutdownCtx); err != nil {
+			slog.Warn("tracing shutdown", "err", err)
+		}
+	}()
+	if traceCfg.Endpoint != "" {
+		slog.Info("OpenTelemetry tracing enabled", "endpoint", traceCfg.Endpoint, "protocol", traceCfg.Protocol)
+	}
+
+	// Pyroscope continuous profiling. Server address is read from
+	// PYROSCOPE_SERVER_ADDRESS; empty disables the profiler. Profiling
+	// labels are a closed set; see internal/profiling for the rationale.
+	profCfg := profiling.NewConfig("signald")
+	profStop, err := profiling.Init(profCfg, version.Version)
+	if err != nil {
+		return fmt.Errorf("init profiling: %w", err)
+	}
+	defer func() {
+		if err := profStop(); err != nil {
+			slog.Warn("profiling shutdown", "err", err)
+		}
+	}()
+	if profCfg.ServerAddress != "" {
+		slog.Info("Pyroscope profiling enabled", "endpoint", profCfg.ServerAddress)
 	}
 
 	database, err := db.Open(cfg.DatabaseURL)
@@ -59,15 +104,56 @@ func run(ctx context.Context) error {
 	lineStore := line.NewStore(database)
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
+
+	// Redis pub/sub for multi-replica signaling. When REDIS_URL is set,
+	// the hub publishes to a shared channel when a target device is not
+	// connected to this pod. Other pods subscribe and deliver locally.
+	var redisBridge *signaling.RedisBridge
+	if cfg.RedisURL != "" {
+		var err error
+		redisBridge, err = signaling.NewRedisBridge(cfg.RedisURL)
+		if err != nil {
+			return fmt.Errorf("connect redis: %w", err)
+		}
+		defer func() { _ = redisBridge.Close() }()
+		if err := redisBridge.Ping(ctx); err != nil {
+			return fmt.Errorf("redis ping: %w", err)
+		}
+		hub.SetRedis(redisBridge)
+		go hub.Run(ctx)
+		slog.Info("redis pub/sub enabled for multi-replica signaling")
+	}
+
 	tracker := calls.New(database)
+	if redisBridge != nil {
+		rc := redisBridge.Client()
+		podID := redisBridge.PodID()
+
+		hub.SetDeviceState(signaling.NewDeviceState(rc, podID))
+		tracker.SetCallState(calls.NewCallState(rc))
+		tracker.Conferences().SetConfState(calls.NewConfState(rc))
+		slog.Info("redis cluster state enabled for multi-replica operation")
+	}
 	householdStore := household.NewStore(database.DB)
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
+
+	// Prometheus metrics. The registry is wired into the web handler as
+	// middleware (HTTP request count + duration) and into the signaling
+	// relay (signaling_errors_total). Live-state gauges sample the hub and
+	// tracker at scrape time so we never persist counts elsewhere.
+	mreg := metrics.New(version.Version, version.Commit)
+	mreg.RegisterDevicesGauge(func() float64 { return float64(hub.LocalConnectionCount()) })
+	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
 
 	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
 	// this broadcaster so the /api/dashboard/stream SSE handler can re-render
 	// counters without polling.
 	dashEvents := events.New()
+	if redisBridge != nil {
+		dashEvents.SetRedis(redisBridge.Client(), redisBridge.PodID())
+		go dashEvents.RunRedis(ctx)
+	}
 	hub.SetDashboardEvents(dashEvents)
 	tracker.SetDashboardEvents(dashEvents)
 
@@ -88,11 +174,13 @@ func run(ctx context.Context) error {
 	// Relay and TURN
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
+	relay.Errors = mreg
+	tracker.SetCallEndObserver(relay)
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
 		}
-		relay.TURNGen = turn.NewCredentialGenerator(cfg.TURNSecret, 24*time.Hour)
+		relay.TURNGen = turn.NewCredentialGenerator(cfg.TURNSecret, 2*time.Hour)
 		relay.TURNDomain = cfg.TURNDomain
 		slog.Info("TURN credential generation enabled", "domain", cfg.TURNDomain)
 	}
@@ -106,7 +194,7 @@ func run(ctx context.Context) error {
 		emailSender = email.NewSMTPSender(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass, cfg.SMTPFrom)
 		slog.Info("SMTP sender configured", "host", cfg.SMTPHost)
 	} else {
-		emailSender = email.NewNoopSender()
+		emailSender = email.NewLogSender()
 		slog.Warn("no SMTP configured, magic link emails will be logged only")
 	}
 
@@ -144,12 +232,15 @@ func run(ctx context.Context) error {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
+		InviteStore:    household.NewInviteStore(database.DB),
+		Emailer:        emailSender,
+		Metrics:        mreg,
 	}, web.HandlerConfig{
-		Addr:        cfg.Addr,
-		BaseURL:     cfg.BaseURL,
-		AdminSecret: cfg.AdminSecret,
-		DevMode:     cfg.DevMode,
+		Addr:              cfg.Addr,
+		BaseURL:           cfg.BaseURL,
+		AdminSecret:       cfg.AdminSecret,
+		DevMode:           cfg.DevMode,
+		WSRateLimitPerMin: cfg.WSRateLimitPerMin,
 	})
 	if err != nil {
 		return fmt.Errorf("create handler: %w", err)
@@ -163,7 +254,15 @@ func run(ctx context.Context) error {
 	case cfg.GitHubRepo != "":
 		parts := strings.SplitN(cfg.GitHubRepo, "/", 2)
 		if len(parts) == 2 {
-			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, 300) // 5 min cache
+			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, 300, // 5 min cache
+				func(piLatest, fwLatest string) {
+					slog.Info("updates: new release detected, broadcasting", "pi", piLatest, "fw", fwLatest)
+					handler.Hub().Broadcast(&signaling.Message{
+						Type:            signaling.TypeReleaseAvailable,
+						LatestPiVersion: piLatest,
+						LatestFWVersion: fwLatest,
+					})
+				})
 			slog.Info("updates: release index from GitHub", "repo", cfg.GitHubRepo)
 		} else {
 			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", cfg.GitHubRepo)
@@ -183,19 +282,64 @@ func run(ctx context.Context) error {
 		}
 	}()
 
+	// Metrics listener. Bound to a separate addr/port so /metrics is never
+	// served over the public app listener. Operators are expected to keep
+	// this address on a private interface (the docker prod compose binds it
+	// to 127.0.0.1; cluster scrapes reach it via the docker host IP). Empty
+	// SIGNALD_METRICS_ADDR disables the listener entirely.
+	var metricsSrv *http.Server
+	metricsErr := make(chan error, 1)
+	if cfg.MetricsAddr != "" {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("GET /metrics", promhttp.HandlerFor(mreg.Reg, promhttp.HandlerOpts{Registry: mreg.Reg}))
+		metricsMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		})
+		metricsSrv = &http.Server{Addr: cfg.MetricsAddr, Handler: metricsMux}
+		go func() {
+			slog.Info("metrics listener started", "addr", cfg.MetricsAddr)
+			metricsErr <- metricsSrv.ListenAndServe()
+		}()
+	}
+
 	select {
 	case err := <-serveErr:
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return fmt.Errorf("listen: %w", err)
-	case <-ctx.Done():
-		slog.Info("shutdown signal received, draining")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("http shutdown: %w", err)
+	case err := <-metricsErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
 		}
+		return fmt.Errorf("metrics listen: %w", err)
+	case <-ctx.Done():
+		slog.Info("shutdown signal received, draining connections")
+
+		// 25s budget leaves 5s headroom before k8s SIGKILL at 30s.
+		drainCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+
+		// 1. Stop accepting new WebSocket upgrades (returns 503).
+		hub.StartDraining()
+
+		// 2. Shut down HTTP server (waits for non-hijacked requests).
+		if err := srv.Shutdown(drainCtx); err != nil {
+			slog.Warn("http shutdown", "err", err)
+		}
+
+		// 3. Close remaining WebSocket connections gracefully (close frame 1001).
+		hub.DrainAndClose(drainCtx)
+
+		// 4. Shut down metrics listener.
+		if metricsSrv != nil {
+			if err := metricsSrv.Shutdown(drainCtx); err != nil {
+				slog.Warn("metrics shutdown", "err", err)
+			}
+		}
+
+		slog.Info("shutdown complete")
 		return nil
 	}
 }

@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
@@ -19,6 +19,18 @@ import (
 )
 
 const maxLineNameRunes = 50
+
+func oldestVersions(infos []signaling.DeviceInfoSnapshot) (fw, pi string) {
+	for _, info := range infos {
+		if info.FirmwareVersion != "" && (fw == "" || updates.CompareSemver(info.FirmwareVersion, fw) < 0) {
+			fw = info.FirmwareVersion
+		}
+		if info.PiVersion != "" && (pi == "" || updates.CompareSemver(info.PiVersion, pi) < 0) {
+			pi = info.PiVersion
+		}
+	}
+	return
+}
 
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
@@ -39,6 +51,7 @@ type pairSuccess struct {
 type linesData struct {
 	chromeData
 	Lines                 []lineRow
+	AllSilent             bool
 	Error                 string
 	PairError             string
 	PairSuccess           *pairSuccess
@@ -54,6 +67,8 @@ type lineRow struct {
 	OnCallElapsed       string // "mm:ss" for the Dashboard room-card callout
 	OnCallID            int64  // 0 when not on a call; otherwise the active call id
 	DeviceInfo          *signaling.DeviceInfoSnapshot
+	Devices             []device.Device
+	OnlineDeviceCount   int
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
 }
@@ -62,16 +77,15 @@ type lineRow struct {
 // nil or lookup fails the handler shows an empty list rather than leaking
 // every line on the server.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMsg string) linesData {
-	var user *auth.User
-	if r != nil {
-		user = auth.UserFromContext(r.Context())
-	}
-
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
-		lines, _ = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		var err error
+		lines, err = h.lineStore.ListByHousehold(r.Context(), hh.ID)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "list lines by household failed", "household_id", hh.ID, "err", err)
+		}
 	}
-	// If household lookup failed, show empty list rather than leaking all lines
+	// On error or nil household, show empty list rather than leaking all lines.
 	if lines == nil {
 		lines = []line.Line{}
 	}
@@ -96,21 +110,47 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 
 	rows := make([]lineRow, len(lines))
 	for i, l := range lines {
-		info := h.hub.DeviceInfo(l.Number)
+		infos := h.hub.AllDeviceInfo(l.Number)
+		var info *signaling.DeviceInfoSnapshot
+		if len(infos) > 0 {
+			info = &infos[0]
+		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
-		if idx != nil && info != nil {
-			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
-				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, info.FirmwareVersion, latestFw)
+		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
+
+		if h.deviceStore != nil {
+			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
+			if err != nil {
+				slog.ErrorContext(r.Context(), "list devices for line", "line_id", l.ID, "err", err)
+			} else {
+				row.Devices = devs
 			}
-			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
-				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, info.PiVersion, latestPi)
+		}
+
+		if idx != nil {
+			oldestFw, oldestPi := oldestVersions(infos)
+			if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
+			}
+			if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 			}
 		}
 		rows[i] = row
 	}
+	allSilent := len(rows) > 0
+	for _, row := range rows {
+		if !row.Line.Settings.SilentMode {
+			allSilent = false
+			break
+		}
+	}
+	cd := h.newChromeDataWithHouseholds(r, "phones")
+	cd.allSilent = allSilent
 	return linesData{
-		chromeData:            newChromeData("phones", user, hh),
+		chromeData:            cd,
 		Lines:                 rows,
+		AllSilent:             allSilent,
 		Error:                 errMsg,
 		LatestPiVersion:       latestPi,
 		LatestFirmwareVersion: latestFw,
@@ -118,17 +158,21 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 }
 
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
-	data := h.buildLinesData(r, h.primaryHousehold(r), "")
+	data := h.buildLinesData(r, h.activeHousehold(r), "")
 	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
 		data.PairSuccess = &pairSuccess{
 			Name:            pairedName,
 			FirmwareVersion: r.URL.Query().Get("fw"),
 		}
 	}
-	renderWith(w, h.tmplPhones, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 }
 
 func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
@@ -136,15 +180,11 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 	name := strings.TrimSpace(r.FormValue("name"))
 
-	hh := h.primaryHousehold(r)
-	var householdID string
-	if hh != nil {
-		householdID = hh.ID
-	}
+	householdID := hh.ID
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, err.Error())
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
@@ -156,72 +196,94 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	data := h.buildLinesData(r, hh, msg)
 
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	if err != nil {
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
+	_, hh, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
-	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
-	name := strings.TrimSpace(r.FormValue("name"))
-
-	hh := h.primaryHousehold(r)
-
-	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = "invalid phone number: " + err.Error()
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
-		return
-	}
+	deviceName := strings.TrimSpace(r.FormValue("name"))
+	pairMode := strings.TrimSpace(r.FormValue("pair_mode"))
+	existingLineID := strings.TrimSpace(r.FormValue("existing_line_id"))
 
 	if h.pairingStore == nil {
 		data := h.buildLinesData(r, hh, "")
 		data.PairError = "pairing is not enabled"
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
-	var householdID string
-	if hh != nil {
-		householdID = hh.ID
-	}
-	if householdID == "" {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = "no household found: please complete onboarding first"
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
-		return
+	householdID := hh.ID
+
+	var (
+		token  string
+		hwID   string
+		number string
+		err    error
+	)
+
+	if pairMode == "existing" && existingLineID != "" {
+		// Add device to an existing line (POTS extension)
+		lineID, parseErr := strconv.ParseInt(existingLineID, 10, 64)
+		if parseErr != nil {
+			data := h.buildLinesData(r, hh, "")
+			data.PairError = "invalid line selection"
+			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			return
+		}
+		token, hwID, err = h.pairingStore.ClaimDeviceToLine(r.Context(), code, lineID, deviceName, householdID)
+		if err == nil {
+			ln, lnErr := h.lineStore.GetByID(r.Context(), lineID)
+			if lnErr == nil {
+				number = ln.Number
+			}
+		}
+	} else {
+		// Create a new line and pair the device
+		number = line.StripNumber(strings.TrimSpace(r.FormValue("number")))
+		if verr := line.ValidateNumber(number); verr != nil {
+			data := h.buildLinesData(r, hh, "")
+			data.PairError = "invalid phone number: " + verr.Error()
+			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			return
+		}
+		lineName := deviceName
+		token, hwID, err = h.pairingStore.ClaimDevice(r.Context(), code, number, lineName, deviceName, householdID)
 	}
 
-	token, hwID, err := h.pairingStore.ClaimDevice(r.Context(), code, number, name, householdID)
 	if err != nil {
 		data := h.buildLinesData(r, hh, "")
 		data.PairError = err.Error()
-		renderWith(w, h.tmplPhones, layoutFor(r), data)
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
 
-	if hwID != "" {
+	if hwID != "" && number != "" {
 		if err := h.hub.SendToHardware(hwID, &signaling.Message{
 			Type:        signaling.TypePaired,
 			DeviceToken: token,
 			Number:      number,
 		}); err != nil {
-			slog.Warn("could not notify device of pairing", "hardware_id", hwID, "err", err)
+			slog.WarnContext(r.Context(), "could not notify device of pairing", "hardware_id", hwID, "err", err)
 		}
 	}
 
 	v := url.Values{}
-	v.Set("paired", name)
+	v.Set("paired", deviceName)
 	http.Redirect(w, r, "/phones?"+v.Encode(), http.StatusSeeOther)
 }
 
@@ -238,6 +300,8 @@ type lineDetailData struct {
 	FWReleases            []updates.Release
 	PiUpdateNotes         []updates.Release
 	FirmwareUpdateNotes   []updates.Release
+	OtherLines            []line.Line
+	NumberError           string
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -246,14 +310,14 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 
 	var devices []device.Device
 	if h.deviceStore != nil {
 		var err error
 		devices, err = h.deviceStore.ListByLine(r.Context(), ln.ID)
 		if err != nil {
-			slog.Error("failed to list devices by line", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "failed to list devices by line", "err", err, "line_id", ln.ID)
 		}
 	}
 
@@ -290,22 +354,35 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		lastSeenAt = &t
 	}
 
-	devInfo := h.hub.DeviceInfo(number)
+	allInfos := h.hub.AllDeviceInfo(number)
+	var devInfo *signaling.DeviceInfoSnapshot
+	if len(allInfos) > 0 {
+		devInfo = &allInfos[0]
+	}
 
 	var piUpdateNotes, firmwareUpdateNotes []updates.Release
-	if idx != nil && devInfo != nil {
-		if latestPi != "" && devInfo.PiVersion != "" && updates.CompareSemver(devInfo.PiVersion, latestPi) < 0 {
-			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, devInfo.PiVersion, latestPi)
+	if idx != nil {
+		oldestFw, oldestPi := oldestVersions(allInfos)
+		if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 		}
-		if latestFw != "" && devInfo.FirmwareVersion != "" && updates.CompareSemver(devInfo.FirmwareVersion, latestFw) < 0 {
-			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, devInfo.FirmwareVersion, latestFw)
+		if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
 		}
 	}
 
-	user := auth.UserFromContext(r.Context())
+	var otherLines []line.Line
+	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
+	if err == nil {
+		for _, ol := range allLines {
+			if ol.ID != ln.ID {
+				otherLines = append(otherLines, ol)
+			}
+		}
+	}
 
-	renderWith(w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		chromeData:            newChromeData("phones", user, hh),
+	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
+		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
 		Online:                online,
 		Devices:               devices,
@@ -317,6 +394,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FWReleases:            fwReleases,
 		PiUpdateNotes:         piUpdateNotes,
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
+		OtherLines:            otherLines,
+		NumberError:           r.URL.Query().Get("number_error"),
 	})
 }
 
@@ -325,16 +404,16 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	if h.requireLineOwnership(w, r, number) == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
+	online := h.hub.IsOnline(number)
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "phone-status", "am-phone-status"), struct {
 			Online bool
 		}{online})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]bool{"online": online}); err != nil {
-		slog.Error("encode online status failed", "err", err)
+		slog.ErrorContext(r.Context(), "encode online status failed", "err", err)
 	}
 }
 
@@ -344,8 +423,8 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.Get(number) != nil
-	renderWith(w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
+	online := h.hub.IsOnline(number)
+	renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phone-edit-row", "am-phone-edit-row"), lineRow{Line: *ln, Online: online})
 }
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +446,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 	if name != ln.Name {
 		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "line update failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -375,7 +454,7 @@ func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 
 	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
@@ -396,7 +475,7 @@ func (h *Handler) handlePhoneNameGet(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
 }
 
 func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request) {
@@ -405,7 +484,7 @@ func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request)
 	if ln == nil {
 		return
 	}
-	renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
+	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: ln.Name})
 }
 
 func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
@@ -421,22 +500,83 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	}
 	name, verr := validateLineName(raw)
 	if verr != nil {
-		renderWithStatus(w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
+		renderWithStatus(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
 		return
 	}
 	if name != ln.Name {
 		if err := h.lineStore.Update(r.Context(), ln.ID, number, name); err != nil {
-			slog.Error("line update failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "line update failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		ln.Name = name
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section", "am-name-section"), nameSectionData{Line: *ln})
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
+	oldNumber := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	newNumber := line.StripNumber(r.FormValue("number"))
+
+	ln, _ := h.requireLineOwnershipAdmin(w, r, oldNumber)
+	if ln == nil {
+		return
+	}
+
+	if h.tracker != nil && h.tracker.Busy(oldNumber) {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
+		return
+	}
+
+	if err := line.ValidateNumber(newNumber); err != nil {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+
+	if newNumber == oldNumber {
+		http.Redirect(w, r, "/phones/"+oldNumber, http.StatusSeeOther)
+		return
+	}
+
+	ctx := r.Context()
+	taken, err := h.lineStore.NumberExistsExcluding(ctx, newNumber, ln.ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "number uniqueness check failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if taken {
+		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("that number is already in use"), http.StatusSeeOther)
+		return
+	}
+
+	if err := h.lineStore.Update(ctx, ln.ID, newNumber, ln.Name); err != nil {
+		slog.ErrorContext(ctx, "line number update failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if h.tracker != nil {
+		if err := h.tracker.RenameNumber(ctx, oldNumber, newNumber); err != nil {
+			slog.ErrorContext(ctx, "call history rename failed", "old", oldNumber, "new", newNumber, "err", err)
+		}
+	}
+
+	h.hub.RekeyNumber(oldNumber, newNumber)
+
+	if err := h.pushLineSettings(newNumber, ln.Settings); err != nil {
+		slog.WarnContext(ctx, "push line settings after number change failed", "number", newNumber, "err", err)
+	}
+
+	http.Redirect(w, r, "/phones/"+newNumber, http.StatusSeeOther)
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
@@ -465,6 +605,17 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	autoUpdate := strings.TrimSpace(r.FormValue("auto_update")) == "on"
+	h.updateLineSetting(w, r, "auto-update-section", "am-auto-update-section", func(s *line.Settings) {
+		s.AutoUpdate = autoUpdate
+	})
+}
+
 // updateLineSetting applies a mutation to the Settings of the line identified
 // by the {number} path value, persists and pushes it if anything changed, and
 // then renders the theme-appropriate partial (or redirects to the phone detail
@@ -472,7 +623,7 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 // ParseForm and extracted the field they need before invoking this helper.
 func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -481,21 +632,17 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	next = next.Normalize()
 	if next != ln.Settings {
 		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
-			slog.Error("update line settings failed", "err", err, "line_id", ln.ID)
+			slog.ErrorContext(r.Context(), "update line settings failed", "err", err, "line_id", ln.ID)
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		dnd := false
-		if hh != nil {
-			dnd = hh.DoNotDisturb
-		}
-		if err := h.pushLineSettings(number, next, dnd); err != nil {
-			slog.Warn("push line settings failed", "number", number, "err", err)
+		if err := h.pushLineSettings(number, next); err != nil {
+			slog.WarnContext(r.Context(), "push line settings failed", "number", number, "err", err)
 		}
 		ln.Settings = next
 	}
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
+		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
 			Line line.Line
 		}{Line: *ln})
 		return
@@ -503,19 +650,18 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
-// pushLineSettings sends the updated effective settings to the device
-// currently registered as the given number, if any. The household-DND flag
-// is OR'd into SilentMode before sending so the device sees one
-// authoritative bool. A missing device is not an error; the next time that
-// device reconnects it will receive the latest effective settings via the
-// registration push in relay.OnRegistered.
-func (h *Handler) pushLineSettings(number string, settings line.Settings, householdDND bool) error {
+// pushLineSettings sends the updated settings to the device currently
+// registered as the given number, if any. A missing device is not an error;
+// the next time that device reconnects it will receive the latest effective
+// settings via the registration push in relay.OnRegistered.
+func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
 	err := h.hub.SendTo(number, &signaling.Message{
 		Type: signaling.TypeLineSettings,
 		To:   number,
 		LineSettings: &signaling.LineSettings{
 			VoiceStyle: settings.VoiceStyle,
-			SilentMode: line.EffectiveSilent(settings, householdDND),
+			SilentMode: settings.SilentMode,
+			AutoUpdate: settings.AutoUpdate,
 		},
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {
@@ -526,7 +672,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings, househ
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -544,16 +690,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 		TargetPiVersion: targetPi,
 		TargetFWVersion: targetFW,
 	}
-
-	var sendErr string
-	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("update trigger failed", "number", number, "err", err)
-		sendErr = err.Error()
-	} else {
-		slog.Info("update trigger sent", "number", number, "target_pi", targetPi, "target_fw", targetFW)
-	}
-
-	h.respondPhoneCommandResult(w, r, number, sendErr)
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "update trigger", "target_pi", targetPi, "target_fw", targetFW)
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
@@ -565,18 +702,30 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
 		if err := json.NewEncoder(w).Encode(map[string]string{"status": ""}); err != nil {
-			slog.Error("update status: json encode failed", "err", err)
+			slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 		}
 		return
 	}
 	if err := json.NewEncoder(w).Encode(status); err != nil {
-		slog.Error("update status: json encode failed", "err", err)
+		slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 	}
+}
+
+func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if h.requireLineOwnership(w, r, number) == nil {
+		return
+	}
+
+	msg := &signaling.Message{
+		Type: signaling.TypeRingTest,
+	}
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "ring test")
 }
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 
@@ -585,21 +734,12 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 	msg := &signaling.Message{
 		Type: signaling.TypeFactoryReset,
 	}
-
-	var sendErr string
-	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("factory reset trigger failed", "number", number, "err", err)
-		sendErr = err.Error()
-	} else {
-		slog.Info("factory reset triggered", "number", number)
-	}
-
-	h.respondPhoneCommandResult(w, r, number, sendErr)
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "factory reset")
 }
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
@@ -609,9 +749,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	mode := strings.TrimSpace(r.FormValue("mode"))
 
 	if mode != "service" && mode != "reboot" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": "mode must be 'service' or 'reboot'"})
+		jsonError(r.Context(), w, "mode must be 'service' or 'reboot'", http.StatusBadRequest)
 		return
 	}
 
@@ -619,15 +757,22 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		Type:        signaling.TypeRestart,
 		RestartMode: mode,
 	}
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "restart command", "mode", mode)
+}
 
+// sendPhoneCommandAndRespond pushes msg to the device, logs the outcome
+// (warn on hub send failure, info on success), and writes the standard
+// phone-command response. opName names the operation for the log
+// messages; extraInfo is forwarded to both the warn and info logs as
+// command-specific context (restart mode, update targets, etc.).
+func (h *Handler) sendPhoneCommandAndRespond(w http.ResponseWriter, r *http.Request, number string, msg *signaling.Message, opName string, extraInfo ...any) {
 	var sendErr string
 	if err := h.hub.SendTo(number, msg); err != nil {
-		slog.Warn("restart command failed", "number", number, "mode", mode, "err", err)
+		slog.WarnContext(r.Context(), opName+" failed", append([]any{"number", number, "err", err}, extraInfo...)...)
 		sendErr = err.Error()
 	} else {
-		slog.Info("restart command sent", "number", number, "mode", mode)
+		slog.InfoContext(r.Context(), opName+" sent", append([]any{"number", number}, extraInfo...)...)
 	}
-
 	h.respondPhoneCommandResult(w, r, number, sendErr)
 }
 
@@ -644,7 +789,7 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 			payload = map[string]string{"error": sendErr}
 		}
 		if err := json.NewEncoder(w).Encode(payload); err != nil {
-			slog.Error("phone command response: json encode failed", "number", number, "err", err)
+			slog.ErrorContext(r.Context(), "phone command response: json encode failed", "number", number, "err", err)
 		}
 		return
 	}
@@ -653,20 +798,114 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	ln, hh := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
 	if err := h.lineStore.Delete(r.Context(), ln.ID); err != nil {
-		slog.Error("delete line failed", "line_id", ln.ID, "err", err)
+		slog.ErrorContext(r.Context(), "delete line failed", "line_id", ln.ID, "err", err)
 		http.Error(w, "failed to delete line", http.StatusInternalServerError)
 		return
 	}
 	data := h.buildLinesData(r, hh, "")
 	if isHTMX(r) {
-		renderWith(w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
+		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "phones-table", "am-phones-table"), data)
 		return
 	}
 	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
+func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	targetLineIDStr := strings.TrimSpace(r.FormValue("target_line_id"))
+	if targetLineIDStr == "" {
+		http.Error(w, "target line required", http.StatusBadRequest)
+		return
+	}
+	targetLineID, err := strconv.ParseInt(targetLineIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid target line", http.StatusBadRequest)
+		return
+	}
+
+	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
+	if srcLn == nil {
+		return
+	}
+	if srcLn.ID == targetLineID {
+		http.Error(w, "cannot move to the same line", http.StatusBadRequest)
+		return
+	}
+
+	// Verify target line belongs to same household.
+	tgtLn, err := h.lineStore.GetByID(r.Context(), targetLineID)
+	if err != nil {
+		http.Error(w, "target line not found", http.StatusNotFound)
+		return
+	}
+	if tgtLn.HouseholdID != srcLn.HouseholdID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if listErr != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	deviceIDStr := strings.TrimSpace(r.FormValue("device_id"))
+	var deviceID int64
+	if deviceIDStr != "" {
+		deviceID, err = strconv.ParseInt(deviceIDStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid device", http.StatusBadRequest)
+			return
+		}
+		owned := false
+		for _, d := range devices {
+			if d.ID == deviceID {
+				owned = true
+				break
+			}
+		}
+		if !owned {
+			http.Error(w, "device does not belong to this line", http.StatusBadRequest)
+			return
+		}
+	} else {
+		if len(devices) != 1 {
+			http.Error(w, "device_id required for multi-device lines", http.StatusBadRequest)
+			return
+		}
+		deviceID = devices[0].ID
+	}
+
+	// Move the device.
+	if err := h.deviceStore.Reassign(r.Context(), deviceID, targetLineID); err != nil {
+		slog.ErrorContext(r.Context(), "move device failed", "device_id", deviceID, "target", targetLineID, "err", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	remaining, err := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list remaining devices failed", "line_id", srcLn.ID, "err", err)
+		http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+		return
+	}
+	if len(remaining) == 0 {
+		if err := h.lineStore.Delete(r.Context(), srcLn.ID); err != nil {
+			slog.ErrorContext(r.Context(), "delete empty line failed", "line_id", srcLn.ID, "err", err)
+		}
+		http.Redirect(w, r, "/phones", http.StatusSeeOther)
+		return
+	}
+
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}

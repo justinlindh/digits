@@ -47,18 +47,24 @@ type GitHubReleases struct {
 
 	mu     sync.RWMutex
 	cached *ReleaseIndex
+
+	// OnChange is called when refresh detects a new latest version for
+	// either component. Called synchronously from SetIndex; the callback
+	// should not block. Nil means no notification.
+	OnChange func(piLatest, fwLatest string)
 }
 
 // NewGitHubReleases creates a GitHubReleases that polls the given repo.
 // It fetches immediately in the background and refreshes every ttlSeconds.
-func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int) *GitHubReleases {
+func NewGitHubReleases(ctx context.Context, owner, repo, token string, ttlSeconds int, onChange func(piLatest, fwLatest string)) *GitHubReleases {
 	g := &GitHubReleases{
-		owner:   owner,
-		repo:    repo,
-		apiBase: "https://api.github.com",
-		token:   token,
-		client:  &http.Client{Timeout: 15 * time.Second},
-		ttl:     time.Duration(ttlSeconds) * time.Second,
+		owner:    owner,
+		repo:     repo,
+		apiBase:  "https://api.github.com",
+		token:    token,
+		client:   &http.Client{Timeout: 15 * time.Second},
+		ttl:      time.Duration(ttlSeconds) * time.Second,
+		OnChange: onChange,
 	}
 	go g.poll(ctx)
 	return g
@@ -89,15 +95,28 @@ func (g *GitHubReleases) poll(ctx context.Context) {
 	}
 }
 
+// SetIndex replaces the cached release index. If OnChange is set and either
+// component's latest version differs from the previous index, the callback is
+// fired synchronously after the lock is released.
+func (g *GitHubReleases) SetIndex(idx *ReleaseIndex) {
+	g.mu.Lock()
+	old := g.cached
+	g.cached = idx
+	cb := g.OnChange
+	g.mu.Unlock()
+
+	if cb != nil && old != nil && (old.Pi.Latest != idx.Pi.Latest || old.Firmware.Latest != idx.Firmware.Latest) {
+		cb(idx.Pi.Latest, idx.Firmware.Latest)
+	}
+}
+
 func (g *GitHubReleases) refresh(ctx context.Context) {
 	idx, err := g.fetch(ctx)
 	if err != nil {
-		slog.Error("failed to fetch GitHub releases", "error", err)
+		slog.ErrorContext(ctx, "failed to fetch GitHub releases", "error", err)
 		return
 	}
-	g.mu.Lock()
-	g.cached = idx
-	g.mu.Unlock()
+	g.SetIndex(idx)
 }
 
 // ServeReleases returns an HTTP handler that serves the release index as JSON.
@@ -149,6 +168,7 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 	idx := &ReleaseIndex{
 		Pi:       ComponentIndex{Releases: make(map[string]*Release)},
 		Firmware: ComponentIndex{Releases: make(map[string]*Release)},
+		Server:   ComponentIndex{Releases: make(map[string]*Release)},
 	}
 
 	for _, rel := range releases {
@@ -157,14 +177,18 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			continue
 		}
 
-		binaryURL, sha256URL := classifyAssets(rel.Assets)
-		if binaryURL == "" {
-			continue // no downloadable binary
-		}
-
-		var sha256 string
-		if sha256URL != "" {
-			sha256 = g.fetchSHA256(ctx, sha256URL)
+		var binaryURL, sha256 string
+		if component == ComponentServer {
+			binaryURL = fmt.Sprintf("ghcr.io/%s/%s/signald:v%s", g.owner, g.repo, version)
+		} else {
+			var sha256URL string
+			binaryURL, sha256URL = classifyAssets(rel.Assets)
+			if binaryURL == "" {
+				continue
+			}
+			if sha256URL != "" {
+				sha256 = g.fetchSHA256(ctx, sha256URL)
+			}
 		}
 
 		date := ""
@@ -173,11 +197,12 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 		}
 
 		r := &Release{
-			Version: version,
-			SHA256:  sha256,
-			URL:     binaryURL,
-			Date:    date,
-			Notes:   StripGroomedSentinel(rel.Body),
+			Version:  version,
+			SHA256:   sha256,
+			URL:      binaryURL,
+			Date:     date,
+			Notes:    StripGroomedSentinel(rel.Body),
+			AudioURL: findAudioAsset(rel.Assets),
 		}
 
 		var ci *ComponentIndex
@@ -186,6 +211,8 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			ci = &idx.Pi
 		case ComponentFirmware:
 			ci = &idx.Firmware
+		case ComponentServer:
+			ci = &idx.Server
 		default:
 			continue
 		}
@@ -228,7 +255,7 @@ func (g *GitHubReleases) fetchSHA256(ctx context.Context, url string) string {
 }
 
 // parseTag parses a GitHub release tag into a component name and version.
-// Recognized prefixes: "fw/v" -> "firmware", "pi/v" -> "pi".
+// Recognized prefixes: "fw/v", "pi/v", "server/v".
 // Returns ("", "", false) for unrecognized tags.
 func parseTag(tag string) (component, version string, ok bool) {
 	parts := strings.SplitN(tag, "/v", 2)
@@ -241,6 +268,8 @@ func parseTag(tag string) (component, version string, ok bool) {
 		return ComponentFirmware, parts[1], true
 	case "pi":
 		return ComponentPi, parts[1], true
+	case "server":
+		return ComponentServer, parts[1], true
 	default:
 		return "", "", false
 	}
@@ -274,11 +303,91 @@ func classifyAssets(assets []ghAsset) (binaryURL, sha256URL string) {
 	return
 }
 
+// ServeAudio returns an HTTP handler that proxies a release's audio asset
+// with the correct Content-Type. GitHub's release asset CDN serves files as
+// application/octet-stream with Content-Disposition: attachment, which
+// prevents browser audio playback. This endpoint re-serves the bytes as
+// audio/mpeg so the <audio> element works.
+//
+// Route: GET /api/release-audio/{component}/{version}
+func (g *GitHubReleases) ServeAudio() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		component := r.PathValue("component")
+		version := r.PathValue("version")
+
+		idx := g.ReleaseIndex()
+		if idx == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		var m map[string]*Release
+		switch component {
+		case ComponentPi:
+			m = idx.Pi.Releases
+		case ComponentFirmware:
+			m = idx.Firmware.Releases
+		case ComponentServer:
+			m = idx.Server.Releases
+		default:
+			http.NotFound(w, r)
+			return
+		}
+
+		rel, ok := m[version]
+		if !ok || rel.AudioURL == "" {
+			http.NotFound(w, r)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, rel.AudioURL, nil)
+		if err != nil {
+			http.Error(w, "bad upstream URL", http.StatusBadGateway)
+			return
+		}
+		if g.token != "" {
+			req.Header.Set("Authorization", "Bearer "+g.token)
+		}
+
+		resp, err := g.client.Do(req)
+		if err != nil {
+			http.Error(w, "upstream fetch failed", http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "upstream returned "+resp.Status, resp.StatusCode)
+			return
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			w.Header().Set("Content-Length", cl)
+		}
+		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
+// findAudioAsset returns the download URL of the first release-notes mp3
+// asset, or "" if none is attached.
+func findAudioAsset(assets []ghAsset) string {
+	for _, a := range assets {
+		if strings.HasPrefix(a.Name, "release-notes") && strings.HasSuffix(a.Name, ".mp3") {
+			return a.BrowserDownloadURL
+		}
+	}
+	return ""
+}
+
 // NewGitHubReleasesWithIndex returns a GitHubReleases prepopulated with
 // the given index. Intended for tests that do not want to hit the real
 // API. The returned instance does not poll.
 func NewGitHubReleasesWithIndex(idx *ReleaseIndex) *GitHubReleases {
-	g := &GitHubReleases{}
+	g := &GitHubReleases{
+		client: &http.Client{Timeout: 15 * time.Second},
+	}
 	g.mu.Lock()
 	g.cached = idx
 	g.mu.Unlock()

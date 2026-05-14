@@ -92,6 +92,19 @@ Digits uses WebRTC for media transport. DTLS-SRTP provides end-to-end encryption
 4. digitsd creates a peer connection and generates an SDP answer
 5. ICE candidates exchanged, SRTP media established
 
+### Call Return (*69) Flow
+
+1. User dials `*69` from dial tone
+2. digitsd sends `call_return` to signald, which queries the calls table for the last inbound caller
+3. signald replies with `call_return_result` containing the number
+4. digitsd plays a voice announcement with the number and waits for the user to press `1`
+5. User presses `1`: digitsd initiates a normal outgoing call to the returned number
+6. If the target is busy: digitsd plays a retry announcement and sends `call_return_retry` to signald
+7. signald monitors the target line. When it becomes free (detected via the call-end observer), signald sends `call_return_ring` to the requester
+8. digitsd rings the phone with a distinctive short-short-long pattern (`RING:PATTERN:1`)
+9. User picks up: digitsd auto-dials the target (no announcement, no confirmation)
+10. User can cancel the retry by dialing `*89`, which sends `call_return_cancel` to signald
+
 ### Audio Pipeline
 
 - **Capture:** ALSA `plughw:CARD=Zero,DEV=0` at 48kHz stereo -- left channel extracted (external mic on TRS jack, routed by mixer to Mixin Left -> Left ADC)

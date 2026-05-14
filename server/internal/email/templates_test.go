@@ -27,3 +27,26 @@ func TestAllEmailsHaveFooter(t *testing.T) {
 		t.Fatal("email missing footer tagline")
 	}
 }
+
+func TestHouseholdInviteEmail(t *testing.T) {
+	subject, body := HouseholdInviteEmail("Lindh Family", "Justin", "https://app.digits.family/invite/abc123")
+
+	if !strings.Contains(subject, "Lindh Family") {
+		t.Errorf("subject should contain household name, got: %s", subject)
+	}
+	if !strings.Contains(body, "Justin") {
+		t.Error("body should contain inviter name")
+	}
+	if !strings.Contains(body, "Lindh Family") {
+		t.Error("body should contain household name")
+	}
+	if !strings.Contains(body, "https://app.digits.family/invite/abc123") {
+		t.Error("body should contain invite link")
+	}
+	if !strings.Contains(body, "Accept Invite") {
+		t.Error("body should contain CTA button text")
+	}
+	if !strings.Contains(body, "7 days") {
+		t.Error("body should mention 7-day expiry")
+	}
+}

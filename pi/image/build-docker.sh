@@ -13,6 +13,22 @@
 # If no base image is provided, a known-good Raspberry Pi OS Lite image
 # is downloaded automatically and cached in a Docker volume for reuse.
 #
+# Default: downloads pre-built binaries from the latest pi/v* GitHub release.
+# Requires a Go toolchain for `make embed` (stages the rootfs overlay, tones,
+# and mixer state into pi/digitsd/internal/assets/embed). Pin a specific
+# release with RELEASE_TAG:
+#
+#   RELEASE_TAG=pi/v1.21.0 ./pi/image/build-docker.sh --pcb
+#
+# Local build mode: set BUILD_LOCAL=1 to cross-compile from the local working
+# tree instead of downloading release artifacts. Use this to test unreleased
+# code changes.
+#
+#   BUILD_LOCAL=1 ./pi/image/build-docker.sh --pcb
+#
+# Optionally pin the firmware release with FIRMWARE_TAG=fw/v<version>.
+# Without FIRMWARE_TAG, the latest fw/v* release is used.
+#
 # Output: digits-pi-YYYYMMDD.img.gz in the current directory.
 set -euo pipefail
 
@@ -40,7 +56,10 @@ for arg in "$@"; do
     esac
 done
 
-# Generate embedded assets on the host (avoids root-owned files from Docker)
+# Generate embedded assets on the host (avoids root-owned files from Docker).
+# make embed populates rootfs overlay, tones, and mixer state regardless of
+# build mode. In release mode, the container overwrites the Go binaries with
+# downloaded release artifacts before build-image.sh uses them.
 info "Generating embedded assets..."
 make -C "$REPO_DIR/pi/digitsd" embed
 
@@ -50,8 +69,8 @@ docker build -t digits-image-builder "$SCRIPT_DIR"
 
 # Set up volume mounts. Pass the host UID/GID so entrypoint.sh can chown
 # the artifacts it writes back to the bind-mounted repo (tools/build/,
-# pi/digits-recovery/bin/, the output .img.gz). Without this, subsequent
-# host-side builds hit Permission denied when overwriting them.
+# the output .img.gz). Without this, subsequent host-side builds hit
+# Permission denied when overwriting them.
 DOCKER_ARGS=(
     --rm --privileged
     -v "$REPO_DIR":/digits
@@ -60,6 +79,17 @@ DOCKER_ARGS=(
     -e "HOST_UID=$(id -u)"
     -e "HOST_GID=$(id -g)"
 )
+
+# Pass build mode and release tags into the container when set.
+[[ -n "${BUILD_LOCAL:-}" ]]   && DOCKER_ARGS+=(-e "BUILD_LOCAL=${BUILD_LOCAL}")
+[[ -n "${RELEASE_TAG:-}" ]]   && DOCKER_ARGS+=(-e "RELEASE_TAG=${RELEASE_TAG}")
+[[ -n "${FIRMWARE_TAG:-}" ]]  && DOCKER_ARGS+=(-e "FIRMWARE_TAG=${FIRMWARE_TAG}")
+
+# Release mode needs gh CLI auth inside the container for GitHub API access.
+if [[ -z "${BUILD_LOCAL:-}" && -z "${GITHUB_TOKEN:-}" ]]; then
+    warn "No GITHUB_TOKEN set. Release mode requires a token to download artifacts. Set GITHUB_TOKEN or use BUILD_LOCAL=1."
+fi
+[[ -n "${GITHUB_TOKEN:-}" ]]  && DOCKER_ARGS+=(-e "GITHUB_TOKEN=${GITHUB_TOKEN}")
 
 # If this is a git worktree, .git is a file pointing to the main repo's
 # .git/worktrees/ directory. Mount the main repo's .git so the pointer

@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"math"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -28,8 +29,10 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
+	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
@@ -65,9 +68,10 @@ var (
 	numberFlag  = flag.String("number", "", "this phone's number, e.g. 3140001 (overrides config file)")
 	serialDev   = flag.String("serial", "/dev/serial0", "serial port device")
 	socketPath  = flag.String("socket", "/home/digits/digits/pi/uart.sock", "UART command socket path")
-	toneDir     = flag.String("tones", "/home/digits/digits/pi/tones", "directory containing WAV tone files")
+	toneDir     = flag.String("tones", "/data/digits/tones", "directory containing WAV tone files")
 	alsaDevice  = flag.String("alsa-playback", "", "ALSA playback device (auto-detects Codec Zero if empty)")
 	showVersion = flag.Bool("version", false, "print version and exit")
+	modeFlag    = flag.String("mode", "normal", "operating mode: normal, recovery, setup, gpclk0 (diagnostic)")
 )
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
@@ -86,14 +90,25 @@ type daemonCallbacks struct {
 	pendingOffer     string
 	pendingCaller    string
 	pendingICE       []string // ICE candidates received before peerMgr is created
+	// preAnswer holds a PeerConnection created during the ring phase to
+	// reduce call-answer latency. Promoted into the active call state on
+	// HOOK:OFF; torn down if the caller hangs up before we answer.
+	preAnswer struct {
+		peerMgr    *owebrtc.PeerManager
+		answerSDP  string
+		webrtcCh   chan []int16
+		candidates []string // local ICE candidates gathered during ring, sent on pickup
+		caller     string   // pendingCaller at time of preparation
+	}
 	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
 	debugMode        bool     // read from DIGITS_DEBUG env at startup
 	paired           atomic.Bool
 	pairingCode          string    // current pairing code from server
 	pairingCodeReceivedAt time.Time // when the current pairing code was received
-	callPeer         string   // number of the remote party during an active call
-	isCaller         bool     // true if we initiated the current call
-	isRestartingICE  bool     // true while an ICE restart is in progress
+	callPeer             string // number of the remote party during an active call
+	isCaller             bool   // true if we initiated the current call
+	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
+	isRestartingICE      bool   // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
@@ -105,6 +120,35 @@ type daemonCallbacks struct {
 	// meshReporterCancels holds one CancelFunc per mesh peer's link-health
 	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
 	meshReporterCancels map[string]context.CancelFunc
+
+	// Firmware version strings, protected by mu. Read/write via
+	// getFirmwareVersion / setFirmwareVersion so that goroutines outside the
+	// main event loop (SWD probe, service-code update, auto-update) never
+	// race with the main loop's writes.
+	fwVer string
+	fwCom string
+
+	// Auto-update state. The atomic bools are safe for concurrent read from
+	// the update goroutine. triggerAutoUpdate is set once at startup and
+	// captures the run()-scoped variables needed by runAutoUpdate.
+	autoUpdateEnabled atomic.Bool
+	pendingAutoUpdate atomic.Bool
+	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+}
+
+// getFirmwareVersion returns the current firmware version and commit under mu.
+func (d *daemonCallbacks) getFirmwareVersion() (version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.fwVer, d.fwCom
+}
+
+// setFirmwareVersion stores a new firmware version and commit under mu.
+func (d *daemonCallbacks) setFirmwareVersion(version, commit string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.fwVer = version
+	d.fwCom = commit
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -160,6 +204,10 @@ func (d *daemonCallbacks) SendRing(start bool) {
 	d.serial.Ring(start)
 }
 
+func (d *daemonCallbacks) SendRingPattern(id int) {
+	d.serial.RingPattern(id)
+}
+
 func (d *daemonCallbacks) SendLED(mode string) {
 	d.serial.LED(mode)
 }
@@ -172,16 +220,29 @@ func (d *daemonCallbacks) SetFlashEnabled(enabled bool) {
 	d.serial.FlashEnabled(enabled)
 }
 
-func (d *daemonCallbacks) InitiateCall(targetNumber string) {
+func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	// Check if the signaling server is reachable before setting up WebRTC.
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}); err != nil {
+		return fmt.Errorf("server unreachable: %w", err)
+	}
+	// TypeCall was sent. If any later step fails, send a hangup so the
+	// callee does not ring until timeout.
+	callSent := true
+	defer func() {
+		if callSent {
+			sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: targetNumber})
+		}
+	}()
 
 	iceCfg := owebrtc.NewICEConfig(d.iceServers)
 	var err error
 	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
 	if err != nil {
 		slog.Error("webrtc: new peer manager failed", "error", err)
-		return
+		return fmt.Errorf("webrtc setup: %w", err)
 	}
 
 	d.callPeer = targetNumber
@@ -244,11 +305,10 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 	if err != nil {
 		slog.Error("webrtc: create offer failed", "error", err)
 		close(sdpSent)
-		return
+		return fmt.Errorf("webrtc offer: %w", err)
 	}
 
 	// Send call + SDP, then ungate ICE candidates
-	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeCall, To: targetNumber})
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer})
 	close(sdpSent)
 
@@ -260,29 +320,36 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("audio pipeline start failed", "error", err)
-			return
+			return fmt.Errorf("audio pipeline: %w", err)
 		}
 
-		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-		go func() {
-			defer recoverGoroutine("caller-encode-loop")
-			for frame := range d.pipeline.OutFrames() {
-				d.mu.Lock()
-				pm := d.peerMgr
-				mesh := d.mesh
-				d.mu.Unlock()
-				if pm != nil {
-					pm.SendPCMFrame(frame)
-				}
-				if mesh != nil {
-					mesh.SendPCMFrameToAll(frame)
-				}
-			}
-		}()
+		d.startEncodeLoop()
 	}
 
 	slog.Info("call initiated", "target", targetNumber)
+	callSent = false
+	return nil
+}
+
+func (d *daemonCallbacks) OnCallReturn() {
+	d.callReturnOrigin.Store(true)
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
+		slog.Error("call_return: server unreachable", "error", err)
+		d.callReturnOrigin.Store(false)
+		d.mixer.PlayOnce("disconnected")
+		d.ctrl.ResetToDialtone()
+		d.mixer.PlayLoop("tone_dial")
+	}
+}
+
+func (d *daemonCallbacks) OnCallReturnCancel() {
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
+		slog.Error("call_return_cancel: server unreachable", "error", err)
+	}
+}
+
+func (d *daemonCallbacks) OnCallReturnAbandon() {
+	d.callReturnOrigin.Store(false)
 }
 
 func (d *daemonCallbacks) AnswerCall() {
@@ -291,6 +358,61 @@ func (d *daemonCallbacks) AnswerCall() {
 
 	if d.pendingOffer == "" {
 		slog.Warn("answer: no pending offer")
+		return
+	}
+
+	// Fast path: use pre-created PeerConnection from ring phase.
+	if d.preAnswer.peerMgr != nil {
+		t0 := time.Now()
+		d.mixer.StopTone()
+		caller := d.preAnswer.caller
+		pm := d.preAnswer.peerMgr
+		answerSDP := d.preAnswer.answerSDP
+		candidates := d.preAnswer.candidates
+
+		d.peerMgr = pm
+		d.callPeer = caller
+		d.isCaller = false
+		d.isRestartingICE = false
+		d.preAnswer.peerMgr = nil
+		d.preAnswer.answerSDP = ""
+		d.preAnswer.webrtcCh = nil
+		d.preAnswer.candidates = nil
+		d.preAnswer.caller = ""
+		d.pendingOffer = ""
+		d.pendingCaller = ""
+
+		sendSignal(d.sig, &sigclient.Message{
+			Type: sigclient.TypeAnswer,
+			To:   caller,
+			SDP:  answerSDP,
+		})
+
+		for _, candidate := range candidates {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		// Any candidates still gathering after promotion should be sent directly.
+		pm.OnICECandidate = func(candidate string) {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline (answer fast-path) start failed", "error", err)
+			return
+		}
+		d.startEncodeLoop()
+
+		slog.Info("answered call (fast path)", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
 		return
 	}
 
@@ -319,92 +441,8 @@ func (d *daemonCallbacks) AnswerCall() {
 		d.handleConnectionStateChange(answerPM, state)
 	}
 
-	// Handle remote audio track — decode and feed into mixer.
 	webrtcCh := d.mixer.AddWebRTCSource(caller)
-	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-		go func() {
-			defer recoverGoroutine("answer-remote-track")
-			var frameCount int
-
-			// Phase 1: Wait for pipeline (user picks up phone).
-			// Read and discard RTP packets to prevent buffering.
-			// Decode each to keep Opus decoder state in sync.
-			slog.Info("remote track active, waiting for answer")
-			var discarded int
-			for {
-				d.mu.Lock()
-				pip := d.pipeline
-				d.mu.Unlock()
-				if pip != nil {
-					slog.Info("pipeline ready", "discarded_packets", discarded)
-					break
-				}
-
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended while waiting for answer", "discarded_packets", discarded)
-					return
-				}
-				answerPM.Decode(pkt.Payload) //nolint:errcheck
-				discarded++
-			}
-
-			// Phase 2: Drain stale packets until caught up to real-time.
-			// Decode each to maintain Opus state, but don't play.
-			drainStart := time.Now()
-			var drained int
-			var lastSeq uint16
-			for {
-				start := time.Now()
-				pkt, _, err := track.ReadRTP()
-				readTime := time.Since(start)
-				if err != nil {
-					slog.Info("remote track ended during drain")
-					return
-				}
-				answerPM.Decode(pkt.Payload) //nolint:errcheck
-				drained++
-				lastSeq = pkt.SequenceNumber
-
-				if readTime > 5*time.Millisecond {
-					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
-					break
-				}
-			}
-
-			// Phase 3: Live playback loop — feed decoded PCM into mixer.
-			for {
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("remote track ended", "frames", frameCount)
-					return
-				}
-				recvTime := time.Now()
-				pcm, err := answerPM.Decode(pkt.Payload)
-				if err != nil {
-					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
-					continue
-				}
-				if answerPM.InboundMuted() {
-					// Silent hold: drop decoded audio rather than feeding the mixer.
-					continue
-				}
-				// Copy — Decode returns a slice of a reused internal buffer
-				frame := make([]int16, len(pcm))
-				copy(frame, pcm)
-				frameCount++
-				select {
-				case webrtcCh <- frame:
-				default:
-					// Drop frame — mixer is behind
-				}
-
-				if frameCount <= 10 || frameCount%50 == 0 {
-					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
-				}
-			}
-		}()
-	}
+	d.peerMgr.OnRemoteTrack = d.remoteTrackHandler(answerPM, webrtcCh)
 
 	// Gate ICE candidates behind answer SDP send.
 	sdpSent := make(chan struct{})
@@ -442,32 +480,13 @@ func (d *daemonCallbacks) AnswerCall() {
 	})
 	close(sdpSent)
 
-	// Start audio pipeline (capture only — playback goes through mixer).
-	// Skip if one is already running; see matching comment in InitiateCall.
 	if d.pipeline == nil {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("audio pipeline (answer) start failed", "error", err)
 			return
 		}
-
-		// Encode and send captured audio to the 2-party peer and any conference mesh peers.
-		// Each PeerManager owns its own encoder; per-peer outbound mute is handled in SendPCMFrame.
-		go func() {
-			defer recoverGoroutine("answer-encode-loop")
-			for frame := range d.pipeline.OutFrames() {
-				d.mu.Lock()
-				pm := d.peerMgr
-				mesh := d.mesh
-				d.mu.Unlock()
-				if pm != nil {
-					pm.SendPCMFrame(frame)
-				}
-				if mesh != nil {
-					mesh.SendPCMFrameToAll(frame)
-				}
-			}
-		}()
+		d.startEncodeLoop()
 	}
 
 	slog.Info("answered call", "caller", caller)
@@ -838,9 +857,11 @@ func (d *daemonCallbacks) HangupCall() {
 	d.pendingOffer = ""
 	d.pendingCaller = ""
 	d.pendingICE = nil
+	d.cleanupPreAnswer()
 	peer := d.callPeer
 	d.callPeer = ""
 	d.isCaller = false
+	d.callReturnOrigin.Store(false)
 	d.isRestartingICE = false
 	if d.restartTimer != nil {
 		d.restartTimer.Stop()
@@ -879,6 +900,13 @@ func (d *daemonCallbacks) HangupCall() {
 	d.mu.Unlock()
 	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
 
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		slog.Info("auto-update: call ended, running deferred update")
+		if d.triggerAutoUpdate != nil {
+			go d.triggerAutoUpdate()
+		}
+	}
+
 	go func() {
 		defer recoverGoroutine("hangup-teardown")
 		teardownStart := time.Now()
@@ -910,6 +938,206 @@ func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
 	cfg := audio.DefaultPipelineConfig()
 	cfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
 	return audio.NewPipeline(cfg)
+}
+
+// startEncodeLoop spawns the goroutine that reads captured PCM from the
+// pipeline and sends it to the active peer and any conference mesh.
+// Must be called with d.mu held (reads d.pipeline).
+func (d *daemonCallbacks) startEncodeLoop() {
+	go func() {
+		defer recoverGoroutine("encode-loop")
+		for frame := range d.pipeline.OutFrames() {
+			d.mu.Lock()
+			pm := d.peerMgr
+			mesh := d.mesh
+			d.mu.Unlock()
+			if pm != nil {
+				pm.SendPCMFrame(frame)
+			}
+			if mesh != nil {
+				mesh.SendPCMFrameToAll(frame)
+			}
+		}
+	}()
+}
+
+// remoteTrackHandler returns an OnRemoteTrack callback that decodes incoming
+// RTP and feeds the mixer. It implements a three-phase startup:
+//   - Phase 1: discard packets until the audio pipeline is running
+//   - Phase 2: drain any buffered packets to catch up to real-time
+//   - Phase 3: live decode and playback
+func (d *daemonCallbacks) remoteTrackHandler(pm *owebrtc.PeerManager, webrtcCh chan []int16) func(*webrtc.TrackRemote) {
+	return func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("remote-track")
+			var frameCount int
+
+			slog.Info("remote track active, waiting for pipeline")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					slog.Info("pipeline ready", "discarded_packets", discarded)
+					break
+				}
+
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended while waiting for pipeline", "discarded_packets", discarded)
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					slog.Info("remote track ended during drain")
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+
+				if readTime > 5*time.Millisecond {
+					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					break
+				}
+			}
+
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended", "frames", frameCount)
+					return
+				}
+				recvTime := time.Now()
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
+					continue
+				}
+				if pm.InboundMuted() {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+
+				if frameCount <= 10 || frameCount%50 == 0 {
+					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
+				}
+			}
+		}()
+	}
+}
+
+// prepareAnswer pre-creates the WebRTC PeerConnection during the ring phase.
+// This moves expensive ECDSA cert generation, SDP processing, and ICE gathering
+// off the critical path between handset pickup and first audio.
+//
+// Security invariant: no audio pipeline is started, no encode loop is spawned,
+// and no ICE candidates are sent to the caller. The caller cannot establish ICE
+// connectivity without our answer SDP (which contains our ufrag/pwd), so no
+// media can flow until AnswerCall sends it after pickup.
+//
+// Must be called with d.mu held. On any failure, logs and returns without
+// setting preAnswer state; AnswerCall falls back to the full creation path.
+func (d *daemonCallbacks) prepareAnswer() {
+	if d.preAnswer.peerMgr != nil {
+		return // already prepared
+	}
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	if offerSDP == "" {
+		return // no offer to work with yet
+	}
+
+	t0 := time.Now()
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	pm, err := owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("prepareAnswer: new peer manager failed", "error", err)
+		return
+	}
+
+	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(pm, state)
+	}
+
+	// Collect local ICE candidates into the preAnswer slice (NOT sent to caller).
+	pm.OnICECandidate = func(candidate string) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.preAnswer.peerMgr == pm {
+			d.preAnswer.candidates = append(d.preAnswer.candidates, candidate)
+		}
+	}
+
+	webrtcCh := d.mixer.AddWebRTCSource(caller)
+	pm.OnRemoteTrack = d.remoteTrackHandler(pm, webrtcCh)
+
+	answerSDP, err := pm.AcceptOffer(offerSDP)
+	if err != nil {
+		slog.Error("prepareAnswer: accept offer failed", "error", err)
+		d.mixer.RemoveWebRTCSource(caller)
+		_ = pm.Close()
+		return
+	}
+
+	// Add any ICE candidates that arrived before we were ready.
+	for _, candidate := range d.pendingICE {
+		if err := pm.AddICECandidate(candidate); err != nil {
+			slog.Warn("prepareAnswer: add queued ICE candidate failed", "error", err)
+		}
+	}
+	d.pendingICE = nil
+
+	d.preAnswer.peerMgr = pm
+	d.preAnswer.answerSDP = answerSDP
+	d.preAnswer.webrtcCh = webrtcCh
+	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
+	d.preAnswer.caller = caller
+
+	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+}
+
+// cleanupPreAnswer tears down any pre-created PeerConnection (e.g. caller
+// hung up during ring). Must be called with d.mu held.
+func (d *daemonCallbacks) cleanupPreAnswer() {
+	if d.preAnswer.peerMgr == nil {
+		return
+	}
+	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", d.preAnswer.caller)
+	pm := d.preAnswer.peerMgr
+	caller := d.preAnswer.caller
+	d.preAnswer.peerMgr = nil
+	d.preAnswer.answerSDP = ""
+	d.preAnswer.webrtcCh = nil
+	d.preAnswer.candidates = nil
+	d.preAnswer.caller = ""
+	if caller != "" {
+		d.mixer.RemoveWebRTCSource(caller)
+	}
+	go func() {
+		defer recoverGoroutine("cleanupPreAnswer")
+		if err := pm.Close(); err != nil {
+			slog.Warn("cleanupPreAnswer: close failed", "error", err)
+		}
+	}()
 }
 
 // applyVoiceStyleLive forwards a voice style change to the active pipeline
@@ -956,6 +1184,15 @@ func (d *daemonCallbacks) applySilentModeLive(silent bool) {
 func (d *daemonCallbacks) setSilentModeConfig(silent bool) error {
 	d.mu.Lock()
 	d.cfg.SilentMode = silent
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
+// setAutoUpdateConfig writes the new flag to the local config cache under
+// d.mu and persists it to disk outside the lock.
+func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
+	d.mu.Lock()
+	d.cfg.AutoUpdate = enabled
 	d.mu.Unlock()
 	return d.cfg.Save()
 }
@@ -1311,6 +1548,24 @@ func triggerFactoryReset(sig *sigclient.Client, deviceID string) {
 // to avoid racing (e.g. double-flashing the Pico).
 var updateInProgress atomic.Bool
 
+// runAutoUpdate checks whether the device is idle (no active call) and, if so,
+// delegates to runTargetedUpdate with empty targets (install whatever is
+// latest). When a call is in progress the update is deferred: pendingAutoUpdate
+// is set so HangupCall can retry once the call ends.
+func runAutoUpdate(d *daemonCallbacks, serverURL, piVersion, fwVersion string, flashCapable bool, afterFirmwareUpdated func()) {
+	d.mu.Lock()
+	inCall := d.callPeer != ""
+	d.mu.Unlock()
+
+	if inCall {
+		slog.Info("auto-update: call in progress, deferring until idle")
+		d.pendingAutoUpdate.Store(true)
+		return
+	}
+
+	slog.Info("auto-update: device is idle, checking for updates")
+	runTargetedUpdate(serverURL, piVersion, fwVersion, "", "", flashCapable, nil, afterFirmwareUpdated)
+}
 
 func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW string, flashCapable bool, reportStatus statusFunc, afterFirmwareUpdated func()) {
 	if !updateInProgress.CompareAndSwap(false, true) {
@@ -1417,7 +1672,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 func resetPicoHardware(sp *phone.SerialPort) {
 	slog.Info("pico: clearing residual hardware state on startup")
 	sp.Ring(false)
-	sp.LED("OFF")
+	sp.LED("UNLOCK")
 }
 
 // playPairingAnnouncement queues one full pairing-voice sequence on mixer:
@@ -1449,12 +1704,108 @@ func playPairingAnnouncement(mixer *audio.Mixer, code string, receivedAt time.Ti
 	mixer.PlayOnce(unitClip)
 }
 
+func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         "/tones",
+		MixerStateFile:  "/mixer.state",
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: subsystem.NewMountsModule(), Required: true, Enabled: true},
+		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true, Enabled: true},
+		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
+		{Module: serial, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
+		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: false, Enabled: true},
+		{Module: web, Required: true, Enabled: true},
+		{Module: subsystem.NewReaperModule(), Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio
+}
+
+func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule, *subsystem.WiFiAPModule) {
+	web := subsystem.NewWebModule()
+	gpclk0 := subsystem.NewGPCLK0Module()
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
+		ToneDir:         *toneDir,
+		GPCLK0Retrigger: gpclk0.Retrigger,
+	})
+	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module.
+	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
+		SSID:       "Digits-Setup",
+		UseSystemd: true,
+	})
+
+	regs := []subsystem.Registration{
+		{Module: gpclk0, Required: true, Enabled: true},
+		{Module: serial, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: audio, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
+		{Module: wifiAP, Required: false, Enabled: false},
+		{Module: web, Required: true, Enabled: true},
+	}
+	return regs, web, serial, audio, wifiAP
+}
+
 func main() {
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version.String())
 		os.Exit(0)
+	}
+
+	if *modeFlag == "gpclk0" {
+		if err := subsystem.EnableGPCLK0(); err != nil {
+			log.Fatalf("gpclk0: %v", err)
+		}
+		return
+	}
+
+	if *modeFlag == "recovery" || os.Getpid() == 1 {
+		// Crash log to /data for SD card post-mortem. Must happen before
+		// mounts module since /data might already be mounted (normal boot
+		// triggering recovery) or will be mounted by the mounts module.
+		if os.Getpid() == 1 {
+			_ = os.MkdirAll("/tmp", 0755)
+			_ = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M")
+			_ = os.MkdirAll("/data", 0755)
+			_ = syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, "")
+		}
+		setupCrashLog("/data/digits/crash.log")
+		setupModeLog("/tmp/recovery.log")
+
+		regs, web, serial, audioMod := recoveryRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/recovery.log")
+		web.SetManager(mgr)
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("recovery init failed", "error", err)
+			syncAndHalt()
+		}
+		runRecoveryMode(web, serial, audioMod)
+		return
+	}
+
+	if *modeFlag == "setup" {
+		// Crash log to /data survives reboots for post-mortem.
+		setupCrashLog("/data/digits/crash.log")
+
+		regs, web, serial, audioMod, wifiAP := setupRegistrations()
+		mgr := subsystem.NewManager(regs)
+		web.SetLogPath("/tmp/setup.log")
+		web.SetManager(mgr)
+		setupModeLog("/tmp/setup.log")
+		if err := mgr.Run(context.Background()); err != nil {
+			slog.Error("setup init failed", "error", err)
+			os.Exit(1)
+		}
+		runSetupMode(web, serial, audioMod, wifiAP)
+		return
 	}
 
 	// --- Config file loading ---
@@ -1498,6 +1849,10 @@ func main() {
 				mode = "rw"
 			}
 			return exec.Command("sudo", "mount", "-o", "remount,"+mode, "/").Run()
+		},
+		Sync: func() error {
+			syscall.Sync()
+			return nil
 		},
 		RootfsWriteFile: func(data []byte, dest string, perm os.FileMode) error {
 			// Write to a temp file, then sudo cp + chmod to the rootfs destination.
@@ -1553,22 +1908,18 @@ func main() {
 		} else {
 			slog.Info("swd render: installed config", "pcb_rev", pcbRev)
 		}
-		if err := extractor.Remount(false); err != nil {
+		if err := extractor.RemountReadOnly(); err != nil {
 			slog.Warn("swd render: remount ro failed", "err", err)
 		}
 	}
 
 	// Render the active mixer state from the per-codec embedded file. Picked
-	// by detectCodec() walking /proc/asound, so this naturally tracks V1↔V2
-	// hardware swaps. The on-disk file is the canonical apply target for
-	// digits-mixer.service, which runs alsactl restore at boot before
-	// digitsd starts. On the first boot after an OTA that changed the
-	// embedded state, the service will have applied the previous-version
-	// file; we update the file here so the next reboot picks up the new
-	// canonical. Live re-apply is intentionally skipped: it would need a
-	// sudoers rule for `alsactl restore` that does not currently ship to
-	// the digits user, and the existing OTA channel cannot update sudoers
-	// (etc/sudoers.d/digits-updater is in the Makefile's OVERLAY_EXCLUDE).
+	// by detectCodec() walking /proc/asound, so this naturally tracks V1/V2
+	// hardware swaps. The on-disk file is applied by the ExecStartPre
+	// alsactl restore in digitsd.service. On the first boot after an OTA
+	// that changed the embedded state, the previous-version file was
+	// applied; we update the file here so the next reboot picks up the
+	// new canonical.
 	mixerEmbedSrc := fmt.Sprintf("mixer/v%s.state", audio.CodecPCBVariant())
 	mixerCard := audio.CodecCardName()
 	if data, err := fs.ReadFile(assets.SubFS(), mixerEmbedSrc); err != nil {
@@ -1578,7 +1929,7 @@ func main() {
 	} else if err := extractor.RootfsWriteFile(data, mixerStatePath, 0644); err != nil {
 		slog.Warn("mixer render: write failed", "dest", mixerStatePath, "err", err)
 	} else {
-		slog.Info("mixer render: wrote canonical state, applies on next reboot via digits-mixer.service", "card", mixerCard, "size", len(data))
+		slog.Info("mixer render: wrote canonical state, applies on next reboot", "card", mixerCard, "size", len(data))
 	}
 
 	// 1. Open serial port directly (log to both stdout and uart.log file)
@@ -1687,7 +2038,12 @@ func main() {
 	// path doesn't fire when the Pico responds.
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
-		if firmwareNeedsReflash(fwVersion, bundled) {
+		needsReflash := firmwareNeedsReflash(fwVersion, bundled)
+		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
+		if needsReflash && skipReflash {
+			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
+				"pico", fwVersion, "bundled", bundled)
+		} else if needsReflash {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
@@ -1771,11 +2127,64 @@ func main() {
 		}
 	}
 
+	// Query the Pico's persisted phase byte. If the user held * during
+	// power-on, the Pico wrote PHASE_RECOVERY to flash before the Pi
+	// even started booting. We read it here, act on it, then clear it
+	// so the device doesn't loop back into recovery on every boot.
+	cachedPhase := "unknown"
+	if postOk {
+		const phaseRetries = 5
+		var phase uint8
+		var phaseErr error
+		for i := 1; i <= phaseRetries; i++ {
+			phase, phaseErr = sp.QueryPhase()
+			if phaseErr == nil {
+				break
+			}
+			slog.Warn("phase query failed", "attempt", i, "max", phaseRetries, "error", phaseErr)
+			time.Sleep(500 * time.Millisecond)
+		}
+		if phaseErr != nil {
+			slog.Error("phase query: all retries exhausted, proceeding without phase check", "error", phaseErr)
+		} else {
+			switch phase {
+			case phone.PhasePaired:
+				cachedPhase = "paired"
+			case phone.PhaseUnpaired:
+				cachedPhase = "unpaired"
+			case phone.PhaseSetup:
+				cachedPhase = "setup"
+			case phone.PhaseRecovery:
+				cachedPhase = "recovery"
+			default:
+				cachedPhase = fmt.Sprintf("0x%02X", phase)
+			}
+			slog.Info("pico phase", "phase", fmt.Sprintf("0x%02X", phase))
+			if phase == phone.PhaseRecovery {
+				slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")
+				if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+					slog.Warn("panic button: failed to set boot counter", "error", err)
+				}
+				_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
+				if cfg.DeviceToken == "" {
+					sp.StateSet("UNPAIRED")
+				} else {
+					sp.StateSet("PAIRED")
+				}
+				time.Sleep(500 * time.Millisecond)
+				doReboot()
+			}
+		}
+	}
+
 	// Clear any residual Pico hardware state from before the last reboot.
-	// If the Pi crashed mid-ring the Pico keeps ringing until told otherwise;
-	// this is a safe no-op on clean boots.
 	if postOk {
 		resetPicoHardware(sp)
+		if cfg.DeviceToken == "" {
+			sp.StateSet("UNPAIRED")
+		} else {
+			sp.StateSet("PAIRED")
+		}
 	}
 
 	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
@@ -1850,6 +2259,7 @@ func main() {
 	// so the dial tone loops under the user's DTMF beeps. Same regression
 	// covered by controller_test.go:1694.
 	var resetToDialtone func()
+	var getPhoneState func() phone.State
 	confirm := func(promptName string, action func()) {
 		mixer.StopTone()
 		mixer.PlayOnce(promptName)
@@ -1865,32 +2275,37 @@ func main() {
 			slog.Warn("confirm: another confirmation already pending, ignoring", "prompt", promptName)
 		}
 	}
-	svcCodes.SetVolumeCallback(func(level int) {
+	svcCodes.OnVolume = func(level int) {
 		if err := phone.SetVolume(level); err != nil {
 			slog.Warn("volume set failed", "error", err)
+		}
+		if getPhoneState != nil && !getPhoneState().IsDialPhase() {
+			doubleBeep()
+			return
 		}
 		mixer.StopAll()
 		time.Sleep(250 * time.Millisecond)
 		doubleBeep()
 		mixer.PlayLoop("tone_dial")
-	})
-	svcCodes.SetShutdownCallback(func() {
+	}
+	svcCodes.OnShutdown = func() {
 		slog.Info("service code: executing shutdown")
 		_ = exec.Command("sudo", "shutdown", "-h", "now").Run()
-	})
-	svcCodes.SetRebootCallback(func() {
+	}
+	svcCodes.OnReboot = func() {
 		slog.Info("service code: executing reboot")
 		_ = exec.Command("sudo", "reboot").Run()
-	})
-	svcCodes.SetSetupCallback(func() {
+	}
+	svcCodes.OnSetup = func() {
 		slog.Info("service code: *#SETUP# (*#73887#) -> awaiting confirmation")
 		confirm("confirm_wifi_setup", func() {
 			slog.Info("service code setup confirmed: removing wifi-configured flag, rebooting")
-			// /data/wifi-configured is owned by root (digits-setup writes it
-			// as root); /data itself is mode 755 root:root. digitsd runs as
-			// the 'digits' user, which lacks write access to /data and so
-			// cannot unlink the flag directly. The digits-updater sudoers
-			// entry grants NOPASSWD on rm -f for this exact path.
+			// /data/wifi-configured is owned by root (digitsd writes it as
+			// root from --mode=setup); /data itself is mode 755 root:root.
+			// digitsd in normal mode runs as the 'digits' user, which lacks
+			// write access to /data and so cannot unlink the flag directly.
+			// The digits-updater sudoers entry grants NOPASSWD on rm -f for
+			// this exact path.
 			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
 			if err != nil {
 				slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
@@ -1907,9 +2322,9 @@ func main() {
 			time.Sleep(200 * time.Millisecond)
 			_ = exec.Command("sudo", "reboot").Run()
 		})
-	})
+	}
 
-	svcCodes.SetAudioTestCallback(func() {
+	svcCodes.OnAudioTest = func() {
 		slog.Info("service code: *#TEST# -> audio test (record 5s, playback)")
 		mixer.StopAll()
 
@@ -1983,7 +2398,7 @@ func main() {
 
 		// Resume dial tone
 		mixer.PlayLoop("tone_dial")
-	})
+	}
 
 	// Detect SWD flash capability. Start with file existence checks; if the
 	// required binaries are present, probe the SWD bus in the background to
@@ -1994,7 +2409,7 @@ func main() {
 	swdFilesPresent := err1 == nil && err2 == nil
 
 	if swdFilesPresent {
-		go func() {
+		go func(fwVer, fwCom string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "sudo", defaultOpenOCD,
@@ -2008,11 +2423,11 @@ func main() {
 				slog.Info("swd probe: Pico detected on SWD bus, enabling flash capability")
 				flashCapable.Store(true)
 			}
-			sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-		}()
+			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
+		}(fwVersion, fwCommit)
 	}
 
-	svcCodes.SetRepairCallback(func() {
+	svcCodes.OnRepair = func() {
 		slog.Info("service code: *#0* -> awaiting confirmation")
 		confirm("confirm_re_pair", func() {
 			slog.Info("service code repair confirmed: clearing device token, rebooting into pairing mode")
@@ -2033,20 +2448,19 @@ func main() {
 			}
 			_ = exec.Command("sudo", "reboot").Run()
 		})
-	})
+	}
 
-	svcCodes.SetUpdateCallback(func() {
-		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
-		go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion, "", "", flashCapable.Load(), nil, requeryFirmware)
-	})
+	// svcCodes.OnUpdate is set after cb is created so the closure can read
+	// fwVersion through the synchronized getter (OnUpdate runs in its own
+	// goroutine and would otherwise race with the main loop).
 
-	svcCodes.SetFactoryResetCallback(func() {
+	svcCodes.OnFactoryReset = func() {
 		slog.Info("service code: *#00000# -> awaiting confirmation")
 		confirm("confirm_factory_reset", func() {
 			slog.Info("service code factory reset confirmed")
 			triggerFactoryReset(sig, deviceID)
 		})
-	})
+	}
 
 	// 6b. Create easter egg detector
 	easterEggs := phone.NewEasterEggDetector([]phone.EasterEgg{
@@ -2083,9 +2497,35 @@ func main() {
 		linkHealthDisabled:  linkHealthDisabled,
 		linkHealthInterval:  linkHealthInterval,
 		meshReporterCancels: make(map[string]context.CancelFunc),
+		fwVer:               fwVersion,
+		fwCom:               fwCommit,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
+	}
+
+	// Deferred from above: OnUpdate runs in its own goroutine, so it reads
+	// fwVersion through the synchronized getter to avoid racing with the
+	// main event loop.
+	svcCodes.OnUpdate = func() {
+		slog.Info("service code: *#UPDATE# (*#873283#) -- checking for updates")
+		fwVer, _ := cb.getFirmwareVersion()
+		go runTargetedUpdate(effectiveServerURL, version.Version, fwVer, "", "", flashCapable.Load(), nil, requeryFirmware)
+	}
+
+	// Wire auto-update. The closure reads fwVersion via the synchronized
+	// getter so that HangupCall (which runs off the main goroutine) never
+	// races with the main loop's writes.
+	cb.autoUpdateEnabled.Store(cfg.AutoUpdate)
+	cb.triggerAutoUpdate = func() {
+		fwVer, _ := cb.getFirmwareVersion()
+		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
+	}
+	if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		slog.Info("auto-update: enabled, checking for updates on startup")
+		go cb.triggerAutoUpdate()
+	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
 
 	// 8. Create phone Controller
@@ -2099,6 +2539,7 @@ func main() {
 		ctrl.ResetToDialtone()
 		sp.SendFire("DIAL:RESET")
 	}
+	getPhoneState = func() phone.State { return ctrl.State() }
 
 	// 8b. Contacts cache: optional dial safelist, persisted to disk.
 	// An empty cache leaves the checker nil so no-contacts phones allow
@@ -2121,47 +2562,9 @@ func main() {
 	}
 	defer sockSrv.Close()
 
-	// 10. Connect signaling client
-	if err := sig.Connect(); err != nil {
-		log.Fatalf("signald connect: %v", err)
-	}
-
-	// 11. Ready
-	phone.RestoreVolume()
-	slog.Info("digitsd ready")
-
-	// Start hardware watchdog (if available)
-	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
-		wd.Start(5 * time.Second)
-		defer wd.Close()
-		slog.Info("watchdog: started", "interval", "5s")
-	} else {
-		slog.Debug("watchdog: not available", "err", err)
-	}
-
-	// Clear boot counter (we're healthy)
-	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
-		slog.Warn("failed to clear boot counter", "err", err)
-	} else {
-		slog.Info("boot counter: cleared (healthy boot)")
-	}
-
-	sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-	requestICEServers(sig)
-
-	// Refresh ICE credentials periodically (TURN creds are time-limited)
-	go func() {
-		ticker := time.NewTicker(30 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			requestICEServers(sig)
-		}
-	}()
-
-	// WiFi auto-fallback supervisor. Watches NM connectivity and flips the
-	// device into setup-AP mode if the configured network is unreachable for
-	// longer than the grace window. Held during active calls. Disabled when
-	// cfg.WiFiFallback.Enabled is false.
+	// 10. WiFi auto-fallback supervisor. Must start before the signaling
+	// connect attempt: if the network is wedged (wrong WiFi password, DNS
+	// failure), the supervisor is the only path back to AP/setup mode.
 	wifiSupervisor := wififallback.NewSupervisor(
 		cfg.WiFiFallback,
 		wififallback.NewNMCLIChecker(),
@@ -2172,6 +2575,106 @@ func main() {
 	wifiCtx, wifiCancel := context.WithCancel(context.Background())
 	defer wifiCancel()
 	go wifiSupervisor.Run(wifiCtx)
+
+	// Clear boot counter: digitsd reached its main daemon phase with the
+	// wifi-fallback supervisor running. Even if the network is down, the
+	// supervisor will eventually bring the device into AP mode, so the
+	// device is not wedged. The initramfs boot-check increments this
+	// counter on every boot; clearing it here prevents threshold-based
+	// recovery from triggering on a device that is functioning normally.
+	if err := bootcount.Clear(bootcount.DefaultPath); err != nil {
+		slog.Warn("failed to clear boot counter", "err", err)
+	} else {
+		slog.Info("boot counter: cleared (healthy boot)")
+	}
+
+	// 11. Ready
+	phone.RestoreVolume()
+	slog.Info("digitsd ready")
+
+	// Dev-mode web UI on :8080 (only when the flag file is present).
+	if devmode.Enabled(devmode.DefaultFlagPath) {
+		slog.Info("devmode: flag present, starting dev-mode web UI")
+		// Snapshot the phase once at startup; it rarely changes during
+		// normal operation and querying UART on every HTTP poll is wasteful.
+		startupPhase := cachedPhase
+		devCfg := &devModeConfig{
+			FlagPath:           devmode.DefaultFlagPath,
+			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
+			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
+			UARTLogPath:        uartLogPath,
+			CaptureDevice:      audio.CodecCaptureDevice(),
+			StatusFunc: func() devModeStatus {
+				fwVer, fwCom := cb.getFirmwareVersion()
+				return devModeStatus{
+					DigitsdVersion:   version.Version,
+					FirmwareVersion:  fwVer,
+					FirmwareCommit:   fwCom,
+					Phase:            startupPhase,
+					Online:           cb.paired.Load(),
+					PhoneNumber:      effectiveNumber,
+					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
+				}
+			},
+		}
+		if flashCapable.Load() {
+			devCfg.FlashFunc = func(elfPath string) error {
+				// Move the uploaded ELF to the standard firmware path, then
+				// invoke the same flash script the OTA updater uses.
+				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
+					return fmt.Errorf("stage firmware: %w", err)
+				}
+				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("flash script: %w", err)
+				}
+				slog.Info("devmode: flash script succeeded")
+				requeryFirmware()
+				return nil
+			}
+		}
+		devLn, devErr := startDevModeServer(devCfg)
+		if devErr != nil {
+			slog.Warn("devmode: failed to start web UI", "error", devErr)
+		} else {
+			defer func() { _ = devLn.Close() }()
+		}
+	}
+
+	// Start hardware watchdog (if available)
+	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
+		wd.Start(5 * time.Second)
+		defer wd.Close()
+		slog.Info("watchdog: started", "interval", "5s")
+	} else {
+		slog.Debug("watchdog: not available", "err", err)
+	}
+
+	// 12. Connect signaling client (non-fatal: the main loop reconnects)
+	if err := sig.Connect(); err != nil {
+		slog.Warn("signald connect failed, will retry", "error", err)
+	} else {
+		sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+		requestICEServers(sig)
+	}
+
+	// Refresh ICE credentials periodically (TURN creds are time-limited).
+	// Read cb.sig under cb.mu so we use the current client after reconnects.
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cb.mu.Lock()
+			s := cb.sig
+			cb.mu.Unlock()
+			if s != nil {
+				requestICEServers(s)
+			}
+		}
+	}()
 
 	// Pairing code refresh: reconnect before the code expires so the
 	// server issues a fresh one. Timer starts when we receive a code.
@@ -2245,6 +2748,11 @@ func main() {
 				}
 			}
 
+			if event == "HOOK:ON" && !cb.paired.Load() && pairingAnnouncementCancel != nil {
+				pairingAnnouncementCancel()
+				pairingAnnouncementCancel = nil
+			}
+
 			// Unpaired phone: play pairing voice sequence instead of dial tone,
 			// then re-play it on a timer so a user who keeps the handset off
 			// the cradle can hear the code again without hanging up. The loop
@@ -2268,7 +2776,6 @@ func main() {
 				code := cb.pairingCode
 				receivedAt := cb.pairingCodeReceivedAt
 				slog.Info("phone: playing pairing code via voice", "code", code)
-				sp.LED("ON")
 				go func() {
 					for {
 						if cb.paired.Load() || code == "" {
@@ -2301,7 +2808,8 @@ func main() {
 					mixer.PlayOnce(dtmfName)
 				}
 				// Forward DTMF to the remote peer if a call is connected.
-				if ctrl.State() == phone.StateCONNECTED {
+				state := ctrl.State()
+				if state == phone.StateCONNECTED {
 					cb.mu.Lock()
 					peer := cb.callPeer
 					cb.mu.Unlock()
@@ -2313,24 +2821,27 @@ func main() {
 						})
 					}
 				}
-				// Mid-service-code: route the key only to svcCodes so easter
-				// eggs (e.g., "0000" Rick Roll) cannot eat digits belonging
-				// to a code like "*#00000#" (factory reset). Otherwise: try
-				// easter eggs first, then fall through to service codes.
+				// Easter eggs only fire during the dialing phase and only
+				// when not mid-service-code. Service codes are always
+				// processed regardless of call state, but the FSM reset
+				// is suppressed when a call is active.
 				inCode := svcCodes.InCode()
-				if inCode || !easterEggs.AddKey(key) {
+				dialPhase := state.IsDialPhase()
+				eggTriggered := false
+				if !inCode && dialPhase {
+					eggTriggered = easterEggs.AddKey(key)
+				}
+				if !eggTriggered {
 					switch svcCodes.AddKey(key) {
 					case phone.ServiceCodeTerminal:
 						ctrl.Reset()
-						// Drop the digits the firmware accumulated while the
-						// user was typing the service code (see comment near
-						// the confirmer cancel above). Otherwise post-code
-						// dialing fires DIAL on a stale prefix.
 						sp.SendFire("DIAL:RESET")
-						continue // skip forwarding to controller
+						continue
 					case phone.ServiceCodeNonTerminal:
-						ctrl.ResetToDialtone()
-						sp.SendFire("DIAL:RESET")
+						if dialPhase {
+							ctrl.ResetToDialtone()
+							sp.SendFire("DIAL:RESET")
+						}
 						continue
 					}
 				}
@@ -2382,6 +2893,7 @@ func main() {
 		case r := <-fwVersionCh:
 			if r.version != fwVersion || r.commit != fwCommit {
 				fwVersion, fwCommit = r.version, r.commit
+				cb.setFirmwareVersion(fwVersion, fwCommit)
 				slog.Info("pico: firmware version changed", "version", fwVersion, "commit", fwCommit)
 				hookFlash = hookFlashCapable(fwVersion)
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
@@ -2414,7 +2926,26 @@ func main() {
 			case sigclient.TypeHangup:
 				ctrl.HandleSignal("hangup", msg.From)
 			case sigclient.TypeBusy:
-				ctrl.HandleSignal("busy", msg.From)
+				if cb.callReturnOrigin.Load() {
+					cb.callReturnOrigin.Store(false)
+					target := msg.From
+					slog.Info("call_return: target busy, registering retry", "target", target)
+					ctrl.HandleSignal("busy", msg.From)
+					go func() {
+						time.Sleep(500 * time.Millisecond)
+						if ctrl.State() != phone.StateCALLING {
+							return
+						}
+						cb.mixer.StopTone()
+						cb.mixer.PlayOnce("call_return_retry")
+						sendSignal(sig, &sigclient.Message{
+							Type:   sigclient.TypeCallReturnRetry,
+							Number: target,
+						})
+					}()
+				} else {
+					ctrl.HandleSignal("busy", msg.From)
+				}
 			case sigclient.TypeDTMF:
 				// Remote peer pressed a digit during the call. Play the local
 				// DTMF sample so the user hears what their peer is pressing,
@@ -2527,6 +3058,7 @@ func main() {
 						slog.Info("set pendingCaller from SDP", "from", msg.From)
 					}
 					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
+					cb.prepareAnswer()
 				case cb.isRestartingICE:
 					// Mid-call: the only legitimate reason to receive an SDP
 					// with an active peerMgr is the restart-answer we asked
@@ -2565,8 +3097,11 @@ func main() {
 					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
 						slog.Warn("webrtc: add ICE candidate failed", "error", err)
 					}
+				} else if cb.preAnswer.peerMgr != nil {
+					if err := cb.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
+						slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
+					}
 				} else {
-					// Queue ICE candidates until peerMgr is ready (e.g. during RINGING before answer)
 					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
 					slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
 				}
@@ -2582,6 +3117,12 @@ func main() {
 				}
 				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
 					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
+
+			case sigclient.TypeReleaseAvailable:
+				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
+				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+					go cb.triggerAutoUpdate()
+				}
 
 			case sigclient.TypeFactoryReset:
 				slog.Info("factory reset: triggered by server")
@@ -2667,13 +3208,13 @@ func main() {
 					}
 					cb.paired.Store(true)
 					cb.pairingCode = ""
+					sp.StateSet("PAIRED")
 					mixer.StopAll()
-					mixer.PlayOnce("tone_dial")
-					// Restart to reconnect with the assigned phone number
+					sp.SendFire("TONE:DIAL")
 					slog.Info("signal: restarting to register", "number", msg.Number)
 					go func() {
-						time.Sleep(2 * time.Second) // let dial tone play briefly
-						os.Exit(0)                  // systemd will restart us
+						time.Sleep(1 * time.Second)
+						os.Exit(0) // systemd restarts; Pico tone survives
 					}()
 				}
 
@@ -2709,6 +3250,15 @@ func main() {
 					slog.Warn("unknown restart mode", "mode", mode)
 				}
 
+			case sigclient.TypeRingTest:
+				slog.Info("ring test: triggering 1s bell")
+				sp.SendFire("RING:TEST")
+				go func() {
+					time.Sleep(1 * time.Second)
+					sp.SendFire("RING:STOP")
+					slog.Info("ring test: stopped")
+				}()
+
 			case sigclient.TypeLineSettings:
 				if msg.LineSettings == nil {
 					slog.Warn("line_settings message missing payload", "from", msg.From)
@@ -2741,6 +3291,20 @@ func main() {
 					}
 				}
 
+				au := msg.LineSettings.AutoUpdate
+				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
+				} else if au != cb.autoUpdateEnabled.Load() {
+					cb.autoUpdateEnabled.Store(au)
+					slog.Info("line_settings applied", "auto_update", au)
+					if err := cb.setAutoUpdateConfig(au); err != nil {
+						slog.Warn("line_settings: auto-update save failed", "err", err)
+					}
+					if au && cb.triggerAutoUpdate != nil {
+						go cb.triggerAutoUpdate()
+					}
+				}
+
 			case sigclient.TypeConferenceMember:
 				ctrl.HandleConferenceMember(msg.ConfID, msg.Members)
 			case sigclient.TypeConferenceConnect:
@@ -2751,6 +3315,46 @@ func main() {
 				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
 			case sigclient.TypeConferenceRejected:
 				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
+
+			case sigclient.TypeCallReturnResult:
+				number := msg.Number
+				if number == "" {
+					slog.Info("call_return: no calls available")
+					cb.mixer.PlayOnce("call_return_none")
+					go func() {
+						time.Sleep(3 * time.Second)
+						if ctrl.State() != phone.StateCALL_RETURN {
+							return
+						}
+						ctrl.ResetToDialtone()
+						cb.mixer.PlayLoop("tone_dial")
+					}()
+				} else {
+					slog.Info("call_return: announcing last caller", "number", number)
+					ctrl.SetCallReturnNumber(number)
+					cb.mixer.PlayOnce("call_return_prefix")
+					for _, ch := range number {
+						cb.mixer.PlayOnce("spoken_" + string(ch))
+					}
+					cb.mixer.PlayOnce("call_return_suffix")
+				}
+
+			case sigclient.TypeCallReturnRing:
+				target := msg.Number
+				slog.Info("call_return: target free, ringing", "target", target)
+				ctrl.HandleCallReturnRing(target)
+
+			case sigclient.TypeCallReturnCancelled:
+				slog.Info("call_return: retry cancelled by server")
+				cb.mixer.PlayOnce("call_return_cancel")
+				go func() {
+					time.Sleep(3 * time.Second)
+					if ctrl.State() != phone.StateCALL_RETURN {
+						return
+					}
+					ctrl.ResetToDialtone()
+					cb.mixer.PlayLoop("tone_dial")
+				}()
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
@@ -2779,6 +3383,20 @@ func main() {
 					continue
 				}
 				slog.Info("signal: reconnected")
+
+				// Tear down any active call. The server cleaned up its
+				// side on disconnect (OnDisconnect), but the local WebRTC
+				// peer connection and audio pipeline survive the WebSocket
+				// drop. Without this, the phone's ICE agent keeps sending
+				// renegotiation messages for a call the server no longer
+				// tracks, producing "sdp/ice without active call" errors.
+				if ctrl.State() != phone.StateIDLE {
+					slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
+					cb.TearDownAllMeshPeers()
+					cb.HangupCall()
+					ctrl.Reset()
+				}
+
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
 				requestICEServers(sig)
 				break
@@ -2793,6 +3411,8 @@ func requestICEServers(sig *sigclient.Client) {
 }
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
+	localAddr := primaryLocalAddr()
+	devModeOn := devmode.Enabled(devmode.DefaultFlagPath)
 	if err := sig.Send(&sigclient.Message{
 		Type:            sigclient.TypeDeviceInfo,
 		PiVersion:       version.Version,
@@ -2800,11 +3420,36 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		FirmwareVersion: fwVersion,
 		FirmwareCommit:  fwCommit,
 		FlashCapable:    flashCapable,
+		LocalAddr:       localAddr,
+		DevMode:         devModeOn,
 	}); err != nil {
 		slog.Warn("device_info: send failed", "error", err)
 	} else {
-		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable)
+		slog.Info("device_info sent",
+			"pi_version", version.Version, "pi_commit", version.Commit,
+			"fw_version", fwVersion, "fw_commit", fwCommit,
+			"flash_capable", flashCapable, "local_addr", localAddr,
+			"dev_mode", devModeOn)
 	}
+}
+
+// primaryLocalAddr returns the source IP that the OS would use to route to
+// the public internet, which is the address the device should self-report
+// to the signaling server. Uses a UDP "dial" to a sentinel: no packet is
+// actually sent because UDP is connectionless, but the kernel resolves the
+// route and assigns a local address. Returns "" when no default route
+// exists or the local address cannot be parsed.
+func primaryLocalAddr() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = conn.Close() }()
+	addr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok || addr == nil {
+		return ""
+	}
+	return addr.IP.String()
 }
 
 // writePCMWav writes mono 16-bit PCM samples to a WAV file. Used by the

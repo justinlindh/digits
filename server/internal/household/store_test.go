@@ -25,6 +25,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	}
 	s := NewStore(database.DB)
 	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_invites")
 		_, _ = database.DB.Exec("DELETE FROM household_members")
 		_, _ = database.DB.Exec("DELETE FROM households")
 		_, _ = database.DB.Exec("DELETE FROM sessions")
@@ -279,42 +280,135 @@ func TestUpdateName(t *testing.T) {
 	}
 }
 
-func TestSetDoNotDisturb(t *testing.T) {
+func TestRemoveMember(t *testing.T) {
 	s, database := testStore(t)
-	userID := createTestUser(t, database, "dnd@example.com")
-	ctx := context.Background()
+	ownerID := createTestUser(t, database, "owner-rm@example.com")
+	memberID := createTestUser(t, database, "member-rm@example.com")
 
-	h, err := s.Create(ctx, "Test Family", userID)
+	hh, err := s.Create(context.Background(), "Remove Test", ownerID)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	got, err := s.GetByID(ctx, h.ID)
-	if err != nil {
-		t.Fatalf("GetByID: %v", err)
-	}
-	if got.DoNotDisturb {
-		t.Errorf("new household DoNotDisturb = true, want false")
+	if err := s.AddMember(context.Background(), memberID, hh.ID, "admin"); err != nil {
+		t.Fatalf("AddMember: %v", err)
 	}
 
-	if err := s.SetDoNotDisturb(ctx, h.ID, true); err != nil {
-		t.Fatalf("SetDoNotDisturb true: %v", err)
-	}
-	got, err = s.GetByID(ctx, h.ID)
+	count, err := s.MemberCount(context.Background(), hh.ID)
 	if err != nil {
-		t.Fatalf("GetByID: %v", err)
+		t.Fatalf("MemberCount: %v", err)
 	}
-	if !got.DoNotDisturb {
-		t.Errorf("after SetDoNotDisturb(true), DoNotDisturb = false, want true")
+	if count != 2 {
+		t.Fatalf("expected 2 members, got %d", count)
 	}
 
-	if err := s.SetDoNotDisturb(ctx, h.ID, false); err != nil {
-		t.Fatalf("SetDoNotDisturb false: %v", err)
+	if err := s.RemoveMember(context.Background(), memberID, hh.ID); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
 	}
-	got, err = s.GetByID(ctx, h.ID)
+
+	count, err = s.MemberCount(context.Background(), hh.ID)
 	if err != nil {
-		t.Fatalf("GetByID after off: %v", err)
+		t.Fatalf("MemberCount after remove: %v", err)
 	}
-	if got.DoNotDisturb {
-		t.Errorf("after SetDoNotDisturb(false), DoNotDisturb = true, want false")
+	if count != 1 {
+		t.Fatalf("expected 1 member after remove, got %d", count)
 	}
 }
+
+func TestMemberCount(t *testing.T) {
+	s, database := testStore(t)
+	ownerID := createTestUser(t, database, "owner-cnt@example.com")
+
+	hh, err := s.Create(context.Background(), "Count Test", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	count, err := s.MemberCount(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("MemberCount: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1, got %d", count)
+	}
+}
+
+func TestStore_Delete(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	userID := createTestUser(t, database, "delete-owner@example.com")
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec(`DELETE FROM users WHERE id = $1`, userID)
+	})
+
+	h, err := s.Create(ctx, "Delete Me Family", userID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Insert a line and device via raw SQL
+	var lineID int
+	err = database.DB.QueryRow(
+		`INSERT INTO lines (number, name, household_id) VALUES ($1, $2, $3) RETURNING id`,
+		"store-delete-test-"+h.ID, "Test Line", h.ID,
+	).Scan(&lineID)
+	if err != nil {
+		t.Fatalf("insert line: %v", err)
+	}
+
+	var deviceID int
+	err = database.DB.QueryRow(
+		`INSERT INTO devices (line_id, device_id) VALUES ($1, $2) RETURNING id`,
+		lineID, "test-device-hw",
+	).Scan(&deviceID)
+	if err != nil {
+		t.Fatalf("insert device: %v", err)
+	}
+
+	if err := s.Delete(ctx, h.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// Household should be gone
+	var count int
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM households WHERE id = $1`, h.ID).Scan(&count); err != nil {
+		t.Fatalf("count households: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("household still exists after Delete")
+	}
+
+	// Members should be gone (CASCADE)
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM household_members WHERE household_id = $1`, h.ID).Scan(&count); err != nil {
+		t.Fatalf("count members: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("household_members still exist after Delete")
+	}
+
+	// Lines should be gone (CASCADE)
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM lines WHERE id = $1`, lineID).Scan(&count); err != nil {
+		t.Fatalf("count lines: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("line still exists after Delete")
+	}
+
+	// Devices should be gone (CASCADE via lines)
+	if err := database.DB.QueryRow(`SELECT COUNT(*) FROM devices WHERE id = $1`, deviceID).Scan(&count); err != nil {
+		t.Fatalf("count devices: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("device still exists after Delete")
+	}
+}
+
+func TestStore_Delete_NotFound(t *testing.T) {
+	s, _ := testStore(t)
+	ctx := context.Background()
+
+	err := s.Delete(ctx, "00000000-0000-0000-0000-000000000000")
+	if err == nil {
+		t.Error("expected error for non-existent household, got nil")
+	}
+}
+

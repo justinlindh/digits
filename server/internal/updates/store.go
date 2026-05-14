@@ -12,6 +12,7 @@ import (
 const (
 	ComponentPi       = "pi"
 	ComponentFirmware = "firmware"
+	ComponentServer   = "server"
 )
 
 // Release describes a single versioned artifact (Pi binary or firmware).
@@ -22,6 +23,7 @@ type Release struct {
 	URL        string    `json:"url"`
 	Date       string    `json:"date"`
 	Notes      string    `json:"notes,omitempty"`
+	AudioURL   string    `json:"audio_url,omitempty"`
 	ReleasedAt time.Time `json:"-"`
 }
 
@@ -29,6 +31,7 @@ type Release struct {
 type ReleaseIndex struct {
 	Pi       ComponentIndex `json:"pi"`
 	Firmware ComponentIndex `json:"firmware"`
+	Server   ComponentIndex `json:"server"`
 }
 
 // ComponentIndex holds the latest version and full history for one component.
@@ -38,8 +41,7 @@ type ComponentIndex struct {
 }
 
 // SortedReleases returns releases for the given component sorted newest-first.
-// component must be ComponentPi or ComponentFirmware. Returns nil for unknown
-// components.
+// Returns nil for unknown components.
 func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 	var m map[string]*Release
 	switch component {
@@ -47,6 +49,8 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 		m = idx.Pi.Releases
 	case ComponentFirmware:
 		m = idx.Firmware.Releases
+	case ComponentServer:
+		m = idx.Server.Releases
 	default:
 		return nil
 	}
@@ -62,7 +66,7 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 
 // RangeReleases returns releases where fromVersion < v <= toVersion,
 // newest-first. An empty fromVersion means "everything up to and
-// including toVersion". component must be ComponentPi or ComponentFirmware.
+// including toVersion".
 // Returns nil for unknown components or when the range is empty.
 func (idx *ReleaseIndex) RangeReleases(component, fromVersion, toVersion string) []Release {
 	all := idx.SortedReleases(component)

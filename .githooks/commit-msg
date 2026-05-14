@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if grep -qiP '^Co-Authored-By:' "$1"; then
+    echo ""
+    echo "commit rejected: Co-Authored-By trailer detected"
+    echo ""
+    echo "  Co-Authored-By trailers are not allowed in this repo."
+    echo "  Remove the trailer and try again."
+    echo ""
+    exit 1
+fi

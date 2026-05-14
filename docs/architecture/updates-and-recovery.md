@@ -50,7 +50,7 @@ A factory reset restores the device to its out-of-box state: rootfs is repopulat
 
 Two paths:
 
-- **Web UI:** The "Factory Reset" button on the phone detail page in the signald admin panel.
+- **Web UI:** The "Factory Reset" button on the phone detail page in the signald web app (`/phones/<number>`).
 - **Service code:** Dial `*#00000#` on the phone keypad.
 
 ### What Happens
@@ -68,10 +68,11 @@ Recovery mode is a minimal environment that runs before the main rootfs is mount
 
 ### Triggers
 
-Recovery mode activates in two situations:
+Recovery mode activates in three situations:
 
 - **Boot failure:** The initramfs maintains a boot counter on the data partition. If the counter reaches 3 consecutive failed boots, recovery mode starts automatically. If the data partition cannot be mounted at all, recovery mode starts as a safety fallback.
 - **Factory reset request:** When a factory reset is initiated (via web UI or service code), `digitsd` sets the boot counter to the threshold value and reboots. The initramfs sees the counter at threshold and enters recovery mode.
+- **Numpad panic button:** Hold the keypad's `*` key while the phone powers on. The Pico firmware scans the keypad at boot and sends `BOOT:PANIC` over UART if `*` is held. When `digitsd` starts and sees this message, it writes `/data/digits/recovery-mode` and reboots. The initramfs sees the persistent flag and enters recovery mode. This is the user-facing escape hatch when the device is unreachable over the network or the web UI.
 
 ### Boot Counter
 

@@ -1,0 +1,23 @@
+{{- if and .Values.observability.enabled .Values.observability.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: signald
+  labels:
+    {{- include "digits.signald.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "digits.signald.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.observability.serviceMonitor.interval }}
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: instance
+        - action: replace
+          targetLabel: job
+          replacement: digits-signald
+{{- end }}

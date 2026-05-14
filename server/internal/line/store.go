@@ -35,17 +35,36 @@ func scanSettings(raw []byte) (Settings, error) {
 
 const lineColumns = `id, number, name, household_id, settings, created_at, updated_at`
 
-func scanLineRow(rows *sql.Rows) (Line, error) {
+// rowScanner abstracts *sql.Row and *sql.Rows so the same field list and
+// settings decode can serve both single-row and multi-row queries.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanLine reads a single row from the lines table using lineColumns and
+// returns the materialized Line. sql.ErrNoRows is returned unwrapped so
+// callers can map it to ErrNotFound with errors.Is.
+func scanLine(s rowScanner) (Line, error) {
 	var l Line
 	var settingsRaw []byte
-	if err := rows.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
-		return Line{}, fmt.Errorf("scan line: %w", err)
+	if err := s.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		return Line{}, err
 	}
 	settings, err := scanSettings(settingsRaw)
 	if err != nil {
 		return Line{}, err
 	}
 	l.Settings = settings
+	return l, nil
+}
+
+// scanLineRow is the multi-row variant used by List* iterators.
+// sql.Rows.Scan never reports ErrNoRows, so wrapping unconditionally is safe.
+func scanLineRow(rows *sql.Rows) (Line, error) {
+	l, err := scanLine(rows)
+	if err != nil {
+		return Line{}, fmt.Errorf("scan line: %w", err)
+	}
 	return l, nil
 }
 
@@ -94,89 +113,70 @@ func NewStore(database *db.Database) *Store {
 
 // Add inserts a new line for the given household and returns it.
 func (s *Store) Add(ctx context.Context, number, name, householdID string) (*Line, error) {
-	l := &Line{}
-	var settingsRaw []byte
-	err := s.db.QueryRowContext(ctx,
+	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO lines (number, name, household_id)
 		 VALUES ($1, $2, $3)
-		 RETURNING id, number, name, household_id, settings, created_at, updated_at`,
+		 RETURNING `+lineColumns,
 		number, name, householdID,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
+	)
+	l, err := scanLine(row)
 	if err != nil {
 		return nil, fmt.Errorf("add line: %w", err)
 	}
-	if l.Settings, err = scanSettings(settingsRaw); err != nil {
-		return nil, err
-	}
-	return l, nil
+	return &l, nil
 }
 
 // GetByID retrieves a line by its integer ID.
 func (s *Store) GetByID(ctx context.Context, id int64) (*Line, error) {
-	l := &Line{}
-	var settingsRaw []byte
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, number, name, household_id, settings, created_at, updated_at
-		 FROM lines WHERE id = $1`,
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+lineColumns+` FROM lines WHERE id = $1`,
 		id,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
-	if err == sql.ErrNoRows {
+	)
+	l, err := scanLine(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by id %d: %w", id, err)
 	}
-	if l.Settings, err = scanSettings(settingsRaw); err != nil {
-		return nil, err
-	}
-	return l, nil
+	return &l, nil
 }
 
 // GetByNumber retrieves a line by its phone number.
 func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
-	l := &Line{}
-	var settingsRaw []byte
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, number, name, household_id, settings, created_at, updated_at
-		 FROM lines WHERE number = $1`,
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+lineColumns+` FROM lines WHERE number = $1`,
 		number,
-	).Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt)
-	if err == sql.ErrNoRows {
+	)
+	l, err := scanLine(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get line by number %s: %w", number, err)
 	}
-	if l.Settings, err = scanSettings(settingsRaw); err != nil {
-		return nil, err
-	}
-	return l, nil
+	return &l, nil
 }
 
-// EffectiveSettingsByNumber returns the line's settings plus the household's
-// do_not_disturb flag in a single query. Used by the signaling layer to push
-// effective silent state without two round-trips.
-func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, bool, error) {
+// EffectiveSettingsByNumber returns the line's settings for the given number.
+// Used by the signaling layer to push settings on device registration.
+func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, error) {
 	var settingsRaw []byte
-	var householdDND bool
 	err := s.db.QueryRowContext(ctx,
-		`SELECT l.settings, h.do_not_disturb
-		 FROM lines l
-		 JOIN households h ON h.id = l.household_id
-		 WHERE l.number = $1`,
+		`SELECT settings FROM lines WHERE number = $1`,
 		number,
-	).Scan(&settingsRaw, &householdDND)
-	if err == sql.ErrNoRows {
-		return Settings{}, false, ErrNotFound
+	).Scan(&settingsRaw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Settings{}, ErrNotFound
 	}
 	if err != nil {
-		return Settings{}, false, fmt.Errorf("effective settings by number %s: %w", number, err)
+		return Settings{}, fmt.Errorf("effective settings by number %s: %w", number, err)
 	}
 	settings, err := scanSettings(settingsRaw)
 	if err != nil {
-		return Settings{}, false, err
+		return Settings{}, err
 	}
-	return settings, householdDND, nil
+	return settings, nil
 }
 
 // List returns all lines ordered by number.
@@ -323,13 +323,46 @@ func (s *Store) UpdateSettings(ctx context.Context, id int64, settings Settings)
 	return nil
 }
 
+// SetAllSilentByHousehold batch-updates silent_mode in the JSONB settings
+// column for every line in the household. Other settings fields are preserved.
+func (s *Store) SetAllSilentByHousehold(ctx context.Context, householdID string, silent bool) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE lines
+		 SET settings = jsonb_set(COALESCE(settings, '{}'), '{silent_mode}', $1::jsonb),
+		     updated_at = NOW()
+		 WHERE household_id = $2`,
+		fmt.Sprintf("%t", silent), householdID,
+	)
+	if err != nil {
+		return fmt.Errorf("set all silent by household: %w", err)
+	}
+	return nil
+}
+
+// AllSilentByHousehold returns true when the household has at least one line
+// and every line has silent_mode set to true. Returns false for households
+// with no lines.
+func (s *Store) AllSilentByHousehold(ctx context.Context, householdID string) (bool, error) {
+	var total, silentCount int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*),
+		        COUNT(*) FILTER (WHERE COALESCE(settings->>'silent_mode', 'false') = 'true')
+		 FROM lines WHERE household_id = $1`,
+		householdID,
+	).Scan(&total, &silentCount)
+	if err != nil {
+		return false, fmt.Errorf("all silent by household: %w", err)
+	}
+	return total > 0 && total == silentCount, nil
+}
+
 // GetHouseholdIDByNumber returns the household UUID for the given phone number.
 func (s *Store) GetHouseholdIDByNumber(ctx context.Context, number string) (string, error) {
 	var householdID string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT household_id FROM lines WHERE number = $1`, number,
 	).Scan(&householdID)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrNotFound
 	}
 	if err != nil {

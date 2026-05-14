@@ -9,9 +9,29 @@
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
+#include "phase.h"
 #include "ringer.h"
 #include "tone.h"
 #include "uart_proto.h"
+
+// fsm_led_set resolves the LED pattern from (phase, fsm_state). When the Pi
+// has locked the LED (e.g. CONNECTING during WiFi verify), FSM changes are
+// skipped. When the FSM requests OFF (idle/on-hook), the phase determines
+// the idle pattern so each mode gets the right ambient indicator.
+static void fsm_led_set(led_mode_t mode) {
+    if (led_is_locked()) {
+        return;
+    }
+    if (mode == LED_MODE_OFF) {
+        switch (phase_read()) {
+        case PHASE_UNPAIRED: led_set_mode(LED_MODE_SLOW_PULSE); return;
+        case PHASE_SETUP:    led_set_mode(LED_MODE_DOUBLE_PULSE); return;
+        case PHASE_RECOVERY: led_set_mode(LED_MODE_FAST_BLINK); return;
+        default: break;
+        }
+    }
+    led_set_mode(mode);
+}
 
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
@@ -94,14 +114,14 @@ static void set_state(phone_state_t next) {
 
     switch (s_state) {
         case PHONE_STATE_IDLE:
-            led_set_mode(LED_MODE_OFF);
+            fsm_led_set(LED_MODE_OFF);
             tone_stop();
             ringer_stop();
             clear_dialing_buffer();
             break;
 
         case PHONE_STATE_DIAL_TONE:
-            led_set_mode(LED_MODE_ON);
+            fsm_led_set(LED_MODE_ON);
             ringer_stop();
             clear_dialing_buffer();
             tone_play(TONE_DIAL);
@@ -109,7 +129,7 @@ static void set_state(phone_state_t next) {
             break;
 
         case PHONE_STATE_DIALING:
-            led_set_mode(LED_MODE_ON);  // Stay lit while off-hook
+            fsm_led_set(LED_MODE_ON);
             ringer_stop();
             tone_stop();
             s_dialing_start_ms = now_ms();
@@ -117,7 +137,7 @@ static void set_state(phone_state_t next) {
 
         case PHONE_STATE_RINGING:
             tone_stop();
-            led_set_mode(LED_MODE_BLINK);
+            fsm_led_set(LED_MODE_BLINK);
             ringer_start();
             uart_proto_send("RING:ACK");
             break;
@@ -125,12 +145,12 @@ static void set_state(phone_state_t next) {
         case PHONE_STATE_CONNECTED:
             ringer_stop();
             tone_stop();
-            led_set_mode(LED_MODE_ON);
+            fsm_led_set(LED_MODE_BREATHING);
             break;
 
         case PHONE_STATE_BUSY:
             ringer_stop();
-            led_set_mode(LED_MODE_ON);  // Still off-hook during busy
+            fsm_led_set(LED_MODE_ON);
             tone_play(TONE_BUSY);
             break;
 
@@ -152,11 +172,16 @@ static void process_pi_command(const char *cmd) {
         // to prevent the on-hook event from immediately reverting us to IDLE.
         hook_get_event();
         set_state(PHONE_STATE_RINGING);
+    } else if (strncmp(cmd, "RING:PATTERN:", 13) == 0) {
+        uint8_t pat = (uint8_t)(cmd[13] - '0');
+        hook_get_event();
+        set_state(PHONE_STATE_RINGING);
+        ringer_start_pattern(pat);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
         // Direct hardware test — bypass FSM entirely.
         // Drives ringer + LED regardless of hook state.
         ringer_start();
-        led_set_mode(LED_MODE_BLINK);
+        fsm_led_set(LED_MODE_BLINK);
         uart_proto_send("RING:TEST:ACK");
     } else if (strcmp(cmd, "RING:STOP") == 0) {
         if (s_state == PHONE_STATE_RINGING) {
@@ -164,7 +189,7 @@ static void process_pi_command(const char *cmd) {
             uart_proto_send("RING:DONE");
         } else {
             ringer_stop();
-            led_set_mode(LED_MODE_OFF);  // Clean up LED from RING:TEST
+            fsm_led_set(LED_MODE_OFF);
             uart_proto_send("RING:DONE");
         }
     } else if (strcmp(cmd, "LED:ON") == 0) {
@@ -173,8 +198,20 @@ static void process_pi_command(const char *cmd) {
         led_set_mode(LED_MODE_OFF);
     } else if (strcmp(cmd, "LED:BLINK") == 0) {
         led_set_mode(LED_MODE_BLINK);
-    } else if (strcmp(cmd, "LED:SLOW_BLINK") == 0) {
-        led_set_mode(LED_MODE_SLOW_BLINK);
+    } else if (strcmp(cmd, "LED:FAST_BLINK") == 0) {
+        led_set_mode(LED_MODE_FAST_BLINK);
+    } else if (strcmp(cmd, "LED:DOUBLE_PULSE") == 0) {
+        led_set_mode(LED_MODE_DOUBLE_PULSE);
+    } else if (strcmp(cmd, "LED:CONNECTING") == 0) {
+        led_set_mode(LED_MODE_CONNECTING);
+    } else if (strcmp(cmd, "LED:BREATHING") == 0) {
+        led_set_mode(LED_MODE_BREATHING);
+    } else if (strcmp(cmd, "LED:SLOW_PULSE") == 0) {
+        led_set_mode(LED_MODE_SLOW_PULSE);
+    } else if (strcmp(cmd, "LED:LOCK") == 0) {
+        led_set_locked(true);
+    } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
+        led_set_locked(false);
     } else if (strcmp(cmd, "TONE:DIAL") == 0) {
         tone_play(TONE_DIAL);
     } else if (strcmp(cmd, "TONE:RINGBACK") == 0) {
@@ -232,6 +269,26 @@ static void process_pi_command(const char *cmd) {
         // a stale prefix.
         clear_dialing_buffer();
         uart_proto_send("DIAL:RESET:OK");
+    } else if (strcmp(cmd, "STATE:SET:PAIRED") == 0) {
+        phase_write(PHASE_PAIRED);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:UNPAIRED") == 0) {
+        phase_write(PHASE_UNPAIRED);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:SETUP") == 0) {
+        phase_write(PHASE_SETUP);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "STATE:SET:RECOVERY") == 0) {
+        phase_write(PHASE_RECOVERY);
+        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
+        uart_proto_send("STATE:SET:OK");
+    } else if (strcmp(cmd, "PHASE?") == 0) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "PHASE:0x%02X", phase_read());
+        uart_proto_send(buf);
     } else if (strcmp(cmd, "REBOOT") == 0 || strcmp(cmd, "REBOOT:BOOTSEL") == 0) {
         // Reboot the chip into BOOTSEL mode (USB MSD + PICOBOOT). The chip
         // resets and stays in bootrom waiting for a USB host connection
@@ -384,6 +441,9 @@ void phone_fsm_init(void) {
     s_state = PHONE_STATE_IDLE;
     clear_dialing_buffer();
     set_state(PHONE_STATE_IDLE);
+    if (hook_is_off_hook()) {
+        uart_proto_send("HOOK:OFF");
+    }
 }
 
 void phone_fsm_update(void) {

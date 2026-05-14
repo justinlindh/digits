@@ -13,7 +13,6 @@ import (
 
 type dashboardData struct {
 	chromeData
-	Stats              dashStats
 	Lines              []lineRow
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
@@ -46,12 +45,6 @@ type callRow struct {
 	DurationS int
 }
 
-type dashStats struct {
-	TotalLines  int
-	OnlineLines int
-	ActiveCalls int
-}
-
 type activePair struct {
 	Caller string
 	Callee string
@@ -65,8 +58,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	active := h.tracker.Active()
-	user := auth.UserFromContext(ctx)
-	hh := h.primaryHousehold(r)
+	hh := h.activeHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
 	loc := hh.Location()
 	now := time.Now().In(loc)
@@ -112,7 +104,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
 			}
-			if id, ok := h.tracker.CallIDFor(ctx, callerRow.Line.Number); ok {
+			if id, ok := h.tracker.CallIDFor(callerRow.Line.Number); ok {
 				callerRow.OnCallID = id
 			}
 		}
@@ -124,7 +116,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			} else {
 				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
 			}
-			if id, ok := h.tracker.CallIDFor(ctx, calleeRow.Line.Number); ok {
+			if id, ok := h.tracker.CallIDFor(calleeRow.Line.Number); ok {
 				calleeRow.OnCallID = id
 			}
 		}
@@ -150,7 +142,10 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	var callsTodayRecent []callRow
 	var callsTodayTotalSec int
 	if callHistoryEnabled && len(ownNumbers) > 0 {
-		recent, _ := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
+		recent, err := h.tracker.RecentForPhones(ctx, ownNumbers, 20)
+		if err != nil {
+			slog.WarnContext(ctx, "dashboard: recent calls lookup failed", "err", err)
+		}
 		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		for _, c := range recent {
 			if !c.StartedAt.After(today) {
@@ -179,14 +174,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	stats := dashStats{
-		TotalLines:  len(ld.Lines),
-		OnlineLines: countOnline(ld.Lines),
-		ActiveCalls: activeCount,
-	}
 	data := dashboardData{
-		chromeData:         newChromeData("dashboard", user, hh),
-		Stats:              stats,
+		chromeData:         h.newChromeDataWithHouseholds(r, "dashboard"),
 		Lines:              ld.Lines,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
@@ -196,13 +185,13 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ActivePeer:         activePeer,
 		ActiveElapsed:      activeElapsed,
 		Status: dashStatusVM{
-			ActiveCalls:    stats.ActiveCalls,
-			OnlineLines:    stats.OnlineLines,
+			ActiveCalls:    activeCount,
+			OnlineLines:    countOnline(ld.Lines),
 			LinkedFamilies: len(linkedFamilies),
 			Now:            now,
 		},
 	}
-	renderWith(w, h.tmplDashboard, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplDashboard, layoutFor(r), data)
 }
 
 // buildLinkedFamilies fetches the list of linked households and their lines
@@ -214,7 +203,7 @@ func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) [
 	}
 	activeLinks, err := h.linkStore.GetLinkedHouseholds(ctx, householdID)
 	if err != nil {
-		slog.Error("buildLinkedFamilies: get linked households failed", "err", err)
+		slog.ErrorContext(ctx, "buildLinkedFamilies: get linked households failed", "err", err)
 		return nil
 	}
 	otherIDs := make([]string, 0, len(activeLinks))
@@ -227,7 +216,7 @@ func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) [
 	}
 	linesByHousehold, err := h.lineStore.ListByHouseholds(ctx, otherIDs)
 	if err != nil {
-		slog.Error("buildLinkedFamilies: batch list lines failed", "err", err)
+		slog.ErrorContext(ctx, "buildLinkedFamilies: batch list lines failed", "err", err)
 	}
 	var families []linkedFamilyRow
 	for i, l := range activeLinks {
@@ -294,7 +283,6 @@ func fmtElapsed(d time.Duration) string {
 	return fmt.Sprintf("%d:%02d", m, s)
 }
 
-
 type connectingData struct {
 	chromeData
 }
@@ -305,7 +293,7 @@ func (h *Handler) handleConnecting(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	renderWith(w, h.tmplConnecting, "connecting.html", connectingData{
-		chromeData: newChromeData("connecting", user, h.primaryHousehold(r)),
+	renderWith(r.Context(), w, h.tmplConnecting, "connecting.html", connectingData{
+		chromeData: h.newChromeDataWithHouseholds(r, "connecting"),
 	})
 }

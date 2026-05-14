@@ -12,7 +12,11 @@
 void keypad_init(void);
 
 // Returns pressed key ('0'-'9', '*', '#', and on V1 also 'A'-'D')
-// or '\0' if no new key press.
+// or '\0' if no new key press. Debounced.
 char keypad_scan(void);
+
+// Raw matrix read with no debounce. Returns the currently held key
+// or '\0'. Used at boot to detect keys held during power-on.
+char keypad_scan_raw(void);
 
 #endif  // DIGITS_KEYPAD_H

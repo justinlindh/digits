@@ -30,10 +30,16 @@ jobs:
     outputs:
       tag: ${{ steps.released_tag.outputs.tag }}
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          token: ${{ secrets.ADMIN_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-node@v6
         with:
@@ -42,7 +48,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.1"
-          cache-dependency-path: pi/digitsd/go.sum
+          cache-dependency-path: |
+            pi/digitsd/go.sum
 
       - name: Install aarch64 cross-compiler and libraries
         run: |
@@ -91,7 +98,7 @@ jobs:
             npx semantic-release --extends ./pi/.releaserc.cjs
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.ADMIN_PAT }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Detect released tag
         id: released_tag

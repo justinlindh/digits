@@ -8,16 +8,21 @@ import (
 )
 
 // fakeLineStore is an in-memory LineStore for unit tests. It returns whatever
-// LineSettings the caller wires in, keyed by phone number. The OR of per-line
-// silent and household DND is the production adapter's job (and is pinned by
-// line.TestEffectiveSilent), so this fake stays a plain pass-through.
+// LineSettings the caller wires in, keyed by phone number.
 type fakeLineStore struct {
-	settings map[string]*LineSettings
+	settings    map[string]*LineSettings
+	identifiers map[string]fakeLineID
+}
+
+type fakeLineID struct {
+	lineID      int64
+	householdID string
 }
 
 func newFakeLineStore() *fakeLineStore {
 	return &fakeLineStore{
-		settings: make(map[string]*LineSettings),
+		settings:    make(map[string]*LineSettings),
+		identifiers: make(map[string]fakeLineID),
 	}
 }
 
@@ -34,6 +39,14 @@ func (f *fakeLineStore) EffectiveLineSettings(ctx context.Context, number string
 	return &out, nil
 }
 
+func (f *fakeLineStore) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
+	id, ok := f.identifiers[number]
+	if !ok {
+		return 0, "", line.ErrNotFound
+	}
+	return id.lineID, id.householdID, nil
+}
+
 // TestOnRegisteredPushesSilentMode verifies that when OnRegistered is called
 // for a number whose stored LineSettings has SilentMode: true, the hub
 // receives a TypeLineSettings message with SilentMode: true and the correct
@@ -48,7 +61,7 @@ func TestOnRegisteredPushesSilentMode(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, store)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	relay.OnRegistered(context.Background(), "3140001")
 
@@ -75,6 +88,41 @@ func TestOnRegisteredPushesSilentMode(t *testing.T) {
 	}
 }
 
+func TestOnRegisteredPushesAutoUpdate(t *testing.T) {
+	hub := NewHub()
+	store := newFakeLineStore()
+	store.set("3140003", &LineSettings{
+		VoiceStyle: "copper",
+		SilentMode: false,
+		AutoUpdate: true,
+	})
+	relay := NewRelay(hub, nil, nil, store)
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140003", conn)
+
+	relay.OnRegistered(context.Background(), "3140003")
+
+	select {
+	case data := <-conn.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeLineSettings {
+			t.Errorf("Type: got %q, want %q", msg.Type, TypeLineSettings)
+		}
+		if msg.LineSettings == nil {
+			t.Fatal("LineSettings: got nil, want non-nil")
+		}
+		if !msg.LineSettings.AutoUpdate {
+			t.Errorf("AutoUpdate: got false, want true")
+		}
+	default:
+		t.Fatal("device did not receive a line_settings push after OnRegistered")
+	}
+}
+
 // TestOnRegisteredPushesSilentModeFalseByDefault verifies that when
 // OnRegistered is called for a number whose stored LineSettings has
 // SilentMode: false, the pushed message also carries SilentMode: false.
@@ -90,7 +138,7 @@ func TestOnRegisteredPushesSilentModeFalseByDefault(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, store)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140002", conn)
+	_ = hub.Register("3140002", conn)
 
 	relay.OnRegistered(context.Background(), "3140002")
 

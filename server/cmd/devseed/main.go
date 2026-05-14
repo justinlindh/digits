@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -56,6 +57,12 @@ var (
 			{"2480002", "Living room"},
 			{"2480003", "Garage"},
 		},
+	}
+
+	secondMember = seededUser{
+		Email:       "other@digits.local",
+		DisplayName: "Other",
+		Theme:       auth.ThemeIntercom,
 	}
 
 	others = []seededUser{
@@ -119,6 +126,7 @@ type stores struct {
 	house *household.Store
 	link  *household.LinkStore
 	line  *line.Store
+	db    *sql.DB
 }
 
 func main() {
@@ -145,6 +153,7 @@ func main() {
 		house: household.NewStore(database.DB),
 		link:  household.NewLinkStore(database.DB),
 		line:  line.NewStore(database),
+		db:    database.DB,
 	}
 
 	primaryUser, primaryHH, err := ensureUser(ctx, s, primary, *minimal)
@@ -157,11 +166,42 @@ func main() {
 		return
 	}
 
+	// Seed device rows with names for the primary household's lines.
+	// The Kitchen line (248-0001) gets two handsets to exercise multi-device UI.
+	ensureDeviceWithName(ctx, s.db, s.line, "2480001", "Kitchen", "dev-hw-kitchen")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480001", "Hallway", "dev-hw-hallway")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480002", "Living room", "dev-hw-living")
+	ensureDeviceWithName(ctx, s.db, s.line, "2480003", "Garage", "dev-hw-garage")
+
+	// Add a second member to the primary household
+	secondUser, err := upsertUser(ctx, s.auth, secondMember.Email, secondMember.DisplayName)
+	if err != nil {
+		log.Fatalf("seed second member: %v", err)
+	}
+	if err := s.auth.SetTheme(ctx, secondUser.ID, secondMember.Theme); err != nil {
+		log.Fatalf("set second member theme: %v", err)
+	}
+	if err := s.auth.MarkThemeChosen(ctx, secondUser.ID); err != nil {
+		log.Fatalf("mark second member theme chosen: %v", err)
+	}
+	if err := s.house.AddMember(ctx, secondUser.ID, primaryHH.ID, "admin"); err != nil {
+		log.Fatalf("add second member: %v", err)
+	}
+	seededEmails := []string{primary.Email, secondMember.Email}
+
+	// Seed a pending user invite on the primary household
+	invStore := household.NewInviteStore(database.DB)
+	pending, _ := invStore.IsPendingForHouseholdEmail(ctx, primaryHH.ID, "pending@digits.local")
+	if !pending {
+		if _, err := invStore.CreateInvite(ctx, primaryHH.ID, "pending@digits.local", primaryUser.ID); err != nil {
+			log.Fatalf("seed pending invite: %v", err)
+		}
+	}
+
 	if err := s.house.SetCallHistoryEnabled(ctx, primaryHH.ID, true); err != nil {
 		log.Fatalf("enable call history on primary: %v", err)
 	}
 
-	seededEmails := []string{primary.Email}
 	for _, o := range others {
 		otherUser, otherHH, err := ensureUser(ctx, s, o, false)
 		if err != nil {
@@ -318,6 +358,41 @@ func printSummary(baseURL string, emails []string, primaryEmail string) {
 	)
 	fmt.Println()
 	fmt.Println("The server must be running with DEV_MODE=true for the dev-session endpoint to work.")
+}
+
+// ensureDeviceWithName creates a paired device row for the given line number
+// if one with that hardware_id does not already exist. Idempotent.
+func ensureDeviceWithName(ctx context.Context, db *sql.DB, lineStore *line.Store, lineNumber, deviceName, hardwareID string) {
+	ln, err := lineStore.GetByNumber(ctx, lineNumber)
+	if err != nil {
+		log.Printf("ensureDevice: line %s not found: %v", lineNumber, err)
+		return
+	}
+	var exists bool
+	if err := db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM devices WHERE hardware_id = $1)`,
+		hardwareID,
+	).Scan(&exists); err != nil {
+		log.Printf("ensureDevice: existence check for %s: %v", hardwareID, err)
+		return
+	}
+	if exists {
+		if _, err := db.ExecContext(ctx,
+			`UPDATE devices SET name = $1 WHERE hardware_id = $2`,
+			deviceName, hardwareID,
+		); err != nil {
+			log.Printf("ensureDevice: update name for %s: %v", hardwareID, err)
+		}
+		return
+	}
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO devices (line_id, hardware_id, name, paired_at, device_token)
+		 VALUES ($1, $2, $3, NOW(), 'devseed-token-' || $2)`,
+		ln.ID, hardwareID, deviceName,
+	)
+	if err != nil {
+		log.Printf("ensureDevice: insert device %s on line %s: %v", hardwareID, lineNumber, err)
+	}
 }
 
 func envOr(key, fallback string) string {

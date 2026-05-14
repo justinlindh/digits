@@ -1,6 +1,10 @@
 package signaling
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
 
 func TestUnregisterOnlyRemovesMatchingConnection(t *testing.T) {
 	hub := NewHub()
@@ -8,7 +12,7 @@ func TestUnregisterOnlyRemovesMatchingConnection(t *testing.T) {
 	oldConn := &Conn{Send: make(chan []byte, 1)}
 	newConn := &Conn{Send: make(chan []byte, 1)}
 
-	hub.conns[number] = newConn
+	hub.conns[number] = []*Conn{newConn}
 
 	hub.Unregister(number, oldConn)
 	if got := hub.Get(number); got != newConn {
@@ -20,11 +24,36 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"
 	conn := &Conn{Send: make(chan []byte, 1)}
-	hub.conns[number] = conn
+	hub.conns[number] = []*Conn{conn}
 
 	hub.Unregister(number, conn)
 	if got := hub.Get(number); got != nil {
 		t.Fatalf("expected connection to be removed")
+	}
+}
+
+func TestIsOnlineReturnsFalseForUnpaired(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("unpaired:test-hw-xyz", conn)
+	if hub.IsOnline("unpaired:test-hw-xyz") {
+		t.Fatal("IsOnline should return false for unpaired devices")
+	}
+}
+
+func TestIsOnlineReturnsTrueForPairedConnected(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn)
+	if !hub.IsOnline("3140001") {
+		t.Fatal("IsOnline should return true for a paired, connected device")
+	}
+}
+
+func TestIsOnlineReturnsFalseForOffline(t *testing.T) {
+	hub := NewHub()
+	if hub.IsOnline("3140099") {
+		t.Fatal("IsOnline should return false for a number with no connection")
 	}
 }
 
@@ -38,7 +67,7 @@ func TestHubGetReturnsNilForOffline(t *testing.T) {
 func TestHubGetReturnsConnForOnline(t *testing.T) {
 	hub := NewHub()
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 	if hub.Get("3140001") == nil {
 		t.Fatal("expected connection for registered number")
 	}
@@ -47,14 +76,190 @@ func TestHubGetReturnsConnForOnline(t *testing.T) {
 func TestRegisterHandlesAlreadyClosedSendChannel(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"
-	oldConn := &Conn{Send: make(chan []byte)}
+	oldConn := &Conn{Send: make(chan []byte), HardwareID: "hw-001"}
 	close(oldConn.Send)
-	hub.conns[number] = oldConn
+	hub.conns[number] = []*Conn{oldConn}
+	hub.hwConns["hw-001"] = oldConn
 
-	newConn := &Conn{Send: make(chan []byte, 1)}
-	hub.Register(number, newConn)
+	newConn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001"}
+	_ = hub.Register(number, newConn)
 
 	if got := hub.Get(number); got != newConn {
 		t.Fatalf("expected new connection to be registered")
+	}
+}
+
+func TestDeviceInfoIncludesRemoteAddr(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{
+		Send:            make(chan []byte, 1),
+		PiVersion:       "1.2.3",
+		FirmwareVersion: "0.4.0",
+		RemoteAddr:      "192.168.1.42",
+	}
+	_ = hub.Register("3140001", conn)
+
+	info := hub.DeviceInfo("3140001")
+	if info == nil {
+		t.Fatal("DeviceInfo returned nil for registered conn")
+	}
+	if info.RemoteAddr != "192.168.1.42" {
+		t.Errorf("DeviceInfo.RemoteAddr = %q, want %q", info.RemoteAddr, "192.168.1.42")
+	}
+	if info.PiVersion != "1.2.3" {
+		t.Errorf("DeviceInfo.PiVersion = %q, want %q", info.PiVersion, "1.2.3")
+	}
+}
+
+func TestDeviceInfoNilWhenOffline(t *testing.T) {
+	hub := NewHub()
+	if got := hub.DeviceInfo("3140002"); got != nil {
+		t.Errorf("DeviceInfo for unregistered number = %+v, want nil", got)
+	}
+}
+
+func TestRegisterOverwritesRemoteAddrOnReconnect(t *testing.T) {
+	hub := NewHub()
+	first := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-003", RemoteAddr: "192.168.1.42"}
+	_ = hub.Register("3140003", first)
+
+	second := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-003", RemoteAddr: "192.168.1.99"}
+	_ = hub.Register("3140003", second)
+
+	info := hub.DeviceInfo("3140003")
+	if info == nil {
+		t.Fatal("expected DeviceInfo after reconnect")
+	}
+	if info.RemoteAddr != "192.168.1.99" {
+		t.Errorf("RemoteAddr after reconnect = %q, want %q", info.RemoteAddr, "192.168.1.99")
+	}
+}
+
+func TestBroadcastSendsToAllConnected(t *testing.T) {
+	hub := NewHub()
+
+	c1 := &Conn{Send: make(chan []byte, 10)}
+	c2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140002", c2)
+
+	msg := &Message{
+		Type:            TypeReleaseAvailable,
+		LatestPiVersion: "2.0.0",
+		LatestFWVersion: "1.5.0",
+	}
+	hub.Broadcast(msg)
+
+	for _, tc := range []struct {
+		name string
+		conn *Conn
+	}{
+		{"device 1", c1},
+		{"device 2", c2},
+	} {
+		select {
+		case data := <-tc.conn.Send:
+			got, err := ParseMessage(data)
+			if err != nil {
+				t.Fatalf("%s: parse: %v", tc.name, err)
+			}
+			if got.Type != TypeReleaseAvailable {
+				t.Errorf("%s: Type = %q, want %q", tc.name, got.Type, TypeReleaseAvailable)
+			}
+			if got.LatestPiVersion != "2.0.0" {
+				t.Errorf("%s: LatestPiVersion = %q, want %q", tc.name, got.LatestPiVersion, "2.0.0")
+			}
+			if got.LatestFWVersion != "1.5.0" {
+				t.Errorf("%s: LatestFWVersion = %q, want %q", tc.name, got.LatestFWVersion, "1.5.0")
+			}
+		default:
+			t.Errorf("%s: did not receive broadcast", tc.name)
+		}
+	}
+}
+
+func TestBroadcastSkipsFullBuffers(t *testing.T) {
+	hub := NewHub()
+
+	full := &Conn{Send: make(chan []byte)} // unbuffered, will be full
+	ok := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", full)
+	_ = hub.Register("3140002", ok)
+
+	msg := &Message{Type: TypeReleaseAvailable, LatestPiVersion: "2.0.0"}
+	hub.Broadcast(msg)
+
+	select {
+	case <-ok.Send:
+		// good
+	default:
+		t.Error("buffered conn should have received broadcast")
+	}
+}
+
+func TestAllDeviceInfoMultipleDevices(t *testing.T) {
+	hub := NewHub()
+	c1 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001", PiVersion: "1.0.0", FirmwareVersion: "0.5.0"}
+	c2 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-002", PiVersion: "1.2.0", FirmwareVersion: "0.8.0"}
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140001", c2)
+
+	infos := hub.AllDeviceInfo("3140001")
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(infos))
+	}
+	versions := map[string]string{}
+	for _, info := range infos {
+		versions[info.HardwareID] = info.PiVersion
+	}
+	if versions["hw-001"] != "1.0.0" {
+		t.Errorf("hw-001 PiVersion = %q, want 1.0.0", versions["hw-001"])
+	}
+	if versions["hw-002"] != "1.2.0" {
+		t.Errorf("hw-002 PiVersion = %q, want 1.2.0", versions["hw-002"])
+	}
+}
+
+func TestAllDeviceInfoReturnsNilForOffline(t *testing.T) {
+	hub := NewHub()
+	infos := hub.AllDeviceInfo("3140099")
+	if infos != nil {
+		t.Errorf("expected nil for unregistered number, got %d items", len(infos))
+	}
+}
+
+func TestAllDeviceInfoAfterUnregister(t *testing.T) {
+	hub := NewHub()
+	c1 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001", PiVersion: "1.0.0"}
+	c2 := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-002", PiVersion: "1.2.0"}
+	_ = hub.Register("3140001", c1)
+	_ = hub.Register("3140001", c2)
+
+	hub.Unregister("3140001", c1)
+
+	infos := hub.AllDeviceInfo("3140001")
+	if len(infos) != 1 {
+		t.Fatalf("expected 1 device after unregister, got %d", len(infos))
+	}
+	if infos[0].HardwareID != "hw-002" {
+		t.Errorf("remaining device = %q, want hw-002", infos[0].HardwareID)
+	}
+}
+
+func TestDeviceInfoSnapshotJSONOmitsRemoteAddr(t *testing.T) {
+	snap := DeviceInfoSnapshot{
+		PiVersion:       "1.2.3",
+		FirmwareVersion: "0.4.0",
+		RemoteAddr:      "192.168.1.42",
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(data, []byte("192.168.1.42")) {
+		t.Errorf("RemoteAddr value leaked into JSON: %s", data)
+	}
+	if bytes.Contains(data, []byte("RemoteAddr")) {
+		t.Errorf("RemoteAddr field name appeared in JSON: %s", data)
 	}
 }

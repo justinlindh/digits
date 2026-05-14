@@ -1,0 +1,16 @@
+[Unit]
+Description=Digits AP Mode Boot Check
+Documentation=https://github.com/digits/digits
+# Run after filesystem and first-boot are done, before networking
+DefaultDependencies=no
+Wants=digits-first-boot.service
+After=local-fs.target digits-first-boot.service
+Before=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/digits-ap-check init
+
+[Install]
+WantedBy=sysinit.target

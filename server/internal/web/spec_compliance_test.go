@@ -117,18 +117,15 @@ func TestSpecLines(t *testing.T) {
 	h.Router().ServeHTTP(w, req)
 	body := w.Body.String()
 
-	// Panel title "Pair a new handset" (Spec: copy change).
-	if !strings.Contains(body, "Pair a new handset") {
-		t.Errorf("Lines missing renamed panel title 'Pair a new handset'")
-	}
-	if strings.Contains(body, ">Pair a device<") {
-		t.Errorf("Lines still shows old panel title 'Pair a device'")
+	// When lines exist, the pair section title is "Add a phone".
+	if !strings.Contains(body, "Add a phone") {
+		t.Errorf("Lines missing pair panel title 'Add a phone'")
 	}
 
 	// Field label, placeholder, helper (Spec: the core pair-flow nudge).
 	for _, want := range []string{
 		"Handset name",
-		"Kitchen · Grandma&#39;s bedroom · Garage", // html/template escapes the apostrophe
+		"Kitchen · Bedroom · Garage",
 		"Most families name handsets by where they live",
 	} {
 		if !strings.Contains(body, want) {

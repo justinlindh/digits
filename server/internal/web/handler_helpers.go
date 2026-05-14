@@ -13,6 +13,7 @@ import (
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/updates"
 	"github.com/justinlindh/digits/server/internal/version"
 )
 
@@ -24,6 +25,23 @@ import (
 func (h *Handler) requireLineOwnership(w http.ResponseWriter, r *http.Request, number string) *line.Line {
 	ln, _ := h.requireLineOwnershipWithHousehold(w, r, number)
 	return ln
+}
+
+// requireLineOwnershipAdmin is requireLineOwnership with an additional admin
+// role check. Used for destructive phone endpoints (delete, factory reset,
+// restart, update, pair, add line).
+func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Request, number string) (*line.Line, *household.Household) {
+	ln, hh := h.requireLineOwnershipWithHousehold(w, r, number)
+	if ln == nil {
+		return nil, nil
+	}
+	user := auth.UserFromContext(r.Context())
+	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, nil
+	}
+	return ln, hh
 }
 
 // requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
@@ -66,7 +84,7 @@ func (h *Handler) requireLineOwnershipWithHousehold(w http.ResponseWriter, r *ht
 func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[string]*line.Line, *household.Household, bool) {
 	households, err := h.householdStore.GetForUser(ctx, user.ID)
 	if err != nil {
-		slog.Error("link_health: list households failed", "user_id", user.ID, "err", err)
+		slog.ErrorContext(ctx, "ownedLinesForUser: list households failed", "user_id", user.ID, "err", err)
 		return nil, nil, false
 	}
 	if len(households) == 0 {
@@ -76,7 +94,7 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 	for _, hh := range households {
 		hhLines, err := h.lineStore.ListByHousehold(ctx, hh.ID)
 		if err != nil {
-			slog.Error("link_health: list lines failed", "household_id", hh.ID, "err", err)
+			slog.ErrorContext(ctx, "ownedLinesForUser: list lines failed", "household_id", hh.ID, "err", err)
 			return nil, nil, false
 		}
 		for i := range hhLines {
@@ -109,7 +127,7 @@ func (h *Handler) requireCallEndpointOwnership(w http.ResponseWriter, r *http.Re
 	call, callErr := h.tracker.GetCall(r.Context(), callID)
 
 	if callErr != nil {
-		slog.Error("link_health: get call failed", "call_id", callID, "err", callErr)
+		slog.ErrorContext(r.Context(), "link_health: get call failed", "call_id", callID, "err", callErr)
 		http.NotFound(w, r)
 		return calls.Call{}, nil, nil, false
 	}
@@ -140,7 +158,7 @@ func (h *Handler) loadConferenceForUser(w http.ResponseWriter, r *http.Request, 
 	ownedLines, primaryHH, ok := h.ownedLinesForUser(r.Context(), user)
 	conf, confErr := h.tracker.GetConferenceByID(r.Context(), confID)
 	if confErr != nil {
-		slog.Error(errLog+": get conference failed", "conf_id", confID, "err", confErr)
+		slog.ErrorContext(r.Context(), errLog+": get conference failed", "conf_id", confID, "err", confErr)
 		http.NotFound(w, r)
 		return nil, nil, nil, false
 	}
@@ -227,15 +245,11 @@ func userDisplayLabel(u *auth.User) string {
 // householdNumbers returns the set of phone numbers belonging to the
 // authenticated user's household. Returns nil if the user has no household.
 func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
-	user := auth.UserFromContext(r.Context())
-	if user == nil || h.householdStore == nil {
+	hh := h.activeHousehold(r)
+	if hh == nil {
 		return nil
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		return nil
-	}
-	lines, err := h.lineStore.ListByHousehold(r.Context(), households[0].ID)
+	lines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err != nil {
 		return nil
 	}
@@ -246,33 +260,83 @@ func (h *Handler) householdNumbers(r *http.Request) map[string]bool {
 	return nums
 }
 
-// primaryHousehold returns the first household the authenticated user belongs
-// to, or nil when the user is unauthenticated, the store is not wired, lookup
-// fails, or the user has no households.
-func (h *Handler) primaryHousehold(r *http.Request) *household.Household {
+// resolveActiveHousehold returns the user's full household list along with
+// the entry currently selected as active. The active entry is the one whose
+// ID matches the session cookie's active_household_id; on any miss (cookie
+// absent, ID unset, ID not in the list) it falls back to households[0].
+// Returns (nil, nil) when the request has no authenticated user, the
+// household store is unset, GetForUser fails, or the user has no
+// households.
+func (h *Handler) resolveActiveHousehold(r *http.Request) (*household.Household, []*household.Household) {
 	if h.householdStore == nil {
-		return nil
+		return nil, nil
 	}
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
-		return nil
+		return nil, nil
 	}
 	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
 	if err != nil || len(households) == 0 {
-		return nil
+		return nil, nil
 	}
-	return households[0]
+	active := households[0]
+	cookie, cookieErr := r.Cookie(auth.CookieName)
+	if cookieErr == nil && h.authStore != nil {
+		activeID, err := h.authStore.ActiveHouseholdID(r.Context(), cookie.Value)
+		if err != nil {
+			slog.WarnContext(r.Context(), "active household lookup failed", "user", user.ID, "err", err)
+		} else if activeID != "" {
+			for _, hh := range households {
+				if hh.ID == activeID {
+					active = hh
+					break
+				}
+			}
+		}
+	}
+	return active, households
+}
+
+// activeHousehold returns the household the user is currently viewing. Reads
+// active_household_id from the session; falls back to the first household
+// when unset or when the user is no longer a member.
+func (h *Handler) activeHousehold(r *http.Request) *household.Household {
+	active, _ := h.resolveActiveHousehold(r)
+	return active
+}
+
+// requireHouseholdAdmin checks that the requesting user holds the "admin" role
+// in the active household. Returns (user, household, true) on success. On
+// failure it writes an appropriate redirect or 403 and returns (nil, nil, false).
+func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, *household.Household, bool) {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	hh := h.activeHousehold(r)
+	if hh == nil {
+		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
+	if err != nil || role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return nil, nil, false
+	}
+	return user, hh, true
 }
 
 // chromeData holds the fields every protected page-data struct shares for
-// rendering the layout chrome (sidebar, nav, DND chip, version pill). The
-// HouseholdName/HouseholdDND/CallHistoryEnabled methods read through the
-// Household pointer so templates hit one source of truth per request.
+// rendering the layout chrome (sidebar, nav, DND chip, version pill).
 type chromeData struct {
-	Page      string
-	Version   string
-	User      *auth.User
-	Household *household.Household
+	Page       string
+	Version    string
+	User       *auth.User
+	Household  *household.Household
+	Households []*household.Household
+	HasUpdates bool
+	allSilent  bool
 }
 
 func (c chromeData) HouseholdName() string {
@@ -283,10 +347,7 @@ func (c chromeData) HouseholdName() string {
 }
 
 func (c chromeData) HouseholdDND() bool {
-	if c.Household == nil {
-		return false
-	}
-	return c.Household.DoNotDisturb
+	return c.allSilent
 }
 
 func (c chromeData) CallHistoryEnabled() bool {
@@ -305,16 +366,77 @@ func newChromeData(page string, user *auth.User, hh *household.Household) chrome
 	}
 }
 
-func jsonError(w http.ResponseWriter, msg string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg}) //nolint:errcheck
+func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chromeData {
+	active, households := h.resolveActiveHousehold(r)
+	cd := newChromeData(page, auth.UserFromContext(r.Context()), active)
+	cd.Households = households
+	if active != nil {
+		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID, nil)
+		if h.lineStore != nil {
+			silent, err := h.lineStore.AllSilentByHousehold(r.Context(), active.ID)
+			if err != nil {
+				slog.ErrorContext(r.Context(), "check all-silent failed", "household_id", active.ID, "err", err)
+			}
+			cd.allSilent = silent
+		}
+	}
+	return cd
 }
 
-func renderWith(w http.ResponseWriter, t *template.Template, name string, data any) {
+// hasPhoneUpdates returns true if any phone in the household is behind the
+// latest pi or firmware release. If lineNumbers is non-nil, it skips the DB
+// lookup and uses the provided numbers directly.
+func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineNumbers []string) bool {
+	if h.Releases == nil {
+		return false
+	}
+	idx := h.Releases.ReleaseIndex()
+	if idx == nil {
+		return false
+	}
+	latestPi := idx.Pi.Latest
+	latestFw := idx.Firmware.Latest
+	if latestPi == "" && latestFw == "" {
+		return false
+	}
+	if lineNumbers == nil {
+		if h.lineStore == nil {
+			return false
+		}
+		lines, err := h.lineStore.ListByHousehold(ctx, householdID)
+		if err != nil {
+			return false
+		}
+		lineNumbers = make([]string, len(lines))
+		for i, l := range lines {
+			lineNumbers[i] = l.Number
+		}
+	}
+	for _, number := range lineNumbers {
+		for _, info := range h.hub.AllDeviceInfo(number) {
+			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
+				return true
+			}
+			if latestFw != "" && info.FirmwareVersion != "" && updates.CompareSemver(info.FirmwareVersion, latestFw) < 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func jsonError(ctx context.Context, w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": msg}); err != nil {
+		slog.ErrorContext(ctx, "jsonError: encode failed", "err", err)
+	}
+}
+
+func renderWith(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("template render failed", "template", name, "err", err)
+		slog.ErrorContext(ctx, "template render failed", "template", name, "err", err)
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
@@ -322,11 +444,11 @@ func renderWith(w http.ResponseWriter, t *template.Template, name string, data a
 // renderWithStatus is renderWith with an explicit non-200 status. Headers must
 // be set before WriteHeader, so we can't reuse renderWith after the caller has
 // already written the status line.
-func renderWithStatus(w http.ResponseWriter, t *template.Template, name string, data any, status int) {
+func renderWithStatus(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any, status int) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("template render failed", "template", name, "err", err)
+		slog.ErrorContext(ctx, "template render failed", "template", name, "err", err)
 	}
 }
 
@@ -357,4 +479,3 @@ func partialFor(r *http.Request, intercom, am string) string {
 	}
 	return intercom
 }
-

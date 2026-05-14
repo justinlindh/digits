@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sort"
 	"sync"
 )
 
@@ -297,6 +298,18 @@ func (m *Mixer) Active() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.loopName
+}
+
+// ToneNames returns the sorted names of all loaded tones.
+func (m *Mixer) ToneNames() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	names := make([]string, 0, len(m.tones))
+	for k := range m.tones {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // PlayOnce queues a one-shot tone to play once, mixed over any active loop.

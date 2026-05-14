@@ -217,7 +217,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 }
 .page__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin: 0 0 20px;
@@ -488,6 +488,45 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 
 .btn--sm { padding: 5px 10px; font-size: 12.5px; border-radius: 6px; }
 
+/* --------- Segmented radio --------- */
+
+.seg-radio {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+.seg-radio__opt {
+  cursor: pointer;
+  margin: 0;
+}
+.seg-radio__opt + .seg-radio__opt { border-left: 1px solid var(--rule); }
+.seg-radio__opt input { position: absolute; opacity: 0; pointer-events: none; }
+.seg-radio__label {
+  display: block;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--paper);
+  transition: background-color 0.12s, color 0.12s;
+}
+.seg-radio__opt:hover .seg-radio__label { background: var(--paper-2); }
+.seg-radio__opt input:checked + .seg-radio__label {
+  background: var(--ink);
+  color: var(--paper);
+}
+.seg-radio__opt input:focus-visible + .seg-radio__label {
+  outline: 2px solid var(--brass);
+  outline-offset: -2px;
+}
+.pair-mode-field {
+  border: none;
+  padding: 0;
+  margin: 0 0 14px;
+}
+.pair-mode-field legend { padding: 0; }
+
 /* --------- Forms --------- */
 
 .field { margin-bottom: 14px; }
@@ -588,11 +627,15 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   box-shadow: 0 1px 2px rgba(42,31,24,0.2);
   transition: left 0.18s ease;
 }
+.toggle--sm { width: 30px; height: 16px; }
+.toggle--sm .toggle__track::after { width: 12px; height: 12px; }
 .toggle input:checked ~ .toggle__track { background: var(--brass); }
 .toggle input:checked ~ .toggle__track::after { left: 18px; }
+.toggle--sm input:checked ~ .toggle__track::after { left: 16px; }
 .toggle input:focus-visible ~ .toggle__track {
   box-shadow: 0 0 0 3px rgba(196,139,58,0.25);
 }
+.dnd-toggle__label { font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
 
 /* --------- Chip / state badge (used sparingly — prefer dot) --------- */
 
@@ -1214,8 +1257,6 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   .show-sm { display: block; }
 }
 
-/* Ringer panel: checkbox-with-label row. Distinct from the .toggle pill-switch
-   used elsewhere; this is a plain native checkbox paired with text. */
 .checkbox-row {
   display: flex;
   align-items: center;
@@ -1224,10 +1265,35 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   user-select: none;
 }
 .checkbox-row input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--ink-muted);
+  border-radius: 4px;
+  background: transparent;
   cursor: pointer;
-  accent-color: var(--ink);
+  flex-shrink: 0;
+  position: relative;
+}
+.checkbox-row input[type="checkbox"]:checked {
+  background: var(--brass);
+  border-color: var(--brass);
+}
+.checkbox-row input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--paper);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+.checkbox-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
 }
 .checkbox-row__label {
   font-size: 14px;
@@ -1596,6 +1662,180 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   grid-column: 1 / -1;
   grid-row: 2;
   margin-top: 4px;
+}
+
+/* Line editor dialog (phone detail: number edit + convert) */
+.line-editor-dialog {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 24px 26px;
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(42,31,24,0.18), 0 2px 6px rgba(42,31,24,0.08);
+  max-width: 400px;
+  width: 92vw;
+  color: var(--ink);
+}
+.line-editor-dialog::backdrop { background: rgba(42,31,24,0.35); }
+.line-editor-dialog__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.005em;
+  margin: 0 0 18px;
+}
+.line-editor-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.line-editor-dialog__divider {
+  margin: 18px 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.line-editor-dialog__error {
+  color: var(--rust);
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+
+/* What's New changelog dialog */
+.page__foot-sep { color: var(--ink-muted); }
+.page__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brass);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.page__foot-link:hover { text-decoration-color: var(--brass); }
+
+.changelog-dialog {
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 0;
+  background: var(--paper);
+  box-shadow: 0 12px 32px rgba(42,31,24,0.18), 0 2px 6px rgba(42,31,24,0.08);
+  max-width: 560px;
+  width: 92vw;
+  max-height: 80vh;
+  color: var(--ink);
+}
+.changelog-dialog::backdrop { background: rgba(42,31,24,0.35); }
+.changelog-dialog__titlebar { display: none; }
+.changelog-dialog__body { padding: 24px 26px; overflow-y: auto; max-height: 78vh; }
+.changelog-dialog__title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.005em;
+  margin: 0 0 18px;
+  color: var(--ink);
+}
+.changelog-dialog__content { min-height: 60px; }
+
+.changelog-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 16px;
+}
+.changelog-tab {
+  background: none;
+  border: none;
+  padding: 6px 14px 8px;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.changelog-tab:hover { color: var(--ink); }
+.changelog-tab--active {
+  color: var(--brass);
+  border-bottom-color: var(--brass);
+}
+.changelog-panel { display: none; }
+.changelog-panel--active { display: block; }
+
+.page__foot-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+  margin-left: 5px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+.changelog__release + .changelog__release {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+.changelog__release-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.changelog__version {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.changelog__date {
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.changelog__adoption {
+  font-size: 11px;
+  color: var(--brass);
+  margin-left: auto;
+}
+.changelog__notes {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.changelog__notes p { margin: 0 0 8px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__notes ul { margin: 4px 0 8px; padding-left: 18px; }
+.changelog__notes li { margin: 2px 0; }
+.changelog__play {
+  background: none;
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--brass);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.changelog__play:hover {
+  border-color: var(--brass);
+  color: var(--ink);
+}
+.changelog__empty {
+  color: var(--ink-muted);
+  font-style: italic;
+  font-size: 13px;
 }
 
 /* =========================================================================
@@ -1999,7 +2239,6 @@ html[data-theme="dark"] .keypad-wrap__strip {
 html[data-theme="dark"] .toggle__track::after {
   box-shadow: 0 1px 2px rgba(0,0,0,0.5), inset 0 1px 0 rgba(221,168,103,0.08);
 }
-
 /* Primary button flips: ink-on-paper in light mode becomes
    parchment-on-walnut; hover raises toward pure parchment. */
 html[data-theme="dark"] .btn--primary {
@@ -2058,6 +2297,14 @@ html[data-theme="dark"] .confirm-dialog::backdrop { background: rgba(0,0,0,0.55)
 html[data-theme="dark"] .confirm-dialog {
   box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
 }
+html[data-theme="dark"] .line-editor-dialog::backdrop { background: rgba(0,0,0,0.55); }
+html[data-theme="dark"] .line-editor-dialog {
+  box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
+}
+html[data-theme="dark"] .changelog-dialog::backdrop { background: rgba(0,0,0,0.55); }
+html[data-theme="dark"] .changelog-dialog {
+  box-shadow: 0 14px 40px rgba(0,0,0,0.7), 0 2px 8px rgba(0,0,0,0.4);
+}
 
 /* --------- Panel pagination (intercom theme) ---------
    Understated text-link controls that ride inside .panel so the htmx
@@ -2090,3 +2337,21 @@ html[data-theme="dark"] .confirm-dialog {
   cursor: default;
   pointer-events: none;
 }
+
+/* Household switcher */
+.rail__hh-switcher { position: relative; }
+.rail__hh-switcher summary { cursor: pointer; list-style: none; }
+.rail__hh-switcher summary::-webkit-details-marker { display: none; }
+.rail__hh-arrow { font-size: 8px; opacity: 0.5; }
+.rail__hh-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; min-width: 180px; margin-top: 4px; overflow: hidden;
+}
+.rail__hh-option {
+  display: block; width: 100%; padding: 8px 12px;
+  border: none; background: transparent; color: var(--ink);
+  font-size: 13px; text-align: left; cursor: pointer;
+}
+.rail__hh-option:hover { background: var(--line); }
+.rail__hh-option.is-active { font-weight: 600; }

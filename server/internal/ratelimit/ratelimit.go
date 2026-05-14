@@ -2,11 +2,11 @@
 package ratelimit
 
 import (
-	"net"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
 type bucket struct {
@@ -75,24 +75,11 @@ func (l *Limiter) Cleanup() {
 // Middleware returns an http.Handler that rejects requests over the rate limit with 429.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := clientIP(r)
+		ip := httputil.ClientIP(r)
 		if !l.Allow(ip) {
 			http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// clientIP extracts the client IP, preferring X-Forwarded-For (first entry).
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

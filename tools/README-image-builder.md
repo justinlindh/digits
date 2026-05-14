@@ -56,18 +56,13 @@ You also need Go 1.22+ installed.
 ### Build Steps
 
 ```bash
-# 1. Cross-compile binaries
+# 1. Cross-compile the digitsd binary (also serves recovery and setup modes)
 mkdir -p tools/build
 
 cd pi/digitsd
 PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
   CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 \
   go build -o ../../tools/build/digitsd ./cmd/digitsd/
-cd ../..
-
-cd pi/digits-setup
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -o ../../tools/build/digits-setup ./cmd/digits-setup/
 cd ../..
 
 # 2. Download Raspberry Pi OS Lite (Bookworm, 64-bit)

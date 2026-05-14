@@ -164,7 +164,8 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 		HouseholdStore: householdStore,
 		PairingStore:   pairingStore,
 		LinkStore:      linkStore,
-		EmailSender:    emailSender,
+		InviteStore:    household.NewInviteStore(database.DB),
+		Emailer:        emailSender,
 	}, authStore
 }
 
@@ -231,7 +232,7 @@ func setupLineWithConn(t *testing.T, h *Handler, database *db.Database, hh *hous
 		t.Fatalf("add line %s: %v", number, err)
 	}
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register(number, conn)
+	_ = h.hub.Register(number, conn)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
 	})
@@ -333,7 +334,7 @@ func seedUnrelatedUser(t *testing.T, env callsTestEnv, label string) *auth.User 
 	if err != nil {
 		t.Fatalf("seedUnrelatedUser %s: GenerateCode: %v", label, err)
 	}
-	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+label, hh.ID); err != nil {
+	if _, _, err := env.pairingStore.ClaimDevice(context.Background(), code, num, "Phone "+label, "Phone "+label, hh.ID); err != nil {
 		t.Fatalf("seedUnrelatedUser %s: ClaimDevice: %v", label, err)
 	}
 	return u
@@ -359,7 +360,7 @@ func startConference(t *testing.T, s lhSetup) uuid.UUID {
 	if err := tr.OnCallAnswered(ctx, s.numA, s.numC); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
-	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
+	originatingCallID := tr.CallIDForPair(s.numA, s.numB)
 	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)

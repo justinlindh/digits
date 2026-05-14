@@ -12,7 +12,7 @@ import (
 )
 
 // SerialPort owns /dev/serial0 and provides thread-safe read/write.
-// Owns the serial port to the Pico — reads UART events, sends commands.
+// Owns the serial port to the Pico: reads UART events, sends commands.
 type SerialPort struct {
 	port   serial.Port
 	events chan string // parsed RX events (HOOK:OFF, KEY:5, etc.)
@@ -20,6 +20,7 @@ type SerialPort struct {
 	mu           sync.Mutex
 	respCh       atomic.Pointer[chan string] // single-slot response channel for command/response pairs
 	flashEnabled atomic.Bool                 // whether HOOK:FLASH should be forwarded (requires firmware v1.5.0+)
+	droppedLines atomic.Int64                // count of unrecognized UART lines dropped
 	stop         chan struct{}
 	logger       *slog.Logger
 
@@ -179,6 +180,11 @@ func (sp *SerialPort) flashEnabledNow() bool {
 	return sp.flashEnabled.Load()
 }
 
+// DroppedLines returns the number of unrecognized UART lines that were dropped.
+func (sp *SerialPort) DroppedLines() int64 {
+	return sp.droppedLines.Load()
+}
+
 // Ring sends RING:START or RING:STOP to the Pico.
 func (sp *SerialPort) Ring(start bool) {
 	if start {
@@ -188,9 +194,45 @@ func (sp *SerialPort) Ring(start bool) {
 	}
 }
 
+// RingPattern sends RING:PATTERN:<id> to the Pico for distinctive ring cadences.
+func (sp *SerialPort) RingPattern(id int) {
+	sp.SendFire(fmt.Sprintf("RING:PATTERN:%d", id))
+}
+
+// QueryPhase sends PHASE? and returns the raw phase byte as a uint8.
+// Response format: PHASE:0xNN
+func (sp *SerialPort) QueryPhase() (uint8, error) {
+	resp, err := sp.SendCommand("PHASE?", 1*time.Second)
+	if err != nil {
+		return 0, err
+	}
+	parts := strings.SplitN(resp, ":", 2)
+	if len(parts) != 2 || parts[0] != "PHASE" {
+		return 0, fmt.Errorf("unexpected phase response: %q", resp)
+	}
+	var val uint8
+	if _, err := fmt.Sscanf(parts[1], "0x%02X", &val); err != nil {
+		return 0, fmt.Errorf("parse phase byte: %w (raw=%q)", err, parts[1])
+	}
+	return val, nil
+}
+
+// Phase byte constants matching firmware/src/phase.h.
+const (
+	PhasePaired   uint8 = 0x01
+	PhaseUnpaired uint8 = 0x02
+	PhaseSetup    uint8 = 0x03
+	PhaseRecovery uint8 = 0x04
+)
+
 // LED sends LED:<mode> to the Pico.
 func (sp *SerialPort) LED(mode string) {
 	sp.SendFire("LED:" + mode)
+}
+
+// StateSet sends STATE:SET:<state> to the Pico to persist the phase byte.
+func (sp *SerialPort) StateSet(state string) {
+	sp.SendFire("STATE:SET:" + state)
 }
 
 // CallConnected sends CALL:CONNECTED to the Pico.
@@ -226,6 +268,8 @@ func isUnsolicitedEvent(line string) bool {
 		return true
 	case line == "STATUS:READY":
 		return true
+	case strings.HasPrefix(line, "BOOT:"):
+		return true
 	case strings.HasPrefix(line, "KEY:"):
 		return true
 	case strings.HasPrefix(line, "DIAL:"):
@@ -247,6 +291,39 @@ func isFireAndForgetAck(line string) bool {
 	case "HOOK:FLASH:ON", "HOOK:FLASH:OFF":
 		return true
 	case "CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED":
+		return true
+	case "STATE:SET:OK":
+		return true
+	default:
+		return false
+	}
+}
+
+// isKnownResponsePrefix returns true for lines that are valid command
+// responses from the Pico. Lines that reach the fallthrough path (no pending
+// command consumer) are checked against this allowlist. Anything unrecognized
+// is dropped with a debug log rather than forwarded to the events channel.
+func isKnownResponsePrefix(line string) bool {
+	switch {
+	case line == "PONG":
+		return true
+	case line == "RST:OK", line == "REBOOT:OK", line == "DIAL:RESET:OK":
+		return true
+	case line == "RING:ACK", line == "RING:TEST:ACK", line == "RING:DONE":
+		return true
+	case strings.HasPrefix(line, "VERSION:"):
+		return true
+	case strings.HasPrefix(line, "BOARD:"):
+		return true
+	case strings.HasPrefix(line, "CONFIG:PCB_REV="):
+		return true
+	case strings.HasPrefix(line, "STATE:"):
+		return true
+	case strings.HasPrefix(line, "HOOK:"):
+		return true
+	case strings.HasPrefix(line, "MODE:"):
+		return true
+	case strings.HasPrefix(line, "ROWS:"), strings.HasPrefix(line, "COLS:"), strings.HasPrefix(line, "SCAN "):
 		return true
 	default:
 		return false
@@ -270,7 +347,7 @@ func (sp *SerialPort) readLoop() {
 			case <-sp.stop:
 				return
 			default:
-				// Read timeout — normal, just retry
+				// Read timeout, normal, just retry
 				continue
 			}
 		}
@@ -321,7 +398,16 @@ func (sp *SerialPort) readLoop() {
 					continue
 				}
 
-				// No pending command — deliver as event (shouldn't normally happen).
+				// Unrecognized line: drop with a debug log and bump the counter
+				// so operators can spot noisy or rogue UART traffic.
+				if !isKnownResponsePrefix(line) {
+					sp.droppedLines.Add(1)
+					sp.logger.Debug("serial: dropping unrecognized UART line",
+						"line", line, "total_dropped", sp.droppedLines.Load())
+					continue
+				}
+
+				// Known response with no pending command. Deliver as event.
 				select {
 				case sp.events <- line:
 				default:

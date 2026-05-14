@@ -6,6 +6,8 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
 type Database struct {
@@ -13,7 +15,11 @@ type Database struct {
 }
 
 func Open(databaseURL string) (*Database, error) {
-	db, err := sql.Open("postgres", databaseURL)
+	// tracing.OpenSQLDB wraps lib/pq through otelsql so query spans flow
+	// into the active HTTP request span. otelsql's DisableQuery option is
+	// set there to prevent SQL text from reaching span attributes; see
+	// internal/tracing/db.go for the privacy rationale.
+	db, err := tracing.OpenSQLDB("postgres", databaseURL, "digits")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -376,6 +382,106 @@ BEGIN
         INSERT INTO schema_version (version) VALUES (25);
     END IF;
 END $$;`,
+
+		// v26: household user invites + multi-household session scoping + auth return_to
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 26) THEN
+
+        CREATE TABLE IF NOT EXISTS household_invites (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            household_id  UUID NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+            email         TEXT NOT NULL,
+            invited_by    UUID NOT NULL REFERENCES users(id),
+            token         TEXT NOT NULL UNIQUE,
+            status        TEXT NOT NULL DEFAULT 'pending',
+            created_at    TIMESTAMPTZ DEFAULT NOW(),
+            accepted_at   TIMESTAMPTZ,
+            expires_at    TIMESTAMPTZ NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_household_invites_pending
+            ON household_invites (household_id, email) WHERE status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_household_invites_token
+            ON household_invites (token);
+
+        ALTER TABLE sessions ADD COLUMN IF NOT EXISTS active_household_id UUID REFERENCES households(id);
+
+        ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS return_to TEXT;
+
+        INSERT INTO schema_version (version) VALUES (26);
+    END IF;
+END $$;`,
+		// v27: per-device name column. Previously line.name served double duty
+		// as both the line label and the handset label. With multiple handsets
+		// per line, each device needs its own name. Backfill copies the line
+		// name to the first paired device on each line.
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 27) THEN
+
+        ALTER TABLE devices ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+
+        UPDATE devices d
+        SET name = l.name
+        FROM lines l
+        WHERE d.line_id = l.id
+          AND d.paired_at IS NOT NULL
+          AND d.name = '';
+
+        INSERT INTO schema_version (version) VALUES (27);
+    END IF;
+END $$;`,
+
+		// v28: allow user deletion by relaxing FK constraints that reference users(id)
+		`DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM schema_version WHERE version = 28) THEN
+
+        -- household_links.invited_by: drop NOT NULL, swap FK to SET NULL
+        ALTER TABLE household_links ALTER COLUMN invited_by DROP NOT NULL;
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_invited_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_invited_by_fkey
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_links.accepted_by: already nullable, swap FK
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_accepted_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_accepted_by_fkey
+            FOREIGN KEY (accepted_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_links.revoked_by: already nullable, swap FK
+        ALTER TABLE household_links DROP CONSTRAINT IF EXISTS household_links_revoked_by_fkey;
+        ALTER TABLE household_links ADD CONSTRAINT household_links_revoked_by_fkey
+            FOREIGN KEY (revoked_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- household_invites.invited_by: drop NOT NULL, swap FK
+        ALTER TABLE household_invites ALTER COLUMN invited_by DROP NOT NULL;
+        ALTER TABLE household_invites DROP CONSTRAINT IF EXISTS household_invites_invited_by_fkey;
+        ALTER TABLE household_invites ADD CONSTRAINT household_invites_invited_by_fkey
+            FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- calls.force_ended_by: already nullable, swap FK
+        ALTER TABLE calls DROP CONSTRAINT IF EXISTS calls_force_ended_by_fkey;
+        ALTER TABLE calls ADD CONSTRAINT calls_force_ended_by_fkey
+            FOREIGN KEY (force_ended_by) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- conference_kicks.kicked_by_user_id: drop NOT NULL, swap FK
+        ALTER TABLE conference_kicks ALTER COLUMN kicked_by_user_id DROP NOT NULL;
+        ALTER TABLE conference_kicks DROP CONSTRAINT IF EXISTS conference_kicks_kicked_by_user_id_fkey;
+        ALTER TABLE conference_kicks ADD CONSTRAINT conference_kicks_kicked_by_user_id_fkey
+            FOREIGN KEY (kicked_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+        -- sessions.active_household_id: swap FK to SET NULL so household
+        -- deletion does not fail when a session points at the household.
+        ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_active_household_id_fkey;
+        ALTER TABLE sessions ADD CONSTRAINT sessions_active_household_id_fkey
+            FOREIGN KEY (active_household_id) REFERENCES households(id) ON DELETE SET NULL;
+
+        INSERT INTO schema_version (version) VALUES (28);
+    END IF;
+END $$;`,
+		// v29: remove household-level do_not_disturb flag. "Silence All" is
+		// now derived from per-line silent_mode settings.
+		`ALTER TABLE households DROP COLUMN IF EXISTS do_not_disturb`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signald
+  labels:
+    {{- include "digits.signald.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.signald.replicas }}
+  {{- if gt (int .Values.signald.replicas) 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "digits.signald.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "digits.signald.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: {{ include "digits.name" . }}
+    spec:
+      automountServiceAccountToken: false
+      {{- if gt (int .Values.signald.replicas) 1 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "digits.signald.selectorLabels" . | nindent 14 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: signald
+          image: {{ include "digits.signald.image" . }}
+          imagePullPolicy: {{ .Values.signald.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.signald.port }}
+            {{- if .Values.observability.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.observability.signaldMetricsPort }}
+            {{- end }}
+          env:
+            - name: SIGNALD_ADDR
+              value: ":{{ .Values.signald.port }}"
+            {{- if .Values.observability.enabled }}
+            - name: SIGNALD_METRICS_ADDR
+              value: ":{{ .Values.observability.signaldMetricsPort }}"
+            {{- end }}
+            {{- if .Values.cnpg.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "digits.fullname" . }}-userdb-app
+                  key: uri
+            {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_URL
+              value: "{{ range $i := until (int .Values.redis.replicas) }}{{ if $i }},{{ end }}{{ include "digits.fullname" $ }}-redis-{{ $i }}.{{ include "digits.fullname" $ }}-redis-headless.{{ $.Release.Namespace }}.svc.cluster.local:26379{{ end }}"
+            - name: REDIS_SENTINEL_MASTER
+              value: {{ .Values.redis.sentinelMasterName | quote }}
+            {{- end }}
+            {{- if .Values.observability.enabled }}
+            {{- include "digits.observability.env" (dict "serviceName" "signald" "ctx" .) | nindent 12 }}
+            {{- end }}
+            {{- range $key, $value := .Values.signald.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.signald.envFrom }}
+          envFrom:
+            {{- toYaml .Values.signald.envFrom | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- with .Values.signald.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

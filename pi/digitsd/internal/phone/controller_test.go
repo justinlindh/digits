@@ -1,6 +1,7 @@
 package phone
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,10 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	callReturns        int
+	ringPatterns       []int
+	callReturnCancels  int
+	callReturnAbandons int
 	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
@@ -29,6 +34,7 @@ type mockCallbacks struct {
 	meshPeers          map[string]bool   // phone -> initiator flag
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
+	initiateCallErr    error             // injected error for InitiateCall
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -52,10 +58,11 @@ func (m *mockCallbacks) SetFlashEnabled(enabled bool) {
 	defer m.mu.Unlock()
 	m.flashEnabledLog = append(m.flashEnabledLog, enabled)
 }
-func (m *mockCallbacks) InitiateCall(number string) {
+func (m *mockCallbacks) InitiateCall(number string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, number)
+	return m.initiateCallErr
 }
 func (m *mockCallbacks) AnswerCall() {
 	m.mu.Lock()
@@ -116,6 +123,26 @@ func (m *mockCallbacks) MigrateToMesh(phone string) {
 	}
 	m.migratedToMesh[phone] = true
 }
+func (m *mockCallbacks) OnCallReturn() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callReturns++
+}
+func (m *mockCallbacks) SendRingPattern(id int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ringPatterns = append(m.ringPatterns, id)
+}
+func (m *mockCallbacks) OnCallReturnCancel() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callReturnCancels++
+}
+func (m *mockCallbacks) OnCallReturnAbandon() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callReturnAbandons++
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -148,6 +175,26 @@ func (m *mockCallbacks) Answers() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.answers
+}
+func (m *mockCallbacks) CallReturns() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callReturns
+}
+func (m *mockCallbacks) RingPatterns() []int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]int(nil), m.ringPatterns...)
+}
+func (m *mockCallbacks) CallReturnCancels() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callReturnCancels
+}
+func (m *mockCallbacks) CallReturnAbandons() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.callReturnAbandons
 }
 func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
@@ -522,6 +569,54 @@ func TestController_DialBlockedContact(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected RINGBACK tone for blocked number, got tones: %v", cb.Tones())
+	}
+}
+
+func TestController_DialServerUnreachable(t *testing.T) {
+	cb := &mockCallbacks{initiateCallErr: fmt.Errorf("signal: not connected")}
+	c := NewController(cb, "")
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:5")
+	c.HandleEvent("DIAL:5551234")
+
+	if c.State() != StateCALLING {
+		t.Fatalf("expected CALLING, got %s", c.State())
+	}
+
+	// InitiateCall was attempted (after 800ms async delay)
+	waitForCall(cb)
+	if !cb.calledNumber("5551234") {
+		t.Fatalf("expected InitiateCall(5551234), got %v", cb.Calls())
+	}
+
+	// After InitiateCall fails, playRejectSequence runs async (3s wait
+	// + intercept + busy). Verify by waiting and checking tones.
+	// The sequence takes ~3.5s; wait a bit longer.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		found := false
+		for _, tone := range cb.Tones() {
+			if tone == ToneIntercept {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	tones := cb.Tones()
+	hasIntercept := false
+	for _, tone := range tones {
+		if tone == ToneIntercept {
+			hasIntercept = true
+		}
+	}
+	if !hasIntercept {
+		t.Errorf("expected INTERCEPT tone after server-unreachable call, got tones: %v", tones)
 	}
 }
 

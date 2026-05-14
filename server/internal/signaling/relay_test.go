@@ -5,18 +5,20 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/calls"
 )
 
 type mockTracker struct {
-	initiated   []string
-	answered    []string
-	ended       []string
-	calls       map[string]bool  // "a→b" keys for active calls
-	callIDs     map[string]int64 // "a→b" keys for active call IDs
-	conferences *calls.ConferenceTracker
+	initiated          []string
+	answered           []string
+	ended              []string
+	calls              map[string]bool  // "a→b" keys for active calls
+	callIDs            map[string]int64 // "a→b" keys for active call IDs
+	conferences        *calls.ConferenceTracker
+	lastInboundCaller  string
 }
 
 func newMockTracker() *mockTracker {
@@ -65,7 +67,7 @@ func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
 		}
 	}
 }
-func (m *mockTracker) Busy(ctx context.Context, number string) bool {
+func (m *mockTracker) Busy(number string) bool {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -75,7 +77,7 @@ func (m *mockTracker) Busy(ctx context.Context, number string) bool {
 	return false
 }
 
-func (m *mockTracker) CanAddAsHost(ctx context.Context, number string) bool {
+func (m *mockTracker) CanAddAsHost(number string) bool {
 	callerCount := 0
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
@@ -89,11 +91,11 @@ func (m *mockTracker) CanAddAsHost(ctx context.Context, number string) bool {
 	return callerCount == 1
 }
 
-func (m *mockTracker) InCall(ctx context.Context, a, b string) bool {
+func (m *mockTracker) InCall(a, b string) bool {
 	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
 
-func (m *mockTracker) PeerOf(ctx context.Context, number string) string {
+func (m *mockTracker) PeerOf(number string) string {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number {
@@ -106,7 +108,7 @@ func (m *mockTracker) PeerOf(ctx context.Context, number string) string {
 	return ""
 }
 
-func (m *mockTracker) AllPeersOf(ctx context.Context, number string) []string {
+func (m *mockTracker) AllPeersOf(number string) []string {
 	var peers []string
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
@@ -127,7 +129,7 @@ func (m *mockTracker) CreateConferencePersistent(ctx context.Context, host strin
 	return m.conferences.CreateConference(host, originatingCallID, addedMembers)
 }
 
-func (m *mockTracker) CallIDForPair(ctx context.Context, a, b string) int64 {
+func (m *mockTracker) CallIDForPair(a, b string) int64 {
 	if id, ok := m.callIDs[a+"→"+b]; ok {
 		return id
 	}
@@ -137,7 +139,7 @@ func (m *mockTracker) CallIDForPair(ctx context.Context, a, b string) int64 {
 	return 0
 }
 
-func (m *mockTracker) CallIDFor(ctx context.Context, number string) (int64, bool) {
+func (m *mockTracker) CallIDFor(number string) (int64, bool) {
 	for k, id := range m.callIDs {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -154,6 +156,10 @@ func (m *mockTracker) EndConferencePersistent(ctx context.Context, id uuid.UUID,
 
 func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, bool, error) {
 	return m.conferences.DropMember(id, phone, reason)
+}
+
+func (m *mockTracker) LastInboundCaller(ctx context.Context, number string) (string, error) {
+	return m.lastInboundCaller, nil
 }
 
 // fakeHealthRecorder records calls for assertion in tests.
@@ -213,8 +219,8 @@ func TestRelayCallFlow(t *testing.T) {
 	// Register two mock connections
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	// Phone 1 calls Phone 2
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
@@ -240,7 +246,7 @@ func TestRelayCallToOfflinePhone(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, nil)
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
+	_ = hub.Register("3140001", conn1)
 
 	// Call offline phone
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
@@ -272,8 +278,8 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	// Test 1: Phone 1 calls Phone 2 → ring delivered (authorized)
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
@@ -316,7 +322,7 @@ func TestRelayCallAuthorizationIntegration(t *testing.T) {
 
 	// Test 3: Phone 3 comes online, Phone 1 calls Phone 3 → not_authorized
 	conn3 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140003", conn3)
+	_ = hub.Register("3140003", conn3)
 
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140003"})
 
@@ -355,8 +361,8 @@ func TestRelayCallDeniedOnAuthorizerError(t *testing.T) {
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
 
@@ -391,9 +397,9 @@ func TestRelayBusySignal(t *testing.T) {
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
 	conn3 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
-	hub.Register("3140003", conn3)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+	_ = hub.Register("3140003", conn3)
 
 	// Phone 1 calls Phone 2 (establishes active call)
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
@@ -457,9 +463,9 @@ func TestRelayAddDialRejectedForNonHost(t *testing.T) {
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
 	conn3 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
-	hub.Register("3140003", conn3)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+	_ = hub.Register("3140003", conn3)
 
 	// Phone 1 calls Phone 2 -- Phone 2 is now the CALLEE.
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
@@ -498,14 +504,14 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	// Phone 1 calls Phone 2
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
 	<-conn2.Send // drain ring
 
-	if !tracker.Busy(context.Background(), "3140001") {
+	if !tracker.Busy("3140001") {
 		t.Fatal("expected 3140001 to be busy after call initiated")
 	}
 
@@ -513,10 +519,10 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeHangup})
 
 	// Tracker should have resolved the peer and ended the call
-	if tracker.Busy(context.Background(), "3140001") {
+	if tracker.Busy("3140001") {
 		t.Fatal("expected 3140001 to no longer be busy after hangup")
 	}
-	if tracker.Busy(context.Background(), "3140002") {
+	if tracker.Busy("3140002") {
 		t.Fatal("expected 3140002 to no longer be busy after hangup")
 	}
 
@@ -545,8 +551,8 @@ func TestRegression_HangupBeforeAnswer_StopsRing(t *testing.T) {
 
 	d1 := &Conn{Send: make(chan []byte, 20)}
 	d3 := &Conn{Send: make(chan []byte, 20)}
-	hub.Register("5550001", d1)
-	hub.Register("5550003", d3)
+	_ = hub.Register("5550001", d1)
+	_ = hub.Register("5550003", d3)
 
 	// D1 calls D3
 	relay.HandleMessage(context.Background(), "5550001", &Message{Type: TypeCall, To: "5550003"})
@@ -570,7 +576,7 @@ func TestRegression_HangupBeforeAnswer_StopsRing(t *testing.T) {
 		t.Fatal("REGRESSION: D3 did not receive hangup, will keep ringing")
 	}
 
-	if tracker.Busy(context.Background(), "5550001") {
+	if tracker.Busy("5550001") {
 		t.Fatal("D1 still busy after hangup")
 	}
 }
@@ -582,8 +588,8 @@ func TestRelayICERestartForwarded(t *testing.T) {
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	// Establish an active call first
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
@@ -623,8 +629,8 @@ func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	// Phone 1 sends ICE restart without an active call
 	relay.HandleMessage(context.Background(), "3140001", &Message{
@@ -668,34 +674,34 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
 	conn3 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
-	hub.Register("3140003", conn3)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+	_ = hub.Register("3140003", conn3)
 
 	// Establish a call: Phone 1 → Phone 2
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
 	<-conn2.Send // drain ring
 
 	// Verify Phone 2 is busy
-	if !tracker.Busy(context.Background(), "3140002") {
+	if !tracker.Busy("3140002") {
 		t.Fatal("expected phone 2 to be busy after call initiated")
 	}
 
 	// Simulate Phone 2 disconnecting (WebSocket drops)
-	relay.OnDisconnect(context.Background(), "3140002")
+	relay.OnDisconnect(context.Background(), "3140002", "")
 
 	// Phone 2 should no longer be busy
-	if tracker.Busy(context.Background(), "3140002") {
+	if tracker.Busy("3140002") {
 		t.Fatal("expected phone 2 to not be busy after disconnect cleanup")
 	}
 	// Phone 1 should also be freed (its call was with Phone 2)
-	if tracker.Busy(context.Background(), "3140001") {
+	if tracker.Busy("3140001") {
 		t.Fatal("expected phone 1 to not be busy after peer disconnected")
 	}
 
 	// Phone 3 can now call Phone 2 (once reconnected)
 	newConn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140002", newConn2)
+	_ = hub.Register("3140002", newConn2)
 	relay.HandleMessage(context.Background(), "3140003", &Message{Type: TypeCall, To: "3140002"})
 
 	select {
@@ -713,8 +719,8 @@ func TestHubOnlineNumbers(t *testing.T) {
 	hub := NewHub()
 	conn1 := &Conn{Send: make(chan []byte, 1)}
 	conn2 := &Conn{Send: make(chan []byte, 1)}
-	hub.Register("3140001", conn1)
-	hub.Register("3140002", conn2)
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
 
 	nums := hub.OnlineNumbers()
 	if len(nums) != 2 {
@@ -733,9 +739,9 @@ func TestHandleHangup_EndsAllActivePeers(t *testing.T) {
 	aConn := &Conn{Send: make(chan []byte, 10)}
 	bConn := &Conn{Send: make(chan []byte, 10)}
 	cConn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Prime two active 2-party calls: A-B (held) and A-C (active).
 	tracker.onCallInitiated("5550001", "5550002")
@@ -755,13 +761,13 @@ func TestHandleHangup_EndsAllActivePeers(t *testing.T) {
 	}
 
 	// Both calls must be removed from the tracker.
-	if tracker.Busy(context.Background(), "5550001") {
+	if tracker.Busy("5550001") {
 		t.Error("A should no longer be busy after hangup")
 	}
-	if tracker.Busy(context.Background(), "5550002") {
+	if tracker.Busy("5550002") {
 		t.Error("B should no longer be busy after hangup")
 	}
-	if tracker.Busy(context.Background(), "5550003") {
+	if tracker.Busy("5550003") {
 		t.Error("C should no longer be busy after hangup")
 	}
 
@@ -818,7 +824,7 @@ func TestRelayRestartMessageNotPanics(t *testing.T) {
 	relay := NewRelay(hub, nil, nil, nil)
 
 	conn := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("3140001", conn)
+	_ = hub.Register("3140001", conn)
 
 	// Restart messages are server->device, not relayed through HandleMessage.
 	// But verify it doesn't crash if one passes through.
@@ -894,8 +900,8 @@ func TestRelayForceHangupSendsToBothPeers(t *testing.T) {
 	hub := NewHub()
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("555-1111", conn1)
-	hub.Register("555-2222", conn2)
+	_ = hub.Register("555-1111", conn1)
+	_ = hub.Register("555-2222", conn2)
 
 	r := &Relay{Hub: hub}
 	r.ForceHangup(context.Background(), "555-1111", "555-2222")
@@ -926,7 +932,7 @@ func TestRelayForceHangupTolerantOfOnePeerOffline(t *testing.T) {
 	hub := NewHub()
 	// 555-1111 is NOT registered (offline); only 555-2222 is online.
 	conn2 := &Conn{Send: make(chan []byte, 10)}
-	hub.Register("555-2222", conn2)
+	_ = hub.Register("555-2222", conn2)
 
 	r := &Relay{Hub: hub}
 
@@ -958,7 +964,7 @@ func TestHandleLinkHealth_3WayPath_RecordsEdge(t *testing.T) {
 
 	loss := float32(4.2)
 	m := &Message{
-		Type: TypeLinkHealth,
+		Type:       TypeLinkHealth,
 		LinkHealth: &LinkHealthPayload{TS: 1, LossPct: &loss, Peer: "B"},
 	}
 	r.handleLinkHealth(context.Background(), "A", m)
@@ -1042,5 +1048,260 @@ func TestHandleLinkHealth_2WayPath_UnchangedBehavior(t *testing.T) {
 	}
 	if rec.sample.LossPct == nil || *rec.sample.LossPct != 0.5 {
 		t.Fatalf("sample LossPct not preserved: %+v", rec.sample)
+	}
+}
+
+// fakeErrorObserver records every category passed to ObserveSignalingError-
+// Category. Tests assert against the slice rather than a counter so the
+// order of observations is also verifiable; ordering matters when we want
+// to confirm the relay's first error wins instead of doubling up.
+type fakeErrorObserver struct {
+	seen []string
+}
+
+func (f *fakeErrorObserver) ObserveSignalingErrorCategory(category string) {
+	f.seen = append(f.seen, category)
+}
+
+func TestRelayObservesPeerUnreachableOnOfflineCall(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	relay := NewRelay(hub, nil, nil, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "peer_unreachable" {
+		t.Fatalf("expected peer_unreachable, got %v", obs.seen)
+	}
+}
+
+func TestRelayObservesAuthFailedWhenAuthorizerDenies(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	authorizer := &mockCallAuthorizer{allowed: map[[2]string]bool{}}
+	relay := NewRelay(hub, newMockTracker(), authorizer, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "auth_failed" {
+		t.Fatalf("expected auth_failed, got %v", obs.seen)
+	}
+}
+
+func TestRelayObservesInvalidMessageOnICERestartWithoutCall(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeErrorObserver{}
+	relay := NewRelay(hub, newMockTracker(), nil, nil)
+	relay.Errors = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeICERestart, To: "3140002"})
+
+	if len(obs.seen) != 1 || obs.seen[0] != "invalid_message" {
+		t.Fatalf("expected invalid_message, got %v", obs.seen)
+	}
+}
+
+func TestRelayNilObserverIsSafe(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil, nil)
+	// Errors is nil; the relay must not panic when it tries to observe.
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
+	// No assertion: the test passes if it didn't panic.
+}
+
+func TestRelayCallReturn(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+
+	tracker.lastInboundCaller = "3140002"
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCallReturn})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnResult {
+			t.Fatalf("expected call_return_result, got %q", msg.Type)
+		}
+		if msg.Number != "3140002" {
+			t.Fatalf("expected number 3140002, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_result")
+	}
+}
+
+func TestRelayCallReturnNoCalls(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCallReturn})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnResult {
+			t.Fatalf("expected call_return_result, got %q", msg.Type)
+		}
+		if msg.Number != "" {
+			t.Fatalf("expected empty number, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_result")
+	}
+}
+
+func TestRelayCallReturnRetryAndTrigger(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.lastInboundCaller = "3140002"
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnRing {
+			t.Fatalf("expected call_return_ring, got %q", msg.Type)
+		}
+		if msg.Number != "3140002" {
+			t.Fatalf("expected number 3140002, got %q", msg.Number)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_ring")
+	}
+}
+
+func TestRelayCallReturnRetryBusyThenFree(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire while target busy")
+	default:
+	}
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnRing {
+			t.Fatalf("expected call_return_ring, got %q", msg.Type)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_ring after target freed")
+	}
+}
+
+func TestRelayCallReturnCancel(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnCancel,
+	})
+
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeCallReturnCancelled {
+			t.Fatalf("expected call_return_cancelled, got %q", msg.Type)
+		}
+	default:
+		t.Fatal("phone did not receive call_return_cancelled")
+	}
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire after cancel")
+	default:
+	}
+}
+
+func TestRelayCallReturnExpiry(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", &Conn{Send: make(chan []byte, 10)})
+
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeCallReturnRetry, Number: "3140002",
+	})
+
+	relay.pendingReturnsMu.Lock()
+	if p, ok := relay.pendingReturns["3140001"]; ok {
+		p.ExpiresAt = time.Now().Add(-1 * time.Second)
+	}
+	relay.pendingReturnsMu.Unlock()
+
+	delete(tracker.calls, "3140002→3140003")
+	relay.OnCallEndedNotify(context.Background(), "3140002", "3140003")
+
+	select {
+	case <-conn1.Send:
+		t.Fatal("should not fire after expiry")
+	default:
 	}
 }

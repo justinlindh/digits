@@ -90,6 +90,12 @@ type Config struct {
 	// the LED. Cached locally so the setting survives reboots while offline.
 	SilentMode bool `json:"silent_mode,omitempty"`
 
+	// AutoUpdate controls whether digitsd applies OTA updates automatically.
+	// When true, the daemon downloads and applies available updates without
+	// waiting for a manual update_trigger from the server. Cached locally so
+	// the setting survives reboots while offline.
+	AutoUpdate bool `json:"auto_update,omitempty"`
+
 	// WiFiFallback configures the WiFi auto-fallback supervisor.
 	WiFiFallback WiFiFallback `json:"wifi_fallback"`
 
@@ -312,14 +318,6 @@ func atomicWrite(path string, data []byte, perm os.FileMode) error {
 	}
 
 	return nil
-}
-
-// SetDeviceToken records a device token returned after pairing and clears the
-// pairing code, then saves the config to disk.
-func (c *Config) SetDeviceToken(token string) error {
-	c.DeviceToken = token
-	c.PairingCode = ""
-	return c.Save()
 }
 
 // Path returns the file path this config was loaded from.

@@ -59,7 +59,7 @@ func TestGenerateCode_Returns6Digits(t *testing.T) {
 	}
 }
 
-func TestGenerateCode_ReusesBeforeExpiry(t *testing.T) {
+func TestGenerateCode_RotatesOnEveryCall(t *testing.T) {
 	s := setupStore(t)
 	code1, err := s.GenerateCode(context.Background(), "test-hw-002")
 	if err != nil {
@@ -69,8 +69,8 @@ func TestGenerateCode_ReusesBeforeExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateCode 2: %v", err)
 	}
-	if code1 != code2 {
-		t.Errorf("expected same code before expiry, got %q and %q", code1, code2)
+	if code1 == code2 {
+		t.Errorf("expected rotated code on second call, got same %q both times", code1)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestClaimDevice_Success(t *testing.T) {
 		t.Fatalf("GenerateCode: %v", err)
 	}
 
-	token, _, err := s.ClaimDevice(context.Background(), code, "5550100", "Kitchen Phone", hhID)
+	token, _, err := s.ClaimDevice(context.Background(), code, "5550100", "Kitchen Phone", "Kitchen Phone", hhID)
 	if err != nil {
 		t.Fatalf("ClaimDevice: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestClaimDevice_Success(t *testing.T) {
 func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
 	s := setupStore(t)
 	hhID := seedHousehold(t, s)
-	_, _, err := s.ClaimDevice(context.Background(), "999999", "5550101", "Bad Phone", hhID)
+	_, _, err := s.ClaimDevice(context.Background(), "999999", "5550101", "Bad Phone", "Bad Phone", hhID)
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode, got %v", err)
 	}
@@ -122,7 +122,7 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 		t.Fatalf("expire code: %v", err)
 	}
 
-	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", seedHousehold(t, s))
+	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", "Expired Phone", seedHousehold(t, s))
 	if err != ErrInvalidCode {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
 	}
@@ -189,42 +189,6 @@ func TestCleanupExpiredCodes(t *testing.T) {
 	}
 	if code != nil {
 		t.Errorf("expected pairing_code to be NULL after cleanup, got %q", *code)
-	}
-}
-
-func TestRegenerateCode(t *testing.T) {
-	s := setupStore(t)
-	hwID := "test-hw-regen-001"
-	t.Cleanup(func() {
-		_, _ = s.db.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
-	})
-
-	// Generate initial code
-	code1, err := s.GenerateCode(context.Background(), hwID)
-	if err != nil {
-		t.Fatalf("GenerateCode: %v", err)
-	}
-
-	// Regenerate — must return a 6-digit code
-	code2, err := s.RegenerateCode(context.Background(), hwID)
-	if err != nil {
-		t.Fatalf("RegenerateCode: %v", err)
-	}
-
-	if len(code2) != CodeLength {
-		t.Errorf("expected %d-digit code, got %q (len %d)", CodeLength, code2, len(code2))
-	}
-
-	// Statistically very unlikely to be the same; treat equality as a failure
-	if code1 == code2 {
-		t.Logf("note: regenerated code happens to match original (%q); rerunning once", code1)
-		code3, err := s.RegenerateCode(context.Background(), hwID)
-		if err != nil {
-			t.Fatalf("RegenerateCode retry: %v", err)
-		}
-		if code1 == code3 {
-			t.Errorf("regenerated code matched original twice (%q) — likely a bug", code1)
-		}
 	}
 }
 

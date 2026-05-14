@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 // StringEnv assigns a non-empty env var to *dst, keeping the current default
 // if the variable is unset. Keeps env wiring scannable instead of a wall of
@@ -17,5 +20,15 @@ func StringEnv(key string, dst *string) {
 func BoolEnv(key string, dst *bool) {
 	if os.Getenv(key) == "true" {
 		*dst = true
+	}
+}
+
+// IntEnv parses the env var as an integer and assigns it to *dst. Keeps the
+// current default if the variable is unset or not a valid integer.
+func IntEnv(key string, dst *int) {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			*dst = n
+		}
 	}
 }

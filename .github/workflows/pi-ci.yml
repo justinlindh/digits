@@ -5,12 +5,10 @@ on:
     branches: [main]
     paths:
       - 'pi/digitsd/**'
-      - 'pi/digits-setup/**'
       - '.github/workflows/pi-ci.yml'
   pull_request:
     paths:
       - 'pi/digitsd/**'
-      - 'pi/digits-setup/**'
       - '.github/workflows/pi-ci.yml'
 
 permissions:
@@ -42,20 +40,3 @@ jobs:
       - name: Test digitsd (with race detector)
         working-directory: pi/digitsd
         run: go test -race ./...
-
-  test-digits-setup:
-    name: test-digits-setup
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.1'
-          cache-dependency-path: pi/digits-setup/go.sum
-      - name: Build digits-setup
-        working-directory: pi/digits-setup
-        run: go build ./...
-      - name: Test digits-setup
-        working-directory: pi/digits-setup
-        run: go test ./...

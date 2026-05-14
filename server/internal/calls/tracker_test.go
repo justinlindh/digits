@@ -54,9 +54,9 @@ func TestCallLifecycle(t *testing.T) {
 	}
 
 	// Check history
-	calls, err := tr.Recent(context.Background(), 10)
+	calls, err := tr.RecentForPhones(context.Background(), []string{"3140001", "3140002"}, 10)
 	if err != nil {
-		t.Fatalf("Recent: %v", err)
+		t.Fatalf("RecentForPhones: %v", err)
 	}
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
@@ -76,10 +76,10 @@ func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 	if id <= 0 {
 		t.Fatalf("want positive id, got %d", id)
 	}
-	if got, ok := tr.CallIDFor(context.Background(), "555-1111"); !ok || got != id {
+	if got, ok := tr.CallIDFor("555-1111"); !ok || got != id {
 		t.Fatalf("CallIDFor caller: got (%d,%v), want (%d,true)", got, ok, id)
 	}
-	if got, ok := tr.CallIDFor(context.Background(), "555-2222"); !ok || got != id {
+	if got, ok := tr.CallIDFor("555-2222"); !ok || got != id {
 		t.Fatalf("CallIDFor callee: got (%d,%v), want (%d,true)", got, ok, id)
 	}
 }

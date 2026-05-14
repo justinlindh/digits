@@ -1,35 +1,6 @@
 {{define "title"}}Lines{{end}}
 
-{{define "content"}}
-{{if and .User (eq .User.Theme "answering-machine")}}
-  {{template "phones-am" .}}
-{{else}}
-<div class="page">
-
-  <header class="page__head">
-    <h1 class="page__title">Lines</h1>
-  </header>
-
-  {{if .PairError}}
-  <div class="banner banner--err">{{.PairError}}</div>
-  {{end}}
-
-  {{if .PairSuccess}}
-  <div class="pair-banner" role="status">
-    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
-    <span class="pair-banner__text">
-      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
-    </span>
-    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
-  </div>
-  {{end}}
-
-  <section class="panel" style="margin-bottom: 20px;">
-    <header class="panel__head">
-      <h2 class="panel__title">Pair a new handset</h2>
-      <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
-    </header>
-
+{{define "pair-form"}}
     <div class="panel__body">
       <div class="cols cols--side" style="align-items: center;">
 
@@ -56,9 +27,9 @@
               <button type="button" class="keypad__btn" data-digit="7"><span class="keypad__num">7</span><span class="keypad__letters">PQRS</span></button>
               <button type="button" class="keypad__btn" data-digit="8"><span class="keypad__num">8</span><span class="keypad__letters">TUV</span></button>
               <button type="button" class="keypad__btn" data-digit="9"><span class="keypad__num">9</span><span class="keypad__letters">WXYZ</span></button>
-              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="clear" aria-label="Clear"><span class="keypad__num">✻</span></button>
+              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="clear" aria-label="Clear"><span class="keypad__num">&#x2733;</span></button>
               <button type="button" class="keypad__btn" data-digit="0"><span class="keypad__num">0</span></button>
-              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="backspace" aria-label="Backspace"><span class="keypad__num">⌫</span></button>
+              <button type="button" class="keypad__btn keypad__btn--symbol" data-action="backspace" aria-label="Backspace"><span class="keypad__num">&#x232B;</span></button>
             </div>
             <div class="keypad-wrap__strip">DIGITS</div>
           </div>
@@ -67,6 +38,7 @@
         <!-- Entry form fields -->
         <form method="POST" action="/phones/pair" id="pair-form" class="stack-md" style="min-width: 0;">
           <input type="hidden" name="code" id="pair-code-hidden" value="">
+          <input type="hidden" name="pair_mode" id="pair-mode-hidden" value="new">
 
           <div class="field">
             <label for="pair-code-manual" class="field__label">Pairing code</label>
@@ -82,17 +54,47 @@
             <p class="field__hint">Or tap the keypad.</p>
           </div>
 
-          <div class="field">
-            <label for="line-number-input" class="field__label">Line number</label>
-            <input type="text"
-                   name="number"
-                   id="line-number-input"
-                   placeholder="314-0001"
-                   pattern="\d{3}-?\d{4}"
-                   maxlength="8"
-                   required
-                   class="field__input field__input--mono">
-            <p id="number-hint" class="field__hint field__hint--err hidden">Line number is already in use.</p>
+          {{if .Lines}}
+          <fieldset class="field pair-mode-field">
+            <legend class="field__label">Line</legend>
+            <div class="seg-radio">
+              <label class="seg-radio__opt">
+                <input type="radio" name="pair_mode_radio" value="new" checked onchange="setPairMode('new')">
+                <span class="seg-radio__label">New line</span>
+              </label>
+              <label class="seg-radio__opt">
+                <input type="radio" name="pair_mode_radio" value="existing" onchange="setPairMode('existing')">
+                <span class="seg-radio__label">Add extension</span>
+              </label>
+            </div>
+          </fieldset>
+          {{end}}
+
+          <div id="new-line-fields">
+            <div class="field">
+              <label for="line-number-input" class="field__label">Line number</label>
+              <input type="text"
+                     name="number"
+                     id="line-number-input"
+                     placeholder="314-0001"
+                     pattern="\d{3}-?\d{4}"
+                     maxlength="8"
+                     class="field__input field__input--mono">
+              <p id="number-hint" class="field__hint field__hint--err hidden">Line number is already in use.</p>
+            </div>
+          </div>
+
+          <div id="existing-line-fields" class="hidden">
+            <div class="field">
+              <label for="existing-line-select" class="field__label">Add to line</label>
+              <select name="existing_line_id" id="existing-line-select" class="field__input">
+                <option value="">Choose a line...</option>
+                {{range .Lines}}
+                <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} - {{.Line.Name}}</option>
+                {{end}}
+              </select>
+              <p class="field__hint" style="font-size: 11.5px; margin-top: 4px;">Like plugging another phone into the same wall jack. All handsets on the line ring together.</p>
+            </div>
           </div>
 
           <div class="field">
@@ -100,7 +102,7 @@
             <input type="text"
                    id="line-name-input"
                    name="name"
-                   placeholder="Kitchen · Grandma&#39;s bedroom · Garage"
+                   placeholder="Kitchen · Bedroom · Garage"
                    required
                    maxlength="50"
                    class="field__input">
@@ -112,10 +114,48 @@
 
       </div>
     </div>
+{{end}}
+
+{{define "content"}}
+{{if and .User (eq .User.Theme "answering-machine")}}
+  {{template "phones-am" .}}
+{{else}}
+<div class="page">
+
+  <header class="page__head">
+    <h1 class="page__title">Lines</h1>
+    {{template "dnd-toggle" .}}
+  </header>
+
+  {{if .PairError}}
+  <div class="banner banner--err">{{.PairError}}</div>
+  {{end}}
+
+  {{if .PairSuccess}}
+  <div class="pair-banner" role="status">
+    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
+    <span class="pair-banner__text">
+      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
+    </span>
+    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
+  </div>
+  {{end}}
+
+  {{if .Lines}}
+  {{template "phones-table" .}}
+  {{end}}
+
+  <section class="panel" style="margin-top: 20px;">
+    <header class="panel__head">
+      <h2 class="panel__title">{{if .Lines}}Add a phone{{else}}Pair a new handset{{end}}</h2>
+      <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
+    </header>
+    {{template "pair-form" .}}
   </section>
 
-  <!-- Existing lines -->
+  {{if not .Lines}}
   {{template "phones-table" .}}
+  {{end}}
 
 </div>
 {{end}}
@@ -204,10 +244,38 @@
     numberInput.classList.remove('is-invalid');
     numberHint.classList.add('hidden');
   }
+  var pairModeHidden = document.getElementById('pair-mode-hidden');
+  var newLineFields = document.getElementById('new-line-fields');
+  var existingLineFields = document.getElementById('existing-line-fields');
+  var existingLineSelect = document.getElementById('existing-line-select');
+  var pairMode = 'new';
+
+  window.setPairMode = function(mode) {
+    pairMode = mode;
+    pairModeHidden.value = mode;
+    if (mode === 'existing') {
+      newLineFields.classList.add('hidden');
+      existingLineFields.classList.remove('hidden');
+    } else {
+      newLineFields.classList.remove('hidden');
+      existingLineFields.classList.add('hidden');
+    }
+    updateSubmit();
+  };
+
   function updateSubmit() {
-    var numDigits = numberInput.value.replace(/\D/g, '');
     var hasName = nameInput.value.trim().length > 0;
-    submitBtn.disabled = code.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+    if (pairMode === 'existing') {
+      var hasLine = existingLineSelect && existingLineSelect.value !== '';
+      submitBtn.disabled = code.length !== 6 || !hasLine || !hasName;
+    } else {
+      var numDigits = numberInput.value.replace(/\D/g, '');
+      submitBtn.disabled = code.length !== 6 || numDigits.length !== 7 || !hasName || numberInput.validity.customError;
+    }
+  }
+
+  if (existingLineSelect) {
+    existingLineSelect.addEventListener('change', updateSubmit);
   }
   function checkNumber() {
     var digits = numberInput.value.replace(/\D/g, '');
@@ -246,7 +314,7 @@
 <div id="phones-table" class="panel">
   <header class="panel__head">
     <h2 class="panel__title">Your lines</h2>
-    <span class="panel__title-sub">{{len .Lines}} total</span>
+    <span class="panel__title-sub">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</span>
   </header>
   {{if .Lines}}
   <!-- Desktop table -->
@@ -255,7 +323,7 @@
       <thead>
         <tr>
           <th>Number</th>
-          <th>Label</th>
+          <th>Handsets</th>
           <th>Status</th>
           <th>Pi</th>
           <th>Firmware</th>
@@ -266,9 +334,23 @@
       <tbody>
         {{range .Lines}}
         <tr>
-          <td class="num"><a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a></td>
+          <td class="num">
+            <a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a>
+            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
+              <span class="num muted" style="display: block; font-size: 11px; margin-top: 2px;">{{.DeviceInfo.RemoteAddr}}</span>
+            {{end}}
+          </td>
           <td>
-            <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{if gt (len .Devices) 1}}
+              <a href="/phones/{{.Line.Number}}" style="font-weight: 500;">{{.Line.Name}}</a>
+              <div style="margin-top: 4px; padding-left: 12px; border-left: 2px solid var(--rule-soft);">
+                {{range .Devices}}
+                <div style="font-size: 12px; color: var(--ink-muted); line-height: 1.6;">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</div>
+                {{end}}
+              </div>
+            {{else}}
+              <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
+            {{end}}
             {{if .Line.Settings.SilentMode}}
             <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
               <span class="phone-silent__dot" aria-hidden="true"></span>
@@ -278,7 +360,11 @@
           </td>
           <td>
             {{if .Online}}
-              <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+              {{if gt (len .Devices) 1}}
+                <span class="chip chip--on"><span class="chip__dot"></span>{{.OnlineDeviceCount}}/{{len .Devices}} online</span>
+              {{else}}
+                <span class="chip chip--on"><span class="chip__dot"></span>online</span>
+              {{end}}
             {{else}}
               <span class="chip"><span class="chip__dot"></span>offline</span>
             {{end}}
@@ -351,9 +437,13 @@
     <li>
       <a class="lines__row" href="/phones/{{.Line.Number}}">
         <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
-        <span class="lines__name">{{.Line.Name}}{{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}</span>
-        <span class="lines__num">{{fmtPhone .Line.Number}}</span>
-        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}online{{else}}offline{{end}}</span>
+        <span class="lines__name">
+          {{.Line.Name}}
+          {{if gt (len .Devices) 1}}<span class="muted" style="font-size: 11px; font-weight: normal;"> ({{len .Devices}} handsets)</span>{{end}}
+          {{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}
+        </span>
+        <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
+        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}{{if gt (len .Devices) 1}}{{.OnlineDeviceCount}}/{{len .Devices}}{{else}}online{{end}}{{else}}offline{{end}}</span>
       </a>
       {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
         <details class="update-details update-details--mobile">
@@ -417,7 +507,7 @@
       <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
       <div class="am-roster__meta">
         {{if $l.OnCall}}IN SESSION
-        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}
+        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{if and $l.DeviceInfo $l.DeviceInfo.RemoteAddr}} &middot; {{$l.DeviceInfo.RemoteAddr}}{{end}}
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
@@ -478,6 +568,7 @@
       <div class="am-led am-led--dim am-page-header__cap">PAIRED</div>
     </div>
     <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
+    {{template "dnd-toggle-am" .}}
   </div>
 
   {{/* Patchbay rail sizing. N=0 shows a dark rail with a pair-me-in hint.
@@ -552,16 +643,48 @@
 
       <form class="am-phones__pair-form" action="/phones/pair" method="POST" id="pair-form">
         <input type="hidden" name="code" id="pair-code-hidden" value="">
+        <input type="hidden" name="pair_mode" id="pair-mode-hidden" value="new">
 
         <div class="am-phones__pair-field">
           <label class="am-phones__pair-field-label" for="pair-code-manual">Or type the code</label>
           <input type="text" id="pair-code-manual" name="code_manual" placeholder="123456" pattern="\d{6}" maxlength="6" inputmode="numeric" autocomplete="off">
         </div>
 
-        <div class="am-phones__pair-field">
-          <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
-          <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8" required>
-          <span id="number-hint" class="am-phones__pair-field-hint am-phones__pair-field-hint--err hidden">Line number is already in use.</span>
+        {{if .Lines}}
+        <fieldset class="pair-mode-field">
+          <legend class="am-phones__pair-field-label">Line</legend>
+          <div class="seg-radio">
+            <label class="seg-radio__opt">
+              <input type="radio" name="pair_mode_radio" value="new" checked onchange="setPairMode('new')">
+              <span class="seg-radio__label">New line</span>
+            </label>
+            <label class="seg-radio__opt">
+              <input type="radio" name="pair_mode_radio" value="existing" onchange="setPairMode('existing')">
+              <span class="seg-radio__label">Add extension</span>
+            </label>
+          </div>
+        </fieldset>
+        {{end}}
+
+        <div id="new-line-fields">
+          <div class="am-phones__pair-field">
+            <label class="am-phones__pair-field-label" for="line-number-input">Line number</label>
+            <input type="text" id="line-number-input" name="number" placeholder="314-0001" pattern="\d{3}-?\d{4}" maxlength="8">
+            <span id="number-hint" class="am-phones__pair-field-hint am-phones__pair-field-hint--err hidden">Line number is already in use.</span>
+          </div>
+        </div>
+
+        <div id="existing-line-fields" class="hidden">
+          <div class="am-phones__pair-field">
+            <label class="am-phones__pair-field-label" for="existing-line-select">Add to line</label>
+            <select name="existing_line_id" id="existing-line-select">
+              <option value="">Choose a line...</option>
+              {{range .Lines}}
+              <option value="{{.Line.ID}}">{{fmtPhone .Line.Number}} - {{.Line.Name}}</option>
+              {{end}}
+            </select>
+            <span class="am-phones__pair-field-hint" style="font-size: 10px;">All handsets on the line ring together.</span>
+          </div>
         </div>
 
         <div class="am-phones__pair-field">

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Digits Recovery</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;background:#1a1a1a;color:#e0e0e0}
+h1{text-align:center;margin-bottom:8px}
+p.subtitle{text-align:center;color:#888;margin-top:0}
+button{display:block;width:100%;padding:16px;margin:12px 0;border:none;border-radius:8px;font-size:16px;font-weight:500;cursor:pointer;transition:opacity 0.2s}
+button:disabled{opacity:0.5;cursor:not-allowed}
+.btn-try{background:#2563eb;color:white}
+.btn-try:hover:not(:disabled){background:#1d4ed8}
+.btn-reset{background:#dc2626;color:white}
+.btn-reset:hover:not(:disabled){background:#b91c1c}
+#status{text-align:center;margin:20px 0;padding:12px;background:#262626;border-radius:6px;color:#a0a0a0;font-size:14px}
+#status.error{color:#f87171;background:#2a1515}
+#status.active{color:#60a5fa;background:#1a2233}
+#actions{transition:opacity 0.3s}
+#actions.hidden{display:none}
+#log-section{margin-top:24px;border-top:1px solid #333;padding-top:16px}
+#log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+#log-header h2{margin:0;font-size:14px;color:#888;font-weight:400}
+.log-btn{background:none;border:1px solid #444;color:#888;padding:4px 10px;font-size:12px;width:auto;display:inline;margin:0 0 0 8px;border-radius:4px}
+#log{background:#111;border-radius:6px;padding:12px;font:12px/1.6 monospace;color:#0f0;max-height:400px;overflow-y:auto;white-space:pre;overflow-x:auto;user-select:text;-webkit-user-select:text}
+#log.collapsed{display:none}
+#log.paused{border:1px solid #555}
+</style>
+</head>
+<body>
+<h1>Digits Recovery</h1>
+<p class="subtitle">Your phone entered recovery mode.</p>
+<div id="status">Loading...</div>
+<div id="actions">
+<button class="btn-try" onclick="tryAgain()">Try Again (Reboot)</button>
+<button class="btn-reset" onclick="factoryReset()">Factory Reset</button>
+</div>
+<div id="log-section">
+<div id="log-header">
+<h2>System Log</h2>
+<span>
+<button class="log-btn" id="log-pause" onclick="togglePause()">Pause</button>
+<button class="log-btn" id="log-toggle" onclick="toggleLog()">Hide</button>
+</span>
+</div>
+<div id="log">Loading log...</div>
+</div>
+<script>
+var statusEl=document.getElementById('status');
+var actionsEl=document.getElementById('actions');
+var logEl=document.getElementById('log');
+var paused=false;
+var actionFails=0;
+
+fetch('/boot-status').then(function(r){return r.json()}).then(function(d){
+  statusEl.textContent='Boot attempts: '+d.boot_count;
+}).catch(function(){});
+
+function tryAgain(){
+  if(!confirm('Reboot normally?'))return;
+  fetch('/try-again',{method:'POST'}).catch(function(){});
+}
+function factoryReset(){
+  if(!confirm('This will erase all data and restore the phone to factory state. Are you sure?'))return;
+  fetch('/factory-reset',{method:'POST'}).catch(function(){});
+}
+function toggleLog(){
+  logEl.classList.toggle('collapsed');
+  document.getElementById('log-toggle').textContent=logEl.classList.contains('collapsed')?'Show':'Hide';
+}
+function togglePause(){
+  paused=!paused;
+  document.getElementById('log-pause').textContent=paused?'Resume':'Pause';
+  logEl.classList.toggle('paused',paused);
+}
+
+function pollAction(){
+  fetch('/action').then(function(r){return r.json()}).then(function(d){
+    actionFails=0;
+    if(d.action){
+      actionsEl.classList.add('hidden');
+      statusEl.textContent=d.status;
+      statusEl.className=d.failed?'error':'active';
+    }
+  }).catch(function(){
+    actionFails++;
+    if(actionFails>5){
+      statusEl.textContent='Connection lost. Device may be rebooting.';
+      statusEl.className='error';
+      actionsEl.classList.add('hidden');
+    }
+  }).finally(function(){setTimeout(pollAction,1000)});
+}
+pollAction();
+
+var lastLog='';
+function pollLog(){
+  if(paused){setTimeout(pollLog,1000);return}
+  fetch('/log/raw').then(function(r){return r.text()}).then(function(t){
+    if(t!==lastLog){
+      lastLog=t;
+      var sel=window.getSelection();
+      if(!sel||sel.rangeCount===0||!logEl.contains(sel.anchorNode)){
+        var atBottom=logEl.scrollTop+logEl.clientHeight>=logEl.scrollHeight-30;
+        logEl.textContent=t||'(empty)';
+        if(atBottom)logEl.scrollTop=logEl.scrollHeight;
+      }
+    }
+  }).catch(function(){}).finally(function(){setTimeout(pollLog,1000)});
+}
+pollLog();
+</script>
+</body></html>

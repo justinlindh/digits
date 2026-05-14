@@ -13,17 +13,22 @@
   {{if .Saved}}
   <div class="banner banner--ok">Settings saved.</div>
   {{end}}
+  {{if .Error}}
+  <div class="banner banner--err">{{.Error}}</div>
+  {{end}}
 
   <div class="settings-layout">
     <nav class="settings-nav" aria-label="Settings sections">
       <a href="#account" class="settings-nav__item is-active">Account</a>
       {{if .Household}}
       <a href="#household" class="settings-nav__item">Household</a>
+      <a href="#members" class="settings-nav__item">Members</a>
       <a href="#timezone" class="settings-nav__item">Timezone</a>
       {{if .User}}<a href="#theme" class="settings-nav__item">Theme</a>{{end}}
       <a href="#privacy" class="settings-nav__item">Privacy</a>
       <a href="#do-not-disturb" class="settings-nav__item">Do Not Disturb</a>
       {{end}}
+      <a href="#danger" class="settings-nav__item">Danger zone</a>
       <a href="#session" class="settings-nav__item">Session</a>
     </nav>
     <div class="settings-sections">
@@ -67,6 +72,71 @@
           <input type="text" id="household-name" name="name" value="{{.Household.Name}}" required class="field__input">
         </div>
         <button type="submit" class="btn btn--primary" style="align-self: end;">Save</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Members -->
+  <section id="members" class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Members</h2>
+    </header>
+    <div class="panel__body" style="padding: 0;">
+      {{range .Members}}
+      <div class="kv__row" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px;">
+        <div>
+          <div style="font-size: 14px;">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .IsYou}} <span class="muted" style="font-size: 12px;">(you)</span>{{end}}</div>
+          {{if .Name}}<div class="muted" style="font-size: 12px;">{{.Email}}</div>{{end}}
+        </div>
+        {{if .IsYou}}
+        <form action="/settings/household/members/{{.UserID}}/remove" method="POST" onsubmit="return confirm('Leave this household?')">
+          <button type="submit" class="btn btn--danger btn--sm">Leave</button>
+        </form>
+        {{else}}
+        <form action="/settings/household/members/{{.UserID}}/remove" method="POST" onsubmit="return confirm('Remove this member?')">
+          <button type="submit" class="btn btn--danger btn--sm">Remove</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+
+  {{if .PendingInvites}}
+  <!-- Pending Invites -->
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Pending Invites</h2>
+    </header>
+    <div class="panel__body" style="padding: 0;">
+      {{range .PendingInvites}}
+      <div class="kv__row" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 16px;">
+        <div>
+          <div style="font-size: 14px;">{{.Email}}</div>
+          <div class="muted" style="font-size: 12px;">Sent {{.CreatedAt.Format "Jan 2"}} · Expires {{.ExpiresAt.Format "Jan 2"}}</div>
+        </div>
+        <form action="/settings/household/invite/{{.ID}}/cancel" method="POST">
+          <button type="submit" class="btn btn--danger btn--sm">Cancel</button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <!-- Invite Form -->
+  <section class="panel" style="margin-bottom: 18px;">
+    <header class="panel__head">
+      <h2 class="panel__title">Invite to {{.HouseholdName}}</h2>
+      <span class="panel__title-sub">They'll be able to manage lines and settings for this household.</span>
+    </header>
+    <div class="panel__body">
+      <form action="/settings/household/invite" method="POST" class="hstack hstack--wrap" style="gap: 10px;">
+        <div class="field" style="flex: 1; min-width: 200px; margin: 0;">
+          <label for="invite-email" class="field__label">Email address</label>
+          <input type="email" id="invite-email" name="email" required placeholder="email@example.com" class="field__input">
+        </div>
+        <button type="submit" class="btn btn--primary" style="align-self: end;">Send Invite</button>
       </form>
     </div>
   </section>
@@ -268,7 +338,7 @@
           <div>
             <div style="font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 4px;">Silence all phones</div>
             <p class="muted" style="font-size: 13px; margin: 0; line-height: 1.55;">
-              When on, no handset rings on incoming calls. LEDs still flicker; calls can still be answered and placed. Composes with each phone's own silent setting; either turns the bell off.
+              When on, no handset rings on incoming calls. LEDs still flicker; calls can still be answered and placed. Turning this off will unmute every phone.
             </p>
           </div>
         </div>
@@ -278,7 +348,7 @@
   {{end}}
 
   <!-- Session -->
-  <section id="session" class="panel" style="border-color: rgba(160,90,58,0.25);">
+  <section id="session" class="panel" style="margin-bottom: 18px; border-color: rgba(160,90,58,0.25);">
     <header class="panel__head">
       <h2 class="panel__title" style="color: var(--rust);">Session</h2>
     </header>
@@ -286,6 +356,24 @@
       <form action="/auth/logout" method="POST">
         <button type="submit" class="btn btn--danger">Sign out</button>
       </form>
+    </div>
+  </section>
+
+  <!-- Delete Account -->
+  <section id="danger" class="panel" style="margin-bottom: 18px; border-color: rgba(160,90,58,0.25);">
+    <header class="panel__head">
+      <h2 class="panel__title" style="color: var(--rust);">Delete account</h2>
+    </header>
+    <div class="panel__body">
+      <p class="muted" style="font-size: 13px; margin: 0 0 14px; line-height: 1.55;">
+        Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
+      </p>
+      <button type="button" class="btn btn--danger"
+              data-confirm
+              data-confirm-action="/settings/account/delete"
+              data-confirm-title="Are you sure?"
+              data-confirm-body="This is permanent and cannot be undone."
+              data-confirm-submit="Delete my account">Delete my account</button>
     </div>
   </section>
 
@@ -482,6 +570,9 @@
   {{if .Saved}}
   <div class="banner banner--ok">Settings saved.</div>
   {{end}}
+  {{if .Error}}
+  <div class="banner banner--err">{{.Error}}</div>
+  {{end}}
 
   <div class="am-plate am-page-header">
     <div class="am-page-header__info">
@@ -502,10 +593,12 @@
       <a href="#account" class="settings-nav__item is-active">Account</a>
       {{if .Household}}
       <a href="#household" class="settings-nav__item">Household</a>
+      <a href="#members" class="settings-nav__item">Members</a>
       <a href="#timezone" class="settings-nav__item">Timezone</a>
       <a href="#theme" class="settings-nav__item">Theme</a>
       <a href="#privacy" class="settings-nav__item">Privacy</a>
       {{end}}
+      <a href="#danger" class="settings-nav__item">Danger zone</a>
       <a href="#session" class="settings-nav__item">Session</a>
     </nav>
 
@@ -553,6 +646,59 @@
           <button type="submit" class="am-key am-settings__submit">
             <span class="am-key__symbol">&#x25B6;</span>
             <span class="am-key__label">Save</span>
+          </button>
+        </form>
+      </section>
+
+      <section id="members" class="am-plate am-settings__section">
+        <div class="am-plate__label">Members</div>
+        {{range .Members}}
+        <div class="am-settings__toggle-row" style="padding: 8px 0;">
+          <div style="flex: 1;">
+            <div class="am-led">{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .IsYou}} <span class="am-led am-led--dim">(you)</span>{{end}}</div>
+            {{if .Name}}<div class="am-hint">{{.Email}}</div>{{end}}
+          </div>
+          {{if .IsYou}}
+          <form action="/settings/household/members/{{.UserID}}/remove" method="POST" onsubmit="return confirm('Leave this household?')">
+            <button type="submit" class="am-key am-key--red"><span class="am-key__label">Leave</span></button>
+          </form>
+          {{else}}
+          <form action="/settings/household/members/{{.UserID}}/remove" method="POST" onsubmit="return confirm('Remove this member?')">
+            <button type="submit" class="am-key am-key--red"><span class="am-key__label">Remove</span></button>
+          </form>
+          {{end}}
+        </div>
+        {{end}}
+      </section>
+
+      {{if .PendingInvites}}
+      <section class="am-plate am-settings__section">
+        <div class="am-plate__label">Pending Invites</div>
+        {{range .PendingInvites}}
+        <div class="am-settings__toggle-row" style="padding: 8px 0;">
+          <div style="flex: 1;">
+            <div class="am-led">{{.Email}}</div>
+            <div class="am-hint">Sent {{.CreatedAt.Format "Jan 2"}} · Expires {{.ExpiresAt.Format "Jan 2"}}</div>
+          </div>
+          <form action="/settings/household/invite/{{.ID}}/cancel" method="POST">
+            <button type="submit" class="am-key am-key--red"><span class="am-key__label">Cancel</span></button>
+          </form>
+        </div>
+        {{end}}
+      </section>
+      {{end}}
+
+      <section class="am-plate am-settings__section">
+        <div class="am-plate__label">Invite to {{.HouseholdName}}</div>
+        <p class="am-hint am-settings__hint">They'll be able to manage lines and settings for this household.</p>
+        <form action="/settings/household/invite" method="POST" class="am-settings__form">
+          <div class="am-settings__field">
+            <label for="invite-email-am" class="am-label am-settings__field-label">Email address</label>
+            <input type="email" id="invite-email-am" name="email" required placeholder="email@example.com" class="am-settings__input" autocomplete="off">
+          </div>
+          <button type="submit" class="am-key am-settings__submit">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Send Invite</span>
           </button>
         </form>
       </section>
@@ -668,6 +814,22 @@
             <span class="am-key__label">Sign out</span>
           </button>
         </form>
+      </section>
+
+      <section id="danger" class="am-plate am-settings__section am-settings__section--danger">
+        <div class="am-plate__label">Delete account</div>
+        <p class="am-hint am-settings__hint" style="margin-bottom: 10px;">
+          Permanently delete your account and all associated data. If you are the only member of a household, all its lines, devices, and links will be removed. This cannot be undone.
+        </p>
+        <button type="button" class="am-key am-key--red am-settings__signout"
+                data-confirm
+                data-confirm-action="/settings/account/delete"
+                data-confirm-title="Are you sure?"
+                data-confirm-body="This is permanent and cannot be undone."
+                data-confirm-submit="Delete my account">
+          <span class="am-key__symbol">&#x2716;</span>
+          <span class="am-key__label">Delete my account</span>
+        </button>
       </section>
 
     </div>

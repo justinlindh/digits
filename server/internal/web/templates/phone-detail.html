@@ -49,7 +49,11 @@
         <dl class="kv">
           <div class="kv__row">
             <dt class="kv__key">Number</dt>
-            <dd class="kv__val kv__val--mono">{{fmtPhone .Line.Number}}</dd>
+            <dd class="kv__val spread">
+              <span class="num">{{fmtPhone .Line.Number}}</span>
+              <button type="button" class="btn btn--quiet btn--sm"
+                      onclick="document.getElementById('line-editor').showModal()">Edit</button>
+            </dd>
           </div>
           {{template "name-section" .}}
           <div class="kv__row">
@@ -58,8 +62,18 @@
           </div>
           {{if .Devices}}
           <div class="kv__row">
-            <dt class="kv__key">Devices</dt>
-            <dd class="kv__val">{{len .Devices}} paired</dd>
+            <dt class="kv__key">Handsets</dt>
+            <dd class="kv__val">
+              {{if gt (len .Devices) 1}}
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                {{range .Devices}}
+                <span>{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</span>
+                {{end}}
+              </div>
+              {{else}}
+              {{len .Devices}} paired
+              {{end}}
+            </dd>
           </div>
           {{end}}
         </dl>
@@ -102,6 +116,9 @@
           <h2 class="panel__title">Hardware &amp; firmware</h2>
         </header>
         <div class="panel__body">
+          <div id="auto-update-section" style="margin-bottom: 12px;">
+            {{template "auto-update-section" .}}
+          </div>
           {{if .DeviceInfo}}
           <div class="stack-md" style="margin-bottom: 12px;">
             <div>
@@ -160,6 +177,22 @@
                 {{end}}
               </div>
             </div>
+            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
+            <div>
+              <div class="field__label" style="margin-bottom: 4px;">LAN IP</div>
+              <div class="hstack hstack--wrap" style="gap: 8px;">
+                <span class="num" style="font-size: 13.5px; color: var(--ink);">{{.DeviceInfo.RemoteAddr}}</span>
+              </div>
+            </div>
+            {{if .DeviceInfo.DevMode}}
+            <div>
+              <div class="field__label" style="margin-bottom: 4px;">Dev mode</div>
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="chip chip--live" style="text-decoration: none;">
+                <span class="chip__dot"></span>Admin panel &#x2197;
+              </a>
+            </div>
+            {{end}}
+            {{end}}
             {{if $.LastSeenAt}}
             <div>
               <div class="field__label" style="margin-bottom: 4px;">Last check-in</div>
@@ -269,8 +302,16 @@
         <div class="panel__body">
 
           <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
+            <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
             <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
             <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
+          </div>
+
+          <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
+            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+              <div id="ring-test-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+              <span id="ring-test-text" style="font-size: 13px; color: var(--ink);">Ringing...</span>
+            </div>
           </div>
 
           <div id="restart-confirm" class="hidden">
@@ -315,6 +356,91 @@
     </div>
   </div>
 
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
+        <div class="field">
+          <label for="edit-number" class="field__label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric"
+                 class="field__input field__input--mono">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--primary">Save</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    {{if .OtherLines}}
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="field__label">Handset</label>
+          <select id="move-device" name="device_id" required class="field__input">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
+          {{end}}
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="field__label">Move to</label>
+          <select id="move-target" name="target_line_id" required class="field__input">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="field__hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="btn btn--danger">Move handset</button>
+          <button type="button" class="btn" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+
+    </div>
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
+
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
@@ -325,6 +451,41 @@
   var fwPollTimer = null;
   var restartPollTimer = null;
   var restartMode = null;
+
+  function doRingTest() {
+    var btn = document.getElementById('ring-test-btn');
+    var status = document.getElementById('ring-test-status');
+    var spinner = document.getElementById('ring-test-spinner');
+    var text = document.getElementById('ring-test-text');
+    btn.disabled = true;
+    status.classList.remove('hidden');
+    spinner.classList.remove('hidden');
+    text.textContent = 'Ringing...';
+    text.style.color = 'var(--ink)';
+    fetch('/phones/' + phoneNumber + '/ring-test', {
+      method: 'POST',
+      headers: {'Accept': 'application/json'}
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      spinner.classList.add('hidden');
+      if (data.error) {
+        text.textContent = 'Failed: ' + data.error;
+        text.style.color = 'var(--rust)';
+        btn.disabled = false;
+      } else {
+        text.textContent = 'Done';
+        text.style.color = 'var(--forest)';
+        setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
+      }
+    })
+    .catch(function(err) {
+      spinner.classList.add('hidden');
+      text.textContent = 'Error: ' + err.message;
+      text.style.color = 'var(--rust)';
+      btn.disabled = false;
+    });
+  }
 
   function triggerComponentUpdate(prefix, paramName) {
     var btn = document.getElementById(prefix + '-install-btn');
@@ -540,6 +701,26 @@
 </div>
 {{end}}
 
+{{define "auto-update-section"}}
+<div id="auto-update-section">
+  <form hx-post="/phones/{{.Line.Number}}/auto-update"
+        hx-target="#auto-update-section"
+        hx-swap="outerHTML"
+        class="stack-sm">
+    <label class="checkbox-row">
+      <input type="checkbox" name="auto_update" value="on"
+             {{if .Line.Settings.AutoUpdate}}checked{{end}}
+             onchange="this.form.requestSubmit()">
+      <span class="checkbox-row__label">Automatic updates</span>
+    </label>
+    <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
+      Install new software and firmware automatically when this
+      phone is idle. Updates wait until any active call ends.
+    </p>
+  </form>
+</div>
+{{end}}
+
 {{define "am-voice-style-section"}}
 <div id="voice-style-section">
   <form hx-post="/phones/{{.Line.Number}}/voice-style"
@@ -591,6 +772,34 @@
       <div class="am-label am-settings__toggle-title">Silent mode</div>
       <p class="am-hint am-settings__toggle-desc">
         Incoming calls won't ring. The light still flashes and you can still answer.
+      </p>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "am-auto-update-section"}}
+<div id="auto-update-section">
+  <form hx-post="/phones/{{.Line.Number}}/auto-update"
+        hx-target="#auto-update-section"
+        hx-swap="outerHTML"
+        class="am-settings__toggle-row">
+    <label class="am-settings__dip" aria-label="Automatic updates">
+      <input type="checkbox" name="auto_update" value="on"
+             {{if .Line.Settings.AutoUpdate}}checked{{end}}
+             onchange="this.form.requestSubmit()"
+             class="am-settings__dip-input">
+      <span class="am-settings__dip-body" aria-hidden="true">
+        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+        <span class="am-settings__dip-lever"></span>
+        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+      </span>
+    </label>
+    <div class="am-settings__toggle-info">
+      <div class="am-label am-settings__toggle-title">Automatic updates</div>
+      <p class="am-hint am-settings__toggle-desc">
+        Install new software and firmware automatically when this
+        phone is idle. Updates wait until any active call ends.
       </p>
     </div>
   </form>
@@ -720,9 +929,13 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Details</span>
       <dl class="am-settings__kv">
-        <div class="am-settings__kv-row">
+        <div class="am-settings__kv-row" id="number-section">
           <dt class="am-settings__kv-key am-label">Number</dt>
-          <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{fmtPhone .Line.Number}}</span></dd>
+          <dd class="am-settings__kv-val">
+            <span class="am-well am-led am-settings__kv-led" style="flex: 1; min-width: 0;">{{fmtPhone .Line.Number}}</span>
+            <button type="button" class="am-tab"
+                    onclick="document.getElementById('line-editor').showModal()">Edit</button>
+          </dd>
         </div>
         {{template "am-name-section" .}}
         <div class="am-settings__kv-row">
@@ -748,6 +961,23 @@
             <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.FirmwareVersion}}{{if .DeviceInfo.FirmwareCommit}} &middot; {{.DeviceInfo.FirmwareCommit}}{{end}}</span></dd>
           </div>
           {{end}}
+          {{if and .Online .DeviceInfo.RemoteAddr}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">LAN IP</dt>
+            <dd class="am-settings__kv-val am-well"><span class="am-led am-settings__kv-led">{{.DeviceInfo.RemoteAddr}}</span></dd>
+          </div>
+          {{if .DeviceInfo.DevMode}}
+          <div class="am-settings__kv-row">
+            <dt class="am-settings__kv-key am-label">Dev mode</dt>
+            <dd class="am-settings__kv-val">
+              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="am-key am-key--accent" style="text-decoration: none;">
+                <span class="am-key__symbol">&#x2699;</span>
+                <span class="am-key__label">Admin panel</span>
+              </a>
+            </dd>
+          </div>
+          {{end}}
+          {{end}}
         {{end}}
         {{if .LastSeenAt}}
         <div class="am-settings__kv-row">
@@ -770,6 +1000,79 @@
 
     {{template "am-software-update-section" .}}
 
+    {{if .Online}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Device controls</span>
+      <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
+        <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
+          <span class="am-key__symbol">&#x266A;</span>
+          <span class="am-key__label">Ring test</span>
+        </button>
+        <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
+          <span class="am-key__symbol">&#x21BB;</span>
+          <span class="am-key__label">Restart service</span>
+        </button>
+        <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
+          <span class="am-key__symbol">&#x23FB;</span>
+          <span class="am-key__label">Reboot device</span>
+        </button>
+      </div>
+      <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-ring-test-text" class="am-led">Ringing...</span>
+        </div>
+      </div>
+      <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
+        <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
+          </button>
+          <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
+        </div>
+      </div>
+      <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-restart-text" class="am-led">Sending command...</span>
+        </div>
+      </div>
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+        <div id="am-recovery-default">
+          <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x26A0;</span>
+            <span class="am-key__label">Recovery mode</span>
+          </button>
+          <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
+        </div>
+        <div id="am-recovery-confirm" class="hidden">
+          <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
+          <div class="am-handset__actions-row" style="gap: 8px;">
+            <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
+              <span class="am-key__symbol">&#x2713;</span>
+              <span class="am-key__label">Confirm</span>
+            </button>
+            <button type="button" onclick="amCancelRecovery()" class="am-key">
+              <span class="am-key__symbol">&#x2715;</span>
+              <span class="am-key__label">Cancel</span>
+            </button>
+          </div>
+        </div>
+        <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
+          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+            <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+            <span id="am-recovery-text" class="am-led">Sending reset command...</span>
+          </div>
+        </div>
+      </div>
+    </section>
+    {{end}}
+
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
       <span class="am-plate__label">Actions</span>
       <p class="am-hint am-handset__action-desc">Removing a handset is permanent. The device will need to be re-paired to come back online.</p>
@@ -787,6 +1090,93 @@
     </section>
 
   </div>
+
+  <dialog id="line-editor" class="line-editor-dialog">
+    <h2 class="line-editor-dialog__title">Edit line</h2>
+    <div class="line-editor-dialog__body">
+
+    {{if .NumberError}}
+    <p class="line-editor-dialog__error">{{.NumberError}}</p>
+    {{end}}
+
+    <div class="seg-radio" style="margin-bottom: 16px;">
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="number" checked onchange="setLineEditMode('number')">
+        <span class="seg-radio__label">Change number</span>
+      </label>
+      {{if .OtherLines}}
+      <label class="seg-radio__opt">
+        <input type="radio" name="line_edit_mode" value="move" onchange="setLineEditMode('move')">
+        <span class="seg-radio__label">Move to another line</span>
+      </label>
+      {{end}}
+    </div>
+
+    <div id="line-edit-number">
+      <form method="POST" action="/phones/{{.Line.Number}}/number">
+        <div class="field">
+          <label for="edit-number" class="am-label">Number</label>
+          <input type="text" id="edit-number" name="number" value="{{fmtPhone .Line.Number}}"
+                 required pattern="\d{3}-?\d{4}" maxlength="8" inputmode="numeric">
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-tab">Save</button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    {{if .OtherLines}}
+    <div id="line-edit-move" class="hidden">
+      <form method="POST" action="/phones/{{.Line.Number}}/convert"
+            onsubmit="return confirm('Move this handset to the selected line?')">
+        {{if gt (len .Devices) 1}}
+        <div class="field">
+          <label for="move-device" class="am-label">Handset</label>
+          <select id="move-device" name="device_id" required style="width: 100%; min-width: 120px;">
+            {{range .Devices}}
+            <option value="{{.ID}}">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
+          {{range .Devices}}
+          <input type="hidden" name="device_id" value="{{.ID}}">
+          {{end}}
+        {{end}}
+        <div class="field">
+          <label for="move-target" class="am-label">Move to</label>
+          <select id="move-target" name="target_line_id" required style="width: 100%; min-width: 120px;">
+            {{range .OtherLines}}
+            <option value="{{.ID}}">{{fmtPhone .Number}} &middot; {{.Name}}</option>
+            {{end}}
+          </select>
+          <p class="am-hint" style="margin-top: 4px;">This handset will ring on the selected line instead.</p>
+        </div>
+        <div class="line-editor-dialog__actions">
+          <button type="submit" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x25B6;</span>
+            <span class="am-key__label">Move handset</span>
+          </button>
+          <button type="button" class="am-tab" onclick="this.closest('dialog').close()">Cancel</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+
+    </div>
+    <script>
+    function setLineEditMode(mode) {
+      document.getElementById('line-edit-number').classList.toggle('hidden', mode !== 'number');
+      var moveEl = document.getElementById('line-edit-move');
+      if (moveEl) moveEl.classList.toggle('hidden', mode !== 'move');
+    }
+    </script>
+  </dialog>
+
+  {{if .NumberError}}
+  <script>document.getElementById('line-editor').showModal();</script>
+  {{end}}
 
   <script>
   (function() {
@@ -863,7 +1253,162 @@
       if (kind !== 'success' && btn) btn.disabled = false;
     }
 
+    window.amDoRingTest = function() {
+      var btn = document.getElementById('am-ring-test-btn');
+      var status = document.getElementById('am-ring-test-status');
+      var lamp = document.getElementById('am-ring-test-lamp');
+      var text = document.getElementById('am-ring-test-text');
+      btn.disabled = true;
+      status.classList.remove('hidden');
+      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add('am-lamp--on-amber');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.textContent = 'Ringing...';
+      fetch('/phones/' + phoneNumber + '/ring-test', {
+        method: 'POST',
+        headers: {'Accept': 'application/json'}
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          lamp.classList.remove('am-lamp--on-amber');
+          lamp.classList.add('am-lamp--on-red');
+          text.classList.add('am-led--red');
+          text.textContent = 'Failed: ' + data.error;
+          btn.disabled = false;
+        } else {
+          lamp.classList.remove('am-lamp--on-amber');
+          lamp.classList.add('am-lamp--on-green');
+          text.classList.add('am-led--green');
+          text.textContent = 'Done';
+          setTimeout(function() { status.classList.add('hidden'); btn.disabled = false; }, 2000);
+        }
+      })
+      .catch(function(err) {
+        lamp.classList.remove('am-lamp--on-amber');
+        lamp.classList.add('am-lamp--on-red');
+        text.classList.add('am-led--red');
+        text.textContent = 'Error: ' + err.message;
+        btn.disabled = false;
+      });
+    };
+
+    var amRestartMode = null;
+    var amRestartPollTimer = null;
+
+    window.amShowRestartConfirm = function(mode) {
+      amRestartMode = mode;
+      document.getElementById('am-ctrl-buttons').classList.add('hidden');
+      var c = document.getElementById('am-restart-confirm');
+      c.classList.remove('hidden');
+      var text = document.getElementById('am-restart-confirm-text');
+      if (mode === 'reboot') {
+        text.textContent = 'Reboot the entire device? This will take about 30 seconds.';
+      } else {
+        text.textContent = 'Restart the service on this device? It will reconnect in a few seconds.';
+      }
+    };
+
+    window.amCancelRestartConfirm = function() {
+      amRestartMode = null;
+      document.getElementById('am-restart-confirm').classList.add('hidden');
+      document.getElementById('am-ctrl-buttons').classList.remove('hidden');
+    };
+
+    window.amDoRestart = function() {
+      var mode = amRestartMode;
+      document.getElementById('am-restart-confirm').classList.add('hidden');
+      var progress = document.getElementById('am-restart-progress');
+      var lamp = document.getElementById('am-restart-lamp');
+      var text = document.getElementById('am-restart-text');
+      progress.classList.remove('hidden');
+      lamp.classList.remove('am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add('am-lamp--on-amber');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
+      var body = new URLSearchParams({mode: mode});
+      fetch('/phones/' + phoneNumber + '/restart', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) { amShowRestartResult('failed', 'Failed: ' + data.error); return; }
+        var maxAttempts = mode === 'reboot' ? 90 : 15;
+        text.textContent = mode === 'reboot' ? 'Rebooting device...' : 'Restarting service...';
+        amPollOnline(maxAttempts);
+      })
+      .catch(function(err) { amShowRestartResult('failed', 'Network error: ' + err.message); });
+    };
+
+    function amPollOnline(maxAttempts) {
+      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
+      var attempts = 0;
+      var sawOffline = false;
+      setTimeout(function() {
+        amRestartPollTimer = setInterval(function() {
+          attempts++;
+          if (attempts > maxAttempts) { clearInterval(amRestartPollTimer); amShowRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
+          fetch('/phones/' + phoneNumber + '/online')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.online) { sawOffline = true; document.getElementById('am-restart-text').textContent = 'Waiting for device to reconnect...'; }
+            else if (sawOffline) { clearInterval(amRestartPollTimer); amShowRestartResult('success', 'Device is back online'); setTimeout(function() { location.reload(); }, 1500); }
+          }).catch(function() {});
+        }, 1000);
+      }, 2000);
+    }
+
+    function amShowRestartResult(kind, msg) {
+      var lamp = document.getElementById('am-restart-lamp');
+      var text = document.getElementById('am-restart-text');
+      lamp.classList.remove('am-lamp--on-amber', 'am-lamp--on-green', 'am-lamp--on-red');
+      lamp.classList.add(kind === 'success' ? 'am-lamp--on-green' : 'am-lamp--on-red');
+      text.classList.remove('am-led--green', 'am-led--red');
+      text.classList.add(kind === 'success' ? 'am-led--green' : 'am-led--red');
+      text.textContent = msg;
+    }
+
+    window.amShowRecoveryConfirm = function() {
+      document.getElementById('am-recovery-default').classList.add('hidden');
+      document.getElementById('am-recovery-confirm').classList.remove('hidden');
+    };
+
+    window.amCancelRecovery = function() {
+      document.getElementById('am-recovery-confirm').classList.add('hidden');
+      document.getElementById('am-recovery-default').classList.remove('hidden');
+    };
+
+    window.amDoRecovery = function() {
+      document.getElementById('am-recovery-confirm').classList.add('hidden');
+      var progress = document.getElementById('am-recovery-progress');
+      var lamp = document.getElementById('am-recovery-lamp');
+      var text = document.getElementById('am-recovery-text');
+      progress.classList.remove('hidden');
+      fetch('/phones/' + phoneNumber + '/factory-reset', { method: 'POST', headers: {'Accept': 'application/json'} })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        lamp.classList.remove('am-lamp--on-amber');
+        if (data.error) {
+          lamp.classList.add('am-lamp--on-red');
+          text.classList.add('am-led--red');
+          text.textContent = 'Failed: ' + data.error;
+        } else {
+          lamp.classList.add('am-lamp--on-amber');
+          text.textContent = 'Device is rebooting into recovery mode. Connect to the Digits-Recovery Wi-Fi network to continue.';
+        }
+      })
+      .catch(function(err) {
+        lamp.classList.remove('am-lamp--on-amber');
+        lamp.classList.add('am-lamp--on-red');
+        text.classList.add('am-led--red');
+        text.textContent = 'Error: ' + err.message;
+      });
+    };
+
     window.addEventListener('pagehide', function() {
+      if (amRestartPollTimer) clearInterval(amRestartPollTimer);
       Object.keys(pollers).forEach(function(p) { if (pollers[p]) clearInterval(pollers[p]); });
     });
   })();
@@ -899,6 +1444,10 @@
 {{define "am-software-update-section"}}
 <section class="am-plate am-handset__plate am-handset__plate--wide am-update">
   <span class="am-plate__label">Software update</span>
+
+  <div id="auto-update-section" style="margin-bottom: 12px;">
+    {{template "am-auto-update-section" .}}
+  </div>
 
   {{if not .Online}}
     <p class="am-hint am-update__offline">Handset is offline. Updates resume when it reconnects.</p>

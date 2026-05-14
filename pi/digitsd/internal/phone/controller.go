@@ -26,6 +26,7 @@ const (
 	StateADD_PRIVATE     State = "ADD_PRIVATE"     // A↔C connected; B on hold
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
+	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -49,6 +50,11 @@ const (
 // so the controller self-fires here once it has the full number.
 const addDialDigitsRequired = 7
 
+// autoDialDelay is the brief silence between the last digit and the first
+// ringback tone on outgoing calls. Mimics the variable PSTN setup pause that
+// rotary phones produced between dial-pulse train end and first ring.
+const autoDialDelay = 800 * time.Millisecond
+
 // Callbacks is the interface the controller uses to drive hardware and network.
 type Callbacks interface {
 	SendTone(name string)       // Play a tone (use one of the Tone* constants)
@@ -56,7 +62,7 @@ type Callbacks interface {
 	SendRing(start bool)        // Send RING:START or RING:STOP
 	SendLED(mode string)        // Send LED:<mode>
 	SetFlashEnabled(enabled bool) // Enable/disable Pico hook-flash detection (off = instant hangup)
-	InitiateCall(number string) // Start outgoing WebRTC call
+	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
@@ -67,6 +73,10 @@ type Callbacks interface {
 	AddMeshPeer(phone string, initiator bool)             // Open a WebRTC peer connection to a conference member
 	RemoveMeshPeer(phone string)                          // Tear down the WebRTC connection to a conference member
 	TearDownAllMeshPeers()                                // Tear down all conference WebRTC connections
+	OnCallReturn()                                        // *69 detected: query server for last inbound caller
+	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
+	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
+	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -92,6 +102,10 @@ type Controller struct {
 	// their sleeps when it fires so daemon shutdown isn't blocked.
 	done      chan struct{}
 	closeOnce sync.Once
+
+	callReturnNumber  string // number to dial when user presses 1 in CALL_RETURN state
+	callReturnRinging bool   // true when ringing with distinctive pattern for *69 callback
+	callReturnTarget  string // target number to auto-dial on pickup during callback ring
 
 	// Conference / call-waiting state.
 	confID     string // non-empty when part of a conference (Member message received)
@@ -153,6 +167,35 @@ func (c *Controller) SetSilentMode(silent bool) {
 	}
 }
 
+// SetCallReturnNumber sets the number to dial when the user presses "1" in
+// CALL_RETURN state. Called by the daemon after the server responds to the
+// *69 query with the last inbound caller's number. Thread-safe.
+func (c *Controller) SetCallReturnNumber(number string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.callReturnNumber = number
+}
+
+// HandleCallReturnRing transitions the phone from IDLE to RINGING with a
+// distinctive ring pattern, signaling that the *69 target is now free. When
+// the user picks up, the controller auto-dials target instead of answering an
+// incoming call. Thread-safe.
+func (c *Controller) HandleCallReturnRing(target string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateIDLE {
+		slog.Info("phone: call_return_ring ignored (not idle)", "state", c.state)
+		return
+	}
+	c.callReturnRinging = true
+	c.callReturnTarget = target
+	c.state = StateRINGING
+	if !c.silentMode {
+		c.cb.SendRingPattern(1)
+	}
+	c.cb.SendLED("BLINK")
+}
+
 // State returns the current FSM state (thread-safe).
 func (c *Controller) State() State {
 	c.mu.Lock()
@@ -170,14 +213,24 @@ func (c *Controller) IsCallActive() bool {
 	}
 }
 
-// Reset forces the controller back to IDLE with no pending digits.
-// Used after terminal service codes (shutdown, reboot, etc.) where the
-// daemon is going down and the FSM state no longer matters.
+// IsDialPhase reports whether s is a dialing state (DIALTONE or DIALING).
+func (s State) IsDialPhase() bool {
+	return s == StateDIALTONE || s == StateDIALING
+}
+
+// Reset forces the controller back to IDLE with no pending digits or
+// per-call state. Used after terminal service codes (shutdown, reboot)
+// and from the WebSocket reconnect teardown, where leaving the *69
+// callback-ring fields populated would mis-route the next unrelated
+// incoming call's pickup into an auto-dial of the stale callback target.
 func (c *Controller) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = StateIDLE
 	c.digits = ""
+	c.callReturnNumber = ""
+	c.callReturnRinging = false
+	c.callReturnTarget = ""
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
@@ -213,7 +266,7 @@ func (c *Controller) HandleEvent(event string) {
 	case evType == "TIMEOUT" && evVal == "DIAL_TONE":
 		c.onTimeoutDialTone()
 	case evType == "RING" && (evVal == "ACK" || evVal == "DONE"):
-		// Informational — ring ack/done from Pico, no action needed
+		// Informational: ring ack/done from Pico, no action needed
 	case event == "PONG":
 		// Keepalive response, ignore
 	default:
@@ -256,13 +309,26 @@ func (c *Controller) onHookOff() {
 		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
-		// Incoming: answer the call; activePeer was set when the ring arrived.
-		c.state = StateCONNECTED
-		c.cb.SendRing(false)
-		c.cb.SendTone(ToneStop)
-		c.cb.SendLED("ON")
-		c.cb.SetFlashEnabled(true)
-		c.cb.AnswerCall()
+		if c.callReturnRinging {
+			number := c.callReturnTarget
+			c.callReturnRinging = false
+			c.callReturnTarget = ""
+			c.cb.SendRing(false)
+			c.cb.SendTone(ToneStop)
+			c.cb.SendLED("ON")
+			slog.Info("phone: callback pickup, auto-dialing", "target", number)
+			c.state = StateCALLING
+			c.initiateCallAfterDelay(number, StateCALLING, "phone: callback auto-dial failed",
+				func() { c.playRejectSequence(StateCALLING) })
+		} else {
+			// Incoming: answer the call; activePeer was set when the ring arrived.
+			c.state = StateCONNECTED
+			c.cb.SendRing(false)
+			c.cb.SendTone(ToneStop)
+			c.cb.SendLED("ON")
+			c.cb.SetFlashEnabled(true)
+			c.cb.AnswerCall()
+		}
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
 	}
@@ -273,6 +339,7 @@ func (c *Controller) onHookOn() {
 		return
 	}
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -291,6 +358,9 @@ func (c *Controller) onHookOn() {
 
 	c.state = StateIDLE
 	c.digits = ""
+	c.callReturnNumber = ""
+	c.callReturnRinging = false
+	c.callReturnTarget = ""
 	c.heldPeer = ""
 	c.addingPeer = ""
 	c.confID = ""
@@ -300,6 +370,12 @@ func (c *Controller) onHookOn() {
 	c.cb.SendLED("OFF")
 	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
+	} else if wasCallReturn {
+		// Abandoning the *69 announcement (or *89 cancel announcement) by
+		// hanging up never triggers HangupCall, so the daemon's
+		// callReturnOrigin flag would otherwise persist and steer the next
+		// unrelated busy response into the call-return retry path.
+		go c.cb.OnCallReturnAbandon()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
@@ -323,7 +399,31 @@ func (c *Controller) onKey(digit string) {
 			slog.Debug("phone: service code handled by bridge, resetting", "code", c.digits)
 			c.digits = ""
 			c.state = StateDIALTONE
-			// Service code detected — reset to dial tone without re-sending tone
+			// Service code detected: reset to dial tone without re-sending tone
+		}
+		if c.digits == "*69" {
+			slog.Info("phone: *69 detected, entering CALL_RETURN")
+			c.digits = ""
+			c.callReturnNumber = ""
+			c.state = StateCALL_RETURN
+			go c.cb.OnCallReturn()
+			return
+		}
+		if c.digits == "*89" {
+			slog.Info("phone: *89 detected, cancelling call return")
+			c.digits = ""
+			c.state = StateCALL_RETURN
+			go c.cb.OnCallReturnCancel()
+			return
+		}
+	case StateCALL_RETURN:
+		if digit == "1" && c.callReturnNumber != "" {
+			number := c.callReturnNumber
+			c.callReturnNumber = ""
+			slog.Info("phone: CALL_RETURN -> CALLING", "number", number)
+			c.state = StateCALLING
+			c.initiateCallAfterDelay(number, StateCALLING, "phone: call return failed, server unreachable",
+				func() { c.playRejectSequence(StateCALLING) })
 		}
 	case StateADD_DIALTONE:
 		// First key during add-dial: stop the second dial tone, start collecting.
@@ -373,56 +473,74 @@ func (c *Controller) onDial(number string) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone(ToneRingback)
-		// Rejection sequence runs async (same as server-side "not connected" error)
-		go func() {
-			checkState := func() bool {
-				c.mu.Lock()
-				defer c.mu.Unlock()
-				return c.state == StateCALLING
-			}
-
-			time.Sleep(3 * time.Second)
-			if !checkState() {
-				return
-			}
-
-			// SIT + disconnected announcement
-			c.cb.SendTone(ToneStop)
-			c.cb.SendTone(ToneIntercept)
-			deadline := time.Now().Add(15 * time.Second)
-			for c.cb.OncePlaying() {
-				time.Sleep(200 * time.Millisecond)
-				if !checkState() {
-					return
-				}
-				if time.Now().After(deadline) {
-					slog.Error("phone: intercept tone timeout — aborting rejection flow")
-					return
-				}
-			}
-
-			time.Sleep(500 * time.Millisecond)
-			if !checkState() {
-				return
-			}
-			c.cb.SendTone(ToneBusy)
-		}()
+		go c.playRejectSequence(StateCALLING)
 		return
 	}
-
 	c.state = StateCALLING
-	// Brief silence before ringback — simulates PSTN call setup delay.
-	// Old rotary phones had a variable pause between last digit and first ring.
+	c.initiateCallAfterDelay(number, StateCALLING, "phone: call failed, server unreachable",
+		func() { c.playRejectSequence(StateCALLING) })
+}
+
+// initiateCallAfterDelay simulates the PSTN call-setup pause and then starts
+// the outgoing call to number. After autoDialDelay it acquires the controller
+// lock; if the FSM has moved out of expectedState (e.g., the caller hung up
+// during the pause) it returns silently. Otherwise it plays ringback, calls
+// InitiateCall, and on error logs errLogMsg with number+error attrs and runs
+// onErr (unlocked) so the caller can drive whatever local treatment the
+// failed leg requires.
+func (c *Controller) initiateCallAfterDelay(number string, expectedState State, errLogMsg string, onErr func()) {
 	go func() {
-		time.Sleep(800 * time.Millisecond)
+		time.Sleep(autoDialDelay)
 		c.mu.Lock()
-		defer c.mu.Unlock()
-		if c.state != StateCALLING {
+		if c.state != expectedState {
+			c.mu.Unlock()
 			return
 		}
 		c.cb.SendTone(ToneRingback)
-		c.cb.InitiateCall(number)
+		err := c.cb.InitiateCall(number)
+		c.mu.Unlock()
+		if err != nil {
+			slog.Info(errLogMsg, "number", number, "error", err)
+			onErr()
+		}
 	}()
+}
+
+// playRejectSequence plays the POTS intercept sequence: ringback is already
+// playing from the caller, so wait 3s (simulates connection attempt), then
+// SIT tones + busy. Runs without holding the controller lock and checks
+// expectedState before each step so a hang-up aborts cleanly.
+func (c *Controller) playRejectSequence(expectedState State) {
+	checkState := func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.state == expectedState
+	}
+
+	time.Sleep(3 * time.Second)
+	if !checkState() {
+		return
+	}
+
+	c.cb.SendTone(ToneStop)
+	c.cb.SendTone(ToneIntercept)
+	deadline := time.Now().Add(15 * time.Second)
+	for c.cb.OncePlaying() {
+		time.Sleep(200 * time.Millisecond)
+		if !checkState() {
+			return
+		}
+		if time.Now().After(deadline) {
+			slog.Error("phone: intercept tone timeout, aborting rejection")
+			return
+		}
+	}
+
+	time.Sleep(500 * time.Millisecond)
+	if !checkState() {
+		return
+	}
+	c.cb.SendTone(ToneBusy)
 }
 
 // dialThirdParty initiates an outgoing call to C from ADD_DIALING state.
@@ -449,17 +567,17 @@ func (c *Controller) dialThirdParty(number string) {
 	c.addingPeer = number
 	c.digits = ""
 	c.state = StateADD_CALLING
-	// Brief silence before ringback — mirrors the 2-party outgoing call setup delay.
-	go func() {
-		time.Sleep(800 * time.Millisecond)
+	c.initiateCallAfterDelay(number, StateADD_CALLING, "phone: add-call failed, server unreachable", func() {
 		c.mu.Lock()
-		defer c.mu.Unlock()
 		if c.state != StateADD_CALLING {
+			c.mu.Unlock()
 			return
 		}
-		c.cb.SendTone(ToneRingback)
-		c.cb.InitiateCall(number)
-	}()
+		c.state = StateADD_INTERCEPT
+		c.mu.Unlock()
+		c.cb.SendTone(ToneStop)
+		c.cb.SendTone(ToneIntercept)
+	})
 }
 
 func (c *Controller) onSignalRing() {
@@ -497,9 +615,10 @@ func (c *Controller) onSignalAnswer(sender string) {
 func (c *Controller) onSignalHangup(sender string) {
 	switch c.state {
 	case StateRINGING:
-		// Caller hung up before we answered - stop ringing and return to idle.
 		slog.Info("phone: caller hung up during ring - stopping ring")
 		c.state = StateIDLE
+		c.callReturnRinging = false
+		c.callReturnTarget = ""
 		c.cb.SendRing(false)
 		c.cb.SendLED("OFF")
 	case StateCONNECTED:
@@ -872,43 +991,4 @@ func (c *Controller) IsConferenceHost() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.isConfHost
-}
-
-// --- test-only setters (internal: test only) ---
-
-// setStateForTest directly sets the FSM state for unit test setup.
-func (c *Controller) setStateForTest(s State) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.state = s
-}
-
-// setHeldPeerForTest sets the held peer for unit test setup.
-func (c *Controller) setHeldPeerForTest(peer string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.heldPeer = peer
-}
-
-// setAddingPeerForTest sets the adding peer for unit test setup.
-func (c *Controller) setAddingPeerForTest(peer string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.addingPeer = peer
-}
-
-// heldPeerForTest returns the current held-peer phone number for unit test
-// assertions.
-func (c *Controller) heldPeerForTest() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.heldPeer
-}
-
-// addingPeerForTest returns the current adding-peer phone number for unit
-// test assertions.
-func (c *Controller) addingPeerForTest() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.addingPeer
 }

@@ -223,7 +223,7 @@ func TestDeleteSession(t *testing.T) {
 	}
 }
 
-func TestRefreshSession(t *testing.T) {
+func TestValidateAndRefreshSession(t *testing.T) {
 	s := testDB(t)
 	u, err := s.CreateUser(context.Background(), "refresh@test.com", "Refresh User", nil)
 	if err != nil {
@@ -235,23 +235,42 @@ func TestRefreshSession(t *testing.T) {
 	}
 	originalExpiry := sess.ExpiresAt
 
-	if err := s.RefreshSession(context.Background(), token, 48*time.Hour); err != nil {
-		t.Fatalf("RefreshSession: %v", err)
-	}
-
-	got, err := s.ValidateSession(context.Background(), token)
+	got, err := s.ValidateAndRefreshSession(context.Background(), token, 48*time.Hour)
 	if err != nil {
-		t.Fatalf("ValidateSession after refresh: %v", err)
+		t.Fatalf("ValidateAndRefreshSession: %v", err)
+	}
+	if got.UserID != u.ID {
+		t.Errorf("user ID = %s, want %s", got.UserID, u.ID)
 	}
 	if !got.ExpiresAt.After(originalExpiry) {
 		t.Errorf("refreshed expiry %v should be after original %v", got.ExpiresAt, originalExpiry)
 	}
 }
 
+func TestValidateAndRefreshSession_Expired(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser(context.Background(), "expired-refresh@test.com", "Expired Refresh User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	token, _, err := s.CreateSession(context.Background(), u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	// Force-expire the session.
+	hash := device.HashToken(token)
+	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
+
+	_, err = s.ValidateAndRefreshSession(context.Background(), token, 48*time.Hour)
+	if err == nil {
+		t.Error("expected error for expired session, got nil")
+	}
+}
+
 func TestCreateAndValidateMagicLink(t *testing.T) {
 	s := testDB(t)
 
-	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", 15*time.Minute)
+	token, err := s.CreateMagicLink(context.Background(), "magic@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -260,7 +279,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// First use should succeed
-	email, err := s.ValidateMagicLink(context.Background(), token)
+	email, _, err := s.ValidateMagicLink(context.Background(), token)
 	if err != nil {
 		t.Fatalf("ValidateMagicLink: %v", err)
 	}
@@ -269,7 +288,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 	}
 
 	// Second use should fail (single-use enforcement)
-	_, err = s.ValidateMagicLink(context.Background(), token)
+	_, _, err = s.ValidateMagicLink(context.Background(), token)
 	if err == nil {
 		t.Error("expected error on reuse of magic link, got nil")
 	}
@@ -277,7 +296,7 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 
 func TestValidateMagicLink_InvalidToken(t *testing.T) {
 	s := testDB(t)
-	_, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
+	_, _, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
 	if err == nil {
 		t.Error("expected error for invalid magic link token, got nil")
 	}
@@ -299,7 +318,7 @@ func TestCleanupExpired(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	// Create a magic link and force-expire it
-	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", 15*time.Minute)
+	mlToken, err := s.CreateMagicLink(context.Background(), "cleanup@test.com", MagicLinkTTL, "")
 	if err != nil {
 		t.Fatalf("CreateMagicLink: %v", err)
 	}
@@ -344,6 +363,46 @@ func TestSetAndLoadCRTMode(t *testing.T) {
 	// Invalid values are rejected.
 	if err := s.SetCRTMode(context.Background(), u.ID, CRTMode("bogus")); err == nil {
 		t.Error("expected error for invalid CRTMode, got nil")
+	}
+}
+
+func TestStore_DeleteUser(t *testing.T) {
+	s := testDB(t)
+	u, err := s.CreateUser(context.Background(), "deleteuser@test.com", "Delete Me", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	_, _, err = s.CreateSession(context.Background(), u.ID, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	if err := s.DeleteUser(context.Background(), u.ID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+
+	// User should be gone.
+	_, err = s.GetUserByEmail(context.Background(), "deleteuser@test.com")
+	if !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("expected ErrUserNotFound after DeleteUser, got %v", err)
+	}
+
+	// Sessions should have cascaded.
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = $1`, u.ID).Scan(&count); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 sessions after DeleteUser cascade, got %d", count)
+	}
+}
+
+func TestStore_DeleteUser_NotFound(t *testing.T) {
+	s := testDB(t)
+	err := s.DeleteUser(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if err == nil {
+		t.Error("expected error for non-existent user, got nil")
 	}
 }
 

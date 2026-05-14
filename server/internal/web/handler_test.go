@@ -8,13 +8,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
@@ -76,7 +79,7 @@ func TestPhonesPage_HandsetNameField(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		"Handset name",
-		"Kitchen · Grandma&#39;s bedroom · Garage",
+		"Kitchen · Bedroom · Garage",
 		"Most families name handsets by where they live",
 	} {
 		if !strings.Contains(body, want) {
@@ -161,6 +164,85 @@ func TestDeletePhone(t *testing.T) {
 	// Line should be gone
 	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
 		t.Error("line should have been deleted")
+	}
+}
+
+func TestConvertLineToExtension(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	srcLn, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add src line: %v", err)
+	}
+	tgtLn, err := lineStore.Add(context.Background(), "3140002", "Bedroom", hh.ID)
+	if err != nil {
+		t.Fatalf("add tgt line: %v", err)
+	}
+	var devID int64
+	err = database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-kitchen', 'dev-kitchen', 'Kitchen Phone', NOW())
+		RETURNING id
+	`, srcLn.ID).Scan(&devID)
+	if err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140002')")
+	})
+
+	form := url.Values{
+		"target_line_id": {strconv.FormatInt(tgtLn.ID, 10)},
+		"device_id":      {strconv.FormatInt(devID, 10)},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/convert", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
+		t.Error("source line should have been deleted")
+	}
+
+	devStore := device.NewStore(database)
+	devices, err := devStore.ListByLine(context.Background(), tgtLn.ID)
+	if err != nil {
+		t.Fatalf("list target devices: %v", err)
+	}
+	if len(devices) != 1 {
+		t.Errorf("expected 1 device on target, got %d", len(devices))
+	}
+}
+
+func TestConvertLineToSelfRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	ln, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	form := url.Values{"target_line_id": {strconv.FormatInt(ln.ID, 10)}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/convert", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for self-convert, got %d", w.Code)
 	}
 }
 
@@ -428,12 +510,12 @@ func TestNotFound(t *testing.T) {
 }
 
 // setupPairedDevice creates a paired device via the pairing flow and returns
-// the hardware ID and plaintext device token.
-func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, token string) {
+// the hardware ID, phone number, and plaintext device token.
+func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairing.Store, householdStore *household.Store, authStore *auth.Store) (hardwareID, number, token string) {
 	t.Helper()
 
 	hardwareID = fmt.Sprintf("test-hw-%d", time.Now().UnixNano())
-	number := fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
+	number = fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
 
 	// Create a household for the line
 	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
@@ -456,7 +538,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	}
 
 	// Claim the device (pairs it, sets hashed token)
-	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", hh.ID)
+	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("claim device: %v", err)
 	}
@@ -468,7 +550,7 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
-	return hardwareID, token
+	return hardwareID, number, token
 }
 
 func TestPhoneRestartOnline(t *testing.T) {
@@ -481,7 +563,7 @@ func TestPhoneRestartOnline(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"service"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -560,7 +642,7 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	form := url.Values{"mode": {"explode"}}
 	req := httptest.NewRequest("POST", "/phones/3140001/restart", strings.NewReader(form.Encode()))
@@ -572,6 +654,59 @@ func TestPhoneRestartInvalidMode(t *testing.T) {
 
 	if w.Code != 400 {
 		t.Fatalf("expected 400 for invalid mode, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneRingTestOnline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	_ = h.hub.Register("3140001", conn)
+
+	req := httptest.NewRequest("POST", "/phones/3140001/ring-test", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, _ := signaling.ParseMessage(data)
+		if msg.Type != signaling.TypeRingTest {
+			t.Fatalf("expected ring_test message, got %s", msg.Type)
+		}
+	default:
+		t.Fatal("device did not receive ring_test message")
+	}
+}
+
+func TestPhoneRingTestOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	_, _ = database.DB.Exec(`INSERT INTO lines (number, name, household_id) VALUES ('3140001', 'Test Phone', $1) ON CONFLICT DO NOTHING`, hh.ID)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number = '3140001'")
+	})
+
+	req := httptest.NewRequest("POST", "/phones/3140001/ring-test", nil)
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != 502 {
+		t.Fatalf("expected 502 for offline device, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -598,7 +733,7 @@ func TestPhoneOnlineStatus(t *testing.T) {
 	}
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	req = httptest.NewRequest("GET", "/phones/3140001/online", nil)
 	req.Header.Set("Accept", "application/json")
@@ -884,7 +1019,7 @@ func TestPhoneSilentModePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	if w := postSilentMode(t, h, cookie, "on", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -913,7 +1048,7 @@ func TestPhoneSilentModeNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	// Line defaults to silent_mode=false on insert. Saving false again must be a no-op.
 	if w := postSilentMode(t, h, cookie, "off", false); w.Code != http.StatusSeeOther {
@@ -955,7 +1090,7 @@ func TestPhoneVoiceStylePushesToConnectedDevice(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	if w := postVoiceStyle(t, h, cookie, "modern", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
@@ -984,7 +1119,7 @@ func TestPhoneVoiceStyleNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register("3140001", conn)
+	_ = h.hub.Register("3140001", conn)
 
 	// Line defaults to copper on insert — saving copper again must be a no-op.
 	if w := postVoiceStyle(t, h, cookie, "copper", false); w.Code != http.StatusSeeOther {
@@ -1023,7 +1158,7 @@ func TestWSRegister_PairedDevice_MissingToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -1046,7 +1181,7 @@ func TestWSRegister_PairedDevice_WrongToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, _, _ := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
@@ -1070,12 +1205,12 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	srv := httptest.NewServer(h.Router())
 	defer srv.Close()
 
-	hwID, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
 
 	ws := dialWS(t, srv)
 	sendMsg(t, ws, signaling.Message{
 		Type:        signaling.TypeRegister,
-		Number:      "1001",
+		Number:      number,
 		HardwareID:  hwID,
 		DeviceToken: token,
 	})
@@ -1591,8 +1726,8 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 	})
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
-	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "")
+	_ = h.hub.Register(number, conn)
+	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", "", false)
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
@@ -2225,5 +2360,245 @@ func TestHandleCalls_AM_PaginationControls(t *testing.T) {
 		if strings.Contains(body, `hx-trigger="every 10s"`) {
 			t.Errorf("page 2: hx-trigger must be absent on paged view")
 		}
+	}
+}
+
+func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
+	conn.RemoteAddr = "192.168.1.42"
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "192.168.1.42") {
+		t.Errorf("phones page missing LAN IP %q in body", "192.168.1.42")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenEmpty(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
+	conn.RemoteAddr = ""
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup despite empty RemoteAddr")
+	}
+}
+
+func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	// Add a line WITHOUT registering a Conn: phone is offline.
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140044", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `class="lines__ip`) {
+		t.Errorf("phones page rendered LAN IP markup for offline phone")
+	}
+}
+
+// runDeviceInfoAndCaptureAddr dials srv's /ws, registers the paired device,
+// sends a device_info with the given local_addr, polls until the hub's
+// snapshot has settled to a non-zero or filtered value, then returns the
+// RemoteAddr the hub stored. localAddr "" sends an omitted local_addr so
+// older-firmware behavior (no field) can be tested.
+func runDeviceInfoAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signaling.Hub, hardwareID, number, token, localAddr string) string {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial ws: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.WriteJSON(signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      number,
+		HardwareID:  hardwareID,
+		DeviceToken: token,
+	}); err != nil {
+		t.Fatalf("write register: %v", err)
+	}
+	waitForRegister(t, hub, number)
+
+	if err := conn.WriteJSON(signaling.Message{
+		Type:            signaling.TypeDeviceInfo,
+		PiVersion:       "1.0.0",
+		FirmwareVersion: "0.1.0",
+		LocalAddr:       localAddr,
+	}); err != nil {
+		t.Fatalf("write device_info: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		info := hub.DeviceInfo(number)
+		if info != nil && info.PiVersion == "1.0.0" {
+			return info.RemoteAddr
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for device_info to land in the hub")
+	return ""
+}
+
+func TestDeviceInfo_StoresPrivateLocalAddr(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "192.168.1.7")
+	if got != "192.168.1.7" {
+		t.Errorf("RemoteAddr = %q, want %q", got, "192.168.1.7")
+	}
+}
+
+func TestDeviceInfo_DropsPublicLocalAddr(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "8.8.8.8")
+	if got != "" {
+		t.Errorf("RemoteAddr = %q, want empty for public local_addr", got)
+	}
+}
+
+func TestDeviceInfo_EmptyWhenLocalAddrOmitted(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	got := runDeviceInfoAndCaptureAddr(t, srv, h.hub, hwID, number, token, "")
+	if got != "" {
+		t.Errorf("RemoteAddr = %q, want empty when local_addr is omitted", got)
+	}
+}
+
+func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	_, conn := setupLineWithConn(t, h, database, hh, "3140055", "Living Room")
+	conn.RemoteAddr = "192.168.77.77"
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "192.168.77.77") {
+		t.Errorf("dashboard rendered LAN IP %q in body; this surface must not surface device IPs", "192.168.77.77")
+	}
+}
+
+func TestChangePhoneNumber(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140099')")
+	})
+
+	form := url.Values{"number": {"314-0099"}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/number", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if loc != "/phones/3140099" {
+		t.Errorf("expected redirect to /phones/3140099, got %s", loc)
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
+		t.Error("old number should not exist")
+	}
+	newLn, err := lineStore.GetByNumber(context.Background(), "3140099")
+	if err != nil {
+		t.Fatalf("new number should exist: %v", err)
+	}
+	if newLn.Name != "Kitchen" {
+		t.Errorf("name should be unchanged, got %q", newLn.Name)
+	}
+}
+
+func TestChangePhoneNumberDuplicate(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	lineStore := line.NewStore(database)
+
+	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line 1: %v", err)
+	}
+	_, err = lineStore.Add(context.Background(), "3140002", "Bedroom", hh.ID)
+	if err != nil {
+		t.Fatalf("add line 2: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE number IN ('3140001','3140002')")
+	})
+
+	form := url.Values{"number": {"314-0002"}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/number", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "number_error=") {
+		t.Errorf("expected redirect with number_error param, got %s", loc)
+	}
+
+	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err != nil {
+		t.Error("original line should still exist")
 	}
 }

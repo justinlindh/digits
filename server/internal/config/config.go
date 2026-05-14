@@ -3,7 +3,8 @@ package config
 import "os"
 
 type Config struct {
-	Addr        string // HTTP listen address
+	Addr        string // HTTP listen address (public app port)
+	MetricsAddr string // Prometheus metrics listen address (separate listener; empty disables)
 	DatabaseURL string // Postgres connection string
 	TLSCert     string // TLS certificate path (empty = plain HTTP)
 	TLSKey      string // TLS key path
@@ -29,6 +30,15 @@ type Config struct {
 	// Link health flusher: when true, calls.NewHealthStore starts with the
 	// background DB flush disabled. Used by integration tests that drive time.
 	LinkHealthFlushDisabled bool
+	// Redis pub/sub for multi-replica signaling. When set, the hub publishes
+	// signaling messages to a Redis channel when the target device is not on
+	// the local pod. Empty disables Redis (single-instance mode).
+	RedisURL string
+
+	// WSRateLimitPerMin overrides the default WebSocket upgrade rate limit
+	// (per IP, per minute). Default is 30. Set higher for load testing.
+	WSRateLimitPerMin int
+
 	// Release index source. Exactly one of FakeUpdates or GitHubRepo (owner/repo)
 	// should be set. FakeUpdates wins if both are set and is intended for e2e
 	// tests. An unset GitHubRepo disables the release endpoint entirely.
@@ -39,12 +49,14 @@ type Config struct {
 
 func Load() *Config {
 	c := &Config{
-		Addr:     ":8443",
-		SMTPPort: "587",
-		SMTPFrom: "noreply@digits.family",
-		BaseURL:  "https://app.digits.family",
+		Addr:        ":8443",
+		MetricsAddr: ":9091",
+		SMTPPort:    "587",
+		SMTPFrom:    "noreply@digits.family",
+		BaseURL:     "https://app.digits.family",
 	}
 	StringEnv("SIGNALD_ADDR", &c.Addr)
+	StringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
 	StringEnv("DATABASE_URL", &c.DatabaseURL)
 	StringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
 	StringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
@@ -71,6 +83,11 @@ func Load() *Config {
 	if os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1" {
 		c.LinkHealthFlushDisabled = true
 	}
+	// Redis
+	StringEnv("REDIS_URL", &c.RedisURL)
+	// Rate limits
+	c.WSRateLimitPerMin = 30
+	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
 	// Release index
 	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
 		c.FakeUpdates = true

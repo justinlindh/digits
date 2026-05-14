@@ -21,63 +21,103 @@ func wsReject(ws *websocket.Conn, errMsg string) {
 }
 
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
+	if h.hub.IsDraining() {
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
+
 	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		slog.Error("websocket upgrade failed", "err", err)
+		slog.ErrorContext(r.Context(), "websocket upgrade failed", "err", err)
 		return
 	}
 
 	// Wait for register message
-	_ = ws.SetReadDeadline(time.Now().Add(10 * time.Second))
-	_, data, err := ws.ReadMessage()
-	if err != nil {
-		slog.Error("websocket no register message", "err", err)
+	if err := ws.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		slog.ErrorContext(r.Context(), "ws set register deadline failed", "err", err)
 		_ = ws.Close()
 		return
 	}
-	_ = ws.SetReadDeadline(time.Time{})
+	_, data, err := ws.ReadMessage()
+	if err != nil {
+		slog.ErrorContext(r.Context(), "websocket no register message", "err", err)
+		_ = ws.Close()
+		return
+	}
+	if err := ws.SetReadDeadline(time.Time{}); err != nil {
+		slog.ErrorContext(r.Context(), "ws clear register deadline failed", "err", err)
+		_ = ws.Close()
+		return
+	}
 
 	msg, err := signaling.ParseMessage(data)
 	if err != nil || msg.Type != signaling.TypeRegister || msg.Number == "" {
-		slog.Warn("invalid register message")
+		slog.WarnContext(r.Context(), "invalid register message")
 		wsReject(ws, "must send register message first")
 		return
 	}
 
 	// Require hardware ID for all connections
 	if msg.HardwareID == "" {
-		slog.Warn("ws register without hardware_id", "number", msg.Number)
+		slog.WarnContext(r.Context(), "ws register without hardware_id", "number", msg.Number)
 		wsReject(ws, "hardware_id required")
 		return
 	}
 
-	// Check pairing and token status
+	// Check pairing and token status. For paired devices, the server-side
+	// bound line number is authoritative: a device cannot register as a
+	// line it is not paired to.
+	isPaired := false
 	if h.pairingStore != nil {
 		paired, tokenValid, err := h.deviceStore.AuthStatus(r.Context(), msg.HardwareID, msg.DeviceToken)
 		if err != nil {
-			slog.Error("device auth check failed", "hardware_id", msg.HardwareID, "err", err)
+			slog.ErrorContext(r.Context(), "device auth check failed", "hardware_id", msg.HardwareID, "err", err)
 			wsReject(ws, "internal error")
 			return
 		}
 		if !paired {
 			code, err := h.pairingStore.GenerateCode(r.Context(), msg.HardwareID)
 			if err != nil {
-				slog.Error("generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
+				slog.ErrorContext(r.Context(), "generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
 			} else {
 				_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
 					Type:        signaling.TypePairingCode,
 					PairingCode: code,
 				}))
 			}
-			// Continue to register so the device can receive the TypePaired message
+			// Unpaired devices register under their hardware ID (not a line
+			// number) so they can receive the TypePaired message via
+			// SendToHardware without displacing a real line's connection.
+			msg.Number = "unpaired:" + msg.HardwareID
 		} else if msg.DeviceToken == "" {
-			slog.Warn("ws register without device_token", "hardware_id", msg.HardwareID)
+			slog.WarnContext(r.Context(), "ws register without device_token", "hardware_id", msg.HardwareID)
 			wsReject(ws, "device_token required")
 			return
 		} else if !tokenValid {
-			slog.Warn("ws invalid device_token", "hardware_id", msg.HardwareID)
+			slog.WarnContext(r.Context(), "ws invalid device_token", "hardware_id", msg.HardwareID)
 			wsReject(ws, "invalid device_token")
 			return
+		} else {
+			isPaired = true
+			boundNumber, err := h.deviceStore.BoundLineNumber(r.Context(), msg.HardwareID)
+			if err != nil {
+				slog.ErrorContext(r.Context(), "bound line lookup failed", "hardware_id", msg.HardwareID, "err", err)
+				wsReject(ws, "internal error")
+				return
+			}
+			if boundNumber == "" {
+				slog.WarnContext(r.Context(), "paired device has no bound line", "hardware_id", msg.HardwareID)
+				wsReject(ws, "device has no assigned line")
+				return
+			}
+			if boundNumber != msg.Number {
+				slog.WarnContext(r.Context(), "ws register number mismatch",
+					"hardware_id", msg.HardwareID,
+					"claimed", msg.Number,
+					"bound", boundNumber)
+				wsReject(ws, "number does not match paired line")
+				return
+			}
 		}
 	}
 
@@ -93,15 +133,21 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		Send:       make(chan []byte, 32),
 		LastSeen:   time.Now(),
 	}
-	h.hub.Register(msg.Number, conn)
-	h.relay.OnRegistered(r.Context(), msg.Number)
+	if err := h.hub.Register(msg.Number, conn); err != nil {
+		wsReject(ws, "server shutting down")
+		return
+	}
+	if isPaired {
+		h.relay.OnRegistered(r.Context(), msg.Number)
+	}
 	number := msg.Number
+	ctx := r.Context()
 
 	// Configure pong handler to extend read deadline on each pong
 	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
 	ws.SetPongHandler(func(string) error {
 		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
-		h.hub.TouchLastSeen(number)
+		h.hub.TouchLastSeen(number, conn.HardwareID)
 		return nil
 	})
 
@@ -120,7 +166,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				if err := ws.WriteMessage(websocket.TextMessage, data); err != nil {
-					slog.Error("websocket write failed", "number", number, "err", err)
+					slog.ErrorContext(ctx, "websocket write failed", "number", number, "err", err)
 					return
 				}
 			case <-ticker.C:
@@ -136,11 +182,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocks until disconnect)
 	defer h.hub.Unregister(number, conn)
-	defer h.relay.OnDisconnect(r.Context(), number)
+	defer h.relay.OnDisconnect(ctx, number, conn.HardwareID)
 	defer func() {
 		if msg.HardwareID != "" && h.deviceStore != nil {
-			if err := h.deviceStore.TouchLastSeen(r.Context(), msg.HardwareID); err != nil {
-				slog.Warn("touch last seen on disconnect failed", "hardware_id", msg.HardwareID, "err", err)
+			if err := h.deviceStore.TouchLastSeen(ctx, msg.HardwareID); err != nil {
+				slog.WarnContext(ctx, "touch last seen on disconnect failed", "hardware_id", msg.HardwareID, "err", err)
 			}
 		}
 	}()
@@ -148,13 +194,13 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
 			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				slog.Error("websocket read failed", "number", number, "err", err)
+				slog.ErrorContext(ctx, "websocket read failed", "number", number, "err", err)
 			}
 			break
 		}
 		msg, err := signaling.ParseMessage(data)
 		if err != nil {
-			slog.Warn("bad websocket message", "number", number, "err", err)
+			slog.WarnContext(ctx, "bad websocket message", "number", number, "err", err)
 			continue
 		}
 		// TypeRepair is intercepted here (not in relay) because we have the
@@ -165,18 +211,18 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		// rather than rejected as "device_token required".
 		if msg.Type == signaling.TypeRepair {
 			if h.deviceStore != nil && msg.HardwareID != "" {
-				if err := h.deviceStore.Unpair(r.Context(), msg.HardwareID); err != nil {
-					slog.Warn("repair: unpair failed", "hardware_id", msg.HardwareID, "err", err)
+				if err := h.deviceStore.Unpair(ctx, msg.HardwareID); err != nil {
+					slog.WarnContext(ctx, "repair: unpair failed", "hardware_id", msg.HardwareID, "err", err)
 				} else {
-					slog.Info("repair: device unpaired by client request", "hardware_id", msg.HardwareID, "number", number)
+					slog.InfoContext(ctx, "repair: device unpaired by client request", "hardware_id", msg.HardwareID, "number", number)
 				}
 			}
 			continue
 		}
-		h.relay.HandleMessage(r.Context(), number, msg)
+		msg.HardwareID = conn.HardwareID
+		h.relay.HandleMessage(ctx, number, msg)
 	}
 }
-
 
 func mustMarshal(msg *signaling.Message) []byte {
 	data, _ := msg.Marshal()
@@ -237,7 +283,7 @@ func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	originatingCallID := h.tracker.CallIDForPair(ctx, body.Host, body.Added[0])
+	originatingCallID := h.tracker.CallIDForPair(body.Host, body.Added[0])
 	if originatingCallID == 0 {
 		http.Error(w, "originating call not found", http.StatusInternalServerError)
 		return
@@ -261,6 +307,8 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 	number := r.URL.Query().Get("number")
 	fw := r.URL.Query().Get("fw")
 	pi := r.URL.Query().Get("pi")
+	ip := r.URL.Query().Get("ip")
+	dm := r.URL.Query().Get("dev_mode") == "1"
 	if number == "" || fw == "" {
 		http.Error(w, "number and fw query params are required", http.StatusBadRequest)
 		return
@@ -272,8 +320,11 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		for range conn.Send {
 		}
 	}()
-	h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, pi, "", fw, "")
+	if err := h.hub.Register(number, conn); err != nil {
+		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	h.hub.UpdateDeviceInfo(number, pi, "", fw, "", ip, dm)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)
 }

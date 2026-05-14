@@ -17,8 +17,8 @@ import (
 type HistoryEntryKind int
 
 const (
-	HistoryEntryCall       HistoryEntryKind = iota
-	HistoryEntryConference HistoryEntryKind = iota
+	HistoryEntryCall HistoryEntryKind = iota
+	HistoryEntryConference
 )
 
 // HistoryEntry is a unified view of either a 2-party call or a 3-way
@@ -113,7 +113,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 	n := len(phones)
 	ph := dbutil.Placeholders(n)
 
-	args := make([]interface{}, 0, n+3)
+	args := make([]any, 0, n+3)
 	for _, p := range phones {
 		args = append(args, p)
 	}
@@ -175,7 +175,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 // recentConferencesForHistory returns conferences where any of the phones is
 // a member, including the ordered member list for each conference.
 func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []string, cursor *HistoryCursor, limit int) ([]ConferenceSummary, error) {
-	args := []interface{}{pq.Array(phones)}
+	args := []any{pq.Array(phones)}
 
 	// Call cursor uses <= because Conference sorts after Call at equal time in
 	// the in-memory merge, so the same-time conference is the next entry on the

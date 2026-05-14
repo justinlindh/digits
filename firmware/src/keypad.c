@@ -30,7 +30,7 @@ void keypad_init(void) {
     s_last_press_time = get_absolute_time();
 }
 
-char keypad_scan(void) {
+char keypad_scan_raw(void) {
     char pressed = '\0';
     const uint num_cols = board->keypad_num_cols;
 
@@ -46,6 +46,12 @@ char keypad_scan(void) {
 
         gpio_put(board->keypad_rows[row], 1);
     }
+
+    return pressed;
+}
+
+char keypad_scan(void) {
+    char pressed = keypad_scan_raw();
 
     absolute_time_t now = get_absolute_time();
     if (pressed != '\0' && pressed != s_last_key) {

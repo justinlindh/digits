@@ -8,12 +8,3 @@ services:
         VERSION: ${BUILD_VERSION:-dev}
         COMMIT: ${BUILD_COMMIT:-unknown}
     image: digits-local/signald:${BUILD_VERSION:-dev}
-
-  admind:
-    build:
-      context: .
-      dockerfile: cmd/admind/Dockerfile
-      args:
-        VERSION: ${BUILD_VERSION:-dev}
-        COMMIT: ${BUILD_COMMIT:-unknown}
-    image: digits-local/admind:${BUILD_VERSION:-dev}

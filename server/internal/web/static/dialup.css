@@ -385,7 +385,7 @@ body.dialup:not(.crt-all) .dialup-window {
   margin: 0 0 10px;
   padding: 4px 8px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   border-top: 1px solid var(--dialup-bevel-hi);
@@ -395,6 +395,7 @@ body.dialup:not(.crt-all) .dialup-window {
   flex-wrap: wrap;
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
+.page__head .dnd-toggle__label { color: #fff; }
 .page__title {
   font-family: inherit;
   font-weight: bold;
@@ -2317,6 +2318,195 @@ body.dialup .phone-silent__text {
   min-width: 88px;
 }
 
+/* Line editor dialog, dialup theme */
+.line-editor-dialog {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  border-radius: 0;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  max-width: 380px;
+  width: 92vw;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+.line-editor-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+.line-editor-dialog__title {
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  font-style: normal;
+  font-weight: bold;
+  font-size: 12px;
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 55%, var(--dialup-blue-light) 100%);
+  color: #ffffff;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3);
+  padding: 3px 6px;
+  margin: 0;
+  letter-spacing: 0;
+}
+.line-editor-dialog__body {
+  padding: 14px 16px 12px;
+}
+.line-editor-dialog__actions {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.line-editor-dialog__actions .btn { min-width: 88px; }
+.line-editor-dialog__divider {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.line-editor-dialog__error {
+  padding: 0 16px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+
+/* What's New changelog dialog, dialup theme */
+.page__foot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--dialup-blue);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.page__foot-link:hover { color: var(--dialup-blue-dark); }
+
+.changelog-dialog {
+  padding: 0;
+  background: var(--dialup-chrome);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.4);
+  max-width: 520px;
+  width: 92vw;
+  max-height: 80vh;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--dialup-ink);
+}
+.changelog-dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
+
+.changelog-dialog__titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, var(--dialup-blue-dark) 0%, var(--dialup-blue) 55%, var(--dialup-blue-light) 100%);
+  color: #ffffff;
+  padding: 3px 5px;
+  font-weight: bold;
+  font-size: 12px;
+  min-height: 22px;
+}
+.changelog-dialog__titlebar-title { text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.3); }
+.changelog-dialog__titlebar-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  border-bottom: 1px solid var(--dialup-bevel-ll);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.changelog-dialog__body { padding: 14px 16px; overflow-y: auto; max-height: calc(80vh - 28px); }
+.changelog-dialog__title {
+  font-weight: bold;
+  font-size: 13px;
+  margin: 0 0 12px;
+  color: var(--dialup-ink);
+}
+
+.changelog-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: -1px;
+  padding: 0 2px;
+}
+.changelog-tab {
+  background: var(--dialup-chrome);
+  border: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  border-left: 1px solid var(--dialup-bevel-hi);
+  border-right: 1px solid var(--dialup-bevel-ll);
+  padding: 3px 10px 4px;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  font-size: 11px;
+  color: var(--dialup-ink);
+  cursor: pointer;
+  position: relative;
+  top: 1px;
+  border-radius: 3px 3px 0 0;
+}
+.changelog-tab--active {
+  background: var(--dialup-chrome);
+  border-bottom: 1px solid var(--dialup-chrome);
+  font-weight: bold;
+  z-index: 1;
+}
+.changelog-panel {
+  display: none;
+  border-top: 1px solid var(--dialup-bevel-hi);
+  padding-top: 10px;
+}
+.changelog-panel--active { display: block; }
+
+.page__foot-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dialup-blue);
+  margin-left: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+.changelog__release + .changelog__release {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dialup-bevel-lo);
+}
+.changelog__version {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: bold;
+}
+.changelog__date { font-size: 11px; color: gray; }
+.changelog__adoption { font-size: 11px; color: var(--dialup-blue-dark); margin-left: auto; }
+.changelog__notes { font-size: 12px; line-height: 1.5; }
+.changelog__notes p { margin: 0 0 6px; }
+.changelog__notes p:last-child { margin: 0; }
+.changelog__play {
+  background: none;
+  border: 1px solid var(--dialup-border);
+  border-radius: 0;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--dialup-blue-dark);
+  cursor: pointer;
+  margin-top: 6px;
+  transition: background 0.15s;
+}
+.changelog__play:hover { background: var(--dialup-hover); }
+.changelog__empty { color: gray; font-style: italic; font-size: 12px; }
+
 /* =========================================================================
    Call-live observation deck — dialup theme (MODEM CONNECTED)
    ========================================================================= */
@@ -2709,4 +2899,74 @@ body.dialup .phone-silent__text {
 .dialup-pagination__btn--disabled:hover {
   background: var(--dialup-chrome);
   color: var(--dialup-chrome-d);
+}
+
+/* Household switcher */
+.dialup-hh-switcher { position: relative; display: inline-block; }
+.dialup-hh-switcher summary { cursor: pointer; list-style: none; }
+.dialup-hh-switcher summary::-webkit-details-marker { display: none; }
+.dialup-hh-arrow { font-size: 8px; }
+.dialup-hh-menu {
+  position: absolute; top: 100%; left: 0; z-index: 100;
+  background: var(--dialup-chrome); border: 2px outset var(--dialup-chrome);
+  min-width: 200px; margin-top: 2px;
+}
+.dialup-hh-option {
+  display: block; width: 100%; padding: 4px 8px;
+  border: none; background: transparent; color: var(--dialup-text);
+  font-family: var(--dialup-font); font-size: 11px;
+  text-align: left; cursor: pointer;
+}
+.dialup-hh-option:hover { background: var(--dialup-blue); color: #fff; }
+.dialup-hh-option.is-active { font-weight: 700; }
+
+/* Segmented radio: Win95 beveled variant */
+.seg-radio {
+  display: inline-flex;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.seg-radio__opt { cursor: pointer; margin: 0; }
+.seg-radio__opt + .seg-radio__opt { border-left: none; }
+.seg-radio__opt input { position: absolute; opacity: 0; pointer-events: none; }
+.seg-radio__label {
+  font-family: var(--dialup-font, 'Tahoma', system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 0;
+  padding: 3px 10px;
+  background: var(--dialup-chrome);
+  color: var(--dialup-ink);
+  border-top: 2px solid var(--dialup-bevel-hi);
+  border-left: 2px solid var(--dialup-bevel-hi);
+  border-right: 2px solid var(--dialup-bevel-ll);
+  border-bottom: 2px solid var(--dialup-bevel-ll);
+}
+.seg-radio__opt:hover .seg-radio__label { background: var(--dialup-chrome-l); }
+.seg-radio__opt input:checked + .seg-radio__label {
+  background: var(--dialup-white);
+  color: var(--dialup-ink);
+  border-top: 2px solid var(--dialup-bevel-ll);
+  border-left: 2px solid var(--dialup-bevel-ll);
+  border-right: 2px solid var(--dialup-bevel-hi);
+  border-bottom: 2px solid var(--dialup-bevel-hi);
+}
+.seg-radio__opt input:focus-visible + .seg-radio__label {
+  outline: 1px dotted var(--dialup-ink);
+  outline-offset: -4px;
+}
+.pair-mode-field {
+  border: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.pair-mode-field legend {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--dialup-ink);
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 0;
+  margin-bottom: 3px;
 }

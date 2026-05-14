@@ -84,9 +84,9 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Step 1: Directly prime both active calls via the tracker (bypassing the
 	// relay's busy-check, which would block A's second call since A is already
@@ -235,9 +235,9 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Prime both active 2-party calls: A-B (held) and A-C (active, adding).
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -254,10 +254,10 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	}
 
 	// Verify both calls are tracked before hangup.
-	if !tr.InCall(context.Background(), "5550001", "5550002") {
+	if !tr.InCall("5550001", "5550002") {
 		t.Fatal("expected A-B to be an active call before hangup")
 	}
-	if !tr.InCall(context.Background(), "5550001", "5550003") {
+	if !tr.InCall("5550001", "5550003") {
 		t.Fatal("expected A-C to be an active call before hangup")
 	}
 
@@ -269,10 +269,10 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	})
 
 	// Both calls must be gone from the in-memory tracker.
-	if tr.InCall(context.Background(), "5550001", "5550002") {
+	if tr.InCall("5550001", "5550002") {
 		t.Error("A-B call still active in tracker after hangup")
 	}
-	if tr.InCall(context.Background(), "5550001", "5550003") {
+	if tr.InCall("5550001", "5550003") {
 		t.Error("A-C call still active in tracker after hangup")
 	}
 
@@ -312,9 +312,9 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -323,7 +323,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	callID := tr.CallIDForPair("5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// Simulate B (non-host) disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect(context.Background(), "5550002")
+	r.OnDisconnect(context.Background(), "5550002", "")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
@@ -379,13 +379,13 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for all three after cleanup.
-	if tr.Busy(context.Background(), "5550001") {
+	if tr.Busy("5550001") {
 		t.Error("A should not be busy after non-host conference disconnect")
 	}
-	if tr.Busy(context.Background(), "5550002") {
+	if tr.Busy("5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy(context.Background(), "5550003") {
+	if tr.Busy("5550003") {
 		t.Error("C should not be busy after non-host conference disconnect")
 	}
 }
@@ -399,9 +399,9 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -410,7 +410,7 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	callID := tr.CallIDForPair("5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
@@ -457,9 +457,9 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	aConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	bConn := &signaling.Conn{Send: make(chan []byte, 50)}
 	cConn := &signaling.Conn{Send: make(chan []byte, 50)}
-	hub.Register("5550001", aConn)
-	hub.Register("5550002", bConn)
-	hub.Register("5550003", cConn)
+	_ = hub.Register("5550001", aConn)
+	_ = hub.Register("5550002", bConn)
+	_ = hub.Register("5550003", cConn)
 
 	// Set up an active conference: A hosts, B and C are members.
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002"); err != nil {
@@ -468,7 +468,7 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
+	callID := tr.CallIDForPair("5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// Simulate A disconnecting by calling OnDisconnect directly.
-	r.OnDisconnect(context.Background(), "5550001")
+	r.OnDisconnect(context.Background(), "5550001", "")
 
 	// Conference DB row must be ended with reason 'disconnect'.
 	var dbState, dbReason string
@@ -507,10 +507,10 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for B and C after cleanup.
-	if tr.Busy(context.Background(), "5550002") {
+	if tr.Busy("5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy(context.Background(), "5550003") {
+	if tr.Busy("5550003") {
 		t.Error("C should not be busy after conference disconnect")
 	}
 }

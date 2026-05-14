@@ -9,7 +9,11 @@
         {{range $i, $m := .Resp.Members}}{{if $i}} &harr; {{end}}{{$m.DisplayName}}{{end}}
       </h1>
       <div class="deck-meta">
-        <span class="deck-duration" data-duration-since="{{.Resp.CreatedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        {{if .Resp.Ended}}
+          <span class="deck-duration">{{fmtDurationClock .Resp.DurationS}}</span>
+        {{else}}
+          <span class="deck-duration" data-duration-since="{{.Resp.CreatedAt.UnixMilli}}">&middot;&middot;:&middot;&middot;</span>
+        {{end}}
       </div>
     </div>
     {{if .Resp.Ended}}

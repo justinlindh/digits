@@ -23,7 +23,9 @@ const (
 )
 
 // ServiceCodeHandler processes hidden service codes entered via the keypad.
-// Codes are detected from a rolling key buffer.
+// Codes are detected from a rolling key buffer. Callers assign the OnXxx
+// callbacks directly after construction; nil entries make the matching code
+// a no-op (the code is still consumed and the buffer cleared).
 //
 // Fixed codes:
 //
@@ -31,71 +33,35 @@ const (
 //	*##*     → reboot
 //	*#8378#  → *#TEST# — audio test (records clip, plays back)
 //	*#73887# → *#SETUP# — Wi-Fi re-provisioning (removes /data/wifi-configured, reboots)
+//	*#0*     → force re-pair
+//	*#00000# → factory reset
+//	*#873283# → *#UPDATE# — check for updates
 //
 // Volume codes: *#*N where N=0-9
 type ServiceCodeHandler struct {
-	buffer      string
-	onVolume    func(level int)
-	onAudioTest func()
-	onShutdown  func()
-	onReboot    func()
-	onSetup        func()
-	onRepair       func()
-	onFactoryReset func()
-	onUpdate       func()
+	OnVolume       func(level int)
+	OnAudioTest    func()
+	OnShutdown     func()
+	OnReboot       func()
+	OnSetup        func()
+	OnRepair       func()
+	OnFactoryReset func()
+	OnUpdate       func()
+
+	buffer string
 }
 
 // bufferMaxLen is the maximum number of keys kept in the rolling buffer.
 // Must be >= the longest service code (currently *#873283# = 9 chars).
 const bufferMaxLen = 9
 
-// NewServiceCodeHandler creates a new handler with no callbacks set.
-func NewServiceCodeHandler() *ServiceCodeHandler {
-	return &ServiceCodeHandler{}
-}
-
-// SetVolumeCallback sets the function called when a volume code (*#*N) is entered.
-func (h *ServiceCodeHandler) SetVolumeCallback(fn func(level int)) {
-	h.onVolume = fn
-}
-
-// SetAudioTestCallback sets the function called for *#8378# (*#TEST#).
-func (h *ServiceCodeHandler) SetAudioTestCallback(fn func()) {
-	h.onAudioTest = fn
-}
-
-// SetShutdownCallback sets the function called for *#*# (shutdown).
-func (h *ServiceCodeHandler) SetShutdownCallback(fn func()) {
-	h.onShutdown = fn
-}
-
-// SetRebootCallback sets the function called for *##* (reboot).
-func (h *ServiceCodeHandler) SetRebootCallback(fn func()) {
-	h.onReboot = fn
-}
-
 // WifiConfiguredFlag is the sentinel file that indicates Wi-Fi has been
 // provisioned. Its absence triggers AP mode on next boot.
 const WifiConfiguredFlag = "/data/wifi-configured"
 
-// SetSetupCallback sets the function called for *#73887# (*#SETUP#).
-func (h *ServiceCodeHandler) SetSetupCallback(fn func()) {
-	h.onSetup = fn
-}
-
-// SetRepairCallback sets the function called for *#0* (force re-pairing).
-func (h *ServiceCodeHandler) SetRepairCallback(fn func()) {
-	h.onRepair = fn
-}
-
-// SetFactoryResetCallback sets the function called for *#00000# (factory reset).
-func (h *ServiceCodeHandler) SetFactoryResetCallback(fn func()) {
-	h.onFactoryReset = fn
-}
-
-// SetUpdateCallback sets the function called for *#873283# (*#UPDATE#).
-func (h *ServiceCodeHandler) SetUpdateCallback(fn func()) {
-	h.onUpdate = fn
+// NewServiceCodeHandler creates a new handler with no callbacks set.
+func NewServiceCodeHandler() *ServiceCodeHandler {
+	return &ServiceCodeHandler{}
 }
 
 // AddKey processes a keypress. Returns the kind of code that was triggered
@@ -123,102 +89,75 @@ func (h *ServiceCodeHandler) InCode() bool {
 	return len(h.buffer) >= 2 && h.buffer[0] == '*' && h.buffer[1] == '#'
 }
 
+// fixedCode describes one of the static service codes recognized by check().
+// Variable-pattern codes (volume *#*N) are handled separately.
+type fixedCode struct {
+	code string
+	// logMsg is emitted at slog.Info whenever the buffer matches this code,
+	// regardless of whether the callback is registered.
+	logMsg string
+	// missingMsg, when non-empty, is emitted at slog.Info if the callback
+	// is nil at match time. Lets ops see the keypress took effect even
+	// when the daemon hasn't wired the action yet.
+	missingMsg string
+	// cbFor returns the handler field to invoke (nil = unregistered).
+	cbFor  func(*ServiceCodeHandler) func()
+	result ServiceCodeResult
+}
+
+// fixedCodes is the dispatch table for static service codes. Order matters:
+// entries are walked top to bottom and each is suffix-matched against the
+// rolling buffer, so longer codes must come first to avoid being eaten by
+// shorter codes that share their final characters.
+var fixedCodes = []fixedCode{
+	{"*#873283#", "service code: *#873283# (*#UPDATE#) -> check for updates", "",
+		func(h *ServiceCodeHandler) func() { return h.OnUpdate }, ServiceCodeTerminal},
+	{"*#00000#", "service code: *#00000# -> factory reset", "",
+		func(h *ServiceCodeHandler) func() { return h.OnFactoryReset }, ServiceCodeTerminal},
+	{"*#73887#", "service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning",
+		"service code: *#73887# triggered but no setup callback registered -- ignoring",
+		func(h *ServiceCodeHandler) func() { return h.OnSetup }, ServiceCodeTerminal},
+	{"*#8378#", "service code: *#8378# (*#TEST#) -> audio test", "",
+		func(h *ServiceCodeHandler) func() { return h.OnAudioTest }, ServiceCodeNonTerminal},
+	{"*#0*", "service code: *#0* -> force re-pair", "",
+		func(h *ServiceCodeHandler) func() { return h.OnRepair }, ServiceCodeTerminal},
+	{"*#*#", "service code: *#*# -> shutdown", "",
+		func(h *ServiceCodeHandler) func() { return h.OnShutdown }, ServiceCodeTerminal},
+	{"*##*", "service code: *##* -> reboot", "",
+		func(h *ServiceCodeHandler) func() { return h.OnReboot }, ServiceCodeTerminal},
+}
+
 func (h *ServiceCodeHandler) check() ServiceCodeResult {
-	// --- 9-character codes ---
-	if len(h.buffer) >= 9 {
-		last9 := h.buffer[len(h.buffer)-9:]
-		if last9 == "*#873283#" {
-			slog.Info("service code: *#873283# (*#UPDATE#) -> check for updates")
-			if h.onUpdate != nil {
-				go h.onUpdate()
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
+	for _, c := range fixedCodes {
+		if !strings.HasSuffix(h.buffer, c.code) {
+			continue
 		}
-	}
-
-	// --- 8-character codes (checked before 4-char to avoid false positives) ---
-
-	if len(h.buffer) >= 8 {
-		last8 := h.buffer[len(h.buffer)-8:]
-		switch last8 {
-		case "*#00000#":
-			slog.Info("service code: *#00000# -> factory reset")
-			if h.onFactoryReset != nil {
-				go h.onFactoryReset()
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
-		}
-		if last8 == "*#73887#" {
-			slog.Info("service code: *#73887# (*#SETUP#) -> Wi-Fi re-provisioning")
-			if h.onSetup != nil {
-				go h.onSetup()
-			} else {
-				slog.Info("service code: *#73887# triggered but no setup callback registered -- ignoring")
-			}
-			h.buffer = ""
-			return ServiceCodeTerminal
-		}
-	}
-
-
-	// --- 7-character codes ---
-
-	if len(h.buffer) >= 7 {
-		last7 := h.buffer[len(h.buffer)-7:]
-		if last7 == "*#8378#" {
-			slog.Info("service code: *#8378# (*#TEST#) -> audio test")
-			if h.onAudioTest != nil {
-				go h.onAudioTest()
-			}
-			h.buffer = ""
-			return ServiceCodeNonTerminal
-		}
-	}
-
-	// --- 4-character codes ---
-
-	if len(h.buffer) < 4 {
-		return ServiceCodeNone
-	}
-	last4 := h.buffer[len(h.buffer)-4:]
-
-	switch last4 {
-	case "*#0*":
-		slog.Info("service code: *#0* -> force re-pair")
-		if h.onRepair != nil {
-			go h.onRepair()
+		slog.Info(c.logMsg)
+		cb := c.cbFor(h)
+		if cb != nil {
+			go cb()
+		} else if c.missingMsg != "" {
+			slog.Info(c.missingMsg)
 		}
 		h.buffer = ""
-		return ServiceCodeTerminal
-	case "*#*#":
-		slog.Info("service code: *#*# -> shutdown")
-		if h.onShutdown != nil {
-			go h.onShutdown()
-		}
-		h.buffer = ""
-		return ServiceCodeTerminal
-	case "*##*":
-		slog.Info("service code: *##* -> reboot")
-		if h.onReboot != nil {
-			go h.onReboot()
-		}
-		h.buffer = ""
-		return ServiceCodeTerminal
+		return c.result
 	}
 
-	// Volume codes: *#*N where N is 0-9
-	if strings.HasPrefix(last4, "*#*") {
-		ch := last4[3]
-		if ch >= '0' && ch <= '9' {
-			level := int(ch - '0')
-			if h.onVolume != nil {
-				slog.Info("service code: volume", "level", level)
-				h.onVolume(level)
+	// Volume codes: *#*N where N is 0-9. Pattern-matched, not table-driven,
+	// because the trailing digit is the parameter rather than a literal.
+	if len(h.buffer) >= 4 {
+		last4 := h.buffer[len(h.buffer)-4:]
+		if strings.HasPrefix(last4, "*#*") {
+			ch := last4[3]
+			if ch >= '0' && ch <= '9' {
+				level := int(ch - '0')
+				if h.OnVolume != nil {
+					slog.Info("service code: volume", "level", level)
+					h.OnVolume(level)
+				}
+				h.buffer = ""
+				return ServiceCodeNonTerminal
 			}
-			h.buffer = ""
-			return ServiceCodeNonTerminal
 		}
 	}
 
@@ -241,18 +180,29 @@ func volumeToALSA(level int) int {
 	return min + (level * (max - min) / 9)
 }
 
+// applyVolumeLevel maps level (0-9) to the codec's ALSA range and pushes it
+// to the mixer via amixer. Returns the alsa value applied so the caller can
+// log it. amixer stderr is wrapped into the returned error.
+func applyVolumeLevel(level int) (alsaVal int, mixer string, err error) {
+	alsaVal = volumeToALSA(level)
+	card := audio.CodecCardName()
+	mixer = audio.CodecMixerName()
+	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
+	if out, runErr := cmd.CombinedOutput(); runErr != nil {
+		return alsaVal, mixer, fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), runErr)
+	}
+	return alsaVal, mixer, nil
+}
+
 // SetVolume sets volume on the detected codec. Level 0-9.
 // Persists the user-facing level to /data/digits/volume; the rest of the
 // mixer state (gain stages, routing) is the canonical embedded copy that
 // digitsd renders to /data/digits_mixer.state at startup, so we no longer
 // snapshot live mixer state on every volume change.
 func SetVolume(level int) error {
-	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName()
-	mixer := audio.CodecMixerName()
-	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("amixer: %s: %w", strings.TrimSpace(string(out)), err)
+	alsaVal, mixer, err := applyVolumeLevel(level)
+	if err != nil {
+		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(volumeFile), 0755); err != nil {
 		slog.Warn("volume: mkdir failed", "error", err)
@@ -271,19 +221,15 @@ func SetVolume(level int) error {
 // a noticeably quieter handset output than on V1's DA7212 Lineout.
 func RestoreVolume() {
 	level := audio.CodecDefaultVolumeLevel()
-	data, err := os.ReadFile(volumeFile)
-	if err == nil {
+	if data, err := os.ReadFile(volumeFile); err == nil {
 		var v int
 		if _, err := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &v); err == nil && v >= 0 && v <= 9 {
 			level = v
 		}
 	}
-	alsaVal := volumeToALSA(level)
-	card := audio.CodecCardName()
-	mixer := audio.CodecMixerName()
-	cmd := exec.Command("amixer", "-c", card, "sset", mixer, fmt.Sprintf("%d", alsaVal))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		slog.Warn("volume restore: amixer failed", "output", strings.TrimSpace(string(out)), "error", err)
+	alsaVal, mixer, err := applyVolumeLevel(level)
+	if err != nil {
+		slog.Warn("volume restore: amixer failed", "error", err)
 		return
 	}
 	slog.Info("volume restored", "level", level, "max", 9, "mixer", mixer, "alsa", alsaVal)

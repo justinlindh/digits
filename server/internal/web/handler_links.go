@@ -3,6 +3,7 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -46,14 +47,14 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	myHousehold := h.primaryHousehold(r)
+	myHousehold := h.activeHousehold(r)
 	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
 
 	data := linksData{
-		chromeData:  newChromeData("links", user, myHousehold),
+		chromeData:  h.newChromeDataWithHouseholds(r, "links"),
 		CreatedCode: r.URL.Query().Get("created"),
 		Accepted:    r.URL.Query().Get("accepted") == "1",
 		Revoked:     r.URL.Query().Get("revoked") == "1",
@@ -67,7 +68,7 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 	// Pending invites sent by this household
 	pending, err := h.linkStore.GetPendingForHousehold(r.Context(), myHousehold.ID)
 	if err != nil {
-		slog.Error("get pending links failed", "err", err)
+		slog.ErrorContext(r.Context(), "get pending links failed", "err", err)
 	}
 	for _, l := range pending {
 		data.PendingInvites = append(data.PendingInvites, linkRow{
@@ -78,26 +79,19 @@ func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	renderWith(w, h.tmplLinks, layoutFor(r), data)
+	renderWith(r.Context(), w, h.tmplLinks, layoutFor(r), data)
 }
 
 func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+	user, myHousehold, ok := h.requireHouseholdAdmin(w, r)
+	if !ok {
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
-		return
-	}
-	myHousehold := households[0]
 
 	link, err := h.linkStore.CreateInvite(r.Context(), myHousehold.ID, user.ID)
 	if err != nil {
-		slog.Error("create invite failed", "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		slog.ErrorContext(r.Context(), "create invite failed", "err", err)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -110,12 +104,11 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	households, err := h.householdStore.GetForUser(r.Context(), user.ID)
-	if err != nil || len(households) == 0 {
+	myHousehold := h.activeHousehold(r)
+	if myHousehold == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
 		return
 	}
-	myHousehold := households[0]
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -129,8 +122,8 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 
 	link, err := h.linkStore.AcceptInvite(r.Context(), code, user.ID, myHousehold.ID)
 	if err != nil {
-		slog.Error("accept invite failed", "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		slog.ErrorContext(r.Context(), "accept invite failed", "err", err)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -139,13 +132,16 @@ func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) 
 	if link.HouseholdBID != nil {
 		bID = *link.HouseholdBID
 	}
-	conflicts, _ := h.linkStore.FindNumberConflicts(r.Context(), link.HouseholdAID, bID)
+	conflicts, err := h.linkStore.FindNumberConflicts(r.Context(), link.HouseholdAID, bID)
+	if err != nil {
+		slog.WarnContext(r.Context(), "find number conflicts failed", "err", err)
+	}
 	if len(conflicts) > 0 {
 		var names []string
 		for _, c := range conflicts {
 			names = append(names, c.Number)
 		}
-		slog.Warn("number conflicts on link accept", "conflicts", names)
+		slog.WarnContext(r.Context(), "number conflicts on link accept", "conflicts", names)
 		http.Redirect(w, r, "/links?accepted=1&conflicts="+strings.Join(names, ","), http.StatusSeeOther)
 		return
 	}
@@ -178,23 +174,26 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	owned := false
+	isAdmin := false
 	for _, hh := range households {
 		if hh.ID == link.HouseholdAID || (link.HouseholdBID != nil && hh.ID == *link.HouseholdBID) {
-			owned = true
-			break
+			role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
+			if err == nil && role == "admin" {
+				isAdmin = true
+				break
+			}
 		}
 	}
-	if !owned {
-		http.NotFound(w, r)
+	if !isAdmin {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
 	wasPending := link.Status == "pending"
 
 	if err := h.linkStore.RevokeLink(r.Context(), id, user.ID); err != nil {
-		slog.Error("revoke link failed", "link_id", id, "err", err)
-		http.Redirect(w, r, "/links?error="+err.Error(), http.StatusSeeOther)
+		slog.ErrorContext(r.Context(), "revoke link failed", "link_id", id, "err", err)
+		http.Redirect(w, r, "/links?error="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
 
@@ -204,4 +203,3 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
-

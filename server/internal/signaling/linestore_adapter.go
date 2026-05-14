@@ -19,13 +19,21 @@ func NewLineStoreAdapter(s *line.Store) LineStore {
 }
 
 func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error) {
-	settings, householdDND, err := a.inner.EffectiveSettingsByNumber(ctx, number)
+	settings, err := a.inner.EffectiveSettingsByNumber(ctx, number)
 	if err != nil {
 		return nil, err
 	}
-	silent := line.EffectiveSilent(settings, householdDND)
 	return &LineSettings{
 		VoiceStyle: settings.VoiceStyle,
-		SilentMode: silent,
+		SilentMode: settings.SilentMode,
+		AutoUpdate: settings.AutoUpdate,
 	}, nil
+}
+
+func (a *lineStoreAdapter) LineIdentifiers(ctx context.Context, number string) (int64, string, error) {
+	l, err := a.inner.GetByNumber(ctx, number)
+	if err != nil {
+		return 0, "", err
+	}
+	return l.ID, l.HouseholdID, nil
 }

@@ -24,9 +24,25 @@ const (
 	TypeICERestart    = "ice_restart"    // Bidirectional: ICE restart offer with new credentials
 	TypeFactoryReset  = "factory_reset"  // Server → Phone: trigger factory reset
 	TypeRestart       = "restart"        // Server → Phone: restart service or reboot
+	TypeRingTest      = "ring_test"      // Server → Phone: brief ring for hardware verification
 	TypeLineSettings  = "line_settings"  // Server → Phone: per-line config update
 	TypeLinkHealth    = "link_health"    // Phone → Server: per-call stats snapshot
 	TypeRepair        = "repair"         // Phone → Server: invalidate pairing (used by *#0* before reboot)
+	TypeCallReturn          = "call_return"           // Phone → Server: request last inbound caller
+	TypeCallReturnResult    = "call_return_result"    // Server → Phone: last inbound caller number
+	TypeCallReturnRetry     = "call_return_retry"     // Phone → Server: register busy-retry for *69
+	TypeCallReturnRing      = "call_return_ring"      // Server → Phone: target is free, ring with distinctive pattern
+	TypeCallReturnCancel    = "call_return_cancel"    // Phone → Server: cancel pending retry (*89)
+	TypeCallReturnCancelled = "call_return_cancelled" // Server → Phone: confirm cancellation
+
+	TypeReleaseAvailable = "release_available" // Server → All: new release detected
+)
+
+// Extension pickup types (POTS extension model: pick up a second handset mid-call)
+const (
+	TypeExtensionPickup  = "extension_pickup"  // Phone → Server: device is picking up during active call on its line
+	TypeExtensionConnect = "extension_connect" // Server → Phone: establish peer connection for the extension
+	TypeExtensionActive  = "extension_active"  // Server → Phone: notify original device that an extension joined
 )
 
 // Conference message types (three-way calling)
@@ -57,6 +73,7 @@ const (
 type LineSettings struct {
 	VoiceStyle string `json:"voice_style,omitempty"`
 	SilentMode bool   `json:"silent_mode,omitempty"`
+	AutoUpdate bool   `json:"auto_update,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.
@@ -127,9 +144,19 @@ type Message struct {
 	FirmwareVersion string `json:"firmware_version,omitempty"`
 	FirmwareCommit  string `json:"firmware_commit,omitempty"`
 
+	// LocalAddr is the device's primary LAN address as it sees itself,
+	// reported in device_info. The server filters non-private values
+	// before storing so a compromised client cannot push a public IP into
+	// the operator UI.
+	LocalAddr string `json:"local_addr,omitempty"`
+
 	// Update trigger fields (update_trigger messages)
 	TargetPiVersion string `json:"target_pi_version,omitempty"`
 	TargetFWVersion string `json:"target_fw_version,omitempty"`
+
+	// Release notification fields (release_available messages)
+	LatestPiVersion string `json:"latest_pi_version,omitempty"`
+	LatestFWVersion string `json:"latest_fw_version,omitempty"`
 
 	// Update status fields (update_status messages)
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
@@ -140,6 +167,16 @@ type Message struct {
 
 	// Per-line settings updates (line_settings messages)
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
+
+	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	DevMode bool `json:"dev_mode,omitempty"`
+
+	// Extension pickup fields (POTS extension model).
+	// Extension is true when this SDP/ICE message belongs to an extension
+	// pickup connection rather than the primary call. The relay routes
+	// extension SDP/ICE to specific hardware IDs rather than broadcasting
+	// to all devices on the line.
+	Extension bool `json:"extension,omitempty"`
 
 	// Conference fields (party-line / three-way calling).
 	ConfID     string                 `json:"conf_id,omitempty"`

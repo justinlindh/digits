@@ -9,7 +9,7 @@
 #   2. initramfs mounts normal rootfs (p2) at $rootmnt
 #   3. THIS SCRIPT (local-bottom) unmounts p2, mounts p3 at $rootmnt instead
 #   4. initramfs does move_virtual_filesystems + switch_root into p3
-#   5. digits-recovery binary runs as PID 1 from the recovery partition
+#   5. digitsd runs as PID 1 from the recovery partition (--mode=recovery)
 #
 # Installed to /etc/initramfs-tools/scripts/local-bottom/recovery-root
 
