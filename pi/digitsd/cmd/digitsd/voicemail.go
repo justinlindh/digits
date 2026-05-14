@@ -740,14 +740,10 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
-		// PlayOnce queues tone_busy on the once-channel; PlayLoop on tone_dial
-		// drives the loop-channel. Both mix together so the user hears the
-		// brief busy ack with dial tone underneath, then just dial tone once
-		// the one-shot drains.
+		// Brief busy ack, then dial tone. The helper drains the one-shot
+		// queue before re-arming the loop so the two never overlap.
 		d.mixer.PlayOnce("tone_busy")
-		d.ctrl.ResetToDialtone()
-		d.SendTone(phone.ToneDial)
-		d.evaluateLED()
+		d.voicemailExitToDialtoneAsync()
 		return
 	}
 
@@ -963,11 +959,10 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after EOF", "last_id", sess.id)
-		// Brief busy ack + dial tone, mixed on separate channels.
+		// Brief busy ack, then dial tone. The helper drains the one-shot
+		// queue before re-arming the loop so the two never overlap.
 		d.mixer.PlayOnce("tone_busy")
-		d.ctrl.ResetToDialtone()
-		d.SendTone(phone.ToneDial)
-		d.evaluateLED()
+		d.voicemailExitToDialtoneAsync()
 		return
 	}
 
@@ -976,14 +971,24 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 }
 
 // voicemailExitToDialtoneAsync resets the FSM to DIALTONE and re-arms the
-// dial tone. Spawned by callers that hold c.mu (VoicemailEnterPlayback) and
-// cannot take it again to call ResetToDialtone directly. The dial tone is
-// required because ResetToDialtone only updates FSM state; the caller owns
-// the audio. Without it, the user lands in DIALTONE hearing silence.
+// dial tone after any queued one-shot tone (e.g. a tone_busy ack) has
+// finished playing. The drain is required because PlayOnce mixes one-shot
+// audio over any active loop, so starting the dial-tone loop while a busy
+// beep is still in the queue would play them simultaneously.
+//
+// Spawned with `go` by callers that hold c.mu (VoicemailEnterPlayback) so
+// the inner ResetToDialtone does not recurse on the controller mutex.
+// Callers already running in a controller-spawned goroutine (VoicemailKey,
+// the playback EOF path) invoke it synchronously: the drain blocks for at
+// most the longest queued one-shot, currently ~1s for tone_busy.
 func (d *daemonCallbacks) voicemailExitToDialtoneAsync() {
 	defer recoverGoroutine("voicemail-exit-to-dialtone")
+	for d.mixer.OncePlaying() {
+		time.Sleep(50 * time.Millisecond)
+	}
 	d.ctrl.ResetToDialtone()
 	d.SendTone(phone.ToneDial)
+	d.evaluateLED()
 }
 
 // evaluateLED re-emits the LED state appropriate for an idle phone with
