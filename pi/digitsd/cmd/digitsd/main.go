@@ -349,6 +349,23 @@ func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
 	return d.cfg.Save()
 }
 
+// setVoicemailConfig replaces the local voicemail config under d.mu and
+// persists it to disk outside the lock. Server pushes are treated as a full
+// replacement of the Voicemail sub-blob; per-field diffing for log granularity
+// happens at the call site before this helper runs.
+//
+// Live consumption: Enabled, RingTimeout and RetrievalCode are read per ring
+// or per dial, so they take effect on the next inbound call without any
+// further wiring. MaxStoredMessages and MaxMessageDuration are baked into the
+// voicemail.Store opened at boot, so changes to those values take effect on
+// the next daemon restart.
+func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
+	d.mu.Lock()
+	d.cfg.Voicemail = vm
+	d.mu.Unlock()
+	return d.cfg.Save()
+}
+
 // --- phone.SocketHandler implementation ---
 
 func (d *daemonCallbacks) HandleSocketCommand(cmd string) string {
@@ -2331,6 +2348,40 @@ func main() {
 					}
 					if au && cb.triggerAutoUpdate != nil {
 						go cb.triggerAutoUpdate()
+					}
+				}
+
+				if vm := msg.LineSettings.Voicemail; vm != nil {
+					target := config.Voicemail{
+						Enabled:            vm.Enabled,
+						RingTimeout:        time.Duration(vm.RingTimeoutSeconds) * time.Second,
+						MaxMessageDuration: time.Duration(vm.MaxMessageSeconds) * time.Second,
+						MaxStoredMessages:  vm.MaxStoredMessages,
+						RetrievalCode:      vm.RetrievalCode,
+					}
+					cb.mu.Lock()
+					current := cb.cfg.Voicemail
+					cb.mu.Unlock()
+
+					if target != current {
+						if target.Enabled != current.Enabled {
+							slog.Info("line_settings applied", "voicemail_enabled", target.Enabled)
+						}
+						if target.RingTimeout != current.RingTimeout {
+							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
+						}
+						if target.MaxMessageDuration != current.MaxMessageDuration {
+							slog.Info("line_settings applied", "voicemail_max_message_duration", target.MaxMessageDuration)
+						}
+						if target.MaxStoredMessages != current.MaxStoredMessages {
+							slog.Info("line_settings applied", "voicemail_max_stored_messages", target.MaxStoredMessages)
+						}
+						if target.RetrievalCode != current.RetrievalCode {
+							slog.Info("line_settings applied", "voicemail_retrieval_code", target.RetrievalCode)
+						}
+						if err := cb.setVoicemailConfig(target); err != nil {
+							slog.Warn("line_settings: voicemail save failed", "err", err)
+						}
 					}
 				}
 

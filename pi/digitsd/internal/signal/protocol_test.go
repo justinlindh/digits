@@ -304,6 +304,88 @@ func TestLinkHealthPeerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLineSettingsVoicemailRoundTrip(t *testing.T) {
+	in := &Message{
+		Type: TypeLineSettings,
+		LineSettings: &LineSettings{
+			VoiceStyle: "copper",
+			SilentMode: true,
+			AutoUpdate: false,
+			Voicemail: &Voicemail{
+				Enabled:            true,
+				RingTimeoutSeconds: 25,
+				MaxMessageSeconds:  120,
+				MaxStoredMessages:  40,
+				RetrievalCode:      "*98",
+			},
+		},
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	// Spot-check JSON keys match the locked wire contract exactly.
+	s := string(data)
+	for _, want := range []string{
+		`"voicemail":`,
+		`"enabled":true`,
+		`"ring_timeout_seconds":25`,
+		`"max_message_seconds":120`,
+		`"max_stored_messages":40`,
+		`"retrieval_code":"*98"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("expected %q in JSON, got: %s", want, s)
+		}
+	}
+	got, err := ParseMessage(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got.LineSettings == nil || got.LineSettings.Voicemail == nil {
+		t.Fatalf("expected non-nil LineSettings.Voicemail, got %+v", got.LineSettings)
+	}
+	gotVM := got.LineSettings.Voicemail
+	wantVM := in.LineSettings.Voicemail
+	if *gotVM != *wantVM {
+		t.Errorf("voicemail round-trip mismatch: got %+v want %+v", *gotVM, *wantVM)
+	}
+}
+
+func TestLineSettingsVoicemailOmittedWhenNil(t *testing.T) {
+	in := &Message{
+		Type: TypeLineSettings,
+		LineSettings: &LineSettings{
+			VoiceStyle: "modern",
+		},
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(data, []byte(`"voicemail"`)) {
+		t.Errorf("expected voicemail key to be omitted when nil, got: %s", data)
+	}
+}
+
+func TestLineSettingsVoicemailZeroValuesParse(t *testing.T) {
+	// Server may push enabled=false with zero ints; receiver must accept it
+	// as an authoritative full-replacement payload, not silently drop fields.
+	raw := []byte(`{"type":"line_settings","line_settings":{"voicemail":{"enabled":false,"ring_timeout_seconds":0,"max_message_seconds":0,"max_stored_messages":0,"retrieval_code":""}}}`)
+	msg, err := ParseMessage(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if msg.LineSettings == nil || msg.LineSettings.Voicemail == nil {
+		t.Fatalf("expected non-nil voicemail block, got %+v", msg.LineSettings)
+	}
+	vm := msg.LineSettings.Voicemail
+	if vm.Enabled || vm.RingTimeoutSeconds != 0 || vm.MaxMessageSeconds != 0 ||
+		vm.MaxStoredMessages != 0 || vm.RetrievalCode != "" {
+		t.Errorf("zero-value parse mismatch: %+v", *vm)
+	}
+}
+
 func TestLinkHealthPeerOmitEmpty(t *testing.T) {
 	m := &Message{Type: TypeLinkHealth, LinkHealth: &LinkHealthPayload{TS: 1, ConnType: "host"}}
 	b, err := json.Marshal(m)
