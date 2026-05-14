@@ -2602,3 +2602,236 @@ func TestChangePhoneNumberDuplicate(t *testing.T) {
 		t.Error("original line should still exist")
 	}
 }
+
+// validVoicemailForm returns a form payload that satisfies all server-side
+// validation. Tests vary one field at a time on top of this baseline.
+func validVoicemailForm() url.Values {
+	return url.Values{
+		"enabled":              {"on"},
+		"ring_timeout_seconds": {"25"},
+		"max_message_seconds":  {"60"},
+		"max_stored_messages":  {"30"},
+		"retrieval_code":       {"*97"},
+	}
+}
+
+func postVoicemail(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voicemail", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func readVoicemailJSON(t *testing.T, database *db.Database) string {
+	t.Helper()
+	var raw string
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE(settings->'voicemail', '{}'::jsonb)::text FROM lines WHERE number = '3140001'`,
+	).Scan(&raw); err != nil {
+		t.Fatalf("read voicemail: %v", err)
+	}
+	return raw
+}
+
+func TestPhoneVoicemailValidFormPersistsAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/phones/3140001" {
+		t.Fatalf("expected redirect to /phones/3140001, got %q", loc)
+	}
+	got := readVoicemailJSON(t, database)
+	for _, want := range []string{
+		`"enabled": true`,
+		`"ring_timeout_seconds": 25`,
+		`"max_message_seconds": 60`,
+		`"max_stored_messages": 30`,
+		`"retrieval_code": "*97"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("voicemail JSONB missing %q in %s", want, got)
+		}
+	}
+}
+
+func TestPhoneVoicemailRingTimeoutOutOfRangeRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	cases := []string{"0", "1", "4", "61", "999", "abc", ""}
+	for _, val := range cases {
+		t.Run(val, func(t *testing.T) {
+			form := validVoicemailForm()
+			form.Set("ring_timeout_seconds", val)
+			w := postVoicemail(t, h, cookie, form)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("ring_timeout_seconds=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), "ring_timeout_seconds") {
+				t.Errorf("400 body should name the field, got %q", w.Body.String())
+			}
+		})
+	}
+}
+
+func TestPhoneVoicemailMaxMessageOutOfRangeRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	cases := []string{"0", "14", "181", "10000", "x"}
+	for _, val := range cases {
+		t.Run(val, func(t *testing.T) {
+			form := validVoicemailForm()
+			form.Set("max_message_seconds", val)
+			w := postVoicemail(t, h, cookie, form)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("max_message_seconds=%q: expected 400, got %d", val, w.Code)
+			}
+		})
+	}
+}
+
+func TestPhoneVoicemailMaxStoredOutOfRangeRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	cases := []string{"0", "4", "201", "9999", ""}
+	for _, val := range cases {
+		t.Run(val, func(t *testing.T) {
+			form := validVoicemailForm()
+			form.Set("max_stored_messages", val)
+			w := postVoicemail(t, h, cookie, form)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("max_stored_messages=%q: expected 400, got %d", val, w.Code)
+			}
+		})
+	}
+}
+
+func TestPhoneVoicemailBadRetrievalCodeRejected(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	cases := []string{
+		"",        // empty
+		"1",       // too short
+		"1234567", // too long
+		"abc",     // bad chars
+		"123",     // no * or #, ambiguous with 7-digit dialing
+		"12345",   // no * or #
+		"* 98",    // space
+	}
+	for _, val := range cases {
+		t.Run(val, func(t *testing.T) {
+			form := validVoicemailForm()
+			form.Set("retrieval_code", val)
+			w := postVoicemail(t, h, cookie, form)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("retrieval_code=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), "retrieval_code") {
+				t.Errorf("400 body should name the field, got %q", w.Body.String())
+			}
+		})
+	}
+}
+
+func TestPhoneVoicemailMissingLineReturns404(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	hh, err := h.householdStore.Create(context.Background(), "Voicemail Missing", user.ID)
+	if err != nil {
+		t.Fatalf("create household: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM household_members WHERE household_id = $1", hh.ID)
+		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
+	})
+
+	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneVoicemailPushesToConnectedDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	_ = h.hub.Register("3140001", conn)
+
+	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse pushed message: %v", err)
+		}
+		if msg.Type != signaling.TypeLineSettings {
+			t.Fatalf("expected %s push, got %s", signaling.TypeLineSettings, msg.Type)
+		}
+		if msg.LineSettings == nil || msg.LineSettings.Voicemail == nil {
+			t.Fatalf("expected non-nil Voicemail in push, got %+v", msg.LineSettings)
+		}
+		got := *msg.LineSettings.Voicemail
+		want := signaling.Voicemail{
+			Enabled:            true,
+			RingTimeoutSeconds: 25,
+			MaxMessageSeconds:  60,
+			MaxStoredMessages:  30,
+			RetrievalCode:      "*97",
+		}
+		if got != want {
+			t.Errorf("Voicemail push: got %+v, want %+v", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive line_settings push")
+	}
+}
+
+func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	// First save populates the row with the validVoicemailForm values.
+	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+		t.Fatalf("setup save: %d %s", w.Code, w.Body.String())
+	}
+
+	// Now connect a device and re-submit the identical form. No change
+	// should produce no push.
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	_ = h.hub.Register("3140001", conn)
+
+	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+		t.Fatalf("second save: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case data := <-conn.Send:
+		t.Fatalf("expected no push on no-op save, got: %s", string(data))
+	case <-time.After(100 * time.Millisecond):
+		// Expected: no push.
+	}
+}

@@ -27,6 +27,13 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 		VoiceStyle: settings.VoiceStyle,
 		SilentMode: settings.SilentMode,
 		AutoUpdate: settings.AutoUpdate,
+		Voicemail: &Voicemail{
+			Enabled:            settings.Voicemail.Enabled,
+			RingTimeoutSeconds: settings.Voicemail.RingTimeoutSeconds,
+			MaxMessageSeconds:  settings.Voicemail.MaxMessageSeconds,
+			MaxStoredMessages:  settings.Voicemail.MaxStoredMessages,
+			RetrievalCode:      settings.Voicemail.RetrievalCode,
+		},
 	}, nil
 }
 

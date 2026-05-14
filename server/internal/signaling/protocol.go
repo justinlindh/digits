@@ -71,9 +71,27 @@ const (
 // as VoiceStyleCopper and VoiceStyleModern. Any new voice style must be
 // added there, in pi/digitsd/internal/config, and in pi/digitsd/internal/signal.
 type LineSettings struct {
-	VoiceStyle string `json:"voice_style,omitempty"`
-	SilentMode bool   `json:"silent_mode,omitempty"`
-	AutoUpdate bool   `json:"auto_update,omitempty"`
+	VoiceStyle string     `json:"voice_style,omitempty"`
+	SilentMode bool       `json:"silent_mode,omitempty"`
+	AutoUpdate bool       `json:"auto_update,omitempty"`
+	Voicemail  *Voicemail `json:"voicemail,omitempty"`
+}
+
+// Voicemail is the wire-format copy of server/internal/line.Voicemail.
+// Pointer-typed on LineSettings so old daemons that don't yet decode the
+// "voicemail" key see no surprise field, and newer daemons can distinguish
+// "settings push from a pre-voicemail server" (nil pointer) from "voicemail
+// explicitly disabled" (non-nil with Enabled=false).
+//
+// Field names mirror the daemon config keys exactly. The daemon's local
+// config holds RingTimeout/MaxMessageDuration as time.Duration; the wire
+// uses integer seconds and the daemon converts on receipt.
+type Voicemail struct {
+	Enabled            bool   `json:"enabled,omitempty"`
+	RingTimeoutSeconds int    `json:"ring_timeout_seconds,omitempty"`
+	MaxMessageSeconds  int    `json:"max_message_seconds,omitempty"`
+	MaxStoredMessages  int    `json:"max_stored_messages,omitempty"`
+	RetrievalCode      string `json:"retrieval_code,omitempty"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.

@@ -616,6 +616,90 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// handlePhoneVoicemailPost accepts a form submission with the full voicemail
+// configuration for the line. All five fields are validated server-side
+// before any DB write: out-of-range ints and malformed retrieval codes
+// return 400 with a friendly message so the form can surface it. On success
+// the new settings are persisted and pushed to the device (if connected),
+// then the user is redirected back to the phone detail page. No htmx
+// partial is rendered today; the UI section partials will be added when
+// the matching settings panel ships.
+func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+
+	enabled := strings.TrimSpace(r.FormValue("enabled")) == "on"
+	ring, ok := parseClampedInt(w, r, "ring_timeout_seconds",
+		line.VoicemailRingTimeoutMin, line.VoicemailRingTimeoutMax)
+	if !ok {
+		return
+	}
+	maxMsg, ok := parseClampedInt(w, r, "max_message_seconds",
+		line.VoicemailMaxMessageMin, line.VoicemailMaxMessageMax)
+	if !ok {
+		return
+	}
+	maxStored, ok := parseClampedInt(w, r, "max_stored_messages",
+		line.VoicemailMaxStoredMin, line.VoicemailMaxStoredMax)
+	if !ok {
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("retrieval_code"))
+	if !line.IsValidRetrievalCode(code) {
+		http.Error(w,
+			"retrieval_code must be 2 to 6 characters of digits, *, or # and must contain at least one * or #",
+			http.StatusBadRequest)
+		return
+	}
+
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+
+	next := ln.Settings
+	next.Voicemail = line.Voicemail{
+		Enabled:            enabled,
+		RingTimeoutSeconds: ring,
+		MaxMessageSeconds:  maxMsg,
+		MaxStoredMessages:  maxStored,
+		RetrievalCode:      code,
+	}
+	next = next.Normalize()
+	if next != ln.Settings {
+		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
+			slog.ErrorContext(r.Context(), "update voicemail settings failed", "err", err, "line_id", ln.ID)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if err := h.pushLineSettings(number, next); err != nil {
+			slog.WarnContext(r.Context(), "push voicemail settings failed", "number", number, "err", err)
+		}
+	}
+
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+// parseClampedInt reads form field `name`, parses it as an integer, and
+// requires it to fall in [min, max]. On any failure it writes a 400 with a
+// friendly message naming the field and the allowed range, then returns
+// (0, false). Helper for handlePhoneVoicemailPost so the three numeric
+// validations don't repeat the same boilerplate.
+func parseClampedInt(w http.ResponseWriter, r *http.Request, name string, min, max int) (int, bool) {
+	raw := strings.TrimSpace(r.FormValue(name))
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < min || v > max {
+		http.Error(w,
+			name+" must be an integer between "+strconv.Itoa(min)+" and "+strconv.Itoa(max),
+			http.StatusBadRequest)
+		return 0, false
+	}
+	return v, true
+}
+
 // updateLineSetting applies a mutation to the Settings of the line identified
 // by the {number} path value, persists and pushes it if anything changed, and
 // then renders the theme-appropriate partial (or redirects to the phone detail
@@ -662,6 +746,13 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 			VoiceStyle: settings.VoiceStyle,
 			SilentMode: settings.SilentMode,
 			AutoUpdate: settings.AutoUpdate,
+			Voicemail: &signaling.Voicemail{
+				Enabled:            settings.Voicemail.Enabled,
+				RingTimeoutSeconds: settings.Voicemail.RingTimeoutSeconds,
+				MaxMessageSeconds:  settings.Voicemail.MaxMessageSeconds,
+				MaxStoredMessages:  settings.Voicemail.MaxStoredMessages,
+				RetrievalCode:      settings.Voicemail.RetrievalCode,
+			},
 		},
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {
