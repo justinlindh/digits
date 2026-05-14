@@ -19,6 +19,8 @@ const (
 	InviteStatusCancelled = "cancelled"
 )
 
+// HouseholdInvite represents an email invitation to join a household. The
+// one-time Token is emailed to the recipient and redeemed at accept time.
 type HouseholdInvite struct {
 	ID          string
 	HouseholdID string
@@ -31,10 +33,13 @@ type HouseholdInvite struct {
 	ExpiresAt   time.Time
 }
 
+// InviteStore persists household invites and enforces one-time token
+// redemption with TTL expiry.
 type InviteStore struct {
 	db *sql.DB
 }
 
+// NewInviteStore returns an InviteStore backed by db.
 func NewInviteStore(db *sql.DB) *InviteStore {
 	return &InviteStore{db: db}
 }

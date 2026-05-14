@@ -31,6 +31,7 @@ type ConfState struct {
 	client redis.UniversalClient
 }
 
+// NewConfState returns a ConfState backed by the given Redis client.
 func NewConfState(client redis.UniversalClient) *ConfState {
 	return &ConfState{client: client}
 }

@@ -23,6 +23,8 @@ type SMTPSender struct {
 	from string
 }
 
+// NewSMTPSender returns an SMTPSender that authenticates with the given
+// credentials and uses from as the envelope sender address.
 func NewSMTPSender(host, port, user, pass, from string) *SMTPSender {
 	return &SMTPSender{host: host, port: port, user: user, pass: pass, from: from}
 }
@@ -75,6 +77,7 @@ type SentEmail struct {
 	Body    string
 }
 
+// NewNoopSender returns a NoopSender with an empty Sent slice.
 func NewNoopSender() *NoopSender {
 	return &NoopSender{}
 }

@@ -6,10 +6,13 @@ import (
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
+// Authorizer checks whether a call between two line numbers is permitted based
+// on household membership and active household links.
 type Authorizer struct {
 	db *db.Database
 }
 
+// NewAuthorizer returns an Authorizer backed by database.
 func NewAuthorizer(database *db.Database) *Authorizer {
 	return &Authorizer{db: database}
 }

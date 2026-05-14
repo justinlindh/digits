@@ -19,6 +19,9 @@ const (
 	updateStatusTTL = time.Hour
 )
 
+// DevicePresence is the cluster-wide view of a single connected device,
+// stored in Redis so every pod can answer presence queries without local
+// connection state.
 type DevicePresence struct {
 	PodID           string
 	HardwareID      string
@@ -30,11 +33,17 @@ type DevicePresence struct {
 	DevMode         bool
 }
 
+// DeviceState persists per-device presence records in Redis so that any pod
+// can answer questions about online devices regardless of which pod holds the
+// WebSocket connection.
 type DeviceState struct {
 	client redis.UniversalClient
 	podID  string
 }
 
+// NewDeviceState returns a DeviceState backed by the given Redis client.
+// podID identifies this process instance in the cluster; it is stored with
+// each presence record so callers can distinguish local vs remote devices.
 func NewDeviceState(client redis.UniversalClient, podID string) *DeviceState {
 	return &DeviceState{client: client, podID: podID}
 }
