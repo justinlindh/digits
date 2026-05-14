@@ -35,6 +35,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
+	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
@@ -134,6 +135,15 @@ type daemonCallbacks struct {
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+
+	// Voicemail state. voicemailStore is opened once at startup and is nil
+	// when the feature is disabled or initialization failed. recorder is the
+	// active answering-machine recording (one at a time), protected by
+	// recorderMu so the FSM callbacks (auto-answer, pickup, record-ended)
+	// never race with the audio path.
+	voicemailStore *voicemail.Store
+	recorder       *voicemail.Recorder
+	recorderMu     sync.Mutex
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -355,7 +365,12 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 func (d *daemonCallbacks) VoicemailAutoAnswer() {}
 func (d *daemonCallbacks) VoicemailPickup()     {}
 func (d *daemonCallbacks) VoicemailRecordEnded() {}
-func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) { return false, 0 }
+func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
+	if d.voicemailStore == nil {
+		return false, 0
+	}
+	return d.cfg.Voicemail.Enabled, d.cfg.Voicemail.RingTimeout
+}
 
 func (d *daemonCallbacks) AnswerCall() {
 	d.mu.Lock()
@@ -2491,6 +2506,23 @@ func main() {
 	}
 	linkHealthInterval := time.Duration(linkHealthIntervalMs) * time.Millisecond
 
+	// Voicemail store. Opened once at daemon startup so the FSM callbacks
+	// can begin and finalize recordings without any per-call I/O setup.
+	// Failures log and disable the feature; the daemon still runs.
+	var vmStore *voicemail.Store
+	if cfg.Voicemail.Enabled {
+		vmDir := filepath.Join(filepath.Dir(*configPath), "voicemail")
+		var err error
+		vmStore, err = voicemail.Open(vmDir, voicemail.Options{
+			MaxMessages:        cfg.Voicemail.MaxStoredMessages,
+			MaxMessageDuration: cfg.Voicemail.MaxMessageDuration,
+		})
+		if err != nil {
+			slog.Error("voicemail store open failed", "dir", vmDir, "error", err)
+			vmStore = nil
+		}
+	}
+
 	cb := &daemonCallbacks{
 		serial:              sp,
 		sig:                 sig,
@@ -2504,6 +2536,7 @@ func main() {
 		meshReporterCancels: make(map[string]context.CancelFunc),
 		fwVer:               fwVersion,
 		fwCom:               fwCommit,
+		voicemailStore:      vmStore,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
