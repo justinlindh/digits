@@ -159,6 +159,35 @@ type daemonCallbacks struct {
 	greetingRecorder   *voicemail.Recorder
 	greetingEncoder    *codec.Encoder
 	greetingRecorderMu sync.Mutex
+
+	// Voicemail retrieval (*98) playback state. Distinct from d.mu and
+	// from the recorder mutexes above: capture and retrieval are mutually
+	// exclusive at the FSM level (recording happens only in RINGING /
+	// VOICEMAIL_RECORDING, retrieval only in VOICEMAIL_PLAYBACK), but
+	// they share the same mixer key, so a dedicated mutex keeps the
+	// teardown / advance / DTMF paths from racing each other.
+	//
+	// Lock-ordering invariant: voicemailMu MUST NOT be held while calling
+	// into d.ctrl (which takes c.mu). All controller callbacks fired from
+	// playback paths run after voicemailMu is released; the FSM
+	// callbacks (VoicemailEnterPlayback, VoicemailExitPlayback) are
+	// themselves invoked under c.mu by the controller, so any
+	// d.ctrl.ResetToDialtone() they need is deferred to a goroutine to
+	// avoid c.mu recursion.
+	voicemailMu       sync.Mutex
+	voicemailPlayback *voicemailPlaybackSession // current message; nil = idle
+	voicemailMixerCh  chan []int16              // mixer source channel for "voicemail" key; nil between sessions
+}
+
+// voicemailPlaybackSession bundles the cancelable context, message ID, and
+// open Player for one retrieval-playback message. Each DTMF dispatch
+// (delete, skip, replay, mark-heard) tears down the current session and
+// either opens the next message or transitions out of playback.
+type voicemailPlaybackSession struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	id     int64
+	player *voicemail.Player
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -871,26 +900,396 @@ func (d *daemonCallbacks) VoicemailRetrievalCode() string {
 	return d.cfg.Voicemail.RetrievalCode
 }
 
-// VoicemailEnterPlayback is invoked by the controller when the user dials the
-// retrieval code. Full implementation lands in the next commit; this stub
-// closes the phone.Callbacks interface so the controller change can land
-// independently.
+// VoicemailEnterPlayback opens the first unheard message and streams it to
+// the earpiece via the mixer's WebRTC source. Invoked by the controller
+// under c.mu after the FSM transitions to VOICEMAIL_PLAYBACK. Any path
+// that needs to call back into the controller (ResetToDialtone on the
+// empty / refused / error paths) is deferred to a goroutine so we do not
+// recurse on c.mu.
+//
+// Mute invariant: there must be no active 2-party peer when we start
+// playback. The FSM gates retrieval through StateDIALING (off-hook, no
+// peer), so callPeer should always be empty here; the assertion is
+// defensive. We never play voicemail audio into a live call.
 func (d *daemonCallbacks) VoicemailEnterPlayback() {
-	slog.Warn("voicemail: VoicemailEnterPlayback not yet implemented")
-	d.ctrl.ResetToDialtone()
-	d.SendTone(phone.ToneDial)
+	d.mu.Lock()
+	store := d.voicemailStore
+	peer := d.callPeer
+	d.mu.Unlock()
+
+	if peer != "" {
+		// Should never happen given the FSM gating; if it does, refuse so a
+		// stale 2-party path never carries voicemail audio to the far end.
+		slog.Error("voicemail: retrieval requested with active peer, refusing", "peer", peer)
+		go d.voicemailExitToDialtoneAsync()
+		return
+	}
+	if store == nil {
+		slog.Warn("voicemail: store unavailable for retrieval")
+		go d.voicemailExitToDialtoneAsync()
+		return
+	}
+
+	var (
+		sess     *voicemailPlaybackSession
+		openErr  error
+		noUnheard bool
+	)
+
+	d.voicemailMu.Lock()
+	// Register the mixer source for the whole playback session. Per-message
+	// goroutines reuse this channel; lifetime ends in VoicemailExitPlayback
+	// or on the end-of-messages fallback. Re-registering with the same key
+	// is idempotent (returns the existing channel).
+	d.voicemailMixerCh = d.mixer.AddWebRTCSource("voicemail")
+	sess, openErr = d.openNextUnheardLocked(store)
+	if openErr != nil || sess == nil {
+		// Empty or error: release the mixer source before we leave.
+		d.mixer.RemoveWebRTCSource("voicemail")
+		d.voicemailMixerCh = nil
+		if openErr == nil {
+			noUnheard = true
+		}
+	}
+	d.voicemailMu.Unlock()
+
+	if openErr != nil {
+		slog.Error("voicemail: open first message failed", "error", openErr)
+		go d.voicemailExitToDialtoneAsync()
+		return
+	}
+	if noUnheard {
+		slog.Info("voicemail: no unheard messages on entry")
+		d.mixer.PlayOnce("tone_busy")
+		go d.voicemailExitToDialtoneAsync()
+		return
+	}
+
+	slog.Info("voicemail: playback start", "id", sess.id)
+	go d.voicemailPlaybackLoop(sess)
 }
 
-// VoicemailExitPlayback is invoked by the controller on hook-on during
-// playback. Full implementation lands in the next commit.
+// VoicemailExitPlayback tears down the current playback session and the
+// mixer source. Invoked by the controller under c.mu on hook-on. Does NOT
+// call into d.ctrl, so it is safe to take voicemailMu here without the
+// async-defer dance.
 func (d *daemonCallbacks) VoicemailExitPlayback() {
-	slog.Info("voicemail: VoicemailExitPlayback stub")
+	d.voicemailMu.Lock()
+	sess := d.teardownPlaybackLocked()
+	if d.voicemailMixerCh != nil {
+		d.mixer.RemoveWebRTCSource("voicemail")
+		d.voicemailMixerCh = nil
+	}
+	d.voicemailMu.Unlock()
+	if sess != nil {
+		slog.Info("voicemail: playback exit", "id", sess.id)
+	}
+	d.evaluateLED()
 }
 
-// VoicemailKey routes a DTMF digit to the playback controller. Full
-// implementation lands in the next commit.
+// VoicemailKey routes DTMF received in StateVOICEMAIL_PLAYBACK. Invoked from
+// a controller-spawned goroutine, so c.mu is not held when we run; we can
+// safely take voicemailMu and call d.ctrl.ResetToDialtone() after
+// releasing it.
+//
+// Digit semantics (per spec):
+//
+//	7: delete current message, advance to next unheard
+//	9: mark current heard, advance
+//	#: skip without changing heard state
+//	*: replay current message from the start
 func (d *daemonCallbacks) VoicemailKey(digit string) {
-	slog.Info("voicemail: VoicemailKey stub", "digit", digit)
+	switch digit {
+	case "7", "9", "#", "*":
+	default:
+		slog.Info("voicemail: ignored DTMF in playback", "digit", digit)
+		return
+	}
+
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+	if store == nil {
+		slog.Warn("voicemail: key received but store unavailable", "digit", digit)
+		return
+	}
+
+	var (
+		next     *voicemailPlaybackSession
+		openErr  error
+		noNext   bool
+	)
+
+	d.voicemailMu.Lock()
+	current := d.voicemailPlayback
+	if current == nil {
+		// Playback already ended (race with hookup or EOF). Drop the key.
+		d.voicemailMu.Unlock()
+		slog.Info("voicemail: key ignored, no active playback", "digit", digit)
+		return
+	}
+	currentID := current.id
+
+	// Tear down the current message's session before mutating the store and
+	// opening the next. teardownPlaybackLocked cancels the goroutine and
+	// closes its player; any frames still in flight will be discarded by
+	// the goroutine's select on ctx.Done.
+	d.teardownPlaybackLocked()
+
+	switch digit {
+	case "7":
+		if err := store.Delete(currentID); err != nil {
+			slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
+		}
+		next, openErr = d.openNextUnheardLocked(store)
+	case "9":
+		if err := store.MarkHeard(currentID); err != nil {
+			slog.Warn("voicemail: mark heard failed", "id", currentID, "error", err)
+		}
+		next, openErr = d.openNextUnheardLocked(store)
+	case "#":
+		next, openErr = d.openNextUnheardLocked(store)
+	case "*":
+		next, openErr = d.reopenLocked(store, currentID)
+	}
+
+	if openErr != nil || next == nil {
+		// No follow-on session: tear down the persistent mixer source so
+		// when ResetToDialtone fires the user lands cleanly on the dial
+		// tone path with no voicemail PCM leaking into the mix.
+		if d.voicemailMixerCh != nil {
+			d.mixer.RemoveWebRTCSource("voicemail")
+			d.voicemailMixerCh = nil
+		}
+		if openErr == nil {
+			noNext = true
+		}
+	}
+	d.voicemailMu.Unlock()
+
+	if openErr != nil {
+		slog.Error("voicemail: advance failed", "digit", digit, "error", openErr)
+		d.ctrl.ResetToDialtone()
+		d.evaluateLED()
+		return
+	}
+	if noNext {
+		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
+		d.mixer.PlayOnce("tone_busy")
+		d.ctrl.ResetToDialtone()
+		d.evaluateLED()
+		return
+	}
+
+	slog.Info("voicemail: advanced to next", "from", currentID, "to", next.id, "digit", digit)
+	go d.voicemailPlaybackLoop(next)
+}
+
+// teardownPlaybackLocked cancels the current playback goroutine, closes its
+// player, and clears the session pointer. Caller must hold voicemailMu.
+// Returns the prior session (or nil if there was none) so the caller can
+// log it or read sess.id without re-deriving.
+func (d *daemonCallbacks) teardownPlaybackLocked() *voicemailPlaybackSession {
+	sess := d.voicemailPlayback
+	if sess == nil {
+		return nil
+	}
+	sess.cancel()
+	if err := sess.player.Close(); err != nil {
+		slog.Warn("voicemail: close player on teardown", "id", sess.id, "error", err)
+	}
+	d.voicemailPlayback = nil
+	return sess
+}
+
+// openNextUnheardLocked picks the next message whose Heard flag is false,
+// opens a Player for it, and installs a new playback session. Returns
+// (nil, nil) when there are no unheard messages. Caller must hold
+// voicemailMu and have already torn down any prior session.
+func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store) (*voicemailPlaybackSession, error) {
+	msgs, err := store.List()
+	if err != nil {
+		return nil, fmt.Errorf("list messages: %w", err)
+	}
+	for _, m := range msgs {
+		if m.Heard {
+			continue
+		}
+		player, err := store.OpenPlayer(m.ID)
+		if err != nil {
+			slog.Warn("voicemail: open player failed, skipping", "id", m.ID, "error", err)
+			continue
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		sess := &voicemailPlaybackSession{
+			ctx:    ctx,
+			cancel: cancel,
+			id:     m.ID,
+			player: player,
+		}
+		d.voicemailPlayback = sess
+		return sess, nil
+	}
+	return nil, nil
+}
+
+// reopenLocked opens a fresh Player for the given message ID and installs a
+// new session. Used by the "*" replay path. Caller must hold voicemailMu
+// and have torn down any prior session.
+func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64) (*voicemailPlaybackSession, error) {
+	player, err := store.OpenPlayer(id)
+	if err != nil {
+		return nil, fmt.Errorf("reopen message %d: %w", id, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sess := &voicemailPlaybackSession{
+		ctx:    ctx,
+		cancel: cancel,
+		id:     id,
+		player: player,
+	}
+	d.voicemailPlayback = sess
+	return sess, nil
+}
+
+// voicemailPlaybackLoop decodes Opus frames from the session's Player and
+// pushes 48kHz mono PCM into the mixer's voicemail source channel. Exits
+// on context cancel (no-op, caller already tore down) or on EOF / read
+// error (transitions to the next message via voicemailAdvanceFromEOF).
+func (d *daemonCallbacks) voicemailPlaybackLoop(sess *voicemailPlaybackSession) {
+	defer recoverGoroutine("voicemail-playback")
+
+	d.voicemailMu.Lock()
+	ch := d.voicemailMixerCh
+	d.voicemailMu.Unlock()
+	if ch == nil {
+		slog.Warn("voicemail: playback loop started without mixer channel", "id", sess.id)
+		return
+	}
+
+	dec, err := codec.NewDecoder(48000, 1)
+	if err != nil {
+		slog.Error("voicemail: decoder init failed", "id", sess.id, "error", err)
+		d.voicemailAdvanceFromEOF(sess)
+		return
+	}
+
+	for {
+		select {
+		case <-sess.ctx.Done():
+			return
+		default:
+		}
+
+		payload, err := sess.player.NextFrame()
+		if errors.Is(err, io.EOF) {
+			d.voicemailAdvanceFromEOF(sess)
+			return
+		}
+		if err != nil {
+			slog.Warn("voicemail: read frame failed", "id", sess.id, "error", err)
+			d.voicemailAdvanceFromEOF(sess)
+			return
+		}
+		pcm, err := dec.Decode(payload)
+		if err != nil {
+			slog.Warn("voicemail: decode failed", "id", sess.id, "error", err)
+			continue
+		}
+		// Decode returns a slice of the decoder's internal buffer (valid
+		// only until the next Decode call). Copy before queuing so the
+		// mixer's render loop sees a stable backing array.
+		frame := make([]int16, len(pcm))
+		copy(frame, pcm)
+		select {
+		case ch <- frame:
+		case <-sess.ctx.Done():
+			return
+		}
+	}
+}
+
+// voicemailAdvanceFromEOF runs when a playback goroutine reaches EOF (or a
+// non-fatal read error). It marks the message heard, opens the next
+// unheard, and either starts the next goroutine or transitions out of
+// playback. Stale: if voicemailPlayback no longer points at sess (a
+// concurrent DTMF callback already moved on), do nothing.
+func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession) {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+	if store == nil {
+		return
+	}
+
+	var (
+		next     *voicemailPlaybackSession
+		openErr  error
+		noNext   bool
+		isStale  bool
+	)
+
+	d.voicemailMu.Lock()
+	if d.voicemailPlayback != sess {
+		// Another callback already swapped us out (e.g. DTMF dispatch
+		// raced ahead of EOF). Whoever swapped has already torn down our
+		// session; we don't touch state.
+		isStale = true
+	} else {
+		d.teardownPlaybackLocked()
+		if err := store.MarkHeard(sess.id); err != nil {
+			slog.Warn("voicemail: mark heard on EOF failed", "id", sess.id, "error", err)
+		}
+		next, openErr = d.openNextUnheardLocked(store)
+		if openErr != nil || next == nil {
+			if d.voicemailMixerCh != nil {
+				d.mixer.RemoveWebRTCSource("voicemail")
+				d.voicemailMixerCh = nil
+			}
+			if openErr == nil {
+				noNext = true
+			}
+		}
+	}
+	d.voicemailMu.Unlock()
+
+	if isStale {
+		return
+	}
+	if openErr != nil {
+		slog.Error("voicemail: open next after EOF failed", "from_id", sess.id, "error", openErr)
+		d.ctrl.ResetToDialtone()
+		d.evaluateLED()
+		return
+	}
+	if noNext {
+		slog.Info("voicemail: end of unheard after EOF", "last_id", sess.id)
+		d.mixer.PlayOnce("tone_busy")
+		d.ctrl.ResetToDialtone()
+		d.evaluateLED()
+		return
+	}
+
+	slog.Info("voicemail: advancing after EOF", "from", sess.id, "to", next.id)
+	go d.voicemailPlaybackLoop(next)
+}
+
+// voicemailExitToDialtoneAsync runs ResetToDialtone in a goroutine. Used by
+// callers (VoicemailEnterPlayback) that are invoked under c.mu and would
+// otherwise recurse on the lock.
+func (d *daemonCallbacks) voicemailExitToDialtoneAsync() {
+	defer recoverGoroutine("voicemail-exit-to-dialtone")
+	d.ctrl.ResetToDialtone()
+}
+
+// evaluateLED resends the appropriate LED state given current voicemail
+// store + config state. Filled in by the message-waiting-indicator
+// commit. For now it is a no-op so playback paths can call it
+// unconditionally without forcing the LED wrapper to land first.
+func (d *daemonCallbacks) evaluateLED() {
+	// TODO(message-waiting-indicator): re-emit SLOW_PULSE when idle and
+	// UnheardCount > 0, OFF otherwise. Lives in this file alongside the
+	// SendLED wrapper.
 }
 
 // playVoicemailGreeting blocks the caller goroutine until the outgoing
