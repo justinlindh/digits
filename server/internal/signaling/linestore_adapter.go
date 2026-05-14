@@ -18,6 +18,20 @@ func NewLineStoreAdapter(s *line.Store) LineStore {
 	return &lineStoreAdapter{inner: s}
 }
 
+// VoicemailFromLine projects a line.Voicemail into its wire representation.
+// Adding a new voicemail field requires updating this helper and the matching
+// receiver in pi/digitsd/internal/signal; collapsing the per-callsite field-
+// copy into one place keeps the wire contract from drifting silently.
+func VoicemailFromLine(v line.Voicemail) *Voicemail {
+	return &Voicemail{
+		Enabled:            v.Enabled,
+		RingTimeoutSeconds: v.RingTimeoutSeconds,
+		MaxMessageSeconds:  v.MaxMessageSeconds,
+		MaxStoredMessages:  v.MaxStoredMessages,
+		RetrievalCode:      v.RetrievalCode,
+	}
+}
+
 func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number string) (*LineSettings, error) {
 	settings, err := a.inner.EffectiveSettingsByNumber(ctx, number)
 	if err != nil {
@@ -27,13 +41,7 @@ func (a *lineStoreAdapter) EffectiveLineSettings(ctx context.Context, number str
 		VoiceStyle: settings.VoiceStyle,
 		SilentMode: settings.SilentMode,
 		AutoUpdate: settings.AutoUpdate,
-		Voicemail: &Voicemail{
-			Enabled:            settings.Voicemail.Enabled,
-			RingTimeoutSeconds: settings.Voicemail.RingTimeoutSeconds,
-			MaxMessageSeconds:  settings.Voicemail.MaxMessageSeconds,
-			MaxStoredMessages:  settings.Voicemail.MaxStoredMessages,
-			RetrievalCode:      settings.Voicemail.RetrievalCode,
-		},
+		Voicemail:  VoicemailFromLine(settings.Voicemail),
 	}, nil
 }
 

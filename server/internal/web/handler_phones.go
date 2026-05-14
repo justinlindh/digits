@@ -669,15 +669,8 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 		RetrievalCode:      code,
 	}
 	next = next.Normalize()
-	if next != ln.Settings {
-		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
-			slog.ErrorContext(r.Context(), "update voicemail settings failed", "err", err, "line_id", ln.ID)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if err := h.pushLineSettings(number, next); err != nil {
-			slog.WarnContext(r.Context(), "push voicemail settings failed", "number", number, "err", err)
-		}
+	if !h.applyLineSettings(w, r, ln, next) {
+		return
 	}
 
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
@@ -714,16 +707,8 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 	next := ln.Settings
 	mutate(&next)
 	next = next.Normalize()
-	if next != ln.Settings {
-		if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
-			slog.ErrorContext(r.Context(), "update line settings failed", "err", err, "line_id", ln.ID)
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return
-		}
-		if err := h.pushLineSettings(number, next); err != nil {
-			slog.WarnContext(r.Context(), "push line settings failed", "number", number, "err", err)
-		}
-		ln.Settings = next
+	if !h.applyLineSettings(w, r, ln, next) {
+		return
 	}
 	if isHTMX(r) {
 		renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, intercom, am), struct {
@@ -732,6 +717,28 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+// applyLineSettings persists `next` and pushes it to the connected device if
+// it differs from ln.Settings. On persistence failure it writes a 500 and
+// returns false so the caller can abort; push failures are logged but do not
+// fail the request (the next OnRegistered reconciles). On success (including
+// the no-op case where next == ln.Settings) it returns true and mutates
+// ln.Settings in place so callers rendering ln see the latest values.
+func (h *Handler) applyLineSettings(w http.ResponseWriter, r *http.Request, ln *line.Line, next line.Settings) bool {
+	if next == ln.Settings {
+		return true
+	}
+	if err := h.lineStore.UpdateSettings(r.Context(), ln.ID, next); err != nil {
+		slog.ErrorContext(r.Context(), "update line settings failed", "err", err, "line_id", ln.ID)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return false
+	}
+	if err := h.pushLineSettings(ln.Number, next); err != nil {
+		slog.WarnContext(r.Context(), "push line settings failed", "number", ln.Number, "err", err)
+	}
+	ln.Settings = next
+	return true
 }
 
 // pushLineSettings sends the updated settings to the device currently
@@ -746,13 +753,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 			VoiceStyle: settings.VoiceStyle,
 			SilentMode: settings.SilentMode,
 			AutoUpdate: settings.AutoUpdate,
-			Voicemail: &signaling.Voicemail{
-				Enabled:            settings.Voicemail.Enabled,
-				RingTimeoutSeconds: settings.Voicemail.RingTimeoutSeconds,
-				MaxMessageSeconds:  settings.Voicemail.MaxMessageSeconds,
-				MaxStoredMessages:  settings.Voicemail.MaxStoredMessages,
-				RetrievalCode:      settings.Voicemail.RetrievalCode,
-			},
+			Voicemail:  signaling.VoicemailFromLine(settings.Voicemail),
 		},
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {
