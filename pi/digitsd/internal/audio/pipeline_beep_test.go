@@ -64,3 +64,55 @@ func abs16(v int16) int16 {
 	}
 	return v
 }
+
+func TestPlayGreetingSamples_ReplacesFrames(t *testing.T) {
+	cfg := DefaultPipelineConfig()
+	p := NewPipeline(cfg)
+
+	frameSize := cfg.SampleRate * cfg.FrameMs / 1000 // 960
+
+	// Two frames of distinctive samples.
+	samples := make([]int16, frameSize*2)
+	for i := range samples {
+		samples[i] = int16(i % 1000)
+	}
+
+	p.PlayGreetingSamples(samples)
+
+	frames := p.drainBeepFrames(frameSize)
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 frames, got %d", len(frames))
+	}
+
+	for i := 0; i < frameSize; i++ {
+		if frames[0][i] != samples[i] {
+			t.Errorf("frame[0][%d] = %d, want %d", i, frames[0][i], samples[i])
+			break
+		}
+	}
+	for i := 0; i < frameSize; i++ {
+		if frames[1][i] != samples[frameSize+i] {
+			t.Errorf("frame[1][%d] = %d, want %d", i, frames[1][i], samples[frameSize+i])
+			break
+		}
+	}
+
+	extra := p.drainBeepFrames(frameSize)
+	if len(extra) != 0 {
+		t.Errorf("expected 0 frames after greeting exhausted, got %d", len(extra))
+	}
+}
+
+func TestPlayGreetingSamples_EmptyIsNoop(t *testing.T) {
+	cfg := DefaultPipelineConfig()
+	p := NewPipeline(cfg)
+
+	p.PlayGreetingSamples(nil)
+	p.PlayGreetingSamples([]int16{})
+
+	frameSize := cfg.SampleRate * cfg.FrameMs / 1000
+	frames := p.drainBeepFrames(frameSize)
+	if len(frames) != 0 {
+		t.Errorf("expected 0 frames after no-op call, got %d", len(frames))
+	}
+}
