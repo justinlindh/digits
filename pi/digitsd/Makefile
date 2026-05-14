@@ -38,6 +38,8 @@ embed: clean-embed
 
 clean-embed:
 	@rm -rf $(EMBED_DIR)
+	@mkdir -p $(EMBED_DIR)
+	@touch $(EMBED_DIR)/.gitkeep
 
 builder:
 	@docker build -q -t $(BUILDER_IMG) -f Dockerfile.builder .
