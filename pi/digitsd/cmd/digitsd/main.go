@@ -140,10 +140,15 @@ type daemonCallbacks struct {
 	// when the feature is disabled or initialization failed. recorder is the
 	// active answering-machine recording (one at a time), protected by
 	// recorderMu so the FSM callbacks (auto-answer, pickup, record-ended)
-	// never race with the audio path.
-	voicemailStore *voicemail.Store
-	recorder       *voicemail.Recorder
-	recorderMu     sync.Mutex
+	// never race with the audio path. voicemailWebRTCCh receives decoded PCM
+	// frames from the caller during voicemail; the channel is not connected
+	// to the mixer (the earpiece stays silent), but on homeowner pickup
+	// VoicemailPickup hands it to the mixer so the caller's audio routes to
+	// the earpiece without rebuilding the WebRTC pipeline.
+	voicemailStore    *voicemail.Store
+	recorder          *voicemail.Recorder
+	recorderMu        sync.Mutex
+	voicemailWebRTCCh chan []int16
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -362,9 +367,247 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 	d.callReturnOrigin.Store(false)
 }
 
-func (d *daemonCallbacks) VoicemailAutoAnswer() {}
-func (d *daemonCallbacks) VoicemailPickup()     {}
-func (d *daemonCallbacks) VoicemailRecordEnded() {}
+func (d *daemonCallbacks) VoicemailPickup() {}
+
+// VoicemailAutoAnswer completes the SDP/ICE handshake for an unanswered call,
+// opens a voicemail recorder, brings up the audio pipeline, and plays the
+// greeting beep. It mirrors the slow path of AnswerCall but diverges in three
+// ways:
+//
+//  1. No mixer.AddWebRTCSource: caller audio does not play through the
+//     earpiece during voicemail. Decoded PCM is sent to voicemailWebRTCCh
+//     instead, which VoicemailPickup later hands to the mixer if the
+//     homeowner picks up mid-recording.
+//  2. OnRemoteTrack runs the same three-phase startup as the live call path
+//     (discard until pipeline ready, drain to live, then feed) but in the
+//     live phase ALSO tees the raw Opus payload into the recorder.
+//  3. After SDP exchange and pipeline start, a small goroutine plays a
+//     greeting beep and then transitions the controller into the recording
+//     state.
+func (d *daemonCallbacks) VoicemailAutoAnswer() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.pendingOffer == "" {
+		slog.Warn("voicemail: no pending offer, aborting auto-answer")
+		return
+	}
+	if d.voicemailStore == nil {
+		slog.Warn("voicemail: store not available, aborting auto-answer")
+		return
+	}
+
+	d.mixer.StopTone()
+
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	d.pendingOffer = ""
+	d.pendingCaller = ""
+
+	d.callPeer = caller
+	d.isCaller = false
+	d.isRestartingICE = false
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	var err error
+	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("voicemail: new peer manager failed", "error", err)
+		return
+	}
+
+	vmPM := d.peerMgr
+	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(vmPM, state)
+	}
+
+	// Decoded PCM target. Buffered so brief mixer-attach delays during
+	// pickup do not block the decode loop; overflow is dropped via the
+	// non-blocking select below, same as the live-call path. Task 7's
+	// VoicemailPickup pulls this channel off the daemon and gives it to
+	// the mixer.
+	webrtcCh := make(chan []int16, 8)
+	d.voicemailWebRTCCh = webrtcCh
+
+	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("voicemail-record")
+			var frameCount int
+
+			// Phase 1: wait for the audio pipeline to come up. pm.Decode is
+			// still called to keep the Opus decoder's internal state in sync;
+			// raw payloads are NOT teed into the recorder yet because the
+			// recorder may not be open until BeginRecording returns below.
+			slog.Info("voicemail: remote track active, waiting for pipeline")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					slog.Info("voicemail: pipeline ready", "discarded", discarded)
+					break
+				}
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("voicemail: remote track ended waiting for pipeline", "discarded", discarded)
+					return
+				}
+				vmPM.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			// Phase 2: drain to live, same heuristic as remoteTrackHandler:
+			// once a ReadRTP call blocks more than 5ms, the buffered backlog
+			// is exhausted and we are tracking live audio.
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					slog.Info("voicemail: remote track ended during drain")
+					return
+				}
+				vmPM.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+				if readTime > 5*time.Millisecond {
+					slog.Info("voicemail: drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					break
+				}
+			}
+
+			// Phase 3: live. Each packet is decoded for the PCM channel AND
+			// the raw payload is teed into the recorder. On atCap, finalize
+			// under recorderMu and trigger the controller-side hangup via
+			// VoicemailRecordEnded.
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("voicemail: remote track ended", "frames", frameCount)
+					return
+				}
+
+				pcm, decErr := vmPM.Decode(pkt.Payload)
+				if decErr != nil {
+					slog.Warn("voicemail: decode error", "error", decErr, "pkt_bytes", len(pkt.Payload))
+					continue
+				}
+
+				d.recorderMu.Lock()
+				rec := d.recorder
+				d.recorderMu.Unlock()
+				if rec != nil {
+					atCap, err := rec.AppendFrame(pkt.Payload)
+					if err != nil {
+						slog.Warn("voicemail: append frame failed", "error", err)
+					} else if atCap {
+						slog.Info("voicemail: max duration reached")
+						d.recorderMu.Lock()
+						if d.recorder != nil {
+							if _, err := d.recorder.Finalize(); err != nil {
+								slog.Error("voicemail: finalize on cap failed", "error", err)
+							}
+							d.recorder = nil
+						}
+						d.recorderMu.Unlock()
+						go d.VoicemailRecordEnded()
+						return
+					}
+				}
+
+				if vmPM.InboundMuted() {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind answer SDP send (mirrors AnswerCall).
+	sdpSent := make(chan struct{})
+	d.peerMgr.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		sendSignal(d.sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        caller,
+			Candidate: candidate,
+		})
+	}
+
+	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
+	if err != nil {
+		slog.Error("voicemail: accept offer failed", "error", err)
+		close(sdpSent)
+		return
+	}
+
+	for _, candidate := range d.pendingICE {
+		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
+			slog.Warn("voicemail: add queued ICE candidate failed", "error", err)
+		}
+	}
+	d.pendingICE = nil
+
+	sendSignal(d.sig, &sigclient.Message{
+		Type: sigclient.TypeAnswer,
+		To:   caller,
+		SDP:  answerSDP,
+	})
+	close(sdpSent)
+
+	rec, err := d.voicemailStore.BeginRecording()
+	if err != nil {
+		slog.Error("voicemail: begin recording failed", "error", err)
+		return
+	}
+	d.recorderMu.Lock()
+	d.recorder = rec
+	d.recorderMu.Unlock()
+
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("voicemail: pipeline start failed", "error", err)
+			return
+		}
+		d.startEncodeLoop()
+	}
+
+	// Beep playback runs off the main goroutine so the daemon stays
+	// responsive. After the beep, transition the controller into the
+	// recording state.
+	pipeline := d.pipeline
+	ctrl := d.ctrl
+	go func() {
+		defer recoverGoroutine("voicemail-beep")
+		time.Sleep(500 * time.Millisecond)
+		pipeline.PlayGreetingBeep(500 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
+		ctrl.SetVoicemailRecording()
+	}()
+
+	slog.Info("voicemail: auto-answered", "caller", caller)
+}
+
+// VoicemailRecordEnded is invoked when the recorder finalizes itself (max
+// duration cap reached). It resets the controller to IDLE and tears down the
+// call. HangupCall handles any remaining recorder cleanup defensively, so a
+// late finalize during teardown is a no-op.
+func (d *daemonCallbacks) VoicemailRecordEnded() {
+	d.ctrl.Reset()
+	d.HangupCall()
+}
+
 func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
 	if d.voicemailStore == nil {
 		return false, 0
@@ -869,6 +1112,18 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 func (d *daemonCallbacks) HangupCall() {
 	t0 := time.Now()
 	d.mu.Lock()
+
+	// Finalize any active voicemail recording so a hangup (local, remote,
+	// or driven by VoicemailRecordEnded) never leaves an orphan .tmp file.
+	// recorderMu is independent of d.mu, so no deadlock with the FSM lock.
+	d.recorderMu.Lock()
+	if d.recorder != nil {
+		if _, err := d.recorder.Finalize(); err != nil {
+			slog.Error("hangup: voicemail finalize failed", "error", err)
+		}
+		d.recorder = nil
+	}
+	d.recorderMu.Unlock()
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.
