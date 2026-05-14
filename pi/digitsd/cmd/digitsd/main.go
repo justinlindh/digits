@@ -367,7 +367,42 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 	d.callReturnOrigin.Store(false)
 }
 
-func (d *daemonCallbacks) VoicemailPickup() {}
+// VoicemailPickup is invoked by the controller when the homeowner picks up
+// the handset during a voicemail recording. The partial recording is finalized
+// (any audio captured before the lift is saved as a regular message), then the
+// caller's decoded PCM stream is bridged into the mixer so it plays through
+// the earpiece. The OnRemoteTrack goroutine from VoicemailAutoAnswer is
+// already decoding and feeding voicemailWebRTCCh; once the mixer registers it
+// as an active source, audio flows immediately.
+func (d *daemonCallbacks) VoicemailPickup() {
+	d.recorderMu.Lock()
+	if d.recorder != nil {
+		if msg, err := d.recorder.Finalize(); err != nil {
+			slog.Error("voicemail pickup: finalize failed", "error", err)
+		} else if msg.ID != 0 {
+			slog.Info("voicemail pickup: saved partial recording", "id", msg.ID, "duration", msg.Duration)
+		}
+		d.recorder = nil
+	}
+	d.recorderMu.Unlock()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.callPeer == "" {
+		slog.Warn("voicemail pickup: no call peer")
+		return
+	}
+	if d.voicemailWebRTCCh == nil {
+		slog.Warn("voicemail pickup: no decoded audio channel", "peer", d.callPeer)
+		return
+	}
+
+	d.mixer.ImportWebRTCSource(d.callPeer, d.voicemailWebRTCCh)
+	d.voicemailWebRTCCh = nil
+
+	slog.Info("voicemail pickup: bridged to live call", "peer", d.callPeer)
+}
 
 // VoicemailAutoAnswer completes the SDP/ICE handshake for an unanswered call,
 // opens a voicemail recorder, brings up the audio pipeline, and plays the
@@ -1156,6 +1191,10 @@ func (d *daemonCallbacks) HangupCall() {
 	d.pipeline = nil
 	d.peerMgr = nil
 	d.mesh = nil
+	// Drop any voicemail decode channel so the next call's pickup attempt
+	// cannot accidentally bridge to a stale source. The decode goroutine
+	// will exit on its own once the peer connection tears down.
+	d.voicemailWebRTCCh = nil
 
 	// Cancel link-health reporters before releasing the lock so the
 	// background goroutine never calls GetStats on a closed peer.

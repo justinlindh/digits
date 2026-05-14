@@ -360,6 +360,19 @@ func (m *Mixer) RemoveWebRTCSource(key string) {
 	delete(m.webrtcSources, key)
 }
 
+// ImportWebRTCSource registers an existing channel under the given key. Unlike
+// AddWebRTCSource, no new channel is allocated; the caller is the channel's
+// producer and the mixer becomes a consumer. Used by voicemail pickup, where
+// the OnRemoteTrack decode goroutine is already filling a channel and the
+// mixer just needs to start draining it for the earpiece. Existing entries at
+// the same key are overwritten, mirroring map semantics; the documented call
+// sites guarantee no prior AddWebRTCSource for the same peer.
+func (m *Mixer) ImportWebRTCSource(key string, ch chan []int16) {
+	m.webrtcMu.Lock()
+	defer m.webrtcMu.Unlock()
+	m.webrtcSources[key] = ch
+}
+
 // readWebRTCSources reads one frame (non-blocking) from each registered source
 // and accumulates it into buf via clampAdd. Called only from the render loop.
 func (m *Mixer) readWebRTCSources(buf []int16) {
