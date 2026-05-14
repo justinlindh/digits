@@ -378,8 +378,12 @@ func (c *Controller) onHookOn() {
 	if c.state == StateIDLE {
 		return
 	}
+	// Greeting record holds an open Recorder + audio pipeline on the daemon
+	// side; routing through HangupCall on hook-on is what gives the daemon
+	// the chance to finalize the partial greeting and stop the pipeline.
 	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING ||
-		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING
+		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING ||
+		c.state == StateVOICEMAIL_RECORD_GREETING
 	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||

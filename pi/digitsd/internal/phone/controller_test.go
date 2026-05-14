@@ -2200,7 +2200,9 @@ func TestController_HashFinishesGreetingRecord(t *testing.T) {
 }
 
 // TestController_HookOnDuringGreetingRecord verifies that hanging up while
-// recording the greeting returns the FSM to IDLE.
+// recording the greeting returns the FSM to IDLE and calls HangupCall, which
+// the daemon side uses to finalize the partial greeting recording and stop
+// the audio pipeline.
 func TestController_HookOnDuringGreetingRecord(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
@@ -2216,5 +2218,8 @@ func TestController_HookOnDuringGreetingRecord(t *testing.T) {
 	c.HandleEvent("HOOK:ON")
 	if c.State() != StateIDLE {
 		t.Fatalf("expected IDLE after hook-on, got %s", c.State())
+	}
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall (so daemon can finalize partial greeting), got %d", cb.Hangups())
 	}
 }

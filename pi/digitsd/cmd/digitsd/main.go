@@ -150,6 +150,14 @@ type daemonCallbacks struct {
 	recorder          *voicemail.Recorder
 	recorderMu        sync.Mutex
 	voicemailWebRTCCh chan []int16
+
+	// Greeting recording (separate from message recording above). Active
+	// only between *97 entry and either # / hook-on / max-duration. Lives
+	// under its own mutex so it doesn't contend with the message recorder
+	// path. The encoder is paired with the recorder: cleared together.
+	greetingRecorder   *voicemail.Recorder
+	greetingEncoder    *codec.Encoder
+	greetingRecorderMu sync.Mutex
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -673,13 +681,172 @@ func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
 	return d.cfg.Voicemail.Enabled, d.cfg.Voicemail.RingTimeout
 }
 
-// VoicemailRecordGreeting, VoicemailRecordGreetingKey, and VoicemailDeleteGreeting
-// are stubs filled in by Task 6 of the voicemail-greeting plan. They satisfy the
-// Callbacks interface so the FSM can transition into the *97 / *99 service
-// codes without a real handler yet.
-func (d *daemonCallbacks) VoicemailRecordGreeting()                {}
-func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {}
-func (d *daemonCallbacks) VoicemailDeleteGreeting()                {}
+// VoicemailRecordGreeting is invoked by the controller when the user dials
+// *97 to record a custom outgoing greeting. It brings up the audio pipeline
+// (without a WebRTC peer; mic capture only), plays a short prompt beep,
+// opens a greeting recorder, and starts a goroutine that encodes mic frames
+// to Opus and appends them. Recording ends on # (VoicemailRecordGreetingKey),
+// hook-on (HangupCall path), or duration cap (atCap branch in the loop).
+//
+// On any error before the recording goroutine starts, the FSM is reset to
+// DIALTONE with dial tone re-armed so the user lands somewhere coherent.
+func (d *daemonCallbacks) VoicemailRecordGreeting() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	if store == nil {
+		slog.Warn("voicemail: store not available for greeting record")
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	d.mu.Lock()
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("voicemail: greeting pipeline start failed", "error", err)
+			d.pipeline = nil
+			d.mu.Unlock()
+			d.ctrl.ResetToDialtone()
+			d.SendTone(phone.ToneDial)
+			return
+		}
+	}
+	pipeline := d.pipeline
+	d.mu.Unlock()
+
+	// Prompt beep so the user knows the recorder is hot. 400ms tail keeps
+	// the beep out of the recording itself.
+	pipeline.PlayGreetingBeep(300 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
+
+	rec, err := store.BeginGreetingRecording()
+	if err != nil {
+		slog.Error("voicemail: begin greeting recording failed", "error", err)
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	enc, err := codec.NewEncoder(48000, 1, 24000)
+	if err != nil {
+		slog.Error("voicemail: greeting encoder failed", "error", err)
+		rec.Discard()
+		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
+		return
+	}
+
+	d.greetingRecorderMu.Lock()
+	d.greetingRecorder = rec
+	d.greetingEncoder = enc
+	d.greetingRecorderMu.Unlock()
+
+	slog.Info("voicemail: recording custom greeting")
+
+	// Mic -> Opus -> Recorder loop. Exits when the recorder/encoder pair is
+	// cleared (finalize, hangup) or the pipeline's OutFrames channel closes.
+	go func() {
+		defer recoverGoroutine("greeting-record")
+		for frame := range pipeline.OutFrames() {
+			d.greetingRecorderMu.Lock()
+			rec := d.greetingRecorder
+			enc := d.greetingEncoder
+			d.greetingRecorderMu.Unlock()
+			if rec == nil || enc == nil {
+				return
+			}
+
+			payload, err := enc.Encode(frame)
+			if err != nil {
+				slog.Warn("voicemail: greeting encode error", "error", err)
+				continue
+			}
+
+			atCap, err := rec.AppendFrame(payload)
+			if err != nil {
+				slog.Warn("voicemail: greeting append failed", "error", err)
+				continue
+			}
+			if atCap {
+				slog.Info("voicemail: greeting max duration reached")
+				d.finalizeGreetingRecording()
+				return
+			}
+		}
+	}()
+}
+
+// finalizeGreetingRecording closes the active greeting recorder, stops the
+// audio pipeline (no live call to keep it open), resets the FSM to DIALTONE,
+// and re-arms dial tone. Idempotent: safe to call from any of the three
+// terminator paths (#, hook-on, max-duration). The first caller wins; the
+// rest see a nil recorder and return early.
+func (d *daemonCallbacks) finalizeGreetingRecording() {
+	d.greetingRecorderMu.Lock()
+	rec := d.greetingRecorder
+	d.greetingRecorder = nil
+	d.greetingEncoder = nil
+	d.greetingRecorderMu.Unlock()
+
+	if rec == nil {
+		return
+	}
+
+	if _, err := rec.Finalize(); err != nil {
+		slog.Error("voicemail: greeting finalize failed", "error", err)
+	} else {
+		slog.Info("voicemail: custom greeting saved")
+	}
+
+	// Stop the pipeline asynchronously: pion's Stop can take a noticeable
+	// fraction of a second and there's no live call holding it open.
+	d.mu.Lock()
+	pipeline := d.pipeline
+	d.pipeline = nil
+	d.mu.Unlock()
+	if pipeline != nil {
+		go func() {
+			defer recoverGoroutine("greeting-pipeline-stop")
+			pipeline.Stop()
+		}()
+	}
+
+	d.ctrl.ResetToDialtone()
+	d.mixer.StopTone()
+	d.SendTone(phone.ToneDial)
+}
+
+// VoicemailRecordGreetingKey routes DTMF keys received while the FSM is in
+// VOICEMAIL_RECORD_GREETING. Only "#" terminates the session today; other
+// digits are ignored so a user typing into the recording doesn't accidentally
+// kill it.
+func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {
+	if digit == "#" {
+		d.finalizeGreetingRecording()
+	}
+}
+
+// VoicemailDeleteGreeting removes the on-disk custom greeting (if any). The
+// next voicemail auto-answer will fall back to the embedded default WAV.
+// Idempotent on missing file (Store.DeleteGreeting handles the not-exist case).
+func (d *daemonCallbacks) VoicemailDeleteGreeting() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	if store == nil {
+		return
+	}
+
+	if err := store.DeleteGreeting(); err != nil {
+		slog.Error("voicemail: delete greeting failed", "error", err)
+	} else {
+		slog.Info("voicemail: custom greeting deleted")
+	}
+}
 
 // hasCustomGreeting reports whether the user has recorded a custom outgoing
 // greeting on this phone. False also when the voicemail store hasn't been
@@ -1288,6 +1455,21 @@ func (d *daemonCallbacks) HangupCall() {
 		d.recorder = nil
 	}
 	d.recorderMu.Unlock()
+
+	// Finalize any active custom-greeting recording. Hangup during *97
+	// preserves what the user spoke up to that point (answering-machine
+	// convention). The encoder is paired with the recorder; clear both.
+	// finalizeGreetingRecording may have already run via the # path, in
+	// which case greetingRecorder is nil and this block no-ops.
+	d.greetingRecorderMu.Lock()
+	if d.greetingRecorder != nil {
+		if _, err := d.greetingRecorder.Finalize(); err != nil {
+			slog.Error("hangup: greeting finalize failed", "error", err)
+		}
+		d.greetingRecorder = nil
+		d.greetingEncoder = nil
+	}
+	d.greetingRecorderMu.Unlock()
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.
