@@ -2,6 +2,7 @@
 package updater
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -63,7 +64,7 @@ func New(cfg Config) *Updater {
 	}
 	return &Updater{
 		cfg:    cfg,
-		client: &http.Client{Timeout: 120 * time.Second},
+		client: &http.Client{},
 	}
 }
 
@@ -93,7 +94,13 @@ type Release struct {
 // If targetPi/targetFW are empty, the latest version is used.
 // If the resolved version matches the current version, that component is skipped.
 func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) {
-	resp, err := u.client.Get(u.cfg.ServerBaseURL + "/api/updates/releases")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.cfg.ServerBaseURL+"/api/updates/releases", nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch releases: %w", err)
+	}
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch releases: %w", err)
 	}
