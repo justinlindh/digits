@@ -407,11 +407,18 @@ func (m *Mixer) readWebRTCSources(buf []int16) {
 
 // loadWAV reads a WAV file and returns the PCM samples as []int16.
 // Parses RIFF/WAV chunks to find the actual data offset (handles extended
-// headers). Asserts the file is mono S16_LE at 48 kHz: that is the rate the
-// mixer and pipeline run at, and samples are consumed without resampling, so
-// a non-48k file plays back pitch-shifted. A wrong rate logs a WARN and
-// returns the samples unchanged so a stale asset is audible (and noticed)
-// rather than silently broken.
+// headers). Logs a WARN when the fmt chunk reports anything other than
+// mono S16_LE at 48 kHz: that is the rate the mixer and pipeline run at,
+// and samples are consumed without resampling. The samples are returned
+// unchanged regardless so a stale or wrong-rate asset is audible (and
+// flagged in the boot log) instead of silently dropped.
+//
+// Some of the bundled tones are still authored at 44.1 kHz. Those play
+// through the local-earpiece path (mixer → ALSA) at a barely audible
+// ~9% pitch shift, which has not been treated as a blocker. The path
+// that does NOT tolerate the mismatch is pipeline.PlayGreetingSamples
+// (voicemail greeting → WebRTC outbound): the embedded greeting WAV is
+// kept at 48 kHz to match.
 func loadWAV(path string) ([]int16, error) {
 	f, err := os.Open(path)
 	if err != nil {
