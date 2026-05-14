@@ -27,6 +27,8 @@ const (
 	StateADD_INTERCEPT   State = "ADD_INTERCEPT"   // Add-leg failed (busy, timeout, refused); B on hold, flash to recover
 	StateCONFERENCE_MERGED State = "CONFERENCE_MERGED" // Three-way call active
 	StateCALL_RETURN       State = "CALL_RETURN"       // *69: waiting for announcement + "1" confirmation
+	StateVOICEMAIL_GREETING  State = "VOICEMAIL_GREETING"  // auto-answered; playing beep
+	StateVOICEMAIL_RECORDING State = "VOICEMAIL_RECORDING" // recording caller audio
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -77,6 +79,10 @@ type Callbacks interface {
 	SendRingPattern(id int)                               // Send RING:PATTERN:<id> for distinctive ring
 	OnCallReturnCancel()                                  // *89 detected: cancel pending call-return retry
 	OnCallReturnAbandon()                                 // CALL_RETURN exited via on-hook without dialing
+	VoicemailAutoAnswer()                                 // Voicemail auto-answered an incoming call
+	VoicemailPickup()                                     // User picked up during voicemail greeting/recording
+	VoicemailRecordEnded()                                // Recording completed or stopped
+	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -98,6 +104,10 @@ type Controller struct {
 	// hook-flap that re-enters off-hook treatment within ~4 min won't let the
 	// previous goroutine step the new session forward.
 	treatmentGen uint64
+	// ringTimeoutGen is incremented each time a voicemail ring-timeout goroutine
+	// starts. The spawned goroutine captures the value and aborts on mismatch,
+	// so a hang-up or answer during the ring window cancels the auto-answer.
+	ringTimeoutGen uint64
 	// done is closed by Close(); long-lived goroutines (off-hook treatment) abort
 	// their sleeps when it fires so daemon shutdown isn't blocked.
 	done      chan struct{}
@@ -176,6 +186,16 @@ func (c *Controller) SetCallReturnNumber(number string) {
 	c.callReturnNumber = number
 }
 
+// SetVoicemailRecording transitions from VOICEMAIL_GREETING to VOICEMAIL_RECORDING.
+// Called by the daemon when the greeting finishes and recording begins. Thread-safe.
+func (c *Controller) SetVoicemailRecording() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state == StateVOICEMAIL_GREETING {
+		c.state = StateVOICEMAIL_RECORDING
+	}
+}
+
 // HandleCallReturnRing transitions the phone from IDLE to RINGING with a
 // distinctive ring pattern, signaling that the *69 target is now free. When
 // the user picks up, the controller auto-dials target instead of answering an
@@ -203,10 +223,14 @@ func (c *Controller) State() State {
 	return c.state
 }
 
-// IsCallActive reports whether the phone is currently in a call or actively ringing.
+// IsCallActive reports whether the phone is currently in a call or actively
+// ringing. Voicemail greeting/recording also count as active: the WebRTC peer
+// connection is up, the recorder is open, and any teardown path (e.g. WebSocket
+// reconnect) must run the full HangupCall flow to finalize cleanly.
 func (c *Controller) IsCallActive() bool {
 	switch c.State() {
-	case StateCALLING, StateRINGING, StateCONNECTED:
+	case StateCALLING, StateRINGING, StateCONNECTED,
+		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		return true
 	default:
 		return false
@@ -231,6 +255,11 @@ func (c *Controller) Reset() {
 	c.callReturnNumber = ""
 	c.callReturnRinging = false
 	c.callReturnTarget = ""
+	// Bump ringTimeoutGen so any in-flight voicemail ring-timeout watcher
+	// observes the mismatch on its next wake-up and aborts. Without this
+	// bump, a Reset during RINGING would let the goroutine still fire
+	// VoicemailAutoAnswer against a phone that is no longer ringing.
+	c.ringTimeoutGen++
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
@@ -309,6 +338,7 @@ func (c *Controller) onHookOff() {
 		c.cb.SendTone(ToneDial)
 		c.cb.SendLED("ON")
 	case StateRINGING:
+		c.ringTimeoutGen++
 		if c.callReturnRinging {
 			number := c.callReturnTarget
 			c.callReturnRinging = false
@@ -329,6 +359,12 @@ func (c *Controller) onHookOff() {
 			c.cb.SetFlashEnabled(true)
 			c.cb.AnswerCall()
 		}
+	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		c.state = StateCONNECTED
+		c.cb.SendTone(ToneStop)
+		c.cb.SendLED("ON")
+		c.cb.SetFlashEnabled(true)
+		c.cb.VoicemailPickup()
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
 	}
@@ -338,7 +374,8 @@ func (c *Controller) onHookOn() {
 	if c.state == StateIDLE {
 		return
 	}
-	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING
+	wasConnectedOrCalling := c.state == StateCONNECTED || c.state == StateCALLING ||
+		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING
 	wasCallReturn := c.state == StateCALL_RETURN
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
@@ -590,6 +627,33 @@ func (c *Controller) onSignalRing() {
 		c.cb.SendRing(true)
 	}
 	c.cb.SendLED("BLINK")
+	enabled, timeout := c.cb.VoicemailEnabled()
+	if enabled && timeout > 0 {
+		c.ringTimeoutGen++
+		gen := c.ringTimeoutGen
+		go c.ringTimeoutWatcher(gen, timeout)
+	}
+}
+
+// ringTimeoutWatcher sleeps for d, then auto-answers into voicemail if the
+// phone is still in RINGING with the same generation counter. Mirrors the
+// runPermanentSignalTreatment generation pattern: a hangup or pickup increments
+// ringTimeoutGen, causing any in-flight watcher to abort on mismatch. Caller
+// must NOT hold c.mu.
+func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
+	if !c.sleepOrDone(d) {
+		return
+	}
+	c.mu.Lock()
+	if c.state != StateRINGING || c.ringTimeoutGen != gen {
+		c.mu.Unlock()
+		return
+	}
+	c.state = StateVOICEMAIL_GREETING
+	c.cb.SendRing(false)
+	c.cb.SendTone(ToneStop)
+	c.mu.Unlock()
+	c.cb.VoicemailAutoAnswer()
 }
 
 func (c *Controller) onSignalAnswer(sender string) {
@@ -616,11 +680,18 @@ func (c *Controller) onSignalHangup(sender string) {
 	switch c.state {
 	case StateRINGING:
 		slog.Info("phone: caller hung up during ring - stopping ring")
+		c.ringTimeoutGen++
 		c.state = StateIDLE
 		c.callReturnRinging = false
 		c.callReturnTarget = ""
 		c.cb.SendRing(false)
 		c.cb.SendLED("OFF")
+	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
+		slog.Info("phone: caller hung up during voicemail")
+		c.state = StateIDLE
+		c.cb.SendTone(ToneStop)
+		c.cb.SendLED("OFF")
+		c.cb.HangupCall()
 	case StateCONNECTED:
 		c.state = StateREMOTE_HANGUP
 		c.cb.HangupCall()
@@ -991,4 +1062,13 @@ func (c *Controller) IsConferenceHost() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.isConfHost
+}
+
+// RingTimeoutGenForTest returns the current ringTimeoutGen counter. For use in
+// tests only; production code uses the generation counter to cancel superseded
+// voicemail ring-timeout goroutines.
+func (c *Controller) RingTimeoutGenForTest() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ringTimeoutGen
 }

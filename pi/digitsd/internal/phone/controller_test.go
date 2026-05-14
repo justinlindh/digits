@@ -35,6 +35,10 @@ type mockCallbacks struct {
 	allTorndown        bool              // true if TearDownAllMeshPeers was called
 	migratedToMesh     map[string]bool   // phone -> true if MigrateToMesh was called
 	initiateCallErr    error             // injected error for InitiateCall
+	voicemailAutoAnswers int
+	voicemailPickups     int
+	voicemailRecordEnded int
+	voicemailEnabled     func() (bool, time.Duration) // nil = (false, 0)
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -143,6 +147,29 @@ func (m *mockCallbacks) OnCallReturnAbandon() {
 	defer m.mu.Unlock()
 	m.callReturnAbandons++
 }
+func (m *mockCallbacks) VoicemailAutoAnswer() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailAutoAnswers++
+}
+func (m *mockCallbacks) VoicemailPickup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailPickups++
+}
+func (m *mockCallbacks) VoicemailRecordEnded() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailRecordEnded++
+}
+func (m *mockCallbacks) VoicemailEnabled() (bool, time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.voicemailEnabled != nil {
+		return m.voicemailEnabled()
+	}
+	return false, 0
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -200,6 +227,16 @@ func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callConnectedCalls
+}
+func (m *mockCallbacks) VoicemailAutoAnswers() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailAutoAnswers
+}
+func (m *mockCallbacks) VoicemailPickups() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailPickups
 }
 
 // peerMuted returns whether the given peer is currently muted.
@@ -1826,5 +1863,211 @@ func TestController_ResetToDialtone_NextKeyStopsTone(t *testing.T) {
 	}
 	if c.digits != "7" {
 		t.Errorf("expected digits=%q after key, got %q", "7", c.digits)
+	}
+}
+
+// TestController_RingTimeoutFiresAutoAnswer verifies that when voicemail is
+// enabled and the ring-timeout expires, the controller transitions to
+// VOICEMAIL_GREETING and calls VoicemailAutoAnswer.
+func TestController_RingTimeoutFiresAutoAnswer(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 50 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING, got %s", c.State())
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Errorf("expected VOICEMAIL_GREETING after timeout, got %s", c.State())
+	}
+	if cb.VoicemailAutoAnswers() != 1 {
+		t.Errorf("expected 1 VoicemailAutoAnswer, got %d", cb.VoicemailAutoAnswers())
+	}
+}
+
+// TestController_RingTimeoutCanceledByHookOff verifies that picking up the
+// handset during ringing cancels the voicemail auto-answer goroutine.
+func TestController_RingTimeoutCanceledByHookOff(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 100 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	c.HandleEvent("HOOK:OFF")
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer after hookoff cancel, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateCONNECTED {
+		t.Errorf("expected CONNECTED after HOOK:OFF, got %s", c.State())
+	}
+}
+
+// TestController_RingTimeoutCanceledByHangup verifies that a hangup signal
+// during ringing cancels the voicemail auto-answer goroutine.
+func TestController_RingTimeoutCanceledByHangup(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 100 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	c.HandleSignal("hangup", "")
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer after hangup cancel, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateIDLE {
+		t.Errorf("expected IDLE after hangup, got %s", c.State())
+	}
+}
+
+// TestController_VoicemailDisabledNoTimeout verifies that when voicemail is
+// disabled, the ring-timeout goroutine is never spawned and the phone stays
+// in RINGING after the timeout window passes.
+func TestController_VoicemailDisabledNoTimeout(t *testing.T) {
+	cb := &mockCallbacks{} // voicemailEnabled is nil -> returns false, 0
+	c := NewController(cb, "")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+
+	time.Sleep(150 * time.Millisecond)
+
+	if c.State() != StateRINGING {
+		t.Errorf("expected still RINGING with voicemail disabled, got %s", c.State())
+	}
+	if cb.VoicemailAutoAnswers() != 0 {
+		t.Errorf("expected 0 VoicemailAutoAnswer with voicemail disabled, got %d", cb.VoicemailAutoAnswers())
+	}
+}
+
+// TestController_VoicemailPickupDuringGreeting verifies that picking up the
+// handset during VOICEMAIL_GREETING transitions to CONNECTED and calls VoicemailPickup
+// without calling AnswerCall (voicemail already answered the call).
+func TestController_VoicemailPickupDuringGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Fatalf("expected VOICEMAIL_GREETING, got %s", c.State())
+	}
+
+	c.HandleEvent("HOOK:OFF")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED after pickup, got %s", c.State())
+	}
+	if cb.VoicemailPickups() != 1 {
+		t.Errorf("expected 1 VoicemailPickup, got %d", cb.VoicemailPickups())
+	}
+	if cb.Answers() != 0 {
+		t.Errorf("expected 0 AnswerCall (voicemail already answered), got %d", cb.Answers())
+	}
+}
+
+// TestController_VoicemailPickupDuringRecording verifies that picking up the
+// handset during VOICEMAIL_RECORDING also transitions to CONNECTED and calls VoicemailPickup.
+func TestController_VoicemailPickupDuringRecording(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+
+	c.SetVoicemailRecording()
+	if c.State() != StateVOICEMAIL_RECORDING {
+		t.Fatalf("expected VOICEMAIL_RECORDING, got %s", c.State())
+	}
+
+	c.HandleEvent("HOOK:OFF")
+	if c.State() != StateCONNECTED {
+		t.Fatalf("expected CONNECTED after pickup during recording, got %s", c.State())
+	}
+	if cb.VoicemailPickups() != 1 {
+		t.Errorf("expected 1 VoicemailPickup, got %d", cb.VoicemailPickups())
+	}
+}
+
+// TestController_VoicemailCallerHangupDuringRecording verifies that a hangup
+// signal during VOICEMAIL_RECORDING transitions to IDLE and calls HangupCall.
+func TestController_VoicemailCallerHangupDuringRecording(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleSignal("ring", "")
+	time.Sleep(100 * time.Millisecond)
+	c.SetVoicemailRecording()
+
+	c.HandleSignal("hangup", "")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after caller hangup, got %s", c.State())
+	}
+	if cb.Hangups() != 1 {
+		t.Errorf("expected 1 HangupCall, got %d", cb.Hangups())
+	}
+}
+
+// TestController_SecondRingNewTimeout verifies that after a hangup cancels the
+// first ring-timeout goroutine, a second incoming ring spawns a fresh one that
+// fires exactly once.
+func TestController_SecondRingNewTimeout(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) {
+			return true, 80 * time.Millisecond
+		},
+	}
+	c := NewController(cb, "")
+	defer c.Close()
+
+	// First ring: let it start then cancel via hangup.
+	c.HandleSignal("ring", "")
+	c.HandleSignal("hangup", "")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after first hangup, got %s", c.State())
+	}
+
+	// Second ring: should spawn a fresh goroutine.
+	c.HandleSignal("ring", "")
+	if c.State() != StateRINGING {
+		t.Fatalf("expected RINGING after second ring signal, got %s", c.State())
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	if cb.VoicemailAutoAnswers() != 1 {
+		t.Errorf("expected exactly 1 VoicemailAutoAnswer, got %d", cb.VoicemailAutoAnswers())
+	}
+	if c.State() != StateVOICEMAIL_GREETING {
+		t.Errorf("expected VOICEMAIL_GREETING, got %s", c.State())
 	}
 }
