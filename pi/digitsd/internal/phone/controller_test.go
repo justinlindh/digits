@@ -945,6 +945,9 @@ func TestIsCallActive(t *testing.T) {
 		{"connected", StateCONNECTED, true},
 		{"remote hangup", StateREMOTE_HANGUP, false},
 		{"offhook timeout", StateOFFHOOK_TIMEOUT, false},
+		{"voicemail greeting", StateVOICEMAIL_GREETING, true},
+		{"voicemail recording", StateVOICEMAIL_RECORDING, true},
+		{"voicemail record greeting", StateVOICEMAIL_RECORD_GREETING, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
