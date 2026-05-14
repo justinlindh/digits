@@ -2,8 +2,10 @@ package audio
 
 import (
 	"log/slog"
+	"math"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // PipelineConfig holds configuration for the audio pipeline.
@@ -54,6 +56,8 @@ type Pipeline struct {
 	character atomic.Pointer[BiquadChain] // post-denoise POTS character, swappable live
 	denoiser  *Denoiser
 	muted     atomic.Bool
+	beepBuf   atomic.Pointer[[]int16]
+	beepPos   atomic.Int64
 	outPCM    chan []int16 // denoised mono 20ms frames for WebRTC to encode
 	stop      chan struct{}
 	wg        sync.WaitGroup
@@ -119,6 +123,80 @@ func maybeMute(frame []int16, muted bool) {
 	}
 }
 
+// PlayGreetingBeep synthesizes a 1kHz sine beep of the given duration and
+// arms it for injection into the capture loop. The beep replaces real mic
+// frames for its duration so the caller hears it in the outbound stream.
+func (p *Pipeline) PlayGreetingBeep(d time.Duration) {
+	sampleRate := p.cfg.SampleRate
+	totalSamples := int(d.Seconds() * float64(sampleRate))
+	if totalSamples == 0 {
+		return
+	}
+
+	const freq = 1000.0
+	const amplitude = 10000.0 // ~30% of int16 max
+	fadeSamples := sampleRate * 5 / 1000 // 5ms fade
+
+	buf := make([]int16, totalSamples)
+	for i := range buf {
+		t := float64(i) / float64(sampleRate)
+		sample := amplitude * math.Sin(2*math.Pi*freq*t)
+
+		// Fade envelope.
+		if i < fadeSamples {
+			sample *= float64(i) / float64(fadeSamples)
+		} else if i >= totalSamples-fadeSamples {
+			sample *= float64(totalSamples-1-i) / float64(fadeSamples)
+		}
+
+		buf[i] = int16(sample)
+	}
+
+	p.beepPos.Store(0)
+	p.beepBuf.Store(&buf)
+}
+
+// nextBeepFrame returns the next frame of beep audio, or nil if no beep is
+// active. The returned slice is always frameSize samples long (zero-padded at
+// the end of the buffer).
+func (p *Pipeline) nextBeepFrame(frameSize int) []int16 {
+	bufPtr := p.beepBuf.Load()
+	if bufPtr == nil {
+		return nil
+	}
+	buf := *bufPtr
+	pos := int(p.beepPos.Load())
+	if pos >= len(buf) {
+		p.beepBuf.Store(nil)
+		return nil
+	}
+	end := pos + frameSize
+	if end > len(buf) {
+		end = len(buf)
+	}
+	frame := make([]int16, frameSize)
+	copy(frame, buf[pos:end])
+	p.beepPos.Store(int64(end))
+	if end >= len(buf) {
+		p.beepBuf.Store(nil)
+	}
+	return frame
+}
+
+// drainBeepFrames is a test helper that consumes all remaining beep frames of
+// the given size.
+func (p *Pipeline) drainBeepFrames(frameSize int) [][]int16 {
+	var frames [][]int16
+	for {
+		frame := p.nextBeepFrame(frameSize)
+		if frame == nil {
+			break
+		}
+		frames = append(frames, frame)
+	}
+	return frames
+}
+
 // Start opens the ALSA capture device and begins the capture goroutine.
 func (p *Pipeline) Start() error {
 	cap, err := NewCapture(DefaultCaptureConfig())
@@ -175,6 +253,16 @@ func (p *Pipeline) captureLoop() {
 		stereo, err := p.capture.ReadFrame()
 		if err != nil {
 			slog.Error("audio: capture read error", "error", err)
+			continue
+		}
+
+		// Beep injection: if a greeting beep is active, replace mic data with
+		// synthesized tone and discard the real capture.
+		if beepFrame := p.nextBeepFrame(len(stereo) / 2); beepFrame != nil {
+			select {
+			case p.outPCM <- beepFrame:
+			default:
+			}
 			continue
 		}
 
