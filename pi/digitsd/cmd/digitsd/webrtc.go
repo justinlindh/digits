@@ -63,7 +63,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("caller-remote-track")
-			// Live playback — decode and feed into mixer
+			// Live playback: decode and feed into mixer
 			var frameCount int
 			for {
 				pkt, _, err := track.ReadRTP()
@@ -79,20 +79,20 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 					// Silent hold: drop decoded audio rather than feeding the mixer.
 					continue
 				}
-				// Copy — Decode returns a slice of a reused internal buffer
+				// Copy: Decode returns a slice of a reused internal buffer
 				frame := make([]int16, len(pcm))
 				copy(frame, pcm)
 				frameCount++
 				select {
 				case webrtcCh <- frame:
 				default:
-					// Drop frame — mixer is behind
+					// Drop frame: mixer is behind
 				}
 			}
 		}()
 	}
 
-	// Gate ICE candidates behind SDP send — candidates must not arrive before the offer.
+	// Gate ICE candidates behind SDP send: candidates must not arrive before the offer.
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
@@ -103,7 +103,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 		})
 	}
 
-	// Create offer (returns immediately — ICE trickles via OnICECandidate)
+	// Create offer (returns immediately; ICE trickles via OnICECandidate)
 	offer, err := d.peerMgr.CreateOffer()
 	if err != nil {
 		slog.Error("webrtc: create offer failed", "error", err)
@@ -198,7 +198,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		return
 	}
 
-	// Stop tones — mixer continues writing silence (DAC keepalive)
+	// Stop tones: mixer continues writing silence (DAC keepalive)
 	d.mixer.StopTone()
 
 	caller := d.pendingCaller
@@ -237,7 +237,7 @@ func (d *daemonCallbacks) AnswerCall() {
 		})
 	}
 
-	// Accept the offer and generate answer (returns immediately — ICE trickles via OnICECandidate)
+	// Accept the offer and generate answer (returns immediately; ICE trickles via OnICECandidate)
 	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
 	if err != nil {
 		slog.Error("webrtc: accept offer failed", "error", err)

@@ -196,7 +196,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 					slog.Info("conference: first RTP packet received", "phone", phone)
 					gotFirst = true
 				}
-				// pm owns its own decoder — safe to call concurrently with other peers.
+				// pm owns its own decoder: safe to call concurrently with other peers.
 				pcm, err := pm.Decode(pkt.Payload)
 				if err != nil {
 					continue
@@ -325,7 +325,7 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 					slog.Info("conference: first RTP packet received (responder)", "phone", peer)
 					gotFirst = true
 				}
-				// pm owns its own decoder — safe to call concurrently with other peers.
+				// pm owns its own decoder: safe to call concurrently with other peers.
 				pcm, err := pm.Decode(pkt.Payload)
 				if err != nil {
 					continue
