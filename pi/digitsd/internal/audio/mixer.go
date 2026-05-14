@@ -232,7 +232,9 @@ func (m *Mixer) ToneSamples(name string) []int16 {
 }
 
 // LoadTonesFromDir loads all .wav files from a directory into the mixer.
-// Reuses loadWAV from tones.go. Expects S16_LE mono 48kHz WAV files.
+// Reuses loadWAV from tones.go. Asserts S16_LE mono 48kHz WAV files;
+// loadWAV logs a WARN for any mismatch but still loads the samples so the
+// audio is audible (and the warning visible) instead of silently broken.
 func (m *Mixer) LoadTonesFromDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -404,7 +406,12 @@ func (m *Mixer) readWebRTCSources(buf []int16) {
 }
 
 // loadWAV reads a WAV file and returns the PCM samples as []int16.
-// Parses RIFF/WAV chunks to find the actual data offset (handles extended headers).
+// Parses RIFF/WAV chunks to find the actual data offset (handles extended
+// headers). Asserts the file is mono S16_LE at 48 kHz: that is the rate the
+// mixer and pipeline run at, and samples are consumed without resampling, so
+// a non-48k file plays back pitch-shifted. A wrong rate logs a WARN and
+// returns the samples unchanged so a stale asset is audible (and noticed)
+// rather than silently broken.
 func loadWAV(path string) ([]int16, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -425,6 +432,7 @@ func loadWAV(path string) ([]int16, error) {
 		return nil, fmt.Errorf("not a WAV file")
 	}
 
+	var sawFmt bool
 	// Walk chunks until we find "data"
 	for {
 		var chunkHdr [8]byte
@@ -434,7 +442,48 @@ func loadWAV(path string) ([]int16, error) {
 		chunkID := string(chunkHdr[:4])
 		chunkSize := binary.LittleEndian.Uint32(chunkHdr[4:8])
 
+		if chunkID == "fmt " {
+			// Parse the part of the fmt chunk we care about: audio format,
+			// channels, sample rate, bits per sample. The rest (byte rate,
+			// block align, extension data) is skipped.
+			if chunkSize < 16 {
+				return nil, fmt.Errorf("fmt chunk too short: %d", chunkSize)
+			}
+			var fmtBuf [16]byte
+			if _, err := io.ReadFull(f, fmtBuf[:]); err != nil {
+				return nil, fmt.Errorf("read fmt chunk: %w", err)
+			}
+			audioFormat := binary.LittleEndian.Uint16(fmtBuf[0:2])
+			channels := binary.LittleEndian.Uint16(fmtBuf[2:4])
+			sampleRate := binary.LittleEndian.Uint32(fmtBuf[4:8])
+			bitsPerSample := binary.LittleEndian.Uint16(fmtBuf[14:16])
+			if audioFormat != 1 || channels != 1 || bitsPerSample != 16 || sampleRate != 48000 {
+				slog.Warn("mixer: WAV not 48kHz mono S16_LE; playback will be wrong rate",
+					"path", path,
+					"audio_format", audioFormat,
+					"channels", channels,
+					"sample_rate", sampleRate,
+					"bits_per_sample", bitsPerSample,
+				)
+			}
+			// Skip any remaining bytes in the fmt chunk past the 16 we read.
+			rest := int64(chunkSize) - 16
+			if chunkSize%2 != 0 {
+				rest++
+			}
+			if rest > 0 {
+				if _, err := f.Seek(rest, io.SeekCurrent); err != nil {
+					return nil, fmt.Errorf("skip fmt tail: %w", err)
+				}
+			}
+			sawFmt = true
+			continue
+		}
+
 		if chunkID == "data" {
+			if !sawFmt {
+				slog.Warn("mixer: WAV data chunk before fmt; skipping rate check", "path", path)
+			}
 			nSamples := int(chunkSize) / 2
 			samples := make([]int16, nSamples)
 			if err := binary.Read(f, binary.LittleEndian, samples); err != nil {

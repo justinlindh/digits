@@ -40,9 +40,13 @@ func createMinimalWAV(t *testing.T, path string, samples []int16) {
 	binary.LittleEndian.PutUint32(header[4:8], uint32(riffSize))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16) // fmt chunk size
-	binary.LittleEndian.PutUint16(header[20:22], 1)  // PCM
-	binary.LittleEndian.PutUint16(header[22:24], 1)  // mono
+	binary.LittleEndian.PutUint32(header[16:20], 16)     // fmt chunk size
+	binary.LittleEndian.PutUint16(header[20:22], 1)      // PCM
+	binary.LittleEndian.PutUint16(header[22:24], 1)      // mono
+	binary.LittleEndian.PutUint32(header[24:28], 48000)  // sample rate
+	binary.LittleEndian.PutUint32(header[28:32], 96000)  // byte rate (48000 * 1 * 2)
+	binary.LittleEndian.PutUint16(header[32:34], 2)      // block align
+	binary.LittleEndian.PutUint16(header[34:36], 16)     // bits per sample
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
 	_, _ = f.Write(header)
@@ -387,9 +391,13 @@ func TestLoadWAV(t *testing.T) {
 	binary.LittleEndian.PutUint32(header[4:8], uint32(riffSize))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16) // fmt chunk size
-	binary.LittleEndian.PutUint16(header[20:22], 1)  // PCM
-	binary.LittleEndian.PutUint16(header[22:24], 1)  // mono
+	binary.LittleEndian.PutUint32(header[16:20], 16)     // fmt chunk size
+	binary.LittleEndian.PutUint16(header[20:22], 1)      // PCM
+	binary.LittleEndian.PutUint16(header[22:24], 1)      // mono
+	binary.LittleEndian.PutUint32(header[24:28], 48000)  // sample rate
+	binary.LittleEndian.PutUint32(header[28:32], 96000)  // byte rate
+	binary.LittleEndian.PutUint16(header[32:34], 2)      // block align
+	binary.LittleEndian.PutUint16(header[34:36], 16)     // bits per sample
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
 	_, _ = f.Write(header)
@@ -439,6 +447,10 @@ func TestLoadWAVDir(t *testing.T) {
 		binary.LittleEndian.PutUint32(hdr[16:20], 16)
 		binary.LittleEndian.PutUint16(hdr[20:22], 1)
 		binary.LittleEndian.PutUint16(hdr[22:24], 1)
+		binary.LittleEndian.PutUint32(hdr[24:28], 48000)
+		binary.LittleEndian.PutUint32(hdr[28:32], 96000)
+		binary.LittleEndian.PutUint16(hdr[32:34], 2)
+		binary.LittleEndian.PutUint16(hdr[34:36], 16)
 		copy(hdr[36:40], "data")
 		binary.LittleEndian.PutUint32(hdr[40:44], uint32(len(pcm)))
 		_, _ = f.Write(hdr)
