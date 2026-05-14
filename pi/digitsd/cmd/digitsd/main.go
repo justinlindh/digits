@@ -862,6 +862,37 @@ func (d *daemonCallbacks) VoicemailDeleteGreeting() {
 	}
 }
 
+// VoicemailRetrievalCode reports the configured retrieval code (default "*98")
+// that the controller uses to intercept the dial-collection state and enter
+// VOICEMAIL_PLAYBACK. Read under d.mu so a future config-reload path is safe.
+func (d *daemonCallbacks) VoicemailRetrievalCode() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.cfg.Voicemail.RetrievalCode
+}
+
+// VoicemailEnterPlayback is invoked by the controller when the user dials the
+// retrieval code. Full implementation lands in the next commit; this stub
+// closes the phone.Callbacks interface so the controller change can land
+// independently.
+func (d *daemonCallbacks) VoicemailEnterPlayback() {
+	slog.Warn("voicemail: VoicemailEnterPlayback not yet implemented")
+	d.ctrl.ResetToDialtone()
+	d.SendTone(phone.ToneDial)
+}
+
+// VoicemailExitPlayback is invoked by the controller on hook-on during
+// playback. Full implementation lands in the next commit.
+func (d *daemonCallbacks) VoicemailExitPlayback() {
+	slog.Info("voicemail: VoicemailExitPlayback stub")
+}
+
+// VoicemailKey routes a DTMF digit to the playback controller. Full
+// implementation lands in the next commit.
+func (d *daemonCallbacks) VoicemailKey(digit string) {
+	slog.Info("voicemail: VoicemailKey stub", "digit", digit)
+}
+
 // playVoicemailGreeting blocks the caller goroutine until the outgoing
 // greeting has finished playing. Tries the user's recorded greeting first;
 // falls back to the embedded default WAV on os.ErrNotExist (no custom

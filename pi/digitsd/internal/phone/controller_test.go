@@ -42,6 +42,10 @@ type mockCallbacks struct {
 	voicemailRecordGreetings int
 	voicemailRecordKeys      []string
 	voicemailDeleteGreetings int
+	playbackEnters           int
+	playbackExits            int
+	playbackKeys             []string
+	retrievalCodeReturn      string // "" defaults to "*98"
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -188,6 +192,29 @@ func (m *mockCallbacks) VoicemailDeleteGreeting() {
 	defer m.mu.Unlock()
 	m.voicemailDeleteGreetings++
 }
+func (m *mockCallbacks) VoicemailEnterPlayback() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.playbackEnters++
+}
+func (m *mockCallbacks) VoicemailExitPlayback() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.playbackExits++
+}
+func (m *mockCallbacks) VoicemailKey(digit string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.playbackKeys = append(m.playbackKeys, digit)
+}
+func (m *mockCallbacks) VoicemailRetrievalCode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.retrievalCodeReturn == "" {
+		return "*98"
+	}
+	return m.retrievalCodeReturn
+}
 
 // Snapshot accessors — return copies under lock so test assertions are
 // race-free against goroutines started by the controller.
@@ -270,6 +297,21 @@ func (m *mockCallbacks) VoicemailRecordKeys() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.voicemailRecordKeys...)
+}
+func (m *mockCallbacks) PlaybackEnters() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.playbackEnters
+}
+func (m *mockCallbacks) PlaybackExits() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.playbackExits
+}
+func (m *mockCallbacks) PlaybackKeys() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.playbackKeys...)
 }
 
 // peerMuted returns whether the given peer is currently muted.
@@ -2224,5 +2266,141 @@ func TestController_HookOnDuringGreetingRecord(t *testing.T) {
 	}
 	if cb.Hangups() != 1 {
 		t.Errorf("expected 1 HangupCall (so daemon can finalize partial greeting), got %d", cb.Hangups())
+	}
+}
+
+// TestRetrievalCodeIntercept verifies that dialing the configured retrieval
+// code (default *98) from off-hook DIALING enters VOICEMAIL_PLAYBACK and fires
+// VoicemailEnterPlayback exactly once, without initiating an outbound call.
+func TestRetrievalCodeIntercept(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:8")
+
+	if got := cb.PlaybackEnters(); got != 1 {
+		t.Errorf("expected 1 VoicemailEnterPlayback, got %d", got)
+	}
+	if c.State() != StateVOICEMAIL_PLAYBACK {
+		t.Errorf("expected VOICEMAIL_PLAYBACK after *98, got %s", c.State())
+	}
+	if len(cb.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall, got %v", cb.Calls())
+	}
+}
+
+// TestRetrievalCodeIgnoredWhenDisabled verifies that with voicemail disabled,
+// dialing *98 does NOT intercept; the controller keeps accumulating digits.
+// The legacy onKey path treats *98 as a normal dialed prefix; no playback
+// enter, no state change to VOICEMAIL_PLAYBACK.
+func TestRetrievalCodeIgnoredWhenDisabled(t *testing.T) {
+	cb := &mockCallbacks{} // VoicemailEnabled returns false by default
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:8")
+
+	if got := cb.PlaybackEnters(); got != 0 {
+		t.Errorf("expected 0 VoicemailEnterPlayback when voicemail disabled, got %d", got)
+	}
+	if c.State() != StateDIALING {
+		t.Errorf("expected DIALING (still accumulating), got %s", c.State())
+	}
+	if got := c.digitsForTest(); got != "*98" {
+		t.Errorf("expected digits to accumulate as %q, got %q", "*98", got)
+	}
+}
+
+// TestPlaybackKeysDispatched verifies that DTMF keys received while in
+// VOICEMAIL_PLAYBACK are forwarded to VoicemailKey in order, with no state
+// change.
+func TestPlaybackKeysDispatched(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.setStateForTest(StateVOICEMAIL_PLAYBACK)
+
+	// VoicemailKey runs in a goroutine to escape c.mu (so the daemon's impl
+	// can safely call ctrl.ResetToDialtone). Wait for each key to arrive
+	// before sending the next so the asserted slice is in send-order.
+	want := []string{"7", "9", "#", "*"}
+	for i, d := range want {
+		c.HandleEvent("KEY:" + d)
+		expected := i + 1
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if len(cb.PlaybackKeys()) >= expected {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if got := len(cb.PlaybackKeys()); got != expected {
+			t.Fatalf("after sending %q expected %d playback keys, got %d: %v", d, expected, got, cb.PlaybackKeys())
+		}
+	}
+	got := cb.PlaybackKeys()
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("playback key %d: expected %q, got %q (full: %v)", i, want[i], got[i], got)
+		}
+	}
+	if c.State() != StateVOICEMAIL_PLAYBACK {
+		t.Errorf("expected state to remain VOICEMAIL_PLAYBACK, got %s", c.State())
+	}
+}
+
+// TestPlaybackHookOnExits verifies that hanging up during playback fires
+// VoicemailExitPlayback, returns to IDLE, and does NOT trigger HangupCall
+// (no WebRTC peer involved).
+func TestPlaybackHookOnExits(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.setStateForTest(StateVOICEMAIL_PLAYBACK)
+	c.HandleEvent("HOOK:ON")
+
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after HOOK:ON, got %s", c.State())
+	}
+	if got := cb.PlaybackExits(); got != 1 {
+		t.Errorf("expected 1 VoicemailExitPlayback, got %d", got)
+	}
+	if cb.Hangups() != 0 {
+		t.Errorf("expected 0 HangupCall (no WebRTC peer in playback), got %d", cb.Hangups())
+	}
+}
+
+// TestPlaybackEntryClearsDigits verifies that the dial buffer is cleared when
+// the retrieval-code intercept fires. Without this, a subsequent re-entry into
+// DIALING would inherit stale digits and mis-route.
+func TestPlaybackEntryClearsDigits(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := NewController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:8")
+
+	if got := c.digitsForTest(); got != "" {
+		t.Errorf("expected digits to be cleared after playback entry, got %q", got)
 	}
 }

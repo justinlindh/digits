@@ -30,6 +30,7 @@ const (
 	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing beep
 	StateVOICEMAIL_RECORDING       State = "VOICEMAIL_RECORDING"       // recording caller audio
 	StateVOICEMAIL_RECORD_GREETING State = "VOICEMAIL_RECORD_GREETING" // user is recording their custom outgoing greeting (*97)
+	StateVOICEMAIL_PLAYBACK        State = "VOICEMAIL_PLAYBACK"        // user dialed retrieval code; playing back stored messages
 )
 
 // Tone names passed to Callbacks.SendTone. Mixer/daemon dispatch on these.
@@ -87,6 +88,10 @@ type Callbacks interface {
 	VoicemailRecordGreeting()                                     // *97: user is recording their custom outgoing greeting
 	VoicemailRecordGreetingKey(digit string)                      // DTMF key during *97 recording (e.g. "#" to finish)
 	VoicemailDeleteGreeting()                                     // *99: clear the custom greeting and revert to default
+	VoicemailEnterPlayback()                                      // *98: enter retrieval playback; daemon opens first unheard and streams to mixer
+	VoicemailExitPlayback()                                       // hook-on during playback; daemon tears down player + mixer source
+	VoicemailKey(digit string)                                    // DTMF key during playback (7=delete, 9=mark heard, #=skip, *=replay)
+	VoicemailRetrievalCode() string                               // configured retrieval code (default "*98")
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -386,6 +391,10 @@ func (c *Controller) onHookOn() {
 		c.state == StateVOICEMAIL_GREETING || c.state == StateVOICEMAIL_RECORDING ||
 		c.state == StateVOICEMAIL_RECORD_GREETING
 	wasCallReturn := c.state == StateCALL_RETURN
+	// VOICEMAIL_PLAYBACK has no WebRTC peer or open recorder; no HangupCall is
+	// needed. The daemon still needs to know we left playback so it can cancel
+	// the playback goroutine, close the player, and tear down the mixer source.
+	wasInPlayback := c.state == StateVOICEMAIL_PLAYBACK
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -422,6 +431,12 @@ func (c *Controller) onHookOn() {
 		// callReturnOrigin flag would otherwise persist and steer the next
 		// unrelated busy response into the call-return retry path.
 		go c.cb.OnCallReturnAbandon()
+	} else if wasInPlayback {
+		// Tear down voicemail playback. No WebRTC peer is involved, so we
+		// don't route through HangupCall; the daemon's VoicemailExitPlayback
+		// cancels the playback goroutine, closes the player, and removes the
+		// mixer source.
+		c.cb.VoicemailExitPlayback()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
@@ -438,6 +453,21 @@ func (c *Controller) onKey(digit string) {
 		c.cb.SendTone(ToneStop)
 	case StateDIALING:
 		c.digits += digit
+		// Voicemail retrieval-code intercept. Evaluated before the service-code
+		// reset and the 7-digit dial logic so *98 (or whatever the user
+		// configured) short-circuits the outbound call attempt. Exact match
+		// only: if the user dials a number that happens to begin with the
+		// retrieval-code prefix, the accumulator keeps growing past it and the
+		// match never fires.
+		if enabled, _ := c.cb.VoicemailEnabled(); enabled {
+			if code := c.cb.VoicemailRetrievalCode(); code != "" && c.digits == code {
+				slog.Info("phone: retrieval code detected, entering VOICEMAIL_PLAYBACK", "code", code)
+				c.digits = ""
+				c.state = StateVOICEMAIL_PLAYBACK
+				c.cb.VoicemailEnterPlayback()
+				return
+			}
+		}
 		// Service codes (*#*N) are handled by ServiceCodeHandler.
 		// Reset dial buffer when we see 4+ chars starting with *#* so the FSM
 		// doesn't try to dial the service code as a phone number.
@@ -485,6 +515,11 @@ func (c *Controller) onKey(digit string) {
 		}
 	case StateVOICEMAIL_RECORD_GREETING:
 		go c.cb.VoicemailRecordGreetingKey(digit)
+	case StateVOICEMAIL_PLAYBACK:
+		// Route DTMF to the daemon's playback controller. Spawn so daemon
+		// callbacks (which may take a separate voicemail mutex) never
+		// block the controller's HandleEvent goroutine.
+		go c.cb.VoicemailKey(digit)
 	case StateCALL_RETURN:
 		if digit == "1" && c.callReturnNumber != "" {
 			number := c.callReturnNumber

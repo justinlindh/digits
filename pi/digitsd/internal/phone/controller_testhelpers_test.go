@@ -34,3 +34,9 @@ func (c *Controller) addingPeerForTest() string {
 	defer c.mu.Unlock()
 	return c.addingPeer
 }
+
+func (c *Controller) digitsForTest() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.digits
+}
