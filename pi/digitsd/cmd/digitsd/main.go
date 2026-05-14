@@ -402,6 +402,15 @@ func (d *daemonCallbacks) VoicemailPickup() {
 	d.mixer.ImportWebRTCSource(d.callPeer, d.voicemailWebRTCCh)
 	d.voicemailWebRTCCh = nil
 
+	// VoicemailAutoAnswer mutes the local mic just before transitioning into
+	// recording so the caller's outbound stream is DTX comfort noise instead
+	// of room audio. On pickup we are bridging back to a live two-way call,
+	// so the mute has to come back off or the caller can't hear the
+	// homeowner. Holding d.mu is safe; SetMuted is its own atomic.
+	if d.pipeline != nil {
+		d.pipeline.SetMuted(false)
+	}
+
 	slog.Info("voicemail pickup: bridged to live call", "peer", d.callPeer)
 }
 
