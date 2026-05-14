@@ -728,11 +728,6 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 	pipeline := d.pipeline
 	d.mu.Unlock()
 
-	// Prompt beep so the user knows the recorder is hot. 400ms tail keeps
-	// the beep out of the recording itself.
-	pipeline.PlayGreetingBeep(300 * time.Millisecond)
-	time.Sleep(400 * time.Millisecond)
-
 	rec, err := store.BeginGreetingRecording()
 	if err != nil {
 		slog.Error("voicemail: begin greeting recording failed", "error", err)
@@ -754,6 +749,11 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 	d.greetingRecorder = rec
 	d.greetingEncoder = enc
 	d.greetingRecorderMu.Unlock()
+
+	// Prompt beep so the user knows the recorder is hot. 400ms tail keeps
+	// the beep out of the recording itself.
+	pipeline.PlayGreetingBeep(300 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 
 	slog.Info("voicemail: recording custom greeting")
 
