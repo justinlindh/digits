@@ -458,9 +458,9 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 
 	// Decoded PCM target. Buffered so brief mixer-attach delays during
 	// pickup do not block the decode loop; overflow is dropped via the
-	// non-blocking select below, same as the live-call path. Task 7's
-	// VoicemailPickup pulls this channel off the daemon and gives it to
-	// the mixer.
+	// non-blocking select below, same as the live-call path. VoicemailPickup
+	// claims this channel and hands it to the mixer when the caller is
+	// answered mid-recording.
 	webrtcCh := make(chan []int16, 8)
 	d.voicemailWebRTCCh = webrtcCh
 

@@ -184,14 +184,10 @@ func (s *Store) Delete(id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	metaPath := filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
-	if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeIfExists(framesPath); err != nil {
 		return err
 	}
-	if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+	return removeIfExists(s.metaPath(id))
 }
 
 // BeginRecording opens a fresh Recorder. AppendFrame queues raw Opus payloads
@@ -433,13 +429,20 @@ func (s *Store) evictLocked() error {
 	}
 	for i := 0; i < excess; i++ {
 		framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", msgs[i].ID))
-		metaPath := s.metaPath(msgs[i].ID)
-		if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := removeIfExists(framesPath); err != nil {
 			return err
 		}
-		if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := removeIfExists(s.metaPath(msgs[i].ID)); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// removeIfExists deletes path, treating "does not exist" as success.
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
