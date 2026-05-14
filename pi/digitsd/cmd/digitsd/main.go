@@ -375,6 +375,9 @@ func (d *daemonCallbacks) OnCallReturnAbandon() {
 // already decoding and feeding voicemailWebRTCCh; once the mixer registers it
 // as an active source, audio flows immediately.
 func (d *daemonCallbacks) VoicemailPickup() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if msg, err := d.recorder.Finalize(); err != nil {
@@ -385,9 +388,6 @@ func (d *daemonCallbacks) VoicemailPickup() {
 		d.recorder = nil
 	}
 	d.recorderMu.Unlock()
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	if d.callPeer == "" {
 		slog.Warn("voicemail pickup: no call peer")
@@ -628,6 +628,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		time.Sleep(500 * time.Millisecond)
 		pipeline.PlayGreetingBeep(500 * time.Millisecond)
 		time.Sleep(500 * time.Millisecond)
+		pipeline.SetMuted(true)
 		ctrl.SetVoicemailRecording()
 	}()
 
