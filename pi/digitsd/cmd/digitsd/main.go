@@ -663,8 +663,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		d.playVoicemailGreeting(pipeline)
 		pipeline.PlayGreetingBeep(500 * time.Millisecond)
 		time.Sleep(500 * time.Millisecond)
-		pipeline.SetMuted(true)
-		ctrl.SetVoicemailRecording()
+		if ctrl.State() == phone.StateVOICEMAIL_GREETING {
+			pipeline.SetMuted(true)
+			ctrl.SetVoicemailRecording()
+		}
 	}()
 
 	slog.Info("voicemail: auto-answered", "caller", caller, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
