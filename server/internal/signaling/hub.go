@@ -24,6 +24,9 @@ var ErrNotConnected = errors.New("not connected")
 // progress). The WebSocket handler should reject new upgrade requests.
 var ErrDraining = errors.New("hub is draining")
 
+// Conn represents an active WebSocket connection from a device to the hub.
+// The Send channel is the only safe write path; all outbound messages are
+// queued here and delivered by the per-connection write pump goroutine.
 type Conn struct {
 	WS         *websocket.Conn
 	Number     string
@@ -53,6 +56,10 @@ type dashNotifier interface {
 	Notify()
 }
 
+// Hub manages all active device WebSocket connections and routes signaling
+// messages between them. In single-instance mode it holds connections in
+// memory; in cluster mode a RedisBridge fans out to sibling pods and a
+// DeviceState tracks presence across the fleet.
 type Hub struct {
 	mu           sync.RWMutex
 	conns        map[string][]*Conn               // phone number -> connections (multiple devices per line)
@@ -64,6 +71,9 @@ type Hub struct {
 	draining     bool         // set by StartDraining; blocks new Register calls
 }
 
+// NewHub creates a Hub ready for use. Call SetRedis and SetDeviceState before
+// Run to enable cluster mode; omitting them leaves the hub in single-instance
+// mode.
 func NewHub() *Hub {
 	return &Hub{
 		conns:        make(map[string][]*Conn),

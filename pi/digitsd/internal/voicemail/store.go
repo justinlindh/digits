@@ -128,6 +128,10 @@ func (s *Store) listLocked() ([]Message, error) {
 			continue
 		}
 		framesPath := filepath.Join(s.dir, name)
+		// Finalize renames .frames before acquiring s.mu to write .meta, so a
+		// List() racing that gap sees a present .frames with no .meta yet.
+		// Tolerate that here: missing meta yields a zero-value record and the
+		// ID-based RecordedAt fallback below.
 		meta, err := s.readMeta(id)
 		if err != nil {
 			slog.Warn("voicemail: meta read failed", "id", id, "error", err)
@@ -184,10 +188,14 @@ func (s *Store) Delete(id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	if err := removeIfExists(framesPath); err != nil {
+	metaPath := filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
+	if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return removeIfExists(s.metaPath(id))
+	if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // BeginRecording opens a fresh Recorder. AppendFrame queues raw Opus payloads
@@ -294,7 +302,7 @@ func (r *Recorder) Finalize() (Message, error) {
 	}
 
 	duration := time.Duration(r.frames) * opusFrameMs * time.Millisecond
-	recordedAt := r.store.opts.Now()
+	recordedAt := time.UnixMilli(r.id)
 	meta := metaFile{
 		Heard:      false,
 		DurationMs: duration.Milliseconds(),
@@ -338,8 +346,8 @@ type Player struct {
 	file *os.File
 }
 
-// Open returns a Player for the given message ID.
-func (s *Store) Open(id int64) (*Player, error) {
+// OpenPlayer returns a Player for the given message ID.
+func (s *Store) OpenPlayer(id int64) (*Player, error) {
 	path := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
 	f, err := os.Open(path)
 	if err != nil {
@@ -408,7 +416,22 @@ func (s *Store) writeMeta(id int64, m metaFile) error {
 		return err
 	}
 	tmp := s.metaPath(id) + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, s.metaPath(id))
@@ -429,20 +452,13 @@ func (s *Store) evictLocked() error {
 	}
 	for i := 0; i < excess; i++ {
 		framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", msgs[i].ID))
-		if err := removeIfExists(framesPath); err != nil {
+		metaPath := s.metaPath(msgs[i].ID)
+		if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		if err := removeIfExists(s.metaPath(msgs[i].ID)); err != nil {
+		if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-	}
-	return nil
-}
-
-// removeIfExists deletes path, treating "does not exist" as success.
-func removeIfExists(path string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
 	}
 	return nil
 }

@@ -10,10 +10,15 @@ import (
 	"github.com/justinlindh/digits/server/internal/tracing"
 )
 
+// Database wraps *sql.DB with OpenTelemetry-instrumented query tracing.
+// Use Open to obtain one; the zero value is not valid.
 type Database struct {
 	DB *sql.DB
 }
 
+// Open connects to the Postgres database at databaseURL, wraps it with
+// OpenTelemetry SQL tracing, and runs all pending schema migrations before
+// returning. Returns an error if the connection or any migration fails.
 func Open(databaseURL string) (*Database, error) {
 	// tracing.OpenSQLDB wraps lib/pq through otelsql so query spans flow
 	// into the active HTTP request span. otelsql's DisableQuery option is

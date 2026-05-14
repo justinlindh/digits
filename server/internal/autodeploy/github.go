@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+// Release is metadata for one GitHub release returned by the API.
+// NotModified is true when the server responded 304 (ETag matched).
 type Release struct {
 	TagName     string
 	CommitSHA   string
@@ -17,12 +19,16 @@ type Release struct {
 	NotModified bool
 }
 
+// GitHubClient is a thin GitHub API client used by the autodeploy daemon.
+// It only implements the release-fetching calls needed by Deployer.
 type GitHubClient struct {
 	base  string
 	token string
 	hc    *http.Client
 }
 
+// NewGitHubClient returns a GitHubClient. base defaults to
+// "https://api.github.com" when empty; pass a custom URL for tests.
 func NewGitHubClient(base, token string) *GitHubClient {
 	if base == "" {
 		base = "https://api.github.com"

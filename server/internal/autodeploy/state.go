@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// AttemptStatus records the outcome of the most recent deploy attempt.
 type AttemptStatus string
 
 const (
@@ -20,6 +21,9 @@ const (
 	StatusCritical       AttemptStatus = "critical"
 )
 
+// State is the autodeploy daemon's persistent bookkeeping: what was last
+// deployed, the outcome of the latest attempt, and rate-limit state for
+// operator email alerts.
 type State struct {
 	LastDeployedTag       string        `json:"last_deployed_tag,omitempty"`
 	LastDeployedCommitSHA string        `json:"last_deployed_commit_sha,omitempty"`
@@ -33,15 +37,19 @@ type State struct {
 	GitHubETag            string        `json:"github_etag,omitempty"`
 }
 
+// Store persists and retrieves autodeploy State between daemon restarts.
 type Store interface {
 	Read() (State, error)
 	Write(State) error
 }
 
+// FileStore is a file-backed Store that serializes State to JSON with an
+// advisory file lock to prevent concurrent daemon instances from racing.
 type FileStore struct {
 	path string
 }
 
+// NewFileStore returns a FileStore that reads and writes state at path.
 func NewFileStore(path string) *FileStore {
 	return &FileStore{path: path}
 }

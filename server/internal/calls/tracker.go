@@ -24,6 +24,9 @@ const (
 	roleAdded = "added"
 )
 
+// Call is a point-in-time snapshot of a call record, populated from the
+// database by history queries. Pointer fields are nil when the event has not
+// yet occurred (e.g. AnsweredAt on a ringing call).
 type Call struct {
 	ID                      int64
 	Caller                  string
@@ -69,6 +72,8 @@ type callEndObserver interface {
 	OnCallEndedNotify(ctx context.Context, caller, callee string)
 }
 
+// Tracker manages in-flight calls and conferences, persisting events to the
+// database and notifying registered observers (dashboard, relay, health store).
 type Tracker struct {
 	db          *db.Database
 	mu          sync.Mutex
@@ -80,6 +85,8 @@ type Tracker struct {
 	state       *CallState
 }
 
+// New returns a Tracker backed by d. Use the Set* methods to wire up optional
+// observers before the server begins accepting connections.
 func New(d *db.Database) *Tracker {
 	return &Tracker{
 		db:          d,

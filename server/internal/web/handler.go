@@ -208,6 +208,8 @@ func staticFileServer(devMode bool, diskDir string) http.Handler {
 	})
 }
 
+// Handler is the HTTP handler for the signald web UI and API. Construct one
+// with NewHandler; the zero value is not valid.
 type Handler struct {
 	upgrader    websocket.Upgrader
 	lineStore   *line.Store
@@ -273,6 +275,8 @@ type segDesc struct {
 	Severity string
 }
 
+// HandlerConfig carries Handler behavior knobs that are not collaborator
+// dependencies (those live in Deps).
 type HandlerConfig struct {
 	Addr string
 	// BaseURL is the public origin for the app (e.g. https://app.digits.family).
@@ -325,6 +329,8 @@ func wsRateLimit(cfg HandlerConfig) int {
 	return 30
 }
 
+// NewHandler constructs a Handler, parses all embedded HTML templates, and
+// wires up rate limiters. Returns an error if any template fails to parse.
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	funcMap := baseTemplateFuncs()
 	// parsePage closes over the layout + shared-partials file list so each
