@@ -5,8 +5,7 @@ package main
 // daemonCallbacks struct definition stays on main.go; only methods that
 // drive the inbound / outbound 2-party WebRTC path live here.
 //
-// Conference (mesh) callbacks and signaling primitives stay on main.go;
-// they get their own file in the next refactor commit.
+// Conference (mesh) callbacks live in conference.go.
 
 import (
 	"context"
