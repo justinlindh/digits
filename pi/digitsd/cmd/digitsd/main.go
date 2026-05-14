@@ -988,8 +988,7 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	sess, openErr = d.openNextUnheardLocked(store)
 	if openErr != nil || sess == nil {
 		// Empty or error: release the mixer source before we leave.
-		d.mixer.RemoveWebRTCSource("voicemail")
-		d.voicemailMixerCh = nil
+		d.closeMixerSourceLocked()
 		if openErr == nil {
 			noUnheard = true
 		}
@@ -1019,10 +1018,7 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 func (d *daemonCallbacks) VoicemailExitPlayback() {
 	d.voicemailMu.Lock()
 	sess := d.teardownPlaybackLocked()
-	if d.voicemailMixerCh != nil {
-		d.mixer.RemoveWebRTCSource("voicemail")
-		d.voicemailMixerCh = nil
-	}
+	d.closeMixerSourceLocked()
 	d.voicemailMu.Unlock()
 	if sess != nil {
 		slog.Info("voicemail: playback exit", "id", sess.id)
@@ -1100,10 +1096,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		// No follow-on session: tear down the persistent mixer source so
 		// when ResetToDialtone fires the user lands cleanly on the dial
 		// tone path with no voicemail PCM leaking into the mix.
-		if d.voicemailMixerCh != nil {
-			d.mixer.RemoveWebRTCSource("voicemail")
-			d.voicemailMixerCh = nil
-		}
+		d.closeMixerSourceLocked()
 		if openErr == nil {
 			noNext = true
 		}
@@ -1126,6 +1119,17 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 
 	slog.Info("voicemail: advanced to next", "from", currentID, "to", next.id, "digit", digit)
 	go d.voicemailPlaybackLoop(next)
+}
+
+// closeMixerSourceLocked removes the "voicemail" mixer source if one is
+// registered and clears voicemailMixerCh. Idempotent: safe to call when the
+// source is already torn down. Caller must hold voicemailMu.
+func (d *daemonCallbacks) closeMixerSourceLocked() {
+	if d.voicemailMixerCh == nil {
+		return
+	}
+	d.mixer.RemoveWebRTCSource("voicemail")
+	d.voicemailMixerCh = nil
 }
 
 // teardownPlaybackLocked cancels the current playback goroutine, closes its
@@ -1285,10 +1289,7 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		}
 		next, openErr = d.openNextUnheardLocked(store)
 		if openErr != nil || next == nil {
-			if d.voicemailMixerCh != nil {
-				d.mixer.RemoveWebRTCSource("voicemail")
-				d.voicemailMixerCh = nil
-			}
+			d.closeMixerSourceLocked()
 			if openErr == nil {
 				noNext = true
 			}
