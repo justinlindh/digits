@@ -28,6 +28,32 @@ type WiFiFallback struct {
 	APNoClientTimeout time.Duration `json:"ap_no_client_timeout"`
 }
 
+// Voicemail configures the answering-machine feature. Storage is phone-local;
+// there is no server-side index. Retrieval is dial-in only, from the same
+// phone the message was left at.
+type Voicemail struct {
+	// Enabled gates the entire feature. When false the FSM behaves as if
+	// voicemail did not exist: no ring timeout, no retrieval code intercept,
+	// no LED message-waiting indicator.
+	Enabled bool `json:"enabled"`
+
+	// RingTimeout is how long an inbound ring may go unanswered before
+	// digitsd auto-answers and starts recording. Mirrors a 4-ring delay on
+	// classic answering machines (~20s on 5Hz cadence).
+	RingTimeout time.Duration `json:"ring_timeout"`
+
+	// MaxMessageDuration caps a single recording. Once hit, the recording is
+	// finalized and the call is hung up.
+	MaxMessageDuration time.Duration `json:"max_message_duration"`
+
+	// MaxStoredMessages caps the on-disk archive. Oldest messages are evicted
+	// FIFO once the cap is exceeded.
+	MaxStoredMessages int `json:"max_stored_messages"`
+
+	// RetrievalCode is the digit sequence dialed off-hook to enter playback.
+	RetrievalCode string `json:"retrieval_code"`
+}
+
 // Config holds digitsd runtime configuration loaded from a JSON file.
 // CLI flags always override values loaded from the file.
 type Config struct {
@@ -73,6 +99,9 @@ type Config struct {
 	// WiFiFallback configures the WiFi auto-fallback supervisor.
 	WiFiFallback WiFiFallback `json:"wifi_fallback"`
 
+	// Voicemail configures the answering-machine feature. Disabled by default.
+	Voicemail Voicemail `json:"voicemail"`
+
 	// path is the file the config was loaded from; used by Save.
 	path string
 }
@@ -91,10 +120,23 @@ func defaultWiFiFallback() WiFiFallback {
 	}
 }
 
+// defaultVoicemail returns the canonical default Voicemail config. Single
+// source of truth used by Default() and the Load path.
+func defaultVoicemail() Voicemail {
+	return Voicemail{
+		Enabled:            false,
+		RingTimeout:        20 * time.Second,
+		MaxMessageDuration: 90 * time.Second,
+		MaxStoredMessages:  50,
+		RetrievalCode:      "*98",
+	}
+}
+
 // Default returns a Config with sensible defaults.
 func Default() *Config {
 	return &Config{
 		WiFiFallback: defaultWiFiFallback(),
+		Voicemail:    defaultVoicemail(),
 	}
 }
 
@@ -104,7 +146,7 @@ func Default() *Config {
 // If the primary file is corrupt (e.g. null bytes from a power cut), Load
 // automatically falls back to the .bak file.
 func Load(path string) (*Config, error) {
-	c := &Config{path: path, WiFiFallback: defaultWiFiFallback()}
+	c := &Config{path: path, WiFiFallback: defaultWiFiFallback(), Voicemail: defaultVoicemail()}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -136,7 +178,7 @@ func Load(path string) (*Config, error) {
 // a zero-value config so the daemon can still boot (in pairing mode).
 func loadBackup(path string) (*Config, error) {
 	bakPath := path + ".bak"
-	c := &Config{path: path, WiFiFallback: defaultWiFiFallback()}
+	c := &Config{path: path, WiFiFallback: defaultWiFiFallback(), Voicemail: defaultVoicemail()}
 
 	data, err := os.ReadFile(bakPath)
 	if err != nil {
