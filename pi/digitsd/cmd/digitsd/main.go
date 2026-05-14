@@ -603,6 +603,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	rec, err := d.voicemailStore.BeginRecording()
 	if err != nil {
 		slog.Error("voicemail: begin recording failed", "error", err)
+		d.mu.Unlock()
+		d.ctrl.Reset()
+		d.HangupCall()
+		d.mu.Lock()
 		return
 	}
 	d.recorderMu.Lock()
@@ -613,6 +617,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		d.pipeline = d.newPipeline()
 		if err := d.pipeline.Start(); err != nil {
 			slog.Error("voicemail: pipeline start failed", "error", err)
+			d.mu.Unlock()
+			d.ctrl.Reset()
+			d.HangupCall()
+			d.mu.Lock()
 			return
 		}
 		d.startEncodeLoop()
