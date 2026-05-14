@@ -223,10 +223,14 @@ func (c *Controller) State() State {
 	return c.state
 }
 
-// IsCallActive reports whether the phone is currently in a call or actively ringing.
+// IsCallActive reports whether the phone is currently in a call or actively
+// ringing. Voicemail greeting/recording also count as active: the WebRTC peer
+// connection is up, the recorder is open, and any teardown path (e.g. WebSocket
+// reconnect) must run the full HangupCall flow to finalize cleanly.
 func (c *Controller) IsCallActive() bool {
 	switch c.State() {
-	case StateCALLING, StateRINGING, StateCONNECTED:
+	case StateCALLING, StateRINGING, StateCONNECTED,
+		StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		return true
 	default:
 		return false
@@ -251,6 +255,11 @@ func (c *Controller) Reset() {
 	c.callReturnNumber = ""
 	c.callReturnRinging = false
 	c.callReturnTarget = ""
+	// Bump ringTimeoutGen so any in-flight voicemail ring-timeout watcher
+	// observes the mismatch on its next wake-up and aborts. Without this
+	// bump, a Reset during RINGING would let the goroutine still fire
+	// VoicemailAutoAnswer against a phone that is no longer ringing.
+	c.ringTimeoutGen++
 }
 
 // ResetToDialtone forces the controller back to DIALTONE with no pending
