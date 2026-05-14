@@ -62,7 +62,7 @@ func stepOf(err error) Step {
 	return ""
 }
 
-// Result summarises what a single Run cycle did.
+// Result summarizes what a single Run cycle did.
 type Result struct {
 	Action Action
 	Tag    string

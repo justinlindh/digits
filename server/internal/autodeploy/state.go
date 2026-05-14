@@ -43,7 +43,7 @@ type Store interface {
 	Write(State) error
 }
 
-// FileStore is a file-backed Store that serialises State to JSON with an
+// FileStore is a file-backed Store that serializes State to JSON with an
 // advisory file lock to prevent concurrent daemon instances from racing.
 type FileStore struct {
 	path string
