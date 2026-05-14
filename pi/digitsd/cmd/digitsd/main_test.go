@@ -148,10 +148,10 @@ func TestWritePCMWav(t *testing.T) {
 	}
 }
 
-// TestLEDModeWithVoicemailHint exercises the OFF-to-SLOW_PULSE rewrite that
-// powers the message-waiting indicator. The function is pure relative to
-// d.serial (no I/O), so the test asserts return values directly without a
-// fake serial port.
+// TestLEDModeWithVoicemailHint exercises the OFF-to-SLOWER_PULSE rewrite
+// that powers the message-waiting indicator. The function is pure
+// relative to d.serial (no I/O), so the test asserts return values
+// directly without a fake serial port.
 func TestLEDModeWithVoicemailHint(t *testing.T) {
 	mustStoreWithMessages := func(t *testing.T, unheard, heard int) *voicemail.Store {
 		t.Helper()
@@ -212,11 +212,11 @@ func TestLEDModeWithVoicemailHint(t *testing.T) {
 			want:        "OFF",
 		},
 		{
-			name:        "off with one unheard rewrites to slow pulse",
+			name:        "off with one unheard rewrites to slower pulse",
 			mode:        "OFF",
 			voicemailOn: true,
 			store:       func(t *testing.T) *voicemail.Store { return mustStoreWithMessages(t, 1, 0) },
-			want:        "SLOW_PULSE",
+			want:        "SLOWER_PULSE",
 		},
 		{
 			name:        "off with all heard passes through",

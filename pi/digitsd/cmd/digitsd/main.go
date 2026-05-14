@@ -263,24 +263,29 @@ func (d *daemonCallbacks) SendRingPattern(id int) {
 }
 
 // SendLED forwards the controller's LED command to the firmware. The
-// "OFF" mode is rewritten to "SLOW_PULSE" when voicemail is enabled and
-// there are unheard messages, so the idle LED also serves as a
+// "OFF" mode is rewritten to "SLOWER_PULSE" when voicemail is enabled
+// and there are unheard messages, so the idle LED also serves as a
 // message-waiting indicator. Other modes (ON, BLINK, FAST_PULSE, etc.)
 // pass through untouched: when the phone rings or is connected, those
 // states take precedence over the message-waiting hint.
+//
+// SLOWER_PULSE (firmware: 150ms on, 3000ms off) is deliberately distinct
+// from SLOW_PULSE (200ms on, 1500ms off), which the firmware uses for
+// the boot-unpaired phase. Two patterns means the user can tell at a
+// glance whether the phone is unprovisioned or has unheard voicemail.
 func (d *daemonCallbacks) SendLED(mode string) {
 	d.serial.LED(d.ledModeWithVoicemailHint(mode))
 }
 
-// ledModeWithVoicemailHint returns "SLOW_PULSE" instead of "OFF" when
+// ledModeWithVoicemailHint returns "SLOWER_PULSE" instead of "OFF" when
 // voicemail is enabled and at least one message is unheard; otherwise
 // returns mode unchanged. Shared by SendLED (controller-driven
 // transitions) and evaluateLED (background mutations that the controller
 // would not otherwise re-emit).
 //
-// UnheardCount() reads ~50 small files. On the SLOW_PULSE path the file
-// system traffic happens every time the controller transitions to idle,
-// which is not a hot path. Cache later if profiling shows it.
+// UnheardCount() reads ~50 small files. On the SLOWER_PULSE path the
+// file system traffic happens every time the controller transitions to
+// idle, which is not a hot path. Cache later if profiling shows it.
 func (d *daemonCallbacks) ledModeWithVoicemailHint(mode string) string {
 	if mode != "OFF" {
 		return mode
@@ -298,7 +303,7 @@ func (d *daemonCallbacks) ledModeWithVoicemailHint(mode string) string {
 		return mode
 	}
 	if n > 0 {
-		return "SLOW_PULSE"
+		return "SLOWER_PULSE"
 	}
 	return mode
 }
@@ -1367,7 +1372,7 @@ func (d *daemonCallbacks) voicemailExitToDialtoneAsync() {
 // that finalizes while idle, or a delete during playback that drops the
 // count to zero just before the playback exit path runs.
 //
-// We deliberately use the same OFF -> SLOW_PULSE rewrite the SendLED
+// We deliberately use the same OFF -> SLOWER_PULSE rewrite the SendLED
 // wrapper performs, so the two paths cannot disagree about what idle
 // looks like. The wrapper is the source of truth.
 func (d *daemonCallbacks) evaluateLED() {
