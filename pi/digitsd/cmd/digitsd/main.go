@@ -425,8 +425,8 @@ func (d *daemonCallbacks) VoicemailPickup() {
 
 // VoicemailAutoAnswer completes the SDP/ICE handshake for an unanswered call,
 // opens a voicemail recorder, brings up the audio pipeline, and plays the
-// greeting beep. It mirrors the slow path of AnswerCall but diverges in three
-// ways:
+// outgoing greeting followed by the prompt beep. It mirrors the slow path of
+// AnswerCall but diverges in three ways:
 //
 //  1. No mixer.AddWebRTCSource: caller audio does not play through the
 //     earpiece during voicemail. Decoded PCM is sent to voicemailWebRTCCh
@@ -435,9 +435,10 @@ func (d *daemonCallbacks) VoicemailPickup() {
 //  2. OnRemoteTrack runs the same three-phase startup as the live call path
 //     (discard until pipeline ready, drain to live, then feed) but in the
 //     live phase ALSO tees the raw Opus payload into the recorder.
-//  3. After SDP exchange and pipeline start, a small goroutine plays a
-//     greeting beep and then transitions the controller into the recording
-//     state.
+//  3. After SDP exchange and pipeline start, a small goroutine plays the
+//     outgoing greeting (custom .frames if recorded, otherwise the embedded
+//     default WAV) followed by the prompt beep, then mutes the mic and
+//     transitions the controller into the recording state.
 func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
