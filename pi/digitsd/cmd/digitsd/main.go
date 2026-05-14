@@ -985,7 +985,7 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	// or on the end-of-messages fallback. Re-registering with the same key
 	// is idempotent (returns the existing channel).
 	d.voicemailMixerCh = d.mixer.AddWebRTCSource("voicemail")
-	sess, openErr = d.openNextUnheardLocked(store)
+	sess, openErr = d.openNextUnheardLocked(store, 0)
 	if openErr != nil || sess == nil {
 		// Empty or error: release the mixer source before we leave.
 		d.closeMixerSourceLocked()
@@ -1080,14 +1080,17 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		if err := store.Delete(currentID); err != nil {
 			slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
 		}
-		next, openErr = d.openNextUnheardLocked(store)
+		next, openErr = d.openNextUnheardLocked(store, 0)
 	case "9":
 		if err := store.MarkHeard(currentID); err != nil {
 			slog.Warn("voicemail: mark heard failed", "id", currentID, "error", err)
 		}
-		next, openErr = d.openNextUnheardLocked(store)
+		next, openErr = d.openNextUnheardLocked(store, 0)
 	case "#":
-		next, openErr = d.openNextUnheardLocked(store)
+		// "#" leaves the heard flag untouched, so the scan must skip past
+		// the current message or it would replay (currentID is still
+		// unheard and would match again as the first hit).
+		next, openErr = d.openNextUnheardLocked(store, currentID)
 	case "*":
 		next, openErr = d.reopenLocked(store, currentID)
 	}
@@ -1106,13 +1109,19 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	if openErr != nil {
 		slog.Error("voicemail: advance failed", "digit", digit, "error", openErr)
 		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
 		d.evaluateLED()
 		return
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
+		// PlayOnce queues tone_busy on the once-channel; PlayLoop on tone_dial
+		// drives the loop-channel. Both mix together so the user hears the
+		// brief busy ack with dial tone underneath, then just dial tone once
+		// the one-shot drains.
 		d.mixer.PlayOnce("tone_busy")
 		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
 		d.evaluateLED()
 		return
 	}
@@ -1149,17 +1158,24 @@ func (d *daemonCallbacks) teardownPlaybackLocked() *voicemailPlaybackSession {
 	return sess
 }
 
-// openNextUnheardLocked picks the next message whose Heard flag is false,
-// opens a Player for it, and installs a new playback session. Returns
-// (nil, nil) when there are no unheard messages. Caller must hold
-// voicemailMu and have already torn down any prior session.
-func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store) (*voicemailPlaybackSession, error) {
+// openNextUnheardLocked picks the next message whose Heard flag is false and
+// whose ID is strictly greater than afterID, opens a Player for it, and
+// installs a new playback session. Pass afterID=0 to start from the oldest
+// unheard message; the "#" skip path passes the current message's ID so the
+// scan advances past it (since "#" leaves the heard flag untouched, otherwise
+// the same message would replay). Returns (nil, nil) when there are no more
+// unheard messages. Caller must hold voicemailMu and have already torn down
+// any prior session.
+func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store, afterID int64) (*voicemailPlaybackSession, error) {
 	msgs, err := store.List()
 	if err != nil {
 		return nil, fmt.Errorf("list messages: %w", err)
 	}
 	for _, m := range msgs {
 		if m.Heard {
+			continue
+		}
+		if m.ID <= afterID {
 			continue
 		}
 		player, err := store.OpenPlayer(m.ID)
@@ -1210,7 +1226,20 @@ func (d *daemonCallbacks) voicemailPlaybackLoop(sess *voicemailPlaybackSession) 
 	ch := d.voicemailMixerCh
 	d.voicemailMu.Unlock()
 	if ch == nil {
+		// Defensive: should never happen because VoicemailEnterPlayback
+		// installs the mixer channel before opening the first session and
+		// the goroutine is spawned with that channel still in place. If a
+		// concurrent teardown removed it before this goroutine ran, fall
+		// back to a clean exit instead of leaving the session pointer set
+		// and the user stuck in StateVOICEMAIL_PLAYBACK.
 		slog.Warn("voicemail: playback loop started without mixer channel", "id", sess.id)
+		d.voicemailMu.Lock()
+		if d.voicemailPlayback == sess {
+			d.teardownPlaybackLocked()
+		}
+		d.closeMixerSourceLocked()
+		d.voicemailMu.Unlock()
+		go d.voicemailExitToDialtoneAsync()
 		return
 	}
 
@@ -1287,7 +1316,7 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		if err := store.MarkHeard(sess.id); err != nil {
 			slog.Warn("voicemail: mark heard on EOF failed", "id", sess.id, "error", err)
 		}
-		next, openErr = d.openNextUnheardLocked(store)
+		next, openErr = d.openNextUnheardLocked(store, 0)
 		if openErr != nil || next == nil {
 			d.closeMixerSourceLocked()
 			if openErr == nil {
@@ -1303,13 +1332,16 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	if openErr != nil {
 		slog.Error("voicemail: open next after EOF failed", "from_id", sess.id, "error", openErr)
 		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
 		d.evaluateLED()
 		return
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after EOF", "last_id", sess.id)
+		// Brief busy ack + dial tone, mixed on separate channels.
 		d.mixer.PlayOnce("tone_busy")
 		d.ctrl.ResetToDialtone()
+		d.SendTone(phone.ToneDial)
 		d.evaluateLED()
 		return
 	}
@@ -1318,12 +1350,15 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	go d.voicemailPlaybackLoop(next)
 }
 
-// voicemailExitToDialtoneAsync runs ResetToDialtone in a goroutine. Used by
-// callers (VoicemailEnterPlayback) that are invoked under c.mu and would
-// otherwise recurse on the lock.
+// voicemailExitToDialtoneAsync resets the FSM to DIALTONE and re-arms the
+// dial tone. Spawned by callers that hold c.mu (VoicemailEnterPlayback) and
+// cannot take it again to call ResetToDialtone directly. The dial tone is
+// required because ResetToDialtone only updates FSM state; the caller owns
+// the audio. Without it, the user lands in DIALTONE hearing silence.
 func (d *daemonCallbacks) voicemailExitToDialtoneAsync() {
 	defer recoverGoroutine("voicemail-exit-to-dialtone")
 	d.ctrl.ResetToDialtone()
+	d.SendTone(phone.ToneDial)
 }
 
 // evaluateLED re-emits the LED state appropriate for an idle phone with

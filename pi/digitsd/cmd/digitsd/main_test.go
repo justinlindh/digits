@@ -253,3 +253,68 @@ func TestLEDModeWithVoicemailHint(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenNextUnheardLocked_AfterIDSkipsCurrent locks down the "#" skip
+// behavior. The original implementation always returned the first unheard
+// message, so "#" (which leaves the heard flag untouched) replayed the
+// current message. The afterID parameter exists to skip past the current
+// message during a "#" press.
+func TestOpenNextUnheardLocked_AfterIDSkipsCurrent(t *testing.T) {
+	store, err := voicemail.Open(t.TempDir(), voicemail.Options{})
+	if err != nil {
+		t.Fatalf("voicemail.Open: %v", err)
+	}
+
+	// Three unheard messages with strictly increasing IDs.
+	ids := make([]int64, 0, 3)
+	for i := 0; i < 3; i++ {
+		r, err := store.BeginRecording()
+		if err != nil {
+			t.Fatalf("BeginRecording[%d]: %v", i, err)
+		}
+		if _, err := r.AppendFrame([]byte{0xff, 0x00}); err != nil {
+			t.Fatalf("AppendFrame[%d]: %v", i, err)
+		}
+		m, err := r.Finalize()
+		if err != nil {
+			t.Fatalf("Finalize[%d]: %v", i, err)
+		}
+		ids = append(ids, m.ID)
+		// Recording IDs are UnixMilli; ensure they don't collide.
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	d := &daemonCallbacks{voicemailStore: store}
+
+	// Helper: open + assert ID + tear down so the next call starts clean.
+	openExpect := func(afterID int64, want int64, label string) {
+		t.Helper()
+		d.voicemailMu.Lock()
+		defer d.voicemailMu.Unlock()
+		sess, err := d.openNextUnheardLocked(store, afterID)
+		if err != nil {
+			t.Fatalf("%s: openNextUnheardLocked(%d): %v", label, afterID, err)
+		}
+		if want == 0 {
+			if sess != nil {
+				_ = sess.player.Close()
+				d.voicemailPlayback = nil
+				t.Fatalf("%s: openNextUnheardLocked(%d) = id %d, want nil", label, afterID, sess.id)
+			}
+			return
+		}
+		if sess == nil {
+			t.Fatalf("%s: openNextUnheardLocked(%d) = nil, want id %d", label, afterID, want)
+		}
+		if sess.id != want {
+			t.Errorf("%s: openNextUnheardLocked(%d) = id %d, want id %d", label, afterID, sess.id, want)
+		}
+		_ = sess.player.Close()
+		d.voicemailPlayback = nil
+	}
+
+	openExpect(0, ids[0], "afterID=0 returns first unheard")
+	openExpect(ids[0], ids[1], "afterID=first skips to second")
+	openExpect(ids[1], ids[2], "afterID=second skips to third")
+	openExpect(ids[2], 0, "afterID=last yields no next message")
+}
