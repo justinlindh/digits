@@ -73,8 +73,8 @@ type Settings struct {
 }
 
 // DefaultVoicemail returns the voicemail configuration a newly created line
-// starts with: disabled, with classic answering-machine defaults so that the
-// first time a household toggles it on, the behavior matches expectations.
+// starts with: enabled, with classic answering-machine defaults so a new line
+// records messages out of the box without the household having to opt in.
 func DefaultVoicemail() Voicemail {
 	return Voicemail{
 		Enabled:            true,

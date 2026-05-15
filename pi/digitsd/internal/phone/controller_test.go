@@ -398,33 +398,30 @@ func (m *mockCallbacks) wasMigrated(phone string) bool {
 	return m.migratedToMesh[phone]
 }
 
-// waitForCall waits up to 2s for a call to be initiated (async after dial delay).
 func waitForCall(cb *mockCallbacks) {
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
 		if len(cb.Calls()) > 0 {
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
-// waitForTone waits up to 2s for a specific tone to appear. Returns true if
-// found, false on timeout.
 func waitForTone(cb *mockCallbacks, tone string) bool {
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 100; i++ {
 		for _, t := range cb.Tones() {
 			if t == tone {
 				return true
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	return false
 }
 
 func TestController_OutgoingCallFlow(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	// Pick up handset
 	c.HandleEvent("HOOK:OFF")
@@ -498,7 +495,7 @@ func TestController_OutgoingCallFlow(t *testing.T) {
 // 2. Full incoming call flow: ring signal → HOOK:OFF → hangup signal
 func TestController_IncomingCallFlow(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	// Incoming ring
 	c.HandleSignal("ring", "")
@@ -550,7 +547,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 // 3. KEY in IDLE is ignored — no state change, no callbacks
 func TestController_IgnoreKeyInIdle(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("KEY:5")
 
@@ -565,7 +562,7 @@ func TestController_IgnoreKeyInIdle(t *testing.T) {
 // 4. Hang up during DIALING → IDLE, no HangupCall
 func TestController_HangupDuringDialing(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF") // → DIAL_TONE
 	c.HandleEvent("KEY:5")    // → DIALING
@@ -582,7 +579,7 @@ func TestController_HangupDuringDialing(t *testing.T) {
 // 5. Hang up during CALLING → IDLE, HangupCall IS called
 func TestController_HangupDuringCalling(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")    // → DIAL_TONE
 	c.HandleEvent("KEY:5")       // → DIALING
@@ -600,7 +597,7 @@ func TestController_HangupDuringCalling(t *testing.T) {
 // 6. Busy signal during CALLING → SendTone("BUSY"), stays in CALLING
 func TestController_BusySignal(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -639,7 +636,7 @@ func (m *mockContactChecker) IsContact(number string) bool {
 // Test: dialing an allowed contact proceeds normally
 func TestController_DialAllowedContact(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5551234": true}})
 
 	c.HandleEvent("HOOK:OFF")
@@ -658,7 +655,7 @@ func TestController_DialAllowedContact(t *testing.T) {
 // Test: dialing a blocked number gets rejection tones, not a call
 func TestController_DialBlockedContact(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5559999": true}})
 
 	c.HandleEvent("HOOK:OFF")
@@ -686,7 +683,7 @@ func TestController_DialBlockedContact(t *testing.T) {
 
 func TestController_DialServerUnreachable(t *testing.T) {
 	cb := &mockCallbacks{initiateCallErr: fmt.Errorf("signal: not connected")}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -696,46 +693,21 @@ func TestController_DialServerUnreachable(t *testing.T) {
 		t.Fatalf("expected CALLING, got %s", c.State())
 	}
 
-	// InitiateCall was attempted (after 800ms async delay)
+	// InitiateCall was attempted (after async dial delay)
 	waitForCall(cb)
 	if !cb.calledNumber("5551234") {
 		t.Fatalf("expected InitiateCall(5551234), got %v", cb.Calls())
 	}
 
-	// After InitiateCall fails, playRejectSequence runs async (3s wait
-	// + intercept + busy). Verify by waiting and checking tones.
-	// The sequence takes ~3.5s; wait a bit longer.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		found := false
-		for _, tone := range cb.Tones() {
-			if tone == ToneIntercept {
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	tones := cb.Tones()
-	hasIntercept := false
-	for _, tone := range tones {
-		if tone == ToneIntercept {
-			hasIntercept = true
-		}
-	}
-	if !hasIntercept {
-		t.Errorf("expected INTERCEPT tone after server-unreachable call, got tones: %v", tones)
+	if !waitForTone(cb, ToneIntercept) {
+		t.Errorf("expected INTERCEPT tone after server-unreachable call, got tones: %v", cb.Tones())
 	}
 }
 
 // Test: no ContactChecker set = all calls allowed (backward compat)
 func TestController_NoContactChecker_AllowsAll(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	// No SetContactChecker call
 
 	c.HandleEvent("HOOK:OFF")
@@ -754,7 +726,7 @@ func TestController_NoContactChecker_AllowsAll(t *testing.T) {
 // 7. Self-dial → immediate busy tone, no call initiated
 func TestController_SelfDial(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "5551234")
+	c := newTestController(cb, "5551234")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -775,7 +747,7 @@ func TestController_SelfDial(t *testing.T) {
 // 8. Caller hangs up while ringing → ring stops, return to IDLE
 func TestController_CallerHangupDuringRing(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleSignal("ring", "")
 	if c.State() != StateRINGING {
@@ -803,16 +775,15 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 
 func TestOnSignalAnswerNotifiesCallConnected(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "5551234")
+	c := newTestController(cb, "5551234")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
 	c.HandleEvent("DIAL:5556789")
 
-	// Wait for the 800ms async goroutine in onDial to set StateCALLING.
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(500 * time.Millisecond)
 	for c.State() != StateCALLING && time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 	if c.State() != StateCALLING {
 		t.Fatalf("expected StateCALLING, got %s", c.State())
@@ -836,7 +807,7 @@ func TestRingbackMustPlayUntilAnswer(t *testing.T) {
 	// Ringback must keep playing from the moment the controller emits RINGBACK
 	// until onSignalAnswer fires; nothing else should STOP it in between.
 	cb := &mockCallbacks{}
-	c := NewController(cb, "5551234")
+	c := newTestController(cb, "5551234")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -858,7 +829,7 @@ func TestRingbackMustPlayUntilAnswer(t *testing.T) {
 // 9. Incoming ring signal while CONNECTED → stays CONNECTED, ignored
 func TestController_IncomingWhileBusy(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	// Set up CONNECTED state via outgoing call flow
 	c.HandleEvent("HOOK:OFF")
@@ -890,7 +861,7 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 // ignored, and going on-hook restores IDLE.
 func TestController_DialToneTimeout(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	if c.State() != StateDIALTONE {
@@ -936,13 +907,13 @@ func TestController_DialToneTimeout(t *testing.T) {
 // silence is 1s; if Close is honored, REORDER must never fire.
 func TestController_CloseAbortsOffHookTreatment(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("TIMEOUT:DIAL_TONE")
 	c.Close()
 
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 	for _, tone := range cb.Tones() {
 		if tone == ToneReorder {
 			t.Errorf("REORDER fired despite Close(); tones=%v", cb.Tones())
@@ -953,7 +924,7 @@ func TestController_CloseAbortsOffHookTreatment(t *testing.T) {
 // 11. TIMEOUT:DIAL_TONE outside DIALTONE state is ignored (defensive).
 func TestController_DialToneTimeout_IgnoredOutsideDialTone(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	// Idle: no off-hook → timeout makes no sense
 	c.HandleEvent("TIMEOUT:DIAL_TONE")
@@ -1003,7 +974,7 @@ func TestIsCallActive(t *testing.T) {
 
 func TestController_FlashFromConnectedEntersAddDialtone(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
 
 	c.HandleHookFlash("5550002")
@@ -1021,7 +992,7 @@ func TestController_FlashFromConnectedEntersAddDialtone(t *testing.T) {
 
 func TestController_FlashInAddDialtoneAborts(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
@@ -1037,7 +1008,7 @@ func TestController_FlashInAddDialtoneAborts(t *testing.T) {
 
 func TestController_FlashInAddCallingAbortsAndTearsDown(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_CALLING)
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
@@ -1054,7 +1025,7 @@ func TestController_FlashInAddCallingAbortsAndTearsDown(t *testing.T) {
 
 func TestController_FlashInAddPrivateMerges(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_PRIVATE)
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
@@ -1071,7 +1042,7 @@ func TestController_FlashInAddPrivateMerges(t *testing.T) {
 
 func TestController_NonHostFlashIsNoop(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550002")
+	c := newTestController(mock, "5550002")
 	c.setStateForTest(StateCONNECTED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost},
@@ -1087,7 +1058,7 @@ func TestController_NonHostFlashIsNoop(t *testing.T) {
 
 func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost},
@@ -1103,7 +1074,7 @@ func TestController_FlashInConferenceMergedIsNoop(t *testing.T) {
 
 func TestController_FlashInAddInterceptAborts(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_INTERCEPT)
 	c.setHeldPeerForTest("5550002")
 
@@ -1128,7 +1099,7 @@ func (m *mockCallbacks) calledNumber(number string) bool {
 
 func TestController_DialInAddDialtoneEntersAddDialing(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
@@ -1147,7 +1118,7 @@ func TestController_DialInAddDialingReachesAddCallingOnDialEvent(t *testing.T) {
 	// The firmware collects digits and sends DIAL:<number> when done —
 	// matching the existing StateDIALING → StateCALLING pattern exactly.
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
@@ -1172,7 +1143,7 @@ func TestController_DialInAddDialingReachesAddCallingOnDialEvent(t *testing.T) {
 
 func TestController_ThirdAnswersEntersAddPrivate(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_CALLING)
 	c.setAddingPeerForTest("5550003")
 
@@ -1185,7 +1156,7 @@ func TestController_ThirdAnswersEntersAddPrivate(t *testing.T) {
 
 func TestController_ThirdBusyPlaysBusyTone(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_CALLING)
 	c.setAddingPeerForTest("5550003")
 
@@ -1207,7 +1178,7 @@ func TestController_ThirdBusyPlaysBusyTone(t *testing.T) {
 
 func TestController_ThirdHangupDuringPrivateGoesToAddIntercept(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_PRIVATE)
 	c.setAddingPeerForTest("5550003")
 
@@ -1228,7 +1199,7 @@ func TestController_ThirdRingTimeoutGoesToAddIntercept(t *testing.T) {
 
 func TestController_ConferenceMemberMarksHostRole(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost},
 		{Phone: "5550002", Role: signal.RoleAdded},
@@ -1245,7 +1216,7 @@ func TestController_ConferenceMemberMarksHostRole(t *testing.T) {
 
 func TestController_ConferenceMemberNonHost(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550002")
+	c := newTestController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost},
 		{Phone: "5550002", Role: signal.RoleAdded},
@@ -1258,7 +1229,7 @@ func TestController_ConferenceMemberNonHost(t *testing.T) {
 
 func TestController_ConferenceConnectOpensPeer(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550002")
+	c := newTestController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
@@ -1275,7 +1246,7 @@ func TestController_ConferenceConnectOpensPeer(t *testing.T) {
 
 func TestController_ConferenceConnectWrongConfIDIgnored(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550002")
+	c := newTestController(mock, "5550002")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
@@ -1289,7 +1260,7 @@ func TestController_ConferenceConnectWrongConfIDIgnored(t *testing.T) {
 
 func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost}, {Phone: "5550002", Role: signal.RoleAdded}, {Phone: "5550003", Role: signal.RoleAdded},
 	})
@@ -1306,7 +1277,7 @@ func TestController_ConferenceLeaveRemovesPeer(t *testing.T) {
 
 func TestController_ConferenceEndTearsDownAllAndReturnsIdle(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	defer c.Close()
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
@@ -1333,7 +1304,7 @@ func TestController_ConferenceEndFromIdleReturnsIdle(t *testing.T) {
 	// Verify that HandleConferenceEnd from a non-conference state (e.g. IDLE
 	// after the user already hung up) goes to IDLE, not REMOTE_HANGUP.
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	defer c.Close()
 	// Simulate: user hung up, then ConferenceEnd arrives late.
 	c.setStateForTest(StateIDLE)
@@ -1354,7 +1325,7 @@ func TestController_ConferenceEndFromIdleReturnsIdle(t *testing.T) {
 // returns silently without emitting Warn or invoking RemoveMeshPeer.
 func TestController_ConferenceLeaveAfterLocalTeardownIsBenign(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	defer c.Close()
 	// confID is "" by default, simulating the post-teardown state.
 
@@ -1370,7 +1341,7 @@ func TestController_ConferenceLeaveAfterLocalTeardownIsBenign(t *testing.T) {
 // returns silently without invoking TearDownAllMeshPeers or HangupCall.
 func TestController_ConferenceEndAfterLocalTeardownIsBenign(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	defer c.Close()
 	// confID is "" by default, simulating the post-teardown state.
 
@@ -1386,7 +1357,7 @@ func TestController_ConferenceEndAfterLocalTeardownIsBenign(t *testing.T) {
 
 func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	// Establish conference ID via HandleConferenceMember so the confID guard is satisfied.
 	c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
 		{Phone: "5550001", Role: signal.RoleHost},
@@ -1415,7 +1386,7 @@ func TestController_ConferenceRejectedReturnsToConnected(t *testing.T) {
 
 func TestController_MuteLiftsOnMerge(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
 
 	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B, true) and enters ADD_DIALTONE.
@@ -1490,7 +1461,7 @@ func TestController_OnHookOnFromConferenceStates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := &mockCallbacks{}
-			c := NewController(mock, "5550001")
+			c := newTestController(mock, "5550001")
 			c.setStateForTest(tc.state)
 			c.setHeldPeerForTest("5550002")
 			c.setAddingPeerForTest("5550003")
@@ -1551,7 +1522,7 @@ func TestController_HandleConferenceEndFromAddStates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			mock := &mockCallbacks{}
-			c := NewController(mock, "5550001")
+			c := newTestController(mock, "5550001")
 			defer c.Close()
 			// Set the conference state so the confID guard passes.
 			c.HandleConferenceMember("conf-abc", []signal.ConferenceMemberInfo{
@@ -1579,7 +1550,7 @@ func TestController_HandleConferenceEndFromAddStates(t *testing.T) {
 // rejects a self-call (ADD_DIALING -> ADD_INTERCEPT) without calling InitiateCall.
 func TestController_DialThirdPartyRejectsSelfDial(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
@@ -1607,7 +1578,7 @@ func TestController_DialThirdPartyRejectsSelfDial(t *testing.T) {
 // rejects a number not in the contact list (ADD_DIALING -> ADD_INTERCEPT).
 func TestController_DialThirdPartyRejectsBlockedContact(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	// Only 5550002 is allowed; 5550004 is blocked.
 	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5550002": true}})
 	c.setStateForTest(StateADD_DIALTONE)
@@ -1635,7 +1606,7 @@ func TestController_DialThirdPartyRejectsBlockedContact(t *testing.T) {
 
 func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONFERENCE_MERGED)
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
@@ -1663,7 +1634,7 @@ func TestController_ConferenceRejectedIgnoredOnWrongConfID(t *testing.T) {
 // that surfaced mesh-leak and stale-callPeer bugs during manual testing.
 func TestController_DoubleFlashFromConnectedIsStable(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
 
 	// Flash 1: CONNECTED -> ADD_DIALTONE.
@@ -1720,7 +1691,7 @@ func TestController_DoubleFlashFromConnectedIsStable(t *testing.T) {
 // stale input.
 func TestController_FlashRaceWithAnswerFlashFirst(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateADD_CALLING)
 	c.setHeldPeerForTest("5550002")
 	c.setAddingPeerForTest("5550003")
@@ -1751,7 +1722,7 @@ func TestController_FlashRaceWithAnswerFlashFirst(t *testing.T) {
 // without crashing on a TearDownPeer for an empty addingPeer.
 func TestController_AbortFromInterceptAfterSelfDial(t *testing.T) {
 	mock := &mockCallbacks{}
-	c := NewController(mock, "5550001")
+	c := newTestController(mock, "5550001")
 	// Simulate the post-self-dial state: dialThirdParty set intercept but
 	// did not run InitiateCall, so addingPeer stays empty.
 	c.setStateForTest(StateADD_INTERCEPT)
@@ -1778,7 +1749,7 @@ func TestController_AbortFromInterceptAfterSelfDial(t *testing.T) {
 // Silent mode suppresses the bell but keeps LED + state transition.
 func TestController_IncomingRingSilentModeSuppressesBell(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	c.SetSilentMode(true) // seeded from config at startup
 
 	c.HandleSignal("ring", "")
@@ -1799,7 +1770,7 @@ func TestController_IncomingRingSilentModeSuppressesBell(t *testing.T) {
 // Silent off behaves exactly like today.
 func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	c.SetSilentMode(false)
 
 	c.HandleSignal("ring", "")
@@ -1819,7 +1790,7 @@ func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
 // State stays RINGING so offhook still answers normally.
 func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleSignal("ring", "") // state RINGING, SendRing(true), SendLED("BLINK")
 	if c.State() != StateRINGING {
@@ -1845,7 +1816,7 @@ func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
 // intentional: a mid-ring bell start is jarring.
 func TestController_SetSilentModeOffDuringRingDoesNotStartBell(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	c.SetSilentMode(true)
 
 	c.HandleSignal("ring", "") // silent: no SendRing(true), only LED:BLINK
@@ -1861,7 +1832,7 @@ func TestController_SetSilentModeOffDuringRingDoesNotStartBell(t *testing.T) {
 // Flipping silent while idle changes state with no hardware side-effect.
 func TestController_SetSilentModeIdleIsSideEffectFree(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.SetSilentMode(true)
 	c.SetSilentMode(false)
@@ -1875,7 +1846,7 @@ func TestController_SetSilentModeIdleIsSideEffectFree(t *testing.T) {
 // TestController_Reset verifies Reset() drops back to IDLE with no digits.
 func TestController_Reset(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -1903,7 +1874,7 @@ func TestController_Reset(t *testing.T) {
 // off-hook sequence.
 func TestController_ResetToDialtone_NextKeyStopsTone(t *testing.T) {
 	cb := &mockCallbacks{}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 
 	// Simulate user picking up and typing partial code; controller is now in
 	// DIALING with some buffered digits.
@@ -1953,7 +1924,7 @@ func TestController_RingTimeoutFiresAutoAnswer(t *testing.T) {
 			return true, 50 * time.Millisecond
 		},
 	}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -1979,7 +1950,7 @@ func TestController_RingTimeoutCanceledByHookOff(t *testing.T) {
 			return true, 100 * time.Millisecond
 		},
 	}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2003,7 +1974,7 @@ func TestController_RingTimeoutCanceledByHangup(t *testing.T) {
 			return true, 100 * time.Millisecond
 		},
 	}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2024,7 +1995,7 @@ func TestController_RingTimeoutCanceledByHangup(t *testing.T) {
 // in RINGING after the timeout window passes.
 func TestController_VoicemailDisabledNoTimeout(t *testing.T) {
 	cb := &mockCallbacks{} // voicemailEnabled is nil -> returns false, 0
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2046,7 +2017,7 @@ func TestController_VoicemailPickupDuringGreeting(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2073,7 +2044,7 @@ func TestController_VoicemailPickupDuringRecording(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2099,7 +2070,7 @@ func TestController_VoicemailCallerHangupDuringRecording(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 50 * time.Millisecond },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleSignal("ring", "")
@@ -2124,7 +2095,7 @@ func TestController_SecondRingNewTimeout(t *testing.T) {
 			return true, 80 * time.Millisecond
 		},
 	}
-	c := NewController(cb, "")
+	c := newTestController(cb, "")
 	defer c.Close()
 
 	// First ring: let it start then cancel via hangup.
@@ -2157,7 +2128,7 @@ func TestController_Star97EntersRecordGreeting(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2189,7 +2160,7 @@ func TestController_Star99DeletesGreeting(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2219,7 +2190,7 @@ func TestController_HashFinishesGreetingRecord(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2252,7 +2223,7 @@ func TestController_HookOnDuringGreetingRecord(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2276,7 +2247,7 @@ func TestRetrievalCodeIntercept(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2301,7 +2272,7 @@ func TestRetrievalCodeIntercept(t *testing.T) {
 // enter, no state change to VOICEMAIL_PLAYBACK.
 func TestRetrievalCodeIgnoredWhenDisabled(t *testing.T) {
 	cb := &mockCallbacks{} // VoicemailEnabled returns false by default
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")
@@ -2327,7 +2298,7 @@ func TestPlaybackKeysDispatched(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.setStateForTest(StateVOICEMAIL_PLAYBACK)
@@ -2368,7 +2339,7 @@ func TestPlaybackHookOnExits(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.setStateForTest(StateVOICEMAIL_PLAYBACK)
@@ -2392,7 +2363,7 @@ func TestPlaybackEntryClearsDigits(t *testing.T) {
 	cb := &mockCallbacks{
 		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
 	}
-	c := NewController(cb, "5551000")
+	c := newTestController(cb, "5551000")
 	defer c.Close()
 
 	c.HandleEvent("HOOK:OFF")

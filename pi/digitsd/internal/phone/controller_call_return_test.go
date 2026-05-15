@@ -7,7 +7,7 @@ import (
 
 func TestController_Star69DetectedInDialing(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	if ctrl.State() != StateDIALTONE {
@@ -33,7 +33,7 @@ func TestController_Star69DetectedInDialing(t *testing.T) {
 
 func TestController_Star69HangupCancels(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -52,7 +52,7 @@ func TestController_Star69HangupCancels(t *testing.T) {
 
 func TestController_Star69IgnoresNon1Keys(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -73,7 +73,7 @@ func TestController_Star69IgnoresNon1Keys(t *testing.T) {
 
 func TestController_Star69Press1InitiatesCall(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -88,7 +88,7 @@ func TestController_Star69Press1InitiatesCall(t *testing.T) {
 		t.Fatalf("expected CALLING, got %s", ctrl.State())
 	}
 
-	time.Sleep(1 * time.Second)
+	waitForCall(cb)
 	calls := cb.Calls()
 	if len(calls) != 1 || calls[0] != "3140002" {
 		t.Fatalf("expected call to 3140002, got %v", calls)
@@ -97,7 +97,7 @@ func TestController_Star69Press1InitiatesCall(t *testing.T) {
 
 func TestController_Star69Press1NoNumber(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -113,7 +113,7 @@ func TestController_Star69Press1NoNumber(t *testing.T) {
 
 func TestController_Star69RingIgnored(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -132,7 +132,7 @@ func TestController_Star69RingIgnored(t *testing.T) {
 
 func TestController_Star69ResetToDialtone(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -147,7 +147,7 @@ func TestController_Star69ResetToDialtone(t *testing.T) {
 
 func TestController_Star69FlashIgnored(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -168,7 +168,7 @@ func TestController_Star69IsNotDialPhase(t *testing.T) {
 
 func TestController_CallReturnRing(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleCallReturnRing("3140002")
 
@@ -183,7 +183,7 @@ func TestController_CallReturnRing(t *testing.T) {
 
 func TestController_CallReturnRingIgnoredWhenBusy(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleCallReturnRing("3140002")
@@ -195,7 +195,7 @@ func TestController_CallReturnRingIgnoredWhenBusy(t *testing.T) {
 
 func TestController_CallReturnPickupAutoDials(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleCallReturnRing("3140002")
 	if ctrl.State() != StateRINGING {
@@ -208,7 +208,7 @@ func TestController_CallReturnPickupAutoDials(t *testing.T) {
 		t.Fatalf("expected CALLING (auto-dial), got %s", ctrl.State())
 	}
 
-	time.Sleep(1 * time.Second)
+	waitForCall(cb)
 	calls := cb.Calls()
 	if len(calls) != 1 || calls[0] != "3140002" {
 		t.Fatalf("expected call to 3140002, got %v", calls)
@@ -217,7 +217,7 @@ func TestController_CallReturnPickupAutoDials(t *testing.T) {
 
 func TestController_CallReturnRingHangup(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleCallReturnRing("3140002")
 	ctrl.HandleSignal("hangup", "")
@@ -229,7 +229,7 @@ func TestController_CallReturnRingHangup(t *testing.T) {
 
 func TestController_Star89DetectedInDialing(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -252,7 +252,7 @@ func TestController_Star89DetectedInDialing(t *testing.T) {
 
 func TestController_Star69AbandonedFiresAbandon(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleEvent("HOOK:OFF")
 	ctrl.HandleEvent("KEY:*")
@@ -278,7 +278,7 @@ func TestController_Star69AbandonedFiresAbandon(t *testing.T) {
 
 func TestController_OnHookFromConnectedDoesNotFireAbandon(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	ctrl.HandleSignal("ring", "3140002")
 	if ctrl.State() != StateRINGING {
@@ -306,7 +306,7 @@ func TestController_OnHookFromConnectedDoesNotFireAbandon(t *testing.T) {
 // pickup instead of answering the new caller.
 func TestController_ResetClearsCallbackRingState(t *testing.T) {
 	cb := &mockCallbacks{}
-	ctrl := NewController(cb, "3140001")
+	ctrl := newTestController(cb, "3140001")
 
 	// Server detected the *69 retry target free, so the controller is ringing
 	// the requester with the distinctive callback pattern.

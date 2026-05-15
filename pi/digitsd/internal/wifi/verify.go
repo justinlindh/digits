@@ -30,13 +30,19 @@ func (systemCmdRunner) run(name string, args ...string) (string, error) {
 
 // verifyConfig holds tunable parameters for the verification polling loop.
 type verifyConfig struct {
-	pollInterval time.Duration
-	maxAttempts  int
+	pollInterval    time.Duration
+	maxAttempts     int
+	postFlushDelay  time.Duration
+	postHostapdDelay time.Duration
+	postReapplyDelay time.Duration
 }
 
 var defaultVerifyConfig = verifyConfig{
-	pollInterval: 2 * time.Second,
-	maxAttempts:  10,
+	pollInterval:    2 * time.Second,
+	maxAttempts:     10,
+	postFlushDelay:  time.Second,
+	postHostapdDelay: 2 * time.Second,
+	postReapplyDelay: 500 * time.Millisecond,
 }
 
 // Verify stops the captive-portal AP, starts NetworkManager, polls for
@@ -107,7 +113,7 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	// Flush wlan0 state left by NM so hostapd can reclaim it.
 	_, _ = cmd.run("ip", "addr", "flush", "dev", "wlan0")
 	_, _ = cmd.run("ip", "link", "set", "wlan0", "down")
-	time.Sleep(time.Second)
+	time.Sleep(cfg.postFlushDelay)
 
 	// Reconfigure wlan0 static IP for AP mode.
 	if out, err := cmd.run("/usr/local/bin/digits-ap-setup"); err != nil {
@@ -120,13 +126,13 @@ func verifyWithConfig(ssid, backupPath string, hidden bool, cmd cmdRunner, cfg v
 	if out, err := cmd.run("systemctl", "start", "digits-ap"); err != nil {
 		slog.Warn("wifi verify: start digits-ap failed", "error", err, "output", out)
 	}
-	time.Sleep(2 * time.Second)
+	time.Sleep(cfg.postHostapdDelay)
 
 	addrOut, _ := cmd.run("ip", "addr", "show", "dev", "wlan0")
 	if !strings.Contains(addrOut, "192.168.4.1") {
 		slog.Warn("wifi verify: AP IP lost after hostapd start, re-applying")
 		_, _ = cmd.run("/usr/local/bin/digits-ap-setup")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(cfg.postReapplyDelay)
 	}
 
 	if out, err := cmd.run("systemctl", "start", "digits-dnsmasq-ap"); err != nil {
