@@ -670,6 +670,10 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 /* conference / 3-way: warm walnut tone, distinct from all alert variants */
 .chip--conf  { color: #7a5a2a; background: rgba(122,90,42,0.09); border-color: rgba(122,90,42,0.25); }
 .chip--conf  .chip__dot { background: #7a5a2a; }
+/* unheard voicemail count: warm brass, reads as "messages waiting" without
+   the alarm weight of warn/err. No pulse, unlike chip--live. */
+.chip--msg   { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
+.chip--msg   .chip__dot { background: var(--brass); }
 
 /* --------- Conference row / from-3way badge --------- */
 .conf-participants { font-style: italic; }
@@ -1327,26 +1331,6 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
    row is already dense). Dialup shows it. */
 .phone-silent__text {
   display: none;
-}
-
-/* Voicemail unheard-count chip in the detail-page section header. Matches
-   the .chip family but stays inline next to the section title. The chip is
-   only rendered when voicemail is enabled AND there is at least one unheard
-   message, so the bare "voicemail off" state has no chip at all. */
-.voicemail-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 10px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #5a3a00;
-  background: #f7e0a0;
-  vertical-align: middle;
 }
 
 /* Advanced disclosure inside the voicemail section. The summary doubles as
@@ -2311,6 +2295,7 @@ html[data-theme="dark"] .chip--live        { background: rgba(221,168,103,0.18);
 html[data-theme="dark"] .chip--err         { background: rgba(210,132,103,0.14); border-color: rgba(210,132,103,0.32); }
 html[data-theme="dark"] .chip--conf        { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
 html[data-theme="dark"] .chip--conf .chip__dot { background: #caa679; }
+html[data-theme="dark"] .chip--msg         { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
 html[data-theme="dark"] .badge-from3way    { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
 
 /* "On a call" callout on room cards: the dashed brass frame is the hero

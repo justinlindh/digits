@@ -2405,8 +2405,8 @@ body.am .pair-mode-field legend {
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 
 
-/* Voicemail unheard-count LED in the AM detail-page section header. Stays
-   inline with the section label, glows red so an unheard count reads as a
+/* Voicemail unheard-count LED on the AM phones-list roster row. Sits inline
+   in the row meta line and glows red so an unheard count reads as a
    "message waiting" annunciator rather than just decoration. */
 .am-voicemail-led {
   display: inline-block;
