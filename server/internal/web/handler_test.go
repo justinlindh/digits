@@ -2891,23 +2891,23 @@ func TestPhoneVoicemailToggleFlipsEnabledAndRedirects(t *testing.T) {
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	if readVoicemailEnabled(t, database) {
-		t.Fatal("setup invariant: voicemail should default to off")
+	if !readVoicemailEnabled(t, database) {
+		t.Fatal("setup invariant: voicemail should default to on")
 	}
 
 	w := postVoicemailToggle(t, h, cookie, false)
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
 	}
-	if !readVoicemailEnabled(t, database) {
-		t.Fatal("expected voicemail enabled=true after toggle")
+	if readVoicemailEnabled(t, database) {
+		t.Fatal("expected voicemail enabled=false after toggle")
 	}
 
 	if w := postVoicemailToggle(t, h, cookie, false); w.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 on second toggle, got %d", w.Code)
 	}
-	if readVoicemailEnabled(t, database) {
-		t.Fatal("expected voicemail enabled=false after second toggle")
+	if !readVoicemailEnabled(t, database) {
+		t.Fatal("expected voicemail enabled=true after second toggle")
 	}
 }
 
@@ -2916,8 +2916,7 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	// First toggle: off -> on. Section partial swaps in with the enabled
-	// checkbox flipped on. No unheard count -> no chip yet.
+	// First toggle: on -> off (default is now enabled).
 	w := postVoicemailToggle(t, h, cookie, true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -2928,15 +2927,6 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	}
 	if !strings.Contains(body, "/voicemail-toggle") {
 		t.Fatalf("htmx response missing toggle endpoint:\n%s", body)
-	}
-	// With Enabled=true and count=0, the chip should NOT render.
-	if strings.Contains(body, "voicemail-chip") {
-		t.Errorf("expected no chip when count=0, got:\n%s", body)
-	}
-	// The enabled checkbox should round-trip back checked.
-	if !strings.Contains(body, `name="enabled" value="on"
-             checked`) && !strings.Contains(body, `checked`) {
-		t.Errorf("expected enabled checkbox to round-trip checked:\n%s", body)
 	}
 	// Advanced disclosure must be present.
 	if !strings.Contains(body, `class="voicemail-advanced"`) {

@@ -77,7 +77,7 @@ type Settings struct {
 // first time a household toggles it on, the behavior matches expectations.
 func DefaultVoicemail() Voicemail {
 	return Voicemail{
-		Enabled:            false,
+		Enabled:            true,
 		RingTimeoutSeconds: DefaultVoicemailRingTimeoutSeconds,
 		MaxMessageSeconds:  DefaultVoicemailMaxMessageSeconds,
 		MaxStoredMessages:  DefaultVoicemailMaxStoredMessages,
