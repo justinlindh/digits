@@ -1,3 +1,7 @@
+// Package signaling implements the WebSocket-based signaling layer for
+// peer-to-peer phone calls. Hub manages connected device sessions and routes
+// messages; Relay enforces authorization and drives the call-state machine;
+// RedisBridge extends both across multiple server replicas via pub/sub.
 package signaling
 
 import (

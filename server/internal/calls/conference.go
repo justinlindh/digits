@@ -1,3 +1,9 @@
+// Package calls tracks active and historical calls and conferences. The
+// Tracker type is the central coordinator: it maintains an in-memory map of
+// active 2-party calls, delegates 3-way conference state to ConferenceTracker,
+// and persists all lifecycle events (initiated, answered, ended, conference
+// created/ended) to the database. Optional observers (dashboard broadcaster,
+// health store, relay) are wired in at startup via Set* methods.
 package calls
 
 import (

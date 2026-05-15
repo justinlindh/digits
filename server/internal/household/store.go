@@ -1,3 +1,7 @@
+// Package household manages household groups and their membership. A household
+// groups users who share a set of phone lines. Store owns the households and
+// household_members tables; LinkStore owns cross-household links; InviteStore
+// owns pending email invitations.
 package household
 
 import (

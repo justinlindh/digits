@@ -1,3 +1,7 @@
+// Package db provides the database connection and schema migration for
+// signald. Use Open to obtain a Database value; it connects to Postgres,
+// wraps the connection with OpenTelemetry tracing, and runs all pending
+// migrations before returning.
 package db
 
 import (

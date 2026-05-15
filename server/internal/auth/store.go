@@ -1,3 +1,8 @@
+// Package auth manages user accounts, browser sessions, and passwordless
+// authentication flows (magic link and Google OAuth). It owns the users,
+// sessions, and magic_links tables and exposes typed sentinel errors
+// (ErrUserNotFound) so callers can distinguish missing-record results from
+// real database errors.
 package auth
 
 import (

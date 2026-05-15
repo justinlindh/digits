@@ -1,3 +1,6 @@
+// Package logging configures the process-wide structured logger (slog) and
+// injects active OpenTelemetry trace and span IDs into every log record so
+// log lines can be correlated with traces in the observability backend.
 package logging
 
 import (

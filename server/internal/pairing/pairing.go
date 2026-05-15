@@ -1,3 +1,8 @@
+// Package pairing implements the device-to-line pairing flow: generating
+// short numeric codes displayed on the phone, validating them from the web
+// UI, and completing the pairing by writing a device token to the database.
+// Typed errors (ErrInvalidCode, ErrAlreadyPaired, ErrNumberTaken) let callers
+// present specific feedback without inspecting error strings.
 package pairing
 
 import (

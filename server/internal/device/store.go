@@ -1,3 +1,7 @@
+// Package device manages physical handsets paired to lines. Store handles
+// the read paths and side-effecting mutations (heartbeat, unpair, reassign)
+// while the pairing package owns device row creation and the pairing-code
+// lifecycle. HashToken is shared with the auth and pairing packages.
 package device
 
 import (
