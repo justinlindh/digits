@@ -124,7 +124,7 @@ func defaultWiFiFallback() WiFiFallback {
 // source of truth used by Default() and the Load path.
 func defaultVoicemail() Voicemail {
 	return Voicemail{
-		Enabled:            false,
+		Enabled:            true,
 		RingTimeout:        20 * time.Second,
 		MaxMessageDuration: 90 * time.Second,
 		MaxStoredMessages:  50,

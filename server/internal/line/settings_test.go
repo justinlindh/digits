@@ -165,8 +165,8 @@ func TestSettingsMergeAutoUpdateFromPatch(t *testing.T) {
 
 func TestDefaultVoicemailMatchesPhaseOneSpec(t *testing.T) {
 	v := DefaultVoicemail()
-	if v.Enabled {
-		t.Errorf("Enabled default: got true, want false")
+	if !v.Enabled {
+		t.Errorf("Enabled default: got false, want true")
 	}
 	if v.RingTimeoutSeconds != 20 {
 		t.Errorf("RingTimeoutSeconds default: got %d, want 20", v.RingTimeoutSeconds)
@@ -369,13 +369,18 @@ func TestIsValidRetrievalCode(t *testing.T) {
 }
 
 func TestSettingsScanFromEmptyJSONAppliesDefaults(t *testing.T) {
-	// Mirrors what store.scanSettings does for a fresh row.
+	// Mirrors what store.scanSettings does for a fresh row. Merge is
+	// authoritative on booleans, so Enabled (JSON zero = false) overwrites
+	// the default true. Normalize backfills numeric/string defaults but
+	// does not force-enable voicemail.
 	var patch Settings
 	if err := json.Unmarshal([]byte(`{}`), &patch); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	merged := DefaultSettings().Merge(patch).Normalize()
-	if merged.Voicemail != DefaultVoicemail() {
-		t.Errorf("empty JSONB should leave defaults intact, got %+v", merged.Voicemail)
+	want := DefaultVoicemail()
+	want.Enabled = false
+	if merged.Voicemail != want {
+		t.Errorf("empty JSONB merge: got %+v, want %+v", merged.Voicemail, want)
 	}
 }
