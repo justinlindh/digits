@@ -194,6 +194,17 @@ type daemonCallbacks struct {
 	voicemailAnnounceNumbers bool
 	voicemailMessageSeq      int
 
+	// Saved-message review state for a *98 retrieval session. After the
+	// unheard messages play, *98 continues into the messages that were
+	// already heard before this session began. voicemailSavedQueue is the
+	// snapshot of those message IDs, taken at session entry (ascending, so
+	// oldest first) before any new message gets auto-marked-heard.
+	// voicemailSavedCursor indexes the currently playing saved message; it
+	// starts at -1 and openNextSavedLocked advances it. Both guarded by
+	// voicemailMu.
+	voicemailSavedQueue  []int64
+	voicemailSavedCursor int
+
 	// Voicemail-state publish bookkeeping. publishVMMu serializes calls to
 	// publishVoicemailState so two trigger sites firing concurrently (e.g.
 	// recorder finalize racing a retrieval MarkHeard) cannot both send the
