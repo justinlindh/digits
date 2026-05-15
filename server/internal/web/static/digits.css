@@ -663,17 +663,19 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 .chip--on    .chip__dot { background: var(--forest); }
 .chip--warn  { color: var(--ochre); background: rgba(199,154,58,0.08); border-color: rgba(199,154,58,0.25); }
 .chip--warn  .chip__dot { background: var(--ochre); }
-.chip--live  { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
-.chip--live  .chip__dot { background: var(--brass); animation: pulse 1.6s ease-in-out infinite; }
+/* chip--msg (unheard voicemail) shares chip--live's brass but stays calm:
+   the pulse is what marks a call as live, so only chip--live's dot animates.
+   The two never co-occur on one page. */
+.chip--live,
+.chip--msg   { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
+.chip--live  .chip__dot,
+.chip--msg   .chip__dot { background: var(--brass); }
+.chip--live  .chip__dot { animation: pulse 1.6s ease-in-out infinite; }
 .chip--err   { color: var(--rust); background: rgba(160,90,58,0.08); border-color: rgba(160,90,58,0.25); }
 .chip--err   .chip__dot { background: var(--rust); }
 /* conference / 3-way: warm walnut tone, distinct from all alert variants */
 .chip--conf  { color: #7a5a2a; background: rgba(122,90,42,0.09); border-color: rgba(122,90,42,0.25); }
 .chip--conf  .chip__dot { background: #7a5a2a; }
-/* unheard voicemail count: warm brass, reads as "messages waiting" without
-   the alarm weight of warn/err. No pulse, unlike chip--live. */
-.chip--msg   { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
-.chip--msg   .chip__dot { background: var(--brass); }
 
 /* --------- Conference row / from-3way badge --------- */
 .conf-participants { font-style: italic; }
@@ -2291,11 +2293,11 @@ html[data-theme="dark"] .chip__dot         { background: var(--ink-muted); }
 html[data-theme="dark"] .chip--on          { background: rgba(127,169,139,0.14); border-color: rgba(127,169,139,0.32); }
 html[data-theme="dark"] .chip--on .chip__dot { background: var(--forest); }
 html[data-theme="dark"] .chip--warn        { background: rgba(224,185,100,0.14); border-color: rgba(224,185,100,0.32); }
-html[data-theme="dark"] .chip--live        { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
+html[data-theme="dark"] .chip--live,
+html[data-theme="dark"] .chip--msg         { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
 html[data-theme="dark"] .chip--err         { background: rgba(210,132,103,0.14); border-color: rgba(210,132,103,0.32); }
 html[data-theme="dark"] .chip--conf        { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
 html[data-theme="dark"] .chip--conf .chip__dot { background: #caa679; }
-html[data-theme="dark"] .chip--msg         { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
 html[data-theme="dark"] .badge-from3way    { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
 
 /* "On a call" callout on room cards: the dashed brass frame is the hero
