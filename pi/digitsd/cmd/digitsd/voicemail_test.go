@@ -28,3 +28,27 @@ func TestMessageNumberClips(t *testing.T) {
 		})
 	}
 }
+
+func TestSavedCountClips(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		want  []string
+	}{
+		{"zero yields no clips", 0, nil},
+		{"negative yields no clips", -1, nil},
+		{"one saved message is singular", 1, []string{"vm_you_have", "spoken_1", "vm_saved_message"}},
+		{"several saved messages are plural", 4, []string{"vm_you_have", "spoken_4", "vm_saved_messages"}},
+		{"highest digit clip", 9, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
+		{"above nine falls back to lost count", 10, []string{"vm_lost_count"}},
+		{"well above nine falls back to lost count", 50, []string{"vm_lost_count"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := savedCountClips(tt.count)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("savedCountClips(%d) = %v, want %v", tt.count, got, tt.want)
+			}
+		})
+	}
+}

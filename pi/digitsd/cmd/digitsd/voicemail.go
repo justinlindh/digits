@@ -87,6 +87,35 @@ func (d *daemonCallbacks) announceMessageNumber(number int) {
 	d.playAnnouncementSequence(clips...)
 }
 
+// savedCountClips returns the clip sequence for "You have N saved message(s)",
+// announced when *98 retrieval crosses from the new messages into the saved
+// ones. It mirrors announceMessageCount: a non-positive count yields no clips,
+// and a count above 9 falls back to the self-contained "lost count" phrase
+// since there is no clip to voice the exact number.
+func savedCountClips(count int) []string {
+	if count <= 0 {
+		return nil
+	}
+	if count > 9 {
+		return []string{"vm_lost_count"}
+	}
+	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", count)}
+	if count == 1 {
+		return append(seq, "vm_saved_message")
+	}
+	return append(seq, "vm_saved_messages")
+}
+
+// announceSavedCount speaks "You have N saved messages" at the transition
+// from the new-message phase into the saved-message review phase.
+func (d *daemonCallbacks) announceSavedCount(count int) {
+	clips := savedCountClips(count)
+	if len(clips) == 0 {
+		return
+	}
+	d.playAnnouncementSequence(clips...)
+}
+
 // voicemailPlaybackSession bundles the cancelable context, message ID, and
 // open Player for one retrieval-playback message. Each DTMF dispatch
 // (delete, skip, replay, mark-heard) tears down the current session and
@@ -95,7 +124,8 @@ type voicemailPlaybackSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	id     int64
-	number int // 1-based position in the retrieval session, for the "Message N" announcement
+	number int  // 1-based position in the retrieval session, for the "Message N" announcement
+	saved  bool // true for a saved-message-review session; false during the new-message phase
 	player *voicemail.Player
 }
 
@@ -702,9 +732,10 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	}
 
 	var (
-		sess     *voicemailPlaybackSession
-		openErr  error
-		noUnheard bool
+		sess       *voicemailPlaybackSession
+		openErr    error
+		hasSaved   bool
+		savedCount int
 	)
 
 	d.voicemailMu.Lock()
@@ -719,13 +750,17 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	// first message.
 	d.voicemailMessageSeq = 0
 	d.voicemailAnnounceNumbers = false
+	// Snapshot the already-heard messages as the saved-review queue before
+	// playback marks any new message heard.
+	d.snapshotSavedQueueLocked(store)
+	savedCount = len(d.voicemailSavedQueue)
+	hasSaved = savedCount > 0
 	sess, openErr = d.openNextUnheardLocked(store, 0)
-	if openErr != nil || sess == nil {
-		// Empty or error: release the mixer source before we leave.
+	if openErr != nil || (sess == nil && !hasSaved) {
+		// Error, or a truly empty mailbox: release the mixer source. When
+		// there are no unheard messages but saved ones exist, the source is
+		// kept so the saved-review phase can play through it.
 		d.closeMixerSourceLocked()
-		if openErr == nil {
-			noUnheard = true
-		}
 	}
 	d.voicemailMu.Unlock()
 
@@ -734,8 +769,8 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 		go d.voicemailExitToDialtoneAsync()
 		return
 	}
-	if noUnheard {
-		slog.Info("voicemail: no unheard messages on entry")
+	if sess == nil && !hasSaved {
+		slog.Info("voicemail: no messages on entry")
 		// Announce, then exit, on a goroutine. VoicemailEnterPlayback runs
 		// under the controller's c.mu; blocking here for the clip duration
 		// would stall every other phone event until it finished.
@@ -746,27 +781,33 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 		return
 	}
 
-	slog.Info("voicemail: playback start", "id", sess.id)
+	// Announce counts and run playback on a goroutine. VoicemailEnterPlayback
+	// runs under the controller's c.mu; blocking here for the multi-clip
+	// announcements would stall every other phone event (including hook-on)
+	// until they finished. The loop's nil-channel and ctx-cancelled guards
+	// cover a hang-up that races the announcement.
+	if sess != nil {
+		slog.Info("voicemail: playback start", "id", sess.id)
+		go func() {
+			if n, err := store.UnheardCount(); err == nil {
+				d.announceMessageCount(n)
+				// Two or more messages get a spoken "Message N" before each
+				// one. A lone message is already identified by the count
+				// intro, so it is left unannounced.
+				d.voicemailMu.Lock()
+				d.voicemailAnnounceNumbers = n >= 2
+				d.voicemailMu.Unlock()
+			}
+			d.playAnnouncementSequence("vm_playback_controls")
+			d.voicemailPlaybackLoop(sess)
+		}()
+		return
+	}
 
-	// Announce the message count, then run the playback loop, on a
-	// goroutine. VoicemailEnterPlayback runs under the controller's c.mu;
-	// blocking here for the multi-clip count announcement would stall every
-	// other phone event (including hook-on) until it finished. The loop's
-	// existing nil-channel and ctx-cancelled guards cover a hang-up that
-	// races the announcement. UnheardCount reads the on-disk store; safe to
-	// call without any mutex.
-	go func() {
-		if n, err := store.UnheardCount(); err == nil {
-			d.announceMessageCount(n)
-			// Two or more messages get a spoken "Message N" before each
-			// one. A lone message is already identified by the count
-			// intro, so it is left unannounced.
-			d.voicemailMu.Lock()
-			d.voicemailAnnounceNumbers = n >= 2
-			d.voicemailMu.Unlock()
-		}
-		d.voicemailPlaybackLoop(sess)
-	}()
+	// No unheard messages, but saved ones exist: skip straight into the
+	// saved-review phase rather than reporting an empty mailbox.
+	slog.Info("voicemail: no unheard messages, entering saved review", "saved", savedCount)
+	go d.transitionToSavedPhase(store, true)
 }
 
 // VoicemailExitPlayback tears down the current playback session and the
@@ -777,6 +818,11 @@ func (d *daemonCallbacks) VoicemailExitPlayback() {
 	d.voicemailMu.Lock()
 	sess := d.teardownPlaybackLocked()
 	d.closeMixerSourceLocked()
+	// Release the saved-review snapshot for this session. snapshotSavedQueueLocked
+	// reinitializes both at the next entry, so this is just tidiness: it keeps
+	// the queue from lingering between sessions.
+	d.voicemailSavedQueue = nil
+	d.voicemailSavedCursor = -1
 	d.voicemailMu.Unlock()
 	if sess != nil {
 		slog.Info("voicemail: playback exit", "id", sess.id)
@@ -789,12 +835,16 @@ func (d *daemonCallbacks) VoicemailExitPlayback() {
 // safely take voicemailMu and call d.ctrl.ResetToDialtone() after
 // releasing it.
 //
-// Digit semantics (per spec):
+// Digit semantics:
 //
-//	7: delete current message, advance to next unheard
-//	9: mark current heard, advance
+//	7: delete the current message, advance
+//	9: in the new phase, mark the current message heard and advance; in
+//	   saved review it just advances (the message is already heard)
 //	#: skip without changing heard state
-//	*: replay current message from the start
+//	*: replay the current message from the start
+//
+// When the new-message phase runs out and saved messages exist, "7"/"9"/"#"
+// cross into the saved-review phase instead of ending playback.
 func (d *daemonCallbacks) VoicemailKey(digit string) {
 	switch digit {
 	case "7", "9", "#", "*":
@@ -812,10 +862,11 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	}
 
 	var (
-		next     *voicemailPlaybackSession
-		openErr  error
-		noNext   bool
-		mutated  bool // true when "7" or "9" actually advanced the unheard count
+		next      *voicemailPlaybackSession
+		openErr   error
+		noNext    bool
+		mutated   bool // true when a delete/mark changed the store; triggers a (deduped) publish
+		goToSaved bool // true when a new-phase key exhausted the unheard messages and saved review follows
 	)
 
 	d.voicemailMu.Lock()
@@ -828,6 +879,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	}
 	currentID := current.id
 	currentNumber := current.number
+	currentSaved := current.saved
 
 	// Tear down the current message's session before mutating the store and
 	// opening the next. teardownPlaybackLocked cancels the goroutine and
@@ -835,44 +887,74 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	// the goroutine's select on ctx.Done.
 	d.teardownPlaybackLocked()
 
-	switch digit {
-	case "7":
-		if err := store.Delete(currentID); err != nil {
-			slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
-		} else {
-			mutated = true
+	if currentSaved {
+		// Saved-review phase. The message is already heard, so "9" has
+		// nothing to mark and simply advances like "#".
+		switch digit {
+		case "7":
+			if err := store.Delete(currentID); err != nil {
+				slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
+			} else {
+				mutated = true
+			}
+			next = d.openNextSavedLocked(store)
+		case "9", "#":
+			next = d.openNextSavedLocked(store)
+		case "*":
+			next, openErr = d.reopenLocked(store, currentID, 0, true)
 		}
-		next, openErr = d.openNextUnheardLocked(store, 0)
-	case "9":
-		if err := store.MarkHeard(currentID); err != nil {
-			slog.Warn("voicemail: mark heard failed", "id", currentID, "error", err)
-		} else {
-			mutated = true
+		if openErr != nil || next == nil {
+			d.closeMixerSourceLocked()
+			if openErr == nil {
+				noNext = true
+			}
 		}
-		next, openErr = d.openNextUnheardLocked(store, 0)
-	case "#":
-		// "#" leaves the heard flag untouched, so the scan must skip past
-		// the current message or it would replay (currentID is still
-		// unheard and would match again as the first hit).
-		next, openErr = d.openNextUnheardLocked(store, currentID)
-	case "*":
-		next, openErr = d.reopenLocked(store, currentID, currentNumber)
-	}
-
-	if openErr != nil || next == nil {
-		// No follow-on session: tear down the persistent mixer source so
-		// when ResetToDialtone fires the user lands cleanly on the dial
-		// tone path with no voicemail PCM leaking into the mix.
-		d.closeMixerSourceLocked()
-		if openErr == nil {
-			noNext = true
+	} else {
+		// New-message phase.
+		switch digit {
+		case "7":
+			if err := store.Delete(currentID); err != nil {
+				slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
+			} else {
+				mutated = true
+			}
+			next, openErr = d.openNextUnheardLocked(store, 0)
+		case "9":
+			if err := store.MarkHeard(currentID); err != nil {
+				slog.Warn("voicemail: mark heard failed", "id", currentID, "error", err)
+			} else {
+				mutated = true
+			}
+			next, openErr = d.openNextUnheardLocked(store, 0)
+		case "#":
+			// "#" leaves the heard flag untouched, so the scan must skip past
+			// the current message or it would replay (currentID is still
+			// unheard and would match again as the first hit).
+			next, openErr = d.openNextUnheardLocked(store, currentID)
+		case "*":
+			next, openErr = d.reopenLocked(store, currentID, currentNumber, false)
+		}
+		if openErr != nil {
+			d.closeMixerSourceLocked()
+		} else if next == nil {
+			// Unheard messages exhausted. Cross into saved review when there
+			// are saved messages; the mixer source stays open for it.
+			if len(d.voicemailSavedQueue) > 0 {
+				goToSaved = true
+			} else {
+				// No follow-on session: tear down the persistent mixer source
+				// so when ResetToDialtone fires the user lands cleanly on the
+				// dial tone path with no voicemail PCM leaking into the mix.
+				d.closeMixerSourceLocked()
+				noNext = true
+			}
 		}
 	}
 	d.voicemailMu.Unlock()
 
 	// Publish only after voicemailMu is released so the network send does
 	// not hold the playback mutex. Dedup inside publishVoicemailState makes
-	// this a no-op on Delete-of-already-heard (count unchanged).
+	// this a no-op when the unheard count did not actually change.
 	if mutated {
 		d.publishVoicemailState()
 	}
@@ -884,18 +966,30 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		d.evaluateLED()
 		return
 	}
-	// 7 (delete) and 9 (save) earn a spoken confirmation; "#" (skip) and
-	// "*" (replay) advance silently.
+
+	// "7" (delete) earns a spoken confirmation in either phase. "9" (save)
+	// is only meaningful in the new phase; in saved review it just advances.
 	var actionClip string
-	switch digit {
-	case "7":
+	switch {
+	case digit == "7":
 		actionClip = "vm_message_deleted"
-	case "9":
+	case digit == "9" && !currentSaved:
 		actionClip = "vm_message_saved"
 	}
 
+	if goToSaved {
+		slog.Info("voicemail: unheard exhausted after key, entering saved review", "last_id", currentID, "digit", digit)
+		// Play the action confirmation, then transitionToSavedPhase announces
+		// the saved count and plays the first saved message.
+		if actionClip != "" {
+			d.playAnnouncementSequence(actionClip)
+		}
+		d.transitionToSavedPhase(store, false)
+		return
+	}
+
 	if noNext {
-		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
+		slog.Info("voicemail: end of messages after key", "last_id", currentID, "digit", digit)
 		// Announce action + end-of-messages, then dial tone. The exit
 		// helper drains the one-shot queue before re-arming the loop so
 		// the announcement and dial tone never overlap.
@@ -985,12 +1079,61 @@ func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store, afterID 
 	return nil, nil
 }
 
+// snapshotSavedQueueLocked records the IDs of every already-heard message as
+// the saved-review play order for this session, ascending so oldest first.
+// It must run at session entry, before playback marks any new message heard.
+// Caller must hold voicemailMu.
+func (d *daemonCallbacks) snapshotSavedQueueLocked(store *voicemail.Store) {
+	d.voicemailSavedQueue = nil
+	d.voicemailSavedCursor = -1
+	msgs, err := store.List()
+	if err != nil {
+		slog.Warn("voicemail: list for saved snapshot failed", "error", err)
+		return
+	}
+	for _, m := range msgs {
+		if m.Heard {
+			d.voicemailSavedQueue = append(d.voicemailSavedQueue, m.ID)
+		}
+	}
+}
+
+// openNextSavedLocked advances the saved-review cursor and opens the next
+// saved message, skipping any that have been deleted since the snapshot.
+// Returns nil when the saved queue is exhausted. Caller must hold voicemailMu
+// and have torn down any prior session.
+func (d *daemonCallbacks) openNextSavedLocked(store *voicemail.Store) *voicemailPlaybackSession {
+	for {
+		d.voicemailSavedCursor++
+		if d.voicemailSavedCursor >= len(d.voicemailSavedQueue) {
+			return nil
+		}
+		id := d.voicemailSavedQueue[d.voicemailSavedCursor]
+		player, err := store.OpenPlayer(id)
+		if err != nil {
+			slog.Warn("voicemail: open saved player failed, skipping", "id", id, "error", err)
+			continue
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		sess := &voicemailPlaybackSession{
+			ctx:    ctx,
+			cancel: cancel,
+			id:     id,
+			saved:  true,
+			player: player,
+		}
+		d.voicemailPlayback = sess
+		return sess
+	}
+}
+
 // reopenLocked opens a fresh Player for the given message ID and installs a
 // new session. Used by the "*" replay path. The replayed message keeps its
 // original session position, so number is carried over from the prior
-// session rather than bumping voicemailMessageSeq. Caller must hold
-// voicemailMu and have torn down any prior session.
-func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number int) (*voicemailPlaybackSession, error) {
+// session rather than bumping voicemailMessageSeq. saved marks whether this
+// is a saved-review session. Caller must hold voicemailMu and have torn down
+// any prior session.
+func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number int, saved bool) (*voicemailPlaybackSession, error) {
 	player, err := store.OpenPlayer(id)
 	if err != nil {
 		return nil, fmt.Errorf("reopen message %d: %w", id, err)
@@ -1001,10 +1144,46 @@ func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number 
 		cancel: cancel,
 		id:     id,
 		number: number,
+		saved:  saved,
 		player: player,
 	}
 	d.voicemailPlayback = sess
 	return sess, nil
+}
+
+// transitionToSavedPhase announces the saved-message count and begins playing
+// the saved-review queue. It runs outside voicemailMu because it plays
+// blocking announcement clips. It bridges the new-message phase into saved
+// review, and is also the direct entry point when *98 starts with no unheard
+// messages. playControls plays the spoken-controls prompt first, used only on
+// the direct-entry path where the controls have not been played yet.
+func (d *daemonCallbacks) transitionToSavedPhase(store *voicemail.Store, playControls bool) {
+	defer recoverGoroutine("voicemail-saved-transition")
+
+	d.voicemailMu.Lock()
+	n := len(d.voicemailSavedQueue)
+	d.voicemailMu.Unlock()
+	d.announceSavedCount(n)
+	if playControls {
+		d.playAnnouncementSequence("vm_playback_controls")
+	}
+
+	d.voicemailMu.Lock()
+	sess := d.openNextSavedLocked(store)
+	if sess == nil {
+		d.closeMixerSourceLocked()
+	}
+	d.voicemailMu.Unlock()
+
+	if sess == nil {
+		// Every saved message was deleted between the snapshot and now.
+		slog.Info("voicemail: saved review empty")
+		d.playAnnouncementSequence("vm_end_of_messages")
+		d.voicemailExitToDialtoneAsync()
+		return
+	}
+	slog.Info("voicemail: saved review start", "id", sess.id)
+	d.voicemailPlaybackLoop(sess)
 }
 
 // voicemailPlaybackLoop decodes Opus frames from the session's Player and
@@ -1035,12 +1214,13 @@ func (d *daemonCallbacks) voicemailPlaybackLoop(sess *voicemailPlaybackSession) 
 		return
 	}
 
-	// Announce "Message N" before this message's audio when the session
-	// holds two or more messages. announceMessageNumber blocks for the clip
-	// duration; skip it if the session was already torn down (hook-on
-	// racing the goroutine spawn).
+	// Announce "Message N" before this message's audio when the new-message
+	// phase holds two or more messages. Saved-review messages are not
+	// numbered; the saved-count announcement already marked the crossover.
+	// announceMessageNumber blocks for the clip duration; skip it if the
+	// session was already torn down (hook-on racing the goroutine spawn).
 	d.voicemailMu.Lock()
-	announce := d.voicemailAnnounceNumbers
+	announce := d.voicemailAnnounceNumbers && !sess.saved
 	number := sess.number
 	d.voicemailMu.Unlock()
 	if announce {
@@ -1108,11 +1288,12 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	}
 
 	var (
-		next     *voicemailPlaybackSession
-		openErr  error
-		noNext   bool
-		isStale  bool
-		mutated  bool // true when MarkHeard succeeded and the unheard count moved
+		next      *voicemailPlaybackSession
+		openErr   error
+		noNext    bool
+		isStale   bool
+		mutated   bool // true when MarkHeard succeeded and the unheard count moved
+		goToSaved bool // true when the new phase is done and saved review follows
 	)
 
 	d.voicemailMu.Lock()
@@ -1121,7 +1302,17 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		// raced ahead of EOF). Whoever swapped has already torn down our
 		// session; we don't touch state.
 		isStale = true
+	} else if sess.saved {
+		// A saved-review message finished: advance the saved queue.
+		d.teardownPlaybackLocked()
+		next = d.openNextSavedLocked(store)
+		if next == nil {
+			d.closeMixerSourceLocked()
+			noNext = true
+		}
 	} else {
+		// A new-message played to the end: mark it heard, then find the next
+		// unheard one.
 		d.teardownPlaybackLocked()
 		if err := store.MarkHeard(sess.id); err != nil {
 			slog.Warn("voicemail: mark heard on EOF failed", "id", sess.id, "error", err)
@@ -1129,9 +1320,16 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 			mutated = true
 		}
 		next, openErr = d.openNextUnheardLocked(store, 0)
-		if openErr != nil || next == nil {
+		if openErr != nil {
 			d.closeMixerSourceLocked()
-			if openErr == nil {
+		} else if next == nil {
+			// Unheard messages exhausted. Cross into the saved-review phase
+			// when there are saved messages, otherwise end. The mixer source
+			// is left open for the saved phase to reuse.
+			if len(d.voicemailSavedQueue) > 0 {
+				goToSaved = true
+			} else {
+				d.closeMixerSourceLocked()
 				noNext = true
 			}
 		}
@@ -1152,8 +1350,13 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		d.evaluateLED()
 		return
 	}
+	if goToSaved {
+		slog.Info("voicemail: unheard exhausted, entering saved review", "last_id", sess.id)
+		d.transitionToSavedPhase(store, false)
+		return
+	}
 	if noNext {
-		slog.Info("voicemail: end of unheard after EOF", "last_id", sess.id)
+		slog.Info("voicemail: end of messages after EOF", "last_id", sess.id)
 		d.playAnnouncementSequence("vm_end_of_messages")
 		d.voicemailExitToDialtoneAsync()
 		return
