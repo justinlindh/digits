@@ -818,6 +818,11 @@ func (d *daemonCallbacks) VoicemailExitPlayback() {
 	d.voicemailMu.Lock()
 	sess := d.teardownPlaybackLocked()
 	d.closeMixerSourceLocked()
+	// Release the saved-review snapshot for this session. snapshotSavedQueueLocked
+	// reinitializes both at the next entry, so this is just tidiness: it keeps
+	// the queue from lingering between sessions.
+	d.voicemailSavedQueue = nil
+	d.voicemailSavedCursor = -1
 	d.voicemailMu.Unlock()
 	if sess != nil {
 		slog.Info("voicemail: playback exit", "id", sess.id)
