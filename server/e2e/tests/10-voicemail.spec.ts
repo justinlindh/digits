@@ -73,7 +73,7 @@ test.describe('Voicemail (intercom theme)', () => {
     }
     await page.goto(href);
 
-    await expect(page.locator('h2.panel__title', { hasText: /voicemail/i })).toBeVisible();
+    await expect(page.locator('h2.panel__title', { hasText: /answering machine/i })).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
     await expect(page.locator('#voicemail-section details.voicemail-advanced')).toBeVisible();
 
@@ -252,7 +252,7 @@ test.describe('Voicemail (answering-machine theme)', () => {
     }
     await page.goto(href);
 
-    await expect(page.locator('.am-plate__label', { hasText: /voicemail/i })).toBeVisible();
+    await expect(page.locator('.am-plate__label', { hasText: /answering machine/i })).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
     await expect(page.locator('#voicemail-section details.am-voicemail-advanced')).toBeVisible();
 
