@@ -157,7 +157,7 @@ Hidden codes entered on the keypad while the handset is off-hook.
 
 These are dialed from dial tone (not prefixed with `*#`), matching the original 1990s POTS behavior.
 
-### Voicemail (*97 / *98 / *99)
+### Voicemail (*98 / *97 / *99)
 
 | Code | Action | Details |
 |------|--------|---------|
