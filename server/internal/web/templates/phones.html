@@ -310,6 +310,11 @@
 </script>
 {{end}}
 
+{{/* Unheard-voicemail count badge for a line row in the phones list (intercom
+     and dialup themes). Renders nothing unless voicemail is enabled and the
+     count is positive. Expects a lineRow as the dot. */}}
+{{define "voicemail-unheard-badge"}}{{if and .Line.Settings.Voicemail.Enabled (gt .VoicemailUnheard 0)}}<span class="chip chip--msg" role="status" aria-label="{{.VoicemailUnheard}} unheard answering machine message{{if ne .VoicemailUnheard 1}}s{{end}}"><span class="chip__dot"></span>{{.VoicemailUnheard}} unheard</span>{{end}}{{end}}
+
 {{define "phones-table"}}
 <div id="phones-table" class="panel">
   <header class="panel__head">
@@ -368,6 +373,7 @@
             {{else}}
               <span class="chip"><span class="chip__dot"></span>offline</span>
             {{end}}
+            {{template "voicemail-unheard-badge" .}}
           </td>
           <td style="font-size: 12px;">
             {{if and .DeviceInfo .DeviceInfo.PiVersion}}
@@ -441,6 +447,7 @@
           {{.Line.Name}}
           {{if gt (len .Devices) 1}}<span class="muted" style="font-size: 11px; font-weight: normal;"> ({{len .Devices}} handsets)</span>{{end}}
           {{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}
+          {{template "voicemail-unheard-badge" .}}
         </span>
         <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
         <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}{{if gt (len .Devices) 1}}{{.OnlineDeviceCount}}/{{len .Devices}}{{else}}online{{end}}{{else}}offline{{end}}</span>
@@ -511,6 +518,9 @@
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
+        {{if and $l.Line.Settings.Voicemail.Enabled (gt $l.VoicemailUnheard 0)}}
+        <span class="am-led am-voicemail-led" role="status" aria-label="{{$l.VoicemailUnheard}} unheard answering machine message{{if ne $l.VoicemailUnheard 1}}s{{end}}">MSG {{$l.VoicemailUnheard}}</span>
+        {{end}}
         {{if or $l.PiUpdateNotes $l.FirmwareUpdateNotes}}
         <span class="am-phones__update-flag" title="Software update available">
           <span class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>

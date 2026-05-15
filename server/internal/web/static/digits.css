@@ -663,8 +663,28 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 .chip--on    .chip__dot { background: var(--forest); }
 .chip--warn  { color: var(--ochre); background: rgba(199,154,58,0.08); border-color: rgba(199,154,58,0.25); }
 .chip--warn  .chip__dot { background: var(--ochre); }
-.chip--live  { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
-.chip--live  .chip__dot { background: var(--brass); animation: pulse 1.6s ease-in-out infinite; }
+/* chip--msg (unheard voicemail) shares chip--live's brass palette. chip--live
+   pulses its dot fast for call-is-live urgency; chip--msg glows slowly to
+   echo the handset's message-waiting LED (see the msg-pulse rule below). */
+.chip--live,
+.chip--msg   { color: var(--brass); background: rgba(196,139,58,0.1); border-color: rgba(196,139,58,0.3); }
+.chip--live  .chip__dot,
+.chip--msg   .chip__dot { background: var(--brass); }
+.chip--live  .chip__dot { animation: pulse 1.6s ease-in-out infinite; }
+
+/* The unheard-voicemail badge glow-pulses on the same 3.15s cadence the
+   handset runs in SLOWER_PULSE mode (firmware: 150ms LED on, 3000ms off),
+   so the screen visually echoes the phone's message-waiting light. The glow
+   blooms briefly near the start of the cycle and rests dark the rest of it,
+   matching the LED's short flash and long pause. */
+.chip--msg   { animation: msg-pulse 3.15s ease-in-out infinite; }
+@keyframes msg-pulse {
+  0%, 6%, 100% { box-shadow: 0 0 0 0 rgba(196,139,58,0); }
+  2.4%         { box-shadow: 0 0 7px 1px rgba(196,139,58,0.55); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chip--msg { animation: none; }
+}
 .chip--err   { color: var(--rust); background: rgba(160,90,58,0.08); border-color: rgba(160,90,58,0.25); }
 .chip--err   .chip__dot { background: var(--rust); }
 /* conference / 3-way: warm walnut tone, distinct from all alert variants */
@@ -1327,26 +1347,6 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
    row is already dense). Dialup shows it. */
 .phone-silent__text {
   display: none;
-}
-
-/* Voicemail unheard-count chip in the detail-page section header. Matches
-   the .chip family but stays inline next to the section title. The chip is
-   only rendered when voicemail is enabled AND there is at least one unheard
-   message, so the bare "voicemail off" state has no chip at all. */
-.voicemail-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 10px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #5a3a00;
-  background: #f7e0a0;
-  vertical-align: middle;
 }
 
 /* Advanced disclosure inside the voicemail section. The summary doubles as
@@ -2307,7 +2307,8 @@ html[data-theme="dark"] .chip__dot         { background: var(--ink-muted); }
 html[data-theme="dark"] .chip--on          { background: rgba(127,169,139,0.14); border-color: rgba(127,169,139,0.32); }
 html[data-theme="dark"] .chip--on .chip__dot { background: var(--forest); }
 html[data-theme="dark"] .chip--warn        { background: rgba(224,185,100,0.14); border-color: rgba(224,185,100,0.32); }
-html[data-theme="dark"] .chip--live        { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
+html[data-theme="dark"] .chip--live,
+html[data-theme="dark"] .chip--msg         { background: rgba(221,168,103,0.18); border-color: rgba(221,168,103,0.42); }
 html[data-theme="dark"] .chip--err         { background: rgba(210,132,103,0.14); border-color: rgba(210,132,103,0.32); }
 html[data-theme="dark"] .chip--conf        { color: #caa679; background: rgba(202,166,121,0.14); border-color: rgba(202,166,121,0.32); }
 html[data-theme="dark"] .chip--conf .chip__dot { background: #caa679; }
@@ -2331,6 +2332,17 @@ html[data-theme="dark"] .chip--live .chip__dot { animation: pulse-dark 1.6s ease
 @keyframes pulse-dark {
   0%, 100% { box-shadow: 0 0 0 0 rgba(221,168,103,0.55); }
   50%      { box-shadow: 0 0 0 5px rgba(221,168,103,0); }
+}
+
+/* Message-waiting glow, dark-adapted: same cadence as msg-pulse, brass
+   shifted to the dark palette so the bloom matches chip--live's dark tone. */
+html[data-theme="dark"] .chip--msg { animation: msg-pulse-dark 3.15s ease-in-out infinite; }
+@keyframes msg-pulse-dark {
+  0%, 6%, 100% { box-shadow: 0 0 0 0 rgba(221,168,103,0); }
+  2.4%         { box-shadow: 0 0 7px 1px rgba(221,168,103,0.55); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="dark"] .chip--msg { animation: none; }
 }
 
 /* Online-dot ring (lines list): the light-mode ring at 0.12 alpha

@@ -2405,9 +2405,13 @@ body.am .pair-mode-field legend {
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 
 
-/* Voicemail unheard-count LED in the AM detail-page section header. Stays
-   inline with the section label, glows red so an unheard count reads as a
-   "message waiting" annunciator rather than just decoration. */
+/* Voicemail unheard-count LED on the AM phones-list roster row. Sits inline
+   in the row meta line and glows red so an unheard count reads as a
+   "message waiting" annunciator rather than just decoration. It glow-pulses
+   on the same 3.15s cadence the handset runs in SLOWER_PULSE mode (firmware:
+   150ms LED on, 3000ms off): a brief bloom near the start of the cycle, calm
+   the rest of it, so the screen echoes the phone's message-waiting light.
+   The static text-shadow is the resting glow and the reduced-motion state. */
 .am-voicemail-led {
   display: inline-block;
   margin-left: 8px;
@@ -2417,6 +2421,14 @@ body.am .pair-mode-field legend {
   color: var(--led-red);
   text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25);
   vertical-align: middle;
+  animation: am-msg-pulse 3.15s ease-in-out infinite;
+}
+@keyframes am-msg-pulse {
+  0%, 6%, 100% { text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25); }
+  2.4%         { text-shadow: 0 0 9px rgba(255,61,46,0.85), 0 0 18px rgba(255,61,46,0.45); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .am-voicemail-led { animation: none; }
 }
 
 /* Form wrapper for the AM voicemail panel. Block-flow so the toggle-row

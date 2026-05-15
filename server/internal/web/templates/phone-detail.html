@@ -734,13 +734,6 @@
 
 {{define "voicemail-section"}}
 <div id="voicemail-section" data-voicemail-section>
-  {{if and .Line.Settings.Voicemail.Enabled (gt .VoicemailUnheard 0)}}
-    <div class="voicemail-chip" role="status"
-         aria-label="{{.VoicemailUnheard}} unheard answering machine message{{if ne .VoicemailUnheard 1}}s{{end}}">
-      {{.VoicemailUnheard}} unheard
-    </div>
-  {{end}}
-
   <form hx-post="/phones/{{.Line.Number}}/voicemail"
         hx-target="#voicemail-section"
         hx-swap="outerHTML"
@@ -813,13 +806,6 @@
 
 {{define "am-voicemail-section"}}
 <div id="voicemail-section" data-voicemail-section>
-  {{if and .Line.Settings.Voicemail.Enabled (gt .VoicemailUnheard 0)}}
-    <span class="am-led am-voicemail-led" role="status"
-          aria-label="{{.VoicemailUnheard}} unheard answering machine message{{if ne .VoicemailUnheard 1}}s{{end}}">
-      MSG {{.VoicemailUnheard}}
-    </span>
-  {{end}}
-
   <form hx-post="/phones/{{.Line.Number}}/voicemail"
         hx-target="#voicemail-section"
         hx-swap="outerHTML"

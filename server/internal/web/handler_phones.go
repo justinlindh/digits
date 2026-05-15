@@ -71,6 +71,11 @@ type lineRow struct {
 	OnlineDeviceCount   int
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
+	// VoicemailUnheard is the line-level unheard-voicemail count summed
+	// across handsets last reported by digitsd. Surfaced as a badge on the
+	// line's row in the phones list; the badge only renders when voicemail
+	// is enabled AND this count is greater than zero.
+	VoicemailUnheard int
 }
 
 // buildLinesData assembles the line-list page payload. hh may be nil; when
@@ -117,6 +122,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
+		row.VoicemailUnheard = h.hub.LineVoicemailUnheard(l.Number)
 
 		if h.deviceStore != nil {
 			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
@@ -302,11 +308,6 @@ type lineDetailData struct {
 	FirmwareUpdateNotes   []updates.Release
 	OtherLines            []line.Line
 	NumberError           string
-	// VoicemailUnheard is the line-level unheard-voicemail count summed
-	// across handsets last reported by digitsd. Surfaced inline with the
-	// Voicemail section header on the detail page; the chip only renders
-	// when voicemail is enabled AND this count is greater than zero.
-	VoicemailUnheard int
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -386,11 +387,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var voicemailUnheard int
-	if h.hub != nil {
-		voicemailUnheard = h.hub.LineVoicemailUnheard(number)
-	}
-
 	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
@@ -406,7 +402,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		OtherLines:            otherLines,
 		NumberError:           r.URL.Query().Get("number_error"),
-		VoicemailUnheard:      voicemailUnheard,
 	})
 }
 
@@ -684,16 +679,11 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	if isHTMX(r) {
-		count := 0
-		if h.hub != nil {
-			count = h.hub.LineVoicemailUnheard(number)
-		}
 		renderWith(r.Context(), w, h.tmplPhoneDetail,
 			partialFor(r, "voicemail-section", "am-voicemail-section"),
 			struct {
-				Line             line.Line
-				VoicemailUnheard int
-			}{Line: *ln, VoicemailUnheard: count})
+				Line line.Line
+			}{Line: *ln})
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
@@ -720,16 +710,11 @@ func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.
 	}
 
 	if isHTMX(r) {
-		count := 0
-		if h.hub != nil {
-			count = h.hub.LineVoicemailUnheard(number)
-		}
 		renderWith(r.Context(), w, h.tmplPhoneDetail,
 			partialFor(r, "voicemail-section", "am-voicemail-section"),
 			struct {
-				Line             line.Line
-				VoicemailUnheard int
-			}{Line: *ln, VoicemailUnheard: count})
+				Line line.Line
+			}{Line: *ln})
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)

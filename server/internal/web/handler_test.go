@@ -2933,9 +2933,6 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 		t.Errorf("expected voicemail-advanced disclosure:\n%s", body)
 	}
 	// After toggling off, fields should be disabled.
-	if strings.Contains(body, "voicemail-chip") {
-		t.Errorf("expected no chip when voicemail is off, got:\n%s", body)
-	}
 	if !strings.Contains(body, `disabled`) {
 		t.Errorf("expected disabled attr on inner fields when off:\n%s", body)
 	}
@@ -2988,31 +2985,47 @@ func TestPhoneVoicemailTogglePushesToConnectedDevice(t *testing.T) {
 	}
 }
 
-func TestPhoneVoicemailToggleHTMXReflectsHubUnheardCount(t *testing.T) {
+func TestPhonesListShowsVoicemailUnheardBadge(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
-	_ = setupVoiceStyleLine(t, h, database, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
 
-	// Pre-populate the hub with an unheard count for the line.
-	h.hub.SetVoicemailUnheard("3140001", "hw-fake", 3)
+	// Hub reports unheard messages for the line. Voicemail is enabled by
+	// default on a new line, so the badge should render.
+	h.hub.SetVoicemailUnheard("3140042", "hw-fake", 3)
 
-	// Default is enabled. First toggle: on -> off.
-	w := postVoicemailToggle(t, h, cookie, true)
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	// Second toggle: off -> on. The section partial should render
-	// the "N unheard" chip in the section header.
-	w = postVoicemailToggle(t, h, cookie, true)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `class="voicemail-chip"`) {
-		t.Errorf("expected voicemail-chip when count > 0:\n%s", body)
+	if !strings.Contains(body, "chip--msg") {
+		t.Errorf("expected chip--msg unheard badge on phones list:\n%s", body)
 	}
 	if !strings.Contains(body, "3 unheard") {
-		t.Errorf("expected '3 unheard' label:\n%s", body)
+		t.Errorf("expected '3 unheard' label on phones list:\n%s", body)
+	}
+}
+
+func TestPhonesListOmitsVoicemailBadgeWhenNoUnheard(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
+
+	// No SetVoicemailUnheard call: the hub reports a zero count.
+	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	if strings.Contains(w.Body.String(), "chip--msg") {
+		t.Errorf("expected no unheard badge when count is zero:\n%s", w.Body.String())
 	}
 }
