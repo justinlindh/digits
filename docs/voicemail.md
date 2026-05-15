@@ -170,6 +170,7 @@ in `internal/assets/embed/data/tones/`:
 | `vm_lost_count.wav` | A self-contained "many messages" phrase for counts of 10 or more |
 | `vm_message_deleted.wav` | "Message deleted" |
 | `vm_message_saved.wav` | "Message saved" |
+| `vm_message.wav` | "Message" (composed with a digit clip for the per-message announcement) |
 | `vm_end_of_messages.wav` | "End of messages" |
 | `vm_record_greeting.wav` | "Record your greeting after the tone" |
 | `vm_greeting_saved.wav` | "Greeting saved" |
@@ -188,6 +189,15 @@ phrase from individual clips:
   counts of ten or more digit by digit; one phrase covers the whole range.
 - otherwise: play the sequence `vm_you_have`, `spoken_<count>`, then
   `vm_new_message` for one or `vm_new_messages` for more than one.
+
+**Composing "Message N".** During a `*98` retrieval session that holds two or
+more messages, `announceMessageNumber(number)` plays a spoken "Message N"
+before each message so the listener can tell them apart. It composes
+`vm_message` followed by `spoken_<number>`, where `number` is the 1-based
+position of the message in the session. A position above 9 has no digit clip,
+so the bare `vm_message` word plays as a separator cue. A session with a
+single message skips the per-message announcement, since the "you have 1
+message" count intro already identifies it.
 
 `playAnnouncementSequence()` plays the clips back to back through the mixer's
 `PlayOnce()`, waiting for each clip to finish before starting the next, with a

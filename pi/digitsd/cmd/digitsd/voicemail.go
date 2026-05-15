@@ -60,6 +60,33 @@ func (d *daemonCallbacks) announceMessageCount(count int) {
 	d.playAnnouncementSequence(seq...)
 }
 
+// messageNumberClips returns the clip sequence for the spoken "Message N"
+// announcement, composed as vm_message + spoken_N the same way
+// announceMessageCount composes its phrase. A non-positive number yields no
+// clips. Positions above 9 have no digit clip, so only the bare "message"
+// word is returned as a separator cue.
+func messageNumberClips(number int) []string {
+	if number <= 0 {
+		return nil
+	}
+	if number > 9 {
+		return []string{"vm_message"}
+	}
+	return []string{"vm_message", fmt.Sprintf("spoken_%d", number)}
+}
+
+// announceMessageNumber speaks "Message N" before a message plays during a
+// *98 retrieval session. It is only used when the session holds two or more
+// messages; a lone message is already identified by the "you have 1 message"
+// count intro.
+func (d *daemonCallbacks) announceMessageNumber(number int) {
+	clips := messageNumberClips(number)
+	if len(clips) == 0 {
+		return
+	}
+	d.playAnnouncementSequence(clips...)
+}
+
 // voicemailPlaybackSession bundles the cancelable context, message ID, and
 // open Player for one retrieval-playback message. Each DTMF dispatch
 // (delete, skip, replay, mark-heard) tears down the current session and
@@ -68,6 +95,7 @@ type voicemailPlaybackSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	id     int64
+	number int // 1-based position in the retrieval session, for the "Message N" announcement
 	player *voicemail.Player
 }
 
@@ -671,6 +699,12 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	// or on the end-of-messages fallback. Re-registering with the same key
 	// is idempotent (returns the existing channel).
 	d.voicemailMixerCh = d.mixer.AddWebRTCSource("voicemail")
+	// Fresh per-message announcement state for this session. The announce
+	// flag is decided once the unheard count is known (below); the sequence
+	// counter starts at 0 and openNextUnheardLocked bumps it to 1 for the
+	// first message.
+	d.voicemailMessageSeq = 0
+	d.voicemailAnnounceNumbers = false
 	sess, openErr = d.openNextUnheardLocked(store, 0)
 	if openErr != nil || sess == nil {
 		// Empty or error: release the mixer source before we leave.
@@ -710,6 +744,12 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	go func() {
 		if n, err := store.UnheardCount(); err == nil {
 			d.announceMessageCount(n)
+			// Two or more messages get a spoken "Message N" before each
+			// one. A lone message is already identified by the count
+			// intro, so it is left unannounced.
+			d.voicemailMu.Lock()
+			d.voicemailAnnounceNumbers = n >= 2
+			d.voicemailMu.Unlock()
 		}
 		d.voicemailPlaybackLoop(sess)
 	}()
@@ -773,6 +813,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		return
 	}
 	currentID := current.id
+	currentNumber := current.number
 
 	// Tear down the current message's session before mutating the store and
 	// opening the next. teardownPlaybackLocked cancels the goroutine and
@@ -801,7 +842,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		// unheard and would match again as the first hit).
 		next, openErr = d.openNextUnheardLocked(store, currentID)
 	case "*":
-		next, openErr = d.reopenLocked(store, currentID)
+		next, openErr = d.reopenLocked(store, currentID, currentNumber)
 	}
 
 	if openErr != nil || next == nil {
@@ -916,10 +957,12 @@ func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store, afterID 
 			continue
 		}
 		ctx, cancel := context.WithCancel(context.Background())
+		d.voicemailMessageSeq++
 		sess := &voicemailPlaybackSession{
 			ctx:    ctx,
 			cancel: cancel,
 			id:     m.ID,
+			number: d.voicemailMessageSeq,
 			player: player,
 		}
 		d.voicemailPlayback = sess
@@ -929,9 +972,11 @@ func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store, afterID 
 }
 
 // reopenLocked opens a fresh Player for the given message ID and installs a
-// new session. Used by the "*" replay path. Caller must hold voicemailMu
-// and have torn down any prior session.
-func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64) (*voicemailPlaybackSession, error) {
+// new session. Used by the "*" replay path. The replayed message keeps its
+// original session position, so number is carried over from the prior
+// session rather than bumping voicemailMessageSeq. Caller must hold
+// voicemailMu and have torn down any prior session.
+func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number int) (*voicemailPlaybackSession, error) {
 	player, err := store.OpenPlayer(id)
 	if err != nil {
 		return nil, fmt.Errorf("reopen message %d: %w", id, err)
@@ -941,6 +986,7 @@ func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64) (*voice
 		ctx:    ctx,
 		cancel: cancel,
 		id:     id,
+		number: number,
 		player: player,
 	}
 	d.voicemailPlayback = sess
@@ -973,6 +1019,23 @@ func (d *daemonCallbacks) voicemailPlaybackLoop(sess *voicemailPlaybackSession) 
 		d.voicemailMu.Unlock()
 		go d.voicemailExitToDialtoneAsync()
 		return
+	}
+
+	// Announce "Message N" before this message's audio when the session
+	// holds two or more messages. announceMessageNumber blocks for the clip
+	// duration; skip it if the session was already torn down (hook-on
+	// racing the goroutine spawn).
+	d.voicemailMu.Lock()
+	announce := d.voicemailAnnounceNumbers
+	number := sess.number
+	d.voicemailMu.Unlock()
+	if announce {
+		select {
+		case <-sess.ctx.Done():
+			return
+		default:
+			d.announceMessageNumber(number)
+		}
 	}
 
 	dec, err := codec.NewDecoder(48000, 1)
