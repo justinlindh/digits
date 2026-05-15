@@ -54,10 +54,25 @@ const (
 // so the controller self-fires here once it has the full number.
 const addDialDigitsRequired = 7
 
-// autoDialDelay is the brief silence between the last digit and the first
-// ringback tone on outgoing calls. Mimics the variable PSTN setup pause that
-// rotary phones produced between dial-pulse train end and first ring.
-const autoDialDelay = 800 * time.Millisecond
+type controllerTiming struct {
+	AutoDialDelay          time.Duration // silence between last digit and first ringback
+	RejectWait             time.Duration // simulated connection attempt before intercept
+	RejectPollInterval     time.Duration // poll interval while waiting for intercept tone to finish
+	PostInterceptDelay     time.Duration // pause after intercept tone before busy
+	TreatmentInitialDelay  time.Duration // CO processing silence before reorder
+	TreatmentReorderDuration time.Duration // reorder tone duration
+	TreatmentHowlerDuration  time.Duration // howler tone duration
+}
+
+var defaultTiming = controllerTiming{
+	AutoDialDelay:            800 * time.Millisecond,
+	RejectWait:               3 * time.Second,
+	RejectPollInterval:       200 * time.Millisecond,
+	PostInterceptDelay:       500 * time.Millisecond,
+	TreatmentInitialDelay:    1 * time.Second,
+	TreatmentReorderDuration: 45 * time.Second,
+	TreatmentHowlerDuration:  3 * time.Minute,
+}
 
 // Callbacks is the interface the controller uses to drive hardware and network.
 type Callbacks interface {
@@ -104,6 +119,7 @@ type Controller struct {
 	mu             sync.Mutex
 	state          State
 	cb             Callbacks
+	timing         controllerTiming
 	digits         string
 	ownNumber      string
 	contactChecker ContactChecker
@@ -139,6 +155,7 @@ func NewController(cb Callbacks, ownNumber string) *Controller {
 	return &Controller{
 		state:     StateIDLE,
 		cb:        cb,
+		timing:    defaultTiming,
 		ownNumber: ownNumber,
 		done:      make(chan struct{}),
 	}
@@ -597,7 +614,7 @@ func (c *Controller) onDial(number string) {
 // failed leg requires.
 func (c *Controller) initiateCallAfterDelay(number string, expectedState State, errLogMsg string, onErr func()) {
 	go func() {
-		time.Sleep(autoDialDelay)
+		time.Sleep(c.timing.AutoDialDelay)
 		c.mu.Lock()
 		if c.state != expectedState {
 			c.mu.Unlock()
@@ -624,7 +641,7 @@ func (c *Controller) playRejectSequence(expectedState State) {
 		return c.state == expectedState
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(c.timing.RejectWait)
 	if !checkState() {
 		return
 	}
@@ -633,7 +650,7 @@ func (c *Controller) playRejectSequence(expectedState State) {
 	c.cb.SendTone(ToneIntercept)
 	deadline := time.Now().Add(15 * time.Second)
 	for c.cb.OncePlaying() {
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(c.timing.RejectPollInterval)
 		if !checkState() {
 			return
 		}
@@ -643,7 +660,7 @@ func (c *Controller) playRejectSequence(expectedState State) {
 		}
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(c.timing.PostInterceptDelay)
 	if !checkState() {
 		return
 	}
@@ -817,19 +834,19 @@ func (c *Controller) runPermanentSignalTreatment(treatmentState State, reason st
 			return c.state == treatmentState && c.treatmentGen == gen
 		}
 
-		if !c.sleepOrDone(1 * time.Second) || !stillInTreatment() {
+		if !c.sleepOrDone(c.timing.TreatmentInitialDelay) || !stillInTreatment() {
 			return
 		}
 
 		slog.Info("phone: off-hook sequence -- reorder tone", "reason", reason)
 		c.cb.SendTone(ToneReorder)
-		if !c.sleepOrDone(45 * time.Second) || !stillInTreatment() {
+		if !c.sleepOrDone(c.timing.TreatmentReorderDuration) || !stillInTreatment() {
 			return
 		}
 
 		slog.Info("phone: off-hook sequence -- howler tone", "reason", reason)
 		c.cb.SendTone(ToneHowler)
-		if !c.sleepOrDone(3 * time.Minute) || !stillInTreatment() {
+		if !c.sleepOrDone(c.timing.TreatmentHowlerDuration) || !stillInTreatment() {
 			return
 		}
 

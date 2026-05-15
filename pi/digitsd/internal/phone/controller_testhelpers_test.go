@@ -1,9 +1,27 @@
 package phone
 
+import "time"
+
 // Test-only accessors and mutators for Controller's unexported state. These
 // live in a _test.go file so the production binary does not carry the API
 // surface; the same-package _test.go gives unit tests access without any
 // build tags.
+
+var testTiming = controllerTiming{
+	AutoDialDelay:            time.Millisecond,
+	RejectWait:               time.Millisecond,
+	RejectPollInterval:       time.Millisecond,
+	PostInterceptDelay:       time.Millisecond,
+	TreatmentInitialDelay:    10 * time.Millisecond,
+	TreatmentReorderDuration: time.Millisecond,
+	TreatmentHowlerDuration:  time.Millisecond,
+}
+
+func newTestController(cb Callbacks, ownNumber string) *Controller {
+	c := NewController(cb, ownNumber)
+	c.timing = testTiming
+	return c
+}
 
 func (c *Controller) setStateForTest(s State) {
 	c.mu.Lock()

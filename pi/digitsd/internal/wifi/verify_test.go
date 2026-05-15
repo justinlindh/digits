@@ -75,8 +75,11 @@ func (m *mockCmdRunner) calledWith(name string, args ...string) bool {
 }
 
 var testVerifyConfig = verifyConfig{
-	pollInterval: 1 * time.Millisecond,
-	maxAttempts:  2,
+	pollInterval:     1 * time.Millisecond,
+	maxAttempts:      2,
+	postFlushDelay:   1 * time.Millisecond,
+	postHostapdDelay: 1 * time.Millisecond,
+	postReapplyDelay: 1 * time.Millisecond,
 }
 
 func TestVerifySuccess(t *testing.T) {
