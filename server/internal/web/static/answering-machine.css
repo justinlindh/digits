@@ -2419,6 +2419,15 @@ body.am .pair-mode-field legend {
   vertical-align: middle;
 }
 
+/* Form wrapper for the AM voicemail panel. Block-flow so the toggle-row
+   and the Advanced disclosure each get their own row, with the standard
+   AM section spacing between them. Crucially NOT am-settings__form--stack:
+   that helper sets align-items: stretch on a flex-column, which would
+   stretch .am-settings__dip (an inline-flex with a red background) to
+   fill the section width. The toggle-row keeps the dip content-sized. */
+.am-voicemail-form { margin: 0; }
+.am-voicemail-form > * + * { margin-top: 12px; }
+
 /* Advanced disclosure inside the AM voicemail plate. The summary acts like
    the existing am-tab buttons: caret prefix flips when open, label is the
    familiar 10-char LED stencil. */

@@ -823,28 +823,30 @@
   <form hx-post="/phones/{{.Line.Number}}/voicemail"
         hx-target="#voicemail-section"
         hx-swap="outerHTML"
-        class="am-settings__form am-settings__form--stack"
+        class="am-voicemail-form"
         data-voicemail-form>
-    <label class="am-settings__dip" aria-label="Answering machine enabled">
-      <input type="checkbox" name="enabled" value="on"
-             {{if .Line.Settings.Voicemail.Enabled}}checked{{end}}
-             class="am-settings__dip-input"
-             hx-post="/phones/{{.Line.Number}}/voicemail-toggle"
-             hx-target="#voicemail-section"
-             hx-swap="outerHTML"
-             hx-trigger="change"
-             data-voicemail-enabled>
-      <span class="am-settings__dip-body" aria-hidden="true">
-        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
-        <span class="am-settings__dip-lever"></span>
-        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
-      </span>
-    </label>
-    <div class="am-settings__toggle-info">
-      <div class="am-label am-settings__toggle-title">Take messages</div>
-      <p class="am-hint am-settings__toggle-desc">
-        Auto-answer after the timeout, play greeting, record. Messages stay on the handset.
-      </p>
+    <div class="am-settings__toggle-row">
+      <label class="am-settings__dip" aria-label="Answering machine enabled">
+        <input type="checkbox" name="enabled" value="on"
+               {{if .Line.Settings.Voicemail.Enabled}}checked{{end}}
+               class="am-settings__dip-input"
+               hx-post="/phones/{{.Line.Number}}/voicemail-toggle"
+               hx-target="#voicemail-section"
+               hx-swap="outerHTML"
+               hx-trigger="change"
+               data-voicemail-enabled>
+        <span class="am-settings__dip-body" aria-hidden="true">
+          <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+          <span class="am-settings__dip-lever"></span>
+          <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+        </span>
+      </label>
+      <div class="am-settings__toggle-info">
+        <div class="am-label am-settings__toggle-title">Take messages</div>
+        <p class="am-hint am-settings__toggle-desc">
+          Auto-answer after the timeout, play greeting, record. Messages stay on the handset.
+        </p>
+      </div>
     </div>
 
     <details class="am-voicemail-advanced">
