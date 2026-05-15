@@ -54,7 +54,7 @@ func generateInviteToken() (string, error) {
 
 const inviteColumns = `id, household_id, email, invited_by, token, status, created_at, accepted_at, expires_at`
 
-func scanInvite(row interface{ Scan(...any) error }) (*HouseholdInvite, error) {
+func scanInvite(row rowScanner) (*HouseholdInvite, error) {
 	inv := &HouseholdInvite{}
 	err := row.Scan(&inv.ID, &inv.HouseholdID, &inv.Email, &inv.InvitedBy,
 		&inv.Token, &inv.Status, &inv.CreatedAt, &inv.AcceptedAt, &inv.ExpiresAt)

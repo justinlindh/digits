@@ -276,7 +276,7 @@ func (s *LinkStore) FindNumberConflicts(ctx context.Context, householdAID, house
 	for rows.Next() {
 		c := NumberConflict{HouseholdAID: householdAID, HouseholdBID: householdBID}
 		if err := rows.Scan(&c.Number, &c.PhoneAName, &c.PhoneBName); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan conflict: %w", err)
 		}
 		conflicts = append(conflicts, c)
 	}
