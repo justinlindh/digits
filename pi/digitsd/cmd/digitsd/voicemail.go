@@ -39,30 +39,24 @@ func (d *daemonCallbacks) playAnnouncementSequence(tones ...string) {
 }
 
 // announceMessageCount composes "You have N new message(s)" from individual
-// clips. Counts above 9 are spelled digit by digit since there is no single
-// clip for them.
+// clips. Counts above 9 get a single self-contained "lost count" phrase
+// since there is no clip to voice the exact number.
 func (d *daemonCallbacks) announceMessageCount(count int) {
 	if count <= 0 {
 		d.playAnnouncementSequence("vm_no_messages")
 		return
 	}
-
-	seq := []string{"vm_you_have"}
-
-	if count <= 9 {
-		seq = append(seq, fmt.Sprintf("spoken_%d", count))
-	} else {
-		for _, ch := range fmt.Sprintf("%d", count) {
-			seq = append(seq, "spoken_"+string(ch))
-		}
+	if count > 9 {
+		d.playAnnouncementSequence("vm_lost_count")
+		return
 	}
 
+	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", count)}
 	if count == 1 {
 		seq = append(seq, "vm_new_message")
 	} else {
 		seq = append(seq, "vm_new_messages")
 	}
-
 	d.playAnnouncementSequence(seq...)
 }
 
