@@ -25,6 +25,47 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+// playAnnouncementSequence plays multiple one-shot tones in sequence, waiting
+// for each to finish before starting the next. Blocks the calling goroutine
+// for the full duration. Never call while holding voicemailMu or d.mu.
+func (d *daemonCallbacks) playAnnouncementSequence(tones ...string) {
+	for _, name := range tones {
+		d.mixer.PlayOnce(name)
+		for d.mixer.OncePlaying() {
+			time.Sleep(50 * time.Millisecond)
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+}
+
+// announceMessageCount composes "You have N new message(s)" from individual
+// clips. For count=0, plays vm_no_messages. For 1-9, uses spoken_N. For 10+,
+// plays individual digits (e.g. 12 = spoken_1 + spoken_2).
+func (d *daemonCallbacks) announceMessageCount(count int) {
+	if count <= 0 {
+		d.playAnnouncementSequence("vm_no_messages")
+		return
+	}
+
+	seq := []string{"vm_you_have"}
+
+	if count <= 9 {
+		seq = append(seq, fmt.Sprintf("spoken_%d", count))
+	} else {
+		for _, ch := range fmt.Sprintf("%d", count) {
+			seq = append(seq, "spoken_"+string(ch))
+		}
+	}
+
+	if count == 1 {
+		seq = append(seq, "vm_new_message")
+	} else {
+		seq = append(seq, "vm_new_messages")
+	}
+
+	d.playAnnouncementSequence(seq...)
+}
+
 // voicemailPlaybackSession bundles the cancelable context, message ID, and
 // open Player for one retrieval-playback message. Each DTMF dispatch
 // (delete, skip, replay, mark-heard) tears down the current session and
@@ -461,8 +502,10 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 	d.greetingEncoder = enc
 	d.greetingRecorderMu.Unlock()
 
-	// Prompt beep so the user knows the recorder is hot. 400ms tail keeps
-	// the beep out of the recording itself.
+	// Spoken prompt ("Record your greeting after the tone") followed by the
+	// beep so the user knows the recorder is hot. 400ms tail keeps the beep
+	// out of the recording itself.
+	d.playAnnouncementSequence("vm_record_greeting")
 	pipeline.PlayGreetingBeep(300 * time.Millisecond)
 	time.Sleep(400 * time.Millisecond)
 
@@ -522,6 +565,7 @@ func (d *daemonCallbacks) finalizeGreetingRecording() {
 		slog.Error("voicemail: greeting finalize failed", "error", err)
 	} else {
 		slog.Info("voicemail: custom greeting saved")
+		d.playAnnouncementSequence("vm_greeting_saved")
 	}
 
 	// Stop the pipeline asynchronously: pion's Stop can take a noticeable
@@ -568,6 +612,12 @@ func (d *daemonCallbacks) VoicemailDeleteGreeting() {
 		slog.Error("voicemail: delete greeting failed", "error", err)
 	} else {
 		slog.Info("voicemail: custom greeting deleted")
+		// The controller already transitioned to DIALTONE and started
+		// the dial tone loop before spawning this goroutine. Stop the
+		// loop, play the confirmation, then restart dial tone.
+		d.mixer.StopTone()
+		d.playAnnouncementSequence("vm_greeting_deleted")
+		d.SendTone(phone.ToneDial)
 	}
 }
 
@@ -639,12 +689,19 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	}
 	if noUnheard {
 		slog.Info("voicemail: no unheard messages on entry")
-		d.mixer.PlayOnce("tone_busy")
+		d.playAnnouncementSequence("vm_no_messages")
 		go d.voicemailExitToDialtoneAsync()
 		return
 	}
 
 	slog.Info("voicemail: playback start", "id", sess.id)
+
+	// Announce message count before starting playback. UnheardCount reads
+	// the on-disk store; safe to call without any mutex.
+	if n, err := store.UnheardCount(); err == nil {
+		d.announceMessageCount(n)
+	}
+
 	go d.voicemailPlaybackLoop(sess)
 }
 
@@ -764,11 +821,27 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
-		// Brief busy ack, then dial tone. The helper drains the one-shot
-		// queue before re-arming the loop so the two never overlap.
-		d.mixer.PlayOnce("tone_busy")
+		// Announce action + end-of-messages, then dial tone. The exit
+		// helper drains the one-shot queue before re-arming the loop so
+		// the announcement and dial tone never overlap.
+		switch digit {
+		case "7":
+			d.playAnnouncementSequence("vm_message_deleted", "vm_end_of_messages")
+		case "9":
+			d.playAnnouncementSequence("vm_message_saved", "vm_end_of_messages")
+		default:
+			d.playAnnouncementSequence("vm_end_of_messages")
+		}
 		d.voicemailExitToDialtoneAsync()
 		return
+	}
+
+	// Announce the action before starting the next message's playback.
+	switch digit {
+	case "7":
+		d.playAnnouncementSequence("vm_message_deleted")
+	case "9":
+		d.playAnnouncementSequence("vm_message_saved")
 	}
 
 	slog.Info("voicemail: advanced to next", "from", currentID, "to", next.id, "digit", digit)
@@ -990,9 +1063,7 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	}
 	if noNext {
 		slog.Info("voicemail: end of unheard after EOF", "last_id", sess.id)
-		// Brief busy ack, then dial tone. The helper drains the one-shot
-		// queue before re-arming the loop so the two never overlap.
-		d.mixer.PlayOnce("tone_busy")
+		d.playAnnouncementSequence("vm_end_of_messages")
 		d.voicemailExitToDialtoneAsync()
 		return
 	}
