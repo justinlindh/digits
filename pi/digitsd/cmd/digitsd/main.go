@@ -27,19 +27,18 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/assets"
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/bootcount"
-	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
-	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/subsystem"
 	"github.com/justinlindh/digits/pi/digitsd/internal/updater"
 	"github.com/justinlindh/digits/pi/digitsd/internal/version"
-	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
+
+	"github.com/pion/webrtc/v4"
 )
 
 // iceRestartTimeout is how long to wait for an ICE restart to succeed
@@ -105,10 +104,9 @@ type daemonCallbacks struct {
 	paired           atomic.Bool
 	pairingCode          string    // current pairing code from server
 	pairingCodeReceivedAt time.Time // when the current pairing code was received
-	callPeer             string // number of the remote party during an active call
-	isCaller             bool   // true if we initiated the current call
-	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
-	isRestartingICE      bool   // true while an ICE restart is in progress
+	callPeer         string   // number of the remote party during an active call
+	isCaller         bool     // true if we initiated the current call
+	isRestartingICE  bool     // true while an ICE restart is in progress
 	restartTimer     *time.Timer // timeout for ICE restart attempt
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
@@ -134,57 +132,6 @@ type daemonCallbacks struct {
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
-
-	// Voicemail state. voicemailStore is opened once at startup and is nil
-	// when the feature is disabled or initialization failed. recorder is the
-	// active answering-machine recording (one at a time), protected by
-	// recorderMu so the FSM callbacks (auto-answer, pickup, record-ended)
-	// never race with the audio path. voicemailWebRTCCh receives decoded PCM
-	// frames from the caller during voicemail; the channel is not connected
-	// to the mixer (the earpiece stays silent), but on homeowner pickup
-	// VoicemailPickup hands it to the mixer so the caller's audio routes to
-	// the earpiece without rebuilding the WebRTC pipeline.
-	voicemailStore    *voicemail.Store
-	recorder          *voicemail.Recorder
-	recorderMu        sync.Mutex
-	voicemailWebRTCCh chan []int16
-
-	// Greeting recording (separate from message recording above). Active
-	// only between *97 entry and either # / hook-on / max-duration. Lives
-	// under its own mutex so it doesn't contend with the message recorder
-	// path. The encoder is paired with the recorder: cleared together.
-	greetingRecorder   *voicemail.Recorder
-	greetingEncoder    *codec.Encoder
-	greetingRecorderMu sync.Mutex
-
-	// Voicemail retrieval (*98) playback state. Distinct from d.mu and
-	// from the recorder mutexes above: capture and retrieval are mutually
-	// exclusive at the FSM level (recording happens only in RINGING /
-	// VOICEMAIL_RECORDING, retrieval only in VOICEMAIL_PLAYBACK), but
-	// they share the same mixer key, so a dedicated mutex keeps the
-	// teardown / advance / DTMF paths from racing each other.
-	//
-	// Lock-ordering invariant: voicemailMu MUST NOT be held while calling
-	// into d.ctrl (which takes c.mu). All controller callbacks fired from
-	// playback paths run after voicemailMu is released; the FSM
-	// callbacks (VoicemailEnterPlayback, VoicemailExitPlayback) are
-	// themselves invoked under c.mu by the controller, so any
-	// d.ctrl.ResetToDialtone() they need is deferred to a goroutine to
-	// avoid c.mu recursion.
-	voicemailMu       sync.Mutex
-	voicemailPlayback *voicemailPlaybackSession // current message; nil = idle
-	voicemailMixerCh  chan []int16              // mixer source channel for "voicemail" key; nil between sessions
-
-	// Voicemail-state publish bookkeeping. publishVMMu serializes calls to
-	// publishVoicemailState so two trigger sites firing concurrently (e.g.
-	// recorder finalize racing a retrieval MarkHeard) cannot both send the
-	// same unheard count, and so dedup against publishVMLast is correct
-	// even under contention. publishVMLast holds the last successfully
-	// sent count; the sentinel -1 forces the first publish to fire
-	// regardless of value, which is what the post-connect snapshot needs
-	// to seed server-side state.
-	publishVMMu   sync.Mutex
-	publishVMLast int64
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -255,23 +202,8 @@ func (d *daemonCallbacks) SendRing(start bool) {
 	d.serial.Ring(start)
 }
 
-func (d *daemonCallbacks) SendRingPattern(id int) {
-	d.serial.RingPattern(id)
-}
-
-// SendLED forwards the controller's LED command to the firmware. The
-// "OFF" mode is rewritten to "SLOWER_PULSE" when voicemail is enabled
-// and there are unheard messages, so the idle LED also serves as a
-// message-waiting indicator. Other modes (ON, BLINK, FAST_PULSE, etc.)
-// pass through untouched: when the phone rings or is connected, those
-// states take precedence over the message-waiting hint.
-//
-// SLOWER_PULSE (firmware: 150ms on, 3000ms off) is deliberately distinct
-// from SLOW_PULSE (200ms on, 1500ms off), which the firmware uses for
-// the boot-unpaired phase. Two patterns means the user can tell at a
-// glance whether the phone is unprovisioned or has unheard voicemail.
 func (d *daemonCallbacks) SendLED(mode string) {
-	d.serial.LED(d.ledModeWithVoicemailHint(mode))
+	d.serial.LED(mode)
 }
 
 func (d *daemonCallbacks) NotifyCallConnected() {
@@ -282,25 +214,902 @@ func (d *daemonCallbacks) SetFlashEnabled(enabled bool) {
 	d.serial.FlashEnabled(enabled)
 }
 
-func (d *daemonCallbacks) OnCallReturn() {
-	d.callReturnOrigin.Store(true)
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
-		slog.Error("call_return: server unreachable", "error", err)
-		d.callReturnOrigin.Store(false)
-		d.mixer.PlayOnce("disconnected")
-		d.ctrl.ResetToDialtone()
-		d.mixer.PlayLoop("tone_dial")
+func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Check if the signaling server is reachable before setting up WebRTC.
+	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCall, To: targetNumber}); err != nil {
+		return fmt.Errorf("server unreachable: %w", err)
+	}
+	// TypeCall was sent. If any later step fails, send a hangup so the
+	// callee does not ring until timeout.
+	callSent := true
+	defer func() {
+		if callSent {
+			sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: targetNumber})
+		}
+	}()
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	var err error
+	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("webrtc: new peer manager failed", "error", err)
+		return fmt.Errorf("webrtc setup: %w", err)
+	}
+
+	d.callPeer = targetNumber
+	d.isCaller = true
+	d.isRestartingICE = false
+
+	callerPM := d.peerMgr
+	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(callerPM, state)
+	}
+
+	// Handle remote audio track
+	webrtcCh := d.mixer.AddWebRTCSource(targetNumber)
+	localPM := d.peerMgr // capture for goroutine; each PM owns its decoder
+	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("caller-remote-track")
+			// Live playback — decode and feed into mixer
+			var frameCount int
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("makeCall remote track ended", "frames", frameCount)
+					return
+				}
+				pcm, err := localPM.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				if localPM.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
+				// Copy — Decode returns a slice of a reused internal buffer
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+					// Drop frame — mixer is behind
+				}
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind SDP send — candidates must not arrive before the offer.
+	sdpSent := make(chan struct{})
+	d.peerMgr.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		sendSignal(d.sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        targetNumber,
+			Candidate: candidate,
+		})
+	}
+
+	// Create offer (returns immediately — ICE trickles via OnICECandidate)
+	offer, err := d.peerMgr.CreateOffer()
+	if err != nil {
+		slog.Error("webrtc: create offer failed", "error", err)
+		close(sdpSent)
+		return fmt.Errorf("webrtc offer: %w", err)
+	}
+
+	// Send call + SDP, then ungate ICE candidates
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeSDP, To: targetNumber, SDP: offer})
+	close(sdpSent)
+
+	// Start audio pipeline. Skip if one is already running (ADD flow: the held
+	// peer's pipeline stays alive across the flash-to-add transition, and the
+	// existing encode loop picks up the new peerMgr via the per-iteration read
+	// under d.mu).
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline start failed", "error", err)
+			return fmt.Errorf("audio pipeline: %w", err)
+		}
+
+		d.startEncodeLoop()
+	}
+
+	slog.Info("call initiated", "target", targetNumber)
+	callSent = false
+	return nil
+}
+
+func (d *daemonCallbacks) AnswerCall() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.pendingOffer == "" {
+		slog.Warn("answer: no pending offer")
+		return
+	}
+
+	// Fast path: use pre-created PeerConnection from ring phase.
+	if d.preAnswer.peerMgr != nil {
+		t0 := time.Now()
+		d.mixer.StopTone()
+		caller := d.preAnswer.caller
+		pm := d.preAnswer.peerMgr
+		answerSDP := d.preAnswer.answerSDP
+		candidates := d.preAnswer.candidates
+
+		d.peerMgr = pm
+		d.callPeer = caller
+		d.isCaller = false
+		d.isRestartingICE = false
+		d.preAnswer.peerMgr = nil
+		d.preAnswer.answerSDP = ""
+		d.preAnswer.webrtcCh = nil
+		d.preAnswer.candidates = nil
+		d.preAnswer.caller = ""
+		d.pendingOffer = ""
+		d.pendingCaller = ""
+
+		sendSignal(d.sig, &sigclient.Message{
+			Type: sigclient.TypeAnswer,
+			To:   caller,
+			SDP:  answerSDP,
+		})
+
+		for _, candidate := range candidates {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		// Any candidates still gathering after promotion should be sent directly.
+		pm.OnICECandidate = func(candidate string) {
+			sendSignal(d.sig, &sigclient.Message{
+				Type:      sigclient.TypeICE,
+				To:        caller,
+				Candidate: candidate,
+			})
+		}
+
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline (answer fast-path) start failed", "error", err)
+			return
+		}
+		d.startEncodeLoop()
+
+		slog.Info("answered call (fast path)", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+		return
+	}
+
+	// Stop tones — mixer continues writing silence (DAC keepalive)
+	d.mixer.StopTone()
+
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	d.pendingOffer = ""
+	d.pendingCaller = ""
+
+	d.callPeer = caller
+	d.isCaller = false
+	d.isRestartingICE = false
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	var err error
+	d.peerMgr, err = owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("webrtc (answer): new peer manager failed", "error", err)
+		return
+	}
+
+	answerPM := d.peerMgr
+	d.peerMgr.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(answerPM, state)
+	}
+
+	webrtcCh := d.mixer.AddWebRTCSource(caller)
+	d.peerMgr.OnRemoteTrack = d.remoteTrackHandler(answerPM, webrtcCh)
+
+	// Gate ICE candidates behind answer SDP send.
+	sdpSent := make(chan struct{})
+	d.peerMgr.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		sendSignal(d.sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        caller,
+			Candidate: candidate,
+		})
+	}
+
+	// Accept the offer and generate answer (returns immediately — ICE trickles via OnICECandidate)
+	answerSDP, err := d.peerMgr.AcceptOffer(offerSDP)
+	if err != nil {
+		slog.Error("webrtc: accept offer failed", "error", err)
+		close(sdpSent)
+		return
+	}
+
+	// Drain any ICE candidates that arrived before peerMgr was ready.
+	for _, candidate := range d.pendingICE {
+		if err := d.peerMgr.AddICECandidate(candidate); err != nil {
+			slog.Warn("webrtc: add queued ICE candidate failed", "error", err)
+		}
+	}
+	slog.Info("drained queued ICE candidates", "count", len(d.pendingICE))
+	d.pendingICE = nil
+
+	// Send answer SDP back to caller, then ungate ICE candidates
+	sendSignal(d.sig, &sigclient.Message{
+		Type: sigclient.TypeAnswer,
+		To:   caller,
+		SDP:  answerSDP,
+	})
+	close(sdpSent)
+
+	if d.pipeline == nil {
+		d.pipeline = d.newPipeline()
+		if err := d.pipeline.Start(); err != nil {
+			slog.Error("audio pipeline (answer) start failed", "error", err)
+			return
+		}
+		d.startEncodeLoop()
+	}
+
+	slog.Info("answered call", "caller", caller)
+}
+
+func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
+	d.mu.Lock()
+	mesh := d.mesh
+	pm := d.peerMgr
+	callPeer := d.callPeer
+	d.mu.Unlock()
+
+	// First try the conference mesh.
+	if mesh != nil {
+		if meshPM := mesh.GetPeer(phone); meshPM != nil {
+			meshPM.SetOutboundMuted(muted)
+			meshPM.SetInboundMuted(muted)
+			slog.Info("mute peer (mesh)", "phone", phone, "muted", muted)
+			return
+		}
+	}
+	// Fall back to the 2-party peerMgr if phone matches the current 2-party peer.
+	if pm != nil && callPeer == phone {
+		pm.SetOutboundMuted(muted)
+		pm.SetInboundMuted(muted)
+		slog.Info("mute peer (2-party)", "phone", phone, "muted", muted)
+		return
+	}
+	slog.Warn("MutePeer: no peer found", "phone", phone, "muted", muted)
+}
+
+func (d *daemonCallbacks) MigrateToMesh(phone string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.peerMgr == nil || d.callPeer != phone {
+		slog.Warn("MigrateToMesh: no matching 2-party peer", "phone", phone, "callPeer", d.callPeer)
+		return
+	}
+
+	// Ensure the mesh exists.
+	if d.mesh == nil {
+		d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(d.iceServers))
+	}
+
+	// Transfer ownership: the existing PeerManager moves into the mesh under
+	// the peer's phone key. d.peerMgr is cleared so future 2-party calls
+	// create a fresh PeerConnection. d.callPeer is intentionally kept so that
+	// HOOK:FLASH dispatch and other paths can still identify the B party after
+	// migration (the peer is now in the mesh, but its identity doesn't change).
+	d.mesh.Adopt(phone, d.peerMgr)
+	d.peerMgr = nil
+}
+
+// currentPeer returns the phone number of the 2-party remote peer that
+// HOOK:FLASH dispatch should treat as the "active" party to hold. The answer
+// depends on the controller's state rather than on daemon internals -- this
+// dispatches explicitly so future state additions have to declare their own
+// peer policy instead of silently inheriting the "len(mesh)==1" heuristic.
+//
+// - CONNECTED: prefer d.callPeer. It's set by InitiateCall/AnswerCall; if a
+//   previous ADD was aborted and its TearDownPeer cleared d.callPeer while
+//   leaving the original held party B in the mesh, fall back to the single
+//   mesh peer.
+// - ADD_*: the controller has already captured the held party in c.heldPeer,
+//   so the value returned here is not consulted by onHookFlash. Return
+//   d.callPeer as a best-effort identity.
+// - All other states: no meaningful "current peer" -- return empty.
+//
+// Must NOT be called with d.mu held. ctrl.State() acquires c.mu, so the
+// lock-order invariant is preserved by snapshotting the state first.
+func (d *daemonCallbacks) currentPeer() string {
+	s := d.ctrl.State()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	switch s {
+	case phone.StateCONNECTED:
+		if d.callPeer != "" {
+			return d.callPeer
+		}
+		if d.mesh != nil {
+			peers := d.mesh.ActivePeers()
+			if len(peers) == 1 {
+				return peers[0]
+			}
+		}
+		return ""
+	case phone.StateADD_DIALTONE, phone.StateADD_DIALING,
+		phone.StateADD_CALLING, phone.StateADD_PRIVATE,
+		phone.StateADD_INTERCEPT, phone.StateCONFERENCE_MERGED:
+		return d.callPeer
+	default:
+		return ""
 	}
 }
 
-func (d *daemonCallbacks) OnCallReturnCancel() {
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
-		slog.Error("call_return_cancel: server unreachable", "error", err)
+func (d *daemonCallbacks) TearDownPeer(phone string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if cancel, ok := d.meshReporterCancels[phone]; ok {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
+	if d.mesh != nil {
+		d.mesh.RemovePeer(phone)
+	}
+	// If the phone being torn down is the current 2-party peer (e.g. an
+	// ADD_CALLING target that the server rejected before it could migrate
+	// into the mesh), close its PeerManager too so we don't leak a dead PC
+	// across retries.
+	if d.peerMgr != nil && d.callPeer == phone {
+		if err := d.peerMgr.Close(); err != nil {
+			slog.Warn("TearDownPeer: peerMgr close failed", "phone", phone, "error", err)
+		}
+		d.peerMgr = nil
+		d.callPeer = ""
+	}
+	d.mixer.RemoveWebRTCSource(phone)
+}
+
+func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
+	d.mu.Lock()
+	sig := d.sig
+	d.mu.Unlock()
+	slog.Info("conference: sending ConferenceMerge to server", "held", held, "active", active)
+	sendSignal(sig, &sigclient.Message{
+		Type:       sigclient.TypeConferenceMerge,
+		HeldPeer:   held,
+		ActivePeer: active,
+	})
+}
+
+func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
+	if !initiator {
+		// Responder path: don't pre-create the mesh peer. setupMeshResponder
+		// will create it when the initiator's SDP offer arrives. Pre-creating
+		// here would leave a PC in signaling state 'stable', which causes the
+		// TypeSDP dispatch at line ~1855 to mistakenly route the incoming
+		// offer as an answer (SetRemote(answer) from stable is an invalid
+		// pion transition).
+		slog.Info("conference: responder waiting for initiator SDP", "phone", phone)
+		return
+	}
+
+	d.mu.Lock()
+	if d.mesh == nil {
+		iceCfg := owebrtc.NewICEConfig(d.iceServers)
+		d.mesh = owebrtc.NewMeshManager(iceCfg)
+	}
+	mesh := d.mesh
+	confID := d.ctrl.ConferenceID()
+	sig := d.sig
+	d.mu.Unlock()
+
+	slog.Info("conference: adding mesh peer", "phone", phone, "initiator", initiator, "conf_id", confID)
+
+	pm, err := mesh.AddPeer(phone)
+	if err != nil {
+		slog.Error("conference: add mesh peer failed", "phone", phone, "err", err)
+		return
+	}
+
+	// Wire remote audio track into the mixer BEFORE any async signaling work.
+	// Pion can fire OnTrack during negotiation; setting it after CreateOffer
+	// would race against the remote track arriving.
+	webrtcCh := d.mixer.AddWebRTCSource(phone)
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		slog.Info("conference: remote track attached (initiator)", "phone", phone)
+		go func() {
+			defer recoverGoroutine("conf-remote-track-" + phone)
+			gotFirst := false
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("conference: remote track ended", "phone", phone)
+					return
+				}
+				if !gotFirst {
+					slog.Info("conference: first RTP packet received", "phone", phone)
+					gotFirst = true
+				}
+				// pm owns its own decoder — safe to call concurrently with other peers.
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				if pm.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				select {
+				case webrtcCh <- frame:
+				default:
+					// drop frame if consumer is behind
+				}
+			}
+		}()
+	}
+
+	// Wire ICE candidate forwarding. Gate candidates behind SDP send so the
+	// remote side has a local description before processing candidates.
+	sdpSent := make(chan struct{})
+	pm.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		sendSignal(sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        phone,
+			ConfID:    confID,
+			Candidate: candidate,
+		})
+	}
+
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, phone)
+
+	if initiator {
+		// Initiator creates and sends the SDP offer to the peer.
+		offer, err := pm.CreateOffer()
+		if err != nil {
+			slog.Error("conference: create offer failed", "phone", phone, "err", err)
+			close(sdpSent)
+			return
+		}
+		sendSignal(sig, &sigclient.Message{
+			Type:   sigclient.TypeSDP,
+			To:     phone,
+			ConfID: confID,
+			SDP:    offer,
+		})
+		close(sdpSent)
+		slog.Info("conference: sent SDP offer to peer", "phone", phone, "conf_id", confID)
+	} else {
+		// Responder waits for the initiator's offer (handled in TypeSDP dispatch).
+		// Ungate ICE candidates immediately since we don't send an offer here.
+		close(sdpSent)
 	}
 }
 
-func (d *daemonCallbacks) OnCallReturnAbandon() {
-	d.callReturnOrigin.Store(false)
+func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
+	slog.Info("conference: removing mesh peer", "phone", phone)
+	d.mu.Lock()
+	mesh := d.mesh
+	if cancel, ok := d.meshReporterCancels[phone]; ok {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
+	d.mu.Unlock()
+	if mesh != nil {
+		mesh.RemovePeer(phone)
+	}
+	d.mixer.RemoveWebRTCSource(phone)
+}
+
+func (d *daemonCallbacks) TearDownAllMeshPeers() {
+	d.mu.Lock()
+	mesh := d.mesh
+	var peers []string
+	if mesh != nil {
+		peers = mesh.ActivePeers()
+	}
+	for phone, cancel := range d.meshReporterCancels {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
+	d.mu.Unlock()
+	slog.Info("conference: tearing down all mesh peers", "count", len(peers), "peers", peers)
+	if mesh == nil {
+		return
+	}
+	for _, p := range peers {
+		d.mixer.RemoveWebRTCSource(p)
+	}
+	mesh.CloseAll()
+}
+
+// setupMeshResponder creates a mesh peer for an incoming conference SDP offer,
+// wires the remote track and ICE candidate handlers, and accepts the offer.
+// Returns the answer SDP. Must NOT be called with d.mu held.
+func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (string, error) {
+	d.mu.Lock()
+	if d.mesh == nil {
+		iceCfg := owebrtc.NewICEConfig(d.iceServers)
+		d.mesh = owebrtc.NewMeshManager(iceCfg)
+	}
+	mesh := d.mesh
+	d.mu.Unlock()
+
+	pm, err := mesh.AddPeer(peer)
+	if err != nil {
+		return "", fmt.Errorf("mesh AddPeer: %w", err)
+	}
+
+	// Wire remote audio track BEFORE AcceptOffer so pion cannot miss it.
+	webrtcCh := d.mixer.AddWebRTCSource(peer)
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		slog.Info("conference: remote track attached (responder)", "phone", peer)
+		go func() {
+			defer recoverGoroutine("conf-remote-track-" + peer)
+			gotFirst := false
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("conference: remote track ended (responder)", "phone", peer)
+					return
+				}
+				if !gotFirst {
+					slog.Info("conference: first RTP packet received (responder)", "phone", peer)
+					gotFirst = true
+				}
+				// pm owns its own decoder — safe to call concurrently with other peers.
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				if pm.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+			}
+		}()
+	}
+
+	// Gate ICE candidates behind answer SDP send.
+	sdpSent := make(chan struct{})
+	pm.OnICECandidate = func(candidate string) {
+		<-sdpSent
+		d.mu.Lock()
+		sig := d.sig
+		d.mu.Unlock()
+		sendSignal(sig, &sigclient.Message{
+			Type:      sigclient.TypeICE,
+			To:        peer,
+			ConfID:    confID,
+			Candidate: candidate,
+		})
+	}
+
+	pm.OnConnectionState = d.meshReporterOnConnected(pm, peer)
+
+	// Use confID from the offer rather than ctrl.ConferenceID() so the answer
+	// is correctly routed even if ConferenceMember has not yet arrived.
+	answerSDP, err := pm.AcceptOffer(offerSDP)
+	if err != nil {
+		close(sdpSent)
+		return "", fmt.Errorf("AcceptOffer: %w", err)
+	}
+	close(sdpSent)
+	return answerSDP, nil
+}
+
+func (d *daemonCallbacks) HangupCall() {
+	t0 := time.Now()
+	d.mu.Lock()
+
+	// Call is tearing down. Drop the Pico into instant-hangup mode so any
+	// subsequent idle hook press doesn't sit behind the flash window.
+	d.serial.FlashEnabled(false)
+
+	d.pendingOffer = ""
+	d.pendingCaller = ""
+	d.pendingICE = nil
+	d.cleanupPreAnswer()
+	peer := d.callPeer
+	d.callPeer = ""
+	d.isCaller = false
+	d.isRestartingICE = false
+	if d.restartTimer != nil {
+		d.restartTimer.Stop()
+		d.restartTimer = nil
+	}
+
+	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
+
+	// Snapshot the slow-to-close resources and null them out so a fresh
+	// call setup (next pickup) doesn't have to wait for pion's DTLS / ICE
+	// shutdown. Pion's pc.Close blocks for hundreds of ms to seconds, and
+	// previously held the daemon's serial event loop the entire time,
+	// gating dialtone on the next HOOK:OFF.
+	pipeline := d.pipeline
+	peerMgr := d.peerMgr
+	mesh := d.mesh
+	d.pipeline = nil
+	d.peerMgr = nil
+	d.mesh = nil
+
+	// Cancel link-health reporters before releasing the lock so the
+	// background goroutine never calls GetStats on a closed peer.
+	if d.reporterCancel != nil {
+		d.reporterCancel()
+		d.reporterCancel = nil
+	}
+	for phone, cancel := range d.meshReporterCancels {
+		cancel()
+		delete(d.meshReporterCancels, phone)
+	}
+
+	if peer != "" {
+		d.mixer.RemoveWebRTCSource(peer)
+	}
+
+	d.mu.Unlock()
+	slog.Info("call disconnected", "peer", peer, "sync_elapsed", time.Since(t0).Round(time.Microsecond))
+
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() {
+		slog.Info("auto-update: call ended, running deferred update")
+		if d.triggerAutoUpdate != nil {
+			go d.triggerAutoUpdate()
+		}
+	}
+
+	go func() {
+		defer recoverGoroutine("hangup-teardown")
+		teardownStart := time.Now()
+		if pipeline != nil {
+			t := time.Now()
+			pipeline.Stop()
+			slog.Info("hangup teardown: pipeline stopped", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if peerMgr != nil {
+			t := time.Now()
+			if err := peerMgr.Close(); err != nil {
+				slog.Warn("hangup teardown: peerMgr close failed", "error", err)
+			}
+			slog.Info("hangup teardown: peerMgr closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		if mesh != nil {
+			t := time.Now()
+			mesh.CloseAll()
+			slog.Info("hangup teardown: mesh closed", "elapsed", time.Since(t).Round(time.Millisecond))
+		}
+		slog.Info("hangup teardown complete", "peer", peer, "async_elapsed", time.Since(teardownStart).Round(time.Millisecond))
+	}()
+}
+
+// newPipeline constructs a fresh capture pipeline with per-line config
+// applied (voice style, etc). The returned pipeline is not yet started.
+// Must be called with d.mu held (reads d.cfg without acquiring the lock).
+func (d *daemonCallbacks) newPipeline() *audio.Pipeline {
+	cfg := audio.DefaultPipelineConfig()
+	cfg.Character = d.cfg.VoiceStyleOrDefault() == config.VoiceStyleCopper
+	return audio.NewPipeline(cfg)
+}
+
+// startEncodeLoop spawns the goroutine that reads captured PCM from the
+// pipeline and sends it to the active peer and any conference mesh.
+// Must be called with d.mu held (reads d.pipeline).
+func (d *daemonCallbacks) startEncodeLoop() {
+	go func() {
+		defer recoverGoroutine("encode-loop")
+		for frame := range d.pipeline.OutFrames() {
+			d.mu.Lock()
+			pm := d.peerMgr
+			mesh := d.mesh
+			d.mu.Unlock()
+			if pm != nil {
+				pm.SendPCMFrame(frame)
+			}
+			if mesh != nil {
+				mesh.SendPCMFrameToAll(frame)
+			}
+		}
+	}()
+}
+
+// remoteTrackHandler returns an OnRemoteTrack callback that decodes incoming
+// RTP and feeds the mixer. It implements a three-phase startup:
+//   - Phase 1: discard packets until the audio pipeline is running
+//   - Phase 2: drain any buffered packets to catch up to real-time
+//   - Phase 3: live decode and playback
+func (d *daemonCallbacks) remoteTrackHandler(pm *owebrtc.PeerManager, webrtcCh chan []int16) func(*webrtc.TrackRemote) {
+	return func(track *webrtc.TrackRemote) {
+		go func() {
+			defer recoverGoroutine("remote-track")
+			var frameCount int
+
+			slog.Info("remote track active, waiting for pipeline")
+			var discarded int
+			for {
+				d.mu.Lock()
+				pip := d.pipeline
+				d.mu.Unlock()
+				if pip != nil {
+					slog.Info("pipeline ready", "discarded_packets", discarded)
+					break
+				}
+
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended while waiting for pipeline", "discarded_packets", discarded)
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				discarded++
+			}
+
+			drainStart := time.Now()
+			var drained int
+			var lastSeq uint16
+			for {
+				start := time.Now()
+				pkt, _, err := track.ReadRTP()
+				readTime := time.Since(start)
+				if err != nil {
+					slog.Info("remote track ended during drain")
+					return
+				}
+				pm.Decode(pkt.Payload) //nolint:errcheck
+				drained++
+				lastSeq = pkt.SequenceNumber
+
+				if readTime > 5*time.Millisecond {
+					slog.Info("drain complete", "packets_skipped", drained-1, "duration", time.Since(drainStart).Round(time.Microsecond), "last_seq", lastSeq)
+					break
+				}
+			}
+
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("remote track ended", "frames", frameCount)
+					return
+				}
+				recvTime := time.Now()
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					slog.Warn("decode error", "error", err, "pkt_bytes", len(pkt.Payload))
+					continue
+				}
+				if pm.InboundMuted() {
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				frameCount++
+				select {
+				case webrtcCh <- frame:
+				default:
+				}
+
+				if frameCount <= 10 || frameCount%50 == 0 {
+					slog.Info("FEED", "frame", frameCount, "seq", pkt.SequenceNumber, "recv", recvTime.Format("15:04:05.000000"))
+				}
+			}
+		}()
+	}
+}
+
+// prepareAnswer pre-creates the WebRTC PeerConnection during the ring phase.
+// This moves expensive ECDSA cert generation, SDP processing, and ICE gathering
+// off the critical path between handset pickup and first audio.
+//
+// Security invariant: no audio pipeline is started, no encode loop is spawned,
+// and no ICE candidates are sent to the caller. The caller cannot establish ICE
+// connectivity without our answer SDP (which contains our ufrag/pwd), so no
+// media can flow until AnswerCall sends it after pickup.
+//
+// Must be called with d.mu held. On any failure, logs and returns without
+// setting preAnswer state; AnswerCall falls back to the full creation path.
+func (d *daemonCallbacks) prepareAnswer() {
+	if d.preAnswer.peerMgr != nil {
+		return // already prepared
+	}
+	caller := d.pendingCaller
+	offerSDP := d.pendingOffer
+	if offerSDP == "" {
+		return // no offer to work with yet
+	}
+
+	t0 := time.Now()
+
+	iceCfg := owebrtc.NewICEConfig(d.iceServers)
+	pm, err := owebrtc.NewPeerManager(iceCfg)
+	if err != nil {
+		slog.Error("prepareAnswer: new peer manager failed", "error", err)
+		return
+	}
+
+	pm.OnConnectionState = func(state webrtc.PeerConnectionState) {
+		d.handleConnectionStateChange(pm, state)
+	}
+
+	// Collect local ICE candidates into the preAnswer slice (NOT sent to caller).
+	pm.OnICECandidate = func(candidate string) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if d.preAnswer.peerMgr == pm {
+			d.preAnswer.candidates = append(d.preAnswer.candidates, candidate)
+		}
+	}
+
+	webrtcCh := d.mixer.AddWebRTCSource(caller)
+	pm.OnRemoteTrack = d.remoteTrackHandler(pm, webrtcCh)
+
+	answerSDP, err := pm.AcceptOffer(offerSDP)
+	if err != nil {
+		slog.Error("prepareAnswer: accept offer failed", "error", err)
+		d.mixer.RemoveWebRTCSource(caller)
+		_ = pm.Close()
+		return
+	}
+
+	// Add any ICE candidates that arrived before we were ready.
+	for _, candidate := range d.pendingICE {
+		if err := pm.AddICECandidate(candidate); err != nil {
+			slog.Warn("prepareAnswer: add queued ICE candidate failed", "error", err)
+		}
+	}
+	d.pendingICE = nil
+
+	d.preAnswer.peerMgr = pm
+	d.preAnswer.answerSDP = answerSDP
+	d.preAnswer.webrtcCh = webrtcCh
+	d.preAnswer.candidates = nil // will be populated by OnICECandidate as they gather
+	d.preAnswer.caller = caller
+
+	slog.Info("prepareAnswer: ready", "caller", caller, "elapsed", time.Since(t0).Round(time.Millisecond))
+}
+
+// cleanupPreAnswer tears down any pre-created PeerConnection (e.g. caller
+// hung up during ring). Must be called with d.mu held.
+func (d *daemonCallbacks) cleanupPreAnswer() {
+	if d.preAnswer.peerMgr == nil {
+		return
+	}
+	slog.Info("cleanupPreAnswer: tearing down pre-created peer", "caller", d.preAnswer.caller)
+	pm := d.preAnswer.peerMgr
+	caller := d.preAnswer.caller
+	d.preAnswer.peerMgr = nil
+	d.preAnswer.answerSDP = ""
+	d.preAnswer.webrtcCh = nil
+	d.preAnswer.candidates = nil
+	d.preAnswer.caller = ""
+	if caller != "" {
+		d.mixer.RemoveWebRTCSource(caller)
+	}
+	go func() {
+		defer recoverGoroutine("cleanupPreAnswer")
+		if err := pm.Close(); err != nil {
+			slog.Warn("cleanupPreAnswer: close failed", "error", err)
+		}
+	}()
 }
 
 // applyVoiceStyleLive forwards a voice style change to the active pipeline
@@ -360,95 +1169,145 @@ func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
 	return d.cfg.Save()
 }
 
-// voicemailStateSender is the minimal Send-only surface publishVoicemailStateOnce
-// needs from the signaling client. Defined as an interface so unit tests can
-// inject a capturing fake without standing up a real WebSocket. *sigclient.Client
-// satisfies it implicitly.
-type voicemailStateSender interface {
-	Send(*sigclient.Message) error
+// triggerHangup dispatches a hangup to the controller from a fresh goroutine.
+// Callers holding d.mu must use this to avoid deadlock: HandleSignal calls
+// back into HangupCall, which also acquires d.mu.
+//
+// d.ctrl is assigned once in main() before the event loop starts and is
+// never mutated, so the unsynchronized nil read here is safe.
+func (d *daemonCallbacks) triggerHangup() {
+	if d.ctrl == nil {
+		return
+	}
+	go d.ctrl.HandleSignal("hangup", "")
 }
 
-// publishVoicemailStateOnce reads the current unheard-message count from store
-// and sends a voicemail_state message via sender. When force is false, the
-// send is skipped if the count equals *last (dedup against repeated change
-// notifications). When force is true, the send is unconditional, used after
-// (re)connect to seed server-side state regardless of local cache parity.
-// Returns true when a message was actually sent.
+// handleConnectionStateChange is called (without d.mu held) from a pion
+// goroutine when the WebRTC peer connection state changes.  On transient
+// failures the original caller attempts a single ICE restart before giving up.
 //
-// The caller is responsible for serializing concurrent invocations (the daemon
-// uses publishVMMu); inside this function, sender.Send and store.UnheardCount
-// can both block on I/O so neither runs under d.mu.
-//
-// On a nil store (voicemail feature disabled at boot) or any UnheardCount
-// error, no message is sent and *last is left unchanged so the next trigger
-// will retry from the same baseline.
-func publishVoicemailStateOnce(sender voicemailStateSender, store *voicemail.Store, last *int64, force bool) bool {
-	if store == nil {
-		return false
+// pm is the PeerManager captured at callback-setup time. Because HangupCall
+// detaches teardown into a goroutine, pion may fire a state change on a
+// pre-hangup peer after the daemon has already moved on to a new call. Every
+// branch that reads d.peerMgr / d.isCaller therefore checks d.peerMgr == pm
+// under d.mu and bails on mismatch, so a stale Failed event can't trigger an
+// ICE restart against the new call's peer.
+func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, state webrtc.PeerConnectionState) {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
+		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
+		wasRestarting := d.isRestartingICE
+		d.isRestartingICE = false
+		if d.restartTimer != nil {
+			d.restartTimer.Stop()
+			d.restartTimer = nil
+		}
+		// Spawn the link-health reporter once per call (not on ICE restart recovery).
+		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
+			rctx, cancel := context.WithCancel(context.Background())
+			d.reporterCancel = cancel
+			sig := d.sig
+			interval := d.linkHealthInterval
+			d.mu.Unlock()
+			send := func(s owebrtc.Sample) error {
+				payload := &sigclient.LinkHealthPayload{
+					TS:       s.TS.UnixMilli(),
+					LossPct:  s.LossPct,
+					JitterMs: s.JitterMs,
+					RttMs:    s.RttMs,
+					ConnType: s.ConnType,
+					BytesIn:  s.BytesIn,
+					BytesOut: s.BytesOut,
+				}
+				return sig.Send(&sigclient.Message{Type: sigclient.TypeLinkHealth, LinkHealth: payload})
+			}
+			reporter := owebrtc.NewReporter(pm, send, interval)
+			go reporter.Run(rctx)
+		} else {
+			d.mu.Unlock()
+		}
+		if wasRestarting {
+			slog.Info("webrtc: ICE restart succeeded -- connection recovered")
+		}
+
+	case webrtc.PeerConnectionStateFailed:
+		d.mu.Lock()
+		if d.peerMgr != pm {
+			d.mu.Unlock()
+			return
+		}
+		alreadyRestarting := d.isRestartingICE
+		isCaller := d.isCaller
+		d.mu.Unlock()
+
+		if alreadyRestarting {
+			slog.Warn("webrtc: ICE restart failed, hanging up")
+			d.triggerHangup()
+			return
+		}
+
+		if isCaller {
+			slog.Warn("webrtc: connection failed, attempting ICE restart")
+			d.attemptICERestart()
+		} else {
+			slog.Warn("webrtc: connection failed, waiting for ICE restart from caller")
+			d.mu.Lock()
+			d.isRestartingICE = true
+			d.startRestartTimeout()
+			d.mu.Unlock()
+		}
 	}
-	n, err := store.UnheardCount()
+}
+
+// attemptICERestart creates a new SDP offer with rotated ICE credentials
+// and sends it to the remote peer.  Must NOT be called with d.mu held.
+func (d *daemonCallbacks) attemptICERestart() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.peerMgr == nil {
+		slog.Warn("ice-restart: no peer manager, hanging up")
+		d.triggerHangup()
+		return
+	}
+
+	d.isRestartingICE = true
+
+	offer, err := d.peerMgr.CreateRestartOffer()
 	if err != nil {
-		slog.Warn("voicemail_state: unheard count failed, skipping publish", "error", err)
-		return false
+		slog.Error("ice-restart: create offer failed", "error", err)
+		d.isRestartingICE = false
+		d.triggerHangup()
+		return
 	}
-	if !force && int64(n) == *last {
-		return false
-	}
-	if err := sender.Send(&sigclient.Message{
-		Type:                  sigclient.TypeVoicemailState,
-		VoicemailUnheardCount: n,
-	}); err != nil {
-		slog.Warn("voicemail_state: send failed", "count", n, "error", err)
-		return false
-	}
-	*last = int64(n)
-	slog.Info("voicemail_state: published", "unheard_count", n, "forced", force)
-	return true
+
+	peer := d.callPeer
+	d.startRestartTimeout()
+
+	slog.Info("ice-restart: sending restart offer", "peer", peer, "bytes", len(offer))
+	sendSignal(d.sig, &sigclient.Message{
+		Type: sigclient.TypeICERestart,
+		To:   peer,
+		SDP:  offer,
+	})
 }
 
-// publishVoicemailState is the change-driven wrapper used by mutation triggers
-// (recording finalize, MarkHeard, delete). Snapshots the current store,
-// serializes against concurrent callers via publishVMMu, and dedups against
-// publishVMLast so a no-op mutation does not produce a redundant wire message.
-func (d *daemonCallbacks) publishVoicemailState() {
-	d.mu.Lock()
-	store := d.voicemailStore
-	d.mu.Unlock()
-
-	d.publishVMMu.Lock()
-	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, false)
-}
-
-// publishVoicemailStateInitial is the (re)connect wrapper. It sends the
-// current unheard count unconditionally so the server can seed its per-phone
-// cache on every fresh WS session, even when the local count has not changed
-// since the previous publish.
-func (d *daemonCallbacks) publishVoicemailStateInitial() {
-	d.mu.Lock()
-	store := d.voicemailStore
-	d.mu.Unlock()
-
-	d.publishVMMu.Lock()
-	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, true)
-}
-
-// setVoicemailConfig replaces the local voicemail config under d.mu and
-// persists it to disk outside the lock. Server pushes are treated as a full
-// replacement of the Voicemail sub-blob; per-field diffing for log granularity
-// happens at the call site before this helper runs.
-//
-// Live consumption: Enabled, RingTimeout and RetrievalCode are read per ring
-// or per dial, so they take effect on the next inbound call without any
-// further wiring. MaxStoredMessages and MaxMessageDuration are baked into the
-// voicemail.Store opened at boot, so changes to those values take effect on
-// the next daemon restart.
-func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
-	d.mu.Lock()
-	d.cfg.Voicemail = vm
-	d.mu.Unlock()
-	return d.cfg.Save()
+// startRestartTimeout sets a timer that hangs up the call if the ICE restart
+// does not complete within iceRestartTimeout.  Must be called with d.mu held.
+func (d *daemonCallbacks) startRestartTimeout() {
+	d.restartTimer = time.AfterFunc(iceRestartTimeout, func() {
+		d.mu.Lock()
+		restarting := d.isRestartingICE
+		d.mu.Unlock()
+		if restarting {
+			slog.Warn("webrtc: ICE restart timed out, hanging up")
+			d.triggerHangup()
+		}
+	})
 }
 
 // --- phone.SocketHandler implementation ---
@@ -1151,12 +2010,7 @@ func main() {
 	// path doesn't fire when the Pico responds.
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
-		needsReflash := firmwareNeedsReflash(fwVersion, bundled)
-		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
-		if needsReflash && skipReflash {
-			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
-				"pico", fwVersion, "bundled", bundled)
-		} else if needsReflash {
+		if firmwareNeedsReflash(fwVersion, bundled) {
 			slog.Warn("firmware version mismatch with bundled image",
 				"pico", fwVersion, "bundled", bundled,
 				"action", "auto-reflash")
@@ -1240,63 +2094,13 @@ func main() {
 		}
 	}
 
-	// Query the Pico's persisted phase byte. If the user held * during
-	// power-on, the Pico wrote PHASE_RECOVERY to flash before the Pi
-	// even started booting. We read it here, act on it, then clear it
-	// so the device doesn't loop back into recovery on every boot.
-	cachedPhase := "unknown"
-	if postOk {
-		const phaseRetries = 5
-		var phase uint8
-		var phaseErr error
-		for i := 1; i <= phaseRetries; i++ {
-			phase, phaseErr = sp.QueryPhase()
-			if phaseErr == nil {
-				break
-			}
-			slog.Warn("phase query failed", "attempt", i, "max", phaseRetries, "error", phaseErr)
-			time.Sleep(500 * time.Millisecond)
-		}
-		if phaseErr != nil {
-			slog.Error("phase query: all retries exhausted, proceeding without phase check", "error", phaseErr)
-		} else {
-			switch phase {
-			case phone.PhasePaired:
-				cachedPhase = "paired"
-			case phone.PhaseUnpaired:
-				cachedPhase = "unpaired"
-			case phone.PhaseSetup:
-				cachedPhase = "setup"
-			case phone.PhaseRecovery:
-				cachedPhase = "recovery"
-			default:
-				cachedPhase = fmt.Sprintf("0x%02X", phase)
-			}
-			slog.Info("pico phase", "phase", fmt.Sprintf("0x%02X", phase))
-			if phase == phone.PhaseRecovery {
-				slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")
-				if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
-					slog.Warn("panic button: failed to set boot counter", "error", err)
-				}
-				_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
-				if cfg.DeviceToken == "" {
-					sp.StateSet("UNPAIRED")
-				} else {
-					sp.StateSet("PAIRED")
-				}
-				time.Sleep(500 * time.Millisecond)
-				doReboot()
-			}
-		}
-	}
-
 	// Clear any residual Pico hardware state from before the last reboot.
+	// If the Pi crashed mid-ring the Pico keeps ringing until told otherwise;
+	// this is a safe no-op on clean boots.
 	if postOk {
 		resetPicoHardware(sp)
 		if cfg.DeviceToken == "" {
 			sp.StateSet("UNPAIRED")
-		} else {
-			sp.StateSet("PAIRED")
 		}
 	}
 
@@ -1372,7 +2176,6 @@ func main() {
 	// so the dial tone loops under the user's DTMF beeps. Same regression
 	// covered by controller_test.go:1694.
 	var resetToDialtone func()
-	var getPhoneState func() phone.State
 	confirm := func(promptName string, action func()) {
 		mixer.StopTone()
 		mixer.PlayOnce(promptName)
@@ -1392,10 +2195,6 @@ func main() {
 		if err := phone.SetVolume(level); err != nil {
 			slog.Warn("volume set failed", "error", err)
 		}
-		if getPhoneState != nil && !getPhoneState().IsDialPhase() {
-			doubleBeep()
-			return
-		}
 		mixer.StopAll()
 		time.Sleep(250 * time.Millisecond)
 		doubleBeep()
@@ -1413,12 +2212,11 @@ func main() {
 		slog.Info("service code: *#SETUP# (*#73887#) -> awaiting confirmation")
 		confirm("confirm_wifi_setup", func() {
 			slog.Info("service code setup confirmed: removing wifi-configured flag, rebooting")
-			// /data/wifi-configured is owned by root (digitsd writes it as
-			// root from --mode=setup); /data itself is mode 755 root:root.
-			// digitsd in normal mode runs as the 'digits' user, which lacks
-			// write access to /data and so cannot unlink the flag directly.
-			// The digits-updater sudoers entry grants NOPASSWD on rm -f for
-			// this exact path.
+			// /data/wifi-configured is owned by root (digits-setup writes it
+			// as root); /data itself is mode 755 root:root. digitsd runs as
+			// the 'digits' user, which lacks write access to /data and so
+			// cannot unlink the flag directly. The digits-updater sudoers
+			// entry grants NOPASSWD on rm -f for this exact path.
 			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
 			if err != nil {
 				slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
@@ -1537,11 +2335,6 @@ func main() {
 				flashCapable.Store(true)
 			}
 			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
-			// Voicemail-state publish skipped here: this goroutine is
-			// launched before vmStore exists and before cb is constructed.
-			// The sig.Connect path at the next site (sendDeviceInfo
-			// after Connect) publishes the initial snapshot once cb and
-			// the store are both ready.
 		}(fwVersion, fwCommit)
 	}
 
@@ -1604,23 +2397,6 @@ func main() {
 	}
 	linkHealthInterval := time.Duration(linkHealthIntervalMs) * time.Millisecond
 
-	// Voicemail store. Opened once at daemon startup so the FSM callbacks
-	// can begin and finalize recordings without any per-call I/O setup.
-	// Failures log and disable the feature; the daemon still runs.
-	var vmStore *voicemail.Store
-	if cfg.Voicemail.Enabled {
-		vmDir := filepath.Join(filepath.Dir(*configPath), "voicemail")
-		var err error
-		vmStore, err = voicemail.Open(vmDir, voicemail.Options{
-			MaxMessages:        cfg.Voicemail.MaxStoredMessages,
-			MaxMessageDuration: cfg.Voicemail.MaxMessageDuration,
-		})
-		if err != nil {
-			slog.Error("voicemail store open failed", "dir", vmDir, "error", err)
-			vmStore = nil
-		}
-	}
-
 	cb := &daemonCallbacks{
 		serial:              sp,
 		sig:                 sig,
@@ -1634,11 +2410,6 @@ func main() {
 		meshReporterCancels: make(map[string]context.CancelFunc),
 		fwVer:               fwVersion,
 		fwCom:               fwCommit,
-		voicemailStore:      vmStore,
-		// Sentinel that forces the first publishVoicemailState call to
-		// fire regardless of count, so the post-connect snapshot seeds
-		// server-side state on every startup.
-		publishVMLast: -1,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
@@ -1661,11 +2432,9 @@ func main() {
 		fwVer, _ := cb.getFirmwareVersion()
 		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
 	}
-	if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+	if cb.autoUpdateEnabled.Load() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
 		go cb.triggerAutoUpdate()
-	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
 
 	// 8. Create phone Controller
@@ -1679,7 +2448,6 @@ func main() {
 		ctrl.ResetToDialtone()
 		sp.SendFire("DIAL:RESET")
 	}
-	getPhoneState = func() phone.State { return ctrl.State() }
 
 	// 8b. Contacts cache: optional dial safelist, persisted to disk.
 	// An empty cache leaves the checker nil so no-contacts phones allow
@@ -1732,58 +2500,6 @@ func main() {
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
 
-	// Dev-mode web UI on :8080 (only when the flag file is present).
-	if devmode.Enabled(devmode.DefaultFlagPath) {
-		slog.Info("devmode: flag present, starting dev-mode web UI")
-		// Snapshot the phase once at startup; it rarely changes during
-		// normal operation and querying UART on every HTTP poll is wasteful.
-		startupPhase := cachedPhase
-		devCfg := &devModeConfig{
-			FlagPath:           devmode.DefaultFlagPath,
-			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
-			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
-			UARTLogPath:        uartLogPath,
-			CaptureDevice:      audio.CodecCaptureDevice(),
-			StatusFunc: func() devModeStatus {
-				fwVer, fwCom := cb.getFirmwareVersion()
-				return devModeStatus{
-					DigitsdVersion:   version.Version,
-					FirmwareVersion:  fwVer,
-					FirmwareCommit:   fwCom,
-					Phase:            startupPhase,
-					Online:           cb.paired.Load(),
-					PhoneNumber:      effectiveNumber,
-					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
-				}
-			},
-		}
-		if flashCapable.Load() {
-			devCfg.FlashFunc = func(elfPath string) error {
-				// Move the uploaded ELF to the standard firmware path, then
-				// invoke the same flash script the OTA updater uses.
-				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
-					return fmt.Errorf("stage firmware: %w", err)
-				}
-				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
-				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("flash script: %w", err)
-				}
-				slog.Info("devmode: flash script succeeded")
-				requeryFirmware()
-				return nil
-			}
-		}
-		devLn, devErr := startDevModeServer(devCfg)
-		if devErr != nil {
-			slog.Warn("devmode: failed to start web UI", "error", devErr)
-		} else {
-			defer func() { _ = devLn.Close() }()
-		}
-	}
-
 	// Start hardware watchdog (if available)
 	if wd, err := watchdog.Open("/dev/watchdog"); err == nil {
 		wd.Start(5 * time.Second)
@@ -1798,7 +2514,6 @@ func main() {
 		slog.Warn("signald connect failed, will retry", "error", err)
 	} else {
 		sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-		cb.publishVoicemailStateInitial()
 		requestICEServers(sig)
 	}
 
@@ -1949,8 +2664,7 @@ func main() {
 					mixer.PlayOnce(dtmfName)
 				}
 				// Forward DTMF to the remote peer if a call is connected.
-				state := ctrl.State()
-				if state == phone.StateCONNECTED {
+				if ctrl.State() == phone.StateCONNECTED {
 					cb.mu.Lock()
 					peer := cb.callPeer
 					cb.mu.Unlock()
@@ -1962,27 +2676,24 @@ func main() {
 						})
 					}
 				}
-				// Easter eggs only fire during the dialing phase and only
-				// when not mid-service-code. Service codes are always
-				// processed regardless of call state, but the FSM reset
-				// is suppressed when a call is active.
+				// Mid-service-code: route the key only to svcCodes so easter
+				// eggs (e.g., "0000" Rick Roll) cannot eat digits belonging
+				// to a code like "*#00000#" (factory reset). Otherwise: try
+				// easter eggs first, then fall through to service codes.
 				inCode := svcCodes.InCode()
-				dialPhase := state.IsDialPhase()
-				eggTriggered := false
-				if !inCode && dialPhase {
-					eggTriggered = easterEggs.AddKey(key)
-				}
-				if !eggTriggered {
+				if inCode || !easterEggs.AddKey(key) {
 					switch svcCodes.AddKey(key) {
 					case phone.ServiceCodeTerminal:
 						ctrl.Reset()
+						// Drop the digits the firmware accumulated while the
+						// user was typing the service code (see comment near
+						// the confirmer cancel above). Otherwise post-code
+						// dialing fires DIAL on a stale prefix.
 						sp.SendFire("DIAL:RESET")
-						continue
+						continue // skip forwarding to controller
 					case phone.ServiceCodeNonTerminal:
-						if dialPhase {
-							ctrl.ResetToDialtone()
-							sp.SendFire("DIAL:RESET")
-						}
+						ctrl.ResetToDialtone()
+						sp.SendFire("DIAL:RESET")
 						continue
 					}
 				}
@@ -2040,7 +2751,6 @@ func main() {
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
 				sp.SetFlashEnabled(hookFlash)
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-				cb.publishVoicemailStateInitial()
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 			}
@@ -2068,26 +2778,7 @@ func main() {
 			case sigclient.TypeHangup:
 				ctrl.HandleSignal("hangup", msg.From)
 			case sigclient.TypeBusy:
-				if cb.callReturnOrigin.Load() {
-					cb.callReturnOrigin.Store(false)
-					target := msg.From
-					slog.Info("call_return: target busy, registering retry", "target", target)
-					ctrl.HandleSignal("busy", msg.From)
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						if ctrl.State() != phone.StateCALLING {
-							return
-						}
-						cb.mixer.StopTone()
-						cb.mixer.PlayOnce("call_return_retry")
-						sendSignal(sig, &sigclient.Message{
-							Type:   sigclient.TypeCallReturnRetry,
-							Number: target,
-						})
-					}()
-				} else {
-					ctrl.HandleSignal("busy", msg.From)
-				}
+				ctrl.HandleSignal("busy", msg.From)
 			case sigclient.TypeDTMF:
 				// Remote peer pressed a digit during the call. Play the local
 				// DTMF sample so the user hears what their peer is pressing,
@@ -2262,7 +2953,7 @@ func main() {
 
 			case sigclient.TypeReleaseAvailable:
 				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+				if cb.autoUpdateEnabled.Load() {
 					go cb.triggerAutoUpdate()
 				}
 
@@ -2356,7 +3047,7 @@ func main() {
 					slog.Info("signal: restarting to register", "number", msg.Number)
 					go func() {
 						time.Sleep(1 * time.Second)
-						os.Exit(0) // systemd restarts; Pico tone survives
+						os.Exit(0) // systemd restarts; Pico dial tone survives
 					}()
 				}
 
@@ -2434,9 +3125,7 @@ func main() {
 				}
 
 				au := msg.LineSettings.AutoUpdate
-				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
-				} else if au != cb.autoUpdateEnabled.Load() {
+				if au != cb.autoUpdateEnabled.Load() {
 					cb.autoUpdateEnabled.Store(au)
 					slog.Info("line_settings applied", "auto_update", au)
 					if err := cb.setAutoUpdateConfig(au); err != nil {
@@ -2444,40 +3133,6 @@ func main() {
 					}
 					if au && cb.triggerAutoUpdate != nil {
 						go cb.triggerAutoUpdate()
-					}
-				}
-
-				if vm := msg.LineSettings.Voicemail; vm != nil {
-					target := config.Voicemail{
-						Enabled:            vm.Enabled,
-						RingTimeout:        time.Duration(vm.RingTimeoutSeconds) * time.Second,
-						MaxMessageDuration: time.Duration(vm.MaxMessageSeconds) * time.Second,
-						MaxStoredMessages:  vm.MaxStoredMessages,
-						RetrievalCode:      vm.RetrievalCode,
-					}
-					cb.mu.Lock()
-					current := cb.cfg.Voicemail
-					cb.mu.Unlock()
-
-					if target != current {
-						if target.Enabled != current.Enabled {
-							slog.Info("line_settings applied", "voicemail_enabled", target.Enabled)
-						}
-						if target.RingTimeout != current.RingTimeout {
-							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
-						}
-						if target.MaxMessageDuration != current.MaxMessageDuration {
-							slog.Info("line_settings applied", "voicemail_max_message_duration", target.MaxMessageDuration)
-						}
-						if target.MaxStoredMessages != current.MaxStoredMessages {
-							slog.Info("line_settings applied", "voicemail_max_stored_messages", target.MaxStoredMessages)
-						}
-						if target.RetrievalCode != current.RetrievalCode {
-							slog.Info("line_settings applied", "voicemail_retrieval_code", target.RetrievalCode)
-						}
-						if err := cb.setVoicemailConfig(target); err != nil {
-							slog.Warn("line_settings: voicemail save failed", "err", err)
-						}
 					}
 				}
 
@@ -2491,46 +3146,6 @@ func main() {
 				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
 			case sigclient.TypeConferenceRejected:
 				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
-
-			case sigclient.TypeCallReturnResult:
-				number := msg.Number
-				if number == "" {
-					slog.Info("call_return: no calls available")
-					cb.mixer.PlayOnce("call_return_none")
-					go func() {
-						time.Sleep(3 * time.Second)
-						if ctrl.State() != phone.StateCALL_RETURN {
-							return
-						}
-						ctrl.ResetToDialtone()
-						cb.mixer.PlayLoop("tone_dial")
-					}()
-				} else {
-					slog.Info("call_return: announcing last caller", "number", number)
-					ctrl.SetCallReturnNumber(number)
-					cb.mixer.PlayOnce("call_return_prefix")
-					for _, ch := range number {
-						cb.mixer.PlayOnce("spoken_" + string(ch))
-					}
-					cb.mixer.PlayOnce("call_return_suffix")
-				}
-
-			case sigclient.TypeCallReturnRing:
-				target := msg.Number
-				slog.Info("call_return: target free, ringing", "target", target)
-				ctrl.HandleCallReturnRing(target)
-
-			case sigclient.TypeCallReturnCancelled:
-				slog.Info("call_return: retry cancelled by server")
-				cb.mixer.PlayOnce("call_return_cancel")
-				go func() {
-					time.Sleep(3 * time.Second)
-					if ctrl.State() != phone.StateCALL_RETURN {
-						return
-					}
-					ctrl.ResetToDialtone()
-					cb.mixer.PlayLoop("tone_dial")
-				}()
 
 			default:
 				slog.Warn("signal: unhandled message type", "type", msg.Type)
@@ -2559,22 +3174,7 @@ func main() {
 					continue
 				}
 				slog.Info("signal: reconnected")
-
-				// Tear down any active call. The server cleaned up its
-				// side on disconnect (OnDisconnect), but the local WebRTC
-				// peer connection and audio pipeline survive the WebSocket
-				// drop. Without this, the phone's ICE agent keeps sending
-				// renegotiation messages for a call the server no longer
-				// tracks, producing "sdp/ice without active call" errors.
-				if ctrl.State() != phone.StateIDLE {
-					slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
-					cb.TearDownAllMeshPeers()
-					cb.HangupCall()
-					ctrl.Reset()
-				}
-
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
-				cb.publishVoicemailState()
 				requestICEServers(sig)
 				break
 			}
@@ -2589,7 +3189,6 @@ func requestICEServers(sig *sigclient.Client) {
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
 	localAddr := primaryLocalAddr()
-	devModeOn := devmode.Enabled(devmode.DefaultFlagPath)
 	if err := sig.Send(&sigclient.Message{
 		Type:            sigclient.TypeDeviceInfo,
 		PiVersion:       version.Version,
@@ -2598,15 +3197,10 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		FirmwareCommit:  fwCommit,
 		FlashCapable:    flashCapable,
 		LocalAddr:       localAddr,
-		DevMode:         devModeOn,
 	}); err != nil {
 		slog.Warn("device_info: send failed", "error", err)
 	} else {
-		slog.Info("device_info sent",
-			"pi_version", version.Version, "pi_commit", version.Commit,
-			"fw_version", fwVersion, "fw_commit", fwCommit,
-			"flash_capable", flashCapable, "local_addr", localAddr,
-			"dev_mode", devModeOn)
+		slog.Info("device_info sent", "pi_version", version.Version, "pi_commit", version.Commit, "fw_version", fwVersion, "fw_commit", fwCommit, "flash_capable", flashCapable, "local_addr", localAddr)
 	}
 }
 
