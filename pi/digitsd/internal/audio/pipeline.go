@@ -123,14 +123,15 @@ func maybeMute(frame []int16, muted bool) {
 	}
 }
 
-// PlayGreetingBeep synthesizes a 1kHz sine beep of the given duration and
-// arms it for injection into the capture loop. The beep replaces real mic
-// frames for its duration so the caller hears it in the outbound stream.
-func (p *Pipeline) PlayGreetingBeep(d time.Duration) {
-	sampleRate := p.cfg.SampleRate
+// SynthGreetingBeep synthesizes a 1kHz sine beep of the given duration at the
+// requested sample rate and returns the PCM buffer. A zero-length result means
+// the duration rounded to zero samples. Callers that need the beep on the
+// outbound capture path use PlayGreetingBeep; callers that need it in the
+// earpiece play the buffer through the mixer.
+func SynthGreetingBeep(sampleRate int, d time.Duration) []int16 {
 	totalSamples := int(d.Seconds() * float64(sampleRate))
 	if totalSamples == 0 {
-		return
+		return nil
 	}
 
 	const freq = 1000.0
@@ -152,6 +153,17 @@ func (p *Pipeline) PlayGreetingBeep(d time.Duration) {
 		buf[i] = int16(sample)
 	}
 
+	return buf
+}
+
+// PlayGreetingBeep synthesizes a 1kHz sine beep of the given duration and
+// arms it for injection into the capture loop. The beep replaces real mic
+// frames for its duration so the caller hears it in the outbound stream.
+func (p *Pipeline) PlayGreetingBeep(d time.Duration) {
+	buf := SynthGreetingBeep(p.cfg.SampleRate, d)
+	if len(buf) == 0 {
+		return
+	}
 	p.beepPos.Store(0)
 	p.beepBuf.Store(&buf)
 }

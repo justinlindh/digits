@@ -497,11 +497,16 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 	d.greetingRecorderMu.Unlock()
 
 	// Spoken prompt ("Record your greeting after the tone") followed by the
-	// beep so the user knows the recorder is hot. 400ms tail keeps the beep
-	// out of the recording itself.
+	// beep so the user knows the recorder is hot. The *97 flow has no WebRTC
+	// peer, so the beep is played through the mixer into the earpiece rather
+	// than injected into the outbound capture path (which nobody would hear).
+	// waitForOnceComplete gates the recording goroutine until the beep has
+	// finished, keeping it out of the recording itself.
 	d.playAnnouncementSequence("vm_record_greeting")
-	pipeline.PlayGreetingBeep(300 * time.Millisecond)
-	time.Sleep(400 * time.Millisecond)
+	beep := audio.SynthGreetingBeep(48000, 300*time.Millisecond)
+	d.mixer.PlayOnceSamples(beep)
+	waitForOnceComplete(d.mixer, 10*time.Second)
+	time.Sleep(30 * time.Millisecond)
 
 	slog.Info("voicemail: recording custom greeting")
 
