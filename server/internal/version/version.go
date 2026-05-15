@@ -1,4 +1,4 @@
-// Package version provides build-time version info for the digits server.
+// Package version provides build-time version information for the digits server.
 package version
 
 // These are set at build time via -ldflags.
