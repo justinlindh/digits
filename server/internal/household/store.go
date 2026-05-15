@@ -10,6 +10,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
+// ErrNotFound is returned by GetByID and Delete when no matching household exists.
+var ErrNotFound = errors.New("household not found")
+
+// ErrNotMember is returned by GetRole and RemoveMember when the user is not a member of the household.
+var ErrNotMember = errors.New("not a member of this household")
+
 // Household represents a family/household group.
 type Household struct {
 	ID                 string
@@ -60,7 +66,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
 		id,
 	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("household not found")
+		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get household: %w", err)
@@ -102,7 +108,7 @@ func (s *Store) GetRole(ctx context.Context, userID, householdID string) (string
 		userID, householdID,
 	).Scan(&role)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", fmt.Errorf("user is not a member of this household")
+		return "", ErrNotMember
 	}
 	if err != nil {
 		return "", fmt.Errorf("get role: %w", err)
@@ -143,14 +149,14 @@ func (s *Store) GetMembersWithUsers(ctx context.Context, householdID string) ([]
 		householdID,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get members with users: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	var members []MemberWithUser
 	for rows.Next() {
 		var m MemberWithUser
 		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &m.Role); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan member: %w", err)
 		}
 		members = append(members, m)
 	}
@@ -216,7 +222,7 @@ func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) er
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("user is not a member of this household")
+		return ErrNotMember
 	}
 	return nil
 }
@@ -252,7 +258,7 @@ func (s *Store) Delete(ctx context.Context, householdID string) error {
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("household not found")
+		return ErrNotFound
 	}
 	return nil
 }

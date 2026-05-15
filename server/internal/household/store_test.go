@@ -4,6 +4,7 @@ package household
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -147,8 +148,8 @@ func TestGetRole_NotMember(t *testing.T) {
 	}
 
 	_, err = s.GetRole(context.Background(), otherID, h.ID)
-	if err == nil {
-		t.Error("expected error for non-member, got nil")
+	if !errors.Is(err, ErrNotMember) {
+		t.Errorf("expected ErrNotMember, got %v", err)
 	}
 }
 
@@ -407,8 +408,8 @@ func TestStore_Delete_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	err := s.Delete(ctx, "00000000-0000-0000-0000-000000000000")
-	if err == nil {
-		t.Error("expected error for non-existent household, got nil")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
