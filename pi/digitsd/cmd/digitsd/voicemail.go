@@ -689,20 +689,31 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 	}
 	if noUnheard {
 		slog.Info("voicemail: no unheard messages on entry")
-		d.playAnnouncementSequence("vm_no_messages")
-		go d.voicemailExitToDialtoneAsync()
+		// Announce, then exit, on a goroutine. VoicemailEnterPlayback runs
+		// under the controller's c.mu; blocking here for the clip duration
+		// would stall every other phone event until it finished.
+		go func() {
+			d.playAnnouncementSequence("vm_no_messages")
+			d.voicemailExitToDialtoneAsync()
+		}()
 		return
 	}
 
 	slog.Info("voicemail: playback start", "id", sess.id)
 
-	// Announce message count before starting playback. UnheardCount reads
-	// the on-disk store; safe to call without any mutex.
-	if n, err := store.UnheardCount(); err == nil {
-		d.announceMessageCount(n)
-	}
-
-	go d.voicemailPlaybackLoop(sess)
+	// Announce the message count, then run the playback loop, on a
+	// goroutine. VoicemailEnterPlayback runs under the controller's c.mu;
+	// blocking here for the multi-clip count announcement would stall every
+	// other phone event (including hook-on) until it finished. The loop's
+	// existing nil-channel and ctx-cancelled guards cover a hang-up that
+	// races the announcement. UnheardCount reads the on-disk store; safe to
+	// call without any mutex.
+	go func() {
+		if n, err := store.UnheardCount(); err == nil {
+			d.announceMessageCount(n)
+		}
+		d.voicemailPlaybackLoop(sess)
+	}()
 }
 
 // VoicemailExitPlayback tears down the current playback session and the
