@@ -71,6 +71,10 @@ type lineRow struct {
 	OnlineDeviceCount   int
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
+	// VoicemailUnheard is the line-level unheard-message count, summed
+	// across handsets the Hub has heard from. Zero when voicemail is off
+	// or no handset has reported a non-zero count.
+	VoicemailUnheard int
 }
 
 // buildLinesData assembles the line-list page payload. hh may be nil; when
@@ -117,6 +121,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
+		row.VoicemailUnheard = h.hub.LineVoicemailUnheard(l.Number)
 
 		if h.deviceStore != nil {
 			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
@@ -621,9 +626,8 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 // before any DB write: out-of-range ints and malformed retrieval codes
 // return 400 with a friendly message so the form can surface it. On success
 // the new settings are persisted and pushed to the device (if connected),
-// then the user is redirected back to the phone detail page. No htmx
-// partial is rendered today; the UI section partials will be added when
-// the matching settings panel ships.
+// then either the voicemail-section partial is swapped (htmx) or the user
+// is redirected back to the phone detail page (regular form post).
 func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -673,7 +677,49 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if isHTMX(r) {
+		renderWith(r.Context(), w, h.tmplPhoneDetail,
+			partialFor(r, "voicemail-section", "am-voicemail-section"),
+			struct{ Line line.Line }{Line: *ln})
+		return
+	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
+// handlePhoneVoicemailTogglePost flips Voicemail.Enabled for a line and
+// swaps the list-row badge partial. The other four voicemail fields are
+// preserved through Normalize, which backfills defaults when the row was
+// created before voicemail existed. Path is intentionally separate from
+// the five-field POST so a checkbox-only round-trip does not have to
+// resubmit the timing/code fields.
+func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+
+	next := ln.Settings
+	next.Voicemail.Enabled = !next.Voicemail.Enabled
+	next = next.Normalize()
+	if !h.applyLineSettings(w, r, ln, next) {
+		return
+	}
+
+	if isHTMX(r) {
+		count := 0
+		if h.hub != nil {
+			count = h.hub.LineVoicemailUnheard(number)
+		}
+		renderWith(r.Context(), w, h.tmplPhones,
+			partialFor(r, "voicemail-badge", "am-voicemail-badge"),
+			struct {
+				Line             line.Line
+				VoicemailUnheard int
+			}{Line: *ln, VoicemailUnheard: count})
+		return
+	}
+	http.Redirect(w, r, "/phones", http.StatusSeeOther)
 }
 
 // parseClampedInt reads form field `name`, parses it as an integer, and

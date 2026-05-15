@@ -2404,3 +2404,21 @@ body.am .pair-mode-field legend {
 .changelog__play:hover { border-color: var(--chip-blue); color: var(--ink); }
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 
+
+/* Voicemail badge + toggle in the AM phones roster meta line. The chip uses
+   the standard am-led typography; the OFF/ON toggle is a compact am-tab. */
+.am-voicemail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.am-voicemail__led {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  padding: 0 4px;
+}
+.am-voicemail__led--on { color: var(--led-amber-dim); text-shadow: none; }
+.am-voicemail__led--attn { color: var(--led-red); text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25); }
+.am-voicemail__toggle { padding: 0 6px; min-width: 0; min-height: 18px; line-height: 18px; font-size: 9px; }

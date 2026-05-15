@@ -564,6 +564,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/silent-mode", h.handlePhoneSilentModePost)
 	protected.HandleFunc("POST /phones/{number}/auto-update", h.handlePhoneAutoUpdatePost)
 	protected.HandleFunc("POST /phones/{number}/voicemail", h.handlePhoneVoicemailPost)
+	protected.HandleFunc("POST /phones/{number}/voicemail-toggle", h.handlePhoneVoicemailTogglePost)
 	protected.HandleFunc("POST /phones/{number}/convert", h.handlePhoneConvert)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)

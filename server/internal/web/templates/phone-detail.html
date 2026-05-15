@@ -105,6 +105,16 @@
         </div>
       </section>
 
+      <!-- Voicemail -->
+      <section class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">Voicemail</h2>
+        </header>
+        <div class="panel__body">
+          {{template "voicemail-section" .}}
+        </div>
+      </section>
+
     </div>
 
     <!-- Right: operator service panel (collapsed by default) -->
@@ -721,6 +731,169 @@
 </div>
 {{end}}
 
+{{define "voicemail-section"}}
+<div id="voicemail-section">
+  <form hx-post="/phones/{{.Line.Number}}/voicemail"
+        hx-target="#voicemail-section"
+        hx-swap="outerHTML"
+        class="stack-sm"
+        data-voicemail-form>
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" value="on"
+             {{if .Line.Settings.Voicemail.Enabled}}checked{{end}}
+             data-voicemail-enabled>
+      <span class="checkbox-row__label">Take messages when nobody answers</span>
+    </label>
+    <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
+      The handset auto-answers after the timeout, plays the greeting, and records the caller.
+      Messages stay on the handset; dial the retrieval code from the phone to listen.
+    </p>
+
+    <div class="stack-sm" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
+      <label class="field">
+        <span class="field__label">Ring timeout (seconds)</span>
+        <input type="number" name="ring_timeout_seconds"
+               min="5" max="60"
+               value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
+               class="field__input" style="width: 110px;"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+        <span class="muted" style="font-size: 11px;">5 to 60 seconds before voicemail picks up.</span>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Max message length (seconds)</span>
+        <input type="number" name="max_message_seconds"
+               min="15" max="180"
+               value="{{.Line.Settings.Voicemail.MaxMessageSeconds}}"
+               class="field__input" style="width: 110px;"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+        <span class="muted" style="font-size: 11px;">15 to 180 seconds per recording.</span>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Max stored messages</span>
+        <input type="number" name="max_stored_messages"
+               min="5" max="200"
+               value="{{.Line.Settings.Voicemail.MaxStoredMessages}}"
+               class="field__input" style="width: 110px;"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+        <span class="muted" style="font-size: 11px;">5 to 200; oldest dropped first.</span>
+      </label>
+
+      <label class="field">
+        <span class="field__label">Retrieval code</span>
+        <input type="text" name="retrieval_code"
+               value="{{.Line.Settings.Voicemail.RetrievalCode}}"
+               pattern="[0-9*#]{2,6}" maxlength="6" required
+               class="field__input" style="width: 110px;"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+        <span class="muted" style="font-size: 11px;">2 to 6 chars; must contain * or # so it cannot collide with a 7-digit dial.</span>
+      </label>
+    </div>
+
+    <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 6px;">Save</button>
+  </form>
+  <script>
+    (function () {
+      var form = document.querySelector('[data-voicemail-form]');
+      if (!form) { return; }
+      var enabledBox = form.querySelector('[data-voicemail-enabled]');
+      var fieldsWrap = form.querySelector('[data-voicemail-fields]');
+      if (!enabledBox || !fieldsWrap) { return; }
+      enabledBox.addEventListener('change', function () {
+        var on = enabledBox.checked;
+        fieldsWrap.style.opacity = on ? '' : '0.55';
+        var inputs = fieldsWrap.querySelectorAll('input');
+        for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = !on; }
+      });
+    })();
+  </script>
+</div>
+{{end}}
+
+{{define "am-voicemail-section"}}
+<div id="voicemail-section">
+  <form hx-post="/phones/{{.Line.Number}}/voicemail"
+        hx-target="#voicemail-section"
+        hx-swap="outerHTML"
+        class="am-settings__form am-settings__form--stack"
+        data-voicemail-form>
+    <label class="am-settings__dip" aria-label="Voicemail enabled">
+      <input type="checkbox" name="enabled" value="on"
+             {{if .Line.Settings.Voicemail.Enabled}}checked{{end}}
+             class="am-settings__dip-input"
+             data-voicemail-enabled>
+      <span class="am-settings__dip-body" aria-hidden="true">
+        <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+        <span class="am-settings__dip-lever"></span>
+        <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+      </span>
+    </label>
+    <div class="am-settings__toggle-info">
+      <div class="am-label am-settings__toggle-title">Take messages</div>
+      <p class="am-hint am-settings__toggle-desc">
+        Auto-answer after the timeout, play greeting, record. Messages stay on the handset.
+      </p>
+    </div>
+
+    <div class="stack-sm" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
+      <label class="am-field">
+        <span class="am-label">Ring timeout (sec)</span>
+        <input type="number" name="ring_timeout_seconds"
+               min="5" max="60"
+               value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
+               class="am-input"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+      </label>
+      <label class="am-field">
+        <span class="am-label">Max message (sec)</span>
+        <input type="number" name="max_message_seconds"
+               min="15" max="180"
+               value="{{.Line.Settings.Voicemail.MaxMessageSeconds}}"
+               class="am-input"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+      </label>
+      <label class="am-field">
+        <span class="am-label">Max stored</span>
+        <input type="number" name="max_stored_messages"
+               min="5" max="200"
+               value="{{.Line.Settings.Voicemail.MaxStoredMessages}}"
+               class="am-input"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+      </label>
+      <label class="am-field">
+        <span class="am-label">Retrieval code</span>
+        <input type="text" name="retrieval_code"
+               value="{{.Line.Settings.Voicemail.RetrievalCode}}"
+               pattern="[0-9*#]{2,6}" maxlength="6" required
+               class="am-input"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+      </label>
+    </div>
+
+    <button type="submit" class="am-key am-settings__submit">
+      <span class="am-key__symbol">&#x25B6;</span>
+      <span class="am-key__label">Save</span>
+    </button>
+  </form>
+  <script>
+    (function () {
+      var form = document.querySelector('[data-voicemail-form]');
+      if (!form) { return; }
+      var enabledBox = form.querySelector('[data-voicemail-enabled]');
+      var fieldsWrap = form.querySelector('[data-voicemail-fields]');
+      if (!enabledBox || !fieldsWrap) { return; }
+      enabledBox.addEventListener('change', function () {
+        var on = enabledBox.checked;
+        fieldsWrap.style.opacity = on ? '' : '0.55';
+        var inputs = fieldsWrap.querySelectorAll('input');
+        for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = !on; }
+      });
+    })();
+  </script>
+</div>
+{{end}}
+
 {{define "am-voice-style-section"}}
 <div id="voice-style-section">
   <form hx-post="/phones/{{.Line.Number}}/voice-style"
@@ -996,6 +1169,11 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Ringer</span>
       {{template "am-silent-mode-section" .}}
+    </section>
+
+    <section class="am-plate am-handset__plate">
+      <span class="am-plate__label">Voicemail</span>
+      {{template "am-voicemail-section" .}}
     </section>
 
     {{template "am-software-update-section" .}}

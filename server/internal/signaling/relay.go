@@ -226,6 +226,18 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeCallReturnCancel:
 		r.handleCallReturnCancel(ctx, from)
 		return
+	case TypeVoicemailState:
+		// Per-handset unheard-count snapshot. Hardware ID identifies which
+		// handset on a multi-handset line emitted this; without it we have
+		// no way to dedupe so we silently drop.
+		if msg.HardwareID == "" {
+			slog.WarnContext(ctx, "voicemail_state missing hardware_id", "number", from)
+			return
+		}
+		slog.InfoContext(ctx, "voicemail_state", "number", from,
+			"hardware_id", msg.HardwareID, "unheard_count", msg.VoicemailUnheardCount)
+		r.Hub.SetVoicemailUnheard(from, msg.HardwareID, msg.VoicemailUnheardCount)
+		return
 	default:
 		slog.WarnContext(ctx, "unknown message type", "type", msg.Type, "from", from)
 	}

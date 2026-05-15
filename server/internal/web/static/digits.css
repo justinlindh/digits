@@ -1329,6 +1329,56 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   display: none;
 }
 
+/* Voicemail row control. One-click toggle plus a count chip when enabled.
+   The form is rendered as inline-flex so the chip and toggle button sit
+   tight together; htmx swaps the whole form when the toggle round-trips. */
+.phone-voicemail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.phone-voicemail__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.phone-voicemail__chip--on {
+  color: var(--ink-muted);
+  background: var(--rule-soft, #ece6d5);
+}
+.phone-voicemail__chip--attn {
+  color: #5a3a00;
+  background: #f7e0a0;
+}
+.phone-voicemail__toggle {
+  appearance: none;
+  border: 1px solid var(--rule-soft, #ddd2b8);
+  background: transparent;
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.phone-voicemail__toggle:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}
+.phone-voicemail__toggle--enable {
+  color: var(--ink-soft);
+}
+
 /* Settings two-column layout */
 .settings-layout {
   display: grid;
