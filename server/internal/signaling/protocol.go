@@ -36,6 +36,8 @@ const (
 	TypeCallReturnCancelled = "call_return_cancelled" // Server → Phone: confirm cancellation
 
 	TypeReleaseAvailable = "release_available" // Server → All: new release detected
+
+	TypeVoicemailState = "voicemail_state" // Phone → Server: per-handset unheard voicemail count snapshot
 )
 
 // Extension pickup types (POTS extension model: pick up a second handset mid-call)
@@ -219,6 +221,12 @@ type Message struct {
 
 	// Link-health telemetry (link_health messages)
 	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
+
+	// Voicemail state (voicemail_state messages). Reports the current
+	// unheard-message count for the originating handset. No omitempty: an
+	// explicit zero must round-trip after MarkHeard-all so the server can
+	// distinguish "feature is on, mailbox empty" from "absent / unknown".
+	VoicemailUnheardCount int `json:"voicemail_unheard_count"`
 }
 
 // ParseMessage decodes a JSON-encoded signaling message from the wire.

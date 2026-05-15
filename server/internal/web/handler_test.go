@@ -2615,10 +2615,16 @@ func validVoicemailForm() url.Values {
 	}
 }
 
-func postVoicemail(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values) *httptest.ResponseRecorder {
+// postVoicemail posts the given form to the per-line voicemail endpoint as
+// the session in cookie. When htmx is true the HX-Request header is set so
+// the handler renders the section partial instead of 303-redirecting.
+func postVoicemail(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values, htmx bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voicemail", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -2641,7 +2647,7 @@ func TestPhoneVoicemailValidFormPersistsAndRedirects(t *testing.T) {
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), false)
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2672,7 +2678,7 @@ func TestPhoneVoicemailRingTimeoutOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("ring_timeout_seconds", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("ring_timeout_seconds=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
 			}
@@ -2693,7 +2699,7 @@ func TestPhoneVoicemailMaxMessageOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("max_message_seconds", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("max_message_seconds=%q: expected 400, got %d", val, w.Code)
 			}
@@ -2711,7 +2717,7 @@ func TestPhoneVoicemailMaxStoredOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("max_stored_messages", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("max_stored_messages=%q: expected 400, got %d", val, w.Code)
 			}
@@ -2737,7 +2743,7 @@ func TestPhoneVoicemailBadRetrievalCodeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("retrieval_code", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("retrieval_code=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
 			}
@@ -2764,7 +2770,7 @@ func TestPhoneVoicemailMissingLineReturns404(t *testing.T) {
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
-	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), false)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2778,7 +2784,7 @@ func TestPhoneVoicemailPushesToConnectedDevice(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
 	}
 
@@ -2816,7 +2822,7 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	// First save populates the row with the validVoicemailForm values.
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("setup save: %d %s", w.Code, w.Body.String())
 	}
 
@@ -2825,7 +2831,7 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("second save: %d %s", w.Code, w.Body.String())
 	}
 	select {
@@ -2833,5 +2839,170 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 		t.Fatalf("expected no push on no-op save, got: %s", string(data))
 	case <-time.After(100 * time.Millisecond):
 		// Expected: no push.
+	}
+}
+
+func TestPhoneVoicemailHTMXReturnsSectionPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="voicemail-section"`) {
+		t.Fatalf("htmx response missing voicemail-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, `name="enabled"`) {
+		t.Fatalf("htmx response missing enabled checkbox:\n%s", body)
+	}
+	if !strings.Contains(body, `name="ring_timeout_seconds"`) {
+		t.Fatalf("htmx response missing ring_timeout_seconds:\n%s", body)
+	}
+}
+
+func postVoicemailToggle(t *testing.T, h *Handler, cookie *http.Cookie, htmx bool) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voicemail-toggle", nil)
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	return w
+}
+
+func readVoicemailEnabled(t *testing.T, database *db.Database) bool {
+	t.Helper()
+	var raw bool
+	if err := database.DB.QueryRow(
+		`SELECT COALESCE((settings->'voicemail'->>'enabled')::bool, false) FROM lines WHERE number = '3140001'`,
+	).Scan(&raw); err != nil {
+		t.Fatalf("read voicemail enabled: %v", err)
+	}
+	return raw
+}
+
+func TestPhoneVoicemailToggleFlipsEnabledAndRedirects(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	if readVoicemailEnabled(t, database) {
+		t.Fatal("setup invariant: voicemail should default to off")
+	}
+
+	w := postVoicemailToggle(t, h, cookie, false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+	if !readVoicemailEnabled(t, database) {
+		t.Fatal("expected voicemail enabled=true after toggle")
+	}
+
+	if w := postVoicemailToggle(t, h, cookie, false); w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 on second toggle, got %d", w.Code)
+	}
+	if readVoicemailEnabled(t, database) {
+		t.Fatal("expected voicemail enabled=false after second toggle")
+	}
+}
+
+func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	// First toggle: off -> on. Section partial swaps in with the enabled
+	// checkbox flipped on. No unheard count -> no chip yet.
+	w := postVoicemailToggle(t, h, cookie, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `id="voicemail-section"`) {
+		t.Fatalf("htmx response missing voicemail-section wrapper:\n%s", body)
+	}
+	if !strings.Contains(body, "/voicemail-toggle") {
+		t.Fatalf("htmx response missing toggle endpoint:\n%s", body)
+	}
+	// With Enabled=true and count=0, the chip should NOT render.
+	if strings.Contains(body, "voicemail-chip") {
+		t.Errorf("expected no chip when count=0, got:\n%s", body)
+	}
+	// The enabled checkbox should round-trip back checked.
+	if !strings.Contains(body, `name="enabled" value="on"
+             checked`) && !strings.Contains(body, `checked`) {
+		t.Errorf("expected enabled checkbox to round-trip checked:\n%s", body)
+	}
+	// Advanced disclosure must be present.
+	if !strings.Contains(body, `class="voicemail-advanced"`) {
+		t.Errorf("expected voicemail-advanced disclosure:\n%s", body)
+	}
+
+	// Second toggle: on -> off. Section partial returns with checkbox
+	// unchecked and the inner fields rendered with disabled.
+	w = postVoicemailToggle(t, h, cookie, true)
+	body = w.Body.String()
+	if strings.Contains(body, "voicemail-chip") {
+		t.Errorf("expected no chip when voicemail is off, got:\n%s", body)
+	}
+	if !strings.Contains(body, `disabled`) {
+		t.Errorf("expected disabled attr on inner fields when off:\n%s", body)
+	}
+}
+
+func TestPhoneVoicemailTogglePushesToConnectedDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10)}
+	_ = h.hub.Register("3140001", conn)
+
+	if w := postVoicemailToggle(t, h, cookie, false); w.Code != http.StatusSeeOther {
+		t.Fatalf("toggle save failed: %d %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, err := signaling.ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse pushed message: %v", err)
+		}
+		if msg.Type != signaling.TypeLineSettings {
+			t.Fatalf("expected %s push, got %s", signaling.TypeLineSettings, msg.Type)
+		}
+		if msg.LineSettings == nil || msg.LineSettings.Voicemail == nil || !msg.LineSettings.Voicemail.Enabled {
+			t.Fatalf("expected enabled=true voicemail push, got %+v", msg.LineSettings)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive line_settings push after toggle")
+	}
+}
+
+func TestPhoneVoicemailToggleHTMXReflectsHubUnheardCount(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie := addSessionCookie(t, authStore)
+	_ = setupVoiceStyleLine(t, h, database, authStore)
+
+	// Pre-populate the hub with an unheard count for the line.
+	h.hub.SetVoicemailUnheard("3140001", "hw-fake", 3)
+
+	// Toggle on; htmx response renders the section partial with the
+	// "N unheard" chip in the section header.
+	w := postVoicemailToggle(t, h, cookie, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `class="voicemail-chip"`) {
+		t.Errorf("expected voicemail-chip when count > 0:\n%s", body)
+	}
+	if !strings.Contains(body, "3 unheard") {
+		t.Errorf("expected '3 unheard' label:\n%s", body)
 	}
 }

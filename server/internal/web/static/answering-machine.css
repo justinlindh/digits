@@ -2404,3 +2404,70 @@ body.am .pair-mode-field legend {
 .changelog__play:hover { border-color: var(--chip-blue); color: var(--ink); }
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 
+
+/* Voicemail unheard-count LED in the AM detail-page section header. Stays
+   inline with the section label, glows red so an unheard count reads as a
+   "message waiting" annunciator rather than just decoration. */
+.am-voicemail-led {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--led-red);
+  text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25);
+  vertical-align: middle;
+}
+
+/* Form wrapper for the AM voicemail panel. Block-flow so the toggle-row
+   and the Advanced disclosure each get their own row, with the standard
+   AM section spacing between them. Crucially NOT am-settings__form--stack:
+   that helper sets align-items: stretch on a flex-column, which would
+   stretch .am-settings__dip (an inline-flex with a red background) to
+   fill the section width. The toggle-row keeps the dip content-sized. */
+.am-voicemail-form { margin: 0; }
+.am-voicemail-form > * + * { margin-top: 12px; }
+
+/* Advanced disclosure inside the AM voicemail plate. The summary acts like
+   the existing am-tab buttons: caret prefix flips when open, label is the
+   familiar 10-char LED stencil. */
+.am-voicemail-advanced {
+  margin-top: 8px;
+  border-top: 1px dashed var(--rule-soft, #6b5a39);
+  padding-top: 8px;
+}
+.am-voicemail-advanced > summary {
+  cursor: pointer;
+  font-family: var(--font-led);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--led-amber-dim);
+  padding: 4px 0;
+  list-style: none;
+  text-transform: uppercase;
+}
+.am-voicemail-advanced > summary::-webkit-details-marker { display: none; }
+.am-voicemail-advanced > summary::before {
+  content: "[+] ";
+}
+.am-voicemail-advanced[open] > summary::before {
+  content: "[-] ";
+  color: var(--led-amber);
+  text-shadow: 0 0 4px rgba(255,165,32,0.45);
+}
+
+/* Force the four field rows + the Save button to stack vertically. The
+   parent form uses .am-settings__form--stack (flex-column), but the
+   <details> + inner-wrapper layers swallow that, so the wrapper has to
+   declare its own column layout. The Save button is pushed to its own
+   row by aligning it to the start of the cross-axis. */
+.am-voicemail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.am-voicemail-fields__submit {
+  align-self: flex-start;
+  margin-top: 4px;
+}

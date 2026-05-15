@@ -263,3 +263,75 @@ func TestDeviceInfoSnapshotJSONOmitsRemoteAddr(t *testing.T) {
 		t.Errorf("RemoteAddr field name appeared in JSON: %s", data)
 	}
 }
+
+func TestSetVoicemailUnheardSumsAcrossHandsets(t *testing.T) {
+	hub := NewHub()
+	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
+	hub.SetVoicemailUnheard("3140001", "hw-b", 5)
+	if got := hub.LineVoicemailUnheard("3140001"); got != 8 {
+		t.Errorf("LineVoicemailUnheard: got %d, want 8", got)
+	}
+}
+
+func TestSetVoicemailUnheardOverwritesPerHandset(t *testing.T) {
+	hub := NewHub()
+	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
+	hub.SetVoicemailUnheard("3140001", "hw-a", 7)
+	if got := hub.LineVoicemailUnheard("3140001"); got != 7 {
+		t.Errorf("LineVoicemailUnheard: got %d, want 7 (overwrite)", got)
+	}
+}
+
+func TestSetVoicemailUnheardRejectsEmptyHardwareID(t *testing.T) {
+	hub := NewHub()
+	hub.SetVoicemailUnheard("3140001", "", 5)
+	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Errorf("empty hwID should be dropped, got %d", got)
+	}
+}
+
+func TestSetVoicemailUnheardClampsNegative(t *testing.T) {
+	hub := NewHub()
+	hub.SetVoicemailUnheard("3140001", "hw-a", -3)
+	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Errorf("negative count should clamp to 0, got %d", got)
+	}
+}
+
+func TestLineVoicemailUnheardZeroForUnknownNumber(t *testing.T) {
+	hub := NewHub()
+	if got := hub.LineVoicemailUnheard("3140099"); got != 0 {
+		t.Errorf("unknown number: got %d, want 0", got)
+	}
+}
+
+func TestUnregisterClearsVoicemailUnheardForHandset(t *testing.T) {
+	hub := NewHub()
+	number := "3140001"
+	conn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-a"}
+	hub.conns[number] = []*Conn{conn}
+	hub.hwConns["hw-a"] = conn
+	hub.SetVoicemailUnheard(number, "hw-a", 4)
+	hub.SetVoicemailUnheard(number, "hw-b", 2)
+
+	hub.Unregister(number, conn)
+	// Only hw-a's count should drop; hw-b's lingers (it's still online).
+	if got := hub.LineVoicemailUnheard(number); got != 2 {
+		t.Errorf("after unregister hw-a: got %d, want 2 (hw-b's only)", got)
+	}
+}
+
+func TestRekeyNumberMovesVoicemailUnheard(t *testing.T) {
+	hub := NewHub()
+	hub.SetVoicemailUnheard("3140001", "hw-a", 3)
+	hub.SetVoicemailUnheard("3140001", "hw-b", 4)
+
+	hub.RekeyNumber("3140001", "3140002")
+
+	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Errorf("old number should have 0 after rekey, got %d", got)
+	}
+	if got := hub.LineVoicemailUnheard("3140002"); got != 7 {
+		t.Errorf("new number should have summed counts, got %d, want 7", got)
+	}
+}

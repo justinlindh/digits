@@ -174,6 +174,17 @@ type daemonCallbacks struct {
 	voicemailMu       sync.Mutex
 	voicemailPlayback *voicemailPlaybackSession // current message; nil = idle
 	voicemailMixerCh  chan []int16              // mixer source channel for "voicemail" key; nil between sessions
+
+	// Voicemail-state publish bookkeeping. publishVMMu serializes calls to
+	// publishVoicemailState so two trigger sites firing concurrently (e.g.
+	// recorder finalize racing a retrieval MarkHeard) cannot both send the
+	// same unheard count, and so dedup against publishVMLast is correct
+	// even under contention. publishVMLast holds the last successfully
+	// sent count; the sentinel -1 forces the first publish to fire
+	// regardless of value, which is what the post-connect snapshot needs
+	// to seed server-side state.
+	publishVMMu   sync.Mutex
+	publishVMLast int64
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
@@ -347,6 +358,80 @@ func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
 	d.cfg.AutoUpdate = enabled
 	d.mu.Unlock()
 	return d.cfg.Save()
+}
+
+// voicemailStateSender is the minimal Send-only surface publishVoicemailStateOnce
+// needs from the signaling client. Defined as an interface so unit tests can
+// inject a capturing fake without standing up a real WebSocket. *sigclient.Client
+// satisfies it implicitly.
+type voicemailStateSender interface {
+	Send(*sigclient.Message) error
+}
+
+// publishVoicemailStateOnce reads the current unheard-message count from store
+// and sends a voicemail_state message via sender. When force is false, the
+// send is skipped if the count equals *last (dedup against repeated change
+// notifications). When force is true, the send is unconditional, used after
+// (re)connect to seed server-side state regardless of local cache parity.
+// Returns true when a message was actually sent.
+//
+// The caller is responsible for serializing concurrent invocations (the daemon
+// uses publishVMMu); inside this function, sender.Send and store.UnheardCount
+// can both block on I/O so neither runs under d.mu.
+//
+// On a nil store (voicemail feature disabled at boot) or any UnheardCount
+// error, no message is sent and *last is left unchanged so the next trigger
+// will retry from the same baseline.
+func publishVoicemailStateOnce(sender voicemailStateSender, store *voicemail.Store, last *int64, force bool) bool {
+	if store == nil {
+		return false
+	}
+	n, err := store.UnheardCount()
+	if err != nil {
+		slog.Warn("voicemail_state: unheard count failed, skipping publish", "error", err)
+		return false
+	}
+	if !force && int64(n) == *last {
+		return false
+	}
+	if err := sender.Send(&sigclient.Message{
+		Type:                  sigclient.TypeVoicemailState,
+		VoicemailUnheardCount: n,
+	}); err != nil {
+		slog.Warn("voicemail_state: send failed", "count", n, "error", err)
+		return false
+	}
+	*last = int64(n)
+	slog.Info("voicemail_state: published", "unheard_count", n, "forced", force)
+	return true
+}
+
+// publishVoicemailState is the change-driven wrapper used by mutation triggers
+// (recording finalize, MarkHeard, delete). Snapshots the current store,
+// serializes against concurrent callers via publishVMMu, and dedups against
+// publishVMLast so a no-op mutation does not produce a redundant wire message.
+func (d *daemonCallbacks) publishVoicemailState() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	d.publishVMMu.Lock()
+	defer d.publishVMMu.Unlock()
+	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, false)
+}
+
+// publishVoicemailStateInitial is the (re)connect wrapper. It sends the
+// current unheard count unconditionally so the server can seed its per-phone
+// cache on every fresh WS session, even when the local count has not changed
+// since the previous publish.
+func (d *daemonCallbacks) publishVoicemailStateInitial() {
+	d.mu.Lock()
+	store := d.voicemailStore
+	d.mu.Unlock()
+
+	d.publishVMMu.Lock()
+	defer d.publishVMMu.Unlock()
+	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, true)
 }
 
 // setVoicemailConfig replaces the local voicemail config under d.mu and
@@ -1452,6 +1537,11 @@ func main() {
 				flashCapable.Store(true)
 			}
 			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
+			// Voicemail-state publish skipped here: this goroutine is
+			// launched before vmStore exists and before cb is constructed.
+			// The sig.Connect path at the next site (sendDeviceInfo
+			// after Connect) publishes the initial snapshot once cb and
+			// the store are both ready.
 		}(fwVersion, fwCommit)
 	}
 
@@ -1545,6 +1635,10 @@ func main() {
 		fwVer:               fwVersion,
 		fwCom:               fwCommit,
 		voicemailStore:      vmStore,
+		// Sentinel that forces the first publishVoicemailState call to
+		// fire regardless of count, so the post-connect snapshot seeds
+		// server-side state on every startup.
+		publishVMLast: -1,
 	}
 	if cfg.DeviceToken != "" {
 		cb.paired.Store(true)
@@ -1704,6 +1798,7 @@ func main() {
 		slog.Warn("signald connect failed, will retry", "error", err)
 	} else {
 		sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+		cb.publishVoicemailStateInitial()
 		requestICEServers(sig)
 	}
 
@@ -1945,6 +2040,7 @@ func main() {
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
 				sp.SetFlashEnabled(hookFlash)
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+				cb.publishVoicemailStateInitial()
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 			}
@@ -2478,6 +2574,7 @@ func main() {
 				}
 
 				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+				cb.publishVoicemailState()
 				requestICEServers(sig)
 				break
 			}

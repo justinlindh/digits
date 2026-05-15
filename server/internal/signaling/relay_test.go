@@ -1305,3 +1305,48 @@ func TestRelayCallReturnExpiry(t *testing.T) {
 	default:
 	}
 }
+
+func TestRelayVoicemailStateUpdatesHub(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil, nil)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:                  TypeVoicemailState,
+		HardwareID:            "hw-a",
+		VoicemailUnheardCount: 4,
+	})
+
+	if got := hub.LineVoicemailUnheard("3140001"); got != 4 {
+		t.Errorf("LineVoicemailUnheard: got %d, want 4", got)
+	}
+}
+
+func TestRelayVoicemailStateMissingHardwareIDIsDropped(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil, nil)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:                  TypeVoicemailState,
+		VoicemailUnheardCount: 9,
+	})
+
+	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Errorf("missing hardware_id should drop the message, got count %d", got)
+	}
+}
+
+func TestRelayVoicemailStateZeroExplicitlyOverwrites(t *testing.T) {
+	hub := NewHub()
+	relay := NewRelay(hub, nil, nil, nil)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeVoicemailState, HardwareID: "hw-a", VoicemailUnheardCount: 5,
+	})
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type: TypeVoicemailState, HardwareID: "hw-a", VoicemailUnheardCount: 0,
+	})
+
+	if got := hub.LineVoicemailUnheard("3140001"); got != 0 {
+		t.Errorf("explicit zero should overwrite, got %d", got)
+	}
+}

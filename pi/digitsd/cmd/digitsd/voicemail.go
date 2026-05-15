@@ -78,16 +78,24 @@ func (d *daemonCallbacks) VoicemailPickup() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	var savedPartial bool
 	d.recorderMu.Lock()
 	if d.recorder != nil {
 		if msg, err := d.recorder.Finalize(); err != nil {
 			slog.Error("voicemail pickup: finalize failed", "peer", d.callPeer, "error", err)
 		} else if msg.ID != 0 {
 			slog.Info("voicemail pickup: saved partial recording", "peer", d.callPeer, "id", msg.ID, "duration", msg.Duration)
+			savedPartial = true
 		}
 		d.recorder = nil
 	}
 	d.recorderMu.Unlock()
+
+	// Fired off the main goroutine so it can take d.mu inside
+	// publishVoicemailState once this function's defer Unlock runs.
+	if savedPartial {
+		go d.publishVoicemailState()
+	}
 
 	if d.callPeer == "" {
 		slog.Warn("voicemail pickup: no call peer")
@@ -382,6 +390,10 @@ func (d *daemonCallbacks) VoicemailRecordEnded() {
 	d.ctrl.Reset()
 	d.HangupCall()
 	d.evaluateLED()
+	// At-cap finalize already ran in the OnTrack loop before VoicemailRecordEnded
+	// was scheduled, so HangupCall's finalizedVoicemail branch did not fire and
+	// did not publish. Publish here so the server learns about the new message.
+	d.publishVoicemailState()
 }
 
 func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
@@ -682,6 +694,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		next     *voicemailPlaybackSession
 		openErr  error
 		noNext   bool
+		mutated  bool // true when "7" or "9" actually advanced the unheard count
 	)
 
 	d.voicemailMu.Lock()
@@ -704,11 +717,15 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	case "7":
 		if err := store.Delete(currentID); err != nil {
 			slog.Warn("voicemail: delete failed", "id", currentID, "error", err)
+		} else {
+			mutated = true
 		}
 		next, openErr = d.openNextUnheardLocked(store, 0)
 	case "9":
 		if err := store.MarkHeard(currentID); err != nil {
 			slog.Warn("voicemail: mark heard failed", "id", currentID, "error", err)
+		} else {
+			mutated = true
 		}
 		next, openErr = d.openNextUnheardLocked(store, 0)
 	case "#":
@@ -730,6 +747,13 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		}
 	}
 	d.voicemailMu.Unlock()
+
+	// Publish only after voicemailMu is released so the network send does
+	// not hold the playback mutex. Dedup inside publishVoicemailState makes
+	// this a no-op on Delete-of-already-heard (count unchanged).
+	if mutated {
+		d.publishVoicemailState()
+	}
 
 	if openErr != nil {
 		slog.Error("voicemail: advance failed", "digit", digit, "error", openErr)
@@ -924,6 +948,7 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		openErr  error
 		noNext   bool
 		isStale  bool
+		mutated  bool // true when MarkHeard succeeded and the unheard count moved
 	)
 
 	d.voicemailMu.Lock()
@@ -936,6 +961,8 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 		d.teardownPlaybackLocked()
 		if err := store.MarkHeard(sess.id); err != nil {
 			slog.Warn("voicemail: mark heard on EOF failed", "id", sess.id, "error", err)
+		} else {
+			mutated = true
 		}
 		next, openErr = d.openNextUnheardLocked(store, 0)
 		if openErr != nil || next == nil {
@@ -949,6 +976,10 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 
 	if isStale {
 		return
+	}
+	// Publish after voicemailMu release; dedup makes redundant calls cheap.
+	if mutated {
+		d.publishVoicemailState()
 	}
 	if openErr != nil {
 		slog.Error("voicemail: open next after EOF failed", "from_id", sess.id, "error", openErr)

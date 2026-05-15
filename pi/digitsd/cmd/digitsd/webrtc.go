@@ -379,6 +379,9 @@ func (d *daemonCallbacks) HangupCall() {
 		// LED state untouched here so the off-hook treatment (remote
 		// hangup, line lockout) keeps its existing visuals.
 		d.evaluateLED()
+		// Same finalize pushes a fresh count to the server so the
+		// owner-side web UI badge updates without polling.
+		d.publishVoicemailState()
 	}
 
 	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {

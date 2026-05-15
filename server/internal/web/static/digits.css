@@ -1329,6 +1329,54 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   display: none;
 }
 
+/* Voicemail unheard-count chip in the detail-page section header. Matches
+   the .chip family but stays inline next to the section title. The chip is
+   only rendered when voicemail is enabled AND there is at least one unheard
+   message, so the bare "voicemail off" state has no chip at all. */
+.voicemail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5a3a00;
+  background: #f7e0a0;
+  vertical-align: middle;
+}
+
+/* Advanced disclosure inside the voicemail section. The summary doubles as
+   a toggle button with a chevron that flips when expanded. */
+.voicemail-advanced {
+  margin-top: 6px;
+  border-top: 1px dashed var(--rule-soft, #ddd2b8);
+  padding-top: 8px;
+}
+.voicemail-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 0;
+  list-style: none;
+}
+.voicemail-advanced > summary::-webkit-details-marker { display: none; }
+.voicemail-advanced > summary::before {
+  content: "+ ";
+  display: inline-block;
+  width: 12px;
+  font-weight: 700;
+}
+.voicemail-advanced[open] > summary::before {
+  content: "- ";
+}
+
 /* Settings two-column layout */
 .settings-layout {
   display: grid;

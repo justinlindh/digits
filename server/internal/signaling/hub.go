@@ -65,10 +65,18 @@ type Hub struct {
 	conns        map[string][]*Conn               // phone number -> connections (multiple devices per line)
 	hwConns      map[string]*Conn                 // hardware ID -> connection
 	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
-	dashEvents   dashNotifier
-	redis        redisPubSub  // nil = single-instance mode (no Redis)
-	state        *DeviceState // nil = single-instance mode (no cluster state)
-	draining     bool         // set by StartDraining; blocks new Register calls
+	// voicemailUnheard tracks the per-handset unheard-voicemail count last
+	// reported by each device. Outer key is the phone number; inner key is
+	// the originating handset's hardware ID. Per-handset because voicemail
+	// storage is local to each handset on a multi-handset line, so the
+	// line-level "you have N new messages" indicator is the SUM across
+	// handsets. In-memory only; digitsd republishes on every reconnect, so
+	// volatility is intentional.
+	voicemailUnheard map[string]map[string]int
+	dashEvents       dashNotifier
+	redis            redisPubSub  // nil = single-instance mode (no Redis)
+	state            *DeviceState // nil = single-instance mode (no cluster state)
+	draining         bool         // set by StartDraining; blocks new Register calls
 }
 
 // NewHub creates a Hub ready for use. Call SetRedis and SetDeviceState before
@@ -76,9 +84,10 @@ type Hub struct {
 // mode.
 func NewHub() *Hub {
 	return &Hub{
-		conns:        make(map[string][]*Conn),
-		hwConns:      make(map[string]*Conn),
-		updateStatus: make(map[string]*UpdateStatusSnapshot),
+		conns:            make(map[string][]*Conn),
+		hwConns:          make(map[string]*Conn),
+		updateStatus:     make(map[string]*UpdateStatusSnapshot),
+		voicemailUnheard: make(map[string]map[string]int),
 	}
 }
 
@@ -359,6 +368,15 @@ func (h *Hub) Unregister(number string, conn *Conn) {
 			}
 			if conn.HardwareID != "" {
 				delete(h.hwConns, conn.HardwareID)
+				// Drop the per-handset voicemail count too: the next
+				// reconnect republishes it. Without this a vanished
+				// handset would inflate the line-level sum forever.
+				if perHW, ok := h.voicemailUnheard[number]; ok {
+					delete(perHW, conn.HardwareID)
+					if len(perHW) == 0 {
+						delete(h.voicemailUnheard, number)
+					}
+				}
 			}
 			changed = true
 			break
@@ -392,6 +410,10 @@ func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
 	if us, ok := h.updateStatus[oldNumber]; ok {
 		h.updateStatus[newNumber] = us
 		delete(h.updateStatus, oldNumber)
+	}
+	if vm, ok := h.voicemailUnheard[oldNumber]; ok {
+		h.voicemailUnheard[newNumber] = vm
+		delete(h.voicemailUnheard, oldNumber)
 	}
 }
 
@@ -644,6 +666,42 @@ func (h *Hub) ClearUpdateStatus(number string) {
 	if ds != nil {
 		ds.ClearUpdateStatus(context.Background(), number)
 	}
+}
+
+// SetVoicemailUnheard records the unheard-voicemail count last reported by
+// the handset identified by hwID on this line. hwID is required: a missing
+// hardware ID is silently dropped so a malformed message can't poison the
+// shared map under a "" key. Per-handset because voicemail is local to the
+// device; the per-line total is the sum across handsets.
+func (h *Hub) SetVoicemailUnheard(number, hwID string, count int) {
+	if hwID == "" {
+		return
+	}
+	if count < 0 {
+		count = 0
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	perHW, ok := h.voicemailUnheard[number]
+	if !ok {
+		perHW = make(map[string]int)
+		h.voicemailUnheard[number] = perHW
+	}
+	perHW[hwID] = count
+}
+
+// LineVoicemailUnheard returns the sum of unheard-voicemail counts across all
+// handsets currently tracked on this line. Zero when the line has no entries
+// (no handsets ever reported, or all handsets disconnected).
+func (h *Hub) LineVoicemailUnheard(number string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	perHW := h.voicemailUnheard[number]
+	total := 0
+	for _, n := range perHW {
+		total += n
+	}
+	return total
 }
 
 // UpdateDeviceInfo sets version info and the device-reported LAN address for

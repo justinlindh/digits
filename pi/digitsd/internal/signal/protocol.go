@@ -55,6 +55,13 @@ const (
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
 
+	// TypeVoicemailState is sent by the phone to the server when its local
+	// unheard-message count changes (post-connect snapshot, after a recording
+	// finalizes, after retrieval marks a message heard, after a delete).
+	// Carries VoicemailUnheardCount; the server stores the value per-phone so
+	// the web UI can render a badge without polling. Phone -> Server only.
+	TypeVoicemailState = "voicemail_state"
+
 	// TypeReleaseAvailable is sent by the server to notify the device that a
 	// new release is available. Carries LatestPiVersion and LatestFWVersion.
 	TypeReleaseAvailable = "release_available"
@@ -229,6 +236,12 @@ type Message struct {
 
 	// Link-health telemetry (link_health messages)
 	LinkHealth *LinkHealthPayload `json:"link_health,omitempty"`
+
+	// Voicemail state (voicemail_state messages). Explicit zero must round-
+	// trip after MarkHeard-all clears the badge, so this field is NOT
+	// omitempty: the server distinguishes "0 unheard" from "field missing"
+	// when reconciling its per-phone cache.
+	VoicemailUnheardCount int `json:"voicemail_unheard_count"`
 }
 
 // ParseMessage deserializes a JSON-encoded signaling message.
