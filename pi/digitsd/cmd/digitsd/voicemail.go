@@ -31,16 +31,16 @@ import (
 func (d *daemonCallbacks) playAnnouncementSequence(tones ...string) {
 	for _, name := range tones {
 		d.mixer.PlayOnce(name)
-		for d.mixer.OncePlaying() {
-			time.Sleep(50 * time.Millisecond)
-		}
+		// 10s is far longer than any prompt clip; it bounds the wait so a
+		// stalled mixer can never wedge the calling goroutine forever.
+		waitForOnceComplete(d.mixer, 10*time.Second)
 		time.Sleep(30 * time.Millisecond)
 	}
 }
 
 // announceMessageCount composes "You have N new message(s)" from individual
-// clips. For count=0, plays vm_no_messages. For 1-9, uses spoken_N. For 10+,
-// plays individual digits (e.g. 12 = spoken_1 + spoken_2).
+// clips. Counts above 9 are spelled digit by digit since there is no single
+// clip for them.
 func (d *daemonCallbacks) announceMessageCount(count int) {
 	if count <= 0 {
 		d.playAnnouncementSequence("vm_no_messages")
@@ -819,17 +819,24 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 		d.evaluateLED()
 		return
 	}
+	// 7 (delete) and 9 (save) earn a spoken confirmation; "#" (skip) and
+	// "*" (replay) advance silently.
+	var actionClip string
+	switch digit {
+	case "7":
+		actionClip = "vm_message_deleted"
+	case "9":
+		actionClip = "vm_message_saved"
+	}
+
 	if noNext {
 		slog.Info("voicemail: end of unheard after key", "last_id", currentID, "digit", digit)
 		// Announce action + end-of-messages, then dial tone. The exit
 		// helper drains the one-shot queue before re-arming the loop so
 		// the announcement and dial tone never overlap.
-		switch digit {
-		case "7":
-			d.playAnnouncementSequence("vm_message_deleted", "vm_end_of_messages")
-		case "9":
-			d.playAnnouncementSequence("vm_message_saved", "vm_end_of_messages")
-		default:
+		if actionClip != "" {
+			d.playAnnouncementSequence(actionClip, "vm_end_of_messages")
+		} else {
 			d.playAnnouncementSequence("vm_end_of_messages")
 		}
 		d.voicemailExitToDialtoneAsync()
@@ -837,11 +844,8 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	}
 
 	// Announce the action before starting the next message's playback.
-	switch digit {
-	case "7":
-		d.playAnnouncementSequence("vm_message_deleted")
-	case "9":
-		d.playAnnouncementSequence("vm_message_saved")
+	if actionClip != "" {
+		d.playAnnouncementSequence(actionClip)
 	}
 
 	slog.Info("voicemail: advanced to next", "from", currentID, "to", next.id, "digit", digit)
