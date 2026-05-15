@@ -1,14 +1,16 @@
 /**
- * 10-voicemail.spec.ts -- Per-line voicemail toggle on /phones plus the 5-field
- * settings form on /phones/{number}.
+ * 10-voicemail.spec.ts -- Detail-page voicemail panel: enable toggle, the
+ * "Advanced settings" disclosure, the unheard-count chip, and the 5-field
+ * Save flow. The list-page no longer surfaces voicemail; that direction was
+ * pulled per owner feedback.
  *
  * Tests:
- *   - List-row toggle flips voicemail on, badge appears, persists across reload.
- *   - Toggle flips it back off, badge disappears.
- *   - Detail page renders the voicemail panel with the 5 fields.
- *   - Saving valid values via the detail form persists and swaps the partial.
+ *   - Detail page renders the panel with the enable checkbox + Advanced disclosure.
+ *   - Enabling voicemail via the checkbox round-trips state through the toggle endpoint.
+ *   - Expanding Advanced reveals the 4 numeric/code fields.
+ *   - Saving valid Advanced values persists across reload.
  *   - Bad retrieval code is rejected (400).
- *   - All three themes render the relevant surface (intercom, dialup, am).
+ *   - All three themes render their respective surface (intercom, dialup, am).
  *
  * Skips when the test household has no paired phones.
  */
@@ -37,29 +39,25 @@ async function firstPhoneHref(page: Page): Promise<string | null> {
   return await link.getAttribute('href');
 }
 
-/**
- * Click the list-row voicemail toggle and wait for the htmx swap. Works for
- * both the intercom (.phone-voicemail) and answering-machine (.am-voicemail)
- * themes since the form id is the same in both.
- */
-async function toggleVoicemailFromList(page: Page, number: string) {
-  await page.goto('/phones');
-  // The /phones page renders the voicemail form once per layout (desktop
-  // table, mobile card, am roster); only one is visible at a time per
-  // viewport. Use .first() to grab whichever is currently rendered.
-  const form = page.locator(`form[data-voicemail][data-line="${number}"]`).first();
-  await expect(form).toBeVisible();
-  const wait = page.waitForResponse(
-    (r) => r.url().includes('/voicemail-toggle') && r.request().method() === 'POST',
-  );
-  await form.locator('button[type="submit"]').first().click();
-  await wait;
-}
-
 async function readEnabledOnDetail(page: Page): Promise<boolean> {
   const checkbox = page.locator('#voicemail-section input[name="enabled"]').first();
   await expect(checkbox).toBeVisible();
   return await checkbox.isChecked();
+}
+
+/**
+ * Click the enable checkbox and wait for the toggle endpoint round-trip.
+ * The checkbox has hx-post + hx-trigger=change, so a click triggers the swap
+ * of the whole voicemail section.
+ */
+async function clickEnableCheckbox(page: Page) {
+  const checkbox = page.locator('#voicemail-section input[name="enabled"]').first();
+  await expect(checkbox).toBeVisible();
+  const wait = page.waitForResponse(
+    (r) => r.url().includes('/voicemail-toggle') && r.request().method() === 'POST',
+  );
+  await checkbox.click();
+  await wait;
 }
 
 test.describe('Voicemail (intercom theme)', () => {
@@ -67,72 +65,39 @@ test.describe('Voicemail (intercom theme)', () => {
     await setTheme(page.request, 'intercom').catch(() => undefined);
   });
 
-  test('list-row toggle flips state and shows the badge', async ({ page }) => {
-    const href = await firstPhoneHref(page);
-    if (!href) {
-      test.skip(true, 'No phones registered');
-      return;
-    }
-    const number = href.split('/').pop() as string;
-
-    // Baseline: enable, then disable so we know the start state.
-    await page.goto(href);
-    if (await readEnabledOnDetail(page)) {
-      await toggleVoicemailFromList(page, number);
-    }
-    // Now off; confirm no chip on the visible row.
-    await page.goto('/phones');
-    const visibleForm = page
-      .locator(`form[data-voicemail][data-line="${number}"]:visible`)
-      .first();
-    await expect(visibleForm.locator('.phone-voicemail__chip')).toHaveCount(0);
-
-    // Toggle on; chip should appear (muted "VM" because count is 0).
-    await toggleVoicemailFromList(page, number);
-    await expect(
-      page
-        .locator(`form[data-voicemail][data-line="${number}"]:visible .phone-voicemail__chip`)
-        .first(),
-    ).toBeVisible();
-
-    // Reload: state must be persisted server-side.
-    await page.goto('/phones');
-    await expect(
-      page
-        .locator(`form[data-voicemail][data-line="${number}"]:visible .phone-voicemail__chip`)
-        .first(),
-    ).toBeVisible();
-
-    // Detail page must reflect the same state.
-    await page.goto(href);
-    expect(await readEnabledOnDetail(page)).toBe(true);
-
-    // Cleanup: toggle off so the next test starts clean.
-    await toggleVoicemailFromList(page, number);
-    await page.goto('/phones');
-    await expect(
-      page.locator(
-        `form[data-voicemail][data-line="${number}"]:visible .phone-voicemail__chip`,
-      ),
-    ).toHaveCount(0);
-  });
-
-  test('detail page renders the voicemail panel with five fields', async ({ page }) => {
+  test('detail page renders panel with enable checkbox + Advanced disclosure', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
       return;
     }
     await page.goto(href);
+
     await expect(page.locator('h2.panel__title', { hasText: /voicemail/i })).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
+    await expect(page.locator('#voicemail-section details.voicemail-advanced')).toBeVisible();
+
+    // Advanced should be collapsed by default; the 4 fields are hidden until expanded.
+    const ringField = page.locator('#voicemail-section input[name="ring_timeout_seconds"]');
+    await expect(ringField).not.toBeVisible();
+  });
+
+  test('expanding Advanced reveals all four detail fields', async ({ page }) => {
+    const href = await firstPhoneHref(page);
+    if (!href) {
+      test.skip(true, 'No phones registered');
+      return;
+    }
+    await page.goto(href);
+
+    await page.locator('#voicemail-section details.voicemail-advanced > summary').click();
     await expect(page.locator('#voicemail-section input[name="ring_timeout_seconds"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="max_message_seconds"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="max_stored_messages"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="retrieval_code"]')).toBeVisible();
   });
 
-  test('detail form save with valid values persists', async ({ page }) => {
+  test('checkbox toggle swaps section partial and persists', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
@@ -140,12 +105,39 @@ test.describe('Voicemail (intercom theme)', () => {
     }
     await page.goto(href);
 
-    // Enable so the inner fields aren't disabled.
-    const enabled = page.locator('#voicemail-section input[name="enabled"]');
-    if (!(await enabled.isChecked())) {
-      await enabled.check();
+    // Baseline: ensure off.
+    if (await readEnabledOnDetail(page)) {
+      await clickEnableCheckbox(page);
+    }
+    expect(await readEnabledOnDetail(page)).toBe(false);
+
+    // Toggle on.
+    await clickEnableCheckbox(page);
+    expect(await readEnabledOnDetail(page)).toBe(true);
+
+    // Reload: persisted server-side.
+    await page.goto(href);
+    expect(await readEnabledOnDetail(page)).toBe(true);
+
+    // Cleanup: turn off.
+    await clickEnableCheckbox(page);
+  });
+
+  test('saving valid Advanced values persists across reload', async ({ page }) => {
+    const href = await firstPhoneHref(page);
+    if (!href) {
+      test.skip(true, 'No phones registered');
+      return;
+    }
+    await page.goto(href);
+
+    // Make sure voicemail is on so the inner fields aren't disabled.
+    if (!(await readEnabledOnDetail(page))) {
+      await clickEnableCheckbox(page);
     }
 
+    // Expand Advanced and edit.
+    await page.locator('#voicemail-section details.voicemail-advanced > summary').click();
     await page.locator('#voicemail-section input[name="ring_timeout_seconds"]').fill('30');
     await page.locator('#voicemail-section input[name="max_message_seconds"]').fill('100');
     await page.locator('#voicemail-section input[name="max_stored_messages"]').fill('25');
@@ -158,8 +150,9 @@ test.describe('Voicemail (intercom theme)', () => {
     const resp = await wait;
     expect(resp.status()).toBe(200);
 
-    // Reload and confirm fields stuck.
+    // Reload, expand, confirm fields stuck.
     await page.goto(href);
+    await page.locator('#voicemail-section details.voicemail-advanced > summary').click();
     await expect(
       page.locator('#voicemail-section input[name="ring_timeout_seconds"]'),
     ).toHaveValue('30');
@@ -167,9 +160,8 @@ test.describe('Voicemail (intercom theme)', () => {
       page.locator('#voicemail-section input[name="retrieval_code"]'),
     ).toHaveValue('*99');
 
-    // Cleanup: turn voicemail back off.
-    await enabled.uncheck();
-    await page.locator('#voicemail-section button[type="submit"]').first().click();
+    // Cleanup: voicemail off.
+    await clickEnableCheckbox(page);
   });
 
   test('bad retrieval code is rejected with 400', async ({ page }) => {
@@ -180,9 +172,9 @@ test.describe('Voicemail (intercom theme)', () => {
     }
     await page.goto(href);
 
-    // Use the request context to bypass HTML5 client-side validation;
-    // we want to assert the server-side guard rail. "12345" is digits only
-    // (no * or #), which the server rejects to avoid 7-digit-dial collision.
+    // Bypass HTML5 client-side validation and exercise the server-side guard.
+    // "12345" is digits-only (no * or #), which the handler rejects to avoid
+    // a 7-digit-dial collision.
     const number = href.split('/').pop() as string;
     const resp = await page.request.post(`/phones/${number}/voicemail`, {
       form: {
@@ -196,6 +188,19 @@ test.describe('Voicemail (intercom theme)', () => {
     });
     expect(resp.status()).toBe(400);
     expect(await resp.text()).toMatch(/retrieval_code/i);
+  });
+
+  test('list page does NOT show a voicemail badge', async ({ page }) => {
+    // Regression guard: the list-row voicemail UI was removed per owner
+    // direction. If a future hand re-adds the badge, this test fails.
+    const href = await firstPhoneHref(page);
+    if (!href) {
+      test.skip(true, 'No phones registered');
+      return;
+    }
+    await page.goto('/phones');
+    await expect(page.locator('form[data-voicemail]')).toHaveCount(0);
+    await expect(page.locator('.phone-voicemail')).toHaveCount(0);
   });
 });
 
@@ -212,38 +217,17 @@ test.describe('Voicemail (dialup theme)', () => {
     await setTheme(page.request, 'intercom').catch(() => undefined);
   });
 
-  test('list-row toggle works under dialup chrome', async ({ page }) => {
+  test('detail page renders the panel under dialup chrome', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
       return;
     }
-    const number = href.split('/').pop() as string;
-
-    // Ensure baseline is OFF regardless of what an earlier test left behind.
     await page.goto(href);
-    if (await readEnabledOnDetail(page)) {
-      await toggleVoicemailFromList(page, number);
-    }
 
-    await page.goto('/phones');
-    const form = page
-      .locator(`form[data-voicemail][data-line="${number}"]:visible`)
-      .first();
-    await expect(form).toBeVisible();
-
-    // Off -> on: expect the muted "VM" chip to appear.
-    await toggleVoicemailFromList(page, number);
-    await expect(
-      page
-        .locator(
-          `form[data-voicemail][data-line="${number}"]:visible .phone-voicemail__chip`,
-        )
-        .first(),
-    ).toBeVisible();
-
-    // Cleanup.
-    await toggleVoicemailFromList(page, number);
+    await expect(page.locator('#voicemail-section')).toBeVisible();
+    await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
+    await expect(page.locator('#voicemail-section details.voicemail-advanced')).toBeVisible();
   });
 });
 
@@ -260,34 +244,21 @@ test.describe('Voicemail (answering-machine theme)', () => {
     await setTheme(page.request, 'intercom').catch(() => undefined);
   });
 
-  test('AM list shows the voicemail toggle in the roster meta', async ({ page }) => {
-    const href = await firstPhoneHref(page);
-    if (!href) {
-      test.skip(true, 'No phones registered');
-      return;
-    }
-    const number = href.split('/').pop() as string;
-
-    await page.goto('/phones');
-    const form = page
-      .locator(`form[data-voicemail][data-line="${number}"]:visible`)
-      .first();
-    await expect(form).toBeVisible();
-    await expect(form).toHaveClass(/am-voicemail/);
-  });
-
-  test('AM detail page renders the voicemail plate with all five fields', async ({ page }) => {
+  test('AM detail page renders the voicemail plate with AM-styled disclosure', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
       return;
     }
     await page.goto(href);
+
     await expect(page.locator('.am-plate__label', { hasText: /voicemail/i })).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
+    await expect(page.locator('#voicemail-section details.am-voicemail-advanced')).toBeVisible();
+
+    // Expand and confirm AM-styled fields show.
+    await page.locator('#voicemail-section details.am-voicemail-advanced > summary').click();
     await expect(page.locator('#voicemail-section input[name="ring_timeout_seconds"]')).toBeVisible();
-    await expect(page.locator('#voicemail-section input[name="max_message_seconds"]')).toBeVisible();
-    await expect(page.locator('#voicemail-section input[name="max_stored_messages"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="retrieval_code"]')).toBeVisible();
   });
 });

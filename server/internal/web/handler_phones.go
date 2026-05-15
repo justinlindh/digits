@@ -71,10 +71,6 @@ type lineRow struct {
 	OnlineDeviceCount   int
 	FirmwareUpdateNotes []updates.Release
 	PiUpdateNotes       []updates.Release
-	// VoicemailUnheard is the line-level unheard-message count, summed
-	// across handsets the Hub has heard from. Zero when voicemail is off
-	// or no handset has reported a non-zero count.
-	VoicemailUnheard int
 }
 
 // buildLinesData assembles the line-list page payload. hh may be nil; when
@@ -121,7 +117,6 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		}
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
-		row.VoicemailUnheard = h.hub.LineVoicemailUnheard(l.Number)
 
 		if h.deviceStore != nil {
 			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
@@ -307,6 +302,11 @@ type lineDetailData struct {
 	FirmwareUpdateNotes   []updates.Release
 	OtherLines            []line.Line
 	NumberError           string
+	// VoicemailUnheard is the line-level unheard-voicemail count summed
+	// across handsets last reported by digitsd. Surfaced inline with the
+	// Voicemail section header on the detail page; the chip only renders
+	// when voicemail is enabled AND this count is greater than zero.
+	VoicemailUnheard int
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -386,6 +386,11 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var voicemailUnheard int
+	if h.hub != nil {
+		voicemailUnheard = h.hub.LineVoicemailUnheard(number)
+	}
+
 	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
@@ -401,6 +406,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		OtherLines:            otherLines,
 		NumberError:           r.URL.Query().Get("number_error"),
+		VoicemailUnheard:      voicemailUnheard,
 	})
 }
 
@@ -678,19 +684,26 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	}
 
 	if isHTMX(r) {
+		count := 0
+		if h.hub != nil {
+			count = h.hub.LineVoicemailUnheard(number)
+		}
 		renderWith(r.Context(), w, h.tmplPhoneDetail,
 			partialFor(r, "voicemail-section", "am-voicemail-section"),
-			struct{ Line line.Line }{Line: *ln})
+			struct {
+				Line             line.Line
+				VoicemailUnheard int
+			}{Line: *ln, VoicemailUnheard: count})
 		return
 	}
 	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 // handlePhoneVoicemailTogglePost flips Voicemail.Enabled for a line and
-// swaps the list-row badge partial. The other four voicemail fields are
-// preserved through Normalize, which backfills defaults when the row was
-// created before voicemail existed. Path is intentionally separate from
-// the five-field POST so a checkbox-only round-trip does not have to
+// swaps the detail-page voicemail section. The other four voicemail fields
+// are preserved through Normalize, which backfills defaults when the row
+// was created before voicemail existed. Path is intentionally separate
+// from the five-field POST so a checkbox-only round-trip does not have to
 // resubmit the timing/code fields.
 func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
@@ -711,15 +724,15 @@ func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.
 		if h.hub != nil {
 			count = h.hub.LineVoicemailUnheard(number)
 		}
-		renderWith(r.Context(), w, h.tmplPhones,
-			partialFor(r, "voicemail-badge", "am-voicemail-badge"),
+		renderWith(r.Context(), w, h.tmplPhoneDetail,
+			partialFor(r, "voicemail-section", "am-voicemail-section"),
 			struct {
 				Line             line.Line
 				VoicemailUnheard int
 			}{Line: *ln, VoicemailUnheard: count})
 		return
 	}
-	http.Redirect(w, r, "/phones", http.StatusSeeOther)
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
 }
 
 // parseClampedInt reads form field `name`, parses it as an integer, and

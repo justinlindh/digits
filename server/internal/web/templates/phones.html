@@ -357,7 +357,6 @@
               <span class="phone-silent__text">SILENT</span>
             </span>
             {{end}}
-            {{template "voicemail-badge" .}}
           </td>
           <td>
             {{if .Online}}
@@ -442,7 +441,6 @@
           {{.Line.Name}}
           {{if gt (len .Devices) 1}}<span class="muted" style="font-size: 11px; font-weight: normal;"> ({{len .Devices}} handsets)</span>{{end}}
           {{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}
-          {{template "voicemail-badge" .}}
         </span>
         <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
         <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}{{if gt (len .Devices) 1}}{{.OnlineDeviceCount}}/{{len .Devices}}{{else}}online{{end}}{{else}}offline{{end}}</span>
@@ -513,7 +511,6 @@
         {{else}}OFFLINE
         {{end}}
         {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
-        {{template "am-voicemail-badge" $l}}
         {{if or $l.PiUpdateNotes $l.FirmwareUpdateNotes}}
         <span class="am-phones__update-flag" title="Software update available">
           <span class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
@@ -543,58 +540,6 @@
     <a href="/phones" class="am-tab">Cancel</a>
   </form>
 </div>
-{{end}}
-
-{{define "voicemail-badge"}}
-<form data-voicemail data-line="{{.Line.Number}}"
-      hx-post="/phones/{{.Line.Number}}/voicemail-toggle"
-      hx-target="this" hx-swap="outerHTML"
-      class="phone-voicemail">
-  {{if .Line.Settings.Voicemail.Enabled}}
-    {{if gt .VoicemailUnheard 0}}
-      <span class="phone-voicemail__chip phone-voicemail__chip--attn"
-            aria-label="{{.VoicemailUnheard}} unheard voicemail message{{if ne .VoicemailUnheard 1}}s{{end}}"
-            title="{{.VoicemailUnheard}} unheard voicemail message{{if ne .VoicemailUnheard 1}}s{{end}}">VM {{.VoicemailUnheard}}</span>
-    {{else}}
-      <span class="phone-voicemail__chip phone-voicemail__chip--on"
-            aria-label="Voicemail on, mailbox empty"
-            title="Voicemail on, mailbox empty">VM</span>
-    {{end}}
-    <button type="submit" class="phone-voicemail__toggle"
-            aria-label="Turn voicemail off"
-            title="Turn voicemail off">off</button>
-  {{else}}
-    <button type="submit" class="phone-voicemail__toggle phone-voicemail__toggle--enable"
-            aria-label="Turn voicemail on"
-            title="Turn voicemail on">VM on</button>
-  {{end}}
-</form>
-{{end}}
-
-{{define "am-voicemail-badge"}}
-<form data-voicemail data-line="{{.Line.Number}}"
-      hx-post="/phones/{{.Line.Number}}/voicemail-toggle"
-      hx-target="this" hx-swap="outerHTML"
-      class="am-voicemail">
-  {{if .Line.Settings.Voicemail.Enabled}}
-    {{if gt .VoicemailUnheard 0}}
-      <span class="am-led am-voicemail__led am-voicemail__led--attn"
-            aria-label="{{.VoicemailUnheard}} unheard voicemail message{{if ne .VoicemailUnheard 1}}s{{end}}"
-            title="{{.VoicemailUnheard}} unheard voicemail message{{if ne .VoicemailUnheard 1}}s{{end}}">VM {{.VoicemailUnheard}}</span>
-    {{else}}
-      <span class="am-led am-voicemail__led am-voicemail__led--on"
-            aria-label="Voicemail on, mailbox empty"
-            title="Voicemail on, mailbox empty">VM</span>
-    {{end}}
-    <button type="submit" class="am-tab am-voicemail__toggle"
-            aria-label="Turn voicemail off"
-            title="Turn voicemail off">OFF</button>
-  {{else}}
-    <button type="submit" class="am-tab am-voicemail__toggle"
-            aria-label="Turn voicemail on"
-            title="Turn voicemail on">VM ON</button>
-  {{end}}
-</form>
 {{end}}
 
 {{define "phones-am"}}

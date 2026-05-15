@@ -2405,20 +2405,44 @@ body.am .pair-mode-field legend {
 .changelog__empty { color: var(--ink-muted); font-style: italic; font-size: 12px; }
 
 
-/* Voicemail badge + toggle in the AM phones roster meta line. The chip uses
-   the standard am-led typography; the OFF/ON toggle is a compact am-tab. */
-.am-voicemail {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 6px;
-  vertical-align: middle;
-}
-.am-voicemail__led {
+/* Voicemail unheard-count LED in the AM detail-page section header. Stays
+   inline with the section label, glows red so an unheard count reads as a
+   "message waiting" annunciator rather than just decoration. */
+.am-voicemail-led {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 6px;
   font-size: 10px;
   letter-spacing: 0.12em;
-  padding: 0 4px;
+  color: var(--led-red);
+  text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25);
+  vertical-align: middle;
 }
-.am-voicemail__led--on { color: var(--led-amber-dim); text-shadow: none; }
-.am-voicemail__led--attn { color: var(--led-red); text-shadow: 0 0 6px rgba(255,61,46,0.5), 0 0 12px rgba(255,61,46,0.25); }
-.am-voicemail__toggle { padding: 0 6px; min-width: 0; min-height: 18px; line-height: 18px; font-size: 9px; }
+
+/* Advanced disclosure inside the AM voicemail plate. The summary acts like
+   the existing am-tab buttons: caret prefix flips when open, label is the
+   familiar 10-char LED stencil. */
+.am-voicemail-advanced {
+  margin-top: 8px;
+  border-top: 1px dashed var(--rule-soft, #6b5a39);
+  padding-top: 8px;
+}
+.am-voicemail-advanced > summary {
+  cursor: pointer;
+  font-family: var(--font-led);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--led-amber-dim);
+  padding: 4px 0;
+  list-style: none;
+  text-transform: uppercase;
+}
+.am-voicemail-advanced > summary::-webkit-details-marker { display: none; }
+.am-voicemail-advanced > summary::before {
+  content: "[+] ";
+}
+.am-voicemail-advanced[open] > summary::before {
+  content: "[-] ";
+  color: var(--led-amber);
+  text-shadow: 0 0 4px rgba(255,165,32,0.45);
+}

@@ -2911,36 +2911,47 @@ func TestPhoneVoicemailToggleFlipsEnabledAndRedirects(t *testing.T) {
 	}
 }
 
-func TestPhoneVoicemailToggleHTMXReturnsBadgePartial(t *testing.T) {
+func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	// First toggle: off -> on, badge should show "VM" lozenge.
+	// First toggle: off -> on. Section partial swaps in with the enabled
+	// checkbox flipped on. No unheard count -> no chip yet.
 	w := postVoicemailToggle(t, h, cookie, true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, `data-line="3140001"`) {
-		t.Fatalf("htmx response missing data-line attribute:\n%s", body)
+	if !strings.Contains(body, `id="voicemail-section"`) {
+		t.Fatalf("htmx response missing voicemail-section wrapper:\n%s", body)
 	}
 	if !strings.Contains(body, "/voicemail-toggle") {
 		t.Fatalf("htmx response missing toggle endpoint:\n%s", body)
 	}
-	// Badge ladder: enabled with 0 unheard renders the muted "VM" chip.
-	if !strings.Contains(body, "phone-voicemail__chip--on") {
-		t.Errorf("expected on/0 muted VM chip in body:\n%s", body)
+	// With Enabled=true and count=0, the chip should NOT render.
+	if strings.Contains(body, "voicemail-chip") {
+		t.Errorf("expected no chip when count=0, got:\n%s", body)
+	}
+	// The enabled checkbox should round-trip back checked.
+	if !strings.Contains(body, `name="enabled" value="on"
+             checked`) && !strings.Contains(body, `checked`) {
+		t.Errorf("expected enabled checkbox to round-trip checked:\n%s", body)
+	}
+	// Advanced disclosure must be present.
+	if !strings.Contains(body, `class="voicemail-advanced"`) {
+		t.Errorf("expected voicemail-advanced disclosure:\n%s", body)
 	}
 
-	// Second toggle: on -> off, badge should collapse to enable button only.
+	// Second toggle: on -> off. Section partial returns with checkbox
+	// unchecked and the inner fields rendered with disabled.
 	w = postVoicemailToggle(t, h, cookie, true)
 	body = w.Body.String()
-	if strings.Contains(body, "phone-voicemail__chip") {
-		t.Errorf("expected no VM chip when voicemail is off, got:\n%s", body)
+	if strings.Contains(body, "voicemail-chip") {
+		t.Errorf("expected no chip when voicemail is off, got:\n%s", body)
 	}
-	if !strings.Contains(body, "phone-voicemail__toggle--enable") {
-		t.Errorf("expected the enable-button class when voicemail off:\n%s", body)
+	if !strings.Contains(body, `disabled`) {
+		t.Errorf("expected disabled attr on inner fields when off:\n%s", body)
 	}
 }
 
@@ -2981,16 +2992,17 @@ func TestPhoneVoicemailToggleHTMXReflectsHubUnheardCount(t *testing.T) {
 	// Pre-populate the hub with an unheard count for the line.
 	h.hub.SetVoicemailUnheard("3140001", "hw-fake", 3)
 
-	// Toggle on; htmx response should render the attention chip with the count.
+	// Toggle on; htmx response renders the section partial with the
+	// "N unheard" chip in the section header.
 	w := postVoicemailToggle(t, h, cookie, true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "phone-voicemail__chip--attn") {
-		t.Errorf("expected attention chip when count > 0:\n%s", body)
+	if !strings.Contains(body, `class="voicemail-chip"`) {
+		t.Errorf("expected voicemail-chip when count > 0:\n%s", body)
 	}
-	if !strings.Contains(body, ">VM 3<") {
-		t.Errorf("expected 'VM 3' label:\n%s", body)
+	if !strings.Contains(body, "3 unheard") {
+		t.Errorf("expected '3 unheard' label:\n%s", body)
 	}
 }
