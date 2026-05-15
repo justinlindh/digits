@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/justinlindh/digits/server/internal/dbutil"
 	"github.com/justinlindh/digits/server/internal/device"
 )
 
@@ -56,14 +57,9 @@ func NewStore(db *sql.DB) *Store {
 // SELECT/RETURNING lists and three Scan argument lists.
 const userColumns = `id, email, name, google_id, theme, theme_chosen, crt_mode, appearance, created_at, last_login_at`
 
-// rowScanner is the subset of *sql.Row / *sql.Rows that matters here.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // scanUser materializes a User from any row whose columns match userColumns
 // in order.
-func scanUser(row rowScanner) (*User, error) {
+func scanUser(row dbutil.RowScanner) (*User, error) {
 	u := &User{}
 	if err := row.Scan(&u.ID, &u.Email, &u.Name, &u.GoogleID, &u.Theme, &u.ThemeChosen, &u.CRTMode, &u.Appearance, &u.CreatedAt, &u.LastLoginAt); err != nil {
 		return nil, err
@@ -182,7 +178,7 @@ const sessionColumns = `id, user_id, expires_at, created_at`
 
 // scanSession materializes a Session from any row whose columns match
 // sessionColumns in order.
-func scanSession(row rowScanner) (*Session, error) {
+func scanSession(row dbutil.RowScanner) (*Session, error) {
 	sess := &Session{}
 	if err := row.Scan(&sess.ID, &sess.UserID, &sess.ExpiresAt, &sess.CreatedAt); err != nil {
 		return nil, err

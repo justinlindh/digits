@@ -13,6 +13,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
 // ErrNotFound is returned when a line cannot be found.
@@ -35,16 +36,10 @@ func scanSettings(raw []byte) (Settings, error) {
 
 const lineColumns = `id, number, name, household_id, settings, created_at, updated_at`
 
-// rowScanner abstracts *sql.Row and *sql.Rows so the same field list and
-// settings decode can serve both single-row and multi-row queries.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // scanLine reads a single row from the lines table using lineColumns and
 // returns the materialized Line. sql.ErrNoRows is returned unwrapped so
 // callers can map it to ErrNotFound with errors.Is.
-func scanLine(s rowScanner) (Line, error) {
+func scanLine(s dbutil.RowScanner) (Line, error) {
 	var l Line
 	var settingsRaw []byte
 	if err := s.Scan(&l.ID, &l.Number, &l.Name, &l.HouseholdID, &settingsRaw, &l.CreatedAt, &l.UpdatedAt); err != nil {

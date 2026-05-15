@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
 const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -18,14 +20,9 @@ const inviteCodeLength = 8
 const linkColumns = `id, household_a_id, household_b_id, status, invite_code, invited_by,
 	accepted_by, created_at, accepted_at, revoked_at, revoked_by`
 
-// rowScanner is the subset of *sql.Row / *sql.Rows that matters here.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // scanLink materializes a HouseholdLink from any row whose columns match
 // linkColumns in order.
-func scanLink(row rowScanner) (*HouseholdLink, error) {
+func scanLink(row dbutil.RowScanner) (*HouseholdLink, error) {
 	l := &HouseholdLink{}
 	if err := row.Scan(
 		&l.ID, &l.HouseholdAID, &l.HouseholdBID, &l.Status, &l.InviteCode,
