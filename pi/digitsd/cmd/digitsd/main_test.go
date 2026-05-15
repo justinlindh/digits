@@ -332,7 +332,7 @@ func TestSetVoicemailConfig_PersistsToDisk(t *testing.T) {
 	}
 	// Defaults at startup.
 	wantDefault := config.Voicemail{
-		Enabled:            false,
+		Enabled:            true,
 		RingTimeout:        20 * time.Second,
 		MaxMessageDuration: 90 * time.Second,
 		MaxStoredMessages:  50,
