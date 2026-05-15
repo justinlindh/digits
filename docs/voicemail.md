@@ -337,8 +337,9 @@ triggers:
 - **Settings change.** A successful POST to `/phones/{number}/voicemail` or
   `/voicemail-toggle` persists the settings, then `pushLineSettings` sends a
   `line_settings` message to the device registered as that number. A
-  disconnected device is not an error; the send failure is swallowed and
-  logged.
+  disconnected device is not an error: the push is skipped silently, and the
+  phone receives the current settings on its next registration. Any other send
+  failure is logged at warn level.
 - **Device registration.** When a phone registers, `Relay.OnRegistered` loads
   the line's effective settings and pushes them, so a phone boots with current
   config. This is how a settings edit made while the phone was offline is
