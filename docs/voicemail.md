@@ -261,7 +261,8 @@ Both endpoints are POST, registered on the authenticated mux in
 failure returns 404, not 403).
 
 - `POST /phones/{number}/voicemail` (`handlePhoneVoicemailPost`) takes the full
-  five-field form: `enabled` (checkbox), the three integers, and
+  form of all five settings: the `enabled` checkbox, the three integer fields
+  (`ring_timeout_seconds`, `max_message_seconds`, `max_stored_messages`), and
   `retrieval_code`. The integers are validated with `parseClampedInt` (400 with
   a friendly "must be an integer between MIN and MAX" message on a bad value)
   and the code with `IsValidRetrievalCode` (400 on a malformed code), both
