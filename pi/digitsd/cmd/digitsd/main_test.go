@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
+	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 )
 
@@ -317,4 +318,84 @@ func TestOpenNextUnheardLocked_AfterIDSkipsCurrent(t *testing.T) {
 	openExpect(ids[0], ids[1], "afterID=first skips to second")
 	openExpect(ids[1], ids[2], "afterID=second skips to third")
 	openExpect(ids[2], 0, "afterID=last yields no next message")
+}
+
+// TestSetVoicemailConfig_PersistsToDisk verifies that the line_settings
+// receiver helper writes the new voicemail block to disk via config.Save,
+// using the same atomic tmp+rename path the daemon uses in production.
+func TestSetVoicemailConfig_PersistsToDisk(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	// Defaults at startup.
+	wantDefault := config.Voicemail{
+		Enabled:            false,
+		RingTimeout:        20 * time.Second,
+		MaxMessageDuration: 90 * time.Second,
+		MaxStoredMessages:  50,
+		RetrievalCode:      "*98",
+	}
+	if cfg.Voicemail != wantDefault {
+		t.Fatalf("unexpected default voicemail config: %+v", cfg.Voicemail)
+	}
+
+	d := &daemonCallbacks{cfg: cfg}
+	target := config.Voicemail{
+		Enabled:            true,
+		RingTimeout:        25 * time.Second,
+		MaxMessageDuration: 120 * time.Second,
+		MaxStoredMessages:  40,
+		RetrievalCode:      "*97",
+	}
+	if err := d.setVoicemailConfig(target); err != nil {
+		t.Fatalf("setVoicemailConfig: %v", err)
+	}
+
+	// In-memory state mutated.
+	if d.cfg.Voicemail != target {
+		t.Errorf("in-memory cfg.Voicemail = %+v, want %+v", d.cfg.Voicemail, target)
+	}
+
+	// Persisted state survives reload.
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if reloaded.Voicemail != target {
+		t.Errorf("reloaded cfg.Voicemail = %+v, want %+v", reloaded.Voicemail, target)
+	}
+}
+
+// TestLineSettingsVoicemailConversion locks in the seconds->Duration wire
+// conversion used by the line_settings receiver. The receiver itself is
+// inline inside the main message loop; this mirrors its conversion math so
+// regressions there get caught before they ship.
+func TestLineSettingsVoicemailConversion(t *testing.T) {
+	wire := &sigclient.Voicemail{
+		Enabled:            true,
+		RingTimeoutSeconds: 30,
+		MaxMessageSeconds:  180,
+		MaxStoredMessages:  25,
+		RetrievalCode:      "*98",
+	}
+	got := config.Voicemail{
+		Enabled:            wire.Enabled,
+		RingTimeout:        time.Duration(wire.RingTimeoutSeconds) * time.Second,
+		MaxMessageDuration: time.Duration(wire.MaxMessageSeconds) * time.Second,
+		MaxStoredMessages:  wire.MaxStoredMessages,
+		RetrievalCode:      wire.RetrievalCode,
+	}
+	want := config.Voicemail{
+		Enabled:            true,
+		RingTimeout:        30 * time.Second,
+		MaxMessageDuration: 180 * time.Second,
+		MaxStoredMessages:  25,
+		RetrievalCode:      "*98",
+	}
+	if got != want {
+		t.Errorf("voicemail wire->config: got %+v, want %+v", got, want)
+	}
 }

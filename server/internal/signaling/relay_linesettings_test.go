@@ -123,6 +123,58 @@ func TestOnRegisteredPushesAutoUpdate(t *testing.T) {
 	}
 }
 
+// TestOnRegisteredPushesVoicemail verifies the register-time push carries
+// the full voicemail sub-struct as the fake store provided. This pins the
+// relay-side projection so a future refactor cannot silently drop the
+// voicemail block from the welcome push.
+func TestOnRegisteredPushesVoicemail(t *testing.T) {
+	hub := NewHub()
+	store := newFakeLineStore()
+	store.set("3140004", &LineSettings{
+		VoiceStyle: "copper",
+		Voicemail: &Voicemail{
+			Enabled:            true,
+			RingTimeoutSeconds: 25,
+			MaxMessageSeconds:  100,
+			MaxStoredMessages:  40,
+			RetrievalCode:      "*97",
+		},
+	})
+	relay := NewRelay(hub, nil, nil, store)
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140004", conn)
+
+	relay.OnRegistered(context.Background(), "3140004")
+
+	select {
+	case data := <-conn.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeLineSettings {
+			t.Errorf("Type: got %q, want %q", msg.Type, TypeLineSettings)
+		}
+		if msg.LineSettings == nil || msg.LineSettings.Voicemail == nil {
+			t.Fatalf("Voicemail: got nil, want non-nil; LineSettings=%+v", msg.LineSettings)
+		}
+		got := *msg.LineSettings.Voicemail
+		want := Voicemail{
+			Enabled:            true,
+			RingTimeoutSeconds: 25,
+			MaxMessageSeconds:  100,
+			MaxStoredMessages:  40,
+			RetrievalCode:      "*97",
+		}
+		if got != want {
+			t.Errorf("Voicemail: got %+v, want %+v", got, want)
+		}
+	default:
+		t.Fatal("device did not receive a line_settings push after OnRegistered")
+	}
+}
+
 // TestOnRegisteredPushesSilentModeFalseByDefault verifies that when
 // OnRegistered is called for a number whose stored LineSettings has
 // SilentMode: false, the pushed message also carries SilentMode: false.

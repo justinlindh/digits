@@ -134,9 +134,23 @@ type ContactEntry struct {
 // VoiceStyleCopper and VoiceStyleModern. Any new voice style must be added
 // there, in server/internal/line, and in server/internal/signaling.
 type LineSettings struct {
-	VoiceStyle string `json:"voice_style,omitempty"`
-	SilentMode bool   `json:"silent_mode,omitempty"`
-	AutoUpdate bool   `json:"auto_update,omitempty"`
+	VoiceStyle string     `json:"voice_style,omitempty"`
+	SilentMode bool       `json:"silent_mode,omitempty"`
+	AutoUpdate bool       `json:"auto_update,omitempty"`
+	Voicemail  *Voicemail `json:"voicemail,omitempty"`
+}
+
+// Voicemail is the wire-format copy of the per-line voicemail settings sub-
+// blob pushed by the server. Mirrors server/internal/signaling.Voicemail.
+//
+// Field-name gotcha: durations cross the wire as integer seconds. The
+// receiver converts to time.Duration when writing to config.
+type Voicemail struct {
+	Enabled            bool   `json:"enabled"`
+	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
+	MaxMessageSeconds  int    `json:"max_message_seconds"`
+	MaxStoredMessages  int    `json:"max_stored_messages"`
+	RetrievalCode      string `json:"retrieval_code"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.

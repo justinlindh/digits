@@ -115,6 +115,9 @@ func (sp *SerialPort) SendCommand(cmd string, timeout time.Duration) (string, er
 }
 
 // SendFire sends a command without waiting for response (fire-and-forget).
+// A short post-write delay gives the Pico time to process the command
+// before the next one arrives; without it, back-to-back fires during
+// init can overflow the Pico's UART RX buffer and silently drop commands.
 func (sp *SerialPort) SendFire(cmd string) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
@@ -123,6 +126,7 @@ func (sp *SerialPort) SendFire(cmd string) {
 	if _, err := sp.port.Write([]byte(cmd + "\r\n")); err != nil {
 		sp.logger.Warn("serial: write failed", "cmd", cmd, "error", err)
 	}
+	time.Sleep(15 * time.Millisecond)
 }
 
 // Ping sends PING and expects PONG.
