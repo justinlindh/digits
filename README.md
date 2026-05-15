@@ -157,6 +157,16 @@ Hidden codes entered on the keypad while the handset is off-hook.
 
 These are dialed from dial tone (not prefixed with `*#`), matching the original 1990s POTS behavior.
 
+### Voicemail (*97 / *98 / *99)
+
+| Code | Action | Details |
+|------|--------|---------|
+| `*98` | Listen to messages | Plays your messages oldest first. During playback: `7` deletes, `9` saves, `#` skips, `*` replays. The retrieval code is configurable; `*98` is the default. |
+| `*97` | Record greeting | Records a custom outgoing greeting after the tone. |
+| `*99` | Delete greeting | Removes your custom greeting and restores the default. |
+
+When a call rings unanswered past the configured timeout, the phone answers it, plays your greeting, and records the caller's message. The handset microphone is muted while recording, so a caller never hears your room. See [Voicemail](docs/voicemail.md) for the FSM, on-disk storage format, signaling, and configuration.
+
 ### Confirmation feedback
 
 - **Volume change.** 1 beep, then dial tone resumes.
@@ -218,6 +228,7 @@ On the hardware side, I am not an electrical engineer. I learned KiCad, read dat
 - [Build one](https://digits.family/build)
 - [Architecture](docs/architecture/overview.md)
 - [Party Line](docs/architecture/party-line.md)
+- [Voicemail](docs/voicemail.md)
 - [Self-hosting](docs/hosting/self-hosting.md)
 - [Load testing](docs/hosting/load-testing.md)
 
