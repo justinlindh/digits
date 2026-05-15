@@ -175,6 +175,16 @@ type daemonCallbacks struct {
 	voicemailPlayback *voicemailPlaybackSession // current message; nil = idle
 	voicemailMixerCh  chan []int16              // mixer source channel for "voicemail" key; nil between sessions
 
+	// Per-message announcement state for a *98 retrieval session. When two
+	// or more messages are queued, each one is preceded by a spoken
+	// "Message N". voicemailAnnounceNumbers is set once at session entry
+	// (false for a lone message, which the count intro already identifies);
+	// voicemailMessageSeq is the running 1-based counter, reset on entry and
+	// bumped by openNextUnheardLocked as each new message opens. Both are
+	// guarded by voicemailMu.
+	voicemailAnnounceNumbers bool
+	voicemailMessageSeq      int
+
 	// Voicemail-state publish bookkeeping. publishVMMu serializes calls to
 	// publishVoicemailState so two trigger sites firing concurrently (e.g.
 	// recorder finalize racing a retrieval MarkHeard) cannot both send the
