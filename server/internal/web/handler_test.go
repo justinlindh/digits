@@ -2615,10 +2615,16 @@ func validVoicemailForm() url.Values {
 	}
 }
 
-func postVoicemail(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values) *httptest.ResponseRecorder {
+// postVoicemail posts the given form to the per-line voicemail endpoint as
+// the session in cookie. When htmx is true the HX-Request header is set so
+// the handler renders the section partial instead of 303-redirecting.
+func postVoicemail(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values, htmx bool) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voicemail", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if htmx {
+		req.Header.Set("HX-Request", "true")
+	}
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -2641,7 +2647,7 @@ func TestPhoneVoicemailValidFormPersistsAndRedirects(t *testing.T) {
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), false)
 	if w.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2672,7 +2678,7 @@ func TestPhoneVoicemailRingTimeoutOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("ring_timeout_seconds", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("ring_timeout_seconds=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
 			}
@@ -2693,7 +2699,7 @@ func TestPhoneVoicemailMaxMessageOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("max_message_seconds", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("max_message_seconds=%q: expected 400, got %d", val, w.Code)
 			}
@@ -2711,7 +2717,7 @@ func TestPhoneVoicemailMaxStoredOutOfRangeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("max_stored_messages", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("max_stored_messages=%q: expected 400, got %d", val, w.Code)
 			}
@@ -2737,7 +2743,7 @@ func TestPhoneVoicemailBadRetrievalCodeRejected(t *testing.T) {
 		t.Run(val, func(t *testing.T) {
 			form := validVoicemailForm()
 			form.Set("retrieval_code", val)
-			w := postVoicemail(t, h, cookie, form)
+			w := postVoicemail(t, h, cookie, form, false)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("retrieval_code=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
 			}
@@ -2764,7 +2770,7 @@ func TestPhoneVoicemailMissingLineReturns404(t *testing.T) {
 		_, _ = database.DB.Exec("DELETE FROM households WHERE id = $1", hh.ID)
 	})
 
-	w := postVoicemail(t, h, cookie, validVoicemailForm())
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), false)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing line, got %d: %s", w.Code, w.Body.String())
 	}
@@ -2778,7 +2784,7 @@ func TestPhoneVoicemailPushesToConnectedDevice(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
 	}
 
@@ -2816,7 +2822,7 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
 	// First save populates the row with the validVoicemailForm values.
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("setup save: %d %s", w.Code, w.Body.String())
 	}
 
@@ -2825,7 +2831,7 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
-	if w := postVoicemail(t, h, cookie, validVoicemailForm()); w.Code != http.StatusSeeOther {
+	if w := postVoicemail(t, h, cookie, validVoicemailForm(), false); w.Code != http.StatusSeeOther {
 		t.Fatalf("second save: %d %s", w.Code, w.Body.String())
 	}
 	select {
@@ -2836,26 +2842,12 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	}
 }
 
-// postVoicemailHTMX submits the same form as postVoicemail but with the
-// HX-Request header so the handler renders the section partial instead of
-// 303-redirecting.
-func postVoicemailHTMX(t *testing.T, h *Handler, cookie *http.Cookie, form url.Values) *httptest.ResponseRecorder {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/voicemail", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
-	req.AddCookie(cookie)
-	w := httptest.NewRecorder()
-	h.Router().ServeHTTP(w, req)
-	return w
-}
-
 func TestPhoneVoicemailHTMXReturnsSectionPartial(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	w := postVoicemailHTMX(t, h, cookie, validVoicemailForm())
+	w := postVoicemail(t, h, cookie, validVoicemailForm(), true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}

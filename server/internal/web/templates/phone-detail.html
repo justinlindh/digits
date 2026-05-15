@@ -1,6 +1,7 @@
 {{define "title"}}{{.Line.Name}}{{end}}
 
 {{define "content"}}
+<script src="{{static "voicemail-form.js"}}" defer></script>
 {{if and .User (eq .User.Theme "answering-machine")}}
   {{template "phone-detail-am" .}}
 {{else}}
@@ -793,21 +794,6 @@
 
     <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 6px;">Save</button>
   </form>
-  <script>
-    (function () {
-      var form = document.querySelector('[data-voicemail-form]');
-      if (!form) { return; }
-      var enabledBox = form.querySelector('[data-voicemail-enabled]');
-      var fieldsWrap = form.querySelector('[data-voicemail-fields]');
-      if (!enabledBox || !fieldsWrap) { return; }
-      enabledBox.addEventListener('change', function () {
-        var on = enabledBox.checked;
-        fieldsWrap.style.opacity = on ? '' : '0.55';
-        var inputs = fieldsWrap.querySelectorAll('input');
-        for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = !on; }
-      });
-    })();
-  </script>
 </div>
 {{end}}
 
@@ -876,21 +862,6 @@
       <span class="am-key__label">Save</span>
     </button>
   </form>
-  <script>
-    (function () {
-      var form = document.querySelector('[data-voicemail-form]');
-      if (!form) { return; }
-      var enabledBox = form.querySelector('[data-voicemail-enabled]');
-      var fieldsWrap = form.querySelector('[data-voicemail-fields]');
-      if (!enabledBox || !fieldsWrap) { return; }
-      enabledBox.addEventListener('change', function () {
-        var on = enabledBox.checked;
-        fieldsWrap.style.opacity = on ? '' : '0.55';
-        var inputs = fieldsWrap.querySelectorAll('input');
-        for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = !on; }
-      });
-    })();
-  </script>
 </div>
 {{end}}
 
