@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
 	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/line"
 )
 
 const (
@@ -126,12 +128,16 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, dev
 		}
 		hardwareID = hwID
 
+		defaults, jsonErr := json.Marshal(line.DefaultSettings().Normalize())
+		if jsonErr != nil {
+			return fmt.Errorf("marshal default settings: %w", jsonErr)
+		}
 		var lineID int64
 		err = tx.QueryRowContext(ctx, `
-			INSERT INTO lines (number, name, household_id)
-			VALUES ($1, $2, $3)
+			INSERT INTO lines (number, name, household_id, settings)
+			VALUES ($1, $2, $3, $4)
 			RETURNING id
-		`, lineNumber, lineName, householdID).Scan(&lineID)
+		`, lineNumber, lineName, householdID, defaults).Scan(&lineID)
 		if err != nil {
 			if isUniqueViolation(err) {
 				return ErrNumberTaken

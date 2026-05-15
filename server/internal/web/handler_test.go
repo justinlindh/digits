@@ -2916,7 +2916,7 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	// First toggle: on -> off (default is now enabled).
+	// First toggle: on -> off (default is enabled).
 	w := postVoicemailToggle(t, h, cookie, true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -2932,16 +2932,19 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	if !strings.Contains(body, `class="voicemail-advanced"`) {
 		t.Errorf("expected voicemail-advanced disclosure:\n%s", body)
 	}
-
-	// Second toggle: on -> off. Section partial returns with checkbox
-	// unchecked and the inner fields rendered with disabled.
-	w = postVoicemailToggle(t, h, cookie, true)
-	body = w.Body.String()
+	// After toggling off, fields should be disabled.
 	if strings.Contains(body, "voicemail-chip") {
 		t.Errorf("expected no chip when voicemail is off, got:\n%s", body)
 	}
 	if !strings.Contains(body, `disabled`) {
 		t.Errorf("expected disabled attr on inner fields when off:\n%s", body)
+	}
+
+	// Second toggle: off -> on. Fields should be enabled again.
+	w = postVoicemailToggle(t, h, cookie, true)
+	body = w.Body.String()
+	if strings.Contains(body, `disabled`) {
+		t.Errorf("expected no disabled attr on inner fields when on:\n%s", body)
 	}
 }
 
@@ -2953,8 +2956,19 @@ func TestPhoneVoicemailTogglePushesToConnectedDevice(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
+	// Default is enabled. First toggle: on -> off. Drain the push.
 	if w := postVoicemailToggle(t, h, cookie, false); w.Code != http.StatusSeeOther {
-		t.Fatalf("toggle save failed: %d %s", w.Code, w.Body.String())
+		t.Fatalf("first toggle failed: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case <-conn.Send:
+	case <-time.After(time.Second):
+		t.Fatal("device did not receive push after first toggle")
+	}
+
+	// Second toggle: off -> on. Verify the push carries enabled=true.
+	if w := postVoicemailToggle(t, h, cookie, false); w.Code != http.StatusSeeOther {
+		t.Fatalf("second toggle failed: %d %s", w.Code, w.Body.String())
 	}
 
 	select {
@@ -2982,9 +2996,15 @@ func TestPhoneVoicemailToggleHTMXReflectsHubUnheardCount(t *testing.T) {
 	// Pre-populate the hub with an unheard count for the line.
 	h.hub.SetVoicemailUnheard("3140001", "hw-fake", 3)
 
-	// Toggle on; htmx response renders the section partial with the
-	// "N unheard" chip in the section header.
+	// Default is enabled. First toggle: on -> off.
 	w := postVoicemailToggle(t, h, cookie, true)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Second toggle: off -> on. The section partial should render
+	// the "N unheard" chip in the section header.
+	w = postVoicemailToggle(t, h, cookie, true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}

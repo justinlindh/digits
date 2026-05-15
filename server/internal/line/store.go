@@ -111,13 +111,19 @@ func NewStore(database *db.Database) *Store {
 	return &Store{db: database.DB}
 }
 
-// Add inserts a new line for the given household and returns it.
+// Add inserts a new line for the given household and returns it. The initial
+// settings column is seeded with DefaultSettings() so the DB round-trip
+// preserves defaults (notably voicemail.enabled) that have non-zero values.
 func (s *Store) Add(ctx context.Context, number, name, householdID string) (*Line, error) {
+	defaults, err := json.Marshal(DefaultSettings().Normalize())
+	if err != nil {
+		return nil, fmt.Errorf("marshal default settings: %w", err)
+	}
 	row := s.db.QueryRowContext(ctx,
-		`INSERT INTO lines (number, name, household_id)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO lines (number, name, household_id, settings)
+		 VALUES ($1, $2, $3, $4)
 		 RETURNING `+lineColumns,
-		number, name, householdID,
+		number, name, householdID, defaults,
 	)
 	l, err := scanLine(row)
 	if err != nil {
