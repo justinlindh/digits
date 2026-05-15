@@ -3,7 +3,13 @@ name: Server Integration
 on:
   push:
     branches: [main]
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-integration.yml'
   pull_request:
+    paths:
+      - 'server/**'
+      - '.github/workflows/server-integration.yml'
 
 jobs:
   integration:
