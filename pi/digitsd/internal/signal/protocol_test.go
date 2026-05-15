@@ -368,6 +368,48 @@ func TestLineSettingsVoicemailOmittedWhenNil(t *testing.T) {
 	}
 }
 
+func TestVoicemailStateRoundTrip(t *testing.T) {
+	in := &Message{
+		Type:                  TypeVoicemailState,
+		VoicemailUnheardCount: 7,
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(data), `"voicemail_unheard_count":7`) {
+		t.Errorf("expected voicemail_unheard_count:7 in JSON, got: %s", data)
+	}
+	got, err := ParseMessage(data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got.Type != TypeVoicemailState {
+		t.Errorf("Type: got %q want %q", got.Type, TypeVoicemailState)
+	}
+	if got.VoicemailUnheardCount != 7 {
+		t.Errorf("VoicemailUnheardCount: got %d want 7", got.VoicemailUnheardCount)
+	}
+}
+
+// TestVoicemailStateZeroNotOmitted locks in the contract that an explicit
+// zero count survives the round trip. The server distinguishes "0 unheard"
+// from "field missing" when reconciling its per-phone cache, so the wire
+// MUST carry the literal "voicemail_unheard_count":0 after MarkHeard-all.
+func TestVoicemailStateZeroNotOmitted(t *testing.T) {
+	in := &Message{
+		Type:                  TypeVoicemailState,
+		VoicemailUnheardCount: 0,
+	}
+	data, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"voicemail_unheard_count":0`)) {
+		t.Errorf("expected literal \"voicemail_unheard_count\":0 in JSON, got: %s", data)
+	}
+}
+
 func TestLineSettingsVoicemailZeroValuesParse(t *testing.T) {
 	// Server may push enabled=false with zero ints; receiver must accept it
 	// as an authoritative full-replacement payload, not silently drop fields.

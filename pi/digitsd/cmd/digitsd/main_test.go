@@ -369,6 +369,163 @@ func TestSetVoicemailConfig_PersistsToDisk(t *testing.T) {
 	}
 }
 
+// fakeVoicemailStateSender captures sent messages for unit tests so the
+// publishVoicemailStateOnce flow can be exercised without a real signaling
+// client.
+type fakeVoicemailStateSender struct {
+	sent    []sigclient.Message
+	sendErr error
+}
+
+func (f *fakeVoicemailStateSender) Send(m *sigclient.Message) error {
+	if f.sendErr != nil {
+		return f.sendErr
+	}
+	f.sent = append(f.sent, *m)
+	return nil
+}
+
+// mustVoicemailStoreWith opens a store under t.TempDir(), records `unheard`
+// messages then `heard` messages, and marks the latter as heard. Sleeps a
+// touch between recordings to keep their UnixMilli IDs strictly increasing.
+func mustVoicemailStoreWith(t *testing.T, unheard, heard int) *voicemail.Store {
+	t.Helper()
+	s, err := voicemail.Open(t.TempDir(), voicemail.Options{})
+	if err != nil {
+		t.Fatalf("voicemail.Open: %v", err)
+	}
+	for i := 0; i < unheard+heard; i++ {
+		r, err := s.BeginRecording()
+		if err != nil {
+			t.Fatalf("BeginRecording[%d]: %v", i, err)
+		}
+		if _, err := r.AppendFrame([]byte{0xff, 0x00}); err != nil {
+			t.Fatalf("AppendFrame[%d]: %v", i, err)
+		}
+		m, err := r.Finalize()
+		if err != nil {
+			t.Fatalf("Finalize[%d]: %v", i, err)
+		}
+		if i < heard {
+			if err := s.MarkHeard(m.ID); err != nil {
+				t.Fatalf("MarkHeard[%d]: %v", i, err)
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return s
+}
+
+// TestPublishVoicemailStateOnce_Sequence walks publishVoicemailStateOnce
+// through the lifecycle a real daemon sees: post-connect snapshot (sentinel
+// -1 forces send), MarkHeard moves count down, no-op call dedups, force-send
+// at the next reconnect even when count is unchanged.
+func TestPublishVoicemailStateOnce_Sequence(t *testing.T) {
+	store := mustVoicemailStoreWith(t, 3, 1)
+	sender := &fakeVoicemailStateSender{}
+	last := int64(-1)
+
+	// Post-connect snapshot. Sentinel forces the send even though count
+	// would otherwise be "unchanged" against -1.
+	if !publishVoicemailStateOnce(sender, store, &last, true) {
+		t.Fatal("first publish (force=true) returned false, want sent")
+	}
+	if got, want := sender.sent[len(sender.sent)-1].VoicemailUnheardCount, 3; got != want {
+		t.Errorf("initial count: got %d want %d", got, want)
+	}
+	if last != 3 {
+		t.Errorf("last after initial publish: got %d want 3", last)
+	}
+
+	// Mutation trigger fires but count has not changed. Dedup skips the send.
+	if publishVoicemailStateOnce(sender, store, &last, false) {
+		t.Fatal("dedup publish returned true, want skip")
+	}
+	if got := len(sender.sent); got != 1 {
+		t.Errorf("send count after dedup: got %d want 1", got)
+	}
+
+	// Mark one heard. Mutation trigger now sees a real delta and sends.
+	msgs, err := store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var firstUnheard int64
+	for _, m := range msgs {
+		if !m.Heard {
+			firstUnheard = m.ID
+			break
+		}
+	}
+	if firstUnheard == 0 {
+		t.Fatal("no unheard message to mark")
+	}
+	if err := store.MarkHeard(firstUnheard); err != nil {
+		t.Fatalf("MarkHeard: %v", err)
+	}
+	if !publishVoicemailStateOnce(sender, store, &last, false) {
+		t.Fatal("change publish returned false, want sent")
+	}
+	if got, want := sender.sent[len(sender.sent)-1].VoicemailUnheardCount, 2; got != want {
+		t.Errorf("post-MarkHeard count: got %d want %d", got, want)
+	}
+
+	// Reconnect with unchanged count: forced publish must still fire.
+	if !publishVoicemailStateOnce(sender, store, &last, true) {
+		t.Fatal("forced reconnect publish returned false, want sent")
+	}
+	if got, want := sender.sent[len(sender.sent)-1].VoicemailUnheardCount, 2; got != want {
+		t.Errorf("forced reconnect count: got %d want %d", got, want)
+	}
+
+	// Type assertion across all sends.
+	for i, m := range sender.sent {
+		if m.Type != sigclient.TypeVoicemailState {
+			t.Errorf("send[%d].Type: got %q want %q", i, m.Type, sigclient.TypeVoicemailState)
+		}
+	}
+}
+
+// TestPublishVoicemailStateOnce_NilStore confirms a nil store (feature
+// disabled at boot) is a silent no-op: no send, no last-published mutation,
+// no error.
+func TestPublishVoicemailStateOnce_NilStore(t *testing.T) {
+	sender := &fakeVoicemailStateSender{}
+	last := int64(-1)
+	if publishVoicemailStateOnce(sender, nil, &last, true) {
+		t.Fatal("expected nil-store call to skip, got sent")
+	}
+	if len(sender.sent) != 0 {
+		t.Errorf("expected zero sends, got %d", len(sender.sent))
+	}
+	if last != -1 {
+		t.Errorf("last mutated on nil-store: got %d want -1", last)
+	}
+}
+
+// TestPublishVoicemailStateOnce_SendFailureLeavesBaseline ensures a Send
+// error does not advance *last, so the next trigger retries from the same
+// baseline rather than silently swallowing the failed publish.
+func TestPublishVoicemailStateOnce_SendFailureLeavesBaseline(t *testing.T) {
+	store := mustVoicemailStoreWith(t, 2, 0)
+	sender := &fakeVoicemailStateSender{sendErr: errors.New("ws closed")}
+	last := int64(-1)
+	if publishVoicemailStateOnce(sender, store, &last, true) {
+		t.Fatal("expected false on send error")
+	}
+	if last != -1 {
+		t.Errorf("last advanced on failed send: got %d want -1", last)
+	}
+	// Recover the sender, retry: should publish 2.
+	sender.sendErr = nil
+	if !publishVoicemailStateOnce(sender, store, &last, false) {
+		t.Fatal("retry after recovery returned false, want sent")
+	}
+	if len(sender.sent) != 1 || sender.sent[0].VoicemailUnheardCount != 2 {
+		t.Errorf("unexpected sends after retry: %+v", sender.sent)
+	}
+}
+
 // TestLineSettingsVoicemailConversion locks in the seconds->Duration wire
 // conversion used by the line_settings receiver. The receiver itself is
 // inline inside the main message loop; this mirrors its conversion math so
