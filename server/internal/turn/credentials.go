@@ -1,3 +1,6 @@
+// Package turn generates time-limited TURN credentials using the HMAC-SHA1
+// scheme described in RFC 8489. Credentials expire after a configurable TTL
+// so a stolen credential set has a bounded useful lifetime.
 package turn
 
 import (

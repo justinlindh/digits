@@ -1,3 +1,8 @@
+// Package web is the HTTP layer for signald. Handler wires together all
+// stores, the signaling hub, and the auth layer into a single http.Handler
+// via Router. Templates are embedded at build time; static assets are either
+// embedded (production) or served from disk (DevMode). Rate limiters protect
+// sensitive endpoints (auth, pairing, WebSocket upgrade) at the handler level.
 package web
 
 import (

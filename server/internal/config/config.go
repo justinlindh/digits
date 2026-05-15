@@ -1,3 +1,6 @@
+// Package config loads signald's runtime configuration from environment
+// variables. All settings live in Config; call Load to populate one with
+// environment values and built-in defaults.
 package config
 
 import "os"

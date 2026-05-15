@@ -1,3 +1,6 @@
+// Package email provides a Sender interface and two implementations:
+// SMTPSender for production mail delivery and LogSender for development
+// environments that log the link to stdout instead of sending a message.
 package email
 
 import (

@@ -1,4 +1,7 @@
-// server/internal/ratelimit/ratelimit.go
+// Package ratelimit provides an in-memory, IP-based rate limiter using a
+// fixed-window token bucket. It is intended for protecting individual HTTP
+// endpoints (auth, pairing, WebSocket upgrade) from brute-force and
+// enumeration attacks within a single process.
 package ratelimit
 
 import (
@@ -17,28 +20,44 @@ type bucket struct {
 // Limiter is an in-memory IP-based rate limiter using a fixed-window token bucket.
 type Limiter struct {
 	mu      sync.Mutex
+	once    sync.Once
 	buckets map[string]*bucket
 	limit   int
 	window  time.Duration
+	done    chan struct{}
 }
 
 // New creates a rate limiter that allows `limit` requests per `window` per IP.
 // Starts a background goroutine to clean up stale entries every 5 minutes.
+// Call Close to stop the background goroutine when the Limiter is no longer needed.
 func New(limit int, window time.Duration) *Limiter {
 	l := &Limiter{
 		buckets: make(map[string]*bucket),
 		limit:   limit,
 		window:  window,
+		done:    make(chan struct{}),
 	}
 	go l.cleanupLoop()
 	return l
 }
 
+// Close stops the background cleanup goroutine. Safe to call multiple times.
+// The Limiter remains usable for Allow/Cleanup/Middleware after Close returns,
+// but stale entries will no longer be evicted automatically.
+func (l *Limiter) Close() {
+	l.once.Do(func() { close(l.done) })
+}
+
 func (l *Limiter) cleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		l.Cleanup()
+	for {
+		select {
+		case <-l.done:
+			return
+		case <-ticker.C:
+			l.Cleanup()
+		}
 	}
 }
 

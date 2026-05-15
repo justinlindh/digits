@@ -1,3 +1,7 @@
+// Package line manages phone lines: their numbers, per-line settings (DND,
+// voice style, voicemail, auto-update), and authorization. Store provides
+// the database queries; Authorizer enforces per-request access control;
+// Settings holds the JSON-encoded per-line configuration.
 package line
 
 import (

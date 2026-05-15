@@ -10,6 +10,7 @@ import (
 
 func TestLimiterAllowsUnderLimit(t *testing.T) {
 	lim := New(5, time.Minute)
+	t.Cleanup(lim.Close)
 	for i := 0; i < 5; i++ {
 		if !lim.Allow("1.2.3.4") {
 			t.Fatalf("request %d should be allowed", i+1)
@@ -19,6 +20,7 @@ func TestLimiterAllowsUnderLimit(t *testing.T) {
 
 func TestLimiterBlocksOverLimit(t *testing.T) {
 	lim := New(3, time.Minute)
+	t.Cleanup(lim.Close)
 	for i := 0; i < 3; i++ {
 		lim.Allow("1.2.3.4")
 	}
@@ -29,6 +31,7 @@ func TestLimiterBlocksOverLimit(t *testing.T) {
 
 func TestLimiterTracksIPsSeparately(t *testing.T) {
 	lim := New(1, time.Minute)
+	t.Cleanup(lim.Close)
 	if !lim.Allow("1.1.1.1") {
 		t.Fatal("first IP should be allowed")
 	}
@@ -42,6 +45,7 @@ func TestLimiterTracksIPsSeparately(t *testing.T) {
 
 func TestLimiterRefillsAfterWindow(t *testing.T) {
 	lim := New(1, 50*time.Millisecond)
+	t.Cleanup(lim.Close)
 	lim.Allow("1.2.3.4")
 	if lim.Allow("1.2.3.4") {
 		t.Fatal("should be blocked immediately")
@@ -54,6 +58,7 @@ func TestLimiterRefillsAfterWindow(t *testing.T) {
 
 func TestMiddleware429(t *testing.T) {
 	lim := New(1, time.Minute)
+	t.Cleanup(lim.Close)
 	handler := lim.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -75,6 +80,7 @@ func TestMiddleware429(t *testing.T) {
 
 func TestMiddlewareRespectsXForwardedFor(t *testing.T) {
 	lim := New(1, time.Minute)
+	t.Cleanup(lim.Close)
 	handler := lim.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -106,6 +112,7 @@ func TestMiddlewareRespectsXForwardedFor(t *testing.T) {
 
 func TestCleanupRemovesStaleEntries(t *testing.T) {
 	lim := New(1, 50*time.Millisecond)
+	t.Cleanup(lim.Close)
 	lim.Allow("stale-ip")
 	time.Sleep(60 * time.Millisecond)
 	lim.Cleanup()
