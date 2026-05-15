@@ -294,11 +294,16 @@ func (d *daemonCallbacks) HangupCall() {
 	var finalizedVoicemail bool
 	d.recorderMu.Lock()
 	if d.recorder != nil {
-		if _, err := d.recorder.Finalize(); err != nil {
+		msg, err := d.recorder.Finalize()
+		if err != nil {
 			slog.Error("hangup: voicemail finalize failed", "error", err)
 		}
 		d.recorder = nil
-		finalizedVoicemail = true
+		// A zero-frame recording (the caller hung up during the greeting,
+		// before the recorder was armed) is discarded by Finalize and
+		// returns a zero Message: nothing landed, so the unheard count did
+		// not move and the LED does not need re-emitting.
+		finalizedVoicemail = msg.ID != 0
 	}
 	d.recorderMu.Unlock()
 

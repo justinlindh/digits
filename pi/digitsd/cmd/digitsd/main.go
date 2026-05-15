@@ -149,6 +149,15 @@ type daemonCallbacks struct {
 	recorderMu        sync.Mutex
 	voicemailWebRTCCh chan []int16
 
+	// voicemailRecordArmed gates the OnRemoteTrack tee into the recorder.
+	// The remote track reaches its live phase right after the call
+	// connects, well before the outgoing greeting and prompt beep finish,
+	// so appending from that point would prepend the whole greeting
+	// duration of caller-side silence to every message. The greeting
+	// goroutine sets this true at the moment it transitions into the
+	// recording state, so the recorder only ever sees the actual message.
+	voicemailRecordArmed atomic.Bool
+
 	// Greeting recording (separate from message recording above). Active
 	// only between *97 entry and either # / hook-on / max-duration. Lives
 	// under its own mutex so it doesn't contend with the message recorder
