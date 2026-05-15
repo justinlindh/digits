@@ -7,7 +7,7 @@ import "time"
 // surface; the same-package _test.go gives unit tests access without any
 // build tags.
 
-var testTiming = Timing{
+var testTiming = controllerTiming{
 	AutoDialDelay:            time.Millisecond,
 	RejectWait:               time.Millisecond,
 	RejectPollInterval:       time.Millisecond,

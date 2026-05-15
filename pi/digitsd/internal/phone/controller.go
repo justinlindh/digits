@@ -54,7 +54,7 @@ const (
 // so the controller self-fires here once it has the full number.
 const addDialDigitsRequired = 7
 
-type Timing struct {
+type controllerTiming struct {
 	AutoDialDelay          time.Duration // silence between last digit and first ringback
 	RejectWait             time.Duration // simulated connection attempt before intercept
 	RejectPollInterval     time.Duration // poll interval while waiting for intercept tone to finish
@@ -64,7 +64,7 @@ type Timing struct {
 	TreatmentHowlerDuration  time.Duration // howler tone duration
 }
 
-var defaultTiming = Timing{
+var defaultTiming = controllerTiming{
 	AutoDialDelay:            800 * time.Millisecond,
 	RejectWait:               3 * time.Second,
 	RejectPollInterval:       200 * time.Millisecond,
@@ -119,7 +119,7 @@ type Controller struct {
 	mu             sync.Mutex
 	state          State
 	cb             Callbacks
-	timing         Timing
+	timing         controllerTiming
 	digits         string
 	ownNumber      string
 	contactChecker ContactChecker
