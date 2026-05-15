@@ -221,6 +221,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	webrtcCh := make(chan []int16, 8)
 	d.voicemailWebRTCCh = webrtcCh
 
+	// Recording stays disarmed until the greeting and beep finish. The
+	// remote track goes live well before then, so an early tee would
+	// prepend the greeting duration of caller-side silence to the message.
+	d.voicemailRecordArmed.Store(false)
+
 	d.peerMgr.OnRemoteTrack = func(track *webrtc.TrackRemote) {
 		go func() {
 			defer recoverGoroutine("voicemail-record")
@@ -272,10 +277,10 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				}
 			}
 
-			// Phase 3: live. Each packet is decoded for the PCM channel AND
-			// the raw payload is teed into the recorder. On atCap, finalize
-			// under recorderMu and trigger the controller-side hangup via
-			// VoicemailRecordEnded.
+			// Phase 3: live. Each packet is decoded for the PCM channel AND,
+			// once recording is armed, the raw payload is teed into the
+			// recorder. On atCap, finalize under recorderMu and trigger the
+			// controller-side hangup via VoicemailRecordEnded.
 			for {
 				pkt, _, err := track.ReadRTP()
 				if err != nil {
@@ -289,10 +294,14 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 					continue
 				}
 
+				// Tee into the recorder only once the greeting goroutine has
+				// armed recording. Before that the live track carries the
+				// caller listening to the greeting; appending it would prepend
+				// the greeting duration of silence to the stored message.
 				d.recorderMu.Lock()
 				rec := d.recorder
 				d.recorderMu.Unlock()
-				if rec != nil {
+				if rec != nil && d.voicemailRecordArmed.Load() {
 					atCap, err := rec.AppendFrame(pkt.Payload)
 					if err != nil {
 						slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
@@ -399,6 +408,11 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 		time.Sleep(500 * time.Millisecond)
 		if ctrl.State() == phone.StateVOICEMAIL_GREETING {
 			pipeline.SetMuted(true)
+			// Arm the recorder tee now: the beep has finished, so the next
+			// caller frames are the actual message. Anything the remote
+			// track delivered earlier (the caller listening to the greeting)
+			// was decoded but not recorded.
+			d.voicemailRecordArmed.Store(true)
 			ctrl.SetVoicemailRecording()
 		}
 	}()
