@@ -9,6 +9,13 @@ import (
 	"strings"
 )
 
+// RowScanner is the subset of *sql.Row / *sql.Rows that scan-helpers depend
+// on. Defined here once so per-table scan functions across packages can share
+// the same single-row / multi-row abstraction without redeclaring it.
+type RowScanner interface {
+	Scan(dest ...any) error
+}
+
 // Placeholders returns a comma-separated string of PostgreSQL positional
 // placeholders ($1, $2, …, $n) for use in SQL IN clauses.
 func Placeholders(n int) string {

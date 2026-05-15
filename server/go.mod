@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/XSAM/otelsql v0.42.0
-	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/pyroscope-go v1.3.0
 	github.com/redis/go-redis/v9 v9.19.0

@@ -6,7 +6,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/pion/webrtc/v4 v4.2.12
 	go.bug.st/serial v1.6.4
-	golang.org/x/mod v0.35.0
+	golang.org/x/mod v0.36.0
 	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302
 )
 

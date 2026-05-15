@@ -14,7 +14,13 @@ Everything you need to build a Digits phone from scratch.
 
 - [Architecture overview](architecture/overview.md) -- system design, call path, data model, NAT traversal
 - [UART protocol](architecture/uart-protocol.md) -- Pico/Pi communication spec
+- [Voicemail](voicemail.md) -- answering machine architecture, storage format, signaling, service codes
 - [State machine](diagrams/phone-fsm.dot) -- firmware FSM ([rendered](diagrams/phone-fsm.png))
+
+## Using Your Phone
+
+- [Quick start guide](user-guide.md) -- setup and everyday use
+- [Voicemail guide](voicemail-guide.md) -- using and configuring the answering machine
 
 ## Run Your Own Server
 

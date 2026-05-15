@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
 const inviteTTL = 7 * 24 * time.Hour
@@ -54,7 +56,7 @@ func generateInviteToken() (string, error) {
 
 const inviteColumns = `id, household_id, email, invited_by, token, status, created_at, accepted_at, expires_at`
 
-func scanInvite(row rowScanner) (*HouseholdInvite, error) {
+func scanInvite(row dbutil.RowScanner) (*HouseholdInvite, error) {
 	inv := &HouseholdInvite{}
 	err := row.Scan(&inv.ID, &inv.HouseholdID, &inv.Email, &inv.InvitedBy,
 		&inv.Token, &inv.Status, &inv.CreatedAt, &inv.AcceptedAt, &inv.ExpiresAt)
