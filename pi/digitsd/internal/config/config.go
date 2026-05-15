@@ -99,7 +99,7 @@ type Config struct {
 	// WiFiFallback configures the WiFi auto-fallback supervisor.
 	WiFiFallback WiFiFallback `json:"wifi_fallback"`
 
-	// Voicemail configures the answering-machine feature. Disabled by default.
+	// Voicemail configures the answering-machine feature. Enabled by default.
 	Voicemail Voicemail `json:"voicemail"`
 
 	// path is the file the config was loaded from; used by Save.
