@@ -135,7 +135,6 @@ func TestOnRegisteredPushesVoicemail(t *testing.T) {
 		Voicemail: &Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxMessageSeconds:  100,
 			MaxStoredMessages:  40,
 			RetrievalCode:      "*97",
 		},
@@ -163,7 +162,6 @@ func TestOnRegisteredPushesVoicemail(t *testing.T) {
 		want := Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxMessageSeconds:  100,
 			MaxStoredMessages:  40,
 			RetrievalCode:      "*97",
 		}

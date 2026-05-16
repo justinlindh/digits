@@ -623,8 +623,8 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 }
 
 // handlePhoneVoicemailPost accepts a form submission with the full voicemail
-// configuration for the line. All five fields are validated server-side
-// before any DB write: out-of-range ints and malformed retrieval codes
+// configuration for the line. Every field is validated server-side before
+// any DB write: out-of-range ints and malformed retrieval codes
 // return 400 with a friendly message so the form can surface it. On success
 // the new settings are persisted and pushed to the device (if connected),
 // then either the voicemail-section partial is swapped (htmx) or the user
@@ -638,11 +638,6 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	enabled := strings.TrimSpace(r.FormValue("enabled")) == "on"
 	ring, ok := parseClampedInt(w, r, "ring_timeout_seconds",
 		line.VoicemailRingTimeoutMin, line.VoicemailRingTimeoutMax)
-	if !ok {
-		return
-	}
-	maxMsg, ok := parseClampedInt(w, r, "max_message_seconds",
-		line.VoicemailMaxMessageMin, line.VoicemailMaxMessageMax)
 	if !ok {
 		return
 	}
@@ -669,7 +664,6 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	next.Voicemail = line.Voicemail{
 		Enabled:            enabled,
 		RingTimeoutSeconds: ring,
-		MaxMessageSeconds:  maxMsg,
 		MaxStoredMessages:  maxStored,
 		RetrievalCode:      code,
 	}
@@ -690,10 +684,10 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 }
 
 // handlePhoneVoicemailTogglePost flips Voicemail.Enabled for a line and
-// swaps the detail-page voicemail section. The other four voicemail fields
+// swaps the detail-page voicemail section. The other voicemail fields
 // are preserved through Normalize, which backfills defaults when the row
 // was created before voicemail existed. Path is intentionally separate
-// from the five-field POST so a checkbox-only round-trip does not have to
+// from the full-form POST so a checkbox-only round-trip does not have to
 // resubmit the timing/code fields.
 func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
