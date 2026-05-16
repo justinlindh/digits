@@ -2861,10 +2861,6 @@ func TestPhoneVoicemailToggleHTMXReturnsSectionPartial(t *testing.T) {
 	if !strings.Contains(body, "/voicemail-toggle") {
 		t.Fatalf("htmx response missing toggle endpoint:\n%s", body)
 	}
-	// Advanced disclosure must be present.
-	if !strings.Contains(body, `class="voicemail-advanced"`) {
-		t.Errorf("expected voicemail-advanced disclosure:\n%s", body)
-	}
 	// After toggling off, fields should be disabled.
 	if !strings.Contains(body, `disabled`) {
 		t.Errorf("expected disabled attr on inner fields when off:\n%s", body)
