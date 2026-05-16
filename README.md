@@ -157,15 +157,16 @@ Hidden codes entered on the keypad while the handset is off-hook.
 
 These are dialed from dial tone (not prefixed with `*#`), matching the original 1990s POTS behavior.
 
-### Voicemail (*98 / *97 / *99)
+### Voicemail (*96 / *97 / *98 / *99)
 
 | Code | Action | Details |
 |------|--------|---------|
-| `*98` | Listen to messages | Plays your messages oldest first. During playback: `7` deletes, `9` saves, `#` skips, `*` replays. The retrieval code is configurable; `*98` is the default. |
+| `*96` | Audition greeting | Plays your current outgoing greeting through the earpiece, so you can hear what callers hear. |
 | `*97` | Record greeting | Records a custom outgoing greeting after the tone. |
+| `*98` | Listen to messages | Plays your messages oldest first, then any saved (already heard) messages. During playback: `7` deletes, `9` saves, `#` skips, `*` replays. The retrieval code is configurable; `*98` is the default. |
 | `*99` | Delete greeting | Removes your custom greeting and restores the default. |
 
-When a call rings unanswered past the configured timeout, the phone answers it, plays your greeting, and records the caller's message. The handset microphone is muted while recording, so a caller never hears your room. See [Voicemail](docs/voicemail.md) for the FSM, on-disk storage format, signaling, and configuration.
+When a call rings unanswered past the configured timeout, the phone answers it, plays your greeting, and records the caller's message. The handset microphone is muted while recording, so a caller never hears your room. See the [voicemail guide](docs/voicemail-guide.md) for using and configuring it, or [Voicemail](docs/voicemail.md) for the engineering reference: FSM, on-disk storage format, signaling, and configuration.
 
 ### Confirmation feedback
 
@@ -229,6 +230,8 @@ On the hardware side, I am not an electrical engineer. I learned KiCad, read dat
 - [Architecture](docs/architecture/overview.md)
 - [Party Line](docs/architecture/party-line.md)
 - [Voicemail](docs/voicemail.md)
+- [User guide](docs/user-guide.md)
+- [Voicemail guide](docs/voicemail-guide.md)
 - [Self-hosting](docs/hosting/self-hosting.md)
 - [Load testing](docs/hosting/load-testing.md)
 

@@ -28,7 +28,9 @@ means no new messages. The slow pulse is your "you have voicemail" light.
 ### Listening to your messages
 
 Lift the handset and dial `*98`. The phone tells you how many new messages you
-have, then plays them one at a time, oldest first.
+have, reads out the keypad controls, then plays the messages one at a time,
+oldest first. When you have more than one new message, the phone says "Message
+one", "Message two", and so on before each one so you can keep track.
 
 While a message is playing, the keypad controls the session:
 
@@ -36,24 +38,49 @@ While a message is playing, the keypad controls the session:
 |-----|--------------|
 | `7` | Delete this message and move to the next one. You hear "Message deleted". |
 | `9` | Save this message and move to the next one. You hear "Message saved". |
-| `#` | Skip to the next message without saving or deleting this one. |
+| `#` | Skip to the next message. The skipped message stays new, so you hear it again next time. |
 | `*` | Replay the current message from the start. |
 
-A saved message is marked as heard and is kept; a deleted message is gone for
-good. When there are no more new messages, the phone says "End of messages".
-Hang up at any time to stop.
+Letting a message play all the way to the end counts as listening to it: the
+phone marks it heard and keeps it. Pressing `9` does the same thing on demand.
+A heard message is not gone, it is kept and you can hear it again in the saved
+review (below). Only `7` deletes a message for good.
+
+### Saved messages
+
+After your new messages, if you have older messages you have already heard, the
+phone says how many saved messages you have and plays those too. You can
+delete, replay, or skip them with the same keys. If you dial `*98` and have no
+new messages but do have saved ones, the phone goes straight to the saved
+review.
+
+When there are no more messages of either kind, the phone says "End of
+messages". Hang up at any time to stop.
+
+### Hearing your current greeting
+
+To check what callers hear when they reach your voicemail, lift the handset and
+dial `*96`. The phone says "Your current answering machine greeting is...", then
+plays your active greeting: your own recording if you have made one, otherwise
+the standard Digits greeting. It then returns to dial tone. This is playback
+only; it never changes your greeting or your messages.
 
 ### Recording your own greeting
 
 By default, callers hear a standard Digits greeting. To record your own:
 
 1. Lift the handset and dial `*97`.
-2. Wait for the prompt: "Record your greeting after the tone."
+2. Wait for the prompt. It tells you to press the pound key when you are
+   finished, or hang up, and is followed by a short pause and a tone.
 3. After the tone, speak your greeting.
-4. The phone confirms with "Greeting saved".
+4. Press `#` when you are done. The phone confirms with "Greeting saved".
 
-Your greeting can be up to 60 seconds long. Recording a new greeting replaces
-the previous one.
+Your greeting can be up to 60 seconds long. You can also finish by hanging up,
+and the phone stops on its own at the 60-second limit; all three ways save what
+you recorded. Recording a new greeting replaces the previous one.
+
+To hear your greeting back, dial `*96` (see "Hearing your current greeting"
+above).
 
 ### Removing your greeting
 
@@ -64,8 +91,8 @@ to dial tone.
 ## Configuring voicemail in the web app
 
 Voicemail settings live on the phone's detail page in the web app. From the
-phones list, open a phone to its detail page (`/phones/{number}`), then find
-the voicemail section.
+phones list, open a phone to reach its detail page, then find the voicemail
+section.
 
 ### Turning voicemail on and off
 
@@ -137,9 +164,9 @@ did not finish cleanly the phone falls back to the standard greeting. Dial
 before hanging up.
 
 **I changed the message limit or storage cap and nothing changed.** The
-maximum message length and the storage cap are read when the phone's daemon
-starts. A change to either takes effect after the phone restarts. The on/off
-toggle, ring timeout, and retrieval code apply right away.
+maximum message length and the storage cap are read when the phone starts up.
+A change to either takes effect after the phone restarts. The on/off toggle,
+ring timeout, and retrieval code apply right away.
 
 **The message-waiting light is pulsing but `*98` says no messages.** The slow
 pulse tracks unheard messages. If you saved or deleted everything, the light
@@ -148,3 +175,9 @@ clears on the next idle check. If it persists, restart the phone.
 **Messages are missing.** The phone keeps a fixed number of messages and
 deletes the oldest when full. If old messages disappeared, the box hit its cap.
 Clear messages regularly to avoid this.
+
+## How it works
+
+For how voicemail is built (the call state machine, on-disk message storage,
+audio pipeline, signaling, and service-code reference), see
+[voicemail.md](voicemail.md).
