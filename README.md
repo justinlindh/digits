@@ -230,6 +230,7 @@ On the hardware side, I am not an electrical engineer. I learned KiCad, read dat
 - [Architecture](docs/architecture/overview.md)
 - [Party Line](docs/architecture/party-line.md)
 - [Voicemail](docs/voicemail.md)
+- [User guide](docs/user-guide.md)
 - [Voicemail guide](docs/voicemail-guide.md)
 - [Self-hosting](docs/hosting/self-hosting.md)
 - [Load testing](docs/hosting/load-testing.md)
