@@ -163,7 +163,7 @@ These are dialed from dial tone (not prefixed with `*#`), matching the original 
 |------|--------|---------|
 | `*96` | Audition greeting | Plays your current outgoing greeting through the earpiece, so you can hear what callers hear. |
 | `*97` | Record greeting | Records a custom outgoing greeting after the tone. |
-| `*98` | Listen to messages | Plays your messages oldest first, then any saved (already heard) messages. During playback: `7` deletes, `9` saves, `#` skips, `*` replays. The retrieval code is configurable; `*98` is the default. |
+| `*98` | Listen to messages | Plays your messages oldest first, then any saved (already heard) messages. During playback: `7` deletes, `9` saves, `#` skips, `*` replays. |
 | `*99` | Delete greeting | Removes your custom greeting and restores the default. |
 
 When a call rings unanswered past the configured timeout, the phone answers it, plays your greeting, and records the caller's message. The handset microphone is muted while recording, so a caller never hears your room. See the [voicemail guide](docs/voicemail-guide.md) for using and configuring it, or [Voicemail](docs/voicemail.md) for the engineering reference: FSM, on-disk storage format, signaling, and configuration.

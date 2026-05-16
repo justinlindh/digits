@@ -241,12 +241,13 @@ in `internal/assets/embed/data/tones/`:
 | `vm_new_message.wav` | "new message" (singular) |
 | `vm_new_messages.wav` | "new messages" (plural) |
 | `vm_no_messages.wav` | "You have no messages" |
-| `vm_lost_count.wav` | A self-contained "many messages" phrase for counts of 10 or more |
+| `vm_no_new_messages.wav` | "You have no new messages", played before saved review when `*98` is dialed with no unheard messages |
 | `vm_message_deleted.wav` | "Message deleted" |
 | `vm_message_saved.wav` | "Message saved" |
 | `vm_message.wav` | "Message" (composed with a digit clip for the per-message announcement) |
 | `vm_saved_message.wav` | "saved message" (singular) |
 | `vm_saved_messages.wav` | "saved messages" (plural) |
+| `vm_saved_next.wav` | "Saved messages are next", played when retrieval crosses from the new-message phase into saved review |
 | `vm_end_of_messages.wav` | "End of messages" |
 | `vm_playback_controls.wav` | The spoken playback-controls prompt, played once per `*98` session |
 | `vm_record_greeting.wav` | The greeting-recording prompt, including how to finish ("press pound when finished, or hang up") |
@@ -263,10 +264,10 @@ feature.
 phrase from individual clips:
 
 - `count <= 0`: play `vm_no_messages` alone.
-- `count >= 10`: play `vm_lost_count` alone. The system does not read out
-  counts of ten or more digit by digit; one phrase covers the whole range.
-- otherwise: play the sequence `vm_you_have`, `spoken_<count>`, then
-  `vm_new_message` for one or `vm_new_messages` for more than one.
+- otherwise: play the sequence `vm_you_have`, `spoken_<min(count, 9)>`, then
+  `vm_new_message` for one or `vm_new_messages` for more than one. The spoken
+  count is capped at nine: there is no digit clip for a larger number, so a
+  mailbox with ten or more unheard messages is announced as "nine".
 
 **Composing "Message N".** During a `*98` retrieval session that holds two or
 more messages, `announceMessageNumber(number)` plays a spoken "Message N"
@@ -346,10 +347,8 @@ type Settings struct {
 }
 
 type Voicemail struct {
-    Enabled            bool   `json:"enabled"`
-    RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-    MaxStoredMessages  int    `json:"max_stored_messages"`
-    RetrievalCode      string `json:"retrieval_code"`
+    Enabled            bool `json:"enabled"`
+    RingTimeoutSeconds int  `json:"ring_timeout_seconds"`
 }
 ```
 
@@ -357,8 +356,7 @@ The inner `Voicemail` fields deliberately omit `omitempty` so a stored row
 carries every field literally; a later read can tell "Enabled was explicitly
 false" apart from "field absent". Time fields are integer seconds in storage
 and on the wire. `line.DefaultVoicemail()` is what a new line starts with:
-`Enabled: true`, ring timeout 20 s, max stored 50, retrieval
-code `*98`. `CreateLine` seeds the `settings` column with
+`Enabled: true`, ring timeout 20 s. `CreateLine` seeds the `settings` column with
 `DefaultSettings().Normalize()` so the non-zero `enabled` default survives the
 DB round trip.
 
@@ -377,12 +375,11 @@ Bounds are package constants in `line/settings.go`, shared by the HTTP handler,
 | Field | Min | Max | Out-of-range heals to |
 |-------|-----|-----|-----------------------|
 | `ring_timeout_seconds` | 5 | 60 | 20 |
-| `max_stored_messages` | 5 | 200 | 50 |
 
-The retrieval code must match `^[0-9*#]{2,6}$` (2 to 6 characters, only digits,
-`*`, and `#`) and must contain at least one `*` or `#`. A purely numeric code
-is rejected so it cannot shadow a real 7-digit dial. An invalid code heals to
-`*98`.
+Ring timeout is the only validated field. The message-storage cap and the
+retrieval code are no longer per-line settings: they are fixed in `digitsd` as
+the `VoicemailMaxStoredMessages` (50) and `VoicemailRetrievalCode` (`*98`)
+constants in `internal/config/config.go`.
 
 ### Endpoints
 
@@ -390,19 +387,17 @@ Both endpoints are POST, registered on the authenticated mux in
 `web/handler.go`, and ownership-checked with `requireLineOwnership` (an auth
 failure returns 404, not 403).
 
-- `POST /phones/{number}/voicemail` (`handlePhoneVoicemailPost`) takes the full
-  form of all four settings: the `enabled` checkbox, the two integer fields
-  (`ring_timeout_seconds`, `max_stored_messages`), and `retrieval_code`. The
-  integers are validated with `parseClampedInt` (400 with a friendly "must be
-  an integer between MIN and MAX" message on a bad value) and the code with
-  `IsValidRetrievalCode` (400 on a malformed code), both before any DB write.
-  On success it builds the new `Voicemail`, runs `Normalize()`, persists, and
-  pushes to the device.
+- `POST /phones/{number}/voicemail` (`handlePhoneVoicemailPost`) takes the
+  `enabled` checkbox and the `ring_timeout_seconds` integer field. The integer
+  is validated with `parseClampedInt` (400 with a friendly "must be an integer
+  between MIN and MAX" message on a bad value) before any DB write. On success
+  it builds the new `Voicemail`, runs `Normalize()`, persists, and pushes to
+  the device.
 - `POST /phones/{number}/voicemail-toggle`
   (`handlePhoneVoicemailTogglePost`) flips `Voicemail.Enabled` only and takes no
-  body fields. The other three fields are preserved through `Normalize()`, which
-  backfills defaults if the row predates voicemail. It is a separate path so a
-  checkbox round trip does not have to resubmit the timing and code fields.
+  body fields. The ring timeout is preserved through `Normalize()`, which
+  backfills the default if the row predates voicemail. It is a separate path so
+  a checkbox round trip does not have to resubmit the ring timeout.
 
 Both swap the `voicemail-section` partial back for HTMX requests
 (`am-voicemail-section` in the answering-machine theme) or send a 303 redirect
@@ -418,9 +413,8 @@ by the `voicemail-section` partial (intercom and dialup themes) or
 
 - An enabled checkbox that `hx-post`s to `/voicemail-toggle` and swaps
   `#voicemail-section`.
-- An advanced `<details>` block holding the four other fields. The whole form
-  `hx-post`s to `/voicemail`. When voicemail is disabled the field block is
-  dimmed and the inputs are `disabled`.
+- An inline ring-timeout field. The form `hx-post`s to `/voicemail`. When
+  voicemail is disabled the field is dimmed and the input is `disabled`.
 - An unheard-count badge ("N unheard" chip, or "MSG N" LED in the
   answering-machine theme) that renders only when voicemail is enabled and the
   unheard count is greater than zero.
@@ -438,10 +432,8 @@ part of a line-settings update. The wire types are in
 
 ```go
 type Voicemail struct {
-    Enabled            bool   `json:"enabled"`
-    RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-    MaxStoredMessages  int    `json:"max_stored_messages"`
-    RetrievalCode      string `json:"retrieval_code"`
+    Enabled            bool `json:"enabled"`
+    RingTimeoutSeconds int  `json:"ring_timeout_seconds"`
 }
 
 type LineSettings struct {
@@ -476,13 +468,9 @@ triggers:
   caught up. There is no server-side retry queue.
 
 The wire format uses integer seconds; the daemon converts them to
-`time.Duration` for its own `config.Voicemail`. Not every setting takes effect
-at the same time:
-
-- `Enabled`, `RingTimeout`, and `RetrievalCode` are read live, per ring or per
-  dial, so a change applies on the next inbound call with no restart.
-- `MaxStoredMessages` is baked into the `voicemail.Store` when it is opened at
-  boot, so a change to it takes effect on the next daemon restart.
+`time.Duration` for its own `config.Voicemail`. Both pushed settings, `Enabled`
+and `RingTimeout`, are read live, per ring, so a change applies on the next
+inbound call with no restart.
 
 In the other direction the daemon reports its unheard-message count to the
 server with a `voicemail_state` message (`TypeVoicemailState`) carrying
@@ -492,18 +480,16 @@ explicit `0`, so the server can tell "zero unheard" apart from "not reported".
 ## Service code reference
 
 Service codes are dialed on the phone. The mapping is defined in
-`internal/phone/controller.go`; the retrieval code is configurable and the rest
-are fixed.
+`internal/phone/controller.go`; all four codes are fixed.
 
 | Code | Action |
 |------|--------|
 | `*96` | Audition the active outgoing greeting through the earpiece. Enters `VOICEMAIL_PLAY_GREETING`, then returns to dial tone. |
 | `*97` | Record a custom outgoing greeting. Enters `VOICEMAIL_RECORD_GREETING`. |
-| `*98` | Retrieve stored messages. Enters `VOICEMAIL_PLAYBACK`. This code is the configurable `RetrievalCode`; `*98` is the default. |
+| `*98` | Retrieve stored messages. Enters `VOICEMAIL_PLAYBACK`. |
 | `*99` | Delete the custom greeting and revert to the default. Returns to dial tone. |
 
-`*96`, `*97`, and `*99` are fixed; only `*98` (the `RetrievalCode`) is
-configurable. All four are gated on voicemail being enabled for the line.
+All four codes are fixed and are gated on voicemail being enabled for the line.
 
 During message playback (`VOICEMAIL_PLAYBACK`), DTMF digits control the
 session. The controller routes them to `VoicemailKey(digit)`:
@@ -522,24 +508,24 @@ to dial tone.
 
 ## Limits and defaults
 
-Configurable bounds are defined in `internal/config/config.go`
-(`defaultVoicemail()`). The two recording caps are fixed constants in
-`internal/voicemail/store.go`, not configurable.
+The two server-pushed settings are defined in `internal/config/config.go`
+(`defaultVoicemail()`). The message-storage cap and retrieval code are fixed
+constants in the same file; the two recording caps are fixed constants in
+`internal/voicemail/store.go`.
 
-| Setting | Config field | Default | Notes |
-|---------|--------------|---------|-------|
-| Voicemail enabled | `Enabled` | `true` | Read live; off at boot means the store is never opened |
-| Ring timeout before auto-answer | `RingTimeout` | 20 s | Read live; `0` disables auto-answer |
-| Max stored messages | `MaxStoredMessages` | 50 | Baked into the store at boot; FIFO eviction past the cap |
-| Retrieval code | `RetrievalCode` | `*98` | Read live |
+| Setting | Config field or constant | Default | Notes |
+|---------|--------------------------|---------|-------|
+| Voicemail enabled | `Voicemail.Enabled` | `true` | Server-pushed; read live; off at boot means the store is never opened |
+| Ring timeout before auto-answer | `Voicemail.RingTimeout` | 20 s | Server-pushed; read live; `0` disables auto-answer |
+| Max stored messages | `VoicemailMaxStoredMessages` | 50 | Fixed constant; baked into the store at boot; FIFO eviction past the cap |
+| Retrieval code | `VoicemailRetrievalCode` | `*98` | Fixed constant |
 | Max message duration | `messageMaxDuration` | 10 min | Fixed in `store.go`, not configurable; a backstop for a caller who never hangs up |
 | Max greeting duration | `greetingMaxDuration` | 60 s | Fixed in `store.go`, not configurable |
 
 The config file is `/data/digits/config.json`. Settings pushed from the server
-update this config; see Signaling above for which take effect immediately and
-which need a restart.
+update this config and take effect on the next inbound call; see Signaling
+above.
 
-These daemon-side values are the defaults. The server clamps user-entered
-values to narrower ranges before they are pushed down (ring timeout 5 to 60 s,
-max stored 5 to 200); see Validation ranges under
+These daemon-side values are the defaults. The server clamps the user-entered
+ring timeout to 5 to 60 s before it is pushed down; see Validation ranges under
 Server internals.
