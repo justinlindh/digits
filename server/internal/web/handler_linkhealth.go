@@ -188,7 +188,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	// together issue DB queries we don't want on the per-sample hot path.
 	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
 
-	if err := h.writeInitialSnapshot(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
+	if err := h.writeSampleEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
 		slog.DebugContext(r.Context(), "SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
 		return
 	}
@@ -238,7 +238,10 @@ func writeSSE(w io.Writer, event, data string) error {
 	return err
 }
 
-func (h *Handler) writeInitialSnapshot(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
+// writeSampleEvent renders the call-live panel for both endpoints and emits
+// it as a "sample" SSE frame. Used for the initial stream snapshot and for
+// every subsequent SampleKind event; the two are the same frame.
+func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
 	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
 	if err != nil {
 		return err
@@ -283,23 +286,7 @@ func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flus
 		return err
 	}
 	// SampleKind
-	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
-	if err != nil {
-		return err
-	}
-	calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
-	if err != nil {
-		return err
-	}
-	fragment, err := h.renderLinkHealthPanel(call, callerEp, calleeEp)
-	if err != nil {
-		return err
-	}
-	if err := writeSSE(w, "sample", fragment); err != nil {
-		return err
-	}
-	flusher.Flush()
-	return nil
+	return h.writeSampleEvent(ctx, w, flusher, call, ownedLines, linkedIndex)
 }
 
 // linkedIndexForCall builds the linked-families index for display-name
