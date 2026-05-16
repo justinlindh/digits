@@ -30,6 +30,7 @@ const (
 	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing outgoing greeting then beep
 	StateVOICEMAIL_RECORDING       State = "VOICEMAIL_RECORDING"       // recording caller audio
 	StateVOICEMAIL_RECORD_GREETING State = "VOICEMAIL_RECORD_GREETING" // user is recording their custom outgoing greeting (*97)
+	StateVOICEMAIL_PLAY_GREETING   State = "VOICEMAIL_PLAY_GREETING"   // user dialed *96; auditioning the active outgoing greeting
 	StateVOICEMAIL_PLAYBACK        State = "VOICEMAIL_PLAYBACK"        // user dialed retrieval code; playing back stored messages
 )
 
@@ -102,6 +103,8 @@ type Callbacks interface {
 	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
 	VoicemailRecordGreeting()                                     // *97: user is recording their custom outgoing greeting
 	VoicemailRecordGreetingKey(digit string)                      // DTMF key during *97 recording (e.g. "#" to finish)
+	VoicemailPlayGreeting()                                       // *96: audition the active outgoing greeting through the earpiece
+	VoicemailExitGreetingPlayback()                               // hook-on during *96 audition; daemon stops the one-shot playback
 	VoicemailDeleteGreeting()                                     // *99: clear the custom greeting and revert to default
 	VoicemailEnterPlayback()                                      // *98: enter retrieval playback; daemon opens first unheard and streams to mixer
 	VoicemailExitPlayback()                                       // hook-on during playback; daemon tears down player + mixer source
@@ -415,6 +418,10 @@ func (c *Controller) onHookOn() {
 	// needed. The daemon still needs to know we left playback so it can cancel
 	// the playback goroutine, close the player, and tear down the mixer source.
 	wasInPlayback := c.state == StateVOICEMAIL_PLAYBACK
+	// VOICEMAIL_PLAY_GREETING (*96 audition) likewise has no peer or recorder.
+	// The daemon needs the signal so it can stop the one-shot greeting playback
+	// instead of letting it run to completion against an on-hook handset.
+	wasPlayingGreeting := c.state == StateVOICEMAIL_PLAY_GREETING
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -457,6 +464,11 @@ func (c *Controller) onHookOn() {
 		// cancels the playback goroutine, closes the player, and removes the
 		// mixer source.
 		c.cb.VoicemailExitPlayback()
+	} else if wasPlayingGreeting {
+		// Abort the *96 greeting audition. The daemon stops the one-shot
+		// playback; its VoicemailPlayGreeting goroutine then unblocks and
+		// exits without re-arming dial tone on the now-idle phone.
+		c.cb.VoicemailExitGreetingPlayback()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
@@ -511,6 +523,16 @@ func (c *Controller) onKey(digit string) {
 			c.state = StateCALL_RETURN
 			go c.cb.OnCallReturnCancel()
 			return
+		}
+		if c.digits == "*96" {
+			enabled, _ := c.cb.VoicemailEnabled()
+			if enabled {
+				slog.Info("phone: *96 detected, auditioning greeting")
+				c.digits = ""
+				c.state = StateVOICEMAIL_PLAY_GREETING
+				go c.cb.VoicemailPlayGreeting()
+				return
+			}
 		}
 		if c.digits == "*97" {
 			enabled, _ := c.cb.VoicemailEnabled()
