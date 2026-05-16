@@ -38,14 +38,16 @@ const greetingFile = "greeting.frames"
 // greetingMaxDuration caps how long a greeting recording can run.
 const greetingMaxDuration = 60 * time.Second
 
+// messageMaxDuration is the fixed cap on a single inbound voicemail recording.
+// It is a generous backstop for a caller who never hangs up: a normal message
+// ends when the caller hangs up, well under this. Not configurable.
+const messageMaxDuration = 10 * time.Minute
+
 // Options controls store retention.
 type Options struct {
 	// MaxMessages caps the number of stored messages. When exceeded, the
 	// oldest are deleted (FIFO). Zero disables the cap.
 	MaxMessages int
-	// MaxMessageDuration caps a single recording. Zero disables the cap;
-	// the recorder will accept frames indefinitely until Finalize.
-	MaxMessageDuration time.Duration
 	// Now is injected for tests. Defaults to time.Now.
 	Now func() time.Time
 }
@@ -226,7 +228,7 @@ func (s *Store) BeginRecording() (*Recorder, error) {
 		tmpPath:  tmpPath,
 		finalPath: framesPath,
 		file:     f,
-		maxFrames: framesForDuration(s.opts.MaxMessageDuration),
+		maxFrames: framesForDuration(messageMaxDuration),
 	}, nil
 }
 

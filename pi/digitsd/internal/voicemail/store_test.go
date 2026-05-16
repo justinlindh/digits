@@ -185,20 +185,26 @@ func TestFIFOEviction(t *testing.T) {
 	}
 }
 
-func TestMaxMessageDurationCap(t *testing.T) {
-	s := newTestStore(t, Options{MaxMessageDuration: 60 * time.Millisecond})
+func TestMessageMaxDurationCap(t *testing.T) {
+	s := newTestStore(t, Options{})
 	r, err := s.BeginRecording()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 3 frames * 20ms = 60ms => atCap on the third.
-	for i := 0; i < 2; i++ {
-		atCap, err := r.AppendFrame([]byte{byte(i)})
+	// The message cap is the fixed messageMaxDuration constant, no longer
+	// configurable. Every frame up to the cap reports atCap=false; the
+	// cap-th frame reports true.
+	capFrames := framesForDuration(messageMaxDuration)
+	if capFrames <= 0 {
+		t.Fatalf("expected a positive frame cap, got %d", capFrames)
+	}
+	for i := 0; i < capFrames-1; i++ {
+		atCap, err := r.AppendFrame([]byte{0x01})
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("frame %d: %v", i, err)
 		}
 		if atCap {
-			t.Errorf("frame %d reported atCap early", i)
+			t.Fatalf("frame %d reported atCap before the %d-frame cap", i, capFrames)
 		}
 	}
 	atCap, err := r.AppendFrame([]byte{0xff})
@@ -206,7 +212,7 @@ func TestMaxMessageDurationCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !atCap {
-		t.Errorf("expected atCap=true on 3rd frame")
+		t.Errorf("expected atCap=true on the cap-th frame (%d)", capFrames)
 	}
 	if _, err := r.Finalize(); err != nil {
 		t.Fatal(err)

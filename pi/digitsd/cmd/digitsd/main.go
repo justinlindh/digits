@@ -471,9 +471,8 @@ func (d *daemonCallbacks) publishVoicemailStateInitial() {
 //
 // Live consumption: Enabled, RingTimeout and RetrievalCode are read per ring
 // or per dial, so they take effect on the next inbound call without any
-// further wiring. MaxStoredMessages and MaxMessageDuration are baked into the
-// voicemail.Store opened at boot, so changes to those values take effect on
-// the next daemon restart.
+// further wiring. MaxStoredMessages is baked into the voicemail.Store opened
+// at boot, so a change to it takes effect on the next daemon restart.
 func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
 	d.mu.Lock()
 	d.cfg.Voicemail = vm
@@ -1642,8 +1641,7 @@ func main() {
 		vmDir := filepath.Join(filepath.Dir(*configPath), "voicemail")
 		var err error
 		vmStore, err = voicemail.Open(vmDir, voicemail.Options{
-			MaxMessages:        cfg.Voicemail.MaxStoredMessages,
-			MaxMessageDuration: cfg.Voicemail.MaxMessageDuration,
+			MaxMessages: cfg.Voicemail.MaxStoredMessages,
 		})
 		if err != nil {
 			slog.Error("voicemail store open failed", "dir", vmDir, "error", err)
@@ -2479,11 +2477,10 @@ func main() {
 
 				if vm := msg.LineSettings.Voicemail; vm != nil {
 					target := config.Voicemail{
-						Enabled:            vm.Enabled,
-						RingTimeout:        time.Duration(vm.RingTimeoutSeconds) * time.Second,
-						MaxMessageDuration: time.Duration(vm.MaxMessageSeconds) * time.Second,
-						MaxStoredMessages:  vm.MaxStoredMessages,
-						RetrievalCode:      vm.RetrievalCode,
+						Enabled:           vm.Enabled,
+						RingTimeout:       time.Duration(vm.RingTimeoutSeconds) * time.Second,
+						MaxStoredMessages: vm.MaxStoredMessages,
+						RetrievalCode:     vm.RetrievalCode,
 					}
 					cb.mu.Lock()
 					current := cb.cfg.Voicemail
@@ -2495,9 +2492,6 @@ func main() {
 						}
 						if target.RingTimeout != current.RingTimeout {
 							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
-						}
-						if target.MaxMessageDuration != current.MaxMessageDuration {
-							slog.Info("line_settings applied", "voicemail_max_message_duration", target.MaxMessageDuration)
 						}
 						if target.MaxStoredMessages != current.MaxStoredMessages {
 							slog.Info("line_settings applied", "voicemail_max_stored_messages", target.MaxStoredMessages)

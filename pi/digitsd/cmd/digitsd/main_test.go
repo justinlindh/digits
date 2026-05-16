@@ -332,11 +332,10 @@ func TestSetVoicemailConfig_PersistsToDisk(t *testing.T) {
 	}
 	// Defaults at startup.
 	wantDefault := config.Voicemail{
-		Enabled:            true,
-		RingTimeout:        20 * time.Second,
-		MaxMessageDuration: 90 * time.Second,
-		MaxStoredMessages:  50,
-		RetrievalCode:      "*98",
+		Enabled:           true,
+		RingTimeout:       20 * time.Second,
+		MaxStoredMessages: 50,
+		RetrievalCode:     "*98",
 	}
 	if cfg.Voicemail != wantDefault {
 		t.Fatalf("unexpected default voicemail config: %+v", cfg.Voicemail)
@@ -344,11 +343,10 @@ func TestSetVoicemailConfig_PersistsToDisk(t *testing.T) {
 
 	d := &daemonCallbacks{cfg: cfg}
 	target := config.Voicemail{
-		Enabled:            true,
-		RingTimeout:        25 * time.Second,
-		MaxMessageDuration: 120 * time.Second,
-		MaxStoredMessages:  40,
-		RetrievalCode:      "*97",
+		Enabled:           true,
+		RingTimeout:       25 * time.Second,
+		MaxStoredMessages: 40,
+		RetrievalCode:     "*97",
 	}
 	if err := d.setVoicemailConfig(target); err != nil {
 		t.Fatalf("setVoicemailConfig: %v", err)
@@ -534,23 +532,20 @@ func TestLineSettingsVoicemailConversion(t *testing.T) {
 	wire := &sigclient.Voicemail{
 		Enabled:            true,
 		RingTimeoutSeconds: 30,
-		MaxMessageSeconds:  180,
 		MaxStoredMessages:  25,
 		RetrievalCode:      "*98",
 	}
 	got := config.Voicemail{
-		Enabled:            wire.Enabled,
-		RingTimeout:        time.Duration(wire.RingTimeoutSeconds) * time.Second,
-		MaxMessageDuration: time.Duration(wire.MaxMessageSeconds) * time.Second,
-		MaxStoredMessages:  wire.MaxStoredMessages,
-		RetrievalCode:      wire.RetrievalCode,
+		Enabled:           wire.Enabled,
+		RingTimeout:       time.Duration(wire.RingTimeoutSeconds) * time.Second,
+		MaxStoredMessages: wire.MaxStoredMessages,
+		RetrievalCode:     wire.RetrievalCode,
 	}
 	want := config.Voicemail{
-		Enabled:            true,
-		RingTimeout:        30 * time.Second,
-		MaxMessageDuration: 180 * time.Second,
-		MaxStoredMessages:  25,
-		RetrievalCode:      "*98",
+		Enabled:           true,
+		RingTimeout:       30 * time.Second,
+		MaxStoredMessages: 25,
+		RetrievalCode:     "*98",
 	}
 	if got != want {
 		t.Errorf("voicemail wire->config: got %+v, want %+v", got, want)
