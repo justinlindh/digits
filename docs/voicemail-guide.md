@@ -101,24 +101,17 @@ machine on for that line, untick it to turn it off. The change saves as soon as
 you click; there is no separate save button for the toggle. With voicemail off,
 the phone simply rings and never auto-answers.
 
-### The settings form
+### The ring timeout
 
-Open the advanced settings block in the voicemail section to edit three fields.
-Change what you need, then submit the form to save.
+The voicemail section has a ring timeout field: how many seconds a call rings
+before the answering machine picks up. Change it, then submit the form to save.
+The allowed range is 5 to 60 seconds.
 
-| Field | What it controls | Allowed range |
-|-------|------------------|---------------|
-| Ring timeout | How many seconds a call rings before the answering machine picks up | 5 to 60 seconds |
-| Max stored messages | How many messages the phone keeps before the oldest is dropped | 5 to 200 |
-| Retrieval code | The code you dial on the phone to listen to messages | 2 to 6 characters, digits and `*` and `#` only, must include at least one `*` or `#` |
+If you enter a number outside that range, the app rejects the form with a
+message explaining the limit; nothing is saved until the value is valid.
 
-If you enter a number outside its range, or a retrieval code that breaks the
-rules, the app rejects the form with a message explaining the limit; nothing is
-saved until the values are valid. A retrieval code cannot be all digits, so it
-can never be mistaken for a real phone number.
-
-When voicemail is disabled, the three fields are dimmed and locked. Turn
-voicemail on to edit them.
+When voicemail is disabled, the ring timeout field is dimmed and locked. Turn
+voicemail on to edit it.
 
 ### The unheard-messages badge
 
@@ -129,10 +122,9 @@ clear messages on the handset.
 
 ### When settings take effect
 
-The on/off toggle, ring timeout, and retrieval code apply on the phone's next
-incoming call. The storage cap applies after the phone restarts. If you edit
-settings while the phone is offline, the phone picks them up the next time it
-connects.
+The on/off toggle and ring timeout apply on the phone's next incoming call. If
+you edit settings while the phone is offline, the phone picks them up the next
+time it connects.
 
 ## Limits and edge cases
 
@@ -141,13 +133,12 @@ connects.
   a caller still talking when the cap is reached hears a beep and the recording
   is saved. The cap is fixed and not configurable.
 - **Greeting length.** A custom greeting can be up to 60 seconds.
-- **Storage cap.** The phone keeps up to 50 messages by default. When the box
-  is full and a new message arrives, the oldest message is deleted to make
-  room. Listen to and clear your messages so you do not lose old ones to new
-  ones.
-- **Lots of messages.** If you have ten or more unheard messages, the phone
-  stops counting them out one by one and just tells you that you have many
-  messages. The exact number is not read aloud past nine.
+- **Storage cap.** The phone keeps up to 50 messages. When the box is full and
+  a new message arrives, the oldest message is deleted to make room. Listen to
+  and clear your messages so you do not lose old ones to new ones.
+- **Lots of messages.** If you have more than nine unheard messages, the phone
+  announces the count as "nine"; it does not read an exact number aloud past
+  nine.
 - **Ring time.** A call has to ring for the configured timeout (20 seconds by
   default) before the answering machine picks up. Setting the timeout to zero
   turns auto-answer off; the phone just keeps ringing.
@@ -163,10 +154,6 @@ takes effect on the next incoming call.
 did not finish cleanly the phone falls back to the standard greeting. Dial
 `*97` and record it again, and wait for the "Greeting saved" confirmation
 before hanging up.
-
-**I changed the storage cap and nothing changed.** The storage cap is read
-when the phone starts up, so a change to it takes effect after the phone
-restarts. The on/off toggle, ring timeout, and retrieval code apply right away.
 
 **The message-waiting light is pulsing but `*98` says no messages.** The slow
 pulse tracks unheard messages. If you saved or deleted everything, the light
