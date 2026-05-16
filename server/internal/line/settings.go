@@ -17,13 +17,10 @@ const (
 const (
 	VoicemailRingTimeoutMin = 5
 	VoicemailRingTimeoutMax = 60
-	VoicemailMaxMessageMin  = 15
-	VoicemailMaxMessageMax  = 180
 	VoicemailMaxStoredMin   = 5
 	VoicemailMaxStoredMax   = 200
 
 	DefaultVoicemailRingTimeoutSeconds = 20
-	DefaultVoicemailMaxMessageSeconds  = 90
 	DefaultVoicemailMaxStoredMessages  = 50
 	DefaultVoicemailRetrievalCode      = "*98"
 )
@@ -53,7 +50,6 @@ func IsValidRetrievalCode(code string) bool {
 type Voicemail struct {
 	Enabled            bool   `json:"enabled"`
 	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-	MaxMessageSeconds  int    `json:"max_message_seconds"`
 	MaxStoredMessages  int    `json:"max_stored_messages"`
 	RetrievalCode      string `json:"retrieval_code"`
 }
@@ -79,7 +75,6 @@ func DefaultVoicemail() Voicemail {
 	return Voicemail{
 		Enabled:            true,
 		RingTimeoutSeconds: DefaultVoicemailRingTimeoutSeconds,
-		MaxMessageSeconds:  DefaultVoicemailMaxMessageSeconds,
 		MaxStoredMessages:  DefaultVoicemailMaxStoredMessages,
 		RetrievalCode:      DefaultVoicemailRetrievalCode,
 	}
@@ -104,9 +99,6 @@ func (v Voicemail) Merge(patch Voicemail) Voicemail {
 	if patch.RingTimeoutSeconds != 0 {
 		v.RingTimeoutSeconds = patch.RingTimeoutSeconds
 	}
-	if patch.MaxMessageSeconds != 0 {
-		v.MaxMessageSeconds = patch.MaxMessageSeconds
-	}
 	if patch.MaxStoredMessages != 0 {
 		v.MaxStoredMessages = patch.MaxStoredMessages
 	}
@@ -118,14 +110,11 @@ func (v Voicemail) Merge(patch Voicemail) Voicemail {
 
 // Normalize substitutes the default value for any field that is zero or out
 // of the allowed range. Defense in depth so corrupt on-disk data can never
-// propagate to the daemon (which would, for instance, refuse to record a
-// message if MaxMessageSeconds is zero).
+// propagate to the daemon (which would, for instance, never pick up if
+// RingTimeoutSeconds is zero).
 func (v Voicemail) Normalize() Voicemail {
 	if v.RingTimeoutSeconds < VoicemailRingTimeoutMin || v.RingTimeoutSeconds > VoicemailRingTimeoutMax {
 		v.RingTimeoutSeconds = DefaultVoicemailRingTimeoutSeconds
-	}
-	if v.MaxMessageSeconds < VoicemailMaxMessageMin || v.MaxMessageSeconds > VoicemailMaxMessageMax {
-		v.MaxMessageSeconds = DefaultVoicemailMaxMessageSeconds
 	}
 	if v.MaxStoredMessages < VoicemailMaxStoredMin || v.MaxStoredMessages > VoicemailMaxStoredMax {
 		v.MaxStoredMessages = DefaultVoicemailMaxStoredMessages

@@ -171,9 +171,6 @@ func TestDefaultVoicemailMatchesPhaseOneSpec(t *testing.T) {
 	if v.RingTimeoutSeconds != 20 {
 		t.Errorf("RingTimeoutSeconds default: got %d, want 20", v.RingTimeoutSeconds)
 	}
-	if v.MaxMessageSeconds != 90 {
-		t.Errorf("MaxMessageSeconds default: got %d, want 90", v.MaxMessageSeconds)
-	}
 	if v.MaxStoredMessages != 50 {
 		t.Errorf("MaxStoredMessages default: got %d, want 50", v.MaxStoredMessages)
 	}
@@ -195,7 +192,6 @@ func TestSettingsJSONRoundTripVoicemail(t *testing.T) {
 		Voicemail: Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 30,
-			MaxMessageSeconds:  120,
 			MaxStoredMessages:  75,
 			RetrievalCode:      "#42",
 		},
@@ -218,7 +214,7 @@ func TestSettingsMergeVoicemailLayersOnDefaults(t *testing.T) {
 	patch := Settings{Voicemail: Voicemail{
 		Enabled:            true,
 		RingTimeoutSeconds: 30,
-		// MaxMessageSeconds, MaxStoredMessages, RetrievalCode unset (zero)
+		// MaxStoredMessages, RetrievalCode unset (zero)
 		// should keep defaults from base.
 	}}
 	merged := base.Merge(patch)
@@ -228,9 +224,9 @@ func TestSettingsMergeVoicemailLayersOnDefaults(t *testing.T) {
 	if merged.Voicemail.RingTimeoutSeconds != 30 {
 		t.Errorf("RingTimeoutSeconds: got %d, want 30", merged.Voicemail.RingTimeoutSeconds)
 	}
-	if merged.Voicemail.MaxMessageSeconds != DefaultVoicemailMaxMessageSeconds {
-		t.Errorf("MaxMessageSeconds: got %d, want default %d",
-			merged.Voicemail.MaxMessageSeconds, DefaultVoicemailMaxMessageSeconds)
+	if merged.Voicemail.MaxStoredMessages != DefaultVoicemailMaxStoredMessages {
+		t.Errorf("MaxStoredMessages: got %d, want default %d",
+			merged.Voicemail.MaxStoredMessages, DefaultVoicemailMaxStoredMessages)
 	}
 	if merged.Voicemail.RetrievalCode != DefaultVoicemailRetrievalCode {
 		t.Errorf("RetrievalCode: got %q, want default %q",
@@ -250,7 +246,6 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 			want: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 20,
-				MaxMessageSeconds:  90,
 				MaxStoredMessages:  50,
 				RetrievalCode:      "*98",
 			},
@@ -260,31 +255,27 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 			in: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 1,
-				MaxMessageSeconds:  60,
 				MaxStoredMessages:  10,
 				RetrievalCode:      "*99",
 			},
 			want: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 20, // 1 < min(5) → default
-				MaxMessageSeconds:  60,
 				MaxStoredMessages:  10,
 				RetrievalCode:      "*99",
 			},
 		},
 		{
-			name: "above-max max message reset",
+			name: "above-max ring timeout reset",
 			in: Voicemail{
 				Enabled:            true,
-				RingTimeoutSeconds: 30,
-				MaxMessageSeconds:  600,
+				RingTimeoutSeconds: 600,
 				MaxStoredMessages:  10,
 				RetrievalCode:      "*99",
 			},
 			want: Voicemail{
 				Enabled:            true,
-				RingTimeoutSeconds: 30,
-				MaxMessageSeconds:  90, // 600 > max(180) → default
+				RingTimeoutSeconds: 20, // 600 > max(60) → default
 				MaxStoredMessages:  10,
 				RetrievalCode:      "*99",
 			},
@@ -294,14 +285,12 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 			in: Voicemail{
 				Enabled:            false,
 				RingTimeoutSeconds: 30,
-				MaxMessageSeconds:  60,
 				MaxStoredMessages:  2,
 				RetrievalCode:      "*98",
 			},
 			want: Voicemail{
 				Enabled:            false,
 				RingTimeoutSeconds: 30,
-				MaxMessageSeconds:  60,
 				MaxStoredMessages:  50, // 2 < min(5) → default
 				RetrievalCode:      "*98",
 			},
@@ -334,7 +323,6 @@ func TestSettingsNormalizeRetrievalCodeFallback(t *testing.T) {
 	for in, want := range cases {
 		got := (Voicemail{
 			RingTimeoutSeconds: 20,
-			MaxMessageSeconds:  90,
 			MaxStoredMessages:  50,
 			RetrievalCode:      in,
 		}).Normalize().RetrievalCode
@@ -382,5 +370,35 @@ func TestSettingsScanFromEmptyJSONAppliesDefaults(t *testing.T) {
 	want.Enabled = false
 	if merged.Voicemail != want {
 		t.Errorf("empty JSONB merge: got %+v, want %+v", merged.Voicemail, want)
+	}
+}
+
+func TestSettingsUnmarshalIgnoresVestigialMaxMessageKey(t *testing.T) {
+	// Rows written before max_message_seconds was removed still carry the
+	// key in their JSONB. encoding/json drops unknown keys silently, so the
+	// surviving fields must still decode and survive Merge + Normalize.
+	raw := []byte(`{
+		"voice_style": "modern",
+		"voicemail": {
+			"enabled": true,
+			"ring_timeout_seconds": 30,
+			"max_message_seconds": 120,
+			"max_stored_messages": 75,
+			"retrieval_code": "#42"
+		}
+	}`)
+	var patch Settings
+	if err := json.Unmarshal(raw, &patch); err != nil {
+		t.Fatalf("unmarshal legacy row: %v", err)
+	}
+	merged := DefaultSettings().Merge(patch).Normalize()
+	want := Voicemail{
+		Enabled:            true,
+		RingTimeoutSeconds: 30,
+		MaxStoredMessages:  75,
+		RetrievalCode:      "#42",
+	}
+	if merged.Voicemail != want {
+		t.Errorf("legacy row decode: got %+v, want %+v", merged.Voicemail, want)
 	}
 }

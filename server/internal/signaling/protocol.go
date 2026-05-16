@@ -94,12 +94,13 @@ type LineSettings struct {
 // its own.
 //
 // Field names mirror the daemon config keys exactly. The daemon's local
-// config holds RingTimeout/MaxMessageDuration as time.Duration; the wire
-// uses integer seconds and the daemon converts on receipt.
+// config holds RingTimeout as a time.Duration; the wire uses integer seconds
+// and the daemon converts on receipt. The per-message recording cap is not
+// configurable: digitsd enforces a fixed 10-minute limit, so no max-duration
+// field rides the wire.
 type Voicemail struct {
 	Enabled            bool   `json:"enabled"`
 	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-	MaxMessageSeconds  int    `json:"max_message_seconds"`
 	MaxStoredMessages  int    `json:"max_stored_messages"`
 	RetrievalCode      string `json:"retrieval_code"`
 }

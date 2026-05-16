@@ -26,7 +26,6 @@ func VoicemailFromLine(v line.Voicemail) *Voicemail {
 	return &Voicemail{
 		Enabled:            v.Enabled,
 		RingTimeoutSeconds: v.RingTimeoutSeconds,
-		MaxMessageSeconds:  v.MaxMessageSeconds,
 		MaxStoredMessages:  v.MaxStoredMessages,
 		RetrievalCode:      v.RetrievalCode,
 	}
