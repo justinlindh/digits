@@ -165,19 +165,10 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := startSSE(w, r)
 	if !ok {
-		slog.ErrorContext(r.Context(), "SSE conference stream: ResponseWriter does not implement Flusher")
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
 
 	var linkedIndex map[string]string
 	if primaryHH != nil {

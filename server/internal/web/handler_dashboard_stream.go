@@ -40,19 +40,10 @@ func (h *Handler) handleDashboardStream(w http.ResponseWriter, r *http.Request) 
 	}
 	hh := h.activeHousehold(r)
 
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := startSSE(w, r)
 	if !ok {
-		slog.ErrorContext(r.Context(), "dashboard SSE: ResponseWriter does not implement Flusher")
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
 
 	if err := h.writeDashStatus(w, flusher, r, hh); err != nil {
 		return
