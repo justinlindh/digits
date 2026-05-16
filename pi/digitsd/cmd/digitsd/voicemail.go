@@ -40,19 +40,14 @@ func (d *daemonCallbacks) playAnnouncementSequence(tones ...string) {
 }
 
 // announceMessageCount composes "You have N new message(s)" from individual
-// clips. Counts above 9 get a single self-contained "lost count" phrase
-// since there is no clip to voice the exact number.
+// clips. Counts above 9 are capped at "9" in the spoken announcement since
+// there is no clip to voice the exact number.
 func (d *daemonCallbacks) announceMessageCount(count int) {
 	if count <= 0 {
 		d.playAnnouncementSequence("vm_no_messages")
 		return
 	}
-	if count > 9 {
-		d.playAnnouncementSequence("vm_lost_count")
-		return
-	}
-
-	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", count)}
+	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", min(count, 9))}
 	if count == 1 {
 		seq = append(seq, "vm_new_message")
 	} else {
@@ -91,16 +86,13 @@ func (d *daemonCallbacks) announceMessageNumber(number int) {
 // savedCountClips returns the clip sequence for "You have N saved message(s)",
 // announced when *98 retrieval crosses from the new messages into the saved
 // ones. It mirrors announceMessageCount: a non-positive count yields no clips,
-// and a count above 9 falls back to the self-contained "lost count" phrase
-// since there is no clip to voice the exact number.
+// and counts above 9 are capped at "9" in the spoken announcement since there
+// is no clip to voice the exact number.
 func savedCountClips(count int) []string {
 	if count <= 0 {
 		return nil
 	}
-	if count > 9 {
-		return []string{"vm_lost_count"}
-	}
-	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", count)}
+	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", min(count, 9))}
 	if count == 1 {
 		return append(seq, "vm_saved_message")
 	}
@@ -893,10 +885,13 @@ func (d *daemonCallbacks) VoicemailEnterPlayback() {
 		return
 	}
 
-	// No unheard messages, but saved ones exist: skip straight into the
-	// saved-review phase rather than reporting an empty mailbox.
+	// No unheard messages, but saved ones exist: announce "no new messages"
+	// so the user knows there's nothing urgent, then enter saved review.
 	slog.Info("voicemail: no unheard messages, entering saved review", "saved", savedCount)
-	go d.transitionToSavedPhase(store, true)
+	go func() {
+		d.playAnnouncementSequence("vm_no_new_messages")
+		d.transitionToSavedPhase(store, true)
+	}()
 }
 
 // VoicemailExitPlayback tears down the current playback session and the
@@ -1249,6 +1244,9 @@ func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number 
 func (d *daemonCallbacks) transitionToSavedPhase(store *voicemail.Store, playControls bool) {
 	defer recoverGoroutine("voicemail-saved-transition")
 
+	if !playControls {
+		d.playAnnouncementSequence("vm_saved_next")
+	}
 	d.voicemailMu.Lock()
 	n := len(d.voicemailSavedQueue)
 	d.voicemailMu.Unlock()

@@ -40,8 +40,8 @@ func TestSavedCountClips(t *testing.T) {
 		{"one saved message is singular", 1, []string{"vm_you_have", "spoken_1", "vm_saved_message"}},
 		{"several saved messages are plural", 4, []string{"vm_you_have", "spoken_4", "vm_saved_messages"}},
 		{"highest digit clip", 9, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
-		{"above nine falls back to lost count", 10, []string{"vm_lost_count"}},
-		{"well above nine falls back to lost count", 50, []string{"vm_lost_count"}},
+		{"above nine caps at 9", 10, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
+		{"well above nine caps at 9", 50, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
