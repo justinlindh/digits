@@ -680,9 +680,9 @@ const greetingAuditionTimeout = 65 * time.Second
 //
 // Pure read-only: no recorder is opened and the stored greeting is never
 // touched. A hook-on mid-audition routes through VoicemailExitGreetingPlayback,
-// which clears the one-shot queue; this goroutine then sees the controller has
-// left StateVOICEMAIL_PLAY_GREETING and skips the dial-tone re-arm so a tone
-// does not loop against an on-hook handset.
+// which clears the one-shot queue; FinishGreetingAudition then reports that the
+// controller has left StateVOICEMAIL_PLAY_GREETING and this goroutine exits
+// without re-arming dial tone, so a tone never loops against an on-hook handset.
 func (d *daemonCallbacks) VoicemailPlayGreeting() {
 	defer recoverGoroutine("voicemail-play-greeting")
 
@@ -702,15 +702,13 @@ func (d *daemonCallbacks) VoicemailPlayGreeting() {
 		waitForOnceComplete(d.mixer, greetingAuditionTimeout)
 	}
 
-	// A hook-on during playback already moved the FSM to IDLE. Re-arming dial
-	// tone now would leave it looping with the handset down, so only re-arm
-	// when the controller is still in the audition state.
-	if d.ctrl.State() != phone.StateVOICEMAIL_PLAY_GREETING {
+	// FinishGreetingAudition atomically checks the FSM state and, only if the
+	// audition is still active, transitions to DIALTONE and re-arms dial tone.
+	// A hook-on that races this is fully serialized by the controller lock, so
+	// there is no window where dial tone could re-arm on an idle phone.
+	if !d.ctrl.FinishGreetingAudition() {
 		slog.Info("voicemail: greeting audition ended by hook-on")
-		return
 	}
-	d.ctrl.ResetToDialtone()
-	d.SendTone(phone.ToneDial)
 }
 
 // VoicemailExitGreetingPlayback is invoked by the controller on hook-on while

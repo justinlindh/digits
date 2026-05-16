@@ -304,6 +304,27 @@ func (c *Controller) ResetToDialtone() {
 	c.digits = ""
 }
 
+// FinishGreetingAudition completes a *96 greeting audition. If the controller
+// is still in StateVOICEMAIL_PLAY_GREETING it transitions back to DIALTONE and
+// re-arms the dial tone, then returns true. If a hook-on already moved the FSM
+// out of the audition state it returns false and changes nothing. The state
+// check, the transition, and the tone re-arm all happen under the controller
+// lock, so a hook-on racing the audition goroutine is fully serialized: it
+// either runs entirely before (this returns false) or entirely after (this
+// sets DIALTONE + dial tone, then hook-on sets IDLE + tone stop). There is no
+// interleaving that could leave a dial tone looping against an on-hook handset.
+func (c *Controller) FinishGreetingAudition() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateVOICEMAIL_PLAY_GREETING {
+		return false
+	}
+	c.state = StateDIALTONE
+	c.digits = ""
+	c.cb.SendTone(ToneDial)
+	return true
+}
+
 // HandleEvent processes UART events from the Pico (e.g. "HOOK:OFF", "KEY:5", "DIAL:5551234").
 func (c *Controller) HandleEvent(event string) {
 	c.mu.Lock()

@@ -2351,6 +2351,46 @@ func TestController_HookOnDuringGreetingAudition(t *testing.T) {
 	}
 }
 
+// TestController_FinishGreetingAudition verifies the atomic completion helper:
+// from StateVOICEMAIL_PLAY_GREETING it transitions to DIALTONE, re-arms the
+// dial tone, and reports true; from any other state it reports false and
+// changes nothing, so a hook-on that already left the audition wins the race.
+func TestController_FinishGreetingAudition(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:6")
+	if c.State() != StateVOICEMAIL_PLAY_GREETING {
+		t.Fatalf("expected VOICEMAIL_PLAY_GREETING, got %s", c.State())
+	}
+
+	if !c.FinishGreetingAudition() {
+		t.Fatal("expected FinishGreetingAudition to return true from audition state")
+	}
+	if c.State() != StateDIALTONE {
+		t.Errorf("expected DIALTONE after FinishGreetingAudition, got %s", c.State())
+	}
+	tones := cb.Tones()
+	if len(tones) == 0 || tones[len(tones)-1] != ToneDial {
+		t.Errorf("expected dial tone re-armed, tones=%v", tones)
+	}
+
+	// A second call (state is now DIALTONE) must be a no-op returning false:
+	// this models a hook-on having already moved the FSM out of the audition.
+	if c.FinishGreetingAudition() {
+		t.Error("expected FinishGreetingAudition to return false outside audition state")
+	}
+	if c.State() != StateDIALTONE {
+		t.Errorf("expected state unchanged at DIALTONE, got %s", c.State())
+	}
+}
+
 // TestRetrievalCodeIntercept verifies that dialing the configured retrieval
 // code (default *98) from off-hook DIALING enters VOICEMAIL_PLAYBACK and fires
 // VoicemailEnterPlayback exactly once, without initiating an outbound call.
