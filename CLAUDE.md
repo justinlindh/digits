@@ -114,9 +114,12 @@ Always include `--env-file .env.prod`. A bare `docker compose up` creates a sepa
 
 **Commits.** Conventional commit format with required scope. PR titles must use this format (they become the squash commit message on merge); individual commits on feature branches don't need to. Valid scopes: `pi`, `digitsd`, `firmware`, `server`, `image`, `docs`, `ci`.
 
+Type selection matters for release automation. `feat` and `fix` trigger releases; `refactor` does not. The deciding question: **does the user or the device see a difference?** If yes, it is `feat` (adding/removing behavior) or `fix` (correcting behavior), never `refactor`. Removing a UI field, dropping a wire protocol field, changing a default: all user-visible, all `feat`. `refactor` is strictly for internal restructuring where the external contract is unchanged.
+
 ```
 fix(server): handle NULL line_id in device lookup
 feat(digitsd): add volume service code
+feat(server): remove the max-message-duration setting
 docs: update wiring notes
 ```
 

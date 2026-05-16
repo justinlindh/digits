@@ -163,19 +163,13 @@ func TestSettingsMergeAutoUpdateFromPatch(t *testing.T) {
 	}
 }
 
-func TestDefaultVoicemailMatchesPhaseOneSpec(t *testing.T) {
+func TestDefaultVoicemailMatchesSpec(t *testing.T) {
 	v := DefaultVoicemail()
 	if !v.Enabled {
 		t.Errorf("Enabled default: got false, want true")
 	}
 	if v.RingTimeoutSeconds != 20 {
 		t.Errorf("RingTimeoutSeconds default: got %d, want 20", v.RingTimeoutSeconds)
-	}
-	if v.MaxStoredMessages != 50 {
-		t.Errorf("MaxStoredMessages default: got %d, want 50", v.MaxStoredMessages)
-	}
-	if v.RetrievalCode != "*98" {
-		t.Errorf("RetrievalCode default: got %q, want %q", v.RetrievalCode, "*98")
 	}
 }
 
@@ -192,8 +186,6 @@ func TestSettingsJSONRoundTripVoicemail(t *testing.T) {
 		Voicemail: Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 30,
-			MaxStoredMessages:  75,
-			RetrievalCode:      "#42",
 		},
 	}
 	b, err := json.Marshal(in)
@@ -214,8 +206,6 @@ func TestSettingsMergeVoicemailLayersOnDefaults(t *testing.T) {
 	patch := Settings{Voicemail: Voicemail{
 		Enabled:            true,
 		RingTimeoutSeconds: 30,
-		// MaxStoredMessages, RetrievalCode unset (zero)
-		// should keep defaults from base.
 	}}
 	merged := base.Merge(patch)
 	if !merged.Voicemail.Enabled {
@@ -223,14 +213,6 @@ func TestSettingsMergeVoicemailLayersOnDefaults(t *testing.T) {
 	}
 	if merged.Voicemail.RingTimeoutSeconds != 30 {
 		t.Errorf("RingTimeoutSeconds: got %d, want 30", merged.Voicemail.RingTimeoutSeconds)
-	}
-	if merged.Voicemail.MaxStoredMessages != DefaultVoicemailMaxStoredMessages {
-		t.Errorf("MaxStoredMessages: got %d, want default %d",
-			merged.Voicemail.MaxStoredMessages, DefaultVoicemailMaxStoredMessages)
-	}
-	if merged.Voicemail.RetrievalCode != DefaultVoicemailRetrievalCode {
-		t.Errorf("RetrievalCode: got %q, want default %q",
-			merged.Voicemail.RetrievalCode, DefaultVoicemailRetrievalCode)
 	}
 }
 
@@ -242,12 +224,10 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 	}{
 		{
 			name: "zero values get defaults",
-			in:   Voicemail{Enabled: true, RetrievalCode: "*98"},
+			in:   Voicemail{Enabled: true},
 			want: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 20,
-				MaxStoredMessages:  50,
-				RetrievalCode:      "*98",
 			},
 		},
 		{
@@ -255,14 +235,10 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 			in: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 1,
-				MaxStoredMessages:  10,
-				RetrievalCode:      "*99",
 			},
 			want: Voicemail{
 				Enabled:            true,
-				RingTimeoutSeconds: 20, // 1 < min(5) → default
-				MaxStoredMessages:  10,
-				RetrievalCode:      "*99",
+				RingTimeoutSeconds: 20, // 1 < min(5) -> default
 			},
 		},
 		{
@@ -270,29 +246,21 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 			in: Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 600,
-				MaxStoredMessages:  10,
-				RetrievalCode:      "*99",
 			},
 			want: Voicemail{
 				Enabled:            true,
-				RingTimeoutSeconds: 20, // 600 > max(60) → default
-				MaxStoredMessages:  10,
-				RetrievalCode:      "*99",
+				RingTimeoutSeconds: 20, // 600 > max(60) -> default
 			},
 		},
 		{
-			name: "below-min max stored reset",
+			name: "valid ring timeout preserved",
 			in: Voicemail{
 				Enabled:            false,
 				RingTimeoutSeconds: 30,
-				MaxStoredMessages:  2,
-				RetrievalCode:      "*98",
 			},
 			want: Voicemail{
 				Enabled:            false,
 				RingTimeoutSeconds: 30,
-				MaxStoredMessages:  50, // 2 < min(5) → default
-				RetrievalCode:      "*98",
 			},
 		},
 	}
@@ -306,60 +274,10 @@ func TestSettingsNormalizeClampsOutOfRangeInts(t *testing.T) {
 	}
 }
 
-func TestSettingsNormalizeRetrievalCodeFallback(t *testing.T) {
-	cases := map[string]string{
-		"":         "*98",      // empty
-		"1234567":  "*98",      // too long
-		"a":        "*98",      // bad chars
-		"123":      "*98",      // digits only, no * or #
-		"12345":    "*98",      // digits only, no * or # (would shadow 7-digit dialing)
-		"*98":      "*98",      // valid: star prefix
-		"#42":      "#42",      // valid: hash prefix
-		"1#":       "1#",       // valid: hash with digit
-		"*123":     "*123",     // valid: longer with star
-		"##":       "##",       // valid: shortest acceptable
-		"123#":     "123#",     // valid: trailing hash
-	}
-	for in, want := range cases {
-		got := (Voicemail{
-			RingTimeoutSeconds: 20,
-			MaxStoredMessages:  50,
-			RetrievalCode:      in,
-		}).Normalize().RetrievalCode
-		if got != want {
-			t.Errorf("Normalize(%q).RetrievalCode = %q, want %q", in, got, want)
-		}
-	}
-}
-
-func TestIsValidRetrievalCode(t *testing.T) {
-	valid := []string{"*98", "#42", "*123", "##", "1#", "*0", "1234*", "*1234"}
-	for _, code := range valid {
-		if !IsValidRetrievalCode(code) {
-			t.Errorf("IsValidRetrievalCode(%q) = false, want true", code)
-		}
-	}
-	invalid := []string{
-		"",        // empty
-		"1",       // too short
-		"1234567", // too long
-		"abc",     // bad chars
-		"*",       // 1-char, too short
-		"123",     // no * or #
-		"12345",   // no * or #
-		"1 2",     // space
-	}
-	for _, code := range invalid {
-		if IsValidRetrievalCode(code) {
-			t.Errorf("IsValidRetrievalCode(%q) = true, want false", code)
-		}
-	}
-}
-
 func TestSettingsScanFromEmptyJSONAppliesDefaults(t *testing.T) {
 	// Mirrors what store.scanSettings does for a fresh row. Merge is
 	// authoritative on booleans, so Enabled (JSON zero = false) overwrites
-	// the default true. Normalize backfills numeric/string defaults but
+	// the default true. Normalize backfills numeric defaults but
 	// does not force-enable voicemail.
 	var patch Settings
 	if err := json.Unmarshal([]byte(`{}`), &patch); err != nil {
@@ -373,10 +291,11 @@ func TestSettingsScanFromEmptyJSONAppliesDefaults(t *testing.T) {
 	}
 }
 
-func TestSettingsUnmarshalIgnoresVestigialMaxMessageKey(t *testing.T) {
-	// Rows written before max_message_seconds was removed still carry the
-	// key in their JSONB. encoding/json drops unknown keys silently, so the
-	// surviving fields must still decode and survive Merge + Normalize.
+func TestSettingsUnmarshalIgnoresVestigialKeys(t *testing.T) {
+	// Rows written before max_stored_messages and retrieval_code were removed
+	// still carry those keys in their JSONB. encoding/json drops unknown keys
+	// silently, so the surviving fields must still decode and survive
+	// Merge + Normalize.
 	raw := []byte(`{
 		"voice_style": "modern",
 		"voicemail": {
@@ -395,8 +314,6 @@ func TestSettingsUnmarshalIgnoresVestigialMaxMessageKey(t *testing.T) {
 	want := Voicemail{
 		Enabled:            true,
 		RingTimeoutSeconds: 30,
-		MaxStoredMessages:  75,
-		RetrievalCode:      "#42",
 	}
 	if merged.Voicemail != want {
 		t.Errorf("legacy row decode: got %+v, want %+v", merged.Voicemail, want)

@@ -153,10 +153,8 @@ type LineSettings struct {
 // Field-name gotcha: durations cross the wire as integer seconds. The
 // receiver converts to time.Duration when writing to config.
 type Voicemail struct {
-	Enabled            bool   `json:"enabled"`
-	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-	MaxStoredMessages  int    `json:"max_stored_messages"`
-	RetrievalCode      string `json:"retrieval_code"`
+	Enabled            bool `json:"enabled"`
+	RingTimeoutSeconds int  `json:"ring_timeout_seconds"`
 }
 
 // ConferenceMemberInfo describes one participant in a conference call.
