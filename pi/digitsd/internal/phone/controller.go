@@ -30,6 +30,7 @@ const (
 	StateVOICEMAIL_GREETING        State = "VOICEMAIL_GREETING"        // auto-answered; playing outgoing greeting then beep
 	StateVOICEMAIL_RECORDING       State = "VOICEMAIL_RECORDING"       // recording caller audio
 	StateVOICEMAIL_RECORD_GREETING State = "VOICEMAIL_RECORD_GREETING" // user is recording their custom outgoing greeting (*97)
+	StateVOICEMAIL_PLAY_GREETING   State = "VOICEMAIL_PLAY_GREETING"   // user dialed *96; auditioning the active outgoing greeting
 	StateVOICEMAIL_PLAYBACK        State = "VOICEMAIL_PLAYBACK"        // user dialed retrieval code; playing back stored messages
 )
 
@@ -102,6 +103,8 @@ type Callbacks interface {
 	VoicemailEnabled() (enabled bool, ringTimeout time.Duration) // Reports whether voicemail is enabled and the ring timeout
 	VoicemailRecordGreeting()                                     // *97: user is recording their custom outgoing greeting
 	VoicemailRecordGreetingKey(digit string)                      // DTMF key during *97 recording (e.g. "#" to finish)
+	VoicemailPlayGreeting()                                       // *96: audition the active outgoing greeting through the earpiece
+	VoicemailExitGreetingPlayback()                               // hook-on during *96 audition; daemon stops the one-shot playback
 	VoicemailDeleteGreeting()                                     // *99: clear the custom greeting and revert to default
 	VoicemailEnterPlayback()                                      // *98: enter retrieval playback; daemon opens first unheard and streams to mixer
 	VoicemailExitPlayback()                                       // hook-on during playback; daemon tears down player + mixer source
@@ -301,6 +304,27 @@ func (c *Controller) ResetToDialtone() {
 	c.digits = ""
 }
 
+// FinishGreetingAudition completes a *96 greeting audition. If the controller
+// is still in StateVOICEMAIL_PLAY_GREETING it transitions back to DIALTONE and
+// re-arms the dial tone, then returns true. If a hook-on already moved the FSM
+// out of the audition state it returns false and changes nothing. The state
+// check, the transition, and the tone re-arm all happen under the controller
+// lock, so a hook-on racing the audition goroutine is fully serialized: it
+// either runs entirely before (this returns false) or entirely after (this
+// sets DIALTONE + dial tone, then hook-on sets IDLE + tone stop). There is no
+// interleaving that could leave a dial tone looping against an on-hook handset.
+func (c *Controller) FinishGreetingAudition() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != StateVOICEMAIL_PLAY_GREETING {
+		return false
+	}
+	c.state = StateDIALTONE
+	c.digits = ""
+	c.cb.SendTone(ToneDial)
+	return true
+}
+
 // HandleEvent processes UART events from the Pico (e.g. "HOOK:OFF", "KEY:5", "DIAL:5551234").
 func (c *Controller) HandleEvent(event string) {
 	c.mu.Lock()
@@ -415,6 +439,10 @@ func (c *Controller) onHookOn() {
 	// needed. The daemon still needs to know we left playback so it can cancel
 	// the playback goroutine, close the player, and tear down the mixer source.
 	wasInPlayback := c.state == StateVOICEMAIL_PLAYBACK
+	// VOICEMAIL_PLAY_GREETING (*96 audition) likewise has no peer or recorder.
+	// The daemon needs the signal so it can stop the one-shot greeting playback
+	// instead of letting it run to completion against an on-hook handset.
+	wasPlayingGreeting := c.state == StateVOICEMAIL_PLAY_GREETING
 	inConferenceFlow := c.confID != "" ||
 		c.state == StateADD_DIALTONE ||
 		c.state == StateADD_DIALING ||
@@ -457,6 +485,11 @@ func (c *Controller) onHookOn() {
 		// cancels the playback goroutine, closes the player, and removes the
 		// mixer source.
 		c.cb.VoicemailExitPlayback()
+	} else if wasPlayingGreeting {
+		// Abort the *96 greeting audition. The daemon stops the one-shot
+		// playback; its VoicemailPlayGreeting goroutine then unblocks and
+		// exits without re-arming dial tone on the now-idle phone.
+		c.cb.VoicemailExitGreetingPlayback()
 	}
 	// REMOTE_HANGUP / OFFHOOK_TIMEOUT: nothing to tear down, tones/LED cleaned up above.
 }
@@ -511,6 +544,16 @@ func (c *Controller) onKey(digit string) {
 			c.state = StateCALL_RETURN
 			go c.cb.OnCallReturnCancel()
 			return
+		}
+		if c.digits == "*96" {
+			enabled, _ := c.cb.VoicemailEnabled()
+			if enabled {
+				slog.Info("phone: *96 detected, auditioning greeting")
+				c.digits = ""
+				c.state = StateVOICEMAIL_PLAY_GREETING
+				go c.cb.VoicemailPlayGreeting()
+				return
+			}
 		}
 		if c.digits == "*97" {
 			enabled, _ := c.cb.VoicemailEnabled()

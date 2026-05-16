@@ -41,6 +41,8 @@ type mockCallbacks struct {
 	voicemailEnabled         func() (bool, time.Duration) // nil = (false, 0)
 	voicemailRecordGreetings int
 	voicemailRecordKeys      []string
+	voicemailPlayGreetings   int
+	greetingPlaybackExits    int
 	voicemailDeleteGreetings int
 	playbackEnters           int
 	playbackExits            int
@@ -187,6 +189,16 @@ func (m *mockCallbacks) VoicemailRecordGreetingKey(digit string) {
 	defer m.mu.Unlock()
 	m.voicemailRecordKeys = append(m.voicemailRecordKeys, digit)
 }
+func (m *mockCallbacks) VoicemailPlayGreeting() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.voicemailPlayGreetings++
+}
+func (m *mockCallbacks) VoicemailExitGreetingPlayback() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.greetingPlaybackExits++
+}
 func (m *mockCallbacks) VoicemailDeleteGreeting() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -292,6 +304,16 @@ func (m *mockCallbacks) VoicemailDeleteGreetings() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.voicemailDeleteGreetings
+}
+func (m *mockCallbacks) VoicemailPlayGreetings() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.voicemailPlayGreetings
+}
+func (m *mockCallbacks) GreetingPlaybackExits() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.greetingPlaybackExits
 }
 func (m *mockCallbacks) VoicemailRecordKeys() []string {
 	m.mu.Lock()
@@ -2237,6 +2259,135 @@ func TestController_HookOnDuringGreetingRecord(t *testing.T) {
 	}
 	if cb.Hangups() != 1 {
 		t.Errorf("expected 1 HangupCall (so daemon can finalize partial greeting), got %d", cb.Hangups())
+	}
+}
+
+// TestController_Star96AuditionsGreeting verifies that dialing *96 from
+// DIALTONE enters StateVOICEMAIL_PLAY_GREETING and fires the
+// VoicemailPlayGreeting callback, without initiating an outbound call.
+func TestController_Star96AuditionsGreeting(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:6")
+
+	if c.State() != StateVOICEMAIL_PLAY_GREETING {
+		t.Fatalf("expected VOICEMAIL_PLAY_GREETING, got %s", c.State())
+	}
+	// Callback fires from a goroutine; give it a moment.
+	for i := 0; i < 20; i++ {
+		if cb.VoicemailPlayGreetings() == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if cb.VoicemailPlayGreetings() != 1 {
+		t.Errorf("expected 1 VoicemailPlayGreeting call, got %d", cb.VoicemailPlayGreetings())
+	}
+	if len(cb.Calls()) != 0 {
+		t.Errorf("expected no InitiateCall, got %v", cb.Calls())
+	}
+}
+
+// TestController_Star96IgnoredWhenDisabled verifies that with voicemail
+// disabled, dialing *96 does not audition; the controller keeps accumulating
+// digits as a normal dialed prefix.
+func TestController_Star96IgnoredWhenDisabled(t *testing.T) {
+	cb := &mockCallbacks{} // VoicemailEnabled returns false by default
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:6")
+
+	if got := cb.VoicemailPlayGreetings(); got != 0 {
+		t.Errorf("expected 0 VoicemailPlayGreeting when voicemail disabled, got %d", got)
+	}
+	if c.State() != StateDIALING {
+		t.Errorf("expected DIALING (still accumulating), got %s", c.State())
+	}
+	if got := c.digitsForTest(); got != "*96" {
+		t.Errorf("expected digits to accumulate as %q, got %q", "*96", got)
+	}
+}
+
+// TestController_HookOnDuringGreetingAudition verifies that hanging up while
+// auditioning the greeting returns the FSM to IDLE and fires
+// VoicemailExitGreetingPlayback (so the daemon stops the one-shot playback)
+// without routing through HangupCall, since *96 has no WebRTC peer or recorder.
+func TestController_HookOnDuringGreetingAudition(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:6")
+
+	if c.State() != StateVOICEMAIL_PLAY_GREETING {
+		t.Fatalf("expected VOICEMAIL_PLAY_GREETING, got %s", c.State())
+	}
+
+	c.HandleEvent("HOOK:ON")
+	if c.State() != StateIDLE {
+		t.Fatalf("expected IDLE after hook-on, got %s", c.State())
+	}
+	if got := cb.GreetingPlaybackExits(); got != 1 {
+		t.Errorf("expected 1 VoicemailExitGreetingPlayback, got %d", got)
+	}
+	if cb.Hangups() != 0 {
+		t.Errorf("expected no HangupCall for *96 audition, got %d", cb.Hangups())
+	}
+}
+
+// TestController_FinishGreetingAudition verifies the atomic completion helper:
+// from StateVOICEMAIL_PLAY_GREETING it transitions to DIALTONE, re-arms the
+// dial tone, and reports true; from any other state it reports false and
+// changes nothing, so a hook-on that already left the audition wins the race.
+func TestController_FinishGreetingAudition(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:6")
+	if c.State() != StateVOICEMAIL_PLAY_GREETING {
+		t.Fatalf("expected VOICEMAIL_PLAY_GREETING, got %s", c.State())
+	}
+
+	if !c.FinishGreetingAudition() {
+		t.Fatal("expected FinishGreetingAudition to return true from audition state")
+	}
+	if c.State() != StateDIALTONE {
+		t.Errorf("expected DIALTONE after FinishGreetingAudition, got %s", c.State())
+	}
+	tones := cb.Tones()
+	if len(tones) == 0 || tones[len(tones)-1] != ToneDial {
+		t.Errorf("expected dial tone re-armed, tones=%v", tones)
+	}
+
+	// A second call (state is now DIALTONE) must be a no-op returning false:
+	// this models a hook-on having already moved the FSM out of the audition.
+	if c.FinishGreetingAudition() {
+		t.Error("expected FinishGreetingAudition to return false outside audition state")
+	}
+	if c.State() != StateDIALTONE {
+		t.Errorf("expected state unchanged at DIALTONE, got %s", c.State())
 	}
 }
 

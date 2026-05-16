@@ -667,6 +667,68 @@ func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {
 	}
 }
 
+// greetingAuditionTimeout bounds how long VoicemailPlayGreeting waits for the
+// one-shot greeting playback to drain. It must exceed the voicemail package's
+// 60s greeting recording cap so a full-length custom greeting always plays to
+// completion; the slack covers the embedded default and mixer scheduling jitter.
+const greetingAuditionTimeout = 65 * time.Second
+
+// VoicemailPlayGreeting is invoked by the controller when the user dials *96
+// to audition the active outgoing greeting. It plays a short spoken intro
+// ("Your current answering machine greeting is..."), then the active greeting:
+// the custom greeting if one is recorded, otherwise the embedded default. Both
+// play through the mixer into the earpiece, after which the FSM returns to dial
+// tone.
+//
+// Pure read-only: no recorder is opened and the stored greeting is never
+// touched. A hook-on mid-audition routes through VoicemailExitGreetingPlayback,
+// which clears the one-shot queue; FinishGreetingAudition then reports that the
+// controller has left StateVOICEMAIL_PLAY_GREETING and this goroutine exits
+// without re-arming dial tone, so a tone never loops against an on-hook handset.
+func (d *daemonCallbacks) VoicemailPlayGreeting() {
+	defer recoverGoroutine("voicemail-play-greeting")
+
+	samples, custom := d.decodeCustomGreeting()
+	if !custom {
+		samples = d.mixer.ToneSamples("voicemail_greeting")
+	}
+
+	if len(samples) == 0 {
+		// No custom greeting decoded and the embedded default is missing.
+		// Nothing to audition; fall through to the dial-tone re-arm so the
+		// user is not stranded in the audition state. The intro is skipped
+		// too: announcing a greeting that will not play would be misleading.
+		slog.Warn("voicemail: no greeting available to audition")
+	} else {
+		slog.Info("voicemail: auditioning greeting", "custom", custom, "samples", len(samples))
+		// Spoken intro, then the greeting itself.
+		d.playAnnouncementSequence("vm_current_greeting")
+		// A hook-on during the intro already left the audition state; skip the
+		// greeting one-shot rather than play it into an on-hook handset.
+		if d.ctrl.State() == phone.StateVOICEMAIL_PLAY_GREETING {
+			d.mixer.PlayOnceSamples(samples)
+			waitForOnceComplete(d.mixer, greetingAuditionTimeout)
+		}
+	}
+
+	// FinishGreetingAudition atomically checks the FSM state and, only if the
+	// audition is still active, transitions to DIALTONE and re-arms dial tone.
+	// A hook-on that races this is fully serialized by the controller lock, so
+	// there is no window where dial tone could re-arm on an idle phone.
+	if !d.ctrl.FinishGreetingAudition() {
+		slog.Info("voicemail: greeting audition ended by hook-on")
+	}
+}
+
+// VoicemailExitGreetingPlayback is invoked by the controller on hook-on while
+// the FSM is in StateVOICEMAIL_PLAY_GREETING. It clears the one-shot queue so
+// the auditioned greeting stops immediately; the VoicemailPlayGreeting
+// goroutine then unblocks from waitForOnceComplete and exits without re-arming
+// dial tone.
+func (d *daemonCallbacks) VoicemailExitGreetingPlayback() {
+	d.mixer.StopOnce()
+}
+
 // VoicemailDeleteGreeting removes the on-disk custom greeting (if any). The
 // next voicemail auto-answer will fall back to the embedded default WAV.
 // Idempotent on missing file (Store.DeleteGreeting handles the not-exist case).
@@ -1434,11 +1496,26 @@ func (d *daemonCallbacks) playDefaultGreeting(pipeline *audio.Pipeline) {
 // to completion; false on no-greeting (caller should fall back to default),
 // decoder init failure, or empty buffer.
 func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
+	samples, ok := d.decodeCustomGreeting()
+	if !ok {
+		return false
+	}
+	pipeline.PlayGreetingSamples(samples)
+	time.Sleep(greetingPlaybackDuration(len(samples)))
+	return true
+}
+
+// decodeCustomGreeting opens the user's recorded greeting and decodes every
+// Opus frame into a flat 48kHz mono PCM buffer. Returns (samples, true) when a
+// non-empty custom greeting decoded successfully; (nil, false) on no-greeting
+// (caller should fall back to the embedded default), store/decoder init
+// failure, or an empty buffer.
+func (d *daemonCallbacks) decodeCustomGreeting() ([]int16, bool) {
 	d.mu.Lock()
 	store := d.voicemailStore
 	d.mu.Unlock()
 	if store == nil {
-		return false
+		return nil, false
 	}
 
 	player, err := store.OpenGreeting()
@@ -1446,14 +1523,14 @@ func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
 		if !errors.Is(err, os.ErrNotExist) {
 			slog.Warn("voicemail: failed to open custom greeting, falling back to default", "error", err)
 		}
-		return false
+		return nil, false
 	}
 	defer player.Close() //nolint:errcheck
 
 	dec, err := codec.NewDecoder(48000, 1)
 	if err != nil {
 		slog.Error("voicemail: decoder for greeting failed", "error", err)
-		return false
+		return nil, false
 	}
 
 	// Decode every frame into a single PCM buffer. append copies pcm into
@@ -1475,12 +1552,10 @@ func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
 
 	if len(allSamples) == 0 {
 		slog.Warn("voicemail: custom greeting is empty, falling back to default")
-		return false
+		return nil, false
 	}
 
-	pipeline.PlayGreetingSamples(allSamples)
-	time.Sleep(greetingPlaybackDuration(len(allSamples)))
-	return true
+	return allSamples, true
 }
 
 // greetingPlaybackDuration returns how long the given PCM sample count will

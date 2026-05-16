@@ -282,6 +282,17 @@ func (m *Mixer) StopTone() {
 	m.loopPos = 0
 }
 
+// StopOnce clears the one-shot queue, silencing any queued or in-progress
+// one-shot playback within one render period (~20ms). The looping tone and
+// WebRTC sources are untouched. Use to abort a long one-shot (e.g. a greeting
+// audition) without disturbing the rest of the mix.
+func (m *Mixer) StopOnce() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onceQueue = nil
+	m.oncePos = 0
+}
+
 // StopAll stops all audio: loops, one-shots, and clears all WebRTC sources.
 // Use on hang-up to guarantee silence.
 func (m *Mixer) StopAll() {
