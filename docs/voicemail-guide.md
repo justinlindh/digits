@@ -76,7 +76,7 @@ By default, callers hear a standard Digits greeting. To record your own:
 4. Press `#` when you are done. The phone confirms with "Greeting saved".
 
 Your greeting can be up to 60 seconds long. You can also finish by hanging up,
-and the phone stops on its own at the 60 second limit; all three ways save what
+and the phone stops on its own at the 60-second limit; all three ways save what
 you recorded. Recording a new greeting replaces the previous one.
 
 To hear your greeting back, dial `*96` (see "Hearing your current greeting"
@@ -91,8 +91,8 @@ to dial tone.
 ## Configuring voicemail in the web app
 
 Voicemail settings live on the phone's detail page in the web app. From the
-phones list, open a phone to its detail page (`/phones/{number}`), then find
-the voicemail section.
+phones list, open a phone to reach its detail page, then find the voicemail
+section.
 
 ### Turning voicemail on and off
 
@@ -164,9 +164,9 @@ did not finish cleanly the phone falls back to the standard greeting. Dial
 before hanging up.
 
 **I changed the message limit or storage cap and nothing changed.** The
-maximum message length and the storage cap are read when the phone's daemon
-starts. A change to either takes effect after the phone restarts. The on/off
-toggle, ring timeout, and retrieval code apply right away.
+maximum message length and the storage cap are read when the phone starts up.
+A change to either takes effect after the phone restarts. The on/off toggle,
+ring timeout, and retrieval code apply right away.
 
 **The message-waiting light is pulsing but `*98` says no messages.** The slow
 pulse tracks unheard messages. If you saved or deleted everything, the light
@@ -175,3 +175,9 @@ clears on the next idle check. If it persists, restart the phone.
 **Messages are missing.** The phone keeps a fixed number of messages and
 deletes the oldest when full. If old messages disappeared, the box hit its cap.
 Clear messages regularly to avoid this.
+
+## How it works
+
+For how voicemail is built (the call state machine, on-disk message storage,
+audio pipeline, signaling, and service-code reference), see
+[voicemail.md](voicemail.md).

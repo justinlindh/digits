@@ -25,6 +25,10 @@ Responsibility is split in two:
 Recorded audio is never uploaded. A caller's message exists as a file on the
 callee's Pi and nowhere else.
 
+This document is the engineering reference. For how to use voicemail from the
+handset and configure it in the web app in plain language, see the
+[voicemail guide](voicemail-guide.md).
+
 ## digitsd internals
 
 ### FSM states
