@@ -140,8 +140,12 @@ begins at the caller's first word, with no leading greeting-duration silence. A
 caller who hangs up while the greeting is still playing leaves no message at
 all, because the recorder was never armed.
 
-When the recorder reports it has hit the message-duration cap, the daemon
-finalizes the recording and calls `VoicemailRecordEnded()`.
+A message normally ends when the caller hangs up. As a backstop for a caller
+who never does, a single recording is capped at a fixed 10 minutes. The cap is
+not configurable. When the recorder reports it has hit the cap, the daemon
+finalizes the recording, plays the prompt beep to the caller through the
+outbound path (so a runaway recording is not cut to silent dead air), then
+calls `VoicemailRecordEnded()` to hang up.
 
 **Microphone mute is a security property.** The caller must never hear the
 callee's environment while leaving a message. The capture pipeline
@@ -344,7 +348,6 @@ type Settings struct {
 type Voicemail struct {
     Enabled            bool   `json:"enabled"`
     RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-    MaxMessageSeconds  int    `json:"max_message_seconds"`
     MaxStoredMessages  int    `json:"max_stored_messages"`
     RetrievalCode      string `json:"retrieval_code"`
 }
@@ -354,7 +357,7 @@ The inner `Voicemail` fields deliberately omit `omitempty` so a stored row
 carries every field literally; a later read can tell "Enabled was explicitly
 false" apart from "field absent". Time fields are integer seconds in storage
 and on the wire. `line.DefaultVoicemail()` is what a new line starts with:
-`Enabled: true`, ring timeout 20 s, max message 90 s, max stored 50, retrieval
+`Enabled: true`, ring timeout 20 s, max stored 50, retrieval
 code `*98`. `CreateLine` seeds the `settings` column with
 `DefaultSettings().Normalize()` so the non-zero `enabled` default survives the
 DB round trip.
@@ -374,7 +377,6 @@ Bounds are package constants in `line/settings.go`, shared by the HTTP handler,
 | Field | Min | Max | Out-of-range heals to |
 |-------|-----|-----|-----------------------|
 | `ring_timeout_seconds` | 5 | 60 | 20 |
-| `max_message_seconds` | 15 | 180 | 90 |
 | `max_stored_messages` | 5 | 200 | 50 |
 
 The retrieval code must match `^[0-9*#]{2,6}$` (2 to 6 characters, only digits,
@@ -389,16 +391,16 @@ Both endpoints are POST, registered on the authenticated mux in
 failure returns 404, not 403).
 
 - `POST /phones/{number}/voicemail` (`handlePhoneVoicemailPost`) takes the full
-  form of all five settings: the `enabled` checkbox, the three integer fields
-  (`ring_timeout_seconds`, `max_message_seconds`, `max_stored_messages`), and
-  `retrieval_code`. The integers are validated with `parseClampedInt` (400 with
-  a friendly "must be an integer between MIN and MAX" message on a bad value)
-  and the code with `IsValidRetrievalCode` (400 on a malformed code), both
-  before any DB write. On success it builds the new `Voicemail`, runs
-  `Normalize()`, persists, and pushes to the device.
+  form of all four settings: the `enabled` checkbox, the two integer fields
+  (`ring_timeout_seconds`, `max_stored_messages`), and `retrieval_code`. The
+  integers are validated with `parseClampedInt` (400 with a friendly "must be
+  an integer between MIN and MAX" message on a bad value) and the code with
+  `IsValidRetrievalCode` (400 on a malformed code), both before any DB write.
+  On success it builds the new `Voicemail`, runs `Normalize()`, persists, and
+  pushes to the device.
 - `POST /phones/{number}/voicemail-toggle`
   (`handlePhoneVoicemailTogglePost`) flips `Voicemail.Enabled` only and takes no
-  body fields. The other four fields are preserved through `Normalize()`, which
+  body fields. The other three fields are preserved through `Normalize()`, which
   backfills defaults if the row predates voicemail. It is a separate path so a
   checkbox round trip does not have to resubmit the timing and code fields.
 
@@ -438,7 +440,6 @@ part of a line-settings update. The wire types are in
 type Voicemail struct {
     Enabled            bool   `json:"enabled"`
     RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-    MaxMessageSeconds  int    `json:"max_message_seconds"`
     MaxStoredMessages  int    `json:"max_stored_messages"`
     RetrievalCode      string `json:"retrieval_code"`
 }
@@ -480,9 +481,8 @@ at the same time:
 
 - `Enabled`, `RingTimeout`, and `RetrievalCode` are read live, per ring or per
   dial, so a change applies on the next inbound call with no restart.
-- `MaxStoredMessages` and `MaxMessageDuration` are baked into the
-  `voicemail.Store` when it is opened at boot, so a change to either takes
-  effect on the next daemon restart.
+- `MaxStoredMessages` is baked into the `voicemail.Store` when it is opened at
+  boot, so a change to it takes effect on the next daemon restart.
 
 In the other direction the daemon reports its unheard-message count to the
 server with a `voicemail_state` message (`TypeVoicemailState`) carrying
@@ -522,17 +522,17 @@ to dial tone.
 
 ## Limits and defaults
 
-Every configurable bound, defined in `internal/config/config.go`
-(`defaultVoicemail()`) except the greeting cap, which is fixed in
-`internal/voicemail/store.go`.
+Configurable bounds are defined in `internal/config/config.go`
+(`defaultVoicemail()`). The two recording caps are fixed constants in
+`internal/voicemail/store.go`, not configurable.
 
 | Setting | Config field | Default | Notes |
 |---------|--------------|---------|-------|
 | Voicemail enabled | `Enabled` | `true` | Read live; off at boot means the store is never opened |
 | Ring timeout before auto-answer | `RingTimeout` | 20 s | Read live; `0` disables auto-answer |
-| Max message duration | `MaxMessageDuration` | 90 s | Baked into the store at boot |
 | Max stored messages | `MaxStoredMessages` | 50 | Baked into the store at boot; FIFO eviction past the cap |
 | Retrieval code | `RetrievalCode` | `*98` | Read live |
+| Max message duration | `messageMaxDuration` | 10 min | Fixed in `store.go`, not configurable; a backstop for a caller who never hangs up |
 | Max greeting duration | `greetingMaxDuration` | 60 s | Fixed in `store.go`, not configurable |
 
 The config file is `/data/digits/config.json`. Settings pushed from the server
@@ -541,5 +541,5 @@ which need a restart.
 
 These daemon-side values are the defaults. The server clamps user-entered
 values to narrower ranges before they are pushed down (ring timeout 5 to 60 s,
-max message 15 to 180 s, max stored 5 to 200); see Validation ranges under
+max stored 5 to 200); see Validation ranges under
 Server internals.

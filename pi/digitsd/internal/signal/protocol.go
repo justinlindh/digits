@@ -155,7 +155,6 @@ type LineSettings struct {
 type Voicemail struct {
 	Enabled            bool   `json:"enabled"`
 	RingTimeoutSeconds int    `json:"ring_timeout_seconds"`
-	MaxMessageSeconds  int    `json:"max_message_seconds"`
 	MaxStoredMessages  int    `json:"max_stored_messages"`
 	RetrievalCode      string `json:"retrieval_code"`
 }

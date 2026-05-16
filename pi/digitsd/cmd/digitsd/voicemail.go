@@ -362,9 +362,17 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 				if rec != nil && d.voicemailRecordArmed.Load() {
 					atCap, err := rec.AppendFrame(pkt.Payload)
 					if err != nil {
-						slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
+						// ErrRecorderClosed means VoicemailPickup finalized the
+						// recorder between the read above and this append. That
+						// is expected, not a failure, so stay quiet. Crucially
+						// do NOT return: unlike the *97 greeting loop this
+						// goroutine still has to decode caller audio into
+						// webrtcCh, which after pickup is the live call's audio.
+						if !errors.Is(err, voicemail.ErrRecorderClosed) {
+							slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
+						}
 					} else if atCap {
-						slog.Info("voicemail: max duration reached", "caller", caller)
+						slog.Info("voicemail: max duration reached, beeping caller", "caller", caller)
 						d.recorderMu.Lock()
 						if d.recorder != nil {
 							if _, err := d.recorder.Finalize(); err != nil {
@@ -373,6 +381,20 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 							d.recorder = nil
 						}
 						d.recorderMu.Unlock()
+						// Beep the caller before hanging up so a runaway
+						// recording that hits the 10-minute cap is not dropped
+						// into silent dead air. The local mic is muted during
+						// recording, but PlayGreetingBeep injects into the
+						// outbound beep slot, so the caller hears it. The sleep
+						// lets the beep drain before VoicemailRecordEnded tears
+						// the call down.
+						d.mu.Lock()
+						pipeline := d.pipeline
+						d.mu.Unlock()
+						if pipeline != nil {
+							pipeline.PlayGreetingBeep(500 * time.Millisecond)
+							time.Sleep(600 * time.Millisecond)
+						}
 						go d.VoicemailRecordEnded()
 						return
 					}
