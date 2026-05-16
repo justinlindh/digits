@@ -2609,8 +2609,6 @@ func validVoicemailForm() url.Values {
 	return url.Values{
 		"enabled":              {"on"},
 		"ring_timeout_seconds": {"25"},
-		"max_stored_messages":  {"30"},
-		"retrieval_code":       {"*97"},
 	}
 }
 
@@ -2657,17 +2655,16 @@ func TestPhoneVoicemailValidFormPersistsAndRedirects(t *testing.T) {
 	for _, want := range []string{
 		`"enabled": true`,
 		`"ring_timeout_seconds": 25`,
-		`"max_stored_messages": 30`,
-		`"retrieval_code": "*97"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("voicemail JSONB missing %q in %s", want, got)
 		}
 	}
-	// The configurable per-message cap is gone: a new write must not
-	// reintroduce the vestigial key.
-	if strings.Contains(got, "max_message_seconds") {
-		t.Errorf("voicemail JSONB should not carry max_message_seconds, got %s", got)
+	// Removed fields must not reappear in new writes.
+	for _, banned := range []string{"max_message_seconds", "max_stored_messages", "retrieval_code"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("voicemail JSONB should not carry %q, got %s", banned, got)
+		}
 	}
 }
 
@@ -2692,52 +2689,6 @@ func TestPhoneVoicemailRingTimeoutOutOfRangeRejected(t *testing.T) {
 	}
 }
 
-func TestPhoneVoicemailMaxStoredOutOfRangeRejected(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
-	_ = setupVoiceStyleLine(t, h, database, authStore)
-
-	cases := []string{"0", "4", "201", "9999", ""}
-	for _, val := range cases {
-		t.Run(val, func(t *testing.T) {
-			form := validVoicemailForm()
-			form.Set("max_stored_messages", val)
-			w := postVoicemail(t, h, cookie, form, false)
-			if w.Code != http.StatusBadRequest {
-				t.Fatalf("max_stored_messages=%q: expected 400, got %d", val, w.Code)
-			}
-		})
-	}
-}
-
-func TestPhoneVoicemailBadRetrievalCodeRejected(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
-	_ = setupVoiceStyleLine(t, h, database, authStore)
-
-	cases := []string{
-		"",        // empty
-		"1",       // too short
-		"1234567", // too long
-		"abc",     // bad chars
-		"123",     // no * or #, ambiguous with 7-digit dialing
-		"12345",   // no * or #
-		"* 98",    // space
-	}
-	for _, val := range cases {
-		t.Run(val, func(t *testing.T) {
-			form := validVoicemailForm()
-			form.Set("retrieval_code", val)
-			w := postVoicemail(t, h, cookie, form, false)
-			if w.Code != http.StatusBadRequest {
-				t.Fatalf("retrieval_code=%q: expected 400, got %d: %s", val, w.Code, w.Body.String())
-			}
-			if !strings.Contains(w.Body.String(), "retrieval_code") {
-				t.Errorf("400 body should name the field, got %q", w.Body.String())
-			}
-		})
-	}
-}
 
 func TestPhoneVoicemailMissingLineReturns404(t *testing.T) {
 	h, database, authStore := setupHandler(t)
@@ -2789,8 +2740,6 @@ func TestPhoneVoicemailPushesToConnectedDevice(t *testing.T) {
 		want := signaling.Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxStoredMessages:  30,
-			RetrievalCode:      "*97",
 		}
 		if got != want {
 			t.Errorf("Voicemail push: got %+v, want %+v", got, want)

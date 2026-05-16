@@ -754,42 +754,19 @@
       Messages stay on the handset; dial the retrieval code from the phone to listen.
     </p>
 
-    <details class="voicemail-advanced">
-      <summary>Advanced settings</summary>
-      <div class="voicemail-fields" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
-        <div class="field">
-          <label for="vm-ring-timeout" class="field__label">Ring timeout (seconds)</label>
-          <input type="number" id="vm-ring-timeout" name="ring_timeout_seconds"
-                 min="5" max="60"
-                 value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
-                 class="field__input" style="width: 110px;"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-          <span class="muted" style="font-size: 11px;">5 to 60 seconds before the answering machine picks up.</span>
-        </div>
-
-        <div class="field">
-          <label for="vm-max-stored" class="field__label">Max stored messages</label>
-          <input type="number" id="vm-max-stored" name="max_stored_messages"
-                 min="5" max="200"
-                 value="{{.Line.Settings.Voicemail.MaxStoredMessages}}"
-                 class="field__input" style="width: 110px;"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-          <span class="muted" style="font-size: 11px;">5 to 200; oldest dropped first.</span>
-        </div>
-
-        <div class="field">
-          <label for="vm-retrieval-code" class="field__label">Retrieval code</label>
-          <input type="text" id="vm-retrieval-code" name="retrieval_code"
-                 value="{{.Line.Settings.Voicemail.RetrievalCode}}"
-                 pattern="[0-9*#]{2,6}" maxlength="6" required
-                 class="field__input" style="width: 110px;"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-          <span class="muted" style="font-size: 11px;">2 to 6 chars; must contain * or # so it cannot collide with a 7-digit dial.</span>
-        </div>
-
-        <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 6px;">Save</button>
+    <div class="voicemail-fields" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
+      <div class="field">
+        <label for="vm-ring-timeout" class="field__label">Ring timeout (seconds)</label>
+        <input type="number" id="vm-ring-timeout" name="ring_timeout_seconds"
+               min="5" max="60"
+               value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
+               class="field__input" style="width: 110px;"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
+        <span class="muted" style="font-size: 11px;">5 to 60 seconds before the answering machine picks up.</span>
       </div>
-    </details>
+
+      <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 6px;">Save</button>
+    </div>
   </form>
 </div>
 {{end}}
@@ -825,40 +802,21 @@
       </div>
     </div>
 
-    <details class="am-voicemail-advanced">
-      <summary>Advanced settings</summary>
-      <div class="am-voicemail-fields" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
-        <div class="am-settings__field">
-          <label for="vm-ring-timeout" class="am-label am-settings__field-label">Ring timeout (sec)</label>
-          <input type="number" id="vm-ring-timeout" name="ring_timeout_seconds"
-                 min="5" max="60"
-                 value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
-                 class="am-settings__input"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-        </div>
-        <div class="am-settings__field">
-          <label for="vm-max-stored" class="am-label am-settings__field-label">Max stored</label>
-          <input type="number" id="vm-max-stored" name="max_stored_messages"
-                 min="5" max="200"
-                 value="{{.Line.Settings.Voicemail.MaxStoredMessages}}"
-                 class="am-settings__input"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-        </div>
-        <div class="am-settings__field">
-          <label for="vm-retrieval-code" class="am-label am-settings__field-label">Retrieval code</label>
-          <input type="text" id="vm-retrieval-code" name="retrieval_code"
-                 value="{{.Line.Settings.Voicemail.RetrievalCode}}"
-                 pattern="[0-9*#]{2,6}" maxlength="6" required
-                 class="am-settings__input"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-        </div>
-
-        <button type="submit" class="am-key am-settings__submit am-voicemail-fields__submit">
-          <span class="am-key__symbol">&#x25B6;</span>
-          <span class="am-key__label">Save</span>
-        </button>
+    <div class="am-voicemail-fields" data-voicemail-fields {{if not .Line.Settings.Voicemail.Enabled}}style="opacity: 0.55;"{{end}}>
+      <div class="am-settings__field">
+        <label for="vm-ring-timeout" class="am-label am-settings__field-label">Ring timeout (sec)</label>
+        <input type="number" id="vm-ring-timeout" name="ring_timeout_seconds"
+               min="5" max="60"
+               value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
+               class="am-settings__input"
+               {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
       </div>
-    </details>
+
+      <button type="submit" class="am-key am-settings__submit am-voicemail-fields__submit">
+        <span class="am-key__symbol">&#x25B6;</span>
+        <span class="am-key__label">Save</span>
+      </button>
+    </div>
   </form>
 </div>
 {{end}}

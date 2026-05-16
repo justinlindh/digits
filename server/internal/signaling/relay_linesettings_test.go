@@ -135,8 +135,6 @@ func TestOnRegisteredPushesVoicemail(t *testing.T) {
 		Voicemail: &Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxStoredMessages:  40,
-			RetrievalCode:      "*97",
 		},
 	})
 	relay := NewRelay(hub, nil, nil, store)
@@ -162,8 +160,6 @@ func TestOnRegisteredPushesVoicemail(t *testing.T) {
 		want := Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxStoredMessages:  40,
-			RetrievalCode:      "*97",
 		}
 		if got != want {
 			t.Errorf("Voicemail: got %+v, want %+v", got, want)

@@ -641,18 +641,6 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	maxStored, ok := parseClampedInt(w, r, "max_stored_messages",
-		line.VoicemailMaxStoredMin, line.VoicemailMaxStoredMax)
-	if !ok {
-		return
-	}
-	code := strings.TrimSpace(r.FormValue("retrieval_code"))
-	if !line.IsValidRetrievalCode(code) {
-		http.Error(w,
-			"retrieval_code must be 2 to 6 characters of digits, *, or # and must contain at least one * or #",
-			http.StatusBadRequest)
-		return
-	}
 
 	number := r.PathValue("number")
 	ln := h.requireLineOwnership(w, r, number)
@@ -664,8 +652,6 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	next.Voicemail = line.Voicemail{
 		Enabled:            enabled,
 		RingTimeoutSeconds: ring,
-		MaxStoredMessages:  maxStored,
-		RetrievalCode:      code,
 	}
 	next = next.Normalize()
 	if !h.applyLineSettings(w, r, ln, next) {

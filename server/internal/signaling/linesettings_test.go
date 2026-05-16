@@ -40,8 +40,6 @@ func TestLineSettingsVoicemailJSONRoundTrip(t *testing.T) {
 			Voicemail: &Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 30,
-				MaxStoredMessages:  75,
-				RetrievalCode:      "#42",
 			},
 		},
 	}
@@ -55,17 +53,16 @@ func TestLineSettingsVoicemailJSONRoundTrip(t *testing.T) {
 		`"voicemail":`,
 		`"enabled":true`,
 		`"ring_timeout_seconds":30`,
-		`"max_stored_messages":75`,
-		`"retrieval_code":"#42"`,
 	} {
 		if !strings.Contains(wire, key) {
 			t.Errorf("wire missing %q in %s", key, wire)
 		}
 	}
-	// The per-message recording cap is fixed in digitsd, not configured
-	// per line, so no max-duration key may ride the wire.
-	if strings.Contains(wire, "max_message_seconds") {
-		t.Errorf("wire must not carry max_message_seconds, got %s", wire)
+	// Removed fields must not ride the wire.
+	for _, banned := range []string{"max_message_seconds", "max_stored_messages", "retrieval_code"} {
+		if strings.Contains(wire, banned) {
+			t.Errorf("wire must not carry %q, got %s", banned, wire)
+		}
 	}
 	got, err := ParseMessage(b)
 	if err != nil {
@@ -101,9 +98,7 @@ func TestLineSettingsVoicemailOmittedWhenNil(t *testing.T) {
 // inner Voicemail fields have no omitempty: a non-nil pointer to a
 // zero-value Voicemail must serialize every key with its zero value so
 // the daemon can distinguish "server didn't set this" (nil outer) from
-// "server set this to zero" (outer present with explicit zero). Regresses
-// against a future hand that tries to re-add omitempty to "tidy up" the
-// wire.
+// "server set this to zero" (outer present with explicit zero).
 func TestLineSettingsVoicemailZeroValuesRoundTrip(t *testing.T) {
 	in := &Message{
 		Type: TypeLineSettings,
@@ -120,8 +115,6 @@ func TestLineSettingsVoicemailZeroValuesRoundTrip(t *testing.T) {
 	for _, key := range []string{
 		`"enabled":false`,
 		`"ring_timeout_seconds":0`,
-		`"max_stored_messages":0`,
-		`"retrieval_code":""`,
 	} {
 		if !strings.Contains(wire, key) {
 			t.Errorf("expected zero-value %q in wire, got %s", key, wire)

@@ -1641,7 +1641,7 @@ func main() {
 		vmDir := filepath.Join(filepath.Dir(*configPath), "voicemail")
 		var err error
 		vmStore, err = voicemail.Open(vmDir, voicemail.Options{
-			MaxMessages: cfg.Voicemail.MaxStoredMessages,
+			MaxMessages: config.VoicemailMaxStoredMessages,
 		})
 		if err != nil {
 			slog.Error("voicemail store open failed", "dir", vmDir, "error", err)
@@ -2477,10 +2477,8 @@ func main() {
 
 				if vm := msg.LineSettings.Voicemail; vm != nil {
 					target := config.Voicemail{
-						Enabled:           vm.Enabled,
-						RingTimeout:       time.Duration(vm.RingTimeoutSeconds) * time.Second,
-						MaxStoredMessages: vm.MaxStoredMessages,
-						RetrievalCode:     vm.RetrievalCode,
+						Enabled:     vm.Enabled,
+						RingTimeout: time.Duration(vm.RingTimeoutSeconds) * time.Second,
 					}
 					cb.mu.Lock()
 					current := cb.cfg.Voicemail
@@ -2492,12 +2490,6 @@ func main() {
 						}
 						if target.RingTimeout != current.RingTimeout {
 							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
-						}
-						if target.MaxStoredMessages != current.MaxStoredMessages {
-							slog.Info("line_settings applied", "voicemail_max_stored_messages", target.MaxStoredMessages)
-						}
-						if target.RetrievalCode != current.RetrievalCode {
-							slog.Info("line_settings applied", "voicemail_retrieval_code", target.RetrievalCode)
 						}
 						if err := cb.setVoicemailConfig(target); err != nil {
 							slog.Warn("line_settings: voicemail save failed", "err", err)

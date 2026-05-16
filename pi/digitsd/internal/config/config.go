@@ -20,6 +20,12 @@ const (
 	VoiceStyleModern = "modern"
 )
 
+// Voicemail constants that are no longer server-configurable.
+const (
+	VoicemailMaxStoredMessages = 50
+	VoicemailRetrievalCode     = "*98"
+)
+
 // WiFiFallback configures the wifi auto-fallback supervisor.
 type WiFiFallback struct {
 	Enabled           bool          `json:"enabled"`
@@ -41,13 +47,6 @@ type Voicemail struct {
 	// digitsd auto-answers and starts recording. Mirrors a 4-ring delay on
 	// classic answering machines (~20s on 5Hz cadence).
 	RingTimeout time.Duration `json:"ring_timeout"`
-
-	// MaxStoredMessages caps the on-disk archive. Oldest messages are evicted
-	// FIFO once the cap is exceeded.
-	MaxStoredMessages int `json:"max_stored_messages"`
-
-	// RetrievalCode is the digit sequence dialed off-hook to enter playback.
-	RetrievalCode string `json:"retrieval_code"`
 }
 
 // Config holds digitsd runtime configuration loaded from a JSON file.
@@ -120,10 +119,8 @@ func defaultWiFiFallback() WiFiFallback {
 // source of truth used by Default() and the Load path.
 func defaultVoicemail() Voicemail {
 	return Voicemail{
-		Enabled:           true,
-		RingTimeout:       20 * time.Second,
-		MaxStoredMessages: 50,
-		RetrievalCode:     "*98",
+		Enabled:     true,
+		RingTimeout: 20 * time.Second,
 	}
 }
 
