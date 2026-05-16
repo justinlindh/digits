@@ -604,6 +604,13 @@ func (d *daemonCallbacks) VoicemailRecordGreeting() {
 
 			atCap, err := rec.AppendFrame(payload)
 			if err != nil {
+				if errors.Is(err, voicemail.ErrRecorderClosed) {
+					// finalizeGreetingRecording closed the recorder out from
+					// under this loop (the # key, hang-up, or duration cap).
+					// The greeting is already saved; this frame just lost the
+					// race. Stop quietly instead of logging a spurious WARN.
+					return
+				}
 				slog.Warn("voicemail: greeting append failed", "error", err)
 				continue
 			}

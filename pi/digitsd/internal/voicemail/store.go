@@ -230,6 +230,11 @@ func (s *Store) BeginRecording() (*Recorder, error) {
 	}, nil
 }
 
+// ErrRecorderClosed is returned by Recorder.AppendFrame when the recorder has
+// already been finalized or discarded. A writer racing a finalize should treat
+// it as a clean stop, not a failure.
+var ErrRecorderClosed = errors.New("voicemail: recorder closed")
+
 // Recorder writes Opus frames for a single message.
 type Recorder struct {
 	store     *Store
@@ -250,7 +255,7 @@ func (r *Recorder) AppendFrame(payload []byte) (atCap bool, err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return false, errors.New("voicemail: recorder closed")
+		return false, ErrRecorderClosed
 	}
 	if len(payload) > 0xffff {
 		return false, fmt.Errorf("voicemail: opus payload too large (%d)", len(payload))
