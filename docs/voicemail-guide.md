@@ -103,13 +103,12 @@ the phone simply rings and never auto-answers.
 
 ### The settings form
 
-Open the advanced settings block in the voicemail section to edit four fields.
+Open the advanced settings block in the voicemail section to edit three fields.
 Change what you need, then submit the form to save.
 
 | Field | What it controls | Allowed range |
 |-------|------------------|---------------|
 | Ring timeout | How many seconds a call rings before the answering machine picks up | 5 to 60 seconds |
-| Max message | The longest a single caller message can be | 15 to 180 seconds |
 | Max stored messages | How many messages the phone keeps before the oldest is dropped | 5 to 200 |
 | Retrieval code | The code you dial on the phone to listen to messages | 2 to 6 characters, digits and `*` and `#` only, must include at least one `*` or `#` |
 
@@ -118,7 +117,7 @@ rules, the app rejects the form with a message explaining the limit; nothing is
 saved until the values are valid. A retrieval code cannot be all digits, so it
 can never be mistaken for a real phone number.
 
-When voicemail is disabled, the four fields are dimmed and locked. Turn
+When voicemail is disabled, the three fields are dimmed and locked. Turn
 voicemail on to edit them.
 
 ### The unheard-messages badge
@@ -131,14 +130,16 @@ clear messages on the handset.
 ### When settings take effect
 
 The on/off toggle, ring timeout, and retrieval code apply on the phone's next
-incoming call. The max message length and storage cap apply after the phone
-restarts. If you edit settings while the phone is offline, the phone picks them
-up the next time it connects.
+incoming call. The storage cap applies after the phone restarts. If you edit
+settings while the phone is offline, the phone picks them up the next time it
+connects.
 
 ## Limits and edge cases
 
-- **Message length.** Each message can be up to 90 seconds by default. When a
-  caller reaches the limit, recording stops and the message is saved.
+- **Message length.** A message ends when the caller hangs up. As a backstop
+  for a caller who never hangs up, a single recording is capped at 10 minutes;
+  a caller still talking when the cap is reached hears a beep and the recording
+  is saved. The cap is fixed and not configurable.
 - **Greeting length.** A custom greeting can be up to 60 seconds.
 - **Storage cap.** The phone keeps up to 50 messages by default. When the box
   is full and a new message arrives, the oldest message is deleted to make
@@ -163,10 +164,9 @@ did not finish cleanly the phone falls back to the standard greeting. Dial
 `*97` and record it again, and wait for the "Greeting saved" confirmation
 before hanging up.
 
-**I changed the message limit or storage cap and nothing changed.** The
-maximum message length and the storage cap are read when the phone starts up.
-A change to either takes effect after the phone restarts. The on/off toggle,
-ring timeout, and retrieval code apply right away.
+**I changed the storage cap and nothing changed.** The storage cap is read
+when the phone starts up, so a change to it takes effect after the phone
+restarts. The on/off toggle, ring timeout, and retrieval code apply right away.
 
 **The message-waiting light is pulsing but `*98` says no messages.** The slow
 pulse tracks unheard messages. If you saved or deleted everything, the light

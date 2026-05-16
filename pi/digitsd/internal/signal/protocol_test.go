@@ -314,7 +314,6 @@ func TestLineSettingsVoicemailRoundTrip(t *testing.T) {
 			Voicemail: &Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 25,
-				MaxMessageSeconds:  120,
 				MaxStoredMessages:  40,
 				RetrievalCode:      "*98",
 			},
@@ -330,7 +329,6 @@ func TestLineSettingsVoicemailRoundTrip(t *testing.T) {
 		`"voicemail":`,
 		`"enabled":true`,
 		`"ring_timeout_seconds":25`,
-		`"max_message_seconds":120`,
 		`"max_stored_messages":40`,
 		`"retrieval_code":"*98"`,
 	} {
@@ -413,7 +411,7 @@ func TestVoicemailStateZeroNotOmitted(t *testing.T) {
 func TestLineSettingsVoicemailZeroValuesParse(t *testing.T) {
 	// Server may push enabled=false with zero ints; receiver must accept it
 	// as an authoritative full-replacement payload, not silently drop fields.
-	raw := []byte(`{"type":"line_settings","line_settings":{"voicemail":{"enabled":false,"ring_timeout_seconds":0,"max_message_seconds":0,"max_stored_messages":0,"retrieval_code":""}}}`)
+	raw := []byte(`{"type":"line_settings","line_settings":{"voicemail":{"enabled":false,"ring_timeout_seconds":0,"max_stored_messages":0,"retrieval_code":""}}}`)
 	msg, err := ParseMessage(raw)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
@@ -422,7 +420,7 @@ func TestLineSettingsVoicemailZeroValuesParse(t *testing.T) {
 		t.Fatalf("expected non-nil voicemail block, got %+v", msg.LineSettings)
 	}
 	vm := msg.LineSettings.Voicemail
-	if vm.Enabled || vm.RingTimeoutSeconds != 0 || vm.MaxMessageSeconds != 0 ||
+	if vm.Enabled || vm.RingTimeoutSeconds != 0 ||
 		vm.MaxStoredMessages != 0 || vm.RetrievalCode != "" {
 		t.Errorf("zero-value parse mismatch: %+v", *vm)
 	}

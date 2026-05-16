@@ -364,7 +364,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 					if err != nil {
 						slog.Warn("voicemail: append frame failed", "caller", caller, "error", err)
 					} else if atCap {
-						slog.Info("voicemail: max duration reached", "caller", caller)
+						slog.Info("voicemail: max duration reached, beeping caller", "caller", caller)
 						d.recorderMu.Lock()
 						if d.recorder != nil {
 							if _, err := d.recorder.Finalize(); err != nil {
@@ -373,6 +373,20 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 							d.recorder = nil
 						}
 						d.recorderMu.Unlock()
+						// Beep the caller before hanging up so a runaway
+						// recording that hits the 10-minute cap is not dropped
+						// into silent dead air. The local mic is muted during
+						// recording, but PlayGreetingBeep injects into the
+						// outbound beep slot, so the caller hears it. The sleep
+						// lets the beep drain before VoicemailRecordEnded tears
+						// the call down.
+						d.mu.Lock()
+						pipeline := d.pipeline
+						d.mu.Unlock()
+						if pipeline != nil {
+							pipeline.PlayGreetingBeep(500 * time.Millisecond)
+							time.Sleep(600 * time.Millisecond)
+						}
 						go d.VoicemailRecordEnded()
 						return
 					}
