@@ -768,16 +768,6 @@
         </div>
 
         <div class="field">
-          <label for="vm-max-message" class="field__label">Max message length (seconds)</label>
-          <input type="number" id="vm-max-message" name="max_message_seconds"
-                 min="15" max="180"
-                 value="{{.Line.Settings.Voicemail.MaxMessageSeconds}}"
-                 class="field__input" style="width: 110px;"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-          <span class="muted" style="font-size: 11px;">15 to 180 seconds per recording.</span>
-        </div>
-
-        <div class="field">
           <label for="vm-max-stored" class="field__label">Max stored messages</label>
           <input type="number" id="vm-max-stored" name="max_stored_messages"
                  min="5" max="200"
@@ -843,14 +833,6 @@
           <input type="number" id="vm-ring-timeout" name="ring_timeout_seconds"
                  min="5" max="60"
                  value="{{.Line.Settings.Voicemail.RingTimeoutSeconds}}"
-                 class="am-settings__input"
-                 {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
-        </div>
-        <div class="am-settings__field">
-          <label for="vm-max-message" class="am-label am-settings__field-label">Max message (sec)</label>
-          <input type="number" id="vm-max-message" name="max_message_seconds"
-                 min="15" max="180"
-                 value="{{.Line.Settings.Voicemail.MaxMessageSeconds}}"
                  class="am-settings__input"
                  {{if not .Line.Settings.Voicemail.Enabled}}disabled{{end}}>
         </div>

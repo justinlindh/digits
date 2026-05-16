@@ -40,7 +40,6 @@ func TestLineSettingsVoicemailJSONRoundTrip(t *testing.T) {
 			Voicemail: &Voicemail{
 				Enabled:            true,
 				RingTimeoutSeconds: 30,
-				MaxMessageSeconds:  120,
 				MaxStoredMessages:  75,
 				RetrievalCode:      "#42",
 			},
@@ -56,13 +55,17 @@ func TestLineSettingsVoicemailJSONRoundTrip(t *testing.T) {
 		`"voicemail":`,
 		`"enabled":true`,
 		`"ring_timeout_seconds":30`,
-		`"max_message_seconds":120`,
 		`"max_stored_messages":75`,
 		`"retrieval_code":"#42"`,
 	} {
 		if !strings.Contains(wire, key) {
 			t.Errorf("wire missing %q in %s", key, wire)
 		}
+	}
+	// The per-message recording cap is fixed in digitsd, not configured
+	// per line, so no max-duration key may ride the wire.
+	if strings.Contains(wire, "max_message_seconds") {
+		t.Errorf("wire must not carry max_message_seconds, got %s", wire)
 	}
 	got, err := ParseMessage(b)
 	if err != nil {
@@ -117,7 +120,6 @@ func TestLineSettingsVoicemailZeroValuesRoundTrip(t *testing.T) {
 	for _, key := range []string{
 		`"enabled":false`,
 		`"ring_timeout_seconds":0`,
-		`"max_message_seconds":0`,
 		`"max_stored_messages":0`,
 		`"retrieval_code":""`,
 	} {

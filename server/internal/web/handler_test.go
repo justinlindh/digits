@@ -2609,7 +2609,6 @@ func validVoicemailForm() url.Values {
 	return url.Values{
 		"enabled":              {"on"},
 		"ring_timeout_seconds": {"25"},
-		"max_message_seconds":  {"60"},
 		"max_stored_messages":  {"30"},
 		"retrieval_code":       {"*97"},
 	}
@@ -2658,13 +2657,17 @@ func TestPhoneVoicemailValidFormPersistsAndRedirects(t *testing.T) {
 	for _, want := range []string{
 		`"enabled": true`,
 		`"ring_timeout_seconds": 25`,
-		`"max_message_seconds": 60`,
 		`"max_stored_messages": 30`,
 		`"retrieval_code": "*97"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("voicemail JSONB missing %q in %s", want, got)
 		}
+	}
+	// The configurable per-message cap is gone: a new write must not
+	// reintroduce the vestigial key.
+	if strings.Contains(got, "max_message_seconds") {
+		t.Errorf("voicemail JSONB should not carry max_message_seconds, got %s", got)
 	}
 }
 
@@ -2684,24 +2687,6 @@ func TestPhoneVoicemailRingTimeoutOutOfRangeRejected(t *testing.T) {
 			}
 			if !strings.Contains(w.Body.String(), "ring_timeout_seconds") {
 				t.Errorf("400 body should name the field, got %q", w.Body.String())
-			}
-		})
-	}
-}
-
-func TestPhoneVoicemailMaxMessageOutOfRangeRejected(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
-	_ = setupVoiceStyleLine(t, h, database, authStore)
-
-	cases := []string{"0", "14", "181", "10000", "x"}
-	for _, val := range cases {
-		t.Run(val, func(t *testing.T) {
-			form := validVoicemailForm()
-			form.Set("max_message_seconds", val)
-			w := postVoicemail(t, h, cookie, form, false)
-			if w.Code != http.StatusBadRequest {
-				t.Fatalf("max_message_seconds=%q: expected 400, got %d", val, w.Code)
 			}
 		})
 	}
@@ -2804,7 +2789,6 @@ func TestPhoneVoicemailPushesToConnectedDevice(t *testing.T) {
 		want := signaling.Voicemail{
 			Enabled:            true,
 			RingTimeoutSeconds: 25,
-			MaxMessageSeconds:  60,
 			MaxStoredMessages:  30,
 			RetrievalCode:      "*97",
 		}

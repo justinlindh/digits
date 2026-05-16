@@ -77,12 +77,12 @@ test.describe('Voicemail (intercom theme)', () => {
     await expect(page.locator('#voicemail-section input[name="enabled"]')).toBeVisible();
     await expect(page.locator('#voicemail-section details.voicemail-advanced')).toBeVisible();
 
-    // Advanced should be collapsed by default; the 4 fields are hidden until expanded.
+    // Advanced should be collapsed by default; the detail fields are hidden until expanded.
     const ringField = page.locator('#voicemail-section input[name="ring_timeout_seconds"]');
     await expect(ringField).not.toBeVisible();
   });
 
-  test('expanding Advanced reveals all four detail fields', async ({ page }) => {
+  test('expanding Advanced reveals all detail fields', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
@@ -92,9 +92,10 @@ test.describe('Voicemail (intercom theme)', () => {
 
     await page.locator('#voicemail-section details.voicemail-advanced > summary').click();
     await expect(page.locator('#voicemail-section input[name="ring_timeout_seconds"]')).toBeVisible();
-    await expect(page.locator('#voicemail-section input[name="max_message_seconds"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="max_stored_messages"]')).toBeVisible();
     await expect(page.locator('#voicemail-section input[name="retrieval_code"]')).toBeVisible();
+    // The per-message recording cap is fixed in digitsd, so no field for it.
+    await expect(page.locator('#voicemail-section input[name="max_message_seconds"]')).toHaveCount(0);
   });
 
   test('checkbox toggle swaps section partial and persists', async ({ page }) => {
@@ -139,7 +140,6 @@ test.describe('Voicemail (intercom theme)', () => {
     // Expand Advanced and edit.
     await page.locator('#voicemail-section details.voicemail-advanced > summary').click();
     await page.locator('#voicemail-section input[name="ring_timeout_seconds"]').fill('30');
-    await page.locator('#voicemail-section input[name="max_message_seconds"]').fill('100');
     await page.locator('#voicemail-section input[name="max_stored_messages"]').fill('25');
     await page.locator('#voicemail-section input[name="retrieval_code"]').fill('*99');
 
@@ -180,7 +180,6 @@ test.describe('Voicemail (intercom theme)', () => {
       form: {
         enabled: 'on',
         ring_timeout_seconds: '20',
-        max_message_seconds: '90',
         max_stored_messages: '50',
         retrieval_code: '12345',
       },
