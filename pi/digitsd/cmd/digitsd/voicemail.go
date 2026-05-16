@@ -674,9 +674,11 @@ func (d *daemonCallbacks) VoicemailRecordGreetingKey(digit string) {
 const greetingAuditionTimeout = 65 * time.Second
 
 // VoicemailPlayGreeting is invoked by the controller when the user dials *96
-// to audition the active outgoing greeting. It decodes the custom greeting if
-// one is recorded, otherwise loads the embedded default, plays it through the
-// mixer into the earpiece, then returns the FSM to dial tone.
+// to audition the active outgoing greeting. It plays a short spoken intro
+// ("Your current answering machine greeting is..."), then the active greeting:
+// the custom greeting if one is recorded, otherwise the embedded default. Both
+// play through the mixer into the earpiece, after which the FSM returns to dial
+// tone.
 //
 // Pure read-only: no recorder is opened and the stored greeting is never
 // touched. A hook-on mid-audition routes through VoicemailExitGreetingPlayback,
@@ -694,12 +696,19 @@ func (d *daemonCallbacks) VoicemailPlayGreeting() {
 	if len(samples) == 0 {
 		// No custom greeting decoded and the embedded default is missing.
 		// Nothing to audition; fall through to the dial-tone re-arm so the
-		// user is not stranded in the audition state.
+		// user is not stranded in the audition state. The intro is skipped
+		// too: announcing a greeting that will not play would be misleading.
 		slog.Warn("voicemail: no greeting available to audition")
 	} else {
 		slog.Info("voicemail: auditioning greeting", "custom", custom, "samples", len(samples))
-		d.mixer.PlayOnceSamples(samples)
-		waitForOnceComplete(d.mixer, greetingAuditionTimeout)
+		// Spoken intro, then the greeting itself.
+		d.playAnnouncementSequence("vm_current_greeting")
+		// A hook-on during the intro already left the audition state; skip the
+		// greeting one-shot rather than play it into an on-hook handset.
+		if d.ctrl.State() == phone.StateVOICEMAIL_PLAY_GREETING {
+			d.mixer.PlayOnceSamples(samples)
+			waitForOnceComplete(d.mixer, greetingAuditionTimeout)
+		}
 	}
 
 	// FinishGreetingAudition atomically checks the FSM state and, only if the
