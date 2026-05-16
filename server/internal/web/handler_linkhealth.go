@@ -168,19 +168,10 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := startSSE(w, r)
 	if !ok {
-		slog.ErrorContext(r.Context(), "SSE stream: ResponseWriter does not implement Flusher")
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
 		return
 	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	w.WriteHeader(http.StatusOK)
-	flusher.Flush()
 
 	// Compute the linked-families index once at subscribe time. It can't
 	// change mid-call (household membership changes don't retroactively
@@ -221,6 +212,27 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 			flusher.Flush()
 		}
 	}
+}
+
+// startSSE asserts that w supports flushing, writes the standard
+// Server-Sent Events response headers, and flushes them so the client sees
+// the stream open immediately. On success it returns the flusher with
+// ok=true; on failure it has already written a 500 response and the caller
+// must return without writing further.
+func startSSE(w http.ResponseWriter, r *http.Request) (http.Flusher, bool) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		slog.ErrorContext(r.Context(), "SSE: ResponseWriter does not implement Flusher")
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return nil, false
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+	return flusher, true
 }
 
 // writeSSE emits one SSE event frame: "event: <name>\ndata: <data>\n\n".
