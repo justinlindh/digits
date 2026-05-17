@@ -209,22 +209,6 @@ func (s *HealthStore) windowSession(key SessionKey, from, peer string) []Sample 
 	return out
 }
 
-// latestSession returns the most recent sample for a single session edge or nil.
-func (s *HealthStore) latestSession(key SessionKey, from, peer string) *Sample {
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		return nil
-	}
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	if r := sr.byEndpoint[endpointKey{From: from, Peer: peer}]; r != nil {
-		return r.latest()
-	}
-	return nil
-}
-
 // evictSession drops all in-memory state for a session. Broadcasts EndedKind
 // to every live subscriber and closes their channels. Idempotent.
 func (s *HealthStore) evictSession(key SessionKey) {
@@ -306,30 +290,6 @@ func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
 	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample)
 }
 
-// latest returns the most recent samples for caller and callee on a 2-party
-// call, captured under a single lock so the two values are consistent. nil
-// pointers if no sample has been recorded for that endpoint yet. nil/nil if
-// the call is unknown. Test-only; production reads use Window/Readback.
-func (s *HealthStore) latest(callID int64, caller, callee string) (*Sample, *Sample) {
-	key := SessionKey{CallID: callID}
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		return nil, nil
-	}
-	sr.mu.Lock()
-	defer sr.mu.Unlock()
-	var a, b *Sample
-	if r := sr.byEndpoint[endpointKey{From: caller}]; r != nil {
-		a = r.latest()
-	}
-	if r := sr.byEndpoint[endpointKey{From: callee}]; r != nil {
-		b = r.latest()
-	}
-	return a, b
-}
-
 // Window returns a copy of the retained sample ring for an endpoint, oldest
 // first. Returns an empty slice if the call or endpoint is unknown.
 func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
@@ -363,12 +323,6 @@ func (s *HealthStore) RecordEdge(confID uuid.UUID, from, peer string, sample Sam
 // edge, oldest first. Empty if unknown.
 func (s *HealthStore) WindowEdge(confID uuid.UUID, from, peer string) []Sample {
 	return s.windowSession(SessionKey{ConfID: confID}, from, peer)
-}
-
-// latestEdge returns the most recent sample for a conference edge or nil.
-// Test-only; production reads use WindowEdge/ReadbackEdge.
-func (s *HealthStore) latestEdge(confID uuid.UUID, from, peer string) *Sample {
-	return s.latestSession(SessionKey{ConfID: confID}, from, peer)
 }
 
 // EvictConference drops in-memory state for a conference and broadcasts
