@@ -88,7 +88,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			// Unpaired devices register under their hardware ID (not a line
 			// number) so they can receive the TypePaired message via
 			// SendToHardware without displacing a real line's connection.
-			msg.Number = "unpaired:" + msg.HardwareID
+			msg.Number = signaling.UnpairedPrefix + msg.HardwareID
 		} else if msg.DeviceToken == "" {
 			slog.WarnContext(r.Context(), "ws register without device_token", "hardware_id", msg.HardwareID)
 			wsReject(ws, "device_token required")

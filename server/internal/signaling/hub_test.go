@@ -35,8 +35,8 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 func TestIsOnlineReturnsFalseForUnpaired(t *testing.T) {
 	hub := NewHub()
 	conn := &Conn{Send: make(chan []byte, 10)}
-	_ = hub.Register("unpaired:test-hw-xyz", conn)
-	if hub.IsOnline("unpaired:test-hw-xyz") {
+	_ = hub.Register(UnpairedPrefix + "test-hw-xyz", conn)
+	if hub.IsOnline(UnpairedPrefix + "test-hw-xyz") {
 		t.Fatal("IsOnline should return false for unpaired devices")
 	}
 }

@@ -14,6 +14,7 @@ import (
 )
 
 func insertCall(t *testing.T, d *db.Database, caller, callee string) int64 {
+	t.Helper()
 	var id int64
 	err := d.DB.QueryRow(
 		"INSERT INTO calls (caller, callee, status) VALUES ($1,$2,'connected') RETURNING id",

@@ -18,6 +18,12 @@ import (
 	"github.com/justinlindh/digits/server/internal/httputil"
 )
 
+// UnpairedPrefix is the hub key prefix for devices that have connected but
+// not yet completed pairing. Keys of this form intentionally never count as
+// online line numbers and are excluded from IsOnline, LocalConnectionCount,
+// and OnlineNumbers.
+const UnpairedPrefix = "unpaired:"
+
 // ErrNotConnected is returned by SendTo and SendToHardware when the target
 // device has no active hub connection. Callers that treat "device offline" as
 // expected (e.g., best-effort pushes) can check for it with errors.Is and skip
@@ -824,7 +830,7 @@ func (h *Hub) LastSeenAt(number string) *time.Time {
 // IsOnline returns true if the number has at least one active hub connection
 // and is not an unpaired sentinel key.
 func (h *Hub) IsOnline(number string) bool {
-	if strings.HasPrefix(number, "unpaired:") {
+	if strings.HasPrefix(number, UnpairedPrefix) {
 		return false
 	}
 	h.mu.RLock()
@@ -841,7 +847,7 @@ func (h *Hub) LocalConnectionCount() int {
 	defer h.mu.RUnlock()
 	n := 0
 	for key, conns := range h.conns {
-		if strings.HasPrefix(key, "unpaired:") {
+		if strings.HasPrefix(key, UnpairedPrefix) {
 			continue
 		}
 		n += len(conns)
@@ -860,7 +866,7 @@ func (h *Hub) OnlineNumbers() []string {
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))
 	for n, conns := range h.conns {
-		if strings.HasPrefix(n, "unpaired:") || len(conns) == 0 {
+		if strings.HasPrefix(n, UnpairedPrefix) || len(conns) == 0 {
 			continue
 		}
 		nums = append(nums, n)

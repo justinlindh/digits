@@ -113,7 +113,7 @@ func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 	for iter.Next(ctx) {
 		key := iter.Val()
 		number := key[prefixLen:]
-		if strings.HasPrefix(number, "unpaired:") {
+		if strings.HasPrefix(number, UnpairedPrefix) {
 			continue
 		}
 		numbers = append(numbers, number)
