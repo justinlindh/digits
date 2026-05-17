@@ -14,6 +14,51 @@ func sample(ts int64, loss float32) Sample {
 	return Sample{TS: time.Unix(0, ts*int64(time.Millisecond)), LossPct: &l}
 }
 
+// latestSession returns the most recent sample for a single session edge or nil.
+func (s *HealthStore) latestSession(key SessionKey, from, peer string) *Sample {
+	s.mu.Lock()
+	sr, ok := s.sessions[key]
+	s.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	if r := sr.byEndpoint[endpointKey{From: from, Peer: peer}]; r != nil {
+		return r.latest()
+	}
+	return nil
+}
+
+// latest returns the most recent samples for caller and callee on a 2-party
+// call, captured under a single lock so the two values are consistent. nil
+// pointers if no sample has been recorded for that endpoint yet. nil/nil if
+// the call is unknown.
+func (s *HealthStore) latest(callID int64, caller, callee string) (*Sample, *Sample) {
+	key := SessionKey{CallID: callID}
+	s.mu.Lock()
+	sr, ok := s.sessions[key]
+	s.mu.Unlock()
+	if !ok {
+		return nil, nil
+	}
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+	var a, b *Sample
+	if r := sr.byEndpoint[endpointKey{From: caller}]; r != nil {
+		a = r.latest()
+	}
+	if r := sr.byEndpoint[endpointKey{From: callee}]; r != nil {
+		b = r.latest()
+	}
+	return a, b
+}
+
+// latestEdge returns the most recent sample for a conference edge or nil.
+func (s *HealthStore) latestEdge(confID uuid.UUID, from, peer string) *Sample {
+	return s.latestSession(SessionKey{ConfID: confID}, from, peer)
+}
+
 func TestHealthStoreRecordAndLatest(t *testing.T) {
 	s := NewHealthStore(nil) // nil DB => flusher disabled (flusher not implemented in T3 but constructor must accept nil cleanly)
 	s.Init(1)
