@@ -109,7 +109,7 @@ type Callbacks interface {
 	VoicemailEnterPlayback()                                      // *98: enter retrieval playback; daemon opens first unheard and streams to mixer
 	VoicemailExitPlayback()                                       // hook-on during playback; daemon tears down player + mixer source
 	VoicemailKey(digit string)                                    // DTMF key during playback (7=delete, 9=mark heard, #=skip, *=replay)
-	VoicemailRetrievalCode() string                               // configured retrieval code (default "*98")
+	VoicemailRetrievalCode() string                               // fixed retrieval code ("*98")
 }
 
 // ContactChecker determines whether a number is in the local contact list.
