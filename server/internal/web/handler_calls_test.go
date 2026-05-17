@@ -18,7 +18,10 @@ import (
 
 func TestCallsPageReturns200(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/calls", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -30,7 +33,10 @@ func TestCallsPageReturns200(t *testing.T) {
 
 func TestHandleCalls_BadCursor_Returns400(t *testing.T) {
 	h, database, authStore := setupHandler(t)
-	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+	if err := h.householdStore.SetCallHistoryEnabled(context.Background(), hh.ID, true); err != nil {
+		t.Fatalf("enable call history: %v", err)
+	}
 	req := httptest.NewRequest(http.MethodGet, "/calls?before=notbase64!!", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -50,23 +56,7 @@ func TestHandleCalls_ValidCursor_Returns200(t *testing.T) {
 	// Seed a small number of calls so we have at least one entry to build a cursor from.
 	seedEndedCallsForCursorTest(t, h, database, hh, 3)
 
-	// Build a cursor directly from the most recent entry, bypassing template rendering.
-	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
-	if err != nil {
-		t.Fatalf("list lines: %v", err)
-	}
-	numbers := make([]string, 0, len(lines))
-	for _, l := range lines {
-		numbers = append(numbers, l.Number)
-	}
-	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
-	if err != nil {
-		t.Fatalf("recent history: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one seeded entry")
-	}
-	cursor := calls.CursorForEntry(entries[0]).Encode()
+	cursor := latestCursorForHousehold(t, h, hh)
 
 	req := httptest.NewRequest(http.MethodGet, "/calls?before="+cursor, nil)
 	req.AddCookie(cookie)
@@ -120,6 +110,26 @@ func seedEndedCallsForCursorTest(t *testing.T, h *Handler, database *db.Database
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM calls WHERE caller = $1 OR callee = $1 OR caller = $2 OR callee = $2", a, b)
 	})
+}
+
+func latestCursorForHousehold(t *testing.T, h *Handler, hh *household.Household) string {
+	t.Helper()
+	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
+	if err != nil {
+		t.Fatalf("list lines: %v", err)
+	}
+	numbers := make([]string, 0, len(lines))
+	for _, l := range lines {
+		numbers = append(numbers, l.Number)
+	}
+	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
+	if err != nil {
+		t.Fatalf("recent history: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("expected at least one seeded entry")
+	}
+	return calls.CursorForEntry(entries[0]).Encode()
 }
 
 func TestCallsPage_CallLogTitle(t *testing.T) {
@@ -201,23 +211,7 @@ func TestHandleCalls_Intercom_PaginationControls(t *testing.T) {
 		}
 	}
 
-	// Build a cursor from the most recent entry to exercise the IsPaged path.
-	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
-	if err != nil {
-		t.Fatalf("list lines: %v", err)
-	}
-	numbers := make([]string, 0, len(lines))
-	for _, l := range lines {
-		numbers = append(numbers, l.Number)
-	}
-	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
-	if err != nil {
-		t.Fatalf("recent history: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one seeded entry")
-	}
-	cursor := calls.CursorForEntry(entries[0]).Encode()
+	cursor := latestCursorForHousehold(t, h, hh)
 
 	// Sub-case 3: page 2 via ?before=cursor. Nav rendered, polling off.
 	{
@@ -308,23 +302,7 @@ func TestHandleCalls_Dialup_PaginationControls(t *testing.T) {
 		}
 	}
 
-	// Build a cursor from the most recent entry to exercise the IsPaged path.
-	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
-	if err != nil {
-		t.Fatalf("list lines: %v", err)
-	}
-	numbers := make([]string, 0, len(lines))
-	for _, l := range lines {
-		numbers = append(numbers, l.Number)
-	}
-	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
-	if err != nil {
-		t.Fatalf("recent history: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one seeded entry")
-	}
-	cursor := calls.CursorForEntry(entries[0]).Encode()
+	cursor := latestCursorForHousehold(t, h, hh)
 
 	// Sub-case 3: page 2 via ?before=cursor. Nav rendered, polling off.
 	{
@@ -420,23 +398,7 @@ func TestHandleCalls_AM_PaginationControls(t *testing.T) {
 		}
 	}
 
-	// Build a cursor from the most recent entry to exercise the IsPaged path.
-	lines, err := h.lineStore.ListByHousehold(context.Background(), hh.ID)
-	if err != nil {
-		t.Fatalf("list lines: %v", err)
-	}
-	numbers := make([]string, 0, len(lines))
-	for _, l := range lines {
-		numbers = append(numbers, l.Number)
-	}
-	entries, err := h.tracker.RecentHistoryForPhones(context.Background(), numbers, nil, 10)
-	if err != nil {
-		t.Fatalf("recent history: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatal("expected at least one seeded entry")
-	}
-	cursor := calls.CursorForEntry(entries[0]).Encode()
+	cursor := latestCursorForHousehold(t, h, hh)
 
 	// Sub-case 3: page 2 via ?before=cursor. Bar rendered, polling off.
 	{

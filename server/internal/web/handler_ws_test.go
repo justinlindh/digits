@@ -25,7 +25,6 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 	hardwareID = fmt.Sprintf("test-hw-%d", time.Now().UnixNano())
 	number = fmt.Sprintf("99%05d", time.Now().UnixNano()%100000)
 
-	// Create a household for the line
 	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
 	if err != nil {
 		user, err = authStore.CreateUser(context.Background(), "test@example.com", "Test User", nil)
@@ -39,13 +38,11 @@ func setupPairedDevice(t *testing.T, database *db.Database, pairingStore *pairin
 		t.Fatalf("create household: %v", err)
 	}
 
-	// Generate pairing code (creates the device row)
 	code, err := pairingStore.GenerateCode(context.Background(), hardwareID)
 	if err != nil {
 		t.Fatalf("generate code: %v", err)
 	}
 
-	// Claim the device (pairs it, sets hashed token)
 	token, _, err = pairingStore.ClaimDevice(context.Background(), code, number, "Test Phone", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("claim device: %v", err)
@@ -151,7 +148,6 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected no message (timeout), but got one")
 	}
-	// A timeout (deadline exceeded) means no error was sent, which is success.
 	if !strings.Contains(err.Error(), "i/o timeout") {
 		t.Fatalf("expected timeout error, got: %v", err)
 	}

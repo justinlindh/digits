@@ -203,7 +203,6 @@ func TestPhoneVoicemailNoOpSkipsPush(t *testing.T) {
 	case data := <-conn.Send:
 		t.Fatalf("expected no push on no-op save, got: %s", string(data))
 	case <-time.After(100 * time.Millisecond):
-		// Expected: no push.
 	}
 }
 
