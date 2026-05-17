@@ -85,7 +85,7 @@ func (m *Manager) runLayer(ctx context.Context, layer []Registration) error {
 	for _, r := range layer {
 		r := r
 		go func() {
-			m.setState(r.Module.Name(), StateInitializing, "")
+			m.setState(r.Module.Name(), StateInitializing, "", 0)
 			start := time.Now()
 			initErr := r.Module.Init(ctx)
 			dur := time.Since(start)
@@ -99,7 +99,7 @@ func (m *Manager) runLayer(ctx context.Context, layer []Registration) error {
 		name := res.reg.Module.Name()
 		if res.err != nil {
 			msg := res.err.Error()
-			m.setStateDetails(name, StateFailed, msg, res.dur)
+			m.setState(name, StateFailed, msg, res.dur)
 			if res.reg.Required {
 				slog.ErrorContext(ctx, "subsystem: module failed", "module", name, "err", res.err)
 				if firstRequiredErr == nil {
@@ -109,7 +109,7 @@ func (m *Manager) runLayer(ctx context.Context, layer []Registration) error {
 				slog.WarnContext(ctx, "subsystem: module failed (optional, continuing)", "module", name, "err", res.err)
 			}
 		} else {
-			m.setStateDetails(name, StateReady, "", res.dur)
+			m.setState(name, StateReady, "", res.dur)
 			slog.InfoContext(ctx, "subsystem: module ready", "module", name, "duration", res.dur.Round(time.Millisecond))
 		}
 	}
@@ -155,16 +155,7 @@ func (m *Manager) Status() []NamedStatus {
 	return out
 }
 
-func (m *Manager) setState(name string, state State, msg string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if s, ok := m.states[name]; ok {
-		s.State = state
-		s.Message = msg
-	}
-}
-
-func (m *Manager) setStateDetails(name string, state State, msg string, dur time.Duration) {
+func (m *Manager) setState(name string, state State, msg string, dur time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s, ok := m.states[name]; ok {
