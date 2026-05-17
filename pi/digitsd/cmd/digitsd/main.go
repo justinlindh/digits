@@ -469,10 +469,11 @@ func (d *daemonCallbacks) publishVoicemailStateInitial() {
 // replacement of the Voicemail sub-blob; per-field diffing for log granularity
 // happens at the call site before this helper runs.
 //
-// Live consumption: Enabled, RingTimeout and RetrievalCode are read per ring
-// or per dial, so they take effect on the next inbound call without any
-// further wiring. MaxStoredMessages is baked into the voicemail.Store opened
-// at boot, so a change to it takes effect on the next daemon restart.
+// Live consumption: both fields, Enabled and RingTimeout, are read per ring,
+// so they take effect on the next inbound call without any further wiring.
+// The storage cap and retrieval code are no longer pushed; they are fixed
+// config.VoicemailMaxStoredMessages and config.VoicemailRetrievalCode
+// constants and never flow through this helper.
 func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
 	d.mu.Lock()
 	d.cfg.Voicemail = vm
