@@ -63,7 +63,7 @@ func TestDeviceStateOnlineNumbers(t *testing.T) {
 
 	ds.SetOnline(ctx, "5551111", DevicePresence{PodID: "p", HardwareID: "h1"})
 	ds.SetOnline(ctx, "5552222", DevicePresence{PodID: "p", HardwareID: "h2"})
-	ds.SetOnline(ctx, "unpaired:test-hw-abc", DevicePresence{PodID: "p", HardwareID: "h3"})
+	ds.SetOnline(ctx, UnpairedPrefix + "test-hw-abc", DevicePresence{PodID: "p", HardwareID: "h3"})
 
 	numbers := ds.OnlineNumbers(ctx)
 
@@ -75,7 +75,7 @@ func TestDeviceStateOnlineNumbers(t *testing.T) {
 	if !got["5551111"] || !got["5552222"] {
 		t.Fatalf("expected both numbers, got %v", numbers)
 	}
-	if got["unpaired:test-hw-abc"] {
+	if got[UnpairedPrefix + "test-hw-abc"] {
 		t.Fatal("unpaired device should be excluded from OnlineNumbers")
 	}
 }
