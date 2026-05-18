@@ -170,4 +170,3 @@ func (s *Store) BoundLineNumber(ctx context.Context, hardwareID string) (string,
 	}
 	return number, nil
 }
-

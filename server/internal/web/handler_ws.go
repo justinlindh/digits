@@ -11,6 +11,14 @@ import (
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
+const (
+	wsRegisterTimeout = 10 * time.Second
+	wsPingInterval    = 30 * time.Second
+	wsPongTimeout     = 45 * time.Second
+	wsWriteTimeout    = 10 * time.Second
+	wsSendBuf         = 32
+)
+
 // wsReject sends an error message to the WebSocket client and closes the connection.
 func wsReject(ws *websocket.Conn, errMsg string) {
 	_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
@@ -33,7 +41,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Wait for register message
-	if err := ws.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	if err := ws.SetReadDeadline(time.Now().Add(wsRegisterTimeout)); err != nil {
 		slog.ErrorContext(r.Context(), "ws set register deadline failed", "err", err)
 		_ = ws.Close()
 		return
@@ -121,16 +129,10 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	const (
-		wsPingInterval = 30 * time.Second
-		wsPongTimeout  = 45 * time.Second
-		wsWriteTimeout = 10 * time.Second
-	)
-
 	conn := &signaling.Conn{
 		WS:         ws,
 		HardwareID: msg.HardwareID,
-		Send:       make(chan []byte, 32),
+		Send:       make(chan []byte, wsSendBuf),
 		LastSeen:   time.Now(),
 	}
 	if err := h.hub.Register(msg.Number, conn); err != nil {
