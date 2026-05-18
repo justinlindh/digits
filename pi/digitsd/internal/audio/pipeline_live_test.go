@@ -4,6 +4,11 @@ import (
 	"testing"
 )
 
+// loadCharacter returns the current character chain (may be nil).
+func (p *Pipeline) loadCharacter() *BiquadChain {
+	return p.character.Load()
+}
+
 func TestSetVoiceStyleTogglesCharacterChain(t *testing.T) {
 	p := NewPipeline(DefaultPipelineConfig())
 

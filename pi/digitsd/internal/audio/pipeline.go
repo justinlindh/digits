@@ -96,12 +96,6 @@ func (p *Pipeline) SetVoiceStyle(style string) {
 	}
 }
 
-// loadCharacter is a test helper. Returns the current character chain (may
-// be nil).
-func (p *Pipeline) loadCharacter() *BiquadChain {
-	return p.character.Load()
-}
-
 // SetMuted toggles the outbound mic mute. When true, outbound PCM frames are
 // replaced with zero-samples. With Opus DTX enabled on the encoder, the
 // receiving end renders low-level comfort noise, matching 90s POTS silent
@@ -208,20 +202,6 @@ func (p *Pipeline) nextBeepFrame(frameSize int) []int16 {
 		p.beepBuf.Store(nil)
 	}
 	return frame
-}
-
-// drainBeepFrames is a test helper that consumes all remaining beep frames of
-// the given size.
-func (p *Pipeline) drainBeepFrames(frameSize int) [][]int16 {
-	var frames [][]int16
-	for {
-		frame := p.nextBeepFrame(frameSize)
-		if frame == nil {
-			break
-		}
-		frames = append(frames, frame)
-	}
-	return frames
 }
 
 // Start opens the ALSA capture device and begins the capture goroutine.
