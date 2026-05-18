@@ -3,8 +3,6 @@
 // environment values and built-in defaults.
 package config
 
-import "os"
-
 // Config holds all runtime configuration for signald, populated by Load from
 // environment variables. Zero values are overridden by Load's defaults where
 // appropriate.
@@ -87,19 +85,14 @@ func Load() *Config {
 	StringEnv("ADMIN_SECRET", &c.AdminSecret)
 	// Dev
 	BoolEnv("DEV_MODE", &c.DevMode)
-	// Link health: env is "1" (not "true") to match the daemon's convention.
-	if os.Getenv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED") == "1" {
-		c.LinkHealthFlushDisabled = true
-	}
+	OneEnv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED", &c.LinkHealthFlushDisabled)
 	// Redis
 	StringEnv("REDIS_URL", &c.RedisURL)
 	// Rate limits
 	c.WSRateLimitPerMin = 30
 	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
 	// Release index
-	if os.Getenv("TEST_FAKE_UPDATES") == "1" {
-		c.FakeUpdates = true
-	}
+	OneEnv("TEST_FAKE_UPDATES", &c.FakeUpdates)
 	StringEnv("GITHUB_REPO", &c.GitHubRepo)
 	StringEnv("GITHUB_TOKEN", &c.GitHubToken)
 	return c

@@ -36,6 +36,9 @@ import (
 	"github.com/justinlindh/digits/server/internal/web"
 )
 
+// releaseCacheTTL is the release index cache lifetime, in seconds.
+const releaseCacheTTL = 5 * 60
+
 func main() {
 	logging.Setup()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -254,7 +257,7 @@ func run(ctx context.Context) error {
 	case cfg.GitHubRepo != "":
 		parts := strings.SplitN(cfg.GitHubRepo, "/", 2)
 		if len(parts) == 2 {
-			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, 300, // 5 min cache
+			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, releaseCacheTTL,
 				func(piLatest, fwLatest string) {
 					slog.Info("updates: new release detected, broadcasting", "pi", piLatest, "fw", fwLatest)
 					handler.Hub().Broadcast(&signaling.Message{

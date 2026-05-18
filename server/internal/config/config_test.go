@@ -78,6 +78,34 @@ func TestBoolEnv(t *testing.T) {
 	})
 }
 
+func TestOneEnv(t *testing.T) {
+	t.Run("sets true when env var is literal 1", func(t *testing.T) {
+		t.Setenv("TEST_ONE_VAR", "1")
+		got := false
+		OneEnv("TEST_ONE_VAR", &got)
+		if !got {
+			t.Error("expected true, got false")
+		}
+	})
+
+	t.Run("does not set true for true", func(t *testing.T) {
+		t.Setenv("TEST_ONE_TRUE", "true")
+		got := false
+		OneEnv("TEST_ONE_TRUE", &got)
+		if got {
+			t.Error("expected false for value 'true', got true")
+		}
+	})
+
+	t.Run("keeps false when env var is unset", func(t *testing.T) {
+		got := false
+		OneEnv("TEST_ONE_UNSET_XYZ", &got)
+		if got {
+			t.Error("expected false for unset var, got true")
+		}
+	})
+}
+
 func TestLoadDefaults(t *testing.T) {
 	c := Load()
 

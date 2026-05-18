@@ -18,6 +18,13 @@ import (
 
 var relayTracer = otel.Tracer("github.com/justinlindh/digits/server/internal/signaling")
 
+const (
+	// callReturnExpiry is how long a *69 busy-retry request remains active.
+	callReturnExpiry = 30 * time.Minute
+	// googleSTUN is the public STUN server included in every ICE-servers response.
+	googleSTUN = "stun:stun.l.google.com:19302"
+)
+
 // CallTracker is the subset of *calls.Tracker that the Relay needs to track
 // call lifecycle events and query in-flight call state.
 type CallTracker interface {
@@ -488,7 +495,7 @@ func (r *Relay) handleRequestICE(ctx context.Context, from string) {
 
 	// Always include a STUN server
 	stunServer := ICEServer{
-		URLs: []string{"stun:stun.l.google.com:19302"},
+		URLs: []string{googleSTUN},
 	}
 	resp.Servers = append(resp.Servers, stunServer)
 
@@ -769,7 +776,7 @@ func (r *Relay) handleCallReturnRetry(ctx context.Context, from string, msg *Mes
 	r.pendingReturnsMu.Lock()
 	r.pendingReturns[from] = &pendingCallReturn{
 		Target:    target,
-		ExpiresAt: time.Now().Add(30 * time.Minute),
+		ExpiresAt: time.Now().Add(callReturnExpiry),
 	}
 	r.pendingReturnsMu.Unlock()
 	slog.InfoContext(ctx, "call_return: retry registered", "requester", from, "target", target)

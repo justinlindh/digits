@@ -23,6 +23,14 @@ func BoolEnv(key string, dst *bool) {
 	}
 }
 
+// OneEnv sets *dst to true iff the env var is literal "1". Used for env vars
+// that follow the daemon's numeric-flag convention instead of the "true" convention.
+func OneEnv(key string, dst *bool) {
+	if os.Getenv(key) == "1" {
+		*dst = true
+	}
+}
+
 // IntEnv parses the env var as an integer and assigns it to *dst. Keeps the
 // current default if the variable is unset or not a valid integer.
 func IntEnv(key string, dst *int) {
