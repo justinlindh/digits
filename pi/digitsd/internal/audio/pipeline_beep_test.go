@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+// drainBeepFrames consumes all remaining beep frames of the given size.
+func (p *Pipeline) drainBeepFrames(frameSize int) [][]int16 {
+	var frames [][]int16
+	for {
+		frame := p.nextBeepFrame(frameSize)
+		if frame == nil {
+			break
+		}
+		frames = append(frames, frame)
+	}
+	return frames
+}
+
 func TestPlayGreetingBeep_ReplacesFrames(t *testing.T) {
 	cfg := DefaultPipelineConfig()
 	p := NewPipeline(cfg)
