@@ -26,7 +26,7 @@ type mockCallbacks struct {
 	ringPatterns       []int
 	callReturnCancels  int
 	callReturnAbandons int
-	flashEnabledLog    []bool            // each SetFlashEnabled call recorded in order
+	flashDetections    int               // EnableFlashDetection call count
 	mutedPeers         map[string]bool   // phone -> current mute state
 	torndownPeers      []string          // peers that had TearDownPeer called
 	removedMeshPeers   []string          // peers that had RemoveMeshPeer called
@@ -64,10 +64,10 @@ func (m *mockCallbacks) SendLED(mode string) {
 	defer m.mu.Unlock()
 	m.leds = append(m.leds, mode)
 }
-func (m *mockCallbacks) SetFlashEnabled(enabled bool) {
+func (m *mockCallbacks) EnableFlashDetection() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.flashEnabledLog = append(m.flashEnabledLog, enabled)
+	m.flashDetections++
 }
 func (m *mockCallbacks) InitiateCall(number string) error {
 	m.mu.Lock()
