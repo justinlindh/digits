@@ -36,6 +36,8 @@ func Open(databaseURL string) (*Database, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
+	// Low-concurrency process: 25 open / 5 idle covers bursts without
+	// exhausting typical Postgres connection limits.
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
