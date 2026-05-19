@@ -42,7 +42,12 @@ func (g *GoogleAuth) Enabled() bool {
 
 // HandleLogin redirects to Google consent screen.
 func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	state, _ := randomToken(16)
+	state, err := randomToken(16)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "auth: failed to generate oauth state token", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 	returnTo := r.URL.Query().Get("return_to")
 	cookieVal := state
 	if returnTo != "" {

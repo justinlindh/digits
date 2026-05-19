@@ -207,6 +207,8 @@ func LoginRedirectFor(u *User) string {
 	return "/"
 }
 
+// isSafeRedirect rejects protocol-relative ("//") and host-relative ("/\") paths
+// that browsers can resolve to an attacker-controlled host.
 func isSafeRedirect(path string) bool {
 	return path != "" && strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "/\\")
 }

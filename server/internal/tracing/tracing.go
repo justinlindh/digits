@@ -297,7 +297,7 @@ func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) 
 // fallbackResource is used when resource detection fails. Carries the
 // minimum to identify a service in a multi-tenant collector.
 func fallbackResource(cfg Config) *resource.Resource {
-	host, _ := os.Hostname() // nolint:errcheck
+	host, _ := os.Hostname() // nolint:errcheck // empty hostname is fine
 	return resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(cfg.ServiceName),
