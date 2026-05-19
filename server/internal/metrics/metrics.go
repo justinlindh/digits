@@ -154,29 +154,32 @@ func New(version, commit string) *Registry {
 	return r
 }
 
-// RegisterDevicesGauge installs a GaugeFunc that reads active-device count
-// from the supplied closure on every scrape. Use a closure that returns
-// len(hub.OnlineNumbers()) so we never pre-compute and never persist counts
-// elsewhere.
-func (r *Registry) RegisterDevicesGauge(read func() float64) {
+// registerScrapeGauge installs a GaugeFunc that reads its value from the
+// supplied closure on every scrape, so counts are never pre-computed or
+// persisted elsewhere.
+func (r *Registry) registerScrapeGauge(name, help string, read func() float64) {
 	g := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: "digits",
 		Subsystem: "signald",
-		Name:      "active_devices_current",
-		Help:      "Current active device count, sampled at scrape time. Identical in meaning to active_devices but read live; the static gauge exists for tests that drive it directly.",
+		Name:      name,
+		Help:      help,
 	}, read)
 	r.Reg.MustRegister(g)
 }
 
+// RegisterDevicesGauge installs a scrape-time gauge for the active-device
+// count. Use a closure that returns len(hub.OnlineNumbers()).
+func (r *Registry) RegisterDevicesGauge(read func() float64) {
+	r.registerScrapeGauge("active_devices_current",
+		"Current active device count, sampled at scrape time. Identical in meaning to active_devices but read live; the static gauge exists for tests that drive it directly.",
+		read)
+}
+
 // RegisterCallsGauge mirrors RegisterDevicesGauge for active calls.
 func (r *Registry) RegisterCallsGauge(read func() float64) {
-	g := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-		Namespace: "digits",
-		Subsystem: "signald",
-		Name:      "active_calls_current",
-		Help:      "Current active call count, sampled at scrape time. Identical in meaning to active_calls but read live.",
-	}, read)
-	r.Reg.MustRegister(g)
+	r.registerScrapeGauge("active_calls_current",
+		"Current active call count, sampled at scrape time. Identical in meaning to active_calls but read live.",
+		read)
 }
 
 // ObserveSignalingError records one signaling error in the named category.
