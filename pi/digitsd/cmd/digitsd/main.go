@@ -308,8 +308,8 @@ func (d *daemonCallbacks) NotifyCallConnected() {
 	d.serial.CallConnected()
 }
 
-func (d *daemonCallbacks) SetFlashEnabled(enabled bool) {
-	d.serial.FlashEnabled(enabled)
+func (d *daemonCallbacks) EnableFlashDetection() {
+	d.serial.FlashEnabled(true)
 }
 
 func (d *daemonCallbacks) OnCallReturn() {

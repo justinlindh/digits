@@ -81,7 +81,7 @@ type Callbacks interface {
 	OncePlaying() bool          // Reports whether a one-shot tone (e.g. intercept) is still playing
 	SendRing(start bool)        // Send RING:START or RING:STOP
 	SendLED(mode string)        // Send LED:<mode>
-	SetFlashEnabled(enabled bool) // Enable/disable Pico hook-flash detection (off = instant hangup)
+	EnableFlashDetection()      // Enable Pico hook-flash detection on the connected call
 	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
@@ -410,14 +410,14 @@ func (c *Controller) onHookOff() {
 			c.cb.SendRing(false)
 			c.cb.SendTone(ToneStop)
 			c.cb.SendLED("ON")
-			c.cb.SetFlashEnabled(true)
+			c.cb.EnableFlashDetection()
 			c.cb.AnswerCall()
 		}
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		c.state = StateCONNECTED
 		c.cb.SendTone(ToneStop)
 		c.cb.SendLED("ON")
-		c.cb.SetFlashEnabled(true)
+		c.cb.EnableFlashDetection()
 		c.cb.VoicemailPickup()
 	default:
 		slog.Info("phone: HOOK:OFF ignored", "state", c.state)
@@ -791,7 +791,7 @@ func (c *Controller) onSignalAnswer(sender string) {
 	case StateCALLING:
 		c.state = StateCONNECTED
 		c.cb.SendTone(ToneStop)
-		c.cb.SetFlashEnabled(true)
+		c.cb.EnableFlashDetection()
 		c.cb.NotifyCallConnected()
 	case StateADD_CALLING:
 		if sender != "" && sender != c.addingPeer {
