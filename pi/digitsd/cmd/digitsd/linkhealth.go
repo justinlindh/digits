@@ -9,8 +9,10 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// sigSender is the minimal send surface buildMeshLinkHealthSend needs.
-// *sigclient.Client satisfies it.
+// sigSender is the minimal Send-only surface that helpers in this package
+// (link-health reporter, voicemail-state publisher) need from the signaling
+// client. *sigclient.Client satisfies it; unit tests inject capturing fakes
+// to exercise these flows without standing up a real WebSocket.
 type sigSender interface {
 	Send(*sigclient.Message) error
 }

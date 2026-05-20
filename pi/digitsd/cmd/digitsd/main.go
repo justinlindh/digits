@@ -390,14 +390,6 @@ func (d *daemonCallbacks) setAutoUpdateConfig(enabled bool) error {
 	return d.cfg.Save()
 }
 
-// voicemailStateSender is the minimal Send-only surface publishVoicemailStateOnce
-// needs from the signaling client. Defined as an interface so unit tests can
-// inject a capturing fake without standing up a real WebSocket. *sigclient.Client
-// satisfies it implicitly.
-type voicemailStateSender interface {
-	Send(*sigclient.Message) error
-}
-
 // publishVoicemailStateOnce reads the current unheard-message count from store
 // and sends a voicemail_state message via sender. When force is false, the
 // send is skipped if the count equals *last (dedup against repeated change
@@ -412,7 +404,7 @@ type voicemailStateSender interface {
 // On a nil store (voicemail feature disabled at boot) or any UnheardCount
 // error, no message is sent and *last is left unchanged so the next trigger
 // will retry from the same baseline.
-func publishVoicemailStateOnce(sender voicemailStateSender, store *voicemail.Store, last *int64, force bool) bool {
+func publishVoicemailStateOnce(sender sigSender, store *voicemail.Store, last *int64, force bool) bool {
 	if store == nil {
 		return false
 	}
