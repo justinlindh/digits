@@ -54,9 +54,13 @@ func IsReady(m Module) bool {
 	return m.Status().State == StateReady
 }
 
+// Registration declares a module and how the Manager should treat it.
+// The zero value is the common case: enabled, not required, no deps. Set
+// Disabled to register a module that the Manager should skip but still report
+// in status snapshots (used for modules managed externally, e.g. by systemd).
 type Registration struct {
 	Module   Module
 	Deps     []string
 	Required bool
-	Enabled  bool
+	Disabled bool
 }

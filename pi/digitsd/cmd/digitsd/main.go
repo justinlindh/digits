@@ -850,14 +850,14 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 	})
 
 	regs := []subsystem.Registration{
-		{Module: subsystem.NewMountsModule(), Required: true, Enabled: true},
-		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true, Enabled: true},
-		{Module: gpclk0, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
-		{Module: serial, Deps: []string{"kernel-modules"}, Required: false, Enabled: true},
-		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true, Enabled: true},
-		{Module: audio, Deps: []string{"gpclk0", "serial"}, Required: false, Enabled: true},
-		{Module: web, Required: true, Enabled: true},
-		{Module: subsystem.NewReaperModule(), Required: true, Enabled: true},
+		{Module: subsystem.NewMountsModule(), Required: true},
+		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true},
+		{Module: gpclk0, Deps: []string{"kernel-modules"}},
+		{Module: serial, Deps: []string{"kernel-modules"}},
+		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true},
+		{Module: audio, Deps: []string{"gpclk0", "serial"}},
+		{Module: web, Required: true},
+		{Module: subsystem.NewReaperModule(), Required: true},
 	}
 	return regs, web, serial, audio
 }
@@ -877,11 +877,11 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 	})
 
 	regs := []subsystem.Registration{
-		{Module: gpclk0, Required: true, Enabled: true},
-		{Module: serial, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
-		{Module: audio, Deps: []string{"gpclk0"}, Required: false, Enabled: true},
-		{Module: wifiAP, Required: false, Enabled: false},
-		{Module: web, Required: true, Enabled: true},
+		{Module: gpclk0, Required: true},
+		{Module: serial, Deps: []string{"gpclk0"}},
+		{Module: audio, Deps: []string{"gpclk0"}},
+		{Module: wifiAP, Disabled: true},
+		{Module: web, Required: true},
 	}
 	return regs, web, serial, audio, wifiAP
 }
