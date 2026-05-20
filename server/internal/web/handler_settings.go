@@ -66,8 +66,7 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -96,8 +95,7 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	_, hh, ok := h.requireHouseholdAdmin(w, r)
@@ -136,8 +134,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	if !ok {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	tz := strings.TrimSpace(r.FormValue("timezone"))
@@ -161,8 +158,7 @@ func (h *Handler) handleUserPrefPost(w http.ResponseWriter, r *http.Request, fie
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	value := r.FormValue(field)
@@ -197,8 +193,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	inviteEmail := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
@@ -355,8 +350,7 @@ func (h *Handler) handleHouseholdSwitchPost(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	householdID := r.FormValue("household_id")

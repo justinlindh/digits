@@ -179,8 +179,7 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
@@ -217,8 +216,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	code := strings.TrimSpace(r.FormValue("code"))
@@ -435,8 +433,7 @@ func (h *Handler) handlePhoneEditGet(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneEditPost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	name, err := validateLineName(r.FormValue("name"))
@@ -495,8 +492,7 @@ func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	raw := r.FormValue("name")
@@ -526,8 +522,7 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
 	oldNumber := r.PathValue("number")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	newNumber := line.StripNumber(r.FormValue("number"))
@@ -586,8 +581,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	raw := strings.TrimSpace(r.FormValue("voice_style"))
@@ -601,8 +595,7 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
@@ -612,8 +605,7 @@ func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	autoUpdate := strings.TrimSpace(r.FormValue("auto_update")) == "on"
@@ -630,8 +622,7 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 // then either the voicemail-section partial is swapped (htmx) or the user
 // is redirected back to the phone detail page (regular form post).
 func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 
@@ -791,8 +782,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	targetPi := strings.TrimSpace(r.FormValue("target_pi_version"))
@@ -858,8 +848,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	mode := strings.TrimSpace(r.FormValue("mode"))
@@ -933,8 +922,7 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 
