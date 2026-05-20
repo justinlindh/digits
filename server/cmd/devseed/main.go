@@ -191,7 +191,10 @@ func main() {
 
 	// Seed a pending user invite on the primary household
 	invStore := household.NewInviteStore(database.DB)
-	pending, _ := invStore.IsPendingForHouseholdEmail(ctx, primaryHH.ID, "pending@digits.local")
+	pending, err := invStore.IsPendingForHouseholdEmail(ctx, primaryHH.ID, "pending@digits.local")
+	if err != nil {
+		log.Fatalf("check pending invite: %v", err)
+	}
 	if !pending {
 		if _, err := invStore.CreateInvite(ctx, primaryHH.ID, "pending@digits.local", primaryUser.ID); err != nil {
 			log.Fatalf("seed pending invite: %v", err)
