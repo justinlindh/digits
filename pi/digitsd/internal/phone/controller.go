@@ -47,6 +47,14 @@ const (
 	ToneStopAll      = "STOPALL"
 )
 
+// LED modes passed to Callbacks.SendLED. Forwarded as "LED:<mode>" to the Pico,
+// which interprets them per firmware/include/led_mode.h.
+const (
+	LEDOn    = "ON"
+	LEDOff   = "OFF"
+	LEDBlink = "BLINK"
+)
+
 // addDialDigitsRequired is the number of digits the add-party dial accumulates
 // before firing dialThirdParty. Must match the Pico firmware's
 // DIAL_DIGITS_REQUIRED, since the 2-party flow still relies on the Pico to
@@ -80,7 +88,7 @@ type Callbacks interface {
 	SendTone(name string)       // Play a tone (use one of the Tone* constants)
 	OncePlaying() bool          // Reports whether a one-shot tone (e.g. intercept) is still playing
 	SendRing(start bool)        // Send RING:START or RING:STOP
-	SendLED(mode string)        // Send LED:<mode>
+	SendLED(mode string)        // Send LED:<mode> (use one of the LED* constants)
 	EnableFlashDetection()      // Enable Pico hook-flash detection on the connected call
 	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
@@ -242,7 +250,7 @@ func (c *Controller) HandleCallReturnRing(target string) {
 	if !c.silentMode {
 		c.cb.SendRingPattern(1)
 	}
-	c.cb.SendLED("BLINK")
+	c.cb.SendLED(LEDBlink)
 }
 
 // State returns the current FSM state (thread-safe).
@@ -390,7 +398,7 @@ func (c *Controller) onHookOff() {
 		c.state = StateDIALTONE
 		c.digits = ""
 		c.cb.SendTone(ToneDial)
-		c.cb.SendLED("ON")
+		c.cb.SendLED(LEDOn)
 	case StateRINGING:
 		c.ringTimeoutGen++
 		if c.callReturnRinging {
@@ -399,7 +407,7 @@ func (c *Controller) onHookOff() {
 			c.callReturnTarget = ""
 			c.cb.SendRing(false)
 			c.cb.SendTone(ToneStop)
-			c.cb.SendLED("ON")
+			c.cb.SendLED(LEDOn)
 			slog.Info("phone: callback pickup, auto-dialing", "target", number)
 			c.state = StateCALLING
 			c.initiateCallAfterDelay(number, StateCALLING, "phone: callback auto-dial failed",
@@ -409,14 +417,14 @@ func (c *Controller) onHookOff() {
 			c.state = StateCONNECTED
 			c.cb.SendRing(false)
 			c.cb.SendTone(ToneStop)
-			c.cb.SendLED("ON")
+			c.cb.SendLED(LEDOn)
 			c.cb.EnableFlashDetection()
 			c.cb.AnswerCall()
 		}
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		c.state = StateCONNECTED
 		c.cb.SendTone(ToneStop)
-		c.cb.SendLED("ON")
+		c.cb.SendLED(LEDOn)
 		c.cb.EnableFlashDetection()
 		c.cb.VoicemailPickup()
 	default:
@@ -470,7 +478,7 @@ func (c *Controller) onHookOn() {
 	c.isConfHost = false
 	c.cb.SendTone(ToneStop)
 	c.cb.SendRing(false)
-	c.cb.SendLED("OFF")
+	c.cb.SendLED(LEDOff)
 	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
 	} else if wasCallReturn {
@@ -756,7 +764,7 @@ func (c *Controller) onSignalRing() {
 	if !c.silentMode {
 		c.cb.SendRing(true)
 	}
-	c.cb.SendLED("BLINK")
+	c.cb.SendLED(LEDBlink)
 	enabled, timeout := c.cb.VoicemailEnabled()
 	if enabled && timeout > 0 {
 		c.ringTimeoutGen++
@@ -815,12 +823,12 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.callReturnRinging = false
 		c.callReturnTarget = ""
 		c.cb.SendRing(false)
-		c.cb.SendLED("OFF")
+		c.cb.SendLED(LEDOff)
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		slog.Info("phone: caller hung up during voicemail")
 		c.state = StateIDLE
 		c.cb.SendTone(ToneStop)
-		c.cb.SendLED("OFF")
+		c.cb.SendLED(LEDOff)
 		c.cb.HangupCall()
 	case StateCONNECTED:
 		c.state = StateREMOTE_HANGUP
@@ -1136,7 +1144,7 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 		c.state = StateIDLE
 		c.cb.SendTone(ToneStop)
 		c.cb.SendRing(false)
-		c.cb.SendLED("OFF")
+		c.cb.SendLED(LEDOff)
 	}
 }
 
