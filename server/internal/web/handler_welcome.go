@@ -38,8 +38,7 @@ func (h *Handler) handleWelcomePost(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	theme := auth.Theme(r.FormValue("theme"))

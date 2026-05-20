@@ -425,6 +425,16 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineN
 	return false
 }
 
+// parseForm calls r.ParseForm and writes a 400 on failure. Returns true on
+// success so callers can guard with `if !parseForm(w, r) { return }`.
+func parseForm(w http.ResponseWriter, r *http.Request) bool {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
 func jsonError(ctx context.Context, w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
