@@ -75,7 +75,7 @@ func assertLayerContains(t *testing.T, layer []Registration, names ...string) {
 }
 
 func reg(m Module, deps []string, required, enabled bool) Registration {
-	return Registration{Module: m, Deps: deps, Required: required, Enabled: enabled}
+	return Registration{Module: m, Deps: deps, Required: required, Disabled: !enabled}
 }
 
 func stub(name string) *stubModule {

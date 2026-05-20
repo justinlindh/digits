@@ -26,8 +26,8 @@ type Manager struct {
 	states map[string]*NamedStatus
 }
 
-// NewManager creates a Manager. Enabled modules start as StatePending;
-// disabled modules start as StateDisabled.
+// NewManager creates a Manager. Enabled (default) modules start as
+// StatePending; explicitly Disabled modules start as StateDisabled.
 func NewManager(regs []Registration) *Manager {
 	states := make(map[string]*NamedStatus, len(regs))
 	for _, r := range regs {
@@ -35,10 +35,10 @@ func NewManager(regs []Registration) *Manager {
 			Name:     r.Module.Name(),
 			Required: r.Required,
 		}
-		if r.Enabled {
-			s.State = StatePending
-		} else {
+		if r.Disabled {
 			s.State = StateDisabled
+		} else {
+			s.State = StatePending
 		}
 		states[r.Module.Name()] = s
 	}
@@ -192,7 +192,7 @@ func topoLayers(regs []Registration) ([][]Registration, error) {
 	// Build index of enabled modules by name.
 	enabled := make(map[string]bool, len(regs))
 	for _, r := range regs {
-		if r.Enabled {
+		if !r.Disabled {
 			enabled[r.Module.Name()] = true
 		}
 	}
@@ -202,7 +202,7 @@ func topoLayers(regs []Registration) ([][]Registration, error) {
 	deps := make(map[string][]string, len(regs)) // name -> list of enabled names that must finish first
 
 	for _, r := range regs {
-		if !r.Enabled {
+		if r.Disabled {
 			continue
 		}
 		name := r.Module.Name()
@@ -222,7 +222,7 @@ func topoLayers(regs []Registration) ([][]Registration, error) {
 	// Collect enabled regs by name for layer construction.
 	regByName := make(map[string]Registration, len(regs))
 	for _, r := range regs {
-		if r.Enabled {
+		if !r.Disabled {
 			regByName[r.Module.Name()] = r
 		}
 	}
