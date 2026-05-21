@@ -180,7 +180,7 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 			`SELECT household_id FROM lines WHERE id = $1`, lineID,
 		).Scan(&ownerHH)
 		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("line not found")
+			return line.ErrNotFound
 		}
 		if err != nil {
 			return fmt.Errorf("verify line ownership: %w", err)
