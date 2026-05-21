@@ -131,8 +131,8 @@ type HealthStoreOption func(*HealthStore)
 // and final shutdown flush. Ingest (Record/Init/Evict) and in-memory
 // reads (Latest/Window) remain fully operational. Intended for DB
 // maintenance windows; the in-memory rings still bound memory usage.
-func WithFlushDisabled(disabled bool) HealthStoreOption {
-	return func(s *HealthStore) { s.flushDisabled = disabled }
+func WithFlushDisabled() HealthStoreOption {
+	return func(s *HealthStore) { s.flushDisabled = true }
 }
 
 // NewHealthStore creates a HealthStore. Pass a nil database to operate in
