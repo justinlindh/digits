@@ -1,0 +1,8 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "digits-pcb")(type "KiCad")(uri "${KIPRJMOD}/digits-pcb.pretty")(options "")(descr "Project-local footprints"))
+  (lib (name "xl6019")(type "KiCad")(uri "${KIPRJMOD}/xl6019.pretty")(options "")(descr "XL6019E1 boost converter"))
+  (lib (name "inductor-lcsc")(type "KiCad")(uri "${KIPRJMOD}/inductor.pretty")(options "")(descr "47uH power inductor LCSC"))
+  (lib (name "cap-out-lcsc")(type "KiCad")(uri "${KIPRJMOD}/cap_out.pretty")(options "")(descr "100uF 63V electrolytic LCSC"))
+  (lib (name "ss56-lcsc")(type "KiCad")(uri "${KIPRJMOD}/ss56.pretty")(options "")(descr "SS56 Schottky diode SMA"))
+)
