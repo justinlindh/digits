@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -196,11 +197,12 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 	if !parseForm(w, r) {
 		return
 	}
-	inviteEmail := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
-	if inviteEmail == "" || !strings.Contains(inviteEmail, "@") {
+	addr, err := mail.ParseAddress(strings.TrimSpace(r.FormValue("email")))
+	if err != nil {
 		http.Redirect(w, r, "/settings?error=invalid+email", http.StatusSeeOther)
 		return
 	}
+	inviteEmail := strings.ToLower(addr.Address)
 
 	isMember, err := h.householdStore.IsMemberByEmail(r.Context(), hh.ID, inviteEmail)
 	if err != nil {

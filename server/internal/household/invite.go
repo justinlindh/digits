@@ -21,6 +21,13 @@ const (
 	InviteStatusCancelled = "cancelled"
 )
 
+var ErrInviteNotFound = errors.New("invite not found")
+
+// ErrInviteExpiredOrUsed is returned by AcceptInvite when the token doesn't match a live pending invite.
+var ErrInviteExpiredOrUsed = errors.New("invite not found, expired, or already used")
+
+var ErrInviteNotPending = errors.New("invite not found or not pending")
+
 // HouseholdInvite represents an email invitation to join a household. The
 // one-time Token is emailed to the recipient and redeemed at accept time.
 type HouseholdInvite struct {
@@ -90,7 +97,7 @@ func (s *InviteStore) GetByID(ctx context.Context, id string) (*HouseholdInvite,
 		SELECT `+inviteColumns+` FROM household_invites WHERE id = $1
 	`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invite not found")
+		return nil, ErrInviteNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get invite by id: %w", err)
@@ -103,7 +110,7 @@ func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdI
 		SELECT `+inviteColumns+` FROM household_invites WHERE token = $1
 	`, token))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invite not found")
+		return nil, ErrInviteNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get invite by token: %w", err)
@@ -120,7 +127,7 @@ func (s *InviteStore) AcceptInvite(ctx context.Context, token string) (*Househol
 		token,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invite not found, expired, or already used")
+		return nil, ErrInviteExpiredOrUsed
 	}
 	if err != nil {
 		return nil, fmt.Errorf("accept invite: %w", err)
@@ -136,7 +143,7 @@ func (s *InviteStore) CancelInvite(ctx context.Context, inviteID string) error {
 		RETURNING id
 	`, inviteID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("invite not found or not pending")
+		return ErrInviteNotPending
 	}
 	if err != nil {
 		return fmt.Errorf("cancel invite: %w", err)
