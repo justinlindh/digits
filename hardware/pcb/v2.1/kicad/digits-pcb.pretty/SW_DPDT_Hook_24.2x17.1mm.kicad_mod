@@ -3,7 +3,7 @@
   (generator "kicad-mcp")
   (generator_version "9.0")
   (layer "F.Cu")
-  (descr "DPDT telephone hook switch (INH-2240 / IL 2240 family), 6 signal pins + 2 mounting, 5.0mm pitch, 7.75mm row spacing, Ø0.9mm signal / Ø2.1mm mounting")
+  (descr "DPDT telephone hook switch (INH-2240 / IL 2240 family), 6 signal pins, 5.0mm pitch, 7.75mm row spacing, Ø0.9mm signal. Mounting pins not present on common clones - held by signal pins + phone body pressure.")
   (tags "switch DPDT hook telephone THT INH-2240 IL-2240")
 
   (property "Reference" "REF**" (at 0 -12 0)
@@ -95,22 +95,6 @@
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
     (uuid "7068ac54-60d3-4a67-bf2a-d4c81b2d332c")
-  )
-
-  (pad "MP1" np_thru_hole circle
-    (at 3.875 -9.1)
-    (size 2.1 2.1)
-    (drill 2.1)
-    (layers "*.Cu" "*.Mask")
-    (uuid "609c1d6a-fafe-41d2-b545-b1a52a29f70b")
-  )
-
-  (pad "MP2" np_thru_hole circle
-    (at 3.875 9.1)
-    (size 2.1 2.1)
-    (drill 2.1)
-    (layers "*.Cu" "*.Mask")
-    (uuid "8a525e99-ec33-46f0-8457-16910b35fd53")
   )
 
 )
