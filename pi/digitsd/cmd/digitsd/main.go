@@ -1558,7 +1558,7 @@ func main() {
 				slog.Info("swd probe: Pico detected on SWD bus, enabling flash capability")
 				flashCapable.Store(true)
 			}
-			sendDeviceInfo(sig, fwVer, fwCom, flashCapable.Load())
+			sendDeviceInfo(sig, fwVer, fwCom)
 			// Voicemail-state publish skipped here: this goroutine is
 			// launched before vmStore exists and before cb is constructed.
 			// The sig.Connect path at the next site (sendDeviceInfo
@@ -1818,7 +1818,7 @@ func main() {
 	if err := sig.Connect(); err != nil {
 		slog.Warn("signald connect failed, will retry", "error", err)
 	} else {
-		sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+		sendDeviceInfo(sig, fwVersion, fwCommit)
 		cb.publishVoicemailStateInitial()
 		requestICEServers(sig)
 	}
@@ -2060,7 +2060,7 @@ func main() {
 				hookFlash = hookFlashCapable(fwVersion)
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
 				sp.SetFlashEnabled(hookFlash)
-				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+				sendDeviceInfo(sig, fwVersion, fwCommit)
 				cb.publishVoicemailStateInitial()
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
@@ -2582,7 +2582,7 @@ func main() {
 					ctrl.Reset()
 				}
 
-				sendDeviceInfo(sig, fwVersion, fwCommit, flashCapable.Load())
+				sendDeviceInfo(sig, fwVersion, fwCommit)
 				cb.publishVoicemailState()
 				requestICEServers(sig)
 				break
@@ -2596,7 +2596,7 @@ func requestICEServers(sig *sigclient.Client) {
 	sendSignal(sig, &sigclient.Message{Type: sigclient.TypeRequestICE})
 }
 
-func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapable bool) {
+func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string) {
 	localAddr := primaryLocalAddr()
 	devModeOn := devmode.Enabled(devmode.DefaultFlagPath)
 	if err := sig.Send(&sigclient.Message{
@@ -2605,7 +2605,6 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		PiCommit:        version.Commit,
 		FirmwareVersion: fwVersion,
 		FirmwareCommit:  fwCommit,
-		FlashCapable:    flashCapable,
 		LocalAddr:       localAddr,
 		DevMode:         devModeOn,
 	}); err != nil {
@@ -2614,7 +2613,7 @@ func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string, flashCapa
 		slog.Info("device_info sent",
 			"pi_version", version.Version, "pi_commit", version.Commit,
 			"fw_version", fwVersion, "fw_commit", fwCommit,
-			"flash_capable", flashCapable, "local_addr", localAddr,
+			"local_addr", localAddr,
 			"dev_mode", devModeOn)
 	}
 }
