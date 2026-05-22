@@ -703,13 +703,21 @@
         "uuid": "74ec24e7-a8af-4132-928f-b03228b07139"
       }
     ],
-    "used_designators": "#FLG_VBOOST1,H1-3",
+    "used_designators": "",
     "variants": []
   },
   "sheets": [
     [
       "74ec24e7-a8af-4132-928f-b03228b07139",
       "digits-pcb"
+    ],
+    [
+      "4a13c0bc-0244-4b6b-8a3c-58ab82adbb77",
+      "codec"
+    ],
+    [
+      "86bcc52b-70aa-42a4-9931-3742612f7070",
+      "ringer"
     ]
   ],
   "text_variables": {},
