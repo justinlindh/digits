@@ -18855,7 +18855,7 @@
 			(justify left bottom)
 		)
 	)
-	(gr_text "Digits V2.0"
+	(gr_text "Digits V3"
 		(at 15.598989 48.085455 270)
 		(layer "F.SilkS")
 		(uuid "b29840af-d232-4312-8af4-245411ce1483")
