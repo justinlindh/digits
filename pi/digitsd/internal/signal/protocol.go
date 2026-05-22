@@ -210,9 +210,6 @@ type Message struct {
 	UpdateStatus string `json:"update_status,omitempty"` // downloading, applying, rebooting, success, failed
 	UpdateDetail string `json:"update_detail,omitempty"` // human-readable detail
 
-	// Flash capability (device_info messages)
-	FlashCapable bool `json:"flash_capable,omitempty"`
-
 	// DevMode indicates the device has dev-mode enabled (device_info messages)
 	DevMode bool `json:"dev_mode,omitempty"`
 
