@@ -1873,6 +1873,15 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C65009"
+			(at 0 0 0)
+			(show_name no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(property "Datasheet" "~"
 			(at 105 42 0)
 			(hide yes)
@@ -1945,6 +1954,15 @@
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C105952"
+			(at 0 0 0)
+			(show_name no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2118,6 +2136,15 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C26983"
+			(at 0 0 0)
+			(show_name no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(property "Datasheet" "~"
 			(at 155 30 0)
 			(hide yes)
@@ -2190,6 +2217,15 @@
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C4109"
+			(at 0 0 0)
+			(show_name no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2438,6 +2474,15 @@
 				)
 			)
 		)
+		(property "LCSC Part #" "C73018"
+			(at 0 0 0)
+			(show_name no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
 		(property "Datasheet" "~"
 			(at 130 45 0)
 			(hide yes)
@@ -2522,6 +2567,15 @@
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C9906"
+			(at 0 0 0)
+			(show_name no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2689,6 +2743,15 @@
 			(hide yes)
 			(show_name no)
 			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C28241"
+			(at 0 0 0)
+			(show_name no)
 			(effects
 				(font
 					(size 1.27 1.27)

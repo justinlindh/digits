@@ -13781,7 +13781,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_JST:JST_ZH_B2B-ZR-SM4-TF_1x02-1MP_P1.50mm_Vertical"
+		(property "Footprint" "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
 			(at 60.96 142.24 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -13811,7 +13811,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C265284"
+		(property "LCSC Part #" "C158012"
 			(at 60.96 142.24 0)
 			(show_name no)
 			(do_not_autoplace no)
