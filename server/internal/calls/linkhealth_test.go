@@ -190,7 +190,7 @@ func TestHealthStoreFlushDisabledOption(t *testing.T) {
 	// attempting any DB writes. Since NewHealthStore(nil, ...) is also
 	// a valid construction (nil DB), use that to avoid needing a DB
 	// in this unit test.
-	s := NewHealthStore(nil, WithFlushDisabled(true))
+	s := NewHealthStore(nil, WithFlushDisabled())
 	if !s.flushDisabled {
 		t.Fatal("expected flushDisabled == true")
 	}

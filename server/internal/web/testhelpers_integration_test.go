@@ -130,7 +130,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	deviceStore := device.NewStore(database)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
-	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled(true))
+	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled())
 	tracker.SetHealthStore(healthStore)
 	dashEvents := events.New()
 	hub.SetDashboardEvents(dashEvents)
