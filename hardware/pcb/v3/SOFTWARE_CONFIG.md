@@ -1,6 +1,6 @@
-# Software configuration required for PCB v2
+# Software configuration required for PCB v3
 
-Hardware-facing software settings that must be in place for the carrier board to operate. None of these are compile-time constants in firmware — they are system configuration on the Pi side. Keep this file in sync with `pi/image/` so image builds apply them automatically.
+Hardware-facing software settings that must be in place for the carrier board to operate. None of these are compile-time constants in firmware; they are system configuration on the Pi side. Keep this file in sync with `pi/image/` so image builds apply them automatically.
 
 ## Pi-side (Raspberry Pi Zero 2 W)
 
@@ -17,7 +17,7 @@ dtoverlay=disable-bt
 
 Required changes in `/boot/firmware/cmdline.txt`:
 
-Remove the `console=serial0,115200` token if present. The Pi Zero 2 W routes `PL011` to the Bluetooth modem by default; `disable-bt` releases `PL011` to the header pins. Alternative `dtoverlay=miniuart-bt` exists but is clock-scaling-sensitive — prefer `disable-bt`.
+Remove the `console=serial0,115200` token if present. The Pi Zero 2 W routes `PL011` to the Bluetooth modem by default; `disable-bt` releases `PL011` to the header pins. Alternative `dtoverlay=miniuart-bt` exists but is clock-scaling-sensitive; prefer `disable-bt`.
 
 ### 2. I2S codec overlay
 
@@ -42,7 +42,7 @@ or program the clock manager directly via `clk-bcm2835`.
 
 ### 4. SWD for RP2040 flashing
 
-OpenOCD's `raspberrypi-native` configuration uses `GPIO24` for SWDIO and `GPIO25` for SWCLK — matches the carrier board wiring as long as the upstream default config is used. No Pi-side overrides required, but the OpenOCD command line must reference the `raspberrypi-native` adapter in the firmware build scripts.
+OpenOCD's `raspberrypi-native` configuration uses `GPIO24` for SWDIO and `GPIO25` for SWCLK, which matches the carrier board wiring as long as the upstream default config is used. No Pi-side overrides required, but the OpenOCD command line must reference the `raspberrypi-native` adapter in the firmware build scripts.
 
 ### 5. HAT EEPROM probe at boot
 
@@ -56,7 +56,7 @@ The RP2040 schematic ties pin 19 (TESTEN) to GND with a stitching via. Firmware 
 
 ### 7. Codec internal DVDD LDO must remain disabled
 
-The TLV320AIC3104 has an internal DVDD LDO (Page 0 Register 89). By default it is OFF. The external XC6206P182 (U7) provides 1.8V to DVDD (pin 32). Firmware must not enable the internal LDO — doing so would fight the external regulator and cause brownouts on the digital rail.
+The TLV320AIC3104 has an internal DVDD LDO (Page 0 Register 89). By default it is OFF. The external XC6206P182 (U7) provides 1.8V to DVDD (pin 32). Firmware must not enable the internal LDO: doing so would fight the external regulator and cause brownouts on the digital rail.
 
 ### 8. Ringer idle state
 

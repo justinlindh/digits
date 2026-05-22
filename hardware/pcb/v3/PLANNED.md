@@ -1,42 +1,38 @@
-# V3 planning notes
+# V3 design decisions
 
-V3 has not been spec'd or fabricated. This file is a parking lot for changes already discussed but not ready to commit to a full revision plan.
+V3 is the carrier board as built. This file records the design decisions behind the parts of V3 that had real alternatives, so the rationale survives outside the schematic. For the full v2-to-v3 delta see `CHANGES_FROM_V2.md`; for the per-component and per-net detail see `COMPONENTS.md` and `NET_TOPOLOGY.md`.
 
-V3 inherits everything from V2.1 (see `hardware/pcb/v2.1/CHANGES_FROM_V2.md`) and adds the items below.
+## Bell drive: on-board XL6019 boost to ~37 V
 
-## Headline change: PCB-mount mains transformer for the bell ringer
+V1 and V2 ring the bell by driving the DRV8871 H-bridge (U2) into the primary of an external 120V:12V mains transformer used in reverse as a step-up, with the high-voltage secondary on the bell coils. The transformer is bulky, costs ~$14 per unit, and adds two flying-wire pairs to the harness.
 
-V2 (and V2.1) require an external 120V/12V mains transformer wired between J7 (BELL_A/BELL_B from the DRV8871 H-bridge) and the phone's bell coils. The transformer provides ~10x voltage step-up so the coils see their design ~120V drive. It is bulky, costs ~$14 per unit, and adds two flying-wire pairs to the harness.
+V3 removes the external transformer. The DRV8871 motor supply (VM, U2 pin 5) is fed from `VBOOST`, an on-board rail produced by an XL6019 boost converter (U10, TO-263-5). The boost steps the +5 V rail up to ~37 V. Output is set by the feedback divider R20 = 57.6 kΩ (VBOOST to FB) and R21 = 2 kΩ (FB to GND): Vout = 1.25 * (1 + R20/R21) ~= 37.25 V. The chain is +5V -> L10 (47 µH) -> SW_NODE -> D10 (SS56 Schottky) -> VBOOST, bulked by C100 (100 µF / 63 V) and C101 (1 µF). U10's metal tab (pad 6) is on SW_NODE, not GND.
 
-V3 replaces the external transformer with a PCB-mount equivalent reflow-soldered to the carrier.
+Bench-validated: ~78 dBA at 33 V is comparable to the ~79 dBA of the transformer. The bell mechanically saturates, so above a threshold loudness barely tracks drive even though hammer power scales with V^2; ~37 V sits past that knee with margin.
 
-Candidate parts (all PCB-mount, ~10 W, 120V:12V, through-hole or PCB-pin):
+### Rejected alternatives
 
-- Bourns SCG12-005
-- Triad FS12-200
-- Hammond 162C12
+- **On-board mains transformer (Bourns SCG12-005, Triad FS12-200, Hammond 162C12).** Rejected: a ~25-30 mm square part plus a high-voltage zone needing 2-3 mm creepage, all to match a loudness the boost already reaches. Largest, costliest, and the only option that puts mains-class voltage on the board.
+- **24 V supply + direct drive.** Rejected: needs a 24 V wall adapter and re-rating of input caps and fuse, and still leaves the bell well below saturation loudness.
+- **12 V supply + direct drive.** Rejected: rings the tested WE bell but at a fraction of saturated loudness; subjectively a weak buzz, and dependent on individual coil mechanics.
 
-Roughly 25-30 mm square footprint. Needs a high-voltage zone on the secondary side with proper creepage (2-3 mm spacing for ~120V at 20 Hz). The DRV8871 (U2) drives the transformer primary from BELL_A/BELL_B exactly as today; only the routing past J7 changes. J7 itself can be removed once the transformer is on-board.
+## Hook and mic-kill: single DPDT cradle switch (SW1)
 
-Bench-validated alternatives that did NOT make the cut:
+V2 used a separate 6 mm tactile hookswitch (SW1) for hook sense and a separate physical microswitch wired through the J9 connector for mic kill. V3 collapses both into one 6-pin DPDT telephone hook switch (SW1, custom footprint `SW_DPDT_Hook_24.2x17.1mm`) that presses the cradle plunger.
 
-- **Direct 12V drive (no transformer):** rings on tested WE bells but at roughly 1% of transformer power; subjectively quieter and dependent on individual coil mechanics.
-- **24V supply + direct drive:** ~16x the hammer force of 12V direct, ~4% of transformer power. Cheaper than transformer per unit but requires a 24V wall adapter and audit of input-cap voltage ratings (C1, C55, F1).
-- **On-board boost converter + higher-V H-bridge (e.g., 12V→48V boost into a 50V H-bridge):** ~16% of transformer power. Smaller PCB area than mains transformer and no high-voltage zone, but more design work and more SMD parts.
+- Pole 1 (hook sense): common pin 2 = `HOOK_SW` switches between pin 3 = GND and pin 1 (unused). On-hook grounds HOOK_SW; off-hook opens it and the RP2040 internal pull-up reads high.
+- Pole 2 (mic kill): common pin 5 = `MIC_HOT` switches between pin 4 = `MIC_FROM_SW` and pin 6 (unused). On-hook breaks the mic path in series, so the mic is dead on the cradle. Privacy is a hardware property: no GPIO can override it.
 
-Decision: stick with the transformer for V3 because it matches landline ringer loudness without coil-by-coil tuning. Move the part on-board to eliminate the external wart.
+This retires both V2's tactile SW1 and the J9 mic-kill connector.
 
-## Other items deferred to V3
+### Rejected alternative
 
-These were discussed in the V2 bring-up cycle but not put into V2.1 because they break cable or harness compatibility, and a V3 build implies new harnesses anyway.
+- **SPDT cradle switch + on-board 2N7002 FET mute via a repinned J9.** Rejected: the DPDT series-interrupt is simpler, uses no active parts, and keeps the mic-mute property purely passive. The FET approach added two SMD parts and a gate pull-up to do what one extra switch pole does directly.
 
-- **J3 connector upsize JST ZH → JST PH 2-pin** (V2 ERRATA item 6). ZH is rated 1.0 A per contact and the V2 design sits at the limit during ringer peaks. PH is rated 2.0 A. Footprint and connector body change; new pigtails required.
-- **SW2 BOOTSEL tact switch** (V2 ERRATA item 4). 6 mm momentary between QSPI_SS and GND on an accessible board edge. Held during power-on to enter BOOTSEL. Eliminates the paperclip-on-U4-pin-1 procedure that has already cost one V2 unit its SWD subsystem.
-- **J9 repinning for SPDT cradle switch + on-board FET mute.** Replace the V2 series-interrupt mic kill switch (which uses a separate physical microswitch wired through J9) with a single SPDT cradle switch shared with the hookswitch. J9 repins as `HOOK_SW / GND / MUTE_DRIVE`, MIC_HOT shorts directly to MIC_FROM_SW on the PCB, and a 2N7002 N-MOSFET (gated by MUTE_DRIVE through a 10 kΩ pull-up) shunts MIC_FROM_SW to GND when on-hook. SW1 (on-board hook tactile) becomes redundant and can be removed. Privacy property survives because MUTE_DRIVE is not connected to any GPIO. Adds two SMD parts; eliminates one external microswitch and simplifies the cradle mechanism to a single SPDT.
+## BOOTSEL: SW2 tact switch
 
-## Out of scope for V3 (for now)
+V3 adds SW2, a 6 mm momentary tact switch between `QSPI_SS` and GND. Hold it during power-on to enter the RP2040 bootrom. This eliminates the V2 procedure of shorting U4 pin 1 with a paperclip, which has already cost one V2 unit its SWD subsystem.
 
-- Codec or audio path changes
-- Rail architecture changes
-- RP2040 or flash subsystem changes beyond what V2.1 already does
-- Pi-side interface changes
+## Power input and rail architecture
+
+V3 input is +5 V, not 12 V. The LM2596 buck stage (U1 + L1 + D1 + C2) is removed. The input connector is `PWR` (JST XH B2B-XH-A, 2.5 mm pitch, ~3 A), upsized from V2's JST ZH which sat at its 1 A contact limit during ringer peaks. The path is `PWR` -> `/VIN_RAW` -> F1 (1.5 A PTC) -> +5V. The +3V3 rail still comes from U5 (AMS1117-3.3) off +5 V; the codec's +1V8 still comes from U7 (XC6206P182MR) off +3V3.
