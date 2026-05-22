@@ -1051,15 +1051,15 @@ func TestHandleLinkHealth_2WayPath_UnchangedBehavior(t *testing.T) {
 	}
 }
 
-// fakeErrorObserver records every category passed to ObserveSignalingError-
-// Category. Tests assert against the slice rather than a counter so the
-// order of observations is also verifiable; ordering matters when we want
-// to confirm the relay's first error wins instead of doubling up.
+// fakeErrorObserver records every category passed to ObserveSignalingError.
+// Tests assert against the slice rather than a counter so the order of
+// observations is also verifiable; ordering matters when we want to confirm
+// the relay's first error wins instead of doubling up.
 type fakeErrorObserver struct {
 	seen []string
 }
 
-func (f *fakeErrorObserver) ObserveSignalingErrorCategory(category string) {
+func (f *fakeErrorObserver) ObserveSignalingError(category string) {
 	f.seen = append(f.seen, category)
 }
 

@@ -182,19 +182,11 @@ func (r *Registry) RegisterCallsGauge(read func() float64) {
 		read)
 }
 
-// ObserveSignalingError records one signaling error in the named category.
-// The category MUST be one of the SignalingErrorCategory constants; passing
-// arbitrary strings here is a code smell and risks accidental PII leakage,
-// so callers should always use the exported constants.
-func (r *Registry) ObserveSignalingError(category SignalingErrorCategory) {
-	r.SignalingErrors.WithLabelValues(string(category)).Inc()
-}
-
 // validErrorCategories enumerates the closed set of categories accepted by
-// ObserveSignalingErrorCategory. The string form is used because the
-// signaling package cannot import this package without a cycle. Any value
-// not in the set is dropped to "other" rather than rejected so a caller
-// bug can't silently exfiltrate the offending string into a label.
+// ObserveSignalingError. The string form is used because the signaling
+// package cannot import this package without a cycle. Any value not in the
+// set is dropped to "other" rather than rejected so a caller bug can't
+// silently exfiltrate the offending string into a label.
 var validErrorCategories = map[string]struct{}{
 	string(ErrTURNAllocFailed): {},
 	string(ErrICETimeout):      {},
@@ -205,11 +197,12 @@ var validErrorCategories = map[string]struct{}{
 	string(ErrRelayDelivery):   {},
 }
 
-// ObserveSignalingErrorCategory accepts a string category from a caller
-// that cannot import the typed constants (e.g. internal/signaling, which
-// would form an import cycle). Unknown categories collapse to "other" so a
-// future caller can never smuggle a free-form string into a label value.
-func (r *Registry) ObserveSignalingErrorCategory(category string) {
+// ObserveSignalingError records one signaling error, partitioned by category.
+// The category is a plain string because the sole caller (internal/signaling)
+// cannot import the typed SignalingErrorCategory constants without forming an
+// import cycle. Unknown categories collapse to "other" so a future caller can
+// never smuggle a free-form string into a label value.
+func (r *Registry) ObserveSignalingError(category string) {
 	if _, ok := validErrorCategories[category]; !ok {
 		category = "other"
 	}

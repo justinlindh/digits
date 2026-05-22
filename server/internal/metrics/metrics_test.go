@@ -165,15 +165,31 @@ func TestActiveDeviceAndCallGauges(t *testing.T) {
 
 func TestObserveSignalingError(t *testing.T) {
 	r := New("test", "abc123")
-	r.ObserveSignalingError(ErrTURNAllocFailed)
-	r.ObserveSignalingError(ErrTURNAllocFailed)
-	r.ObserveSignalingError(ErrICETimeout)
+	r.ObserveSignalingError(string(ErrTURNAllocFailed))
+	r.ObserveSignalingError(string(ErrTURNAllocFailed))
+	r.ObserveSignalingError(string(ErrICETimeout))
 
 	if got := testutil.ToFloat64(r.SignalingErrors.WithLabelValues("turn_alloc_failed")); got != 2 {
 		t.Errorf("turn_alloc_failed counter = %v, want 2", got)
 	}
 	if got := testutil.ToFloat64(r.SignalingErrors.WithLabelValues("ice_timeout")); got != 1 {
 		t.Errorf("ice_timeout counter = %v, want 1", got)
+	}
+}
+
+// A category outside the closed set must collapse to "other" rather than land
+// in a label of its own, so a caller bug can never write a free-form string
+// (and any PII it might carry) into the signaling_errors_total label.
+func TestObserveSignalingErrorUnknownCollapsesToOther(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveSignalingError("3145551234")
+	r.ObserveSignalingError("not-a-category")
+
+	if got := testutil.ToFloat64(r.SignalingErrors.WithLabelValues("other")); got != 2 {
+		t.Errorf("other counter = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.SignalingErrors.WithLabelValues("3145551234")); got != 0 {
+		t.Errorf("unknown category leaked into its own label: got %v, want 0", got)
 	}
 }
 
@@ -194,7 +210,7 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 	// at least one labelled child has been observed.
 	r.HTTPRequestsTotal.WithLabelValues("/api/status", "GET", "200").Inc()
 	r.HTTPRequestDuration.WithLabelValues("/api/status", "GET", "200").Observe(0.012)
-	r.ObserveSignalingError(ErrTURNAllocFailed)
+	r.ObserveSignalingError(string(ErrTURNAllocFailed))
 
 	srv := httptest.NewServer(promhttp.HandlerFor(r.Reg, promhttp.HandlerOpts{Registry: r.Reg}))
 	defer srv.Close()
