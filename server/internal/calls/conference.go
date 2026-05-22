@@ -65,6 +65,7 @@ type ConferenceTracker struct {
 	state       *ConfState
 }
 
+// NewConferenceTracker returns a ConferenceTracker with empty state.
 func NewConferenceTracker() *ConferenceTracker {
 	return &ConferenceTracker{
 		active:      make(map[uuid.UUID]*Conference),

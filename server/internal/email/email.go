@@ -97,6 +97,7 @@ func (s *NoopSender) Send(to, subject, htmlBody string) error {
 // Bodies can be long; only the subject and recipient are logged.
 type LogSender struct{}
 
+// NewLogSender returns a LogSender that writes to the structured logger.
 func NewLogSender() *LogSender {
 	return &LogSender{}
 }

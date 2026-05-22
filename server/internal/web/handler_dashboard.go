@@ -1,14 +1,12 @@
 package web
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/line"
 )
 
 type dashboardData struct {
@@ -192,69 +190,6 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	renderWith(r.Context(), w, h.tmplDashboard, layoutFor(r), data)
-}
-
-// buildLinkedFamilies fetches the list of linked households and their lines
-// for the given householdID. Returns an empty slice if householdID is empty or
-// the lookup fails.
-func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) []linkedFamilyRow {
-	if householdID == "" || h.linkStore == nil {
-		return nil
-	}
-	activeLinks, err := h.linkStore.GetLinkedHouseholds(ctx, householdID)
-	if err != nil {
-		slog.ErrorContext(ctx, "buildLinkedFamilies: get linked households failed", "err", err)
-		return nil
-	}
-	otherIDs := make([]string, 0, len(activeLinks))
-	for _, l := range activeLinks {
-		otherID := l.HouseholdAID
-		if otherID == householdID && l.HouseholdBID != nil {
-			otherID = *l.HouseholdBID
-		}
-		otherIDs = append(otherIDs, otherID)
-	}
-	linesByHousehold, err := h.lineStore.ListByHouseholds(ctx, otherIDs)
-	if err != nil {
-		slog.ErrorContext(ctx, "buildLinkedFamilies: batch list lines failed", "err", err)
-	}
-	var families []linkedFamilyRow
-	for i, l := range activeLinks {
-		otherID := otherIDs[i]
-		otherName := otherID
-		if other, err := h.householdStore.GetByID(ctx, otherID); err == nil {
-			otherName = other.Name
-		}
-		families = append(families, linkedFamilyRow{
-			ID:         l.ID,
-			Name:       otherName,
-			Lines:      linesByHousehold[otherID],
-			Status:     l.Status,
-			AcceptedAt: l.AcceptedAt,
-		})
-	}
-	return families
-}
-
-// buildLinkedLineIndex flattens a slice of linkedFamilyRow into a map from
-// line number to "FamilyName · LineName" for fast peer-name resolution.
-func buildLinkedLineIndex(families []linkedFamilyRow) map[string]string {
-	index := make(map[string]string)
-	for _, f := range families {
-		for _, l := range f.Lines {
-			index[l.Number] = f.Name + " · " + l.Name
-		}
-	}
-	return index
-}
-
-// resolvePeerName returns the friendly name for a peer number using the linked
-// line index, falling back to fmtPhone formatting.
-func resolvePeerName(number string, linkedLines map[string]string) string {
-	if name, ok := linkedLines[number]; ok {
-		return name
-	}
-	return line.FormatNumber(number)
 }
 
 func countOnline(lines []lineRow) int {

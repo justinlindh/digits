@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -488,4 +489,77 @@ func partialFor(r *http.Request, intercom, am string) string {
 		return am
 	}
 	return intercom
+}
+
+// linkedFamilyRow holds the display data for one linked household and its lines.
+// Used by the dashboard, links, and link-health handlers to render linked-family
+// information without repeated store round-trips.
+type linkedFamilyRow struct {
+	ID         string
+	Name       string
+	Lines      []line.Line
+	Status     string
+	AcceptedAt *time.Time
+}
+
+// buildLinkedFamilies fetches the list of linked households and their lines
+// for the given householdID. Returns nil if householdID is empty or the lookup fails.
+func (h *Handler) buildLinkedFamilies(ctx context.Context, householdID string) []linkedFamilyRow {
+	if householdID == "" || h.linkStore == nil {
+		return nil
+	}
+	activeLinks, err := h.linkStore.GetLinkedHouseholds(ctx, householdID)
+	if err != nil {
+		slog.ErrorContext(ctx, "buildLinkedFamilies: get linked households failed", "err", err)
+		return nil
+	}
+	otherIDs := make([]string, 0, len(activeLinks))
+	for _, l := range activeLinks {
+		otherID := l.HouseholdAID
+		if otherID == householdID && l.HouseholdBID != nil {
+			otherID = *l.HouseholdBID
+		}
+		otherIDs = append(otherIDs, otherID)
+	}
+	linesByHousehold, err := h.lineStore.ListByHouseholds(ctx, otherIDs)
+	if err != nil {
+		slog.ErrorContext(ctx, "buildLinkedFamilies: batch list lines failed", "err", err)
+	}
+	var families []linkedFamilyRow
+	for i, l := range activeLinks {
+		otherID := otherIDs[i]
+		otherName := otherID
+		if other, err := h.householdStore.GetByID(ctx, otherID); err == nil {
+			otherName = other.Name
+		}
+		families = append(families, linkedFamilyRow{
+			ID:         l.ID,
+			Name:       otherName,
+			Lines:      linesByHousehold[otherID],
+			Status:     l.Status,
+			AcceptedAt: l.AcceptedAt,
+		})
+	}
+	return families
+}
+
+// buildLinkedLineIndex flattens a slice of linkedFamilyRow into a map from
+// line number to "FamilyName · LineName" for fast peer-name resolution.
+func buildLinkedLineIndex(families []linkedFamilyRow) map[string]string {
+	index := make(map[string]string)
+	for _, f := range families {
+		for _, l := range f.Lines {
+			index[l.Number] = f.Name + " · " + l.Name
+		}
+	}
+	return index
+}
+
+// resolvePeerName returns the friendly name for a peer number using the linked
+// line index, falling back to fmtPhone formatting.
+func resolvePeerName(number string, linkedLines map[string]string) string {
+	if name, ok := linkedLines[number]; ok {
+		return name
+	}
+	return line.FormatNumber(number)
 }

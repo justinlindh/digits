@@ -128,3 +128,33 @@ func TestLoadDefaults(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadEnvOverrides(t *testing.T) {
+	t.Setenv("SIGNALD_ADDR", ":9000")
+	t.Setenv("DATABASE_URL", "postgres://localhost/testdb")
+	t.Setenv("SIGNALD_TURN_ENABLED", "true")
+	t.Setenv("REDIS_URL", "redis://localhost:6379")
+	t.Setenv("SIGNALD_WS_RATE_LIMIT", "60")
+	t.Setenv("DEV_MODE", "true")
+
+	c := Load()
+
+	if c.Addr != ":9000" {
+		t.Errorf("Addr: got %q, want %q", c.Addr, ":9000")
+	}
+	if c.DatabaseURL != "postgres://localhost/testdb" {
+		t.Errorf("DatabaseURL: got %q, want %q", c.DatabaseURL, "postgres://localhost/testdb")
+	}
+	if !c.TURNEnabled {
+		t.Error("TURNEnabled: expected true")
+	}
+	if c.RedisURL != "redis://localhost:6379" {
+		t.Errorf("RedisURL: got %q, want %q", c.RedisURL, "redis://localhost:6379")
+	}
+	if c.WSRateLimitPerMin != 60 {
+		t.Errorf("WSRateLimitPerMin: got %d, want 60", c.WSRateLimitPerMin)
+	}
+	if !c.DevMode {
+		t.Error("DevMode: expected true")
+	}
+}

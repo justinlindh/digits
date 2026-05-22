@@ -29,6 +29,7 @@ type Runner interface {
 // ExecRunner is the production Runner that delegates to os/exec.
 type ExecRunner struct{}
 
+// NewExecRunner returns an ExecRunner ready for use.
 func NewExecRunner() *ExecRunner { return &ExecRunner{} }
 
 func (ExecRunner) Run(ctx context.Context, spec RunSpec) error {
