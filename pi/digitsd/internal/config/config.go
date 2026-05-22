@@ -104,41 +104,34 @@ type Config struct {
 // DefaultPath is the default config file location on a Pi.
 const DefaultPath = "/data/digits/config.json"
 
-// defaultWiFiFallback returns the canonical default WiFiFallback config. This
-// is the single source of truth for both Default() and the Load path.
-func defaultWiFiFallback() WiFiFallback {
-	return WiFiFallback{
-		Enabled:           true,
-		GraceInitial:      5 * time.Minute,
-		GraceMax:          30 * time.Minute,
-		APNoClientTimeout: 10 * time.Minute,
-	}
-}
-
-// defaultVoicemail returns the canonical default Voicemail config. Single
-// source of truth used by Default() and the Load path.
-func defaultVoicemail() Voicemail {
-	return Voicemail{
-		Enabled:     true,
-		RingTimeout: 20 * time.Second,
-	}
-}
-
-// Default returns a Config with sensible defaults.
+// Default returns a Config populated with the daemon's built-in defaults. It
+// is the single source of truth for those defaults: Load and loadBackup both
+// start from Default() and overlay the on-disk JSON, so changing a default
+// here changes it everywhere.
 func Default() *Config {
 	return &Config{
-		WiFiFallback: defaultWiFiFallback(),
-		Voicemail:    defaultVoicemail(),
+		WiFiFallback: WiFiFallback{
+			Enabled:           true,
+			GraceInitial:      5 * time.Minute,
+			GraceMax:          30 * time.Minute,
+			APNoClientTimeout: 10 * time.Minute,
+		},
+		Voicemail: Voicemail{
+			Enabled:     true,
+			RingTimeout: 20 * time.Second,
+		},
 	}
 }
 
-// Load reads the config file at path. If the file does not exist a zero-value
-// Config is returned with no error (caller applies CLI-flag defaults).
+// Load reads the config file at path. If the file does not exist a Config with
+// built-in defaults is returned with no error (caller applies CLI-flag
+// defaults).
 //
 // If the primary file is corrupt (e.g. null bytes from a power cut), Load
 // automatically falls back to the .bak file.
 func Load(path string) (*Config, error) {
-	c := &Config{path: path, WiFiFallback: defaultWiFiFallback(), Voicemail: defaultVoicemail()}
+	c := Default()
+	c.path = path
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -167,10 +160,12 @@ func Load(path string) (*Config, error) {
 }
 
 // loadBackup tries to load from the .bak file. If that also fails, returns
-// a zero-value config so the daemon can still boot (in pairing mode).
+// a Config with built-in defaults so the daemon can still boot (in pairing
+// mode).
 func loadBackup(path string) (*Config, error) {
 	bakPath := path + ".bak"
-	c := &Config{path: path, WiFiFallback: defaultWiFiFallback(), Voicemail: defaultVoicemail()}
+	c := Default()
+	c.path = path
 
 	data, err := os.ReadFile(bakPath)
 	if err != nil {
