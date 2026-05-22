@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
-	"github.com/justinlindh/digits/server/internal/line"
 )
 
 type linksData struct {
@@ -21,14 +20,6 @@ type linksData struct {
 	Canceled       bool
 	Conflicts      string
 	Error          string
-}
-
-type linkedFamilyRow struct {
-	ID         string
-	Name       string
-	Lines      []line.Line
-	Status     string
-	AcceptedAt *time.Time
 }
 
 type linkRow struct {
