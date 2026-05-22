@@ -63,7 +63,7 @@ type HealthRecorder interface {
 // strings on this surface so the relay package stays independent; the
 // metrics package validates them by exposing only a fixed set of constants.
 type SignalingErrorObserver interface {
-	ObserveSignalingErrorCategory(category string)
+	ObserveSignalingError(category string)
 }
 
 // activeExtension tracks a device that picked up an extension phone during
@@ -113,7 +113,7 @@ type Relay struct {
 // only one place to look when reviewing what categories the relay emits.
 func (r *Relay) observeError(category string) {
 	if r.Errors != nil {
-		r.Errors.ObserveSignalingErrorCategory(category)
+		r.Errors.ObserveSignalingError(category)
 	}
 }
 
