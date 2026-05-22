@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync/atomic"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -35,9 +34,6 @@ type redisPubSub interface {
 type RedisBridge struct {
 	client redis.UniversalClient
 	podID  string
-
-	published atomic.Int64
-	received  atomic.Int64
 }
 
 // compile-time check
@@ -102,7 +98,6 @@ func (b *RedisBridge) Publish(ctx context.Context, env *Envelope) {
 		slog.ErrorContext(ctx, "redis: publish failed", "err", err)
 		return
 	}
-	b.published.Add(1)
 	slog.DebugContext(ctx, "redis: published message", "pod", b.podID)
 }
 
@@ -135,24 +130,12 @@ func (b *RedisBridge) Subscribe(ctx context.Context) <-chan *Envelope {
 				if env.PodID == b.podID {
 					continue
 				}
-				b.received.Add(1)
 				ch <- &env
 			}
 		}
 	}()
 
 	return ch
-}
-
-// Published returns the total number of messages published by this bridge.
-func (b *RedisBridge) Published() int64 {
-	return b.published.Load()
-}
-
-// Received returns the total number of messages received (from other pods)
-// by this bridge.
-func (b *RedisBridge) Received() int64 {
-	return b.received.Load()
 }
 
 // Close shuts down the Redis client connection.
