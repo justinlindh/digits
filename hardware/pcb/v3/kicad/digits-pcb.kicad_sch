@@ -11395,7 +11395,7 @@
 	)
 	(global_label "HOOK_SW"
 		(shape input)
-		(at 54.61 52.07 0)
+		(at 54.61 57.15 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -11404,7 +11404,7 @@
 		)
 		(uuid "a1118aea-7629-411c-9487-094f951cee4e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 54.61 52.07 0)
+			(at 54.61 57.15 0)
 			(hide yes)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -11459,7 +11459,7 @@
 			)
 		)
 	)
-	(global_label "MIC_HOT"
+	(global_label "MIC_FROM_SW"
 		(shape input)
 		(at 54.61 31.75 0)
 		(effects
@@ -11899,7 +11899,7 @@
 			)
 		)
 	)
-	(global_label "MIC_FROM_SW"
+	(global_label "MIC_HOT"
 		(shape input)
 		(at 54.61 36.83 0)
 		(effects
