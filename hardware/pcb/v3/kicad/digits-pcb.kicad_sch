@@ -17205,7 +17205,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" ""
+		(property "LCSC Part #" "C87036"
 			(at 35.56 57.38 0)
 			(show_name yes)
 			(do_not_autoplace no)

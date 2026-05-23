@@ -1404,19 +1404,6 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C25102"
-			(at 0 0 0)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "c642a459-7189-4a1e-946d-422168e3546e")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
 		(property "Value" "300"
 			(at 0 1.17 0)
 			(layer "F.Fab")
@@ -1447,6 +1434,19 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C25102"
+			(at 0 0 0)
+			(unlocked yes)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "c642a459-7189-4a1e-946d-422168e3546e")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2088,19 +2088,6 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C2286"
-			(at 0 0 0)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "6e1184c5-ec57-4318-baed-a128849255bf")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
 		(property "Value" "LED_RED"
 			(at 0 1.43 0)
 			(layer "F.Fab")
@@ -2131,6 +2118,19 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C2286"
+			(at 0 0 0)
+			(unlocked yes)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "6e1184c5-ec57-4318-baed-a128849255bf")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -5526,7 +5526,7 @@
 				)
 			)
 		)
-		(property "Value" "47uF"
+		(property "Value" "10uF"
 			(at 0 -3.7 90)
 			(layer "F.Fab")
 			(uuid "5e82ff55-1669-4ccc-8b29-3594227aa654")
@@ -5571,7 +5571,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C336270"
+		(property "LCSC Part #" "C116402"
 			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
@@ -8506,19 +8506,6 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C12624"
-			(at 0 0 0)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "8657a168-54ab-4f95-8261-ab892a10cbfd")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
 		(property "Value" "LED_GREEN"
 			(at 0 1.43 0)
 			(layer "F.Fab")
@@ -8549,6 +8536,19 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C12624"
+			(at 0 0 0)
+			(unlocked yes)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "8657a168-54ab-4f95-8261-ab892a10cbfd")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -10169,7 +10169,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" ""
+		(property "LCSC Part #" "C87036"
 			(at 0 0 270)
 			(unlocked yes)
 			(layer "F.Fab")
@@ -17328,19 +17328,6 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C25104"
-			(at 0 0 0)
-			(unlocked yes)
-			(layer "F.Fab")
-			(hide yes)
-			(uuid "f8c6679f-ce6c-40da-9183-df3bb12b624a")
-			(effects
-				(font
-					(size 1 1)
-					(thickness 0.15)
-				)
-			)
-		)
 		(property "Value" "330"
 			(at 0 1.17 0)
 			(layer "F.Fab")
@@ -17371,6 +17358,19 @@
 			(effects
 				(font
 					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "LCSC Part #" "C25104"
+			(at 0 0 0)
+			(unlocked yes)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "f8c6679f-ce6c-40da-9183-df3bb12b624a")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
