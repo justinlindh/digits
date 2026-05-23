@@ -571,7 +571,7 @@
       },
       {
         "netclass": "Switching",
-        "pattern": "SW_NODE"
+        "pattern": "/ringer/SW_NODE"
       }
     ]
   },
