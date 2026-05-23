@@ -36,29 +36,27 @@ New parts on the `/ringer/` sheet:
 | R20 | 57.6 kΩ | C26983 | FB divider top (VBOOST -> FB) |
 | R21 | 2 kΩ | C4109 | FB divider bottom (FB -> GND) |
 
-Vout = 1.25 * (1 + R20/R21) ~= 37.25 V. The DRV8871 VM bypass/bulk caps C54 (100 nF) and C55 (47 µF) now sit on VBOOST instead of the old +12V rail. Bench-validated: ~78 dBA at 33 V, comparable to the ~79 dBA transformer.
+Vout = 1.25 * (1 + R20/R21) ~= 37.25 V. The DRV8871 VM bypass/bulk caps C54 (100 nF) and C55 (10 µF) now sit on VBOOST instead of the old +12V rail. Bench-validated: ~78 dBA at 33 V, comparable to the ~79 dBA transformer.
 
 ## Hook and mic-kill: single DPDT cradle switch
 
 V2 used a separate tactile hookswitch (`SW1`, 6 mm) for hook sense plus a separate physical microswitch wired through the `J9` connector for mic kill. V3 replaces both with one 6-pin DPDT telephone hook switch, `SW1`, custom footprint `SW_DPDT_Hook_24.2x17.1mm`, that presses the cradle plunger.
 
-- Pole 1: common pin 2 = `HOOK_SW` switches between pin 3 = GND and pin 1 (unused). Hook sense.
-- Pole 2: common pin 5 = `MIC_HOT` switches between pin 4 = `MIC_FROM_SW` and pin 6 (unused). Series mic interrupt; mic is dead on-hook (privacy, no GPIO override).
+- Pole 1: common pad 3 = `HOOK_SW` switches between pad 2 = GND and pad 1 (unused). Hook sense.
+- Pole 2: common pad 6 = `MIC_HOT` switches between pad 4 = `MIC_FROM_SW` and pad 5 (unused). Series mic interrupt; mic is dead on-hook (privacy, no GPIO override).
 
 This retires the V2 tactile SW1 and the J9 mic-kill connector. SW1 is the only part on the back copper side (see component-side flip below).
 
 ## SW2 BOOTSEL tact switch
 
-V3 adds `SW2`, a 6 mm momentary tact switch between `QSPI_SS` and GND. Held during power-on it enters the RP2040 bootrom. Eliminates the V2 paperclip-on-U4-pin-1 procedure that destroyed a V2 unit's SWD subsystem.
+V3 adds `SW2`, a 6 mm momentary tact switch (OMRON B3F-1002, LCSC C87036) between `QSPI_SS` and GND. Held during power-on it enters the RP2040 bootrom. Eliminates the V2 paperclip-on-U4-pin-1 procedure that destroyed a V2 unit's SWD subsystem.
 
 ## Power indicator LEDs
 
 V3 adds two on-board indicator LEDs:
 
-- `D2` (red) on +5V through `R12` = 300 Ω.
-- `D3` (green) on +3V3 through `R13` = 330 Ω.
-
-These are generic 0603 LEDs and current-limit resistors with no LCSC part assigned in the schematic; assign before fab.
+- `D2` (red, 0603, LCSC C2286) on +5V through `R12` = 300 Ω (LCSC C25102).
+- `D3` (yellow-green KENTO KT-0603YG, 0603, LCSC C2289) on +3V3 through `R13` = 120 Ω (LCSC C25752). R13 is sized so the +3V3 indicator reliably lights at ~10 mA.
 
 ## Handset and LED connector pin assignments
 

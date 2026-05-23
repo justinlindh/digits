@@ -69,7 +69,7 @@ of the DPDT cradle switch SW1 in series with the mic line, documented in
 | R21 | R21 | 2 kohm | 0402 | C4109 | Boost FB divider bottom |
 | R2 | R2 | 33 kohm | 0402 | C25779 | ILIM: 64 / 33 ~= 1.94A fault trip (SLVSCY9B sec 7.3.3 eqn 1) |
 | C54 | C54 | 100 nF | 0402 X7R | C307331 | DRV8871 VM (VBOOST) HF bypass, <=3mm from U2.5 |
-| C55 | C55 | 47 uF | electrolytic 25V | C336270 | DRV8871 VM (VBOOST) bulk, <=6mm from U2.5 |
+| C55 | C55 | 10 uF | electrolytic 50V | C116402 | DRV8871 VM (VBOOST) bulk, <=6mm from U2.5 |
 
 ## DRV8871 pin map (U2)
 
@@ -107,7 +107,7 @@ continuous rating, so it only fires on a fault such as a shorted coil.
    7=GND, 8=OUT2, pad=GND.
 3. U2.4 connects to R2 pin 1; R2 pin 2 connects to GND; R2 value 33kohm.
 4. C54 (100nF) connects between U2.5 (VBOOST) and GND.
-5. C55 (>=10uF, nominal 47uF) connects between U2.5 (VBOOST) and GND.
+5. C55 (>=10uF, nominal 10uF) connects between U2.5 (VBOOST) and GND.
 6. U2.6 is the sole driver of BELL_A inside the sheet.
 7. U2.8 is the sole driver of BELL_B inside the sheet.
 8. Boost topology: U10.2/4 on +5V, U10.3 and tab pad 6 on SW_NODE, U10.5 on

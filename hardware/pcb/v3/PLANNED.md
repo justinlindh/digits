@@ -20,8 +20,8 @@ Bench-validated: ~78 dBA at 33 V is comparable to the ~79 dBA of the transformer
 
 V2 used a separate 6 mm tactile hookswitch (SW1) for hook sense and a separate physical microswitch wired through the J9 connector for mic kill. V3 collapses both into one 6-pin DPDT telephone hook switch (SW1, custom footprint `SW_DPDT_Hook_24.2x17.1mm`) that presses the cradle plunger.
 
-- Pole 1 (hook sense): common pin 2 = `HOOK_SW` switches between pin 3 = GND and pin 1 (unused). On-hook grounds HOOK_SW; off-hook opens it and the RP2040 internal pull-up reads high.
-- Pole 2 (mic kill): common pin 5 = `MIC_HOT` switches between pin 4 = `MIC_FROM_SW` and pin 6 (unused). On-hook breaks the mic path in series, so the mic is dead on the cradle. Privacy is a hardware property: no GPIO can override it.
+- Pole 1 (hook sense): common pad 3 = `HOOK_SW` switches between pad 2 = GND and pad 1 (unused). On-hook grounds HOOK_SW; off-hook opens it and the RP2040 internal pull-up reads high.
+- Pole 2 (mic kill): common pad 6 = `MIC_HOT` switches between pad 4 = `MIC_FROM_SW` and pad 5 (unused). On-hook breaks the mic path in series, so the mic is dead on the cradle. Privacy is a hardware property: no GPIO can override it.
 
 This retires both V2's tactile SW1 and the J9 mic-kill connector.
 

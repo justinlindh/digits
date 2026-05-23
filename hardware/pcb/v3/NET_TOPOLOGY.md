@@ -36,7 +36,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `SW1` | Hook_DPDT | Hook sense + mic kill cradle switch | SW_DPDT_Hook_24.2x17.1mm (B.Cu) |
 | `SW2` | SW_Push | BOOTSEL tact switch | SW_PUSH_6mm |
 | `D2` | LED_RED | +5V power indicator | LED 0603 |
-| `D3` | LED_GREEN | +3V3 power indicator | LED 0603 |
+| `D3` | LED_GREEN (yellow-green KENTO KT-0603YG) | +3V3 power indicator | LED 0603 |
 | `D10` | SS56 | Boost rectifier | SMA |
 | `L10` | 47 uH | Boost inductor | IND-SMD 12.3x12.3 |
 | `F1` | 1.5 A | Polyfuse on +5 V input | Fuse_1210_3225Metric |
@@ -47,7 +47,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `R10` | 2.2 kohm | Mic bias series (MICBIAS to mic) | 0402 |
 | `R11` | 10 kohm | Codec /RESET pullup | 0402 |
 | `R12` | 300 ohm | D2 (+5V LED) current limit | 0402 |
-| `R13` | 330 ohm | D3 (+3V3 LED) current limit | 0402 |
+| `R13` | 120 ohm | D3 (+3V3 LED) current limit, ~10mA | 0402 |
 | `R20` | 57.6 kohm | Boost FB divider top | 0402 |
 | `R21` | 2 kohm | Boost FB divider bottom | 0402 |
 | `C1` | 470 uF | +5 V bulk input | CP_Elec 10x10.5 |
@@ -78,7 +78,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `C49-C52` | 100 nF | Unused codec mic-input terminations | 0402 |
 | `C53` | 1 nF | Codec /RESET ESD cap | 0402 |
 | `C54` | 100 nF | DRV8871 VM (VBOOST) HF bypass | 0402 |
-| `C55` | 47 uF | DRV8871 VM (VBOOST) bulk | CP_Elec 5x5.3 |
+| `C55` | 10 uF | DRV8871 VM (VBOOST) bulk | CP_Elec 5x5.3 |
 | `C100` | 100 uF | VBOOST bulk | 10 mm dia SMD |
 | `C101` | 1 uF | VBOOST HF bypass | 0805 |
 | `MH1, MH2, MH3` | -- | M3 mechanical mounting | MountingHole_3.2mm_M3 |
@@ -92,15 +92,16 @@ PWR JST XH        ──┬── PWR.1 ── /VIN_RAW ── F1 (1.5 A polyfus
                                                                       ├── C4 100 nF HF bypass
                                                                       ├── C11 10 uF (at LDO input)
                                                                       ├── U5.3 VI (AMS1117-3.3 input)
-                                                                      ├── U10.2 / U10.4 VIN (boost input)
+                                                                      ├── U10.2 EN (enable, tied high) / U10.4 VIN (boost input)
                                                                       ├── L10.1 (boost inductor)
                                                                       ├── D2 anode (red power LED via R12)
                                                                       └── Pi header pin 2, pin 4 (Pi +5 V)
 
 U10 XL6019E1 boost (set to ~37 V)
     pin 1 GND         <- GND
-    pin 2, 4 VIN      <- +5 V
+    pin 2 EN          <- +5 V  (enable, tied high for always-on)
     pin 3 SW          -> SW_NODE  (also the metal tab, pad 6 -> SW_NODE, NOT GND)
+    pin 4 VIN         <- +5 V
     pin 5 FB          <- FB_NODE
 L10 47 uH             : 1 -> +5 V, 2 -> SW_NODE
 D10 SS56              : anode -> SW_NODE, cathode -> VBOOST
@@ -111,7 +112,7 @@ Vout = 1.25 * (1 + R20/R21) ~= 37.25 V
 VBOOST rail (~37 V)   ├── C100 100 uF bulk
                       ├── C101 1 uF HF
                       ├── C54 100 nF (DRV8871 VM HF)
-                      ├── C55 47 uF (DRV8871 VM bulk)
+                      ├── C55 10 uF (DRV8871 VM bulk)
                       └── U2.5 VM (DRV8871 motor supply)
 
 U5 AMS1117-3.3
@@ -130,7 +131,7 @@ U5 AMS1117-3.3
                      ├── C44 1 uF, C45 10 uF (codec +3V3 bulk near EP)
                      ├── R5 pullup  -> U3.26 RUN
                      ├── R11 pullup -> CODEC_RESET
-                     ├── D3 anode (green power LED via R13)
+                     ├── D3 anode (yellow-green power LED via R13)
                      ├── U3 IOVDD x6, ADC_AVDD, VREG_VIN, USB_VDD
                      ├── U6 AVDD, DRVDD x2, IOVDD
                      └── U7.3 VIN
@@ -153,8 +154,8 @@ DVDD_1V1 (RP2040 internal 1.1 V regulator output)
 Two on-board LEDs confirm the two main rails are up. Both are wired anode-to-rail, cathode-through-resistor-to-GND.
 
 ```
- +5 V  ── D2 (red)   ── /LED12V_K ── R12 300 ── GND
- +3V3  ── D3 (green) ── /LED3V3_K ── R13 330 ── GND
+ +5 V  ── D2 (red)          ── /LED12V_K ── R12 300 ── GND
+ +3V3  ── D3 (yellow-green) ── /LED3V3_K ── R13 120 ── GND
 ```
 
 `/LED12V_K` is a legacy net label carried over from the 12 V era; on v3 the D2 anode is on +5 V. The net name is cosmetic and does not change the connectivity.
@@ -230,7 +231,7 @@ KiCad symbol `MCU_RaspberryPi:RP2040`; pin numbering matches the RP2040 datashee
 | 27 | GPIO16 | LED_OUT | Via R1 220 ohm to status LED on the LED connector |
 | 28, 29 | GPIO17, GPIO18 | (NC) | Reserved |
 | 30 | GPIO19 | RINGER_IN1 | To DRV8871 IN1 |
-| 31 | GPIO20 | HOOK_SW | Hook sense input (SW1 pole 1) |
+| 31 | GPIO20 | HOOK_SW | Hook sense input (SW1 pole 1 common, pad 3) |
 | 32 | GPIO21 | KP_ROW2 | Keypad row 2 |
 | 33 | IOVDD | +3V3 | |
 | 34 | GPIO22 | KP_COL2 | Keypad column 2 |
@@ -299,14 +300,14 @@ R2 (33k) sets the DRV8871 current chopping threshold per TI datasheet equation 1
 
 XL6019 boost (U10):
 
-| Pin | Name | Net |
-|---|---|---|
-| 1 | GND | GND |
-| 2 | VIN | +5V |
-| 3 | SW | SW_NODE |
-| 4 | VIN | +5V |
-| 5 | FB | FB_NODE |
-| 6 | tab | SW_NODE |
+| Pin | Name | Net | Notes |
+|---|---|---|---|
+| 1 | GND | GND | |
+| 2 | EN | +5V | Enable, tied to +5V for always-on operation |
+| 3 | SW | SW_NODE | |
+| 4 | VIN | +5V | Boost input |
+| 5 | FB | FB_NODE | |
+| 6 | tab | SW_NODE | |
 
 The metal tab (pad 6) is on SW_NODE, NOT GND. Wiring it to GND would dead-short the switch node.
 
@@ -373,7 +374,7 @@ The mic signal leaves J8 as `MIC_HOT`, runs through SW1 pole 2 (the cradle kill 
 ```
                               ┌── C3 100 nF ── GND   (RFI filter at the connector)
                               │
- Handset MIC+  →  J8.1 ── MIC_HOT ── SW1.5 ──(pole 2)── SW1.4 ── MIC_FROM_SW ──┬── C46 0.47 uF ── U6.10 MIC1LP
+ Handset MIC+  →  J8.1 ── MIC_HOT ── SW1.6 ──(pole 2)── SW1.4 ── MIC_FROM_SW ──┬── C46 0.47 uF ── U6.10 MIC1LP
                                                                                │                (/codec/MIC_P_INT, DC block)
                                                                   R10 2.2k ────┤
                                                                                │
@@ -384,7 +385,7 @@ The mic signal leaves J8 as `MIC_HOT`, runs through SW1 pole 2 (the cradle kill 
  Handset MIC-  →  J8.2 ── GND
 ```
 
-SW1 pole 2 is the mic kill: when the handset is on-hook the pole opens and MIC_HOT is disconnected from MIC_FROM_SW, so the mic is dead. This is a hardware privacy property; no GPIO can override it. Mic bias from `U6.15 MICBIAS` is injected into the post-switch `MIC_FROM_SW` node via R10 (2.2k series, parallel branch, not in the signal path), and the same node is AC-coupled into the codec's `MIC1LP` input through C46 (0.47 uF). C3 (100 nF) is an RFI suppression cap across the raw mic signal at the connector.
+SW1 pole 2 is the mic kill: its common is pad 6 (MIC_HOT). When the handset is on-hook the pole opens and MIC_HOT (pad 6) is disconnected from MIC_FROM_SW (pad 4), so the mic is dead. This is a hardware privacy property; no GPIO can override it. Mic bias from `U6.15 MICBIAS` is injected into the post-switch `MIC_FROM_SW` node via R10 (2.2k series, parallel branch, not in the signal path), and the same node is AC-coupled into the codec's `MIC1LP` input through C46 (0.47 uF). C3 (100 nF) is an RFI suppression cap across the raw mic signal at the connector.
 
 ### Earpiece BTL path
 
@@ -441,8 +442,8 @@ The Pi programs the RP2040 via bit-banged SWD over two GPIO pins using openocd's
    KEYPAD.7 KP_ROW0     U3.39 GPIO27
 
  SW1 hook sense (pole 1)
-   SW1.2 HOOK_SW  →  U3.31 GPIO20
-   SW1.3 GND      →  grounds HOOK_SW on-hook; off-hook opens it and the RP2040 internal pull-up reads high
+   SW1.3 HOOK_SW  →  U3.31 GPIO20   (pole 1 common)
+   SW1.2 GND      →  grounds HOOK_SW on-hook; off-hook opens it and the RP2040 internal pull-up reads high
    SW1.1          →  unused
 
  Status LED

@@ -74,7 +74,7 @@ External flash memory storing the RP2040's firmware. Connected via a 4-bit QSPI 
 |-----|------|---------|------|----------|---------|
 | U4 | W25Q16JVSSIQ | SOIC-8 | C131025 | U3 QSPI pins (SS, SCLK, SD0-3), +3V3, GND | 2MB SPI NOR flash. Stores the RP2040 firmware image (UF2 format). Connected via 4-bit QSPI for fast sequential reads during boot. The RP2040 boots by reading code from this chip into internal SRAM. |
 | C34 | 100nF 50V X7R | 0402 | C307331 | +3V3, GND, at U4.8 VCC | Flash VCC decoupling cap. Winbond W25Q16JV datasheet requires a 100nF ceramic as close as possible to pin 8. QSPI read bursts draw ~20mA transients; without this cap they couple back into +3V3 and can corrupt XIP instruction fetches. |
-| SW2 | 6mm tact switch | THT SW_PUSH_6mm | (assign before fab) | QSPI_SS, GND | BOOTSEL button. Held during power-on, it pulls QSPI_SS low so the RP2040 bootrom enters USB/SWD bootloader mode. Eliminates V2's paperclip-on-U4-pin-1 procedure. |
+| SW2 | 6mm tact switch (OMRON B3F-1002) | THT SW_PUSH_6mm | C87036 | QSPI_SS, GND | BOOTSEL button. Held during power-on, it pulls QSPI_SS low so the RP2040 bootrom enters USB/SWD bootloader mode. Eliminates V2's paperclip-on-U4-pin-1 procedure. |
 
 **QSPI_SS has no external pullup.** The RP2040 bootrom drives /CS actively within nanoseconds of reset, and neither the Pico nor any of the Raspberry Pi Press RP2040 references populate a pullup here. SW2 momentarily grounds QSPI_SS only during power-on for BOOTSEL entry.
 
@@ -117,7 +117,7 @@ H-bridge motor driver that drives the phone's mechanical bell. The RP2040 genera
 |-----|------|---------|------|----------|---------|
 | U2 | DRV8871DDAR | SOIC-8 with EP | C75864 | VBOOST (VM pin 5), RP2040 GPIO19/15 (IN1/IN2 via RINGER_IN1/RINGER_IN2), R2 (ILIM pin 4), BELL connector (OUT1/OUT2 pins 6/8), GND | H-bridge motor driver rated 3.6A, 6.5-45V. Drives the phone's bell mechanism bidirectionally. Receives PWM/square wave from the RP2040 on IN1 and IN2 to alternate the bell hammer direction. Built-in current limiting via the ILIM pin and R2. Sleep mode when both inputs are low (50us wake-up, imperceptible). |
 | C54 | 100nF 50V X7R | 0402 | C307331 | VBOOST (U2.5 VM), GND | VM HF bypass for U2, placed within 3mm of U2.5 per `ringer-module-spec.md`. |
-| C55 | 47uF 25V electrolytic (Panasonic EEEFT1E470AR, D5xH5.8mm) | 5x5.3mm SMD footprint | C336270 | VBOOST (U2.5 VM), GND | VM bulk reservoir for U2, placed within 6mm of U2.5. Absorbs the inductive kickback from the bell coil during direction reversals. |
+| C55 | 10uF 50V electrolytic | 5x5.3mm SMD footprint (CP_Elec_5x5.3) | C116402 | VBOOST (U2.5 VM), GND | VM bulk reservoir for U2, placed within 6mm of U2.5. Absorbs the inductive kickback from the bell coil during direction reversals. |
 | R2 | 33k 1% | 0402 | C25779 | U2.4 (ILIM), GND | Current regulation resistor. Sets the DRV8871's current chopping threshold per TI DRV8871 datasheet (SLVSCY9B) section 7.3.3 Equation 1: I_TRIP = V_ILIM / R_ILIM = 64 / 33 ~= 1.94A typical (range ~1.77-2.11A including V_ILIM part-to-part tolerance and 1% resistor tolerance). Design intent: set the trip well above the 150-400mA expected peak ringing current so it only fires on a fault condition (e.g. bell coil short). |
 
 ## Connectors
@@ -136,14 +136,14 @@ The off-board signal connectors are SMD JST ZH (1.5mm pitch). The Pi header is a
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| SW1 | 6-pin DPDT telephone hook switch | SW_DPDT_Hook_24.2x17.1mm (custom, B.Cu side) | (assign before fab) | Pole 1: pin2 HOOK_SW, pin3 GND, pin1 unused. Pole 2: pin5 MIC_HOT, pin4 MIC_FROM_SW, pin6 unused. | Hook + mic-kill cradle switch. Mounted alone on the BACK copper side so it can press the cradle plunger. Pole 1 grounds/opens HOOK_SW for hook sense (off-hook reads high via RP2040 internal pull-up; on-hook grounds it). Pole 2 series-interrupts the mic path so the mic is dead on-hook (privacy: no GPIO can override it). Position is fixed by the phone enclosure. Retires V2's separate tactile hookswitch and the J9 mic-kill connector. |
-| SW2 | 6mm tact switch | THT SW_PUSH_6mm | (assign before fab) | QSPI_SS, GND | See QSPI Flash section. BOOTSEL entry on power-on. |
-| D2 | Red LED | 0603 | (assign before fab) | +5V via R12, /LED12V_K | Power indicator on the +5V rail. The net `/LED12V_K` is a legacy label; it sits on +5V on this revision. |
-| D3 | Green LED | 0603 | (assign before fab) | +3V3 via R13, /LED3V3_K | Power indicator on the +3V3 rail. |
-| R12 | 300 ohm | 0402 | (assign before fab) | D2 cathode (/LED12V_K) -> GND | Current limit for D2. |
-| R13 | 330 ohm | 0402 | (assign before fab) | D3 cathode (/LED3V3_K) -> GND | Current limit for D3. |
+| SW1 | 6-pin DPDT telephone hook switch | SW_DPDT_Hook_24.2x17.1mm (custom, B.Cu side) | (no LCSC part: custom hand-placed DPDT) | Pole 1: pad3 HOOK_SW (common), pad2 GND, pad1 unused. Pole 2: pad6 MIC_HOT (common), pad4 MIC_FROM_SW, pad5 unused. | Hook + mic-kill cradle switch. Mounted alone on the BACK copper side so it can press the cradle plunger. Pole 1 common HOOK_SW (pad3): handset down/on-hook (lever pressed) connects HOOK_SW to GND (pad2) so the RP2040 reads on-hook via its internal pull-up; handset up/off-hook (lever at rest) opens HOOK_SW and the pull-up reads off-hook. Pole 2 common MIC_HOT (pad6): on-hook opens MIC_HOT from MIC_FROM_SW (pad4) so the mic loop is broken (mic dead); off-hook connects MIC_HOT to MIC_FROM_SW so the mic is live. Privacy is a hardware property: no GPIO can override it. Position is fixed by the phone enclosure. Retires V2's separate tactile hookswitch and the J9 mic-kill connector. |
+| SW2 | 6mm tact switch (OMRON B3F-1002) | THT SW_PUSH_6mm | C87036 | QSPI_SS, GND | See QSPI Flash section. BOOTSEL entry on power-on. |
+| D2 | Red LED | 0603 | C2286 | +5V via R12, /LED12V_K | Power indicator on the +5V rail. The net `/LED12V_K` is a legacy label; it sits on +5V on this revision. |
+| D3 | Yellow-green LED (KENTO KT-0603YG) | 0603 | C2289 | +3V3 via R13, /LED3V3_K | Power indicator on the +3V3 rail. |
+| R12 | 300 ohm | 0402 | C25102 | D2 cathode (/LED12V_K) -> GND | Current limit for D2. |
+| R13 | 120 ohm | 0402 | C25752 | D3 cathode (/LED3V3_K) -> GND | Current limit for D3, sized so the +3V3 indicator reliably lights at ~10mA. |
 
-D2/D3/R12/R13 and the SW1/SW2 switches have no LCSC part assigned in the schematic; assign before fab.
+SW1 has no LCSC part assigned in the schematic: it is the custom hand-placed DPDT cradle switch (footprint SW_DPDT_Hook_24.2x17.1mm).
 
 ## Other
 
@@ -160,7 +160,7 @@ D2/D3/R12/R13 and the SW1/SW2 switches have no LCSC part assigned in the schemat
 | Rail | Voltage | Source | Consumers | Decoupling |
 |------|---------|--------|-----------|------------|
 | +5V | 5V | PWR -> /VIN_RAW -> F1 | Pi Zero 2 W via header pins 2/4, U5 (LDO input), U10 (boost input), D2 indicator | C1 (470uF bulk), C4 (100nF HF), C11 (10uF LDO input) |
-| VBOOST | ~37V | U10 XL6019 boost (+5V -> L10 -> SW_NODE -> D10 -> VBOOST) | U2 (DRV8871 VM) | C100 (100uF bulk), C101 (1uF HF), C54 (100nF VM HF), C55 (47uF VM bulk) |
+| VBOOST | ~37V | U10 XL6019 boost (+5V -> L10 -> SW_NODE -> D10 -> VBOOST) | U2 (DRV8871 VM) | C100 (100uF bulk), C101 (1uF HF), C54 (100nF VM HF), C55 (10uF VM bulk) |
 | +3V3 | 3.3V | U5 AMS1117-3.3 | U3 (RP2040 IOVDD/USB_VDD/ADC_AVDD/VREG_VIN), U4 (flash VCC), U6 (codec AVDD/DRVDD/IOVDD), U7 (codec DVDD LDO input), R5/R11 (pullups), D3 indicator | C9 (10uF LDO output bulk), C12-C16 + C28 (RP2040 IOVDD per-pin), C31 (VREG_VIN 1uF), C32 (USB_VDD), C33 (ADC_AVDD), C34 (flash VCC), C35 (RUN POR), C36 (U7 VIN), C40-C43 (codec rails), C44/C45 (codec +3V3 bulk near EP) |
 | +1V8 | 1.8V | U7 XC6206P182MR | U6.32 (codec DVDD only) | C37 (10uF U7 VOUT bulk), C38 (100nF DVDD close-in), C39 (1uF DVDD bulk close-in) |
 | DVDD_1V1 | 1.1V | U3 internal VREG (VREG_VOUT pin 45) | U3 (RP2040 digital core only) | C10 (1uF), C29, C30 (100nF per-pin) |
@@ -182,7 +182,7 @@ Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric**: the name desc
 | SWD_SWCLK | Pi header pin 22 (GPIO25) | U3 pin 24 | Bit-banged SWD clock line. |
 | KP_COL0..2 | KEYPAD.1..3 | U3 pins 36/35/34 (GPIO24/23/22) | Keypad column reads. Active row pulls these low when a button is pressed. |
 | KP_ROW0..3 | U3 pins 39/38/32/37 (GPIO27/26/21/25) | KEYPAD.7/6/5/4 | Keypad row scan outputs. |
-| HOOK_SW | SW1.2 | U3 pin 31 (GPIO20) | Hook switch state. Low when the handset is on the cradle. High via RP2040 internal pull-up when lifted. |
+| HOOK_SW | SW1.3 | U3 pin 31 (GPIO20) | Hook switch state. Low when the handset is on the cradle (SW1 pole 1 common pad3 connects to GND pad2). High via RP2040 internal pull-up when lifted. |
 | LED_OUT | U3 pin 27 (GPIO16) | R1 -> LED_A (LED connector pin 2) | Indicator LED drive. High = LED on. |
 | RINGER_IN1 | U3 pin 30 (GPIO19) | U2 IN1 | Motor driver control line 1. |
 | RINGER_IN2 | U3 pin 18 (GPIO15) | U2 IN2 | Motor driver control line 2. Square wave on IN1/IN2 alternates bell hammer. |
@@ -201,7 +201,7 @@ Naming convention: `UART_TX_PI` / `UART_RX_PI` are **Pi-centric**: the name desc
 | CODEC_DOUT | U6 pin 5 | Pi header pin 38 (GPIO20) | I2S data codec -> Pi (capture). |
 | CODEC_MCLK | Pi header pin 7 (GPIO4 / GPCLK0) | U6 pin 1 | Master clock (optional fallback). |
 | CODEC_RESET | Pi header pin 15 (GPIO22) | U6 pin 31 | Active-low codec reset. Driven by the Pi during boot, tristated normally; held high by R11. |
-| MIC_HOT | J8.1 | C3, SW1.5 | Microphone hot signal from handset. Passes through C3 (RF filter) and SW1 pole 2 (kill switch). |
+| MIC_HOT | J8.1 | C3, SW1.6 | Microphone hot signal from handset. Passes through C3 (RF filter) and SW1 pole 2 common (pad6, kill switch). |
 | MIC_FROM_SW | SW1.4 | R10 (bias), C46 (AC coupling) | Mic signal after the SW1 kill pole. Carries both the DC bias from MICBIAS via R10 and the AC audio signal. C46 strips the DC and passes only the audio to U6.10 (MIC1LP). |
 | MICBIAS | U6 pin 15 | R10, C48 | Mic bias voltage output from codec. ~2V through R10 to power the electret mic element. |
 | EAR_P | U6 HPLOUT (pin 19) | J8 pin 3 | Earpiece positive. Direct capless BTL output from the codec's headphone amplifier. |

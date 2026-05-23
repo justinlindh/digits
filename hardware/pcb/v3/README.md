@@ -10,7 +10,7 @@ V3 is a major revision of V2. Headline changes versus V2:
 - On-board XL6019 boost to ~37 V (`VBOOST`) drives the DRV8871 motor supply, replacing V2's external mains step-up transformer.
 - Single 6-pin DPDT cradle switch `SW1` does both hook sense and series mic-kill, retiring V2's separate tactile hookswitch and the J9 mic-kill connector.
 - `SW2` BOOTSEL tact switch across `QSPI_SS` to `GND`, retiring the paperclip bootstrap that destroyed a V2 RP2040's SWD interface during bring-up.
-- Power indicator LEDs D2 (red, +5 V) and D3 (green, +3V3).
+- Power indicator LEDs D2 (red, +5 V) and D3 (yellow-green, +3V3).
 - Components flipped to face up so the Pi header is reachable; SW1 is the only back-side part.
 - J8 handset and `LED` connector pinouts match the stock cables directly (no per-unit adapter rework).
 
