@@ -9985,7 +9985,7 @@
 			)
 		)
 	)
-	(global_label "HOOK_SW"
+	(global_label "GND"
 		(shape input)
 		(at 44.45 54.61 0)
 		(effects
@@ -11393,18 +11393,18 @@
 			)
 		)
 	)
-	(global_label "GND"
+	(global_label "HOOK_SW"
 		(shape input)
-		(at 54.61 57.15 0)
+		(at 54.61 52.07 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "a911874d-fda9-4e4a-8410-45fe3aa3e353")
+		(uuid "a1118aea-7629-411c-9487-094f951cee4e")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 54.61 57.15 0)
+			(at 54.61 52.07 0)
 			(hide yes)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -11459,7 +11459,7 @@
 			)
 		)
 	)
-	(global_label "MIC_FROM_SW"
+	(global_label "MIC_HOT"
 		(shape input)
 		(at 54.61 31.75 0)
 		(effects
@@ -11899,18 +11899,18 @@
 			)
 		)
 	)
-	(global_label "MIC_HOT"
+	(global_label "MIC_FROM_SW"
 		(shape input)
-		(at 44.45 34.29 0)
+		(at 54.61 36.83 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 			(justify left)
 		)
-		(uuid "c6dbc9d3-6ac7-4fcd-ad89-fa736566ab81")
+		(uuid "57cd03e9-1ff2-4e31-bfc6-6ffc1ab573f0")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 44.45 34.29 0)
+			(at 54.61 36.83 0)
 			(hide yes)
 			(show_name yes)
 			(do_not_autoplace no)
