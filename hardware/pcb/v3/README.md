@@ -1,15 +1,20 @@
-# Digits PCB v2.1
+# Digits PCB v3
 
-Carrier board that sits under a Raspberry Pi Zero 2 W inside a gutted vintage desk phone. Provides power (12 V → 5 V → 3.3 V), onboard audio codec for handset mic + earpiece, an RP2040 microcontroller that runs keypad scanning + hookswitch + bell ringer, and all the mechanical/electrical interfaces to the phone shell.
+Carrier board that sits under a Raspberry Pi Zero 2 W inside a gutted vintage desk phone. Takes +5 V in, derives +3.3 V (U5 AMS1117) and +1.8 V (U7 XC6206) for the audio codec, and boosts +5 V up to ~37 V on-board (U10 XL6019) to drive the mechanical bell through the DRV8871 H-bridge. Hosts the TLV320AIC3104 codec for handset mic + earpiece and an RP2040 that runs keypad scanning, hook sense, and bell ringer. A single DPDT cradle switch (SW1) handles both hook sense and series mic-kill.
 
-This directory is the source of truth for PCB v2.1. Schematic, footprint placement, and design notes all live here.
+This directory is the source of truth for PCB v3. Schematic, footprint placement, and design notes all live here.
 
-V2.1 is a minor revision of V2. Electrical changes versus V2:
+V3 is a major revision of V2. Headline changes versus V2:
 
-- J8 handset connector pin assignment matches the stock Sangyn Retro 2500 cable directly (no per-unit adapter rework).
-- `SW2` BOOTSEL tact switch added across `QSPI_SS` to `GND`, retiring the paperclip bootstrap and the +3.3 V/GND short hazard that destroyed a V2 RP2040's SWD interface during bring-up.
+- +5 V input (was 12 V); the LM2596 buck stage is removed. Input connector `PWR` is JST XH (~3 A), upsized from V2's JST ZH.
+- On-board XL6019 boost to ~37 V (`VBOOST`) drives the DRV8871 motor supply, replacing V2's external mains step-up transformer.
+- Single 6-pin DPDT cradle switch `SW1` does both hook sense and series mic-kill, retiring V2's separate tactile hookswitch and the J9 mic-kill connector.
+- `SW2` BOOTSEL tact switch across `QSPI_SS` to `GND`, retiring the paperclip bootstrap that destroyed a V2 RP2040's SWD interface during bring-up.
+- Power indicator LEDs D2 (red, +5 V) and D3 (yellow-green, +3V3).
+- Components flipped to face up so the Pi header is reachable; SW1 is the only back-side part.
+- J8 handset and `LED` connector pinouts match the stock cables directly (no per-unit adapter rework).
 
-See `CHANGES_FROM_V2.md` and `hardware/pcb/v2/ERRATA.md` for background.
+See `CHANGES_FROM_V2.md` for the full delta, `PLANNED.md` for the bell-drive and mic-kill design rationale, and `hardware/pcb/v2/ERRATA.md` for V2 background.
 
 ---
 
@@ -31,13 +36,14 @@ When two artefacts disagree, the higher entry in this table wins. Never argue wi
 ## File map
 
 ```
-hardware/pcb/v2.1/
+hardware/pcb/v3/
 ├── README.md                   # this file
-├── CHANGES_FROM_V2.md          # what changed between V2 and V2.1
+├── CHANGES_FROM_V2.md          # full v2-to-v3 delta
+├── PLANNED.md                  # design decisions and rejected alternatives
 ├── NET_TOPOLOGY.md             # net-by-net wiring description with citations
 ├── COMPONENTS.md               # per-component catalogue
 ├── codec-module-spec.md        # TLV320AIC3104 codec sheet spec
-├── ringer-module-spec.md       # DRV8871 ringer sheet spec
+├── ringer-module-spec.md       # DRV8871 + XL6019 ringer sheet spec
 ├── SOFTWARE_CONFIG.md          # Pi-side config needed for bring-up
 ├── kicad/
 │   ├── digits-pcb.kicad_pro    # KiCad project file
@@ -46,8 +52,7 @@ hardware/pcb/v2.1/
 │   ├── ringer.kicad_sch        # ringer hierarchical sheet
 │   ├── digits-pcb.kicad_pcb    # PCB layout
 │   ├── digits-pcb.kicad_sym    # project-local symbol library
-│   └── production/bom.csv      # hand-audited assembly BOM
-└── gerber/                     # last-known-good fab output (regenerate before ordering)
+│   └── production/             # hand-audited assembly BOM and fab output (regenerate before ordering)
 ```
 
 ---
@@ -58,7 +63,7 @@ hardware/pcb/v2.1/
 
 ```bash
 kicad-cli sch erc --severity-error --exit-code-violations \
-  hardware/pcb/v2.1/kicad/digits-pcb.kicad_sch -o /tmp/erc.rpt
+  hardware/pcb/v3/kicad/digits-pcb.kicad_sch -o /tmp/erc.rpt
 ```
 
 Must report **0 errors**.
@@ -67,7 +72,7 @@ Must report **0 errors**.
 
 ```bash
 kicad-cli pcb drc --refill-zones \
-  hardware/pcb/v2.1/kicad/digits-pcb.kicad_pcb -o /tmp/drc.rpt
+  hardware/pcb/v3/kicad/digits-pcb.kicad_pcb -o /tmp/drc.rpt
 ```
 
 Must report **0 unconnected, 0 clearance, 0 dangling**. `--refill-zones` is mandatory; without it, DRC reads stale zone fills and misses zone-island and same-layer clearance violations.
