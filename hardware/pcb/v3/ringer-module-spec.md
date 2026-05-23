@@ -27,7 +27,8 @@ decision and rejected alternatives.
                       │                       │
                   U10.3 SW                C100 100uF / C101 1uF
                   U10.6 tab (SW_NODE, NOT GND)
-U10.2/4 VIN ← +5V
+U10.2 EN  ← +5V  (enable, tied high for always-on)
+U10.4 VIN ← +5V
 U10.5 FB  ← FB_NODE
 R20 57.6k : VBOOST → FB_NODE
 R21 2k    : FB_NODE → GND

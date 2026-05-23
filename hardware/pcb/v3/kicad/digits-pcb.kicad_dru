@@ -7,9 +7,13 @@
 # sub-sheet, so its nets carry the /ringer/ hierarchical prefix.
 
 # Boost switching node: keep it on the front layer with no vias to limit the
-# dV/dt loop area and radiation. V3 runs it at the Default 0.2mm width on
-# purpose: the XL6019 boost handles only ~0.2A peak, well inside a 0.2mm trace,
-# so trace width is intentionally not constrained here.
+# dV/dt loop area and radiation. Routed at 0.75mm via the Switching netclass:
+# the switch node carries the boost inductor current, roughly 1-3A input-side at
+# the 5V-to-37V ratio under bell load, well above the ~0.74A a 0.2mm trace
+# handles. The sw_node_min_width rule below hard-enforces 0.75mm so a future
+# reroute cannot silently thin it (the V2 SW_NODE incident, and this rev's
+# silently-void Switching netclass pattern, both prove the netclass alone is not
+# a sufficient backstop).
 (rule "sw_node_no_vias"
     (condition "A.Type == 'Via' && A.NetName == '/ringer/SW_NODE'")
     (constraint disallow via)
@@ -20,12 +24,18 @@
     (constraint disallow track)
     (severity error))
 
+(rule "sw_node_min_width"
+    (condition "A.NetName == '/ringer/SW_NODE' && A.Type == 'Track'")
+    (constraint track_width (min 0.75mm))
+    (severity error))
+
 # High-current rails must be at least 0.4mm (IPC-2221, ~20C rise at the rated
 # current). Catches hierarchical-prefix mismatches and accidental Default-class
 # fall-through on the rails that actually carry current. The 12V input rail is
-# gone in V3 (5V input, no buck stage). The boost rails /ringer/SW_NODE,
-# /ringer/VBOOST, and /ringer/FB_NODE are low-current and intentionally Default
-# 0.2mm, so they are not listed. +3V3 is omitted: 400mA peak on 0.2mm is within
+# gone in V3 (5V input, no buck stage). /ringer/SW_NODE carries real current and
+# has its own 0.75mm rule above. /ringer/VBOOST and /ringer/FB_NODE are
+# low-current and intentionally Default 0.2mm, so they are not listed here.
+# +3V3 is omitted: 400mA peak on 0.2mm is within
 # IPC spec (+4C rise).
 (rule "power_rail_min_width"
     (condition "A.NetName == '+5V' || A.NetName == '/VIN_RAW' || A.NetName == 'BELL_A' || A.NetName == 'BELL_B'")
