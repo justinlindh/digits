@@ -3,7 +3,7 @@
   (generator "kicad-mcp")
   (generator_version "9.0")
   (layer "F.Cu")
-  (descr "DPDT telephone hook switch (INH-2240 / IL 2240 family), 6 signal pins, 5.0mm pitch, 7.75mm row spacing, Ø0.9mm signal. Mounting pins not present on common clones - held by signal pins + phone body pressure.")
+  (descr "DPDT telephone hook switch, IL Switch 2240 / Innocent INH-2240 family. Body 24.4 x 17.2mm. 6 signal pins 0.9mm on a 5.0 x 5.0mm grid (3 cols x 2 rows). The 7.45/7.75mm datasheet dims are mounting-feature offsets, not signal-pin spacing. Pole A common = pin 3, pole B common = pin 6; at rest 1-3 and 4-6 closed, pressed/on-hook 2-3 and 5-6 closed per datasheet. Genuine part also has 2x 2.1mm mounting holes, deliberately omitted to match the donor PCB; long signal pins seat the switch. Body outline is nominal (24.4 x 17.2mm) centered on the signal grid; the 6 pads are the precise reference, verified against a 1:1 printout.")
   (tags "switch DPDT hook telephone THT INH-2240 IL-2240")
 
   (property "Reference" "REF**" (at 0 -12 0)
@@ -23,8 +23,8 @@
   )
 
   (fp_rect
-    (start -9.1 -11)
-    (end 9.1 11)
+    (start -8.85 -12.45)
+    (end 8.85 12.45)
     (stroke (width 0.05) (type default))
     (fill none)
     (layer "F.CrtYd")
@@ -32,8 +32,8 @@
   )
 
   (fp_rect
-    (start -8.85 -7.55)
-    (end 8.85 7.55)
+    (start -8.72 -12.32)
+    (end 8.72 12.32)
     (stroke (width 0.12) (type default))
     (fill none)
     (layer "F.SilkS")
@@ -41,16 +41,25 @@
   )
 
   (fp_rect
-    (start -8.6 -7.3)
-    (end 8.6 7.3)
+    (start -8.6 -12.2)
+    (end 8.6 12.2)
     (stroke (width 0.1) (type default))
     (fill none)
     (layer "F.Fab")
     (uuid "bd86cabe-ad4d-46b6-90a7-84209e5587fd")
   )
 
+  (fp_circle
+    (center -2.5 -7.5)
+    (end -2.2 -7.5)
+    (stroke (width 0.1) (type default))
+    (fill solid)
+    (layer "F.SilkS")
+    (uuid "f1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b")
+  )
+
   (pad "1" thru_hole rect
-    (at -3.875 -5)
+    (at -2.5 -5)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
@@ -58,7 +67,7 @@
   )
 
   (pad "2" thru_hole circle
-    (at -3.875 0)
+    (at -2.5 0)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
@@ -66,7 +75,7 @@
   )
 
   (pad "3" thru_hole circle
-    (at -3.875 5)
+    (at -2.5 5)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
@@ -74,7 +83,7 @@
   )
 
   (pad "4" thru_hole circle
-    (at 3.875 -5)
+    (at 2.5 -5)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
@@ -82,7 +91,7 @@
   )
 
   (pad "5" thru_hole circle
-    (at 3.875 0)
+    (at 2.5 0)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
@@ -90,7 +99,7 @@
   )
 
   (pad "6" thru_hole circle
-    (at 3.875 5)
+    (at 2.5 5)
     (size 1.6 1.6)
     (drill 0.9)
     (layers "*.Cu" "*.Mask")
