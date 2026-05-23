@@ -137,7 +137,7 @@ func Init(cfg Config, version string) (Stop, error) {
 		runtime.SetBlockProfileRate(cfg.BlockProfileRate)
 	}
 
-	host, _ := os.Hostname() // nolint:errcheck // empty hostname acceptable
+	host, _ := os.Hostname() //nolint:errcheck // empty hostname acceptable
 	tags := map[string]string{
 		"service":  cfg.ApplicationName,
 		"version":  version,

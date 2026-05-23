@@ -1,4 +1,4 @@
-.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy dev-up dev-down dev-seed dev-logs
+.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy dev-up dev-down dev-seed dev-logs lint vet
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
@@ -22,6 +22,12 @@ run: build
 
 test:
 	go test ./...
+
+vet:
+	go vet ./...
+
+lint:
+	golangci-lint run ./...
 
 # Integration tests against a local ephemeral Postgres (the `test-db` compose profile).
 # `test-db-reset` drops any leftover test state before running, matching the fresh-container

@@ -183,12 +183,17 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	number := line.StripNumber(strings.TrimSpace(r.FormValue("number")))
-	name := strings.TrimSpace(r.FormValue("name"))
+	name, nameErr := validateLineName(r.FormValue("name"))
 
 	householdID := hh.ID
 
 	if err := line.ValidateNumber(number); err != nil {
 		data := h.buildLinesData(r, hh, err.Error())
+		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+		return
+	}
+	if nameErr != nil {
+		data := h.buildLinesData(r, hh, nameErr.Error())
 		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 		return
 	}
@@ -265,7 +270,13 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
 			return
 		}
-		lineName := deviceName
+		lineName, verr := validateLineName(deviceName)
+		if verr != nil {
+			data := h.buildLinesData(r, hh, "")
+			data.PairError = "handset name: " + verr.Error()
+			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			return
+		}
 		token, hwID, err = h.pairingStore.ClaimDevice(r.Context(), code, number, lineName, deviceName, householdID)
 	}
 

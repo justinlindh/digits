@@ -274,7 +274,7 @@ func newExporter(ctx context.Context, cfg Config) (sdktrace.SpanExporter, error)
 // OTEL_RESOURCE_ATTRIBUTES entry can override a detected default (e.g.
 // pinning service.namespace=digits even if the SDK picked something else).
 func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
-	host, _ := os.Hostname() // nolint:errcheck // empty hostname is fine
+	host, _ := os.Hostname() //nolint:errcheck // empty hostname is fine
 	base := []attribute.KeyValue{
 		semconv.ServiceName(cfg.ServiceName),
 		semconv.ServiceVersion(cfg.ServiceVersion),
@@ -297,7 +297,7 @@ func buildResource(ctx context.Context, cfg Config) (*resource.Resource, error) 
 // fallbackResource is used when resource detection fails. Carries the
 // minimum to identify a service in a multi-tenant collector.
 func fallbackResource(cfg Config) *resource.Resource {
-	host, _ := os.Hostname() // nolint:errcheck // empty hostname is fine
+	host, _ := os.Hostname() //nolint:errcheck // empty hostname is fine
 	return resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(cfg.ServiceName),
