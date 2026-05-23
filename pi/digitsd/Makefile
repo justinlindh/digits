@@ -23,7 +23,7 @@ MIXER_STATE_SRC   = $(REPO_ROOT)/pi/mixer-state
 # runtime). None of these should be extracted at runtime by digitsd.
 OVERLAY_EXCLUDE = boot etc/fstab.fragment usr/local/bin/ro-root usr/local/bin/rw-root etc/sudoers.d/digits-updater etc/digits-pcb-rev
 
-.PHONY: build build-local builder deploy run test clean embed clean-embed
+.PHONY: build build-local builder deploy run test vet lint clean embed clean-embed
 
 embed: clean-embed
 	@mkdir -p $(EMBED_DIR)/rootfs $(EMBED_DIR)/data $(EMBED_DIR)/mixer
@@ -64,6 +64,12 @@ run: deploy
 
 test:
 	go test ./...
+
+vet:
+	go vet ./...
+
+lint:
+	golangci-lint run ./...
 
 clean: clean-embed
 	rm -rf bin/
