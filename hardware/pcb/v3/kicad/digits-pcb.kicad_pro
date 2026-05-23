@@ -703,7 +703,7 @@
         "uuid": "74ec24e7-a8af-4132-928f-b03228b07139"
       }
     ],
-    "used_designators": "",
+    "used_designators": "Pi Zero W1,PWR1,LED1,KEYPAD1,BELL1",
     "variants": []
   },
   "sheets": [

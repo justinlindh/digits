@@ -13673,7 +13673,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "4554b061-2bf7-4c8d-9628-8b64b906d64c")
-		(property "Reference" "BELL"
+		(property "Reference" "BELL1"
 			(at 29.21 107.9499 0)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -13744,7 +13744,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "BELL")
+					(reference "BELL1")
 					(unit 1)
 				)
 			)
@@ -13761,7 +13761,7 @@
 		(in_pos_files yes)
 		(dnp no)
 		(uuid "470177b6-fec6-4ea4-9064-1be1d7b20983")
-		(property "Reference" "PWR"
+		(property "Reference" "PWR1"
 			(at 60.96 139.7 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -13830,7 +13830,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "PWR")
+					(reference "PWR1")
 					(unit 1)
 				)
 			)
@@ -14271,7 +14271,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "6a619123-ebea-4c9f-b161-736b86dc04af")
-		(property "Reference" "LED"
+		(property "Reference" "LED1"
 			(at 50.8 125.7299 0)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -14342,7 +14342,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "LED")
+					(reference "LED1")
 					(unit 1)
 				)
 			)
@@ -16074,7 +16074,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c89b5032-109a-4d70-b460-8c783eba29a5")
-		(property "Reference" "Pi Zero W 2"
+		(property "Reference" "Pi Zero W1"
 			(at 168.91 67.31 0)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -16257,7 +16257,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "Pi Zero W 2")
+					(reference "Pi Zero W1")
 					(unit 1)
 				)
 			)
@@ -16447,7 +16447,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "ecd15530-eee8-4449-8d9f-27222c037170")
-		(property "Reference" "KEYPAD"
+		(property "Reference" "KEYPAD1"
 			(at 49.53 81.28 0)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -16531,7 +16531,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "KEYPAD")
+					(reference "KEYPAD1")
 					(unit 1)
 				)
 			)
