@@ -8539,7 +8539,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C12624"
+		(property "LCSC Part #" "C2289"
 			(at 0 0 0)
 			(unlocked yes)
 			(layer "F.Fab")
@@ -17328,7 +17328,7 @@
 				)
 			)
 		)
-		(property "Value" "330"
+		(property "Value" "120"
 			(at 0 1.17 0)
 			(layer "F.Fab")
 			(uuid "42391333-5ba4-4dca-a08b-7e208388e6ac")
@@ -17361,7 +17361,7 @@
 				)
 			)
 		)
-		(property "LCSC Part #" "C25104"
+		(property "LCSC Part #" "C25752"
 			(at 0 0 0)
 			(unlocked yes)
 			(layer "F.Fab")
