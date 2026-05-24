@@ -255,7 +255,7 @@ The checker will parse `codec.kicad_sch` and assert all of the following. Any fa
 
 ### Resolved during Phase 2 → Phase 3 transition
 
-- **Parent schematic net naming** investigated (kicad-cli netlist export of `digits-pcb.kicad_sch`). Parent uses `CODEC_BCLK`, `CODEC_WCLK`, `CODEC_DIN`, `CODEC_DOUT`, `CODEC_MCLK`, `CODEC_SDA`, `CODEC_SCL`, `CODEC_RESET` (to the Pi Zero W 2 header), plus `MIC_FROM_SW`, `EAR_P`, `EAR_N` (to the J8 handset connector; `MIC_FROM_SW` comes from SW1 pole 2, and `EAR_P`/`EAR_N` reach J8 directly). Codec sheet ports renamed to match these existing net names verbatim, so Phase 3 integration wires sheet-pin-to-existing-net with no label gymnastics.
+- **Parent schematic net naming** investigated (kicad-cli netlist export of `digits-pcb.kicad_sch`). Parent uses `CODEC_BCLK`, `CODEC_WCLK`, `CODEC_DIN`, `CODEC_DOUT`, `CODEC_MCLK`, `CODEC_SDA`, `CODEC_SCL`, `CODEC_RESET` (to the PI_ZERO_W1 header), plus `MIC_FROM_SW`, `EAR_P`, `EAR_N` (to the J8 handset connector; `MIC_FROM_SW` comes from SW1 pole 2, and `EAR_P`/`EAR_N` reach J8 directly). Codec sheet ports renamed to match these existing net names verbatim, so Phase 3 integration wires sheet-pin-to-existing-net with no label gymnastics.
 
 ## 11. References
 

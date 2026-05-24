@@ -126,7 +126,7 @@ The off-board signal connectors are SMD JST ZH (1.5mm pitch). The Pi header is a
 
 | Ref | Part | Package | LCSC | Connects | Purpose |
 |-----|------|---------|------|----------|---------|
-| Pi Zero W 2 | 2x20 Female Header 2.54mm | THT, body on F.Cu side | C2977589 | Pi Zero 2 W GPIO | The main interconnect between the carrier board and the Raspberry Pi. Carries: UART (Pi GPIO14/15 serial to RP2040), SWD (Pi GPIO24/25 for firmware flashing), I2S (codec data), I2C (codec control), GPCLK0 (Pi GPIO4 optional MCLK), CODEC_RESET (Pi GPIO22), +5V power to the Pi (pins 2/4), and GND. Female socket to mate with the Pi's male 2x20 pin header. |
+| PI_ZERO_W1 | 2x20 Female Header 2.54mm | THT, body on F.Cu side | C2977589 | Pi Zero 2 W GPIO | The main interconnect between the carrier board and the Raspberry Pi. Carries: UART (Pi GPIO14/15 serial to RP2040), SWD (Pi GPIO24/25 for firmware flashing), I2S (codec data), I2C (codec control), GPCLK0 (Pi GPIO4 optional MCLK), CODEC_RESET (Pi GPIO22), +5V power to the Pi (pins 2/4), and GND. Female socket to mate with the Pi's male 2x20 pin header. |
 | KEYPAD | JST ZH 7-pin SMD | JST_ZH_B7B-ZR-SM4-TF | C265294 | KP_COL0-2, KP_ROW0-3 | Keypad connector. Connects to the phone's 4x3 button matrix. Four row lines (KP_ROW0-3) are scanned as outputs by the RP2040; three column lines (KP_COL0-2) are read as inputs to detect which button is pressed. |
 | LED | JST ZH 2-pin SMD | JST_ZH_B2B-ZR-SM4-TF | C265284 | pin1 GND, pin2 LED_A | LED connector. Drives an indicator LED in the phone housing through R1 (220 ohm current limiter). The RP2040 controls the LED via GPIO16 (LED_OUT). Pin 1/2 polarity matches the stock phone LED cable directly. |
 | BELL | JST ZH 2-pin SMD (carrying screw-terminal labels in schematic) | JST_ZH_B2B-ZR-SM4-TF | C265284 | BELL_A, BELL_B | Bell/ringer output. Connects to the phone's mechanical bell mechanism. The DRV8871 (U2) drives this bidirectionally from the VBOOST rail to make the bell hammer oscillate. |
@@ -141,7 +141,7 @@ The off-board signal connectors are SMD JST ZH (1.5mm pitch). The Pi header is a
 | D2 | Red LED | 0603 | C2286 | +5V via R12, /LED12V_K | Power indicator on the +5V rail. The net `/LED12V_K` is a legacy label; it sits on +5V on this revision. |
 | D3 | Yellow-green LED (KENTO KT-0603YG) | 0603 | C2289 | +3V3 via R13, /LED3V3_K | Power indicator on the +3V3 rail. |
 | R12 | 300 ohm | 0402 | C25102 | D2 cathode (/LED12V_K) -> GND | Current limit for D2. |
-| R13 | 120 ohm | 0402 | C25752 | D3 cathode (/LED3V3_K) -> GND | Current limit for D3, sized so the +3V3 indicator reliably lights at ~10mA. |
+| R13 | 120 ohm | 0402 | C25079 | D3 cathode (/LED3V3_K) -> GND | Current limit for D3, sized so the +3V3 indicator reliably lights at ~10mA. |
 
 SW1 has no LCSC part assigned in the schematic: it is the custom hand-placed DPDT cradle switch (footprint SW_DPDT_Hook_24.2x17.1mm).
 
