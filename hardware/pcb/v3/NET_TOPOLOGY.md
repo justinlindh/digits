@@ -27,7 +27,7 @@ All component references, values, footprints, and placements are fixed by the ph
 | `U7` | XC6206P182MR | Codec +1V8 LDO | SOT-23 |
 | `U10` | XL6019E1 | +5V to ~37V bell boost | TO-263-5 |
 | `Y1` | ABM8-272-T3 (12 MHz) | RP2040 crystal, per RP2040 DS sec 2.16.1.1 | Crystal_SMD_3225-4Pin |
-| `Pi Zero W 2` | Conn_02x20_Odd_Even | Raspberry Pi 40-pin header | PinHeader 2x20 2.54 mm |
+| `PI_ZERO_W1` | Conn_02x20_Odd_Even | Raspberry Pi 40-pin header | PinHeader 2x20 2.54 mm |
 | `PWR` | VIN_BARREL_PIGTAIL | +5 V power input | JST XH B2B-XH-A 2.5 mm |
 | `KEYPAD` | Conn_01x07 | Keypad flex ribbon | JST ZH B7B-ZR-SM4-TF |
 | `LED` | Conn_01x02 | Status LED | JST ZH B2B-ZR-SM4-TF |
@@ -160,9 +160,9 @@ Two on-board LEDs confirm the two main rails are up. Both are wired anode-to-rai
 
 `/LED12V_K` is a legacy net label carried over from the 12 V era; on v3 the D2 anode is on +5 V. The net name is cosmetic and does not change the connectivity.
 
-## Raspberry Pi 40-pin header (`Pi Zero W 2`)
+## Raspberry Pi 40-pin header (`PI_ZERO_W1`)
 
-The reference designator is `Pi Zero W 2`; it is the standard Raspberry Pi 40-pin header. Pi pin numbering matches the physical pinout. It is not rotated or mirrored in the schematic.
+The reference designator is `PI_ZERO_W1`; it is the standard Raspberry Pi 40-pin header. Pi pin numbering matches the physical pinout. It is not rotated or mirrored in the schematic.
 
 | Pin | Pi function | Net | Notes |
 |---|---|---|---|

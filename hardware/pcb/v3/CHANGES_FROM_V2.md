@@ -56,7 +56,7 @@ V3 adds `SW2`, a 6 mm momentary tact switch (OMRON B3F-1002, LCSC C87036) betwee
 V3 adds two on-board indicator LEDs:
 
 - `D2` (red, 0603, LCSC C2286) on +5V through `R12` = 300 Ω (LCSC C25102).
-- `D3` (yellow-green KENTO KT-0603YG, 0603, LCSC C2289) on +3V3 through `R13` = 120 Ω (LCSC C25752). R13 is sized so the +3V3 indicator reliably lights at ~10 mA.
+- `D3` (yellow-green KENTO KT-0603YG, 0603, LCSC C2289) on +3V3 through `R13` = 120 Ω (LCSC C25079). R13 is sized so the +3V3 indicator reliably lights at ~10 mA.
 
 ## Handset and LED connector pin assignments
 
@@ -94,7 +94,7 @@ V3 gives the connectors semantic reference designators, consistent across schema
 | J6 | LED | Indicator LED to the phone housing |
 | J4 | KEYPAD | 7-pin keypad matrix |
 | J7 | BELL | Bell H-bridge output (BELL_A / BELL_B) |
-| J1 | Pi Zero W 2 | 40-pin Pi header |
+| J1 | PI_ZERO_W1 | 40-pin Pi header |
 | J9 | (removed) | Old mic-kill loop, folded into SW1 |
 
 ## Component-side flip
