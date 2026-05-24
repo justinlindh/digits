@@ -16074,7 +16074,7 @@
 		(dnp no)
 		(fields_autoplaced yes)
 		(uuid "c89b5032-109a-4d70-b460-8c783eba29a5")
-		(property "Reference" "Pi Zero W1"
+		(property "Reference" "PI_ZERO_W1"
 			(at 168.91 67.31 0)
 			(show_name yes)
 			(do_not_autoplace no)
@@ -16257,7 +16257,7 @@
 		(instances
 			(project "digits-pcb"
 				(path "/74ec24e7-a8af-4132-928f-b03228b07139"
-					(reference "Pi Zero W1")
+					(reference "PI_ZERO_W1")
 					(unit 1)
 				)
 			)
