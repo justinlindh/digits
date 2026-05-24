@@ -51,9 +51,9 @@ Each phone is a gutted vintage desk phone with two processors inside: an RP2040 
 
 | Component | Role |
 |-----------|------|
-| **RP2040** (firmware, C) | Real-time phone I/O: keypad matrix, hook switch, bell driver, DTMF/tone generation, status LED. Communicates with the Pi over UART. V0/V1 use a Pico H module; V2 has the RP2040 onboard. |
+| **RP2040** (firmware, C) | Real-time phone I/O: keypad matrix, hook switch, bell driver, DTMF/tone generation, status LED. Communicates with the Pi over UART. V0/V1 use a Pico H module; V2/V3 have the RP2040 onboard. |
 | **Pi Zero 2 W** (digitsd, Go) | VoIP daemon: WebRTC media, Opus codec, DTLS-SRTP, signaling client, call state machine, Wi-Fi setup, OTA updates. |
-| **Audio codec** | Mic input and earpiece output. Codec Zero HAT (DA7212) on V0/V1, onboard TLV320AIC3104 on V2. |
+| **Audio codec** | Mic input and earpiece output. Codec Zero HAT (DA7212) on V0/V1, onboard TLV320AIC3104 on V2/V3. |
 | **Signaling server** (Go) | WebSocket relay for SDP/ICE exchange, PostgreSQL persistence, device pairing, household management, web dashboard. |
 
 Calls are peer-to-peer WebRTC sessions between two phones (or three, for party-line calls). The server brokers the signaling handshake but never handles media.
@@ -62,19 +62,22 @@ See [Architecture deep-dive](docs/architecture/overview.md) for the full call pa
 
 ## Hardware
 
-Three hardware iterations, each a different build strategy:
+Four hardware iterations, each a different build strategy:
 
 | Rev | Construction | Audio | Ringer | Status |
 |-----|-------------|-------|--------|--------|
 | [V0](docs/build/components.md) | Perfboard, off-the-shelf modules | Codec Zero HAT (DA7212) | L298N + step-up transformer | Done, documented end-to-end |
 | [V1](hardware/pcb/v1/) | Hand-assembled PCB, Pico H module | Codec Zero HAT (DA7212) | L298N + step-up transformer | Fabricated, has [errata](hardware/pcb/v1/ERRATA.md) |
 | [V2](hardware/pcb/v2/) | Contract-assembled (JLCPCB), onboard RP2040 | Onboard TLV320AIC3104 | Onboard DRV8871 | Deployed, ~10 units in use |
+| [V3](hardware/pcb/v3/) | Contract-assembled (JLCPCB), onboard RP2040 | Onboard TLV320AIC3104 | Onboard DRV8871 + XL6019 boost | In progress, see [changes](hardware/pcb/v3/CHANGES_FROM_V2.md) |
 
 **V1** is a bench-build target: single-sided, mostly through-hole, hand-solderable. External modules handle audio (Codec Zero HAT) and bell ringing (L298N H-bridge plus a step-up transformer).
 
 **V2** is a fab-service target: onboard RP2040, audio codec (TLV320AIC3104, 32-pin QFN), and ringer driver (DRV8871). Arrives pre-assembled from JLCPCB. Not practical to hand-solder.
 
-Schematics, PCB layouts, Gerbers, and BOMs are in [`hardware/pcb/`](hardware/pcb/). All designed in KiCad. The firmware abstracts board differences at runtime, so the same binary runs on V1 and V2.
+**V3** is a major spin of V2: +5 V input (the 12 V buck stage is gone), an on-board XL6019 boost converter making ~37 V to ring the bell in place of the external step-up transformer, a single DPDT cradle switch for hook sense and series mic-kill, an SW2 BOOTSEL button, power indicator LEDs, components flipped to face up, and J8/LED pinouts matched to the stock donor-phone cables. Like V2, it arrives pre-assembled from JLCPCB.
+
+Schematics, PCB layouts, Gerbers, and BOMs are in [`hardware/pcb/`](hardware/pcb/). All designed in KiCad. The firmware abstracts board differences at runtime, so the same binary runs on V1, V2, and V3.
 
 ## Project Structure
 
