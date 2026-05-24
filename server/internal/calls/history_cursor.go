@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -69,7 +70,7 @@ func CursorForEntry(e HistoryEntry) HistoryCursor {
 	c := HistoryCursor{Time: e.SortTime, Kind: e.Kind}
 	switch e.Kind {
 	case HistoryEntryCall:
-		c.ID = fmt.Sprintf("%d", e.Call.ID)
+		c.ID = strconv.FormatInt(e.Call.ID, 10)
 	case HistoryEntryConference:
 		c.ID = e.Conference.ID.String()
 	}

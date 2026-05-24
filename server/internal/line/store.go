@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -336,7 +337,7 @@ func (s *Store) SetAllSilentByHousehold(ctx context.Context, householdID string,
 		 SET settings = jsonb_set(COALESCE(settings, '{}'), '{silent_mode}', $1::jsonb),
 		     updated_at = NOW()
 		 WHERE household_id = $2`,
-		fmt.Sprintf("%t", silent), householdID,
+		strconv.FormatBool(silent), householdID,
 	)
 	if err != nil {
 		return fmt.Errorf("set all silent by household: %w", err)
