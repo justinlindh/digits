@@ -87,7 +87,8 @@ var defaultTiming = controllerTiming{
 type Callbacks interface {
 	SendTone(name string)       // Play a tone (use one of the Tone* constants)
 	OncePlaying() bool          // Reports whether a one-shot tone (e.g. intercept) is still playing
-	SendRing(start bool)        // Send RING:START or RING:STOP
+	StartRing()                 // Start the ringer (emits RING:START)
+	StopRing()                  // Stop the ringer (emits RING:STOP)
 	SendLED(mode string)        // Send LED:<mode> (use one of the LED* constants)
 	EnableFlashDetection()      // Enable Pico hook-flash detection on the connected call
 	InitiateCall(number string) error // Start outgoing WebRTC call
@@ -134,7 +135,7 @@ type Controller struct {
 	digits         string
 	ownNumber      string
 	contactChecker ContactChecker
-	silentMode     bool // when true, onSignalRing suppresses SendRing(true)
+	silentMode     bool // when true, onSignalRing suppresses StartRing
 	// treatmentGen is incremented each time runPermanentSignalTreatment starts.
 	// The spawned goroutine captures the value and aborts on mismatch, so a
 	// hook-flap that re-enters off-hook treatment within ~4 min won't let the
@@ -210,7 +211,7 @@ func (c *Controller) SetSilentMode(silent bool) {
 	}
 	c.silentMode = silent
 	if silent && c.state == StateRINGING {
-		c.cb.SendRing(false)
+		c.cb.StopRing()
 	}
 }
 
@@ -405,7 +406,7 @@ func (c *Controller) onHookOff() {
 			number := c.callReturnTarget
 			c.callReturnRinging = false
 			c.callReturnTarget = ""
-			c.cb.SendRing(false)
+			c.cb.StopRing()
 			c.cb.SendTone(ToneStop)
 			c.cb.SendLED(LEDOn)
 			slog.Info("phone: callback pickup, auto-dialing", "target", number)
@@ -415,7 +416,7 @@ func (c *Controller) onHookOff() {
 		} else {
 			// Incoming: answer the call; activePeer was set when the ring arrived.
 			c.state = StateCONNECTED
-			c.cb.SendRing(false)
+			c.cb.StopRing()
 			c.cb.SendTone(ToneStop)
 			c.cb.SendLED(LEDOn)
 			c.cb.EnableFlashDetection()
@@ -477,7 +478,7 @@ func (c *Controller) onHookOn() {
 	c.confID = ""
 	c.isConfHost = false
 	c.cb.SendTone(ToneStop)
-	c.cb.SendRing(false)
+	c.cb.StopRing()
 	c.cb.SendLED(LEDOff)
 	if wasConnectedOrCalling || inConferenceFlow {
 		c.cb.HangupCall()
@@ -762,7 +763,7 @@ func (c *Controller) onSignalRing() {
 	}
 	c.state = StateRINGING
 	if !c.silentMode {
-		c.cb.SendRing(true)
+		c.cb.StartRing()
 	}
 	c.cb.SendLED(LEDBlink)
 	enabled, timeout := c.cb.VoicemailEnabled()
@@ -788,7 +789,7 @@ func (c *Controller) ringTimeoutWatcher(gen uint64, d time.Duration) {
 		return
 	}
 	c.state = StateVOICEMAIL_GREETING
-	c.cb.SendRing(false)
+	c.cb.StopRing()
 	c.cb.SendTone(ToneStop)
 	c.mu.Unlock()
 	c.cb.VoicemailAutoAnswer()
@@ -822,7 +823,7 @@ func (c *Controller) onSignalHangup(sender string) {
 		c.state = StateIDLE
 		c.callReturnRinging = false
 		c.callReturnTarget = ""
-		c.cb.SendRing(false)
+		c.cb.StopRing()
 		c.cb.SendLED(LEDOff)
 	case StateVOICEMAIL_GREETING, StateVOICEMAIL_RECORDING:
 		slog.Info("phone: caller hung up during voicemail")
@@ -1143,7 +1144,7 @@ func (c *Controller) HandleConferenceEnd(confID, reason string) {
 	default:
 		c.state = StateIDLE
 		c.cb.SendTone(ToneStop)
-		c.cb.SendRing(false)
+		c.cb.StopRing()
 		c.cb.SendLED(LEDOff)
 	}
 }
