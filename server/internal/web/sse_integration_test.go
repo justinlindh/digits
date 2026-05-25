@@ -342,7 +342,10 @@ func TestConferenceSSEStream_ReceivesSampleOnRecordEdge(t *testing.T) {
 	confID := startConference(t, s)
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -388,7 +391,10 @@ func TestConferenceSSEStream_ReceivesEndedOnEvict(t *testing.T) {
 	confID := startConference(t, s)
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -434,7 +440,10 @@ func TestConferenceSSEStream_UnrelatedHouseholdGets404(t *testing.T) {
 	userD := seedUnrelatedUser(t, s.env, "conf-sse-d")
 
 	client := authedClient(t, s, userD)
-	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
@@ -453,7 +462,10 @@ func TestConferenceSSEStream_EndedConferenceGets404(t *testing.T) {
 	}
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
@@ -469,7 +481,10 @@ func TestConferenceSSEStream_KickTriggersDisconnectEvent(t *testing.T) {
 	confID := startConference(t, s)
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	req, err := http.NewRequest("GET", confStreamURL(s, confID), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
@@ -485,11 +500,17 @@ func TestConferenceSSEStream_KickTriggersDisconnectEvent(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond)
 
-	token, _, _ := s.env.authStore.CreateSession(context.Background(), s.userA.ID, auth.SessionTTL)
+	token, _, err := s.env.authStore.CreateSession(context.Background(), s.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 	form := url.Values{"phone": {s.numC}}
-	kickReq, _ := http.NewRequest(http.MethodPost,
+	kickReq, err := http.NewRequest(http.MethodPost,
 		s.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
 		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new kick request: %v", err)
+	}
 	kickReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	kickReq.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	kickResp, err := s.env.srv.Client().Do(kickReq)
