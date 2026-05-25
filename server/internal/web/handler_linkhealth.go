@@ -73,11 +73,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// Linked-household names are shown for peers that the user already sees in
 	// their call log; the underlying auth check does not grant read access to
 	// calls the user was not part of.
-	var linkedIndex map[string]string
-	if primaryHH != nil {
-		linkedFamilies := h.buildLinkedFamilies(r.Context(), primaryHH.ID)
-		linkedIndex = buildLinkedLineIndex(linkedFamilies)
-	}
+	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
 
 	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
 	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
