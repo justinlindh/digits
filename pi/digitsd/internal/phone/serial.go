@@ -189,13 +189,14 @@ func (sp *SerialPort) DroppedLines() int64 {
 	return sp.droppedLines.Load()
 }
 
-// Ring sends RING:START or RING:STOP to the Pico.
-func (sp *SerialPort) Ring(start bool) {
-	if start {
-		sp.SendFire("RING:START")
-	} else {
-		sp.SendFire("RING:STOP")
-	}
+// StartRing sends RING:START to the Pico to begin ringing.
+func (sp *SerialPort) StartRing() {
+	sp.SendFire("RING:START")
+}
+
+// StopRing sends RING:STOP to the Pico to stop ringing.
+func (sp *SerialPort) StopRing() {
+	sp.SendFire("RING:STOP")
 }
 
 // RingPattern sends RING:PATTERN:<id> to the Pico for distinctive ring cadences.
@@ -244,15 +245,17 @@ func (sp *SerialPort) CallConnected() {
 	sp.SendFire("CALL:CONNECTED")
 }
 
-// FlashEnabled toggles flash-window detection on the Pico. When disabled,
-// hangup is instantaneous; when enabled the Pico waits up to 600ms after on-hook
-// to distinguish a flash from a hangup. Pi enables it only while in a call.
-func (sp *SerialPort) FlashEnabled(enabled bool) {
-	if enabled {
-		sp.SendFire("HOOK:FLASH:ON")
-	} else {
-		sp.SendFire("HOOK:FLASH:OFF")
-	}
+// EnableFlashDetection opens the flash-detection window on the Pico: after
+// on-hook it waits up to 600ms to distinguish a flash from a hangup. The Pi
+// enables this only while in a call.
+func (sp *SerialPort) EnableFlashDetection() {
+	sp.SendFire("HOOK:FLASH:ON")
+}
+
+// DisableFlashDetection closes the flash-detection window so the Pico treats
+// on-hook as an instantaneous hangup.
+func (sp *SerialPort) DisableFlashDetection() {
+	sp.SendFire("HOOK:FLASH:OFF")
 }
 
 // Close stops the reader and closes the port.

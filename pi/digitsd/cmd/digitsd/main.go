@@ -282,11 +282,11 @@ func (d *daemonCallbacks) OncePlaying() bool {
 }
 
 func (d *daemonCallbacks) StartRing() {
-	d.serial.Ring(true)
+	d.serial.StartRing()
 }
 
 func (d *daemonCallbacks) StopRing() {
-	d.serial.Ring(false)
+	d.serial.StopRing()
 }
 
 func (d *daemonCallbacks) SendRingPattern(id int) {
@@ -313,7 +313,7 @@ func (d *daemonCallbacks) NotifyCallConnected() {
 }
 
 func (d *daemonCallbacks) EnableFlashDetection() {
-	d.serial.FlashEnabled(true)
+	d.serial.EnableFlashDetection()
 }
 
 func (d *daemonCallbacks) OnCallReturn() {
@@ -810,7 +810,7 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 // hardware states were active.
 func resetPicoHardware(sp *phone.SerialPort) {
 	slog.Info("pico: clearing residual hardware state on startup")
-	sp.Ring(false)
+	sp.StopRing()
 	sp.LED("UNLOCK")
 }
 
