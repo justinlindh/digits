@@ -48,7 +48,6 @@ type Supervisor struct {
 	graceExpires time.Time
 	apExpires    time.Time
 	backoff      time.Duration
-	lastOKAt     time.Time
 }
 
 // NewSupervisor creates a Supervisor. If logger is nil, slog.Default() is used.
@@ -100,7 +99,6 @@ func (s *Supervisor) Tick(now time.Time) {
 
 func (s *Supervisor) tickStationOK(now time.Time, connected bool) {
 	if connected {
-		s.lastOKAt = now
 		return
 	}
 	s.transitionTo(now, StateStationDegraded, "connectivity lost")
@@ -160,7 +158,6 @@ func (s *Supervisor) transitionTo(now time.Time, next State, reason string) {
 	s.logger.Info("wifi-fallback: transition", "from", prev.String(), "to", next.String(), "reason", reason)
 	switch next {
 	case StateStationOK:
-		s.lastOKAt = now
 		s.backoff = s.cfg.GraceInitial
 	case StateStationDegraded:
 		s.graceExpires = now.Add(s.backoff)
