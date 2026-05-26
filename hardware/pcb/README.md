@@ -9,7 +9,7 @@ Index of the Digits project's printed-circuit-board revisions. Each revision liv
 | V1   | Fabricated    | Hand-assembled                  | First PCB attempt. External Codec Zero HAT for audio; external L298N plus step-up transformer for ringer. Has documented defects (see `v1/ERRATA.md`). |
 | V1.1 | Planned       | Hand-assembled                  | Incremental revision of V1 that corrects the V1 errata. Fix targets tracked per-entry in `v1/ERRATA.md`. |
 | V2   | Fabricated    | Contract-assembly (JLCPCB PCBA) | Onboard TLV320AIC3104 audio codec and onboard DRV8871 H-bridge ringer driver. Not practical to hand-solder. Shipped with a J8 pinout errata (see `v2/ERRATA.md`). |
-| V2.1 | In progress   | Contract-assembly (JLCPCB PCBA) | Minor spin of V2 with J8 pinout reassigned to match the stock Sangyn handset cable directly. Schematic, PCB, and docs in `v2.1/`. |
+| V3   | In progress   | Contract-assembly (JLCPCB PCBA) | Major spin of V2: +5 V input (buck stage removed), on-board XL6019 boost to ~37 V drives the bell in place of the external mains transformer, a single DPDT cradle switch handles hook sense and series mic-kill, SW2 BOOTSEL button, power indicator LEDs, components flipped to face up, and J8/LED pinouts matched to the stock cables. Schematic, PCB, and docs in `v3/`. |
 
 ## V1 vs V2: two different builds
 
@@ -21,7 +21,7 @@ V1 and V2 are not the same circuit on different boards. They are two different h
 
 Pick **V1** (really V1.1 once it ships) if you want to understand the design, iterate on a subsystem, or build one at your bench from parts.
 
-Pick **V2** (really V2.1 once it ships) if you want a production board with integrated audio and ringer and are willing to order assembled.
+Pick **V2** (really V3 once it ships) if you want a production board with integrated audio and ringer and are willing to order assembled.
 
 ## What lives where
 

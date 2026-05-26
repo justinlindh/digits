@@ -58,10 +58,7 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var linkedIndex map[string]string
-	if primaryHH != nil {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
-	}
+	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
 
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
@@ -170,10 +167,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 		return
 	}
 
-	var linkedIndex map[string]string
-	if primaryHH != nil {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
-	}
+	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
 
 	// Subscribe FIRST so samples arriving between the initial snapshot and
 	// the select loop are buffered rather than silently dropped.
@@ -271,10 +265,7 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	}
 	user := auth.UserFromContext(r.Context())
 
-	var linkedIndex map[string]string
-	if primaryHH != nil {
-		linkedIndex = buildLinkedLineIndex(h.buildLinkedFamilies(r.Context(), primaryHH.ID))
-	}
+	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
 	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 
 	_, isHostHH := ownedLines[conf.Host]

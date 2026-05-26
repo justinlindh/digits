@@ -18,6 +18,15 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
+// ensureMesh lazily creates the conference mesh manager and returns it.
+// The caller must hold d.mu.
+func (d *daemonCallbacks) ensureMesh() *owebrtc.MeshManager {
+	if d.mesh == nil {
+		d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(d.iceServers))
+	}
+	return d.mesh
+}
+
 func (d *daemonCallbacks) MutePeer(phone string) { d.setPeerMuted(phone, true) }
 
 func (d *daemonCallbacks) UnmutePeer(phone string) { d.setPeerMuted(phone, false) }
@@ -59,10 +68,7 @@ func (d *daemonCallbacks) MigrateToMesh(phone string) {
 		return
 	}
 
-	// Ensure the mesh exists.
-	if d.mesh == nil {
-		d.mesh = owebrtc.NewMeshManager(owebrtc.NewICEConfig(d.iceServers))
-	}
+	d.ensureMesh()
 
 	// Transfer ownership: the existing PeerManager moves into the mesh under
 	// the peer's phone key. d.peerMgr is cleared so future 2-party calls
@@ -166,11 +172,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	}
 
 	d.mu.Lock()
-	if d.mesh == nil {
-		iceCfg := owebrtc.NewICEConfig(d.iceServers)
-		d.mesh = owebrtc.NewMeshManager(iceCfg)
-	}
-	mesh := d.mesh
+	mesh := d.ensureMesh()
 	confID := d.ctrl.ConferenceID()
 	sig := d.sig
 	d.mu.Unlock()
@@ -302,11 +304,7 @@ func (d *daemonCallbacks) TearDownAllMeshPeers() {
 // Returns the answer SDP. Must NOT be called with d.mu held.
 func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (string, error) {
 	d.mu.Lock()
-	if d.mesh == nil {
-		iceCfg := owebrtc.NewICEConfig(d.iceServers)
-		d.mesh = owebrtc.NewMeshManager(iceCfg)
-	}
-	mesh := d.mesh
+	mesh := d.ensureMesh()
 	d.mu.Unlock()
 
 	pm, err := mesh.AddPeer(peer)

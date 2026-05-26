@@ -580,7 +580,10 @@ func TestCallLiveDetail_OwnerRenders(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	bodyStr := string(body)
 
 	// Both endpoint numbers appear in the .deck-card__num rendering.
@@ -625,7 +628,10 @@ func TestCallLiveDetail_EndedCallStillRenders(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200 (postmortem view)", resp.StatusCode)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	bodyStr := string(body)
 	// Terminal state should NOT auto-connect the SSE stream.
 	if strings.Contains(bodyStr, "sse-connect=") {
@@ -650,7 +656,10 @@ func TestDashboardLineCardLinksToCallLive(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	bodyStr := string(body)
 	expected := `href="/call/live/` + strconv.FormatInt(callID, 10) + `"`
 	if !strings.Contains(bodyStr, expected) {
@@ -673,15 +682,21 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session A: %v", err)
 	}
-	req, _ := http.NewRequest(http.MethodGet,
+	req, err := http.NewRequest(http.MethodGet,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
@@ -738,8 +753,11 @@ func TestConferenceLinkHealthJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session D: %v", err)
 	}
-	reqD, _ := http.NewRequest(http.MethodGet,
+	reqD, err := http.NewRequest(http.MethodGet,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	if err != nil {
+		t.Fatalf("new request D: %v", err)
+	}
 	reqD.AddCookie(&http.Cookie{Name: auth.CookieName, Value: tokenD})
 	respD, err := env.env.srv.Client().Do(reqD)
 	if err != nil {
@@ -814,13 +832,19 @@ func TestConferenceLiveDetailPage_OwnerRenders(t *testing.T) {
 	confID := startConference(t, s)
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
@@ -859,13 +883,19 @@ func TestConferenceLiveDetailPage_MemberHouseholdNoKickButtons(t *testing.T) {
 	confID := startConference(t, env)
 
 	client := authedClient(t, env, env.userB)
-	req, _ := http.NewRequest(http.MethodGet, env.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, env.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200", resp.StatusCode)
 	}
@@ -889,13 +919,19 @@ func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {
 	}
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+confID.String(), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("ended status: got %d want 200 (terminal render); body=%s", resp.StatusCode, string(body))
 	}
@@ -911,7 +947,10 @@ func TestConferenceLiveDetailPage_EndedRendersTerminalNoSSE(t *testing.T) {
 func TestConferenceLiveDetailPage_UnknownUUID_404(t *testing.T) {
 	s := newLHEnv(t)
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+uuid.New().String(), nil)
+	req, err := http.NewRequest(http.MethodGet, s.env.srv.URL+"/conference/live/"+uuid.New().String(), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
@@ -1001,15 +1040,21 @@ func TestConferenceLinkHealthJSON_DBFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	req, _ := http.NewRequest(http.MethodGet,
+	req, err := http.NewRequest(http.MethodGet,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/link-health", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
 	}
@@ -1051,9 +1096,12 @@ func TestConferenceKickEndpoint_HostSucceeds(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 	form := url.Values{"phone": {env.numC}}
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
 		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
@@ -1090,11 +1138,17 @@ func TestConferenceKickEndpoint_MemberForbidden(t *testing.T) {
 	ctx := context.Background()
 	confID := startConference(t, env)
 
-	token, _, _ := env.env.authStore.CreateSession(ctx, env.userB.ID, auth.SessionTTL)
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userB.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 	form := url.Values{"phone": {env.numC}}
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
 		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
@@ -1112,11 +1166,17 @@ func TestConferenceKickEndpoint_KickHostReturns400(t *testing.T) {
 	ctx := context.Background()
 	confID := startConference(t, env)
 
-	token, _, _ := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 	form := url.Values{"phone": {env.numA}}
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
 		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)
@@ -1137,11 +1197,17 @@ func TestConferenceKickEndpoint_EndedConferenceReturns404(t *testing.T) {
 		t.Fatalf("EndConferencePersistent: %v", err)
 	}
 
-	token, _, _ := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	token, _, err := env.env.authStore.CreateSession(ctx, env.userA.ID, auth.SessionTTL)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 	form := url.Values{"phone": {env.numC}}
-	req, _ := http.NewRequest(http.MethodPost,
+	req, err := http.NewRequest(http.MethodPost,
 		env.env.srv.URL+"/api/conference/"+confID.String()+"/kick",
 		strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
 	resp, err := env.env.srv.Client().Do(req)

@@ -349,13 +349,19 @@ func TestCallsPageConferenceRowLinksToLive(t *testing.T) {
 	}
 
 	client := authedClient(t, s, s.userA)
-	req, _ := http.NewRequest(http.MethodGet, s.env.srv.URL+"/calls", nil)
+	req, err := http.NewRequest(http.MethodGet, s.env.srv.URL+"/calls", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do: %v", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status: got %d want 200; body=%s", resp.StatusCode, string(body))
 	}

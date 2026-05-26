@@ -555,6 +555,17 @@ func buildLinkedLineIndex(families []linkedFamilyRow) map[string]string {
 	return index
 }
 
+// linkedIndexForHousehold builds the linked-line display-name index for the
+// caller's primary household, or returns nil when hh is nil (the caller owns
+// no household). The link-health endpoints share this so the "resolve once per
+// request" rule lives in one place.
+func (h *Handler) linkedIndexForHousehold(ctx context.Context, hh *household.Household) map[string]string {
+	if hh == nil {
+		return nil
+	}
+	return buildLinkedLineIndex(h.buildLinkedFamilies(ctx, hh.ID))
+}
+
 // resolvePeerName returns the friendly name for a peer number using the linked
 // line index, falling back to fmtPhone formatting.
 func resolvePeerName(number string, linkedLines map[string]string) string {

@@ -56,10 +56,15 @@ func (m *mockCallbacks) SendTone(name string) {
 	m.tones = append(m.tones, name)
 }
 func (m *mockCallbacks) OncePlaying() bool { return false }
-func (m *mockCallbacks) SendRing(start bool) {
+func (m *mockCallbacks) StartRing() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.rings = append(m.rings, start)
+	m.rings = append(m.rings, true)
+}
+func (m *mockCallbacks) StopRing() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rings = append(m.rings, false)
 }
 func (m *mockCallbacks) SendLED(mode string) {
 	m.mu.Lock()
@@ -529,7 +534,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 		t.Fatalf("expected RINGING, got %s", c.State())
 	}
 	if len(cb.Rings()) == 0 || cb.Rings()[0] != true {
-		t.Error("expected SendRing(true)")
+		t.Error("expected StartRing")
 	}
 	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
 		t.Error("expected SendLED(BLINK)")
@@ -546,7 +551,7 @@ func TestController_IncomingCallFlow(t *testing.T) {
 	// Ring should have been stopped
 	lastRing := cb.Rings()[len(cb.Rings())-1]
 	if lastRing != false {
-		t.Error("expected SendRing(false) when answering")
+		t.Error("expected StopRing when answering")
 	}
 
 	// Remote hangs up — enters REMOTE_HANGUP (off-hook warning sequence)
@@ -787,7 +792,7 @@ func TestController_CallerHangupDuringRing(t *testing.T) {
 	// Ring must have been stopped
 	lastRing := cb.Rings()[len(cb.Rings())-1]
 	if lastRing != false {
-		t.Error("expected SendRing(false) when caller hangs up during ring")
+		t.Error("expected StopRing when caller hangs up during ring")
 	}
 	lastLED := cb.LEDs()[len(cb.LEDs())-1]
 	if lastLED != "OFF" {
@@ -877,7 +882,7 @@ func TestController_IncomingWhileBusy(t *testing.T) {
 	}
 	// No new ring callbacks
 	if len(cb.Rings()) != ringsBefore {
-		t.Error("expected no SendRing call when ring arrives during CONNECTED")
+		t.Error("expected no ring call when ring arrives during CONNECTED")
 	}
 }
 
@@ -1785,7 +1790,7 @@ func TestController_IncomingRingSilentModeSuppressesBell(t *testing.T) {
 	}
 	for _, r := range cb.Rings() {
 		if r == true {
-			t.Error("expected no SendRing(true) while silent")
+			t.Error("expected no StartRing while silent")
 		}
 	}
 	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
@@ -1805,7 +1810,7 @@ func TestController_IncomingRingSilentOffBehavesNormally(t *testing.T) {
 		t.Fatalf("state: got %s", c.State())
 	}
 	if len(cb.Rings()) == 0 || cb.Rings()[0] != true {
-		t.Errorf("expected SendRing(true), got %v", cb.Rings())
+		t.Errorf("expected StartRing, got %v", cb.Rings())
 	}
 	if len(cb.LEDs()) == 0 || cb.LEDs()[0] != "BLINK" {
 		t.Errorf("expected SendLED(BLINK), got %v", cb.LEDs())
@@ -1818,7 +1823,7 @@ func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := newTestController(cb, "")
 
-	c.HandleSignal("ring", "") // state RINGING, SendRing(true), SendLED("BLINK")
+	c.HandleSignal("ring", "") // state RINGING, StartRing, SendLED("BLINK")
 	if c.State() != StateRINGING {
 		t.Fatalf("precondition: state %s != RINGING", c.State())
 	}
@@ -1827,7 +1832,7 @@ func TestController_SetSilentModeOnDuringRingStopsBell(t *testing.T) {
 
 	last := cb.Rings()[len(cb.Rings())-1]
 	if last != false {
-		t.Errorf("expected SendRing(false) after silent=true mid-ring, got %v", cb.Rings())
+		t.Errorf("expected StopRing after silent=true mid-ring, got %v", cb.Rings())
 	}
 	if c.State() != StateRINGING {
 		t.Errorf("state changed unexpectedly: %s (should stay RINGING)", c.State())
@@ -1845,13 +1850,13 @@ func TestController_SetSilentModeOffDuringRingDoesNotStartBell(t *testing.T) {
 	c := newTestController(cb, "")
 	c.SetSilentMode(true)
 
-	c.HandleSignal("ring", "") // silent: no SendRing(true), only LED:BLINK
+	c.HandleSignal("ring", "") // silent: no StartRing, only LED:BLINK
 	ringsBefore := len(cb.Rings())
 
 	c.SetSilentMode(false)
 
 	if len(cb.Rings()) != ringsBefore {
-		t.Errorf("unexpected SendRing call on silent=false mid-ring: %v", cb.Rings())
+		t.Errorf("unexpected ring call on silent=false mid-ring: %v", cb.Rings())
 	}
 }
 

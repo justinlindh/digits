@@ -1,0 +1,109 @@
+(footprint "SW_DPDT_Hook_24.2x17.1mm"
+  (version 20241229)
+  (generator "kicad-mcp")
+  (generator_version "9.0")
+  (layer "F.Cu")
+  (descr "DPDT telephone hook switch, IL Switch 2240 / Innocent INH-2240 family. Body 24.4 x 17.2mm. 6 signal pins 0.9mm on a 5.0 x 5.0mm grid (3 cols x 2 rows). The 7.45/7.75mm datasheet dims are mounting-feature offsets, not signal-pin spacing. Pole A common = pin 3, pole B common = pin 6; at rest 1-3 and 4-6 closed, pressed/on-hook 2-3 and 5-6 closed per datasheet. Genuine part also has 2x 2.1mm mounting holes, deliberately omitted to match the donor PCB; long signal pins seat the switch. Body outline is nominal (24.4 x 17.2mm) centered on the signal grid; the 6 pads are the precise reference, verified against a 1:1 printout.")
+  (tags "switch DPDT hook telephone THT INH-2240 IL-2240")
+
+  (property "Reference" "REF**" (at 0 -12 0)
+    (layer "F.SilkS")
+    (uuid "b6212522-35fc-43ac-97c1-9bb8e6a3d4db")
+    (effects (font (size 1 1) (thickness 0.15)))
+  )
+  (property "Value" "SW_DPDT_Hook_24.2x17.1mm" (at 0 12 0)
+    (layer "F.Fab")
+    (uuid "acd38f56-bd90-453a-a7d7-f34959bd4038")
+    (effects (font (size 1 1) (thickness 0.15)))
+  )
+  (property "Datasheet" "" (at 0 0 0)
+    (layer "F.Fab")
+    (uuid "5662d16e-15bd-4ef5-a34a-994015e5eebe")
+    (effects (font (size 1 1) (thickness 0.15)))
+  )
+
+  (fp_rect
+    (start -8.85 -12.45)
+    (end 8.85 12.45)
+    (stroke (width 0.05) (type default))
+    (fill none)
+    (layer "F.CrtYd")
+    (uuid "7d0510da-0bd9-45f8-b6ac-c802faac8f2a")
+  )
+
+  (fp_rect
+    (start -8.72 -12.32)
+    (end 8.72 12.32)
+    (stroke (width 0.12) (type default))
+    (fill none)
+    (layer "F.SilkS")
+    (uuid "7a070d9a-09f6-4398-b400-f3e1496ff5cb")
+  )
+
+  (fp_rect
+    (start -8.6 -12.2)
+    (end 8.6 12.2)
+    (stroke (width 0.1) (type default))
+    (fill none)
+    (layer "F.Fab")
+    (uuid "bd86cabe-ad4d-46b6-90a7-84209e5587fd")
+  )
+
+  (fp_circle
+    (center -2.5 -7.5)
+    (end -2.2 -7.5)
+    (stroke (width 0.1) (type default))
+    (fill solid)
+    (layer "F.SilkS")
+    (uuid "f1a2b3c4-d5e6-47f8-9a0b-1c2d3e4f5a6b")
+  )
+
+  (pad "1" thru_hole rect
+    (at -2.5 -5)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "a6033691-fa3d-4737-81b6-cc26a32284bd")
+  )
+
+  (pad "2" thru_hole circle
+    (at -2.5 0)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "03d0987c-04ca-4ccd-a757-3437a5945af1")
+  )
+
+  (pad "3" thru_hole circle
+    (at -2.5 5)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "163117b8-b27e-4bdc-9a24-3f446de3746c")
+  )
+
+  (pad "4" thru_hole circle
+    (at 2.5 -5)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "10f58dc0-59be-4f6c-8cc8-2871e898e6f3")
+  )
+
+  (pad "5" thru_hole circle
+    (at 2.5 0)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "9fa43e3f-dbd1-4e06-a916-d12385b7f6e9")
+  )
+
+  (pad "6" thru_hole circle
+    (at 2.5 5)
+    (size 1.6 1.6)
+    (drill 0.9)
+    (layers "*.Cu" "*.Mask")
+    (uuid "7068ac54-60d3-4a67-bf2a-d4c81b2d332c")
+  )
+
+)

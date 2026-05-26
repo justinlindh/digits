@@ -166,11 +166,11 @@ V2 ERRATA items affected by this change:
 | 3. boot2 chip mismatch | Closed. Unified firmware uses `boot2_generic_03h` which works on the existing W25Q16JV. No flash chip swap needed. |
 | 9. Firmware HOOK_PIN GP10 vs GP20 | Closed. Subsumed into the unified firmware refactor. |
 
-Items 1, 4, 6, 7, 8 still need their respective V2.1 or V3 PCB work.
+Items 1, 4, 6, 7, 8 still need their respective V3 PCB work.
 
-`hardware/pcb/v2.1/CHANGES_FROM_V2.md`: drop the flash chip swap section, demote the UART pullup section. V2.1 KiCad scope shrinks to component-side flip, J6 polarity swap (J8 reassignment is already done in the V2.1 schematic).
+`hardware/pcb/v3/CHANGES_FROM_V2.md`: the flash chip swap is dropped and the UART pullup is demoted to optional. The W25Q16JV stays because the unified firmware's `boot2_generic_03h` works on it.
 
-`#313` (V2.1 KiCad work issue): update checklist to remove the flash chip swap and demote the UART pullup.
+`#313` (PCB KiCad work issue): update checklist to remove the flash chip swap and demote the UART pullup.
 
 ## Migration plan
 
@@ -188,7 +188,7 @@ Each step independently verifiable on hardware. Worst-case rollback is reverting
 
 6. **Update digitsd.** Add `BOARD?` query at startup, log result, cross-check against `pcb_rev`. Wire up the dormant `CONFIG:PCB_REV=N` UART command.
 
-7. **ERRATA and docs cleanup.** Close V2 ERRATA items 3 and 9. Demote item 2 to optional. Update V2.1 CHANGES doc and #313 to reflect shrunk KiCad scope.
+7. **ERRATA and docs cleanup.** Close V2 ERRATA items 3 and 9. Demote item 2 to optional. Update the V3 CHANGES doc and #313 to reflect shrunk KiCad scope.
 
 ## Risks
 

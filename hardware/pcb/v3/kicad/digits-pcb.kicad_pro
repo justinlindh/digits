@@ -50,7 +50,23 @@
         "silk_text_thickness": 0.1,
         "silk_text_upright": false,
         "zones": {
-          "min_clearance": 0.5
+          "border_display_style": 2,
+          "border_hatch_pitch": 0.5,
+          "corner_radius": 0.0,
+          "corner_smoothing": 0,
+          "fill_mode": 0,
+          "hatch_gap": 1.5,
+          "hatch_orientation": 0.0,
+          "hatch_smoothing_level": 0,
+          "hatch_smoothing_value": 0.1,
+          "hatch_thickness": 1.0,
+          "min_clearance": 0.5,
+          "min_island_area": 10.0,
+          "min_thickness": 0.25,
+          "pad_connection": 1,
+          "remove_islands": 0,
+          "thermal_relief_gap": 0.5,
+          "thermal_relief_spoke_width": 0.5
         }
       },
       "diff_pair_dimensions": [],
@@ -555,7 +571,7 @@
       },
       {
         "netclass": "Switching",
-        "pattern": "SW_NODE"
+        "pattern": "/ringer/SW_NODE"
       }
     ]
   },
@@ -687,13 +703,21 @@
         "uuid": "74ec24e7-a8af-4132-928f-b03228b07139"
       }
     ],
-    "used_designators": "H1-3",
+    "used_designators": "",
     "variants": []
   },
   "sheets": [
     [
       "74ec24e7-a8af-4132-928f-b03228b07139",
       "digits-pcb"
+    ],
+    [
+      "4a13c0bc-0244-4b6b-8a3c-58ab82adbb77",
+      "codec"
+    ],
+    [
+      "86bcc52b-70aa-42a4-9931-3742612f7070",
+      "ringer"
     ]
   ],
   "text_variables": {},

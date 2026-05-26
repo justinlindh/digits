@@ -281,8 +281,12 @@ func (d *daemonCallbacks) OncePlaying() bool {
 	return d.mixer.OncePlaying()
 }
 
-func (d *daemonCallbacks) SendRing(start bool) {
-	d.serial.Ring(start)
+func (d *daemonCallbacks) StartRing() {
+	d.serial.Ring(true)
+}
+
+func (d *daemonCallbacks) StopRing() {
+	d.serial.Ring(false)
 }
 
 func (d *daemonCallbacks) SendRingPattern(id int) {

@@ -63,9 +63,7 @@ func baseTemplateFuncs() template.FuncMap {
 			return fmt.Sprintf("%d:%02d", seconds/60, seconds%60)
 		},
 		"fmtDurationClock": func(seconds int) string {
-			h := seconds / 3600
-			m := (seconds % 3600) / 60
-			s := seconds % 60
+			h, m, s := clockParts(seconds)
 			if h > 0 {
 				return fmt.Sprintf("%d:%02d:%02d", h, m, s)
 			}
@@ -162,6 +160,15 @@ func baseTemplateFuncs() template.FuncMap {
 			return nil
 		},
 	}
+}
+
+// clockParts decomposes a second count into hours, minutes, and seconds.
+// Negative values are clamped to zero.
+func clockParts(total int) (h, m, s int) {
+	if total < 0 {
+		total = 0
+	}
+	return total / 3600, (total % 3600) / 60, total % 60
 }
 
 const (
