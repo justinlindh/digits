@@ -278,8 +278,6 @@ sudo systemctl daemon-reload
 sudo systemctl restart digitsd
 ```
 
-If your server uses a self-signed cert (dev only), add `-insecure` to skip TLS verification. Do not do this in production.
-
 ### Pairing Flow
 
 1. In the web app, complete onboarding to create a household, then add a line on `/phones`.
