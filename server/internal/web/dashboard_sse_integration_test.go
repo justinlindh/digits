@@ -86,7 +86,10 @@ func TestDashboardStream_HubRegisterTriggersFrame(t *testing.T) {
 	// drives a fresh Register below and observes the resulting Notify.
 	h.hub.Unregister(number, h.hub.Get(number))
 
-	req, _ := http.NewRequest("GET", dashStreamURL(srv), nil)
+	req, err := http.NewRequest("GET", dashStreamURL(srv), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.AddCookie(cookie)
 	resp, err := srv.Client().Do(req)
 	if err != nil {
@@ -129,7 +132,10 @@ func TestDashboardStream_CallInitiatedTriggersFrame(t *testing.T) {
 	callee := "+15551110021"
 	_, _ = setupLineWithConn(t, h, database, hh, caller, "Caller")
 
-	req, _ := http.NewRequest("GET", dashStreamURL(srv), nil)
+	req, err := http.NewRequest("GET", dashStreamURL(srv), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
 	req.AddCookie(cookie)
 	resp, err := srv.Client().Do(req)
 	if err != nil {
