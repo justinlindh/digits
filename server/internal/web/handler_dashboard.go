@@ -208,10 +208,7 @@ func fmtElapsed(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
-	total := int(d.Seconds())
-	h := total / 3600
-	m := (total % 3600) / 60
-	s := total % 60
+	h, m, s := clockParts(int(d.Seconds()))
 	if h > 0 {
 		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
 	}

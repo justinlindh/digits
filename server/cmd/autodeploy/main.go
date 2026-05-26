@@ -65,7 +65,11 @@ func main() {
 	defer cancel()
 
 	if *dryRun {
-		s, _ := store.Read()
+		s, err := store.Read()
+		if err != nil {
+			logger.Error("dry-run read state", "err", err)
+			os.Exit(2)
+		}
 		rel, err := gh.LatestReleaseWithETag(ctx, cfg.Repo, cfg.TagPrefix, s.GitHubETag)
 		if err != nil {
 			logger.Error("dry-run github", "err", err)
