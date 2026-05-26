@@ -12,7 +12,8 @@ func TestSerialPortInterface(t *testing.T) {
 		SendCommand(string, time.Duration) (string, error)
 		SendFire(string)
 		Ping() error
-		Ring(bool)
+		StartRing()
+		StopRing()
 		LED(string)
 		AddMonitor(chan string) func()
 		Close() error

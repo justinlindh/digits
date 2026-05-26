@@ -324,7 +324,7 @@ func (d *daemonCallbacks) HangupCall() {
 
 	// Call is tearing down. Drop the Pico into instant-hangup mode so any
 	// subsequent idle hook press doesn't sit behind the flash window.
-	d.serial.FlashEnabled(false)
+	d.serial.DisableFlashDetection()
 
 	d.pendingOffer = ""
 	d.pendingCaller = ""
