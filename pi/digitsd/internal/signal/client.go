@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -20,15 +19,14 @@ const (
 
 // Client connects to a signald WebSocket server and manages message I/O.
 type Client struct {
-	url             string
-	number          string
-	hardwareID      string
-	deviceToken     string
-	conn            *websocket.Conn
-	inbox           chan *Message
-	done            chan struct{}
-	mu              sync.Mutex
-	insecureSkipTLS bool
+	url         string
+	number      string
+	hardwareID  string
+	deviceToken string
+	conn        *websocket.Conn
+	inbox       chan *Message
+	done        chan struct{}
+	mu          sync.Mutex
 }
 
 // NewClient creates a new Client. Call Connect() to establish the connection.
@@ -43,22 +41,11 @@ func NewClient(url, number, hardwareID, deviceToken string) *Client {
 	}
 }
 
-// SetInsecureSkipTLS disables TLS certificate verification (for dev/self-signed certs).
-func (c *Client) SetInsecureSkipTLS(skip bool) {
-	c.insecureSkipTLS = skip
-}
-
 // Connect dials the WebSocket URL, sends a register message, and starts
 // the readPump goroutine. On failure, the done channel is closed so that
 // callers selecting on Done() can detect the failure and retry.
 func (c *Client) Connect() error {
-	dialer := websocket.DefaultDialer
-	if c.insecureSkipTLS {
-		dialer = &websocket.Dialer{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-	}
-	conn, _, err := dialer.Dial(c.url, http.Header{})
+	conn, _, err := websocket.DefaultDialer.Dial(c.url, http.Header{})
 	if err != nil {
 		close(c.done)
 		return fmt.Errorf("signal: dial %s: %w", c.url, err)
