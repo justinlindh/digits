@@ -92,7 +92,11 @@ func (m *mockCallbacks) NotifyCallConnected() {
 	defer m.mu.Unlock()
 	m.callConnectedCalls++
 }
-func (m *mockCallbacks) MutePeer(phone string, muted bool) {
+func (m *mockCallbacks) MutePeer(phone string) { m.setMuted(phone, true) }
+
+func (m *mockCallbacks) UnmutePeer(phone string) { m.setMuted(phone, false) }
+
+func (m *mockCallbacks) setMuted(phone string, muted bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.mutedPeers == nil {
@@ -1411,7 +1415,7 @@ func TestController_MuteLiftsOnMerge(t *testing.T) {
 	c := newTestController(mock, "5550001")
 	c.setStateForTest(StateCONNECTED)
 
-	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B, true) and enters ADD_DIALTONE.
+	// Flash from CONNECTED: controller calls MigrateToMesh(B), MutePeer(B) and enters ADD_DIALTONE.
 	c.HandleHookFlash("5550002")
 	if c.State() != StateADD_DIALTONE {
 		t.Fatalf("expected StateADD_DIALTONE after flash, got %v", c.State())
