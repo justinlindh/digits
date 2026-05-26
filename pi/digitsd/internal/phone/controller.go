@@ -95,7 +95,8 @@ type Callbacks interface {
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
 	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
-	MutePeer(phone string, muted bool)                    // Mute or unmute the A↔B audio path for a peer
+	MutePeer(phone string)                                // Silence both directions of the A↔B audio path (silent hold)
+	UnmutePeer(phone string)                              // Restore both directions of the A↔B audio path
 	TearDownPeer(phone string)                            // Hang up and tear down the connection to a peer
 	MigrateToMesh(phone string)                           // Move the 2-party peer into the mesh under this key
 	RequestConferenceMerge(held, active string)           // Request server-side three-way merge
@@ -999,7 +1000,7 @@ func (c *Controller) enterAddDialtone(activePeer string) {
 	c.state = StateADD_DIALTONE
 	if c.heldPeer != "" {
 		c.cb.MigrateToMesh(c.heldPeer) // move B's PC from peerMgr into mesh
-		c.cb.MutePeer(c.heldPeer, true) // silent hold
+		c.cb.MutePeer(c.heldPeer)      // silent hold
 	}
 	c.cb.SendTone(ToneDial)
 }
@@ -1017,7 +1018,7 @@ func (c *Controller) abortAdd() {
 		c.cb.TearDownPeer(c.addingPeer)
 	}
 	if c.heldPeer != "" {
-		c.cb.MutePeer(c.heldPeer, false)
+		c.cb.UnmutePeer(c.heldPeer)
 	}
 	c.addingPeer = ""
 	c.heldPeer = ""
@@ -1031,7 +1032,7 @@ func (c *Controller) abortAddCalling() {
 		c.cb.TearDownPeer(c.addingPeer)
 	}
 	if c.heldPeer != "" {
-		c.cb.MutePeer(c.heldPeer, false)
+		c.cb.UnmutePeer(c.heldPeer)
 	}
 	c.addingPeer = ""
 	c.heldPeer = ""
@@ -1041,7 +1042,7 @@ func (c *Controller) abortAddCalling() {
 func (c *Controller) requestMerge() {
 	slog.Info("phone: ADD_PRIVATE -> CONFERENCE_MERGED, requesting merge", "held", c.heldPeer, "adding", c.addingPeer)
 	if c.heldPeer != "" {
-		c.cb.MutePeer(c.heldPeer, false)
+		c.cb.UnmutePeer(c.heldPeer)
 	}
 	if c.addingPeer != "" {
 		c.cb.MigrateToMesh(c.addingPeer) // move C's PC from peerMgr into mesh
@@ -1180,7 +1181,7 @@ func (c *Controller) HandleConferenceRejected(confID, reason string) {
 	}
 	// Restore state: held peer unmute, return to CONNECTED.
 	if c.heldPeer != "" {
-		c.cb.MutePeer(c.heldPeer, false)
+		c.cb.UnmutePeer(c.heldPeer)
 	}
 	c.heldPeer = ""
 	c.state = StateCONNECTED

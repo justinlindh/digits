@@ -27,7 +27,13 @@ func (d *daemonCallbacks) ensureMesh() *owebrtc.MeshManager {
 	return d.mesh
 }
 
-func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
+func (d *daemonCallbacks) MutePeer(phone string) { d.setPeerMuted(phone, true) }
+
+func (d *daemonCallbacks) UnmutePeer(phone string) { d.setPeerMuted(phone, false) }
+
+// setPeerMuted sets both audio directions on the peer's WebRTC connection,
+// trying the conference mesh first and falling back to the 2-party peer.
+func (d *daemonCallbacks) setPeerMuted(phone string, muted bool) {
 	d.mu.Lock()
 	mesh := d.mesh
 	pm := d.peerMgr
@@ -50,7 +56,7 @@ func (d *daemonCallbacks) MutePeer(phone string, muted bool) {
 		slog.Info("mute peer (2-party)", "phone", phone, "muted", muted)
 		return
 	}
-	slog.Warn("MutePeer: no peer found", "phone", phone, "muted", muted)
+	slog.Warn("setPeerMuted: no peer found", "phone", phone, "muted", muted)
 }
 
 func (d *daemonCallbacks) MigrateToMesh(phone string) {
