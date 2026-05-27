@@ -22,7 +22,7 @@ func TestPlayGreetingBeep_ReplacesFrames(t *testing.T) {
 	cfg := DefaultPipelineConfig()
 	p := NewPipeline(cfg)
 
-	frameSize := cfg.SampleRate * cfg.FrameMs / 1000 // 960
+	frameSize := cfg.SampleRate / 50 // 20ms frames (960 at 48kHz)
 
 	p.PlayGreetingBeep(40 * time.Millisecond) // 2 frames at 20ms each
 
@@ -54,7 +54,7 @@ func TestPlayGreetingBeep_FadeEnvelope(t *testing.T) {
 
 	p.PlayGreetingBeep(100 * time.Millisecond) // 5 frames
 
-	frameSize := cfg.SampleRate * cfg.FrameMs / 1000
+	frameSize := cfg.SampleRate / 50 // 20ms frames (960 at 48kHz)
 	frames := p.drainBeepFrames(frameSize)
 	if len(frames) == 0 {
 		t.Fatal("no beep frames")
@@ -82,7 +82,7 @@ func TestPlayGreetingSamples_ReplacesFrames(t *testing.T) {
 	cfg := DefaultPipelineConfig()
 	p := NewPipeline(cfg)
 
-	frameSize := cfg.SampleRate * cfg.FrameMs / 1000 // 960
+	frameSize := cfg.SampleRate / 50 // 20ms frames (960 at 48kHz)
 
 	// Two frames of distinctive samples.
 	samples := make([]int16, frameSize*2)
@@ -123,7 +123,7 @@ func TestPlayGreetingSamples_EmptyIsNoop(t *testing.T) {
 	p.PlayGreetingSamples(nil)
 	p.PlayGreetingSamples([]int16{})
 
-	frameSize := cfg.SampleRate * cfg.FrameMs / 1000
+	frameSize := cfg.SampleRate / 50 // 20ms frames (960 at 48kHz)
 	frames := p.drainBeepFrames(frameSize)
 	if len(frames) != 0 {
 		t.Errorf("expected 0 frames after no-op call, got %d", len(frames))

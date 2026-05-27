@@ -10,11 +10,9 @@ import (
 
 // PipelineConfig holds configuration for the audio pipeline.
 type PipelineConfig struct {
-	SampleRate  int
-	FrameMs     int
-	OpusBitrate int
-	MicChannel  int  // 0=left, 1=right. Both codecs route mic to left channel.
-	Denoise     bool
+	SampleRate int
+	MicChannel int // 0=left, 1=right. Both codecs route mic to left channel.
+	Denoise    bool
 	// Bandpass enables the POTS telephony bandpass + mains notch comb on
 	// the capture path, applied BEFORE the denoiser. See NewPOTSChain for
 	// the exact filter topology.
@@ -28,11 +26,9 @@ type PipelineConfig struct {
 // DefaultPipelineConfig returns sensible defaults for both codec types.
 func DefaultPipelineConfig() PipelineConfig {
 	return PipelineConfig{
-		SampleRate:  48000,
-		FrameMs:     20,
-		OpusBitrate: 24000,
-		MicChannel:  0, // Both codecs route mic to left channel
-		Denoise:     true,
+		SampleRate: 48000,
+		MicChannel: 0, // Both codecs route mic to left channel
+		Denoise:    true,
 		// Bandpass off by default: RNNoise alone handles both the 60 Hz
 		// mains hum and the broadband preamp hiss on the prototype phones
 		// cleanly. A fixed biquad chain in front of RNNoise only distorts
@@ -52,7 +48,7 @@ func DefaultPipelineConfig() PipelineConfig {
 type Pipeline struct {
 	cfg       PipelineConfig
 	capture   *Capture
-	filters   *BiquadChain // pre-denoise bandpass (optional)
+	filters   *BiquadChain                // pre-denoise bandpass (optional)
 	character atomic.Pointer[BiquadChain] // post-denoise POTS character, swappable live
 	denoiser  *Denoiser
 	muted     atomic.Bool
@@ -129,7 +125,7 @@ func SynthGreetingBeep(sampleRate int, d time.Duration) []int16 {
 	}
 
 	const freq = 1000.0
-	const amplitude = 10000.0 // ~30% of int16 max
+	const amplitude = 10000.0            // ~30% of int16 max
 	fadeSamples := sampleRate * 5 / 1000 // 5ms fade
 
 	buf := make([]int16, totalSamples)
