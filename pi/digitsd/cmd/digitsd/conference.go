@@ -159,6 +159,46 @@ func (d *daemonCallbacks) RequestConferenceMerge(held, active string) {
 	})
 }
 
+// wireMeshRemoteTrack attaches a decode loop to pm's inbound track that feeds
+// decoded PCM frames into webrtcCh (the peer's mixer source). role only tags
+// log lines ("initiator"/"responder"); the loop body is identical for both.
+// pm owns its own decoder, so the loop is safe to run concurrently per peer.
+func (d *daemonCallbacks) wireMeshRemoteTrack(pm *owebrtc.PeerManager, phone, role string, webrtcCh chan []int16) {
+	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
+		slog.Info("conference: remote track attached", "phone", phone, "role", role)
+		go func() {
+			defer recoverGoroutine("conf-remote-track-" + phone)
+			gotFirst := false
+			for {
+				pkt, _, err := track.ReadRTP()
+				if err != nil {
+					slog.Info("conference: remote track ended", "phone", phone, "role", role)
+					return
+				}
+				if !gotFirst {
+					slog.Info("conference: first RTP packet received", "phone", phone, "role", role)
+					gotFirst = true
+				}
+				pcm, err := pm.Decode(pkt.Payload)
+				if err != nil {
+					continue
+				}
+				if pm.InboundMuted() {
+					// Silent hold: drop decoded audio rather than feeding the mixer.
+					continue
+				}
+				frame := make([]int16, len(pcm))
+				copy(frame, pcm)
+				select {
+				case webrtcCh <- frame:
+				default:
+					// drop frame if consumer is behind
+				}
+			}
+		}()
+	}
+}
+
 func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	if !initiator {
 		// Responder path: don't pre-create the mesh peer. setupMeshResponder
@@ -189,40 +229,7 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 	// Pion can fire OnTrack during negotiation; setting it after CreateOffer
 	// would race against the remote track arriving.
 	webrtcCh := d.mixer.AddWebRTCSource(phone)
-	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-		slog.Info("conference: remote track attached (initiator)", "phone", phone)
-		go func() {
-			defer recoverGoroutine("conf-remote-track-" + phone)
-			gotFirst := false
-			for {
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("conference: remote track ended", "phone", phone)
-					return
-				}
-				if !gotFirst {
-					slog.Info("conference: first RTP packet received", "phone", phone)
-					gotFirst = true
-				}
-				// pm owns its own decoder: safe to call concurrently with other peers.
-				pcm, err := pm.Decode(pkt.Payload)
-				if err != nil {
-					continue
-				}
-				if pm.InboundMuted() {
-					// Silent hold: drop decoded audio rather than feeding the mixer.
-					continue
-				}
-				frame := make([]int16, len(pcm))
-				copy(frame, pcm)
-				select {
-				case webrtcCh <- frame:
-				default:
-					// drop frame if consumer is behind
-				}
-			}
-		}()
-	}
+	d.wireMeshRemoteTrack(pm, phone, "initiator", webrtcCh)
 
 	// Wire ICE candidate forwarding. Gate candidates behind SDP send so the
 	// remote side has a local description before processing candidates.
@@ -314,39 +321,7 @@ func (d *daemonCallbacks) setupMeshResponder(peer, offerSDP, confID string) (str
 
 	// Wire remote audio track BEFORE AcceptOffer so pion cannot miss it.
 	webrtcCh := d.mixer.AddWebRTCSource(peer)
-	pm.OnRemoteTrack = func(track *webrtc.TrackRemote) {
-		slog.Info("conference: remote track attached (responder)", "phone", peer)
-		go func() {
-			defer recoverGoroutine("conf-remote-track-" + peer)
-			gotFirst := false
-			for {
-				pkt, _, err := track.ReadRTP()
-				if err != nil {
-					slog.Info("conference: remote track ended (responder)", "phone", peer)
-					return
-				}
-				if !gotFirst {
-					slog.Info("conference: first RTP packet received (responder)", "phone", peer)
-					gotFirst = true
-				}
-				// pm owns its own decoder: safe to call concurrently with other peers.
-				pcm, err := pm.Decode(pkt.Payload)
-				if err != nil {
-					continue
-				}
-				if pm.InboundMuted() {
-					// Silent hold: drop decoded audio rather than feeding the mixer.
-					continue
-				}
-				frame := make([]int16, len(pcm))
-				copy(frame, pcm)
-				select {
-				case webrtcCh <- frame:
-				default:
-				}
-			}
-		}()
-	}
+	d.wireMeshRemoteTrack(pm, peer, "responder", webrtcCh)
 
 	// Gate ICE candidates behind answer SDP send.
 	sdpSent := make(chan struct{})
