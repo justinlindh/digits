@@ -47,10 +47,11 @@ func TestDeviceStateIntegrationTwoPods(t *testing.T) {
 		t.Fatal("pod B should see device as online")
 	}
 
-	info := dsB.DeviceInfo(ctx, "test-5551234")
-	if info == nil {
+	all := dsB.AllDeviceInfo(ctx, "test-5551234")
+	if len(all) == 0 {
 		t.Fatal("pod B should see device info")
 	}
+	info := all[0]
 	if info.PiVersion != "2.0.0" {
 		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "2.0.0")
 	}

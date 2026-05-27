@@ -1865,9 +1865,9 @@ func runDeviceInfoAndCaptureAddr(t *testing.T, srv *httptest.Server, hub *signal
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		info := hub.DeviceInfo(number)
-		if info != nil && info.PiVersion == "1.0.0" {
-			return info.RemoteAddr
+		all := hub.AllDeviceInfo(number)
+		if len(all) > 0 && all[0].PiVersion == "1.0.0" {
+			return all[0].RemoteAddr
 		}
 		time.Sleep(2 * time.Millisecond)
 	}

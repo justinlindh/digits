@@ -600,16 +600,6 @@ type DeviceInfoSnapshot struct {
 	DevMode bool `json:"-"`
 }
 
-// DeviceInfo returns version info for the first connected device on a line.
-// Returns nil if no device is online.
-func (h *Hub) DeviceInfo(number string) *DeviceInfoSnapshot {
-	all := h.AllDeviceInfo(number)
-	if len(all) == 0 {
-		return nil
-	}
-	return &all[0]
-}
-
 // AllDeviceInfo returns version info for all connected devices on a line.
 func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
 	h.mu.RLock()

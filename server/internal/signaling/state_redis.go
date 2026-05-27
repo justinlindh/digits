@@ -124,14 +124,6 @@ func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 	return numbers
 }
 
-func (s *DeviceState) DeviceInfo(ctx context.Context, number string) *DeviceInfoSnapshot {
-	all := s.AllDeviceInfo(ctx, number)
-	if len(all) == 0 {
-		return nil
-	}
-	return &all[0]
-}
-
 func (s *DeviceState) AllDeviceInfo(ctx context.Context, number string) []DeviceInfoSnapshot {
 	setKey := lineDevicesPrefix + number
 	hwIDs, err := s.client.SMembers(ctx, setKey).Result()
