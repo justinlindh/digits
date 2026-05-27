@@ -99,22 +99,23 @@ func TestDeviceInfoIncludesRemoteAddr(t *testing.T) {
 	}
 	_ = hub.Register("3140001", conn)
 
-	info := hub.DeviceInfo("3140001")
-	if info == nil {
-		t.Fatal("DeviceInfo returned nil for registered conn")
+	all := hub.AllDeviceInfo("3140001")
+	if len(all) == 0 {
+		t.Fatal("AllDeviceInfo returned no devices for registered conn")
 	}
+	info := all[0]
 	if info.RemoteAddr != "192.168.1.42" {
-		t.Errorf("DeviceInfo.RemoteAddr = %q, want %q", info.RemoteAddr, "192.168.1.42")
+		t.Errorf("RemoteAddr = %q, want %q", info.RemoteAddr, "192.168.1.42")
 	}
 	if info.PiVersion != "1.2.3" {
-		t.Errorf("DeviceInfo.PiVersion = %q, want %q", info.PiVersion, "1.2.3")
+		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "1.2.3")
 	}
 }
 
-func TestDeviceInfoNilWhenOffline(t *testing.T) {
+func TestAllDeviceInfoEmptyWhenOffline(t *testing.T) {
 	hub := NewHub()
-	if got := hub.DeviceInfo("3140002"); got != nil {
-		t.Errorf("DeviceInfo for unregistered number = %+v, want nil", got)
+	if got := hub.AllDeviceInfo("3140002"); len(got) != 0 {
+		t.Errorf("AllDeviceInfo for unregistered number = %+v, want empty", got)
 	}
 }
 
@@ -126,10 +127,11 @@ func TestRegisterOverwritesRemoteAddrOnReconnect(t *testing.T) {
 	second := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-003", RemoteAddr: "192.168.1.99"}
 	_ = hub.Register("3140003", second)
 
-	info := hub.DeviceInfo("3140003")
-	if info == nil {
-		t.Fatal("expected DeviceInfo after reconnect")
+	all := hub.AllDeviceInfo("3140003")
+	if len(all) == 0 {
+		t.Fatal("expected device info after reconnect")
 	}
+	info := all[0]
 	if info.RemoteAddr != "192.168.1.99" {
 		t.Errorf("RemoteAddr after reconnect = %q, want %q", info.RemoteAddr, "192.168.1.99")
 	}

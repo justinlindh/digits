@@ -94,10 +94,11 @@ func TestDeviceStateDeviceInfo(t *testing.T) {
 		RemoteAddr:      "10.0.0.5",
 	})
 
-	info := ds.DeviceInfo(ctx, "5551234")
-	if info == nil {
-		t.Fatal("expected non-nil DeviceInfoSnapshot")
+	all := ds.AllDeviceInfo(ctx, "5551234")
+	if len(all) == 0 {
+		t.Fatal("expected a DeviceInfoSnapshot")
 	}
+	info := all[0]
 	if info.PiVersion != "1.2.0" {
 		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "1.2.0")
 	}
@@ -119,9 +120,8 @@ func TestDeviceStateDeviceInfoOffline(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	info := ds.DeviceInfo(ctx, "5559999")
-	if info != nil {
-		t.Fatalf("expected nil for offline device, got %+v", info)
+	if got := ds.AllDeviceInfo(ctx, "5559999"); len(got) != 0 {
+		t.Fatalf("expected no devices for offline number, got %+v", got)
 	}
 }
 
@@ -141,10 +141,11 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 		RemoteAddr: "192.168.1.50",
 	})
 
-	info := ds.DeviceInfo(ctx, "5551234")
-	if info == nil {
-		t.Fatal("expected non-nil DeviceInfoSnapshot")
+	all := ds.AllDeviceInfo(ctx, "5551234")
+	if len(all) == 0 {
+		t.Fatal("expected a DeviceInfoSnapshot")
 	}
+	info := all[0]
 	if info.PiVersion != "1.1.0" {
 		t.Errorf("PiVersion = %q, want %q", info.PiVersion, "1.1.0")
 	}
