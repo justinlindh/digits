@@ -169,20 +169,17 @@ func (m *Manager) logSummary(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var ready, total, degraded int
+	var ready, total int
 	for _, s := range m.states {
 		if s.State == StateDisabled {
 			continue
 		}
 		total++
-		switch s.State {
-		case StateReady:
+		if s.State == StateReady {
 			ready++
-		case StateDegraded:
-			degraded++
 		}
 	}
-	slog.InfoContext(ctx, "subsystem: init complete", "ready", ready, "total", total, "degraded", degraded)
+	slog.InfoContext(ctx, "subsystem: init complete", "ready", ready, "total", total)
 }
 
 // topoLayers sorts regs into dependency-ordered layers using Kahn's algorithm.

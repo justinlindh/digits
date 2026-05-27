@@ -11,7 +11,6 @@ func TestModuleStatusString(t *testing.T) {
 		{StateInitializing, "initializing"},
 		{StateReady, "ready"},
 		{StateFailed, "failed"},
-		{StateDegraded, "degraded"},
 		{StateDisabled, "disabled"},
 	}
 	for _, tt := range tests {

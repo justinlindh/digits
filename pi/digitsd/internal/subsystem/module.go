@@ -12,7 +12,6 @@ const (
 	StateInitializing
 	StateReady
 	StateFailed
-	StateDegraded
 	StateDisabled
 )
 
@@ -26,8 +25,6 @@ func (s State) String() string {
 		return "ready"
 	case StateFailed:
 		return "failed"
-	case StateDegraded:
-		return "degraded"
 	case StateDisabled:
 		return "disabled"
 	default:
