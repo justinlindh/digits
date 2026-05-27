@@ -36,8 +36,8 @@ import (
 	"github.com/justinlindh/digits/server/internal/web"
 )
 
-// releaseCacheTTL is the release index cache lifetime, in seconds.
-const releaseCacheTTL = 5 * 60
+// releaseCacheTTL is the release index cache lifetime.
+const releaseCacheTTL = 5 * time.Minute
 
 func main() {
 	logging.Setup()

@@ -55,11 +55,12 @@ type Config struct {
 // present in the environment retain their defaults (e.g. Addr ":8443").
 func Load() *Config {
 	c := &Config{
-		Addr:        ":8443",
-		MetricsAddr: ":9091",
-		SMTPPort:    "587",
-		SMTPFrom:    "noreply@digits.family",
-		BaseURL:     "https://app.digits.family",
+		Addr:              ":8443",
+		MetricsAddr:       ":9091",
+		SMTPPort:          "587",
+		SMTPFrom:          "noreply@digits.family",
+		BaseURL:           "https://app.digits.family",
+		WSRateLimitPerMin: 30,
 	}
 	StringEnv("SIGNALD_ADDR", &c.Addr)
 	StringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
@@ -89,7 +90,6 @@ func Load() *Config {
 	// Redis
 	StringEnv("REDIS_URL", &c.RedisURL)
 	// Rate limits
-	c.WSRateLimitPerMin = 30
 	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
 	// Release index
 	OneEnv("TEST_FAKE_UPDATES", &c.FakeUpdates)
