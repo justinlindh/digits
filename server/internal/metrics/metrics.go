@@ -44,22 +44,6 @@ import (
 
 const serviceName = "signald"
 
-// SignalingErrorCategory is a closed set of categories for the
-// signaling_errors_total counter. The list is intentionally small and
-// product-defined: adding a new category is a code change, never a runtime
-// label, so an attacker cannot smuggle PII into a label value.
-type SignalingErrorCategory string
-
-const (
-	ErrTURNAllocFailed SignalingErrorCategory = "turn_alloc_failed"
-	ErrICETimeout      SignalingErrorCategory = "ice_timeout"
-	ErrPeerUnreachable SignalingErrorCategory = "peer_unreachable"
-	ErrCallSetupFailed SignalingErrorCategory = "call_setup_failed"
-	ErrAuthFailed      SignalingErrorCategory = "auth_failed"
-	ErrInvalidMessage  SignalingErrorCategory = "invalid_message"
-	ErrRelayDelivery   SignalingErrorCategory = "relay_delivery"
-)
-
 // Registry bundles a Prometheus registry, the metrics registered into it,
 // and any GaugeFuncs that read live state. Keep one Registry per process.
 type Registry struct {
@@ -182,26 +166,27 @@ func (r *Registry) RegisterCallsGauge(read func() float64) {
 		read)
 }
 
-// validErrorCategories enumerates the closed set of categories accepted by
-// ObserveSignalingError. The string form is used because the signaling
-// package cannot import this package without a cycle. Any value not in the
-// set is dropped to "other" rather than rejected so a caller bug can't
-// silently exfiltrate the offending string into a label.
+// validErrorCategories is the closed, product-defined set of categories
+// accepted by ObserveSignalingError. The set is intentionally small: adding a
+// category is a code change here, never a runtime label, so a caller can never
+// smuggle a free-form string (or any PII it might carry) into a label value.
+// Any value not in the set collapses to "other" rather than being rejected so
+// a caller bug can't silently exfiltrate the offending string into a label.
 var validErrorCategories = map[string]struct{}{
-	string(ErrTURNAllocFailed): {},
-	string(ErrICETimeout):      {},
-	string(ErrPeerUnreachable): {},
-	string(ErrCallSetupFailed): {},
-	string(ErrAuthFailed):      {},
-	string(ErrInvalidMessage):  {},
-	string(ErrRelayDelivery):   {},
+	"turn_alloc_failed": {},
+	"ice_timeout":       {},
+	"peer_unreachable":  {},
+	"call_setup_failed": {},
+	"auth_failed":       {},
+	"invalid_message":   {},
+	"relay_delivery":    {},
 }
 
 // ObserveSignalingError records one signaling error, partitioned by category.
 // The category is a plain string because the sole caller (internal/signaling)
-// cannot import the typed SignalingErrorCategory constants without forming an
-// import cycle. Unknown categories collapse to "other" so a future caller can
-// never smuggle a free-form string into a label value.
+// cannot import this package without forming an import cycle, so it reports
+// categories as string literals. Unknown categories collapse to "other" so a
+// caller can never smuggle a free-form string into a label value.
 func (r *Registry) ObserveSignalingError(category string) {
 	if _, ok := validErrorCategories[category]; !ok {
 		category = "other"
