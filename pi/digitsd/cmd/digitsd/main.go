@@ -866,7 +866,7 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 	return regs, web, serial, audio
 }
 
-func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule, *subsystem.WiFiAPModule) {
+func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
 	web := subsystem.NewWebModule()
 	gpclk0 := subsystem.NewGPCLK0Module()
 	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
@@ -887,7 +887,7 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 		{Module: wifiAP, Disabled: true},
 		{Module: web, Required: true},
 	}
-	return regs, web, serial, audio, wifiAP
+	return regs, web, serial, audio
 }
 
 func main() {
@@ -934,7 +934,7 @@ func main() {
 		// Crash log to /data survives reboots for post-mortem.
 		setupCrashLog("/data/digits/crash.log")
 
-		regs, web, serial, audioMod, wifiAP := setupRegistrations()
+		regs, web, serial, audioMod := setupRegistrations()
 		mgr := subsystem.NewManager(regs)
 		web.SetLogPath("/tmp/setup.log")
 		web.SetManager(mgr)
@@ -943,7 +943,7 @@ func main() {
 			slog.Error("setup init failed", "error", err)
 			os.Exit(1)
 		}
-		runSetupMode(web, serial, audioMod, wifiAP)
+		runSetupMode(web, serial, audioMod)
 		return
 	}
 
