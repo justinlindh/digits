@@ -413,7 +413,7 @@ func (c *Controller) onHookOff() {
 			slog.Info("phone: callback pickup, auto-dialing", "target", number)
 			c.state = StateCALLING
 			c.initiateCallAfterDelay(number, StateCALLING, "phone: callback auto-dial failed",
-				func() { c.playRejectSequence(StateCALLING) })
+				func() { c.playRejectSequence() })
 		} else {
 			// Incoming: answer the call; activePeer was set when the ring arrived.
 			c.state = StateCONNECTED
@@ -600,7 +600,7 @@ func (c *Controller) onKey(digit string) {
 			slog.Info("phone: CALL_RETURN -> CALLING", "number", number)
 			c.state = StateCALLING
 			c.initiateCallAfterDelay(number, StateCALLING, "phone: call return failed, server unreachable",
-				func() { c.playRejectSequence(StateCALLING) })
+				func() { c.playRejectSequence() })
 		}
 	case StateADD_DIALTONE:
 		// First key during add-dial: stop the second dial tone, start collecting.
@@ -650,12 +650,12 @@ func (c *Controller) onDial(number string) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone(ToneRingback)
-		go c.playRejectSequence(StateCALLING)
+		go c.playRejectSequence()
 		return
 	}
 	c.state = StateCALLING
 	c.initiateCallAfterDelay(number, StateCALLING, "phone: call failed, server unreachable",
-		func() { c.playRejectSequence(StateCALLING) })
+		func() { c.playRejectSequence() })
 }
 
 // initiateCallAfterDelay simulates the PSTN call-setup pause and then starts
@@ -685,13 +685,13 @@ func (c *Controller) initiateCallAfterDelay(number string, expectedState State, 
 
 // playRejectSequence plays the POTS intercept sequence: ringback is already
 // playing from the caller, so wait 3s (simulates connection attempt), then
-// SIT tones + busy. Runs without holding the controller lock and checks
-// expectedState before each step so a hang-up aborts cleanly.
-func (c *Controller) playRejectSequence(expectedState State) {
+// SIT tones + busy. Runs without holding the controller lock and checks the
+// call is still in StateCALLING before each step so a hang-up aborts cleanly.
+func (c *Controller) playRejectSequence() {
 	checkState := func() bool {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		return c.state == expectedState
+		return c.state == StateCALLING
 	}
 
 	time.Sleep(c.timing.RejectWait)
