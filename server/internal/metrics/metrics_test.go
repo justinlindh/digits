@@ -165,9 +165,9 @@ func TestActiveDeviceAndCallGauges(t *testing.T) {
 
 func TestObserveSignalingError(t *testing.T) {
 	r := New("test", "abc123")
-	r.ObserveSignalingError(string(ErrTURNAllocFailed))
-	r.ObserveSignalingError(string(ErrTURNAllocFailed))
-	r.ObserveSignalingError(string(ErrICETimeout))
+	r.ObserveSignalingError("turn_alloc_failed")
+	r.ObserveSignalingError("turn_alloc_failed")
+	r.ObserveSignalingError("ice_timeout")
 
 	if got := testutil.ToFloat64(r.SignalingErrors.WithLabelValues("turn_alloc_failed")); got != 2 {
 		t.Errorf("turn_alloc_failed counter = %v, want 2", got)
@@ -210,7 +210,7 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 	// at least one labelled child has been observed.
 	r.HTTPRequestsTotal.WithLabelValues("/api/status", "GET", "200").Inc()
 	r.HTTPRequestDuration.WithLabelValues("/api/status", "GET", "200").Observe(0.012)
-	r.ObserveSignalingError(string(ErrTURNAllocFailed))
+	r.ObserveSignalingError("turn_alloc_failed")
 
 	srv := httptest.NewServer(promhttp.HandlerFor(r.Reg, promhttp.HandlerOpts{Registry: r.Reg}))
 	defer srv.Close()

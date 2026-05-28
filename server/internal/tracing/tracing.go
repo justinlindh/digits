@@ -21,7 +21,7 @@
 //     service.instance.id (the pod / container hostname), deployment
 //     environment, plus the static cluster=homelab label.
 //   - Span events for signaling errors using the closed-set category
-//     identifiers from internal/metrics.SignalingErrorCategory.
+//     identifiers accepted by internal/metrics.ObserveSignalingError.
 //   - Relay signaling spans: message type, internal line numbers
 //     (signaling.from, signaling.to), and call_id. These are opaque
 //     internal identifiers, not real telephone numbers or PII. They
