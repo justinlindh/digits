@@ -9101,6 +9101,10 @@
 		(at 175.26 101.6)
 		(uuid "faf47937-1b1f-4cae-b8c7-f71e988aabd6")
 	)
+	(no_connect
+		(at 44.45 34.29)
+		(uuid "6ccd332a-e566-4050-98ab-ec620bd5b198")
+	)
 	(wire
 		(pts
 			(xy 200 200.32) (xy 194.92 200.32)

@@ -475,9 +475,9 @@ Three M3 mechanical mounts, positions locked by the phone enclosure:
 
 | Ref | Position (mm) | Footprint |
 |---|---|---|
-| MH1 | (23.4, 47.96) | MountingHole_3.2mm_M3 |
-| MH2 | (82.3, 61.16) | MountingHole_3.2mm_M3 |
-| MH3 | (87.4, 30.46) | MountingHole_3.2mm_M3 |
+| MH1 | (22.939, 20.786) | MountingHole_3.2mm_M3 |
+| MH2 | (36.139, 79.686) | MountingHole_3.2mm_M3 |
+| MH3 | (53.639, 15.686) | MountingHole_3.2mm_M3 |
 
 No electrical connections.
 

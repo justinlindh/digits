@@ -141,7 +141,7 @@ The off-board signal connectors are SMD JST ZH (1.5mm pitch). The Pi header is a
 | D2 | Red LED | 0603 | C2286 | +5V via R12, /LED12V_K | Power indicator on the +5V rail. The net `/LED12V_K` is a legacy label; it sits on +5V on this revision. |
 | D3 | Yellow-green LED (KENTO KT-0603YG) | 0603 | C2289 | +3V3 via R13, /LED3V3_K | Power indicator on the +3V3 rail. |
 | R12 | 300 ohm | 0402 | C25102 | D2 cathode (/LED12V_K) -> GND | Current limit for D2. |
-| R13 | 120 ohm | 0402 | C25752 | D3 cathode (/LED3V3_K) -> GND | Current limit for D3, sized so the +3V3 indicator reliably lights at ~10mA. |
+| R13 | 120 ohm | 0402 | C25079 | D3 cathode (/LED3V3_K) -> GND | Current limit for D3, sized so the +3V3 indicator reliably lights at ~10mA. |
 
 SW1 has no LCSC part assigned in the schematic: it is the custom hand-placed DPDT cradle switch (footprint SW_DPDT_Hook_24.2x17.1mm).
 
