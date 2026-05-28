@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,7 +24,7 @@ func TestStartDrainingBlocksNewRegistrations(t *testing.T) {
 
 	newConn := &Conn{Send: make(chan []byte, 1)}
 	err := hub.Register("3140002", newConn)
-	if err != ErrDraining {
+	if !errors.Is(err, ErrDraining) {
 		t.Fatalf("expected ErrDraining, got %v", err)
 	}
 

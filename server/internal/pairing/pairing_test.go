@@ -4,6 +4,7 @@ package pairing
 
 import (
 	"context"
+	"errors"
 	"os"
 	"regexp"
 	"testing"
@@ -103,7 +104,7 @@ func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
 	s := setupStore(t)
 	hhID := seedHousehold(t, s)
 	_, _, err := s.ClaimDevice(context.Background(), "999999", "5550101", "Bad Phone", "Bad Phone", hhID)
-	if err != ErrInvalidCode {
+	if !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("expected ErrInvalidCode, got %v", err)
 	}
 }
@@ -123,7 +124,7 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 	}
 
 	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", "Expired Phone", seedHousehold(t, s))
-	if err != ErrInvalidCode {
+	if !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
 	}
 }
