@@ -73,7 +73,7 @@ func NewRedisBridge(redisURL string) (*RedisBridge, error) {
 		client = redis.NewClient(opts)
 	}
 
-	podID, _ := os.Hostname()
+	podID, _ := os.Hostname() //nolint:errcheck // empty hostname is fine
 	if podID == "" {
 		podID = "unknown"
 	}

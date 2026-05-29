@@ -73,6 +73,8 @@ func CursorForEntry(e HistoryEntry) HistoryCursor {
 		c.ID = strconv.FormatInt(e.Call.ID, 10)
 	case HistoryEntryConference:
 		c.ID = e.Conference.ID.String()
+	default:
+		panic(fmt.Sprintf("calls: unknown HistoryEntryKind %v", e.Kind))
 	}
 	return c
 }

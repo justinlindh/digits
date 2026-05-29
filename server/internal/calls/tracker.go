@@ -41,7 +41,9 @@ type Call struct {
 	ForceEndedBy            *string // UUID of user who force-ended, nil if peer-initiated
 }
 
-type activeCall struct {
+// ActiveCall is a snapshot of an in-flight 2-party call. It is returned by
+// Tracker.Active and CallState.Active for use by metrics and dashboard handlers.
+type ActiveCall struct {
 	ID        int64
 	Caller    string
 	Callee    string
@@ -77,7 +79,7 @@ type callEndObserver interface {
 type Tracker struct {
 	db          *db.Database
 	mu          sync.Mutex
-	active      map[string]*activeCall // "caller→callee" → call
+	active      map[string]*ActiveCall // "caller→callee" → call
 	conferences *ConferenceTracker
 	health      healthLifecycle
 	dashEvents  dashNotifier
@@ -90,7 +92,7 @@ type Tracker struct {
 func New(d *db.Database) *Tracker {
 	return &Tracker{
 		db:          d,
-		active:      make(map[string]*activeCall),
+		active:      make(map[string]*ActiveCall),
 		conferences: NewConferenceTracker(),
 	}
 }
@@ -148,7 +150,7 @@ func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, 
 	}
 
 	t.mu.Lock()
-	t.active[callKey(from, to)] = &activeCall{
+	t.active[callKey(from, to)] = &ActiveCall{
 		ID:        id,
 		Caller:    from,
 		Callee:    to,
@@ -442,13 +444,13 @@ func (t *Tracker) InCall(a, b string) bool {
 	return fwd || rev
 }
 
-func (t *Tracker) Active() []activeCall {
+func (t *Tracker) Active() []ActiveCall {
 	if s := t.callStateSnapshot(); s != nil {
 		return s.Active(context.Background())
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	calls := make([]activeCall, 0, len(t.active))
+	calls := make([]ActiveCall, 0, len(t.active))
 	for _, c := range t.active {
 		calls = append(calls, *c)
 	}
@@ -736,7 +738,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		if b < a {
 			a, b = b, a
 		}
-		t.active[callKey(a, b)] = &activeCall{ID: continuationCallID, Caller: a, Callee: b, StartedAt: time.Now()}
+		t.active[callKey(a, b)] = &ActiveCall{ID: continuationCallID, Caller: a, Callee: b, StartedAt: time.Now()}
 	}
 	h := t.health
 	s := t.state
