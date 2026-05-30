@@ -7,7 +7,7 @@ import (
 
 func TestClockParts(t *testing.T) {
 	tests := []struct {
-		in   int
+		in      int
 		h, m, s int
 	}{
 		{0, 0, 0, 0},

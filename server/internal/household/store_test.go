@@ -412,4 +412,3 @@ func TestStore_Delete_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
-

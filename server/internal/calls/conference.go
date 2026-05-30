@@ -20,7 +20,7 @@ import (
 type ConferenceRole int
 
 const (
-	ConferenceRoleHost  ConferenceRole = iota
+	ConferenceRoleHost ConferenceRole = iota
 	ConferenceRoleAdded
 )
 
