@@ -75,26 +75,34 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// calls the user was not part of.
 	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
 
-	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt}
-	callerEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Caller, linkedIndex, ownedLines)
+	caller, callee, err := h.buildCallEndpoints(r.Context(), call, linkedIndex, ownedLines)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "link_health: build caller endpoint failed", "call_id", callID, "err", err)
+		slog.ErrorContext(r.Context(), "link_health: build endpoints failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	calleeEndpoint, err := h.buildLinkHealthEndpoint(r.Context(), call.ID, call.Callee, linkedIndex, ownedLines)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "link_health: build callee endpoint failed", "call_id", callID, "err", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	resp.Caller = callerEndpoint
-	resp.Callee = calleeEndpoint
+	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt, Caller: caller, Callee: callee}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		slog.ErrorContext(r.Context(), "link_health encode failed", "call_id", callID, "err", err)
 	}
+}
+
+// buildCallEndpoints assembles the caller and callee LinkHealthEndpointResp
+// values for a 2-party call in one go. The same caller/callee pair is needed
+// by the JSON endpoint, the live-detail page, and the SSE sample frame; this
+// helper keeps the duplicated nil-error short-circuit out of all three.
+func (h *Handler) buildCallEndpoints(ctx context.Context, call calls.Call, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, LinkHealthEndpointResp, error) {
+	caller, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
+	if err != nil {
+		return LinkHealthEndpointResp{}, LinkHealthEndpointResp{}, fmt.Errorf("caller: %w", err)
+	}
+	callee, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	if err != nil {
+		return LinkHealthEndpointResp{}, LinkHealthEndpointResp{}, fmt.Errorf("callee: %w", err)
+	}
+	return caller, callee, nil
 }
 
 func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
@@ -250,11 +258,7 @@ func writeSSE(w io.Writer, event, data string) error {
 // it as a "sample" SSE frame. Used for the initial stream snapshot and for
 // every subsequent SampleKind event; the two are the same frame.
 func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
-	callerEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
-	if err != nil {
-		return err
-	}
-	calleeEp, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	callerEp, calleeEp, err := h.buildCallEndpoints(ctx, call, linkedIndex, ownedLines)
 	if err != nil {
 		return err
 	}
