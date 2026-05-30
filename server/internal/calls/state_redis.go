@@ -194,9 +194,9 @@ func (s *CallState) CanAddAsHost(ctx context.Context, number string) bool {
 	return false
 }
 
-func (s *CallState) Active(ctx context.Context) []activeCall {
+func (s *CallState) Active(ctx context.Context) []ActiveCall {
 	seen := make(map[int64]bool)
-	var calls []activeCall
+	var calls []ActiveCall
 
 	iter := s.client.Scan(ctx, 0, callKeyPrefix+"*", 100).Iterator()
 	for iter.Next(ctx) {
@@ -227,7 +227,7 @@ func (s *CallState) Active(ctx context.Context) []activeCall {
 				callee = number
 			}
 
-			calls = append(calls, activeCall{
+			calls = append(calls, ActiveCall{
 				ID:        e.ID,
 				Caller:    caller,
 				Callee:    callee,
