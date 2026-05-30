@@ -57,6 +57,22 @@ func toAPISample(s calls.Sample) LinkHealthSample {
 	}
 }
 
+// samplesToWindow converts a calls.Sample slice into a LinkHealthSample window
+// and a pointer to the most recent sample. Returns an empty (non-nil) window
+// and a nil latest when samples is empty, matching the JSON shape callers
+// emit for endpoints with no observations.
+func samplesToWindow(samples []calls.Sample) ([]LinkHealthSample, *LinkHealthSample) {
+	if len(samples) == 0 {
+		return []LinkHealthSample{}, nil
+	}
+	window := make([]LinkHealthSample, len(samples))
+	for i, s := range samples {
+		window[i] = toAPISample(s)
+	}
+	latest := window[len(window)-1]
+	return window, &latest
+}
+
 func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	callID, err := strconv.ParseInt(idStr, 10, 64)
@@ -104,31 +120,16 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 	// linked-index for peer names, then bare number as fallback.
 	out.DisplayName = resolveMemberDisplayName(number, ownedLines, linkedIndex)
 
-	// Memory first.
-	windowMem := h.healthStore.Window(callID, number)
-	if len(windowMem) > 0 {
-		out.Window = make([]LinkHealthSample, len(windowMem))
-		for i, s := range windowMem {
-			out.Window[i] = toAPISample(s)
-		}
-		la := toAPISample(windowMem[len(windowMem)-1])
-		out.Latest = &la
+	if windowMem := h.healthStore.Window(callID, number); len(windowMem) > 0 {
+		out.Window, out.Latest = samplesToWindow(windowMem)
 		return out, nil
 	}
 
-	// DB fallback.
 	dbSamples, err := h.healthStore.Readback(ctx, callID, number, calls.RingCapacity)
 	if err != nil {
 		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
 	}
-	out.Window = make([]LinkHealthSample, len(dbSamples))
-	for i, s := range dbSamples {
-		out.Window[i] = toAPISample(s)
-	}
-	if len(dbSamples) > 0 {
-		la := toAPISample(dbSamples[len(dbSamples)-1])
-		out.Latest = &la
-	}
+	out.Window, out.Latest = samplesToWindow(dbSamples)
 	return out, nil
 }
 
