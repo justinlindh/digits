@@ -319,34 +319,6 @@ func (p *Playback) PeriodSize() int {
 	return p.cfg.FrameSize
 }
 
-// Prime writes silence to fill the ALSA buffer, preventing the first real
-// snd_pcm_writei from blocking while the hardware buffer drains.
-// Call once before switching from idle/keepalive to live audio playback.
-func (p *Playback) Prime() error {
-	silence := make([]int16, p.cfg.FrameSize*p.cfg.Channels)
-
-	// Recover from any prior underrun state
-	state := C.snd_pcm_state(p.handle)
-	if state == C.SND_PCM_STATE_XRUN || state == C.SND_PCM_STATE_SETUP {
-		C.snd_pcm_prepare(p.handle)
-	}
-
-	// Fill the buffer (4 periods = 80ms at 960-sample period, 48kHz)
-	for i := 0; i < 4; i++ {
-		rc := C.snd_pcm_writei(p.handle, unsafe.Pointer(&silence[0]),
-			C.snd_pcm_uframes_t(p.cfg.FrameSize))
-		if rc < 0 {
-			C.snd_pcm_recover(p.handle, C.int(rc), 0)
-			rc = C.snd_pcm_writei(p.handle, unsafe.Pointer(&silence[0]),
-				C.snd_pcm_uframes_t(p.cfg.FrameSize))
-			if rc < 0 {
-				return fmt.Errorf("snd_pcm_writei (prime): %s", C.GoString(C.snd_strerror(C.int(rc))))
-			}
-		}
-	}
-	return nil
-}
-
 // Close drains and closes the playback handle.
 func (p *Playback) Close() {
 	if p.handle != nil {
