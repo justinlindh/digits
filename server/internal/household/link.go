@@ -11,6 +11,14 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
+// HouseholdLink status values written to and read from the household_links
+// table. Must match the DB CHECK constraint defined in db.go.
+const (
+	LinkStatusPending = "pending"
+	LinkStatusActive  = "active"
+	LinkStatusRevoked = "revoked"
+)
+
 const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const inviteCodeLength = 8
 

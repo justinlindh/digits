@@ -159,7 +159,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
-	if call.Status == "ended" {
+	if call.Status == calls.CallStatusEnded {
 		http.NotFound(w, r)
 		return
 	}
@@ -358,7 +358,7 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 
 	// Idempotency: if the call already ended, just return 200 without
 	// touching the audit column.
-	if call.Status == "ended" {
+	if call.Status == calls.CallStatusEnded {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{}"))
 		return

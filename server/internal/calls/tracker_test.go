@@ -61,7 +61,7 @@ func TestCallLifecycle(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 call, got %d", len(calls))
 	}
-	if calls[0].Status != "ended" {
+	if calls[0].Status != CallStatusEnded {
 		t.Fatalf("expected status ended, got %s", calls[0].Status)
 	}
 }

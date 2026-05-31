@@ -114,7 +114,7 @@ func TestCreateInvite_ReturnsValidLink(t *testing.T) {
 	if link.InviteCode == "" || len(link.InviteCode) != inviteCodeLength {
 		t.Errorf("expected %d-char invite code, got %q", inviteCodeLength, link.InviteCode)
 	}
-	if link.Status != "pending" {
+	if link.Status != LinkStatusPending {
 		t.Errorf("expected status 'pending', got %q", link.Status)
 	}
 	if link.HouseholdAID != householdID {
@@ -143,7 +143,7 @@ func TestAcceptInvite_ActivatesLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
-	if link.Status != "active" {
+	if link.Status != LinkStatusActive {
 		t.Errorf("expected status 'active', got %q", link.Status)
 	}
 	if link.HouseholdBID == nil {
@@ -235,7 +235,7 @@ func TestRevokeLink_ChangesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if updated.Status != "revoked" {
+	if updated.Status != LinkStatusRevoked {
 		t.Errorf("expected status 'revoked', got %q", updated.Status)
 	}
 	if updated.RevokedAt == nil {
