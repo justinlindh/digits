@@ -23,7 +23,7 @@ func TestInviteStore_CreateAndGet(t *testing.T) {
 	if inv.Email != "invited@example.com" {
 		t.Errorf("email not lowercased: got %q", inv.Email)
 	}
-	if inv.Status != "pending" {
+	if inv.Status != InviteStatusPending {
 		t.Errorf("expected status pending, got %q", inv.Status)
 	}
 
@@ -54,7 +54,7 @@ func TestInviteStore_AcceptInvite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept invite: %v", err)
 	}
-	if accepted.Status != "accepted" {
+	if accepted.Status != InviteStatusAccepted {
 		t.Errorf("expected accepted, got %q", accepted.Status)
 	}
 	if accepted.AcceptedAt == nil {
@@ -89,7 +89,7 @@ func TestInviteStore_CancelInvite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get after cancel: %v", err)
 	}
-	if got.Status != "cancelled" {
+	if got.Status != InviteStatusCancelled {
 		t.Errorf("expected cancelled, got %q", got.Status)
 	}
 }
