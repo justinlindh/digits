@@ -100,41 +100,20 @@ func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls
 	}
 }
 
-// lastSample returns a pointer to the last element of window, or nil if empty.
-// Copies the value to avoid aliasing the slice backing array.
-func lastSample(window []LinkHealthSample) *LinkHealthSample {
-	if len(window) == 0 {
-		return nil
-	}
-	s := window[len(window)-1]
-	return &s
-}
-
 func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid.UUID, from, peer string) ConferenceLinkHealthEdge {
 	out := ConferenceLinkHealthEdge{From: from, Peer: peer, Window: []LinkHealthSample{}}
 
-	// Memory first.
-	windowMem := h.healthStore.WindowEdge(confID, from, peer)
-	if len(windowMem) > 0 {
-		out.Window = make([]LinkHealthSample, len(windowMem))
-		for i, s := range windowMem {
-			out.Window[i] = toAPISample(s)
-		}
-		out.Latest = lastSample(out.Window)
+	if windowMem := h.healthStore.WindowEdge(confID, from, peer); len(windowMem) > 0 {
+		out.Window, out.Latest = samplesToWindow(windowMem)
 		return out
 	}
-	// DB fallback.
 	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
 	if err != nil {
 		slog.WarnContext(ctx, "ReadbackEdge failed; serving empty window",
 			"conf_id", confID, "from", from, "peer", peer, "err", err)
 		return out
 	}
-	out.Window = make([]LinkHealthSample, len(dbSamples))
-	for i, s := range dbSamples {
-		out.Window[i] = toAPISample(s)
-	}
-	out.Latest = lastSample(out.Window)
+	out.Window, out.Latest = samplesToWindow(dbSamples)
 	return out
 }
 
