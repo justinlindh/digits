@@ -32,6 +32,24 @@ func oldestVersions(infos []signaling.DeviceInfoSnapshot) (fw, pi string) {
 	return
 }
 
+// updateNotes returns the Pi and firmware release notes that span from the
+// oldest connected device's reported version up to latestPi / latestFw. Empty
+// when idx is nil or when nothing on this line is behind its component's
+// latest release.
+func updateNotes(idx *updates.ReleaseIndex, infos []signaling.DeviceInfoSnapshot, latestPi, latestFw string) (pi, fw []updates.Release) {
+	if idx == nil {
+		return nil, nil
+	}
+	oldestFw, oldestPi := oldestVersions(infos)
+	if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
+		pi = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
+	}
+	if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
+		fw = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
+	}
+	return pi, fw
+}
+
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
@@ -133,15 +151,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 			}
 		}
 
-		if idx != nil {
-			oldestFw, oldestPi := oldestVersions(infos)
-			if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
-				row.FirmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
-			}
-			if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
-				row.PiUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
-			}
-		}
+		row.PiUpdateNotes, row.FirmwareUpdateNotes = updateNotes(idx, infos, latestPi, latestFw)
 		rows[i] = row
 	}
 	allSilent := len(rows) > 0
@@ -375,16 +385,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		devInfo = &allInfos[0]
 	}
 
-	var piUpdateNotes, firmwareUpdateNotes []updates.Release
-	if idx != nil {
-		oldestFw, oldestPi := oldestVersions(allInfos)
-		if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
-			piUpdateNotes = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
-		}
-		if latestFw != "" && oldestFw != "" && updates.CompareSemver(oldestFw, latestFw) < 0 {
-			firmwareUpdateNotes = idx.RangeReleases(updates.ComponentFirmware, oldestFw, latestFw)
-		}
-	}
+	piUpdateNotes, firmwareUpdateNotes := updateNotes(idx, allInfos, latestPi, latestFw)
 
 	var otherLines []line.Line
 	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
