@@ -86,38 +86,31 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// calls. When both sides of the call are own lines (intra-household),
 	// each card uses the other local line's name as its peer instead of a
 	// phone-number fallback.
+	annotate := func(self, peer *lineRow, peerNumber, elapsed string) {
+		if self == nil {
+			return
+		}
+		self.OnCall = true
+		self.OnCallElapsed = elapsed
+		if peer != nil {
+			self.OnCallPeerName = peer.Line.Name
+		} else {
+			self.OnCallPeerName = resolvePeerName(peerNumber, linkedLineIndex)
+		}
+		if id, ok := h.tracker.CallIDFor(self.Line.Number); ok {
+			self.OnCallID = id
+		}
+	}
 	var activeCount int
 	for _, pair := range active {
-		if ownLineByNumber[pair.Caller] != nil || ownLineByNumber[pair.Callee] != nil {
-			activeCount++
-		}
 		callerRow := ownLineByNumber[pair.Caller]
 		calleeRow := ownLineByNumber[pair.Callee]
+		if callerRow != nil || calleeRow != nil {
+			activeCount++
+		}
 		elapsed := fmtElapsed(time.Since(pair.StartedAt))
-		if callerRow != nil {
-			callerRow.OnCall = true
-			callerRow.OnCallElapsed = elapsed
-			if calleeRow != nil {
-				callerRow.OnCallPeerName = calleeRow.Line.Name
-			} else {
-				callerRow.OnCallPeerName = resolvePeerName(pair.Callee, linkedLineIndex)
-			}
-			if id, ok := h.tracker.CallIDFor(callerRow.Line.Number); ok {
-				callerRow.OnCallID = id
-			}
-		}
-		if calleeRow != nil {
-			calleeRow.OnCall = true
-			calleeRow.OnCallElapsed = elapsed
-			if callerRow != nil {
-				calleeRow.OnCallPeerName = callerRow.Line.Name
-			} else {
-				calleeRow.OnCallPeerName = resolvePeerName(pair.Caller, linkedLineIndex)
-			}
-			if id, ok := h.tracker.CallIDFor(calleeRow.Line.Number); ok {
-				calleeRow.OnCallID = id
-			}
-		}
+		annotate(callerRow, calleeRow, pair.Callee, elapsed)
+		annotate(calleeRow, callerRow, pair.Caller, elapsed)
 	}
 
 	// Pluck the first household-scoped active call for the AM dashboard's
