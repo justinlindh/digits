@@ -127,7 +127,7 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		Call:         call,
 		Caller:       callerEp,
 		Callee:       calleeEp,
-		Ended:        call.Status == "ended",
+		Ended:        call.Status == calls.CallStatusEnded,
 		ForceEndedBy: h.forceEndedLabel(r.Context(), call),
 	}
 

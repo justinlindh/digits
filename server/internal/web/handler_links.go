@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
+	"github.com/justinlindh/digits/server/internal/household"
 )
 
 type linksData struct {
@@ -179,7 +180,7 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	wasPending := link.Status == "pending"
+	wasPending := link.Status == household.LinkStatusPending
 
 	if err := h.linkStore.RevokeLink(r.Context(), id, user.ID); err != nil {
 		slog.ErrorContext(r.Context(), "revoke link failed", "link_id", id, "err", err)

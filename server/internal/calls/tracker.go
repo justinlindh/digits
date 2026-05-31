@@ -16,6 +16,15 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
+// Call status values written to and read from the calls table. Must match the
+// DB CHECK constraint defined in db.go.
+const (
+	CallStatusInitiated = "initiated"
+	CallStatusRinging   = "ringing"
+	CallStatusConnected = "connected"
+	CallStatusEnded     = "ended"
+)
+
 // role strings written to the conference_members table. Must match the DB
 // CHECK constraint defined in db.go and the wire constants in
 // server/internal/signaling (signaling imports calls, so we can't share directly).
