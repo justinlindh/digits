@@ -194,12 +194,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeRequestICE:
 		r.handleRequestICE(ctx, from)
 	case TypeDeviceInfo:
-		updated := false
-		if msg.HardwareID != "" {
-			updated = r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
-		} else {
-			updated = r.Hub.UpdateDeviceInfo(from, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
-		}
+		// msg.HardwareID is always set: the WS handler stamps it from
+		// conn.HardwareID and rejects registrations without a hardware_id.
+		updated := r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
 		if updated {
 			slog.InfoContext(ctx, "device_info", "number", from,
 				"hardware_id", msg.HardwareID,
