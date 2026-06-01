@@ -323,7 +323,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair("5550001", "5550002")
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair("5550001", "5550002")
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	if err := tr.OnCallAnswered(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallAnswered A->B: %v", err)
 	}
-	callID := tr.CallIDForPair("5550001", "5550002")
+	callID := tr.CallIDForPair(context.Background(), "5550001", "5550002")
 	if _, err := tr.OnCallInitiated(context.Background(), "5550001", "5550003"); err != nil {
 		t.Fatalf("OnCallInitiated A->C: %v", err)
 	}

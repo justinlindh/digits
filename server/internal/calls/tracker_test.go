@@ -97,7 +97,7 @@ func TestActiveCalls(t *testing.T) {
 	}
 
 	_ = tr.OnCallEnded(context.Background(), "3140001", "3140002")
-	active = tr.Active()
+	active = tr.Active(context.Background())
 	if len(active) != 0 {
 		t.Fatalf("expected 0 active calls, got %d", len(active))
 	}
