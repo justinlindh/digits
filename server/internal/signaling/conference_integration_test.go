@@ -254,10 +254,10 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	}
 
 	// Verify both calls are tracked before hangup.
-	if !tr.InCall("5550001", "5550002") {
+	if !tr.InCall(context.Background(), "5550001", "5550002") {
 		t.Fatal("expected A-B to be an active call before hangup")
 	}
-	if !tr.InCall("5550001", "5550003") {
+	if !tr.InCall(context.Background(), "5550001", "5550003") {
 		t.Fatal("expected A-C to be an active call before hangup")
 	}
 
@@ -269,10 +269,10 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	})
 
 	// Both calls must be gone from the in-memory tracker.
-	if tr.InCall("5550001", "5550002") {
+	if tr.InCall(context.Background(), "5550001", "5550002") {
 		t.Error("A-B call still active in tracker after hangup")
 	}
-	if tr.InCall("5550001", "5550003") {
+	if tr.InCall(context.Background(), "5550001", "5550003") {
 		t.Error("A-C call still active in tracker after hangup")
 	}
 
@@ -379,13 +379,13 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for all three after cleanup.
-	if tr.Busy("5550001") {
+	if tr.Busy(context.Background(), "5550001") {
 		t.Error("A should not be busy after non-host conference disconnect")
 	}
-	if tr.Busy("5550002") {
+	if tr.Busy(context.Background(), "5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy("5550003") {
+	if tr.Busy(context.Background(), "5550003") {
 		t.Error("C should not be busy after non-host conference disconnect")
 	}
 }
@@ -507,10 +507,10 @@ func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	}
 
 	// IsBusy must return false for B and C after cleanup.
-	if tr.Busy("5550002") {
+	if tr.Busy(context.Background(), "5550002") {
 		t.Error("B should not be busy after conference disconnect")
 	}
-	if tr.Busy("5550003") {
+	if tr.Busy(context.Background(), "5550003") {
 		t.Error("C should not be busy after conference disconnect")
 	}
 }
