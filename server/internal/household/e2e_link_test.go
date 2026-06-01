@@ -65,7 +65,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	if len(link.InviteCode) != 8 {
 		t.Fatalf("invite code length = %d, want 8", len(link.InviteCode))
 	}
-	if link.Status != "pending" {
+	if link.Status != LinkStatusPending {
 		t.Fatalf("status = %q, want pending", link.Status)
 	}
 	t.Logf("Invite code: %s", link.InviteCode)
@@ -84,7 +84,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
-	if accepted.Status != "active" {
+	if accepted.Status != LinkStatusActive {
 		t.Fatalf("accepted status = %q, want active", accepted.Status)
 	}
 
