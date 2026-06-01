@@ -67,7 +67,7 @@ func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
 		}
 	}
 }
-func (m *mockTracker) Busy(number string) bool {
+func (m *mockTracker) Busy(_ context.Context, number string) bool {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -77,7 +77,7 @@ func (m *mockTracker) Busy(number string) bool {
 	return false
 }
 
-func (m *mockTracker) CanAddAsHost(number string) bool {
+func (m *mockTracker) CanAddAsHost(_ context.Context, number string) bool {
 	callerCount := 0
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
@@ -91,11 +91,11 @@ func (m *mockTracker) CanAddAsHost(number string) bool {
 	return callerCount == 1
 }
 
-func (m *mockTracker) InCall(a, b string) bool {
+func (m *mockTracker) InCall(_ context.Context, a, b string) bool {
 	return m.calls[a+"→"+b] || m.calls[b+"→"+a]
 }
 
-func (m *mockTracker) PeerOf(number string) string {
+func (m *mockTracker) PeerOf(_ context.Context, number string) string {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number {
@@ -108,7 +108,7 @@ func (m *mockTracker) PeerOf(number string) string {
 	return ""
 }
 
-func (m *mockTracker) AllPeersOf(number string) []string {
+func (m *mockTracker) AllPeersOf(_ context.Context, number string) []string {
 	var peers []string
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
@@ -126,10 +126,10 @@ func (m *mockTracker) Conferences() *calls.ConferenceTracker {
 }
 
 func (m *mockTracker) CreateConferencePersistent(ctx context.Context, host string, originatingCallID int64, addedMembers []string) (*calls.Conference, error) {
-	return m.conferences.CreateConference(host, originatingCallID, addedMembers)
+	return m.conferences.CreateConference(ctx, host, originatingCallID, addedMembers)
 }
 
-func (m *mockTracker) CallIDForPair(a, b string) int64 {
+func (m *mockTracker) CallIDForPair(_ context.Context, a, b string) int64 {
 	if id, ok := m.callIDs[a+"→"+b]; ok {
 		return id
 	}
@@ -139,7 +139,7 @@ func (m *mockTracker) CallIDForPair(a, b string) int64 {
 	return 0
 }
 
-func (m *mockTracker) CallIDFor(number string) (int64, bool) {
+func (m *mockTracker) CallIDFor(_ context.Context, number string) (int64, bool) {
 	for k, id := range m.callIDs {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -150,12 +150,12 @@ func (m *mockTracker) CallIDFor(number string) (int64, bool) {
 }
 
 func (m *mockTracker) EndConferencePersistent(ctx context.Context, id uuid.UUID, reason string) error {
-	_, err := m.conferences.EndConference(id, reason)
+	_, err := m.conferences.EndConference(ctx, id, reason)
 	return err
 }
 
 func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, bool, error) {
-	return m.conferences.DropMember(id, phone, reason)
+	return m.conferences.DropMember(ctx, id, phone, reason)
 }
 
 func (m *mockTracker) LastInboundCaller(ctx context.Context, number string) (string, error) {
@@ -511,7 +511,7 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
 	<-conn2.Send // drain ring
 
-	if !tracker.Busy("3140001") {
+	if !tracker.Busy(context.Background(), "3140001") {
 		t.Fatal("expected 3140001 to be busy after call initiated")
 	}
 
@@ -519,10 +519,10 @@ func TestRelayHangupWithoutToResolvesPeer(t *testing.T) {
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeHangup})
 
 	// Tracker should have resolved the peer and ended the call
-	if tracker.Busy("3140001") {
+	if tracker.Busy(context.Background(), "3140001") {
 		t.Fatal("expected 3140001 to no longer be busy after hangup")
 	}
-	if tracker.Busy("3140002") {
+	if tracker.Busy(context.Background(), "3140002") {
 		t.Fatal("expected 3140002 to no longer be busy after hangup")
 	}
 
@@ -576,7 +576,7 @@ func TestRegression_HangupBeforeAnswer_StopsRing(t *testing.T) {
 		t.Fatal("REGRESSION: D3 did not receive hangup, will keep ringing")
 	}
 
-	if tracker.Busy("5550001") {
+	if tracker.Busy(context.Background(), "5550001") {
 		t.Fatal("D1 still busy after hangup")
 	}
 }
@@ -683,7 +683,7 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	<-conn2.Send // drain ring
 
 	// Verify Phone 2 is busy
-	if !tracker.Busy("3140002") {
+	if !tracker.Busy(context.Background(), "3140002") {
 		t.Fatal("expected phone 2 to be busy after call initiated")
 	}
 
@@ -691,11 +691,11 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	relay.OnDisconnect(context.Background(), "3140002", "")
 
 	// Phone 2 should no longer be busy
-	if tracker.Busy("3140002") {
+	if tracker.Busy(context.Background(), "3140002") {
 		t.Fatal("expected phone 2 to not be busy after disconnect cleanup")
 	}
 	// Phone 1 should also be freed (its call was with Phone 2)
-	if tracker.Busy("3140001") {
+	if tracker.Busy(context.Background(), "3140001") {
 		t.Fatal("expected phone 1 to not be busy after peer disconnected")
 	}
 
@@ -761,13 +761,13 @@ func TestHandleHangup_EndsAllActivePeers(t *testing.T) {
 	}
 
 	// Both calls must be removed from the tracker.
-	if tracker.Busy("5550001") {
+	if tracker.Busy(context.Background(), "5550001") {
 		t.Error("A should no longer be busy after hangup")
 	}
-	if tracker.Busy("5550002") {
+	if tracker.Busy(context.Background(), "5550002") {
 		t.Error("B should no longer be busy after hangup")
 	}
-	if tracker.Busy("5550003") {
+	if tracker.Busy(context.Background(), "5550003") {
 		t.Error("C should no longer be busy after hangup")
 	}
 
@@ -955,7 +955,7 @@ func TestRelayForceHangupTolerantOfOnePeerOffline(t *testing.T) {
 
 func TestHandleLinkHealth_3WayPath_RecordsEdge(t *testing.T) {
 	tracker := newMockTracker()
-	conf, err := tracker.conferences.CreateConference("A", 1, []string{"B", "C"})
+	conf, err := tracker.conferences.CreateConference(context.Background(), "A", 1, []string{"B", "C"})
 	if err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}
@@ -986,7 +986,7 @@ func TestHandleLinkHealth_3WayPath_RecordsEdge(t *testing.T) {
 
 func TestHandleLinkHealth_3WayPath_BogusPeerDropped(t *testing.T) {
 	tracker := newMockTracker()
-	if _, err := tracker.conferences.CreateConference("A", 1, []string{"B", "C"}); err != nil {
+	if _, err := tracker.conferences.CreateConference(context.Background(), "A", 1, []string{"B", "C"}); err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}
 	store := &fakeHealthRecorder{}

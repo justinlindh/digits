@@ -15,7 +15,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	slog.InfoContext(ctx, "conference: merge requested", "host", host, "held", held, "active", active)
 
 	// 1. Validate: host is in both calls.
-	if !r.Tracker.InCall(host, held) || !r.Tracker.InCall(host, active) {
+	if !r.Tracker.InCall(ctx, host, held) || !r.Tracker.InCall(ctx, host, active) {
 		slog.WarnContext(ctx, "conference: merge rejected", "host", host, "reason", "host_not_in_both_calls", "held", held, "active", active)
 		r.sendRejection(host, msg.ConfID, "host_not_in_both_calls")
 		return
@@ -23,7 +23,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 
 	// 2. Validate: neither added member is already in a conference.
 	for _, p := range []string{held, active} {
-		if r.Tracker.Conferences().IsBusy(p) {
+		if r.Tracker.Conferences().IsBusy(ctx, p) {
 			slog.WarnContext(ctx, "conference: merge rejected", "host", host, "reason", "member_already_in_conference", "busy_member", p)
 			r.sendRejection(host, msg.ConfID, "member_already_in_conference")
 			return
@@ -31,7 +31,7 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 	}
 
 	// 3. Look up the originating call id (A-held).
-	callID := r.Tracker.CallIDForPair(host, held)
+	callID := r.Tracker.CallIDForPair(ctx, host, held)
 	if callID == 0 {
 		slog.WarnContext(ctx, "conference: merge rejected", "host", host, "reason", "call_id_unknown", "held", held)
 		r.sendRejection(host, msg.ConfID, "call_id_unknown")

@@ -37,7 +37,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 	activeCallCount := 0
 	if h.tracker != nil {
-		activeCallCount = len(h.tracker.Active())
+		activeCallCount = len(h.tracker.Active(r.Context()))
 	}
 
 	totalUsers := 0
@@ -99,7 +99,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	allActive := h.tracker.Active()
+	allActive := h.tracker.Active(r.Context())
 	var activeCount int
 	for _, a := range allActive {
 		if nums[a.Caller] || nums[a.Callee] {
@@ -119,7 +119,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 	nums := h.householdNumbers(r)
-	allActive := h.tracker.Active()
+	allActive := h.tracker.Active(r.Context())
 	var pairs []activePair
 	for _, a := range allActive {
 		if nums[a.Caller] || nums[a.Callee] {

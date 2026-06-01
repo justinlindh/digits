@@ -30,7 +30,7 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
-	if !tr.Busy("5550001") {
+	if !tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 busy from 2-party call")
 	}
 
@@ -39,21 +39,21 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	if err := tr.OnCallEnded(context.Background(), "5550001", "5550002"); err != nil {
 		t.Fatalf("OnCallEnded: %v", err)
 	}
-	if tr.Busy("5550001") {
+	if tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 NOT busy after call ended")
 	}
 
-	_, err = tr.Conferences().CreateConference("5550001", id, []string{"5550010", "5550011"})
+	_, err = tr.Conferences().CreateConference(context.Background(), "5550001", id, []string{"5550010", "5550011"})
 	if err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}
-	if !tr.Busy("5550001") {
+	if !tr.Busy(context.Background(), "5550001") {
 		t.Fatalf("expected 5550001 busy via conference")
 	}
-	if !tr.Busy("5550010") {
+	if !tr.Busy(context.Background(), "5550010") {
 		t.Fatalf("expected 5550010 busy via conference")
 	}
-	if tr.Busy("5550099") {
+	if tr.Busy(context.Background(), "5550099") {
 		t.Fatalf("unexpected busy for 5550099")
 	}
 }

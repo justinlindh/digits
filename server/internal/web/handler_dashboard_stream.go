@@ -99,7 +99,7 @@ func (h *Handler) computeDashStatus(r *http.Request, hh *household.Household) da
 	}
 
 	activeCount := 0
-	for _, pair := range h.tracker.Active() {
+	for _, pair := range h.tracker.Active(r.Context()) {
 		if _, ok := ownNums[pair.Caller]; ok {
 			activeCount++
 			continue

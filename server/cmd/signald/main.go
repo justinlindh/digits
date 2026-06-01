@@ -147,7 +147,7 @@ func run(ctx context.Context) error {
 	// tracker at scrape time so we never persist counts elsewhere.
 	mreg := metrics.New(version.Version, version.Commit)
 	mreg.RegisterDevicesGauge(func() float64 { return float64(hub.LocalConnectionCount()) })
-	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active())) })
+	mreg.RegisterCallsGauge(func() float64 { return float64(len(tracker.Active(context.Background()))) })
 
 	// Dashboard pub/sub: hub.Register/Unregister and tracker.OnCall* notify
 	// this broadcaster so the /api/dashboard/stream SSE handler can re-render

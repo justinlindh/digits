@@ -88,7 +88,7 @@ var (
 // CreateConference builds a 3-party conference with host + added members.
 // Returns an error if the cap is exceeded, the host is already hosting,
 // or any member is already in another active conference.
-func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int64, addedMembers []string) (*Conference, error) {
+func (ct *ConferenceTracker) CreateConference(ctx context.Context, host string, originatingCallID int64, addedMembers []string) (*Conference, error) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 
@@ -125,14 +125,14 @@ func (ct *ConferenceTracker) CreateConference(host string, originatingCallID int
 
 	if ct.state != nil {
 		allMembers := append([]string{host}, addedMembers...)
-		ct.state.Create(context.Background(), conf.ID, host, originatingCallID, allMembers)
+		ct.state.Create(ctx, conf.ID, host, originatingCallID, allMembers)
 	}
 
 	return conf, nil
 }
 
 // IsBusy returns true if phone is an active member of any active conference.
-func (ct *ConferenceTracker) IsBusy(phone string) bool {
+func (ct *ConferenceTracker) IsBusy(ctx context.Context, phone string) bool {
 	ct.mu.Lock()
 	if _, ok := ct.memberIndex[phone]; ok {
 		ct.mu.Unlock()
@@ -141,13 +141,13 @@ func (ct *ConferenceTracker) IsBusy(phone string) bool {
 	state := ct.state
 	ct.mu.Unlock()
 	if state != nil {
-		return state.IsBusy(context.Background(), phone)
+		return state.IsBusy(ctx, phone)
 	}
 	return false
 }
 
 // ConferenceByPhone returns the active conference for a phone, or nil.
-func (ct *ConferenceTracker) ConferenceByPhone(phone string) *Conference {
+func (ct *ConferenceTracker) ConferenceByPhone(ctx context.Context, phone string) *Conference {
 	ct.mu.Lock()
 	id, ok := ct.memberIndex[phone]
 	if ok {
@@ -158,13 +158,13 @@ func (ct *ConferenceTracker) ConferenceByPhone(phone string) *Conference {
 	state := ct.state
 	ct.mu.Unlock()
 	if state != nil {
-		return state.ConferenceByPhone(context.Background(), phone)
+		return state.ConferenceByPhone(ctx, phone)
 	}
 	return nil
 }
 
 // ConferenceContains reports whether both phones are members of the same active conference.
-func (ct *ConferenceTracker) ConferenceContains(confID uuid.UUID, phoneA, phoneB string) bool {
+func (ct *ConferenceTracker) ConferenceContains(ctx context.Context, confID uuid.UUID, phoneA, phoneB string) bool {
 	ct.mu.Lock()
 	conf, ok := ct.active[confID]
 	if ok && conf.State == ConferenceStateActive {
@@ -176,7 +176,7 @@ func (ct *ConferenceTracker) ConferenceContains(confID uuid.UUID, phoneA, phoneB
 	state := ct.state
 	ct.mu.Unlock()
 	if state != nil {
-		return state.Contains(context.Background(), confID, phoneA, phoneB)
+		return state.Contains(ctx, confID, phoneA, phoneB)
 	}
 	return false
 }
@@ -184,7 +184,7 @@ func (ct *ConferenceTracker) ConferenceContains(confID uuid.UUID, phoneA, phoneB
 // DropMember removes a single member. Returns the remaining member list and
 // whether the conference ended as a result. In v1, any drop ends the conference
 // (we cap at exactly 3, so dropping to 2 terminates).
-func (ct *ConferenceTracker) DropMember(confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
+func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	conf, ok := ct.active[confID]
@@ -215,7 +215,6 @@ func (ct *ConferenceTracker) DropMember(confID uuid.UUID, phone, reason string) 
 	}
 
 	if ct.state != nil {
-		ctx := context.Background()
 		ct.state.RemoveMember(ctx, confID, phone)
 		ct.state.End(ctx, confID, remaining)
 	}
@@ -245,7 +244,7 @@ func (ct *ConferenceTracker) Snapshot(id uuid.UUID) *Conference {
 
 // EndConference ends the conference with the given reason. Returns the list of
 // members that were still active at end-time.
-func (ct *ConferenceTracker) EndConference(confID uuid.UUID, reason string) ([]string, error) {
+func (ct *ConferenceTracker) EndConference(ctx context.Context, confID uuid.UUID, reason string) ([]string, error) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	conf, ok := ct.active[confID]
@@ -268,7 +267,7 @@ func (ct *ConferenceTracker) EndConference(confID uuid.UUID, reason string) ([]s
 	delete(ct.active, confID)
 
 	if ct.state != nil {
-		ct.state.End(context.Background(), confID, active)
+		ct.state.End(ctx, confID, active)
 	}
 
 	return active, nil
