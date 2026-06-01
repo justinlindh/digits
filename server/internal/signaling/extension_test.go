@@ -132,10 +132,10 @@ func TestExtensionHangup_OnlyExtensionCleared(t *testing.T) {
 	})
 
 	// The main call between A and Y should still be active
-	if !tracker.Busy("3140001") {
+	if !tracker.Busy(context.Background(), "3140001") {
 		t.Fatal("main call should still be active after extension hangup")
 	}
-	if !tracker.Busy("3140002") {
+	if !tracker.Busy(context.Background(), "3140002") {
 		t.Fatal("remote peer should still be active after extension hangup")
 	}
 }

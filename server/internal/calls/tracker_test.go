@@ -76,10 +76,10 @@ func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 	if id <= 0 {
 		t.Fatalf("want positive id, got %d", id)
 	}
-	if got, ok := tr.CallIDFor("555-1111"); !ok || got != id {
+	if got, ok := tr.CallIDFor(context.Background(), "555-1111"); !ok || got != id {
 		t.Fatalf("CallIDFor caller: got (%d,%v), want (%d,true)", got, ok, id)
 	}
-	if got, ok := tr.CallIDFor("555-2222"); !ok || got != id {
+	if got, ok := tr.CallIDFor(context.Background(), "555-2222"); !ok || got != id {
 		t.Fatalf("CallIDFor callee: got (%d,%v), want (%d,true)", got, ok, id)
 	}
 }
@@ -91,13 +91,13 @@ func TestActiveCalls(t *testing.T) {
 	_, _ = tr.OnCallInitiated(context.Background(), "3140001", "3140002")
 	_ = tr.OnCallAnswered(context.Background(), "3140001", "3140002")
 
-	active := tr.Active()
+	active := tr.Active(context.Background())
 	if len(active) != 1 {
 		t.Fatalf("expected 1 active call, got %d", len(active))
 	}
 
 	_ = tr.OnCallEnded(context.Background(), "3140001", "3140002")
-	active = tr.Active()
+	active = tr.Active(context.Background())
 	if len(active) != 0 {
 		t.Fatalf("expected 0 active calls, got %d", len(active))
 	}

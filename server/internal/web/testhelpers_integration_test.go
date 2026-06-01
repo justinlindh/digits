@@ -360,7 +360,7 @@ func startConference(t *testing.T, s lhSetup) uuid.UUID {
 	if err := tr.OnCallAnswered(ctx, s.numA, s.numC); err != nil {
 		t.Fatalf("OnCallAnswered A->C: %v", err)
 	}
-	originatingCallID := tr.CallIDForPair(s.numA, s.numB)
+	originatingCallID := tr.CallIDForPair(ctx, s.numA, s.numB)
 	conf, err := tr.CreateConferencePersistent(ctx, s.numA, originatingCallID, []string{s.numB, s.numC})
 	if err != nil {
 		t.Fatalf("CreateConferencePersistent: %v", err)

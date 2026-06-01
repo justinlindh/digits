@@ -324,12 +324,12 @@ func (t *Tracker) callStateSnapshot() *CallState {
 	return t.state
 }
 
-func (t *Tracker) Busy(number string) bool {
-	if t.conferences.IsBusy(number) {
+func (t *Tracker) Busy(ctx context.Context, number string) bool {
+	if t.conferences.IsBusy(ctx, number) {
 		return true
 	}
 	if s := t.callStateSnapshot(); s != nil {
-		return s.Busy(context.Background(), number)
+		return s.Busy(ctx, number)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -349,12 +349,12 @@ func (t *Tracker) Busy(number string) bool {
 //
 // Together with the normal Busy(to) check, this lets the 5ESS-style three-way
 // flow work without allowing arbitrary multi-call spam.
-func (t *Tracker) CanAddAsHost(number string) bool {
-	if t.conferences.IsBusy(number) {
+func (t *Tracker) CanAddAsHost(ctx context.Context, number string) bool {
+	if t.conferences.IsBusy(ctx, number) {
 		return false
 	}
 	if s := t.callStateSnapshot(); s != nil {
-		return s.CanAddAsHost(context.Background(), number)
+		return s.CanAddAsHost(ctx, number)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -372,9 +372,9 @@ func (t *Tracker) CanAddAsHost(number string) bool {
 
 // AllPeersOf returns all remote parties that number has active 2-party calls
 // with. Empty if number has no active calls.
-func (t *Tracker) AllPeersOf(number string) []string {
+func (t *Tracker) AllPeersOf(ctx context.Context, number string) []string {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.AllPeersOf(context.Background(), number)
+		return s.AllPeersOf(ctx, number)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -391,9 +391,9 @@ func (t *Tracker) AllPeersOf(number string) []string {
 
 // PeerOf returns the other party in an active call involving number,
 // or "" if number is not in any active call.
-func (t *Tracker) PeerOf(number string) string {
+func (t *Tracker) PeerOf(ctx context.Context, number string) string {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.PeerOf(context.Background(), number)
+		return s.PeerOf(ctx, number)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -411,9 +411,9 @@ func (t *Tracker) PeerOf(number string) string {
 // CallIDForPair returns the database call ID for an active call between a and
 // b, or 0 if no such call exists. Used by conference setup to find the
 // originating 2-party call id before migrating to mesh.
-func (t *Tracker) CallIDForPair(a, b string) int64 {
+func (t *Tracker) CallIDForPair(ctx context.Context, a, b string) int64 {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.CallIDForPair(context.Background(), a, b)
+		return s.CallIDForPair(ctx, a, b)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -428,9 +428,9 @@ func (t *Tracker) CallIDForPair(a, b string) int64 {
 
 // CallIDFor returns the active call id for an endpoint phone number.
 // Returns (0, false) if the number is not currently in a call.
-func (t *Tracker) CallIDFor(number string) (int64, bool) {
+func (t *Tracker) CallIDFor(ctx context.Context, number string) (int64, bool) {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.CallIDFor(context.Background(), number)
+		return s.CallIDFor(ctx, number)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -442,9 +442,9 @@ func (t *Tracker) CallIDFor(number string) (int64, bool) {
 	return 0, false
 }
 
-func (t *Tracker) InCall(a, b string) bool {
+func (t *Tracker) InCall(ctx context.Context, a, b string) bool {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.InCall(context.Background(), a, b)
+		return s.InCall(ctx, a, b)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -453,9 +453,9 @@ func (t *Tracker) InCall(a, b string) bool {
 	return fwd || rev
 }
 
-func (t *Tracker) Active() []ActiveCall {
+func (t *Tracker) Active(ctx context.Context) []ActiveCall {
 	if s := t.callStateSnapshot(); s != nil {
-		return s.Active(context.Background())
+		return s.Active(ctx)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -512,14 +512,14 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 	// creating the conference so the active map is still intact.
 	addedCallIDs := make([]int64, 0, len(addedMembers))
 	for _, member := range addedMembers {
-		cid := t.CallIDForPair(host, member)
+		cid := t.CallIDForPair(ctx, host, member)
 		if cid == 0 {
 			return nil, fmt.Errorf("no active call between %s and %s", host, member)
 		}
 		addedCallIDs = append(addedCallIDs, cid)
 	}
 
-	conf, err := t.conferences.CreateConference(host, originatingCallID, addedMembers)
+	conf, err := t.conferences.CreateConference(ctx, host, originatingCallID, addedMembers)
 	if err != nil {
 		return nil, err
 	}
@@ -558,7 +558,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil
 	})
 	if txErr != nil {
-		_, _ = t.conferences.EndConference(conf.ID, "db_error")
+		_, _ = t.conferences.EndConference(ctx, conf.ID, "db_error")
 		return nil, txErr
 	}
 
@@ -593,7 +593,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 // EndConferencePersistent ends the in-memory conference and writes the final
 // state to the database atomically.
 func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error {
-	if _, err := t.conferences.EndConference(confID, reason); err != nil {
+	if _, err := t.conferences.EndConference(ctx, confID, reason); err != nil {
 		return err
 	}
 	t.mu.Lock()
@@ -685,11 +685,11 @@ func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*Con
 // conference ends but the surviving pair's PC continues as a regular 2-party call.
 func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
 	// Bail early with a useful error if the phone has no active conference.
-	if t.conferences.ConferenceByPhone(phone) == nil {
+	if t.conferences.ConferenceByPhone(ctx, phone) == nil {
 		return nil, false, fmt.Errorf("phone %s is not in any active conference", phone)
 	}
 
-	remaining, ended, err = t.conferences.DropMember(confID, phone, reason)
+	remaining, ended, err = t.conferences.DropMember(ctx, confID, phone, reason)
 	if err != nil {
 		return nil, false, err
 	}

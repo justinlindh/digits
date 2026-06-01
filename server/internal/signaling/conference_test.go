@@ -147,7 +147,7 @@ func TestHandleSDP_AllowsConferencePeer(t *testing.T) {
 	tr.onCallInitiated("5550001", "5550002")
 	tr.onCallInitiated("5550001", "5550003")
 	tr.setCallID("5550001", "5550002", 42)
-	conf, err := tr.Conferences().CreateConference("5550001", 42, []string{"5550002", "5550003"})
+	conf, err := tr.Conferences().CreateConference(context.Background(), "5550001", 42, []string{"5550002", "5550003"})
 	if err != nil {
 		t.Fatalf("CreateConference: %v", err)
 	}

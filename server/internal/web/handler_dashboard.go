@@ -55,7 +55,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	active := h.tracker.Active()
+	active := h.tracker.Active(ctx)
 	hh := h.activeHousehold(r)
 	ld := h.buildLinesData(r, hh, "")
 	loc := hh.Location()
@@ -97,7 +97,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		} else {
 			self.OnCallPeerName = resolvePeerName(peerNumber, linkedLineIndex)
 		}
-		if id, ok := h.tracker.CallIDFor(self.Line.Number); ok {
+		if id, ok := h.tracker.CallIDFor(ctx, self.Line.Number); ok {
 			self.OnCallID = id
 		}
 	}

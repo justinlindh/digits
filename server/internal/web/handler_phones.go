@@ -544,7 +544,7 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if h.tracker != nil && h.tracker.Busy(oldNumber) {
+	if h.tracker != nil && h.tracker.Busy(r.Context(), oldNumber) {
 		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
 		return
 	}
