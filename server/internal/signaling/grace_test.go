@@ -133,3 +133,34 @@ func TestOnDisconnectIdlePhoneClearsImmediately(t *testing.T) {
 		t.Fatal("idle disconnect should not arm a grace timer")
 	}
 }
+
+func TestDeliverFromRedisReconnectInvokesHook(t *testing.T) {
+	hub := NewHub()
+	var gotNumber, gotHW string
+	hub.SetReconnectHook(func(number, hardwareID string) {
+		gotNumber, gotHW = number, hardwareID
+	})
+	hub.deliverFromRedis(&Envelope{
+		TargetType: "reconnect",
+		Target:     "3140001",
+		Message:    &Message{HardwareID: "hw-1"},
+	})
+	if gotNumber != "3140001" || gotHW != "hw-1" {
+		t.Fatalf("hook got (%q,%q), want (3140001,hw-1)", gotNumber, gotHW)
+	}
+}
+
+func TestPublishReconnectPublishesEnvelope(t *testing.T) {
+	hub := NewHub()
+	fb := newFakeRedis()
+	hub.SetRedis(fb)
+	hub.PublishReconnect("3140001", "hw-1")
+	envs := fb.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1", len(envs))
+	}
+	env := envs[0]
+	if env.TargetType != "reconnect" || env.Target != "3140001" || env.Message == nil || env.Message.HardwareID != "hw-1" {
+		t.Fatalf("unexpected envelope: %+v", env)
+	}
+}
