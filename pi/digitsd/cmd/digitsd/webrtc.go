@@ -642,6 +642,38 @@ func (d *daemonCallbacks) triggerHangup() {
 	go d.ctrl.HandleSignal("hangup", "")
 }
 
+// connAction is the decision output for a pion connection-state change.
+type connAction int
+
+const (
+	actionNone          connAction = iota
+	actionStartDebounce            // Disconnected: wait before reacting
+	actionEnterRecovery            // Failed (or debounce expiry): drive ICE recovery
+	actionClearRecovery            // Connected: cancel timers, recovery succeeded
+)
+
+// connStateAction maps a pion connection state plus current recovery flags to
+// the action the daemon should take. Pure and table-tested; the side effects
+// live in handleConnectionStateChange.
+func connStateAction(state webrtc.PeerConnectionState, recovering, debouncePending bool) connAction {
+	switch state {
+	case webrtc.PeerConnectionStateConnected:
+		return actionClearRecovery
+	case webrtc.PeerConnectionStateDisconnected:
+		if recovering || debouncePending {
+			return actionNone
+		}
+		return actionStartDebounce
+	case webrtc.PeerConnectionStateFailed:
+		if recovering {
+			return actionNone
+		}
+		return actionEnterRecovery
+	default:
+		return actionNone
+	}
+}
+
 // handleConnectionStateChange is called (without d.mu held) from a pion
 // goroutine when the WebRTC peer connection state changes.  On transient
 // failures the original caller attempts a single ICE restart before giving up.
