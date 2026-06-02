@@ -216,6 +216,8 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
 
 	case "reconnect":
+		// env.Message is guaranteed non-nil by the early return at the top of
+		// deliverFromRedis.
 		h.mu.RLock()
 		hook := h.reconnectHook
 		h.mu.RUnlock()

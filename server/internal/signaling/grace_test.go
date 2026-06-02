@@ -213,3 +213,55 @@ func TestPublishReconnectNoRedisIsNoop(t *testing.T) {
 	hub := NewHub()                         // no redis configured
 	hub.PublishReconnect("3140001", "hw-1") // must not panic, no-op
 }
+
+func TestGraceLifecycleReconnectWithinWindowKeepsCall(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002", "3140002": "3140001"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 80 * time.Millisecond
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	relay.OnDisconnect(context.Background(), "3140001", "hw-1")
+
+	time.Sleep(20 * time.Millisecond)
+	relay.OnReconnect(context.Background(), "3140001", "hw-1")
+
+	time.Sleep(120 * time.Millisecond)
+	if got := tracker.clearedNumbers(); len(got) != 0 {
+		t.Fatalf("call torn down despite reconnect: %v", got)
+	}
+	select {
+	case <-peer.Send:
+		t.Fatal("peer received hangup despite reconnect")
+	default:
+	}
+}
+
+func TestGraceLifecycleExpiryTearsDownAndNotifiesPeer(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002", "3140002": "3140001"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 30 * time.Millisecond
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	relay.OnDisconnect(context.Background(), "3140001", "hw-1")
+
+	select {
+	case data := <-peer.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeHangup {
+			t.Fatalf("peer got %q, want hangup", msg.Type)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("peer never notified after grace expiry")
+	}
+	if got := tracker.clearedNumbers(); len(got) != 1 {
+		t.Fatalf("ClearByNumber calls = %v, want one", got)
+	}
+}
