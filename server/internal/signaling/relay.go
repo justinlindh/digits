@@ -107,16 +107,17 @@ type Relay struct {
 	// in cmd/signald/main.go.
 	Errors SignalingErrorObserver
 
+	// GraceWindow is how long a 2-party call is held open after the last
+	// device on a line disconnects, before teardown. Defaults to
+	// graceWindow; overridable in tests. Must be set before the relay starts
+	// handling messages; it is read without synchronization.
+	GraceWindow time.Duration
+
 	extMu      sync.Mutex
 	extensions map[string]*activeExtension // hardware_id -> extension state
 
 	pendingReturnsMu sync.Mutex
 	pendingReturns   map[string]*pendingCallReturn // requester number -> pending retry
-
-	// GraceWindow is how long a 2-party call is held open after the last
-	// device on a line disconnects, before teardown. Defaults to
-	// graceWindow; overridable in tests.
-	GraceWindow time.Duration
 
 	graceMu     sync.Mutex
 	graceTimers map[string]*graceEntry // key: graceKey(number, hardwareID)
