@@ -167,6 +167,34 @@ func TestQuietHoursNormalizeEqualStartEndDisabled(t *testing.T) {
 	}
 }
 
+func TestQuietHoursNormalizeDisabledPreservesValidTimes(t *testing.T) {
+	// A disabled window with valid times must keep Start/End so the schedule
+	// survives a round-trip through Normalize when the user re-enables it.
+	q := QuietHours{Enabled: false, Start: "22:00", End: "07:00", Days: daysAll()}
+	got := q.Normalize()
+	if got.Enabled {
+		t.Errorf("Normalize must not re-enable a disabled window, got %+v", got)
+	}
+	if got.Start != "22:00" {
+		t.Errorf("Start: got %q, want %q", got.Start, "22:00")
+	}
+	if got.End != "07:00" {
+		t.Errorf("End: got %q, want %q", got.End, "07:00")
+	}
+}
+
+func TestQuietHoursNormalizeDisabledDropsMalformedTimes(t *testing.T) {
+	// A disabled window with invalid times should still clear them (safety).
+	q := QuietHours{Enabled: false, Start: "99:99", End: "07:00", Days: daysAll()}
+	got := q.Normalize()
+	if got.Start != "" {
+		t.Errorf("Start: malformed time should be cleared, got %q", got.Start)
+	}
+	if got.End != "07:00" {
+		t.Errorf("End: valid time should be preserved, got %q", got.End)
+	}
+}
+
 func TestQuietHoursMergeTakesEnabledAndDays(t *testing.T) {
 	base := QuietHours{Enabled: false, Start: "01:00", End: "02:00"}
 	patch := QuietHours{Enabled: true, Days: daysAll()}

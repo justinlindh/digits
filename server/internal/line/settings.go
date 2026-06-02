@@ -112,9 +112,22 @@ func (q QuietHours) ActiveAt(t time.Time) bool {
 // or a window with no days selected disable the feature outright (Enabled is
 // forced false) so a malformed payload can never silence a line. A newly
 // enabled window with no days defaults to every day.
+//
+// Valid Start/End times are always preserved even when Enabled is false, so a
+// household that disables the window retains its custom schedule for when they
+// re-enable it (matching Voicemail.Normalize's approach of not discarding user
+// data on disable).
 func (q QuietHours) Normalize() QuietHours {
 	if !q.Enabled {
-		return QuietHours{Days: q.Days}
+		// Preserve valid times so re-enabling later keeps the user's schedule.
+		out := QuietHours{Days: q.Days}
+		if validQuietTime(q.Start) {
+			out.Start = q.Start
+		}
+		if validQuietTime(q.End) {
+			out.End = q.End
+		}
+		return out
 	}
 	if !validQuietTime(q.Start) || !validQuietTime(q.End) || minutesOfDay(q.Start) == minutesOfDay(q.End) {
 		return QuietHours{Days: q.Days}
