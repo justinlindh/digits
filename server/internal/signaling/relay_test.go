@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ type mockTracker struct {
 	initiated         []string
 	answered          []string
 	ended             []string
+	mu                sync.Mutex
 	cleared           []string
 	calls             map[string]bool  // "a→b" keys for active calls
 	callIDs           map[string]int64 // "a→b" keys for active call IDs
@@ -60,7 +62,9 @@ func (m *mockTracker) OnCallEnded(ctx context.Context, caller, callee string) er
 	return nil
 }
 func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
+	m.mu.Lock()
 	m.cleared = append(m.cleared, number)
+	m.mu.Unlock()
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -69,7 +73,11 @@ func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
 		}
 	}
 }
-func (m *mockTracker) clearedNumbers() []string { return m.cleared }
+func (m *mockTracker) clearedNumbers() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.cleared...)
+}
 func (m *mockTracker) Busy(_ context.Context, number string) bool {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")

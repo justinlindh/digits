@@ -791,7 +791,7 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 	})
 	r.graceTimers[key] = entry
 	r.graceMu.Unlock()
-	slog.Info("grace: holding call through reconnect window", "number", number, "peer", peer, "window", r.GraceWindow)
+	slog.InfoContext(context.Background(), "grace: holding call through reconnect window", "number", number, "peer", peer, "window", r.GraceWindow)
 }
 
 // cancelGraceLocal stops a pending grace timer held by THIS pod. Returns
@@ -807,7 +807,7 @@ func (r *Relay) cancelGraceLocal(number, hardwareID string) bool {
 	entry.canceled = true
 	entry.timer.Stop()
 	delete(r.graceTimers, key)
-	slog.Info("grace: canceled by reconnect", "number", number)
+	slog.InfoContext(context.Background(), "grace: canceled by reconnect", "number", number)
 	return true
 }
 
