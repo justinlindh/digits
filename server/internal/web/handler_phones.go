@@ -123,8 +123,8 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 		idx                *updates.ReleaseIndex
 		latestPi, latestFw string
 	)
-	if h.Releases != nil {
-		idx = h.Releases.ReleaseIndex()
+	if h.releases != nil {
+		idx = h.releases.ReleaseIndex()
 	}
 	if idx != nil {
 		latestPi = idx.Pi.Latest
@@ -362,8 +362,8 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	var latestPi, latestFw string
 	var piReleases, fwReleases []updates.Release
 	var idx *updates.ReleaseIndex
-	if h.Releases != nil {
-		idx = h.Releases.ReleaseIndex()
+	if h.releases != nil {
+		idx = h.releases.ReleaseIndex()
 	}
 	if idx != nil {
 		latestPi = idx.Pi.Latest

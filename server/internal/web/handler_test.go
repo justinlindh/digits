@@ -1499,9 +1499,9 @@ func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
 	// Seed a line without any hub registration (never-connected device).
 	seedLineWithoutDeviceInfoForTest(t, database, hh.ID, "+15551230001")
 
-	h.Releases = fakeReleasesForTest(t, map[string]string{
+	h.SetReleases(fakeReleasesForTest(t, map[string]string{
 		"1.4.0": "<!-- groomed:v1 -->\nshould not appear for offline device",
-	})
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
 	req.AddCookie(cookie)
@@ -1525,11 +1525,11 @@ func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
 	seedPairedHandsetForTest(t, h, database, hh.ID, "+15551230000", "1.2.0")
 
 	// Build a fake release index with fw 1.2.0, 1.3.0, 1.4.0.
-	h.Releases = fakeReleasesForTest(t, map[string]string{
+	h.SetReleases(fakeReleasesForTest(t, map[string]string{
 		"1.2.0": "older release",
 		"1.3.0": "<!-- groomed:v1 -->\nmid release",
 		"1.4.0": "<!-- groomed:v1 -->\nlatest release",
-	})
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
 	req.AddCookie(cookie)

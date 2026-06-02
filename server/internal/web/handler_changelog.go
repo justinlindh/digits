@@ -37,8 +37,8 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var idx *updates.ReleaseIndex
-	if h.Releases != nil {
-		idx = h.Releases.ReleaseIndex()
+	if h.releases != nil {
+		idx = h.releases.ReleaseIndex()
 	}
 
 	var data changelogData

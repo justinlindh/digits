@@ -220,6 +220,7 @@ type Handler struct {
 	tmplConferenceLiveDetail *template.Template
 	tmplDashboardAMStatus    *template.Template
 	tmplChangelog            *template.Template
+	tmplActiveCalls          *template.Template
 	cfg                      HandlerConfig
 	// Auth
 	authStore    *auth.Store
@@ -244,7 +245,7 @@ type Handler struct {
 	inviteLimiter      *ratelimit.Limiter // POST /settings/household/invite
 	wsLimiter          *ratelimit.Limiter // GET  /ws (WebSocket upgrade)
 	// Updates
-	Releases *updates.GitHubReleases
+	releases *updates.GitHubReleases
 	// Metrics is the optional Prometheus registry. When set, a request
 	// timing/count middleware is wrapped around the public mux. nil disables
 	// HTTP instrumentation entirely (useful for tests that don't care).
@@ -447,6 +448,10 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse changelog: %w", err)
 	}
+	tmplActiveCalls, err := template.New("active-calls").Funcs(funcMap).ParseFS(templateFS, "templates/_active-calls.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse active-calls: %w", err)
+	}
 
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -484,6 +489,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		tmplConferenceLiveDetail: tmplConferenceLiveDetail,
 		tmplDashboardAMStatus:    tmplDashboardAMStatus,
 		tmplChangelog:            tmplChangelog,
+		tmplActiveCalls:          tmplActiveCalls,
 		cfg:                      cfg,
 		authStore:                deps.AuthStore,
 		authHandlers:             deps.AuthHandlers,
@@ -507,6 +513,13 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 // external callbacks and need to broadcast messages to connected devices.
 func (h *Handler) Hub() *signaling.Hub {
 	return h.hub
+}
+
+// SetReleases configures the release index server. Called after construction
+// because the callback passed to NewGitHubReleases references the handler's Hub,
+// which creates a circular initialization dependency if wired at NewHandler time.
+func (h *Handler) SetReleases(r *updates.GitHubReleases) {
+	h.releases = r
 }
 
 func (h *Handler) Router() http.Handler {
@@ -535,9 +548,9 @@ func (h *Handler) Router() http.Handler {
 	mux.Handle("GET /ws", h.wsLimiter.Middleware(http.HandlerFunc(h.handleWS)))
 
 	// Update release index endpoint (unauthenticated — phones fetch this)
-	if h.Releases != nil {
-		mux.HandleFunc("GET /api/updates/releases", h.Releases.ServeReleases())
-		mux.HandleFunc("GET /api/release-audio/{component}/{version}", h.Releases.ServeAudio())
+	if h.releases != nil {
+		mux.HandleFunc("GET /api/updates/releases", h.releases.ServeReleases())
+		mux.HandleFunc("GET /api/release-audio/{component}/{version}", h.releases.ServeAudio())
 		slog.Info("updates: serving release index from GitHub")
 	}
 	// /test is a legacy alias for the dev test client. The file now lives in
