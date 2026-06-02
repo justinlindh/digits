@@ -22,10 +22,21 @@ const quietHoursTick = time.Minute
 // across a window boundary converges to the same state it would get on a
 // fresh registration, without the household having to touch anything.
 //
-// Pushes are emitted only on a state change, tracked per line number, so a
-// line that stays inside (or outside) its window across many ticks produces
-// no traffic. The tracked state is cleared lazily for numbers that go
-// offline so the map cannot grow unbounded across a long uptime.
+// Pushes are emitted on a state change, tracked per line number, so a line
+// that stays inside (or outside) its window across many ticks produces no
+// traffic. On the first tick a line is seen, the scheduler pushes the current
+// effective state unconditionally to close the seed gap: a window boundary can
+// cross between relay.OnRegistered's connect-push and the scheduler's first
+// tick (up to one tick of lag), and the daemon dedupes by value so the push is
+// a no-op when the device already matches.
+//
+// The scheduler iterates only the lines connected to THIS hub instance
+// (Hub.LocalNumbers), not the global online roster. A device is connected to
+// exactly one replica, so each line is evaluated and pushed by exactly one
+// replica with a local send (no Redis fan-out, no duplicate pushes across
+// replicas). The tracked state is cleared lazily for numbers no longer
+// connected locally (offline, or moved to another replica) so the map cannot
+// grow unbounded.
 type QuietHoursScheduler struct {
 	hub   *Hub
 	store LineStore
@@ -34,8 +45,9 @@ type QuietHoursScheduler struct {
 	lastSent map[string]bool // number -> last pushed effective SilentMode
 }
 
-// NewQuietHoursScheduler wires a scheduler to the hub (for the online roster
-// and the push path) and the line store (for effective settings).
+// NewQuietHoursScheduler wires a scheduler to the hub (for the locally
+// connected lines and the push path) and the line store (for effective
+// settings).
 func NewQuietHoursScheduler(hub *Hub, store LineStore) *QuietHoursScheduler {
 	return &QuietHoursScheduler{
 		hub:      hub,
@@ -62,28 +74,28 @@ func (s *QuietHoursScheduler) Run(ctx context.Context) {
 	}
 }
 
-// evaluate recomputes the effective silent state for every online line and
-// pushes the new settings to any line whose state changed since the last
-// tick. It also prunes tracking entries for lines that have gone offline so
-// a reconnect re-pushes from a clean slate (the on-connect path in
-// OnRegistered already sends the current state, so a transition that lands
-// while a line is offline is reconciled on its next registration).
+// evaluate recomputes the effective silent state for every line connected to
+// this replica and pushes the new settings to any line whose state changed
+// since the last tick (or that this replica is seeing for the first time). It
+// also prunes tracking entries for lines no longer connected locally (offline,
+// or migrated to another replica) so the map cannot grow unbounded and a
+// reconnect re-seeds from a clean slate.
 func (s *QuietHoursScheduler) evaluate(ctx context.Context) {
-	online := s.hub.OnlineNumbers()
-	onlineSet := make(map[string]bool, len(online))
-	for _, number := range online {
-		onlineSet[number] = true
+	local := s.hub.LocalNumbers()
+	localSet := make(map[string]bool, len(local))
+	for _, number := range local {
+		localSet[number] = true
 	}
 
 	s.mu.Lock()
 	for number := range s.lastSent {
-		if !onlineSet[number] {
+		if !localSet[number] {
 			delete(s.lastSent, number)
 		}
 	}
 	s.mu.Unlock()
 
-	for _, number := range online {
+	for _, number := range local {
 		settings, err := s.store.EffectiveLineSettings(ctx, number)
 		if err != nil {
 			slog.DebugContext(ctx, "quiet-hours eval skipped", "number", number, "err", err)
@@ -98,10 +110,12 @@ func (s *QuietHoursScheduler) evaluate(ctx context.Context) {
 		s.lastSent[number] = settings.SilentMode
 		s.mu.Unlock()
 
-		// First time we see a line, seed its state without pushing:
-		// relay.OnRegistered already delivered the current settings on
-		// connect, so only an actual transition while online needs a push.
-		if !seen || prev == settings.SilentMode {
+		// On a steady state (already seen and unchanged) emit nothing. On the
+		// first sight of a line, push the current effective state to close the
+		// seed gap: a window boundary can cross between OnRegistered's
+		// connect-push and this first tick, and the daemon dedupes by value so
+		// the push is a no-op when the device already matches.
+		if seen && prev == settings.SilentMode {
 			continue
 		}
 		if err := s.hub.SendTo(number, &Message{
