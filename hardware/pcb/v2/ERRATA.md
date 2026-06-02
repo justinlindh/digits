@@ -2,6 +2,8 @@
 
 Issues discovered after V2 entered fabrication (2026-04-19). These apply to all fabricated V2 boards unless noted otherwise.
 
+The board-level fixes below are carried into the V3 revision (`hardware/pcb/v3/`, see `CHANGES_FROM_V2.md`). An interim V2.1 revision was considered for some of them but was superseded by V3.
+
 ---
 
 ## Must Fix at Assembly
@@ -21,7 +23,7 @@ Either approach is purely a placement/copper-side change; net topology and routi
 
 **Workaround for fabricated boards:** none clean. The board can be powered and tested on the bench with the components facing up (no enclosure), but it cannot be mounted in the phone shell as-is.
 
-**Fix for V2.1:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
+**Fix for V3:** flip components to the opposite copper side. Decide whether mounting holes or component side moves; the simpler patch is whichever requires the fewer reroutes. Add a placement-review checklist item: with the board oriented as it will sit in the enclosure (mounting holes aligned to standoffs), confirm components face the intended direction before sign-off.
 
 ### 2. Missing pull-up on RP2040 UART TX (GPIO28) net (optional fix)
 
@@ -31,13 +33,13 @@ The RP2040's UART_TX_PI net (RP2040 GP28 to Pi J1.10 / GPIO15) has no external p
 
 **Workaround for fabricated boards:** firmware-side, drive both candidate UART_TX pins HIGH at the very top of `main()` before any other init (done in `firmware/src/main.c::uart_tx_idle_high()`). Eliminates the floating-line window after firmware reaches the chip.
 
-**Status:** firmware-side workaround is permanent in the unified firmware. `main.c` drives both candidate UART_TX pins (GP0 for V1, GP28 for V2) high in the pre-bootstrap window before `board_init()` reads the rev byte. The hardware pullup remains a "nice to have" so the line stays at UART idle even when the RP2040 is unflashed, held in reset, or before the firmware reaches `main()`. Optional for V2.1.
+**Status:** firmware-side workaround is permanent in the unified firmware. `main.c` drives both candidate UART_TX pins (GP0 for V1, GP28 for V2) high in the pre-bootstrap window before `board_init()` reads the rev byte. The hardware pullup remains a "nice to have" so the line stays at UART idle even when the RP2040 is unflashed, held in reset, or before the firmware reaches `main()`. The firmware workaround is permanent, so V3 does not add the pullup.
 
 ### 3. PICO_DEFAULT_BOOT_STAGE2 must be boot2_generic_03h, not the SDK default
 
 The Pico SDK ships `boot2_w25q080` as the default boot stage 2 because that matches the Winbond W25Q16/W25Q080 fitted on a genuine Pi Pico. The V2 carrier uses `W25Q16JVSSIQ` (a similar but not identical Winbond part). The w25q080 boot2 issues QSPI-quad continuation commands the JV variant rejects; the chip then fails to enter XIP, watchdog reset fires, and the chip enters a tight reset loop that also keeps SWD silent (cores held in reset every iteration).
 
-**Status:** closed by unified firmware. The Pico firmware now uses `boot2_generic_03h` unconditionally for all boards (V1, V2, future). The W25Q16JV flash on V2 carriers (and on the Pi Pico module that V1 PCB uses, as bench-verified during the unified firmware migration) is fully supported. No flash chip swap is needed for V2.1 or V3. See `docs/architecture/unified-firmware.md`.
+**Status:** closed by unified firmware. The Pico firmware now uses `boot2_generic_03h` unconditionally for all boards (V1, V2, future). The W25Q16JV flash on V2 carriers (and on the Pi Pico module that V1 PCB uses, as bench-verified during the unified firmware migration) is fully supported. No flash chip swap is needed for V3. See `docs/architecture/unified-firmware.md`.
 
 ### 4. No BOOTSEL button: first-flash and recovery require a paperclip
 
@@ -91,7 +93,7 @@ V2's J8 assigns: pin 1 = `MIC_HOT`, pin 2 = `EAR_P`, pin 3 = `EAR_N`, pin 4 = `G
 
 **Workaround for fabricated boards:** rebuild the J8 adapter with pins 2 and 4 swapped relative to the stock cable, giving JST pin 1=Black, 2=Green, 3=Red, 4=Yellow.
 
-**Fix for V2.1:** update J8 pin assignment so pin 1 = `MIC_HOT`, pin 2 = `GND`, pin 3 = `EAR_P`, pin 4 = `EAR_N`. Stock Sangyn cable then plugs in directly with no per-unit adapter rework.
+**Fix for V3:** update J8 pin assignment so pin 1 = `MIC_HOT`, pin 2 = `GND`, pin 3 = `EAR_P`, pin 4 = `EAR_N`. Stock Sangyn cable then plugs in directly with no per-unit adapter rework.
 
 ### 8. J6 LED connector polarity is reversed relative to the stock phone LED cable
 
@@ -105,7 +107,7 @@ The stock LED cable that ships in the donor phone is wired with the opposite pol
 
 **Workaround for fabricated boards:** rework the J6 cable end so the two crimps are swapped in the JST housing. Pin 1 receives the cathode wire, pin 2 receives the anode wire. Verified working on the bench unit (192.168.2.229).
 
-**Fix for V2.1:** swap J6.1 and J6.2 net assignments in the schematic so pin 1 = `GND` and pin 2 = `LED_A`. Stock cable then plugs in directly with no per-unit rework. Single-row 2-pin, no other routing changes.
+**Fix for V3:** swap J6.1 and J6.2 net assignments in the schematic so pin 1 = `GND` and pin 2 = `LED_A`. Stock cable then plugs in directly with no per-unit rework. Single-row 2-pin, no other routing changes.
 
 ### 9. Firmware HOOK_PIN was hardcoded to GP10, V2 SW1 is on GP20
 
