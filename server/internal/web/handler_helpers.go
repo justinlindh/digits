@@ -388,10 +388,10 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 // latest pi or firmware release. If lineNumbers is non-nil, it skips the DB
 // lookup and uses the provided numbers directly.
 func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineNumbers []string) bool {
-	if h.Releases == nil {
+	if h.releases == nil {
 		return false
 	}
-	idx := h.Releases.ReleaseIndex()
+	idx := h.releases.ReleaseIndex()
 	if idx == nil {
 		return false
 	}

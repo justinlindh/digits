@@ -1,0 +1,16 @@
+{{define "active-calls-fragment"}}
+{{if .}}
+  {{range .}}
+  <div class="px-4 py-3 border-b border-[#21262d] last:border-0">
+    <div class="flex items-center gap-2">
+      <span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] animate-pulse shrink-0"></span>
+      <span class="font-mono text-sm text-[#e6edf3]">{{.Caller}}</span>
+      <span class="text-[#8b949e] text-xs">→</span>
+      <span class="font-mono text-sm text-[#e6edf3]">{{.Callee}}</span>
+    </div>
+  </div>
+  {{end}}
+{{else}}
+  <div class="px-4 py-8 text-center text-[#8b949e] text-sm">No active calls</div>
+{{end}}
+{{end}}
