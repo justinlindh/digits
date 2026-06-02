@@ -135,8 +135,9 @@ Bandwidth per active TURN-relayed call: ~40kbps per direction. Negligible at sma
 - Bidirectional Opus/WebRTC audio across NAT (STUN/TURN)
 - End-to-end encrypted calls (DTLS-SRTP)
 - ICE server credential fetch from signald with periodic refresh
-- ICE restart on transient connection drops (caller-initiated, single attempt with 15s timeout)
-- Connection failure detection (hangup after failed ICE restart)
+- Mid-call media recovery on transient connection drops: 4s `Disconnected` debounce, then caller-initiated ICE restart with a 25s recovery deadline; recovery is also driven on either side from a signaling-WebSocket reconnect when local media has dropped
+- Signaling-reconnect grace window: the server holds a 2-party call open for 20s after the WebSocket drops so a phone can resume the call instead of losing it; new callers reaching a grace-held line get busy
+- Connection failure detection (hangup after recovery deadline)
 - Mechanical bell, dial tone, ringback, and busy tone
 - Household linking via invite codes
 - Device pairing via one-time codes
