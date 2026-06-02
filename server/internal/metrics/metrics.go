@@ -180,6 +180,7 @@ var validErrorCategories = map[string]struct{}{
 	"auth_failed":       {},
 	"invalid_message":   {},
 	"relay_delivery":    {},
+	"send_buffer_full":  {},
 }
 
 // ObserveSignalingError records one signaling error, partitioned by category.

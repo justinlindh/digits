@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
@@ -213,5 +214,37 @@ func TestTryResumeConferenceReturnsFalse(t *testing.T) {
 	d := &daemonCallbacks{peerMgr: pm, mesh: mesh, isCaller: true, callPeer: "x"}
 	if d.tryResumeAfterReconnect(phone.StateCONFERENCE_MERGED) {
 		t.Fatal("conference must not resume via the 2-party path")
+	}
+}
+
+// TestNextReconnectBackoff verifies the pure backoff helper: active calls
+// always get the short fixed interval; idle paths get exponential growth
+// capped at 60 s.
+func TestNextReconnectBackoff(t *testing.T) {
+	// Active call: always returns activeCallReconnectBackoff regardless of current.
+	for _, cur := range []time.Duration{3 * time.Second, 6 * time.Second, 60 * time.Second} {
+		got := nextReconnectBackoff(cur, true)
+		if got != activeCallReconnectBackoff {
+			t.Errorf("active: nextReconnectBackoff(%v, true) = %v, want %v", cur, got, activeCallReconnectBackoff)
+		}
+	}
+
+	// Idle: doubles from 3 s -> 6 s -> 12 s -> ... -> 60 s cap.
+	cases := []struct {
+		current time.Duration
+		want    time.Duration
+	}{
+		{3 * time.Second, 6 * time.Second},
+		{6 * time.Second, 12 * time.Second},
+		{12 * time.Second, 24 * time.Second},
+		{24 * time.Second, 48 * time.Second},
+		{48 * time.Second, 60 * time.Second},
+		{60 * time.Second, 60 * time.Second}, // cap
+	}
+	for _, tc := range cases {
+		got := nextReconnectBackoff(tc.current, false)
+		if got != tc.want {
+			t.Errorf("idle: nextReconnectBackoff(%v, false) = %v, want %v", tc.current, got, tc.want)
+		}
 	}
 }

@@ -271,3 +271,20 @@ func (m *PeerManager) Close() error {
 func (m *PeerManager) ConnectionState() webrtc.PeerConnectionState {
 	return m.pc.ConnectionState()
 }
+
+// UpdateICEServers replaces the STUN/TURN server list on the live
+// PeerConnection so that a subsequent ICE restart uses fresh credentials.
+// TURN credentials issued by the signaling server expire after 2 hours; this
+// keeps long calls from ice-restarting with stale creds after a media blip.
+//
+// Note: this updates the 2-party PeerManager only. Conference mesh peers
+// (owebrtc.MeshManager) are out of scope; mesh calls are short-lived relative
+// to the TURN credential TTL.
+func (m *PeerManager) UpdateICEServers(servers []ICEServerConfig) error {
+	iceCfg := NewICEConfig(servers)
+	if err := m.pc.SetConfiguration(iceCfg.WebRTCConfig()); err != nil {
+		return fmt.Errorf("update ICE servers: %w", err)
+	}
+	m.iceCfg = iceCfg
+	return nil
+}

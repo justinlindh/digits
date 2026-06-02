@@ -705,12 +705,12 @@ func (d *daemonCallbacks) tryResumeAfterReconnect(ctrlState phone.State) bool {
 	d.mu.Lock()
 	pm := d.peerMgr
 	hasMesh := d.mesh != nil
-	d.mu.Unlock()
-
+	// Read connection state under the same lock as pm so the pair is consistent.
 	var connState webrtc.PeerConnectionState
 	if pm != nil {
 		connState = pm.ConnectionState()
 	}
+	d.mu.Unlock()
 
 	switch reconnectAction(ctrlState, hasMesh, pm != nil, connState) {
 	case reconnResumeNoop:

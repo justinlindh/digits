@@ -3,7 +3,9 @@ package signaling
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 )
 
 func TestUnregisterOnlyRemovesMatchingConnection(t *testing.T) {
@@ -335,5 +337,157 @@ func TestRekeyNumberMovesVoicemailUnheard(t *testing.T) {
 	}
 	if got := hub.LineVoicemailUnheard("3140002"); got != 7 {
 		t.Errorf("new number should have summed counts, got %d, want 7", got)
+	}
+}
+
+// TestSendToWithTimeoutDeliversWhenBufferHasRoom verifies that
+// SendToWithTimeout successfully enqueues a message when the channel has
+// capacity.
+func TestSendToWithTimeoutDeliversWhenBufferHasRoom(t *testing.T) {
+	hub := NewHub()
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn)
+
+	err := hub.SendToWithTimeout("3140001", &Message{Type: TypeRing, From: "3140002"}, time.Second)
+	if err != nil {
+		t.Fatalf("SendToWithTimeout returned unexpected error: %v", err)
+	}
+	select {
+	case data := <-conn.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeRing {
+			t.Errorf("got type %q, want ring", msg.Type)
+		}
+	default:
+		t.Fatal("no message in send channel after SendToWithTimeout")
+	}
+}
+
+// TestSendToWithTimeoutReturnsErrorWhenBufferFullAndNotDrained verifies that
+// SendToWithTimeout returns ErrSendTimeout promptly when the buffer is full
+// and no reader drains it, rather than blocking forever.
+func TestSendToWithTimeoutReturnsErrorWhenBufferFullAndNotDrained(t *testing.T) {
+	hub := NewHub()
+	// Unbuffered channel: any send blocks immediately.
+	conn := &Conn{Send: make(chan []byte)}
+	_ = hub.Register("3140001", conn)
+
+	timeout := 50 * time.Millisecond
+	start := time.Now()
+	err := hub.SendToWithTimeout("3140001", &Message{Type: TypeRing}, timeout)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error from SendToWithTimeout on full buffer, got nil")
+	}
+	if !errors.Is(err, ErrSendTimeout) {
+		t.Errorf("expected ErrSendTimeout, got: %v", err)
+	}
+	// Must return within roughly 2x the timeout, not hang.
+	if elapsed > 5*timeout {
+		t.Errorf("SendToWithTimeout took %v, expected ~%v", elapsed, timeout)
+	}
+}
+
+// TestSendToWithTimeoutReturnsNotConnectedWhenNoDevice verifies the offline
+// case with no Redis bridge.
+func TestSendToWithTimeoutReturnsNotConnectedWhenNoDevice(t *testing.T) {
+	hub := NewHub()
+	err := hub.SendToWithTimeout("3140099", &Message{Type: TypeRing}, time.Second)
+	if !errors.Is(err, ErrNotConnected) {
+		t.Errorf("expected ErrNotConnected for offline number, got: %v", err)
+	}
+}
+
+// TestSendToWithTimeoutFallsBackToRedis verifies that with no local
+// connection but a Redis bridge configured, SendToWithTimeout publishes a
+// cross-pod envelope and returns nil instead of dropping the message. This
+// guards the regression where reliable ICE-restart delivery to a peer on
+// another pod was silently dropped.
+func TestSendToWithTimeoutFallsBackToRedis(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+
+	err := hub.SendToWithTimeout("3140002", &Message{Type: TypeICERestart, From: "3140001", To: "3140002"}, time.Second)
+	if err != nil {
+		t.Fatalf("SendToWithTimeout returned error, want nil with Redis fallback: %v", err)
+	}
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1", len(envs))
+	}
+	if envs[0].TargetType != "number" || envs[0].Target != "3140002" {
+		t.Fatalf("unexpected envelope: %+v", envs[0])
+	}
+	if envs[0].Message == nil || envs[0].Message.Type != TypeICERestart {
+		t.Fatalf("envelope message = %+v, want ICERestart", envs[0].Message)
+	}
+}
+
+// TestSendToWithTimeoutNoPanicOnConcurrentUnregister verifies the panic-safety
+// fix: closing a conn's Send channel (via Unregister) while a
+// SendToWithTimeout is retrying against a full buffer must not send on a
+// closed channel. The call should return cleanly once the conn is gone.
+func TestSendToWithTimeoutNoPanicOnConcurrentUnregister(t *testing.T) {
+	hub := NewHub()
+	// Buffered capacity 1, pre-filled so the next send blocks (buffer full).
+	conn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-1"}
+	conn.Send <- []byte("prefill")
+	_ = hub.Register("3140001", conn)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- hub.SendToWithTimeout("3140001", &Message{Type: TypeICERestart}, 2*time.Second)
+	}()
+
+	// Let the sender spin on the full buffer, then unregister (closes Send).
+	time.Sleep(40 * time.Millisecond)
+	hub.Unregister("3140001", conn)
+
+	select {
+	case err := <-done:
+		// After Unregister the line has no conns, no Redis bridge: expect
+		// ErrNotConnected, and crucially no panic.
+		if !errors.Is(err, ErrNotConnected) {
+			t.Fatalf("expected ErrNotConnected after unregister, got: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("SendToWithTimeout did not return after conn was unregistered")
+	}
+}
+
+// TestSendToInvokesDropHookOnFullBuffer verifies that the best-effort SendTo
+// path calls the drop hook when a device's send buffer is full.
+func TestSendToInvokesDropHookOnFullBuffer(t *testing.T) {
+	hub := NewHub()
+	var drops int
+	hub.SetDropHook(func() { drops++ })
+
+	// Unbuffered channel: send immediately triggers the default branch.
+	conn := &Conn{Send: make(chan []byte)}
+	_ = hub.Register("3140001", conn)
+
+	_ = hub.SendTo("3140001", &Message{Type: TypeRing})
+
+	if drops != 1 {
+		t.Errorf("drop hook called %d times, want 1", drops)
+	}
+}
+
+// TestSendToDoesNotInvokeDropHookOnSuccessfulSend verifies the hook is NOT
+// called when the message is delivered.
+func TestSendToDoesNotInvokeDropHookOnSuccessfulSend(t *testing.T) {
+	hub := NewHub()
+	var drops int
+	hub.SetDropHook(func() { drops++ })
+
+	conn := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn)
+
+	_ = hub.SendTo("3140001", &Message{Type: TypeRing})
+
+	if drops != 0 {
+		t.Errorf("drop hook called %d times on successful send, want 0", drops)
 	}
 }
