@@ -164,14 +164,26 @@ func (s *Store) GetByNumber(ctx context.Context, number string) (*Line, error) {
 	return &l, nil
 }
 
-// EffectiveSettingsByNumber returns the line's settings for the given number.
-// Used by the signaling layer to push settings on device registration.
+// EffectiveSettingsByNumber returns the line's settings for the given number,
+// with SilentMode already folded together with any active scheduled
+// quiet-hours window. Quiet hours are evaluated in the owning household's
+// timezone at the current instant, so the value a caller receives is what the
+// device should treat as authoritative right now: if the window is open, the
+// returned SilentMode is true even when the explicit toggle is off. Used by
+// the signaling layer to push settings on device registration and by the
+// quiet-hours scheduler on window transitions.
 func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (Settings, error) {
-	var settingsRaw []byte
+	var (
+		settingsRaw []byte
+		timezone    string
+	)
 	err := s.db.QueryRowContext(ctx,
-		`SELECT settings FROM lines WHERE number = $1`,
+		`SELECT l.settings, h.timezone
+		   FROM lines l
+		   JOIN households h ON h.id = l.household_id
+		  WHERE l.number = $1`,
 		number,
-	).Scan(&settingsRaw)
+	).Scan(&settingsRaw, &timezone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Settings{}, ErrNotFound
 	}
@@ -182,6 +194,11 @@ func (s *Store) EffectiveSettingsByNumber(ctx context.Context, number string) (S
 	if err != nil {
 		return Settings{}, err
 	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+	settings.SilentMode = settings.SilentNow(time.Now().In(loc))
 	return settings, nil
 }
 

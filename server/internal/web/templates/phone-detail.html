@@ -106,6 +106,16 @@
         </div>
       </section>
 
+      <!-- Quiet hours -->
+      <section class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">Quiet hours</h2>
+        </header>
+        <div class="panel__body">
+          {{template "quiet-hours-section" .}}
+        </div>
+      </section>
+
       <!-- Answer machine -->
       <section class="panel">
         <header class="panel__head">
@@ -771,6 +781,121 @@
 </div>
 {{end}}
 
+{{define "quiet-hours-section"}}
+<div id="quiet-hours-section">
+  <form hx-post="/phones/{{.Line.Number}}/quiet-hours"
+        hx-target="#quiet-hours-section"
+        hx-swap="outerHTML"
+        class="stack-sm">
+    <label class="checkbox-row">
+      <input type="checkbox" name="enabled" value="on"
+             {{if .Line.Settings.QuietHours.Enabled}}checked{{end}}>
+      <span class="checkbox-row__label">Scheduled quiet hours</span>
+    </label>
+    <p class="muted" style="font-size: 12px; margin: 4px 0 0;">
+      During the window this line stays silent: incoming calls won't ring,
+      though the light still flashes and you can still answer. Times use this
+      household's timezone.
+    </p>
+
+    <div class="quiet-hours-fields" {{if not .Line.Settings.QuietHours.Enabled}}style="opacity: 0.55;"{{end}}>
+      <div class="hstack hstack--wrap" style="gap: 16px; margin-top: 8px;">
+        <div class="field">
+          <label for="qh-start" class="field__label">From</label>
+          <input type="time" id="qh-start" name="start"
+                 value="{{if .Line.Settings.QuietHours.Start}}{{.Line.Settings.QuietHours.Start}}{{else}}22:00{{end}}"
+                 class="field__input" style="width: 130px;">
+        </div>
+        <div class="field">
+          <label for="qh-end" class="field__label">To</label>
+          <input type="time" id="qh-end" name="end"
+                 value="{{if .Line.Settings.QuietHours.End}}{{.Line.Settings.QuietHours.End}}{{else}}07:00{{end}}"
+                 class="field__input" style="width: 130px;">
+        </div>
+      </div>
+      <p class="muted" style="font-size: 11px; margin: 4px 0 0;">An end time earlier than the start wraps past midnight.</p>
+
+      <div style="margin-top: 10px;">
+        <div class="field__label" style="margin-bottom: 6px;">Days</div>
+        <div class="hstack hstack--wrap" style="gap: 8px;">
+          {{$days := .Line.Settings.QuietHours.Days}}
+          {{range weekdays}}
+          <label class="checkbox-row" style="gap: 6px;">
+            <input type="checkbox" name="day_{{.Index}}" value="on"
+                   {{if index $days .Index}}checked{{end}}>
+            <span class="checkbox-row__label">{{.Short}}</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 10px;">Save</button>
+    </div>
+  </form>
+</div>
+{{end}}
+
+{{define "am-quiet-hours-section"}}
+<div id="quiet-hours-section">
+  <form hx-post="/phones/{{.Line.Number}}/quiet-hours"
+        hx-target="#quiet-hours-section"
+        hx-swap="outerHTML"
+        class="am-settings__form am-settings__form--stack">
+    <div class="am-settings__toggle-row">
+      <label class="am-settings__dip" aria-label="Scheduled quiet hours">
+        <input type="checkbox" name="enabled" value="on"
+               {{if .Line.Settings.QuietHours.Enabled}}checked{{end}}
+               class="am-settings__dip-input">
+        <span class="am-settings__dip-body" aria-hidden="true">
+          <span class="am-settings__dip-label am-settings__dip-label--on">1</span>
+          <span class="am-settings__dip-lever"></span>
+          <span class="am-settings__dip-label am-settings__dip-label--off">0</span>
+        </span>
+      </label>
+      <div class="am-settings__toggle-info">
+        <div class="am-label am-settings__toggle-title">Quiet hours</div>
+        <p class="am-hint am-settings__toggle-desc">
+          Line stays silent during the window. The light still flashes and you can still answer. Times use the household timezone.
+        </p>
+      </div>
+    </div>
+
+    <div class="am-voicemail-fields" {{if not .Line.Settings.QuietHours.Enabled}}style="opacity: 0.55;"{{end}}>
+      <div class="am-settings__field">
+        <label for="qh-start" class="am-label am-settings__field-label">From</label>
+        <input type="time" id="qh-start" name="start"
+               value="{{if .Line.Settings.QuietHours.Start}}{{.Line.Settings.QuietHours.Start}}{{else}}22:00{{end}}"
+               class="am-settings__input">
+      </div>
+      <div class="am-settings__field">
+        <label for="qh-end" class="am-label am-settings__field-label">To</label>
+        <input type="time" id="qh-end" name="end"
+               value="{{if .Line.Settings.QuietHours.End}}{{.Line.Settings.QuietHours.End}}{{else}}07:00{{end}}"
+               class="am-settings__input">
+      </div>
+
+      <div class="am-settings__field">
+        <span class="am-label am-settings__field-label">Days</span>
+        <div class="hstack hstack--wrap" style="gap: 8px; margin-top: 4px;">
+          {{$days := .Line.Settings.QuietHours.Days}}
+          {{range weekdays}}
+          <label class="am-settings__dip-mini" style="display: inline-flex; align-items: center; gap: 5px;">
+            <input type="checkbox" name="day_{{.Index}}" value="on" {{if index $days .Index}}checked{{end}}>
+            <span class="am-led">{{.Short}}</span>
+          </label>
+          {{end}}
+        </div>
+      </div>
+
+      <button type="submit" class="am-key am-settings__submit">
+        <span class="am-key__symbol">&#x25B6;</span>
+        <span class="am-key__label">Save</span>
+      </button>
+    </div>
+  </form>
+</div>
+{{end}}
+
 {{define "am-voicemail-section"}}
 <div id="voicemail-section" data-voicemail-section>
   <form hx-post="/phones/{{.Line.Number}}/voicemail"
@@ -1096,6 +1221,11 @@
     <section class="am-plate am-handset__plate">
       <span class="am-plate__label">Ringer</span>
       {{template "am-silent-mode-section" .}}
+    </section>
+
+    <section class="am-plate am-handset__plate">
+      <span class="am-plate__label">Quiet hours</span>
+      {{template "am-quiet-hours-section" .}}
     </section>
 
     <section class="am-plate am-handset__plate">

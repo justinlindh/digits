@@ -89,6 +89,21 @@ func baseTemplateFuncs() template.FuncMap {
 			return out
 		},
 		"inc": func(n int) int { return n + 1 },
+		// weekdays returns the seven days for the quiet-hours day picker,
+		// indexed to match time.Weekday (Sunday = 0) so the template can pair
+		// each label with the corresponding entry in QuietHours.Days.
+		"weekdays": func() []struct {
+			Index int
+			Short string
+		} {
+			return []struct {
+				Index int
+				Short string
+			}{
+				{0, "Sun"}, {1, "Mon"}, {2, "Tue"}, {3, "Wed"},
+				{4, "Thu"}, {5, "Fri"}, {6, "Sat"},
+			}
+		},
 		"mod": func(a, b int) int {
 			if b == 0 {
 				return 0
@@ -583,6 +598,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/auto-update", h.handlePhoneAutoUpdatePost)
 	protected.HandleFunc("POST /phones/{number}/voicemail", h.handlePhoneVoicemailPost)
 	protected.HandleFunc("POST /phones/{number}/voicemail-toggle", h.handlePhoneVoicemailTogglePost)
+	protected.HandleFunc("POST /phones/{number}/quiet-hours", h.handlePhoneQuietHoursPost)
 	protected.HandleFunc("POST /phones/{number}/convert", h.handlePhoneConvert)
 	protected.HandleFunc("POST /phones/{number}/delete", h.handlePhoneDelete)
 	protected.HandleFunc("POST /phones/{number}/update", h.handlePhoneUpdate)

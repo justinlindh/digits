@@ -626,6 +626,53 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// handlePhoneQuietHoursPost accepts the full quiet-hours window for a line:
+// an enable checkbox, start/end "HH:MM" times, and day_0..day_6 checkboxes
+// (index = time.Weekday, Sunday = 0). The times are validated through
+// Settings.Normalize, which disables a malformed or zero-length window rather
+// than rejecting the request, so a fat-fingered time can never wedge the
+// form. On success the new settings persist and push, then the quiet-hours
+// section partial is swapped (htmx) or the detail page reloads.
+func (h *Handler) handlePhoneQuietHoursPost(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
+
+	var days [7]bool
+	for i := range days {
+		if strings.TrimSpace(r.FormValue("day_"+strconv.Itoa(i))) == "on" {
+			days[i] = true
+		}
+	}
+
+	next := ln.Settings
+	next.QuietHours = line.QuietHours{
+		Enabled: strings.TrimSpace(r.FormValue("enabled")) == "on",
+		Start:   strings.TrimSpace(r.FormValue("start")),
+		End:     strings.TrimSpace(r.FormValue("end")),
+		Days:    days,
+	}
+	next = next.Normalize()
+	if !h.applyLineSettings(w, r, ln, next) {
+		return
+	}
+
+	if isHTMX(r) {
+		renderWith(r.Context(), w, h.tmplPhoneDetail,
+			partialFor(r, "quiet-hours-section", "am-quiet-hours-section"),
+			struct {
+				Line line.Line
+			}{Line: *ln})
+		return
+	}
+	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+}
+
 // handlePhoneVoicemailPost accepts a form submission with the full voicemail
 // configuration for the line. Every field is validated server-side before
 // any DB write: out-of-range ints and malformed retrieval codes
