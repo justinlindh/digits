@@ -164,3 +164,52 @@ func TestPublishReconnectPublishesEnvelope(t *testing.T) {
 		t.Fatalf("unexpected envelope: %+v", env)
 	}
 }
+
+func TestOnReconnectCancelsLocalTimerAndPublishes(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = time.Hour
+
+	relay.startGraceTimer("3140001", "hw-1", "3140002")
+	relay.OnReconnect(context.Background(), "3140001", "hw-1")
+
+	if relay.cancelGraceLocal("3140001", "hw-1") {
+		t.Fatal("grace timer still present after OnReconnect")
+	}
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 || envs[0].TargetType != "reconnect" {
+		t.Fatalf("expected one reconnect publish, got %+v", envs)
+	}
+}
+
+func TestHandleRemoteReconnectCancelsWithoutPublishing(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+	relay := NewRelay(hub, newMockTracker(), nil, nil)
+	relay.GraceWindow = time.Hour
+
+	relay.startGraceTimer("3140001", "hw-1", "3140002")
+	relay.HandleRemoteReconnect("3140001", "hw-1")
+
+	if relay.cancelGraceLocal("3140001", "hw-1") {
+		t.Fatal("grace timer still present after HandleRemoteReconnect")
+	}
+	if envs := fake.publishedEnvelopes(); len(envs) != 0 {
+		t.Fatalf("HandleRemoteReconnect published %d envelopes, want 0", len(envs))
+	}
+}
+
+func TestDeliverFromRedisReconnectNilHookNoPanic(t *testing.T) {
+	hub := NewHub() // no hook set
+	hub.deliverFromRedis(&Envelope{TargetType: "reconnect", Target: "x", Message: &Message{HardwareID: "y"}})
+	// reaching here without panic is the assertion
+}
+
+func TestPublishReconnectNoRedisIsNoop(t *testing.T) {
+	hub := NewHub()                         // no redis configured
+	hub.PublishReconnect("3140001", "hw-1") // must not panic, no-op
+}

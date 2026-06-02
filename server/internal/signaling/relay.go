@@ -823,6 +823,20 @@ func (r *Relay) cancelGraceLocal(number, hardwareID string) bool {
 	return true
 }
 
+// OnReconnect is called when a paired device re-registers. It cancels any
+// grace timer held locally and broadcasts the reconnect so a sibling pod
+// holding the timer cancels too.
+func (r *Relay) OnReconnect(ctx context.Context, number, hardwareID string) {
+	r.cancelGraceLocal(number, hardwareID)
+	r.Hub.PublishReconnect(number, hardwareID)
+}
+
+// HandleRemoteReconnect is invoked from the Redis reconnect dispatch. It
+// cancels a locally held grace timer only; it never re-publishes.
+func (r *Relay) HandleRemoteReconnect(number, hardwareID string) {
+	r.cancelGraceLocal(number, hardwareID)
+}
+
 func (r *Relay) forward(ctx context.Context, msg *Message) {
 	if msg.To == "" {
 		slog.WarnContext(ctx, "no destination for message", "type", msg.Type, "from", msg.From)

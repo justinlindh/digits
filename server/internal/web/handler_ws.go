@@ -141,6 +141,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	if isPaired {
 		h.relay.OnRegistered(r.Context(), msg.Number)
+		h.relay.OnReconnect(r.Context(), msg.Number, msg.HardwareID)
 	}
 	number := msg.Number
 	ctx := r.Context()

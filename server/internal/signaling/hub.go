@@ -219,7 +219,7 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		h.mu.RLock()
 		hook := h.reconnectHook
 		h.mu.RUnlock()
-		if hook != nil && env.Message != nil {
+		if hook != nil {
 			hook(env.Target, env.Message.HardwareID)
 		}
 	}

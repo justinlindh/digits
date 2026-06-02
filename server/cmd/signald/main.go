@@ -181,6 +181,7 @@ func run(ctx context.Context) error {
 	relay.HealthStore = healthStore
 	relay.Errors = mreg
 	tracker.SetCallEndObserver(relay)
+	hub.SetReconnectHook(relay.HandleRemoteReconnect)
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
