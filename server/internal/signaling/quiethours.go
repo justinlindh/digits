@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// quietHoursTick is how often the scheduler re-evaluates each online line's
+// quietHoursTick is how often the scheduler re-evaluates each locally connected line's
 // effective silent state. Quiet-hours windows have minute granularity, so a
 // one-minute cadence catches every open/close transition with at most a
 // minute of lag. The work per tick is bounded by the number of currently
-// online lines and is a cheap settings lookup plus a comparison.
+// locally connected lines and is a cheap settings lookup plus a comparison.
 const quietHoursTick = time.Minute
 
 // QuietHoursScheduler periodically recomputes the effective per-line settings
@@ -56,7 +56,7 @@ func NewQuietHoursScheduler(hub *Hub, store LineStore) *QuietHoursScheduler {
 	}
 }
 
-// Run ticks until ctx is cancelled, evaluating online lines on each tick.
+// Run ticks until ctx is cancelled, evaluating locally connected lines on each tick.
 // Intended to be launched in its own goroutine from cmd/signald.
 func (s *QuietHoursScheduler) Run(ctx context.Context) {
 	if s.hub == nil || s.store == nil {
