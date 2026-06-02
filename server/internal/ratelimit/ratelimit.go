@@ -34,16 +34,14 @@ func New(limit int, window time.Duration) *Limiter {
 		limit:   limit,
 		window:  window,
 	}
-	go l.cleanupLoop()
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			l.evictExpired()
+		}
+	}()
 	return l
-}
-
-func (l *Limiter) cleanupLoop() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-	for range ticker.C {
-		l.Cleanup()
-	}
 }
 
 // Allow checks whether the given IP is within its rate limit.
@@ -64,8 +62,7 @@ func (l *Limiter) Allow(ip string) bool {
 	return true
 }
 
-// Cleanup removes expired bucket entries. Call periodically to prevent memory leak.
-func (l *Limiter) Cleanup() {
+func (l *Limiter) evictExpired() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := time.Now()
