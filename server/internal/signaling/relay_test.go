@@ -127,6 +127,11 @@ func (m *mockTracker) PeerOf(_ context.Context, number string) string {
 }
 
 func (m *mockTracker) AllPeersOf(_ context.Context, number string) []string {
+	// Explicit peers map takes precedence, mirroring PeerOf behavior so
+	// grace-window tests that stage via peers instead of calls still work.
+	if peer, ok := m.peers[number]; ok && peer != "" {
+		return []string{peer}
+	}
 	var peers []string
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
