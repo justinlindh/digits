@@ -15,6 +15,7 @@ type mockTracker struct {
 	initiated         []string
 	answered          []string
 	ended             []string
+	cleared           []string
 	calls             map[string]bool  // "a→b" keys for active calls
 	callIDs           map[string]int64 // "a→b" keys for active call IDs
 	conferences       *calls.ConferenceTracker
@@ -59,6 +60,7 @@ func (m *mockTracker) OnCallEnded(ctx context.Context, caller, callee string) er
 	return nil
 }
 func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
+	m.cleared = append(m.cleared, number)
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number || b == number {
@@ -67,6 +69,7 @@ func (m *mockTracker) ClearByNumber(ctx context.Context, number string) {
 		}
 	}
 }
+func (m *mockTracker) clearedNumbers() []string { return m.cleared }
 func (m *mockTracker) Busy(_ context.Context, number string) bool {
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")

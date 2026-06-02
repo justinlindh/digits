@@ -758,6 +758,59 @@ func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 	}
 }
 
+// startGraceTimer holds a 2-party call open for GraceWindow after the last
+// device on `number` disconnects. If the device re-registers within the
+// window (cancelGraceLocal), the call survives. Otherwise the call is torn
+// down and `peer` receives an explicit hangup.
+func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
+	key := graceKey(number, hardwareID)
+	r.graceMu.Lock()
+	if old, ok := r.graceTimers[key]; ok {
+		old.canceled = true
+		old.timer.Stop()
+	}
+	entry := &graceEntry{}
+	entry.timer = time.AfterFunc(r.GraceWindow, func() {
+		r.graceMu.Lock()
+		if entry.canceled {
+			r.graceMu.Unlock()
+			return
+		}
+		delete(r.graceTimers, key)
+		r.graceMu.Unlock()
+
+		ctx := context.Background()
+		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
+		if r.Tracker != nil {
+			r.Tracker.ClearByNumber(ctx, number)
+		}
+		r.clearExtensionsForCall(ctx, number)
+		if err := r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer}); err != nil {
+			slog.DebugContext(ctx, "grace: hangup to peer failed", "peer", peer, "err", err)
+		}
+	})
+	r.graceTimers[key] = entry
+	r.graceMu.Unlock()
+	slog.Info("grace: holding call through reconnect window", "number", number, "peer", peer, "window", r.GraceWindow)
+}
+
+// cancelGraceLocal stops a pending grace timer held by THIS pod. Returns
+// true if a live timer was found and canceled. Does not publish anything.
+func (r *Relay) cancelGraceLocal(number, hardwareID string) bool {
+	key := graceKey(number, hardwareID)
+	r.graceMu.Lock()
+	defer r.graceMu.Unlock()
+	entry, ok := r.graceTimers[key]
+	if !ok {
+		return false
+	}
+	entry.canceled = true
+	entry.timer.Stop()
+	delete(r.graceTimers, key)
+	slog.Info("grace: canceled by reconnect", "number", number)
+	return true
+}
+
 func (r *Relay) forward(ctx context.Context, msg *Message) {
 	if msg.To == "" {
 		slog.WarnContext(ctx, "no destination for message", "type", msg.Type, "from", msg.From)
