@@ -104,11 +104,11 @@ func TestMiddlewareRespectsXForwardedFor(t *testing.T) {
 	}
 }
 
-func TestCleanupRemovesStaleEntries(t *testing.T) {
+func TestEvictExpiredRemovesStaleEntries(t *testing.T) {
 	lim := New(1, 50*time.Millisecond)
 	lim.Allow("stale-ip")
 	time.Sleep(60 * time.Millisecond)
-	lim.Cleanup()
+	lim.evictExpired()
 	lim.mu.Lock()
 	_, exists := lim.buckets["stale-ip"]
 	lim.mu.Unlock()
