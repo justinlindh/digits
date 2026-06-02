@@ -699,19 +699,89 @@ func reconnectAction(ctrlState phone.State, hasMesh, hasPeer bool, connState web
 	return reconnResumeRestart
 }
 
+// cancelDisconnectDebounceLocked stops a pending Disconnected debounce timer.
+// Must be called with d.mu held.
+func (d *daemonCallbacks) cancelDisconnectDebounceLocked() {
+	if d.disconnectTimer != nil {
+		d.disconnectTimer.Stop()
+		d.disconnectTimer = nil
+	}
+}
+
+// enterICERecovery starts media recovery for the active 2-party call. The
+// caller side rotates ICE credentials and sends a fresh restart offer; the
+// callee side arms the wait timeout and waits for the caller's offer. Single
+// offerer (caller) avoids offer/answer glare. Idempotent: if recovery is
+// already in progress, it does nothing and lets the deadline timer govern.
+// Must NOT be called with d.mu held.
+func (d *daemonCallbacks) enterICERecovery(pm *owebrtc.PeerManager, reason string) {
+	d.mu.Lock()
+	if d.peerMgr != pm {
+		d.mu.Unlock()
+		return
+	}
+	if d.isRestartingICE {
+		d.mu.Unlock()
+		return
+	}
+	d.isRestartingICE = true
+	d.cancelDisconnectDebounceLocked()
+	d.startRestartTimeout()
+	isCaller := d.isCaller
+	peer := d.callPeer
+
+	if !isCaller {
+		d.mu.Unlock()
+		slog.Warn("ice-recovery: waiting for restart offer from caller", "reason", reason)
+		return
+	}
+
+	offer, err := d.peerMgr.CreateRestartOffer()
+	if err != nil {
+		slog.Error("ice-recovery: create offer failed", "error", err, "reason", reason)
+		d.isRestartingICE = false
+		if d.restartTimer != nil {
+			d.restartTimer.Stop()
+			d.restartTimer = nil
+		}
+		d.mu.Unlock()
+		d.triggerHangup()
+		return
+	}
+	sig := d.sig
+	d.mu.Unlock()
+
+	slog.Info("ice-recovery: sending restart offer", "peer", peer, "reason", reason, "bytes", len(offer))
+	sendSignal(sig, &sigclient.Message{
+		Type: sigclient.TypeICERestart,
+		To:   peer,
+		SDP:  offer,
+	})
+}
+
 // handleConnectionStateChange is called (without d.mu held) from a pion
-// goroutine when the WebRTC peer connection state changes.  On transient
-// failures the original caller attempts a single ICE restart before giving up.
+// goroutine when the WebRTC peer connection state changes. The action is
+// decided by connStateAction: Connected clears recovery, Disconnected starts a
+// debounce, Failed enters recovery, and a Failed event while already recovering
+// is ignored so the restart deadline timer governs the hangup.
 //
 // pm is the PeerManager captured at callback-setup time. Because HangupCall
 // detaches teardown into a goroutine, pion may fire a state change on a
 // pre-hangup peer after the daemon has already moved on to a new call. Every
-// branch that reads d.peerMgr / d.isCaller therefore checks d.peerMgr == pm
-// under d.mu and bails on mismatch, so a stale Failed event can't trigger an
-// ICE restart against the new call's peer.
+// branch that reads d.peerMgr therefore checks d.peerMgr == pm under d.mu and
+// bails on mismatch, so a stale event can't drive recovery against the new
+// call's peer.
 func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, state webrtc.PeerConnectionState) {
-	switch state {
-	case webrtc.PeerConnectionStateConnected:
+	d.mu.Lock()
+	if d.peerMgr != pm {
+		d.mu.Unlock()
+		return
+	}
+	action := connStateAction(state, d.isRestartingICE, d.disconnectTimer != nil)
+	d.mu.Unlock()
+
+	switch action {
+	case actionClearRecovery:
 		d.mu.Lock()
 		if d.peerMgr != pm {
 			d.mu.Unlock()
@@ -719,11 +789,12 @@ func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, s
 		}
 		wasRestarting := d.isRestartingICE
 		d.isRestartingICE = false
+		d.cancelDisconnectDebounceLocked()
 		if d.restartTimer != nil {
 			d.restartTimer.Stop()
 			d.restartTimer = nil
 		}
-		// Spawn the link-health reporter once per call (not on ICE restart recovery).
+		// Spawn the link-health reporter once per call (not on recovery).
 		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
 			rctx, cancel := context.WithCancel(context.Background())
 			d.reporterCancel = cancel
@@ -748,69 +819,46 @@ func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, s
 			d.mu.Unlock()
 		}
 		if wasRestarting {
-			slog.Info("webrtc: ICE restart succeeded -- connection recovered")
+			slog.Info("webrtc: ICE recovery succeeded -- connection recovered")
 		}
 
-	case webrtc.PeerConnectionStateFailed:
+	case actionStartDebounce:
 		d.mu.Lock()
-		if d.peerMgr != pm {
+		if d.peerMgr != pm || d.isRestartingICE || d.disconnectTimer != nil {
 			d.mu.Unlock()
 			return
 		}
-		alreadyRestarting := d.isRestartingICE
-		isCaller := d.isCaller
-		d.mu.Unlock()
-
-		if alreadyRestarting {
-			slog.Warn("webrtc: ICE restart failed, hanging up")
-			d.triggerHangup()
-			return
-		}
-
-		if isCaller {
-			slog.Warn("webrtc: connection failed, attempting ICE restart")
-			d.attemptICERestart()
-		} else {
-			slog.Warn("webrtc: connection failed, waiting for ICE restart from caller")
+		d.disconnectTimer = time.AfterFunc(disconnectDebounce, func() {
 			d.mu.Lock()
-			d.isRestartingICE = true
-			d.startRestartTimeout()
+			d.disconnectTimer = nil
+			stale := d.peerMgr != pm
+			recovering := d.isRestartingICE
 			d.mu.Unlock()
+			if stale || recovering {
+				return
+			}
+			if pm.ConnectionState() == webrtc.PeerConnectionStateConnected {
+				slog.Info("webrtc: disconnected self-healed during debounce")
+				return
+			}
+			slog.Warn("webrtc: still disconnected after debounce, entering ICE recovery")
+			d.enterICERecovery(pm, "disconnected-debounce")
+		})
+		d.mu.Unlock()
+		slog.Info("webrtc: disconnected, starting debounce", "debounce", disconnectDebounce)
+
+	case actionEnterRecovery:
+		d.mu.Lock()
+		d.cancelDisconnectDebounceLocked()
+		d.mu.Unlock()
+		slog.Warn("webrtc: connection failed, entering ICE recovery")
+		d.enterICERecovery(pm, "failed")
+
+	case actionNone:
+		if state == webrtc.PeerConnectionStateFailed {
+			slog.Warn("webrtc: connection failed while recovering; deadline timer governs")
 		}
 	}
-}
-
-// attemptICERestart creates a new SDP offer with rotated ICE credentials
-// and sends it to the remote peer.  Must NOT be called with d.mu held.
-func (d *daemonCallbacks) attemptICERestart() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.peerMgr == nil {
-		slog.Warn("ice-restart: no peer manager, hanging up")
-		d.triggerHangup()
-		return
-	}
-
-	d.isRestartingICE = true
-
-	offer, err := d.peerMgr.CreateRestartOffer()
-	if err != nil {
-		slog.Error("ice-restart: create offer failed", "error", err)
-		d.isRestartingICE = false
-		d.triggerHangup()
-		return
-	}
-
-	peer := d.callPeer
-	d.startRestartTimeout()
-
-	slog.Info("ice-restart: sending restart offer", "peer", peer, "bytes", len(offer))
-	sendSignal(d.sig, &sigclient.Message{
-		Type: sigclient.TypeICERestart,
-		To:   peer,
-		SDP:  offer,
-	})
 }
 
 // startRestartTimeout sets a timer that hangs up the call if the ICE restart

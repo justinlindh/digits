@@ -119,6 +119,7 @@ type daemonCallbacks struct {
 	callReturnOrigin      atomic.Bool // true when the current call was initiated via *69
 	isRestartingICE       bool        // true while an ICE restart is in progress
 	restartTimer          *time.Timer // timeout for ICE restart attempt
+	disconnectTimer       *time.Timer // debounce before reacting to pion Disconnected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.

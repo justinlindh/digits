@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
+	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
+	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -60,5 +62,79 @@ func TestReconnectAction(t *testing.T) {
 					tc.ctrlState, tc.hasMesh, tc.hasPeer, tc.connState, got, tc.want)
 			}
 		})
+	}
+}
+
+func newTestPeerManager(t *testing.T) *owebrtc.PeerManager {
+	t.Helper()
+	pm, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pm.Close() })
+	// Drive a full offer/answer handshake against a throwaway remote peer so the
+	// local PC reaches the stable signaling state with a live ICE agent. Recovery
+	// only ever runs on an established peer, where CreateRestartOffer can rotate
+	// credentials; a fresh PC has no ICE agent and CreateRestartOffer errors.
+	remote, err := owebrtc.NewPeerManager(owebrtc.NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = remote.Close() })
+	offer, err := pm.CreateOffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := remote.AcceptOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.SetAnswer(answer); err != nil {
+		t.Fatal(err)
+	}
+	return pm
+}
+
+func TestEnterICERecoveryCallerArmsTimerAndRecovers(t *testing.T) {
+	pm := newTestPeerManager(t)
+	// An unconnected client makes sendSignal return an error cleanly instead of
+	// dereferencing a nil receiver; the recovery bookkeeping still stands.
+	sig := sigclient.NewClient("ws://127.0.0.1:0/ws", "3140000", "hw", "tok")
+	d := &daemonCallbacks{peerMgr: pm, isCaller: true, callPeer: "3140002", sig: sig}
+	d.enterICERecovery(pm, "test")
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.isRestartingICE {
+		t.Fatal("caller recovery did not set isRestartingICE")
+	}
+	if d.restartTimer == nil {
+		t.Fatal("caller recovery did not arm the restart timeout")
+	}
+}
+
+func TestEnterICERecoveryCalleeWaitsWithoutOffer(t *testing.T) {
+	pm := newTestPeerManager(t)
+	d := &daemonCallbacks{peerMgr: pm, isCaller: false, callPeer: "3140001"}
+	d.enterICERecovery(pm, "test")
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.isRestartingICE {
+		t.Fatal("callee recovery did not set isRestartingICE")
+	}
+	if d.restartTimer == nil {
+		t.Fatal("callee recovery did not arm the wait timeout")
+	}
+}
+
+func TestEnterICERecoveryIdempotentWhenAlreadyRecovering(t *testing.T) {
+	pm := newTestPeerManager(t)
+	d := &daemonCallbacks{peerMgr: pm, isCaller: true, callPeer: "x", isRestartingICE: true}
+	d.enterICERecovery(pm, "test") // must be a no-op
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.restartTimer != nil {
+		t.Fatal("second recovery armed a duplicate timer")
 	}
 }
