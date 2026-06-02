@@ -42,9 +42,18 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
 )
 
-// iceRestartTimeout is how long to wait for an ICE restart to succeed
-// before giving up and hanging up the call.
-const iceRestartTimeout = 15 * time.Second
+// iceRestartTimeout is how long to wait for ICE recovery to succeed before
+// giving up and hanging up the call. It MUST exceed the server-side grace
+// window (20s in server/internal/signaling/relay.go) plus margin, so a peer
+// that stays connected does not give up before a dropped phone can reconnect
+// its WebSocket and re-establish media within that window.
+const iceRestartTimeout = 25 * time.Second
+
+// disconnectDebounce is how long the daemon waits after pion reports the
+// peer connection Disconnected before proactively driving ICE recovery.
+// pion can recover a transient blip on its own (STUN consent / connectivity
+// checks) within this window, in which case no restart is needed.
+const disconnectDebounce = 4 * time.Second
 
 // pairingRefreshInterval is how often an unpaired device reconnects to
 // obtain a fresh pairing code. Must be shorter than the server-side
@@ -76,20 +85,20 @@ var (
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
 type daemonCallbacks struct {
-	serial           *phone.SerialPort
-	sig              *sigclient.Client
-	mixer            *audio.Mixer
-	serviceCodes     *phone.ServiceCodeHandler
-	ctrl             *phone.Controller
-	mu               sync.Mutex
-	peerMgr          *owebrtc.PeerManager
-	mesh             *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
-	pipeline         *audio.Pipeline
-	number           string
-	cfg              *config.Config
-	pendingOffer     string
-	pendingCaller    string
-	pendingICE       []string // ICE candidates received before peerMgr is created
+	serial        *phone.SerialPort
+	sig           *sigclient.Client
+	mixer         *audio.Mixer
+	serviceCodes  *phone.ServiceCodeHandler
+	ctrl          *phone.Controller
+	mu            sync.Mutex
+	peerMgr       *owebrtc.PeerManager
+	mesh          *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
+	pipeline      *audio.Pipeline
+	number        string
+	cfg           *config.Config
+	pendingOffer  string
+	pendingCaller string
+	pendingICE    []string // ICE candidates received before peerMgr is created
 	// preAnswer holds a PeerConnection created during the ring phase to
 	// reduce call-answer latency. Promoted into the active call state on
 	// HOOK:OFF; torn down if the caller hangs up before we answer.
@@ -100,22 +109,23 @@ type daemonCallbacks struct {
 		candidates []string // local ICE candidates gathered during ring, sent on pickup
 		caller     string   // pendingCaller at time of preparation
 	}
-	iceServers       []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
-	debugMode        bool     // read from DIGITS_DEBUG env at startup
-	paired           atomic.Bool
-	pairingCode          string    // current pairing code from server
-	pairingCodeReceivedAt time.Time // when the current pairing code was received
-	callPeer             string // number of the remote party during an active call
-	isCaller             bool   // true if we initiated the current call
-	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
-	isRestartingICE      bool   // true while an ICE restart is in progress
-	restartTimer     *time.Timer // timeout for ICE restart attempt
+	iceServers            []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
+	debugMode             bool                      // read from DIGITS_DEBUG env at startup
+	paired                atomic.Bool
+	pairingCode           string      // current pairing code from server
+	pairingCodeReceivedAt time.Time   // when the current pairing code was received
+	callPeer              string      // number of the remote party during an active call
+	isCaller              bool        // true if we initiated the current call
+	callReturnOrigin      atomic.Bool // true when the current call was initiated via *69
+	isRestartingICE       bool        // true while an ICE restart is in progress
+	restartTimer          *time.Timer // timeout for ICE restart attempt
+	disconnectTimer       *time.Timer // debounce before reacting to pion Disconnected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.
-	reporterCancel      context.CancelFunc
-	linkHealthDisabled  bool
-	linkHealthInterval  time.Duration
+	reporterCancel     context.CancelFunc
+	linkHealthDisabled bool
+	linkHealthInterval time.Duration
 
 	// meshReporterCancels holds one CancelFunc per mesh peer's link-health
 	// reporter. Keyed by peer phone. Protected by mu, same as mesh.
@@ -2577,17 +2587,20 @@ func main() {
 				}
 				slog.Info("signal: reconnected")
 
-				// Tear down any active call. The server cleaned up its
-				// side on disconnect (OnDisconnect), but the local WebRTC
-				// peer connection and audio pipeline survive the WebSocket
-				// drop. Without this, the phone's ICE agent keeps sending
-				// renegotiation messages for a call the server no longer
-				// tracks, producing "sdp/ice without active call" errors.
+				// A 2-party call whose media survived the WebSocket drop is
+				// resumed in place; if media also dropped, drive ICE recovery.
+				// Anything else (conference, voicemail, ringing) is torn down:
+				// the server already cleared its side or will after its grace
+				// window, and stale renegotiation would error.
 				if ctrl.State() != phone.StateIDLE {
-					slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
-					cb.TearDownAllMeshPeers()
-					cb.HangupCall()
-					ctrl.Reset()
+					if cb.tryResumeAfterReconnect(ctrl.State()) {
+						slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
+					} else {
+						slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
+						cb.TearDownAllMeshPeers()
+						cb.HangupCall()
+						ctrl.Reset()
+					}
 				}
 
 				sendDeviceInfo(sig, fwVersion, fwCommit)
