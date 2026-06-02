@@ -279,6 +279,15 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 
 func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 	if !r.Hub.IsOnline(msg.To) {
+		// During the grace window a line's WebSocket is offline but its call
+		// is still tracked (Busy == true). Return busy instead of
+		// "phone not connected" so the caller gets the correct signal.
+		// Dashboard/presence remains transport-truth; this only corrects
+		// new-call routing to a grace-held line.
+		if r.Tracker != nil && r.Tracker.Busy(ctx, msg.To) {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			return
+		}
 		r.observeError("peer_unreachable")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return

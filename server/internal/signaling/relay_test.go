@@ -1383,3 +1383,66 @@ func TestRelayVoicemailStateZeroExplicitlyOverwrites(t *testing.T) {
 		t.Errorf("explicit zero should overwrite, got %d", got)
 	}
 }
+
+// TestHandleCallGraceHeldLineReturnsBusy verifies Fix I1: when the callee is
+// offline (grace window holding the call) but still Busy, a new caller
+// receives TypeBusy instead of TypeError "phone not connected".
+func TestHandleCallGraceHeldLineReturnsBusy(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	// 3140002 is in a call with 3140003 but its WebSocket is offline (grace window).
+	tracker.onCallInitiated("3140002", "3140003")
+
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	caller := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", caller)
+	// 3140002 is intentionally NOT registered so IsOnline returns false.
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+
+	select {
+	case data := <-caller.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeBusy {
+			t.Fatalf("expected TypeBusy for grace-held line, got type=%q error=%q", msg.Type, msg.Error)
+		}
+	default:
+		t.Fatal("caller did not receive any message")
+	}
+}
+
+// TestHandleCallOfflineAndIdleReturnsNotConnected verifies that the busy-first
+// check does not regress the existing "offline and not in a call" path: the
+// caller should still receive TypeError "phone not connected".
+func TestHandleCallOfflineAndIdleReturnsNotConnected(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	// 3140002 is offline and not in any call.
+
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	caller := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", caller)
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+
+	select {
+	case data := <-caller.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeError {
+			t.Fatalf("expected TypeError for offline idle line, got type=%q", msg.Type)
+		}
+		if msg.Error != "phone not connected" {
+			t.Fatalf("expected 'phone not connected', got %q", msg.Error)
+		}
+	default:
+		t.Fatal("caller did not receive any message")
+	}
+}
