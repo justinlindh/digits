@@ -23,6 +23,12 @@ const (
 	callReturnExpiry = 30 * time.Minute
 	// googleSTUN is the public STUN server included in every ICE-servers response.
 	googleSTUN = "stun:stun.l.google.com:19302"
+	// graceWindow is how long the server holds a 2-party call open after a
+	// phone's signaling WebSocket drops, giving the phone time to reconnect
+	// before the call is torn down. The Pi-side ICE recovery timeout
+	// (iceRestartTimeout) must exceed this so a waiting peer does not give up
+	// before a dropped phone can return.
+	graceWindow = 20 * time.Second
 )
 
 // CallTracker is the subset of *calls.Tracker that the Relay needs to track
@@ -106,6 +112,27 @@ type Relay struct {
 
 	pendingReturnsMu sync.Mutex
 	pendingReturns   map[string]*pendingCallReturn // requester number -> pending retry
+
+	// GraceWindow is how long a 2-party call is held open after the last
+	// device on a line disconnects, before teardown. Defaults to
+	// graceWindow; overridable in tests.
+	GraceWindow time.Duration
+
+	graceMu     sync.Mutex
+	graceTimers map[string]*graceEntry // key: graceKey(number, hardwareID)
+}
+
+// graceEntry holds a pending grace timer plus a cancel flag that closes the
+// time.AfterFunc race: a fire that is already past the deadline but blocked
+// on graceMu observes canceled == true (set by cancelGraceLocal under the
+// same lock) and bails instead of tearing down a call that just reconnected.
+type graceEntry struct {
+	timer    *time.Timer
+	canceled bool
+}
+
+func graceKey(number, hardwareID string) string {
+	return number + "\x00" + hardwareID
 }
 
 // observeError is a nil-safe pass-through to the SignalingErrorObserver.
@@ -154,6 +181,8 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 		LineStore:      lineStore,
 		extensions:     make(map[string]*activeExtension),
 		pendingReturns: make(map[string]*pendingCallReturn),
+		GraceWindow:    graceWindow,
+		graceTimers:    make(map[string]*graceEntry),
 	}
 }
 
