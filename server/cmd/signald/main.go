@@ -182,6 +182,7 @@ func run(ctx context.Context) error {
 	relay.Errors = mreg
 	tracker.SetCallEndObserver(relay)
 	hub.SetReconnectHook(relay.HandleRemoteReconnect)
+	hub.SetDropHook(func() { mreg.ObserveSignalingError("send_buffer_full") })
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")

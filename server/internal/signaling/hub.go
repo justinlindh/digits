@@ -88,6 +88,10 @@ type Hub struct {
 	state            *DeviceState // nil = single-instance mode (no cluster state)
 	draining         bool         // set by StartDraining; blocks new Register calls
 	reconnectHook    func(number, hardwareID string)
+	// dropHook is called each time a best-effort SendTo skips a device whose
+	// send buffer is full. Optional; nil disables. Wired in cmd/signald/main.go
+	// to the metrics registry to count dropped signaling sends.
+	dropHook func()
 }
 
 // NewHub creates a Hub ready for use. Call SetRedis and SetDeviceState before
@@ -117,6 +121,17 @@ func (h *Hub) SetRedis(bridge redisPubSub) {
 func (h *Hub) SetReconnectHook(fn func(number, hardwareID string)) {
 	h.mu.Lock()
 	h.reconnectHook = fn
+	h.mu.Unlock()
+}
+
+// SetDropHook registers a zero-argument callback that is called each time
+// SendTo skips a device because its send buffer is full. Used by
+// cmd/signald/main.go to wire in the metrics counter for dropped sends;
+// nil disables instrumentation. Must be called before the hub starts
+// handling messages.
+func (h *Hub) SetDropHook(fn func()) {
+	h.mu.Lock()
+	h.dropHook = fn
 	h.mu.Unlock()
 }
 
@@ -495,6 +510,10 @@ func (h *Hub) ConnectionCount(number string) int {
 	return len(h.conns[number])
 }
 
+// ErrSendTimeout is returned by SendToWithTimeout when the target's send
+// buffer does not drain within the deadline.
+var ErrSendTimeout = errors.New("send timed out: buffer full")
+
 // SendTo marshals msg and sends it to every device on the given line number.
 // This is the POTS extension model: a ring reaches all phones on the line.
 // Returns ErrNotConnected only when no devices are connected locally AND
@@ -520,15 +539,56 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 		}
 		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
+	dropHook := h.dropHook
 	for _, conn := range conns {
 		select {
 		case conn.Send <- data:
 		default:
 			slog.Warn("SendTo: send buffer full, skipping device",
 				"number", number, "hardware_id", conn.HardwareID)
+			if dropHook != nil {
+				dropHook()
+			}
 		}
 	}
 	h.mu.RUnlock()
+	return nil
+}
+
+// SendToWithTimeout attempts to deliver msg to every local device on number,
+// waiting up to timeout for each device's send buffer to have room. Unlike
+// SendTo it does NOT fall back to Redis on success (local-only delivery);
+// callers that need cross-pod delivery for the non-full case should use
+// SendTo. Returns ErrSendTimeout if any device's buffer stays full for the
+// entire timeout. Returns ErrNotConnected if no local device is present
+// (Redis paths are out of scope for timeout delivery).
+func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Duration) error {
+	data, err := msg.Marshal()
+	if err != nil {
+		return err
+	}
+
+	h.mu.RLock()
+	conns := h.conns[number]
+	if len(conns) == 0 {
+		h.mu.RUnlock()
+		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+	}
+	// Snapshot so we release the lock before blocking.
+	targets := make([]*Conn, len(conns))
+	copy(targets, conns)
+	h.mu.RUnlock()
+
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+
+	for _, conn := range targets {
+		select {
+		case conn.Send <- data:
+		case <-deadline.C:
+			return fmt.Errorf("phone %s hw %s: %w", number, conn.HardwareID, ErrSendTimeout)
+		}
+	}
 	return nil
 }
 

@@ -354,6 +354,14 @@ func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 	r.forward(ctx, msg)
 }
 
+// iceRestartDeliveryTimeout is how long handleICERestart waits for the
+// peer's send buffer to accept the offer before giving up. This is a
+// deliberate local-pod blocking send: losing the ICE-restart offer during
+// recovery stalls reconnection into a hangup, so a short wait is preferable
+// to the silent drop that SendTo's best-effort path would apply. Cross-pod
+// (Redis) forwarding continues to use best-effort delivery.
+const iceRestartDeliveryTimeout = 2 * time.Second
+
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(ctx, from, msg.To) {
 		slog.WarnContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
@@ -361,7 +369,18 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
-	r.forward(ctx, msg)
+	if msg.To == "" {
+		slog.WarnContext(ctx, "no destination for ice_restart", "from", from)
+		r.observeError("invalid_message")
+		return
+	}
+	// Use a blocking send with a short deadline so the offer is not silently
+	// dropped when the peer's send buffer is temporarily full during recovery.
+	// Redis forwarding stays best-effort: SendToWithTimeout is local-only.
+	if err := r.Hub.SendToWithTimeout(msg.To, msg, iceRestartDeliveryTimeout); err != nil {
+		slog.ErrorContext(ctx, "ice_restart delivery failed", "to", msg.To, "err", err)
+		r.observeError("relay_delivery")
+	}
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
