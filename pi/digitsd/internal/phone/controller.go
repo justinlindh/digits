@@ -94,7 +94,8 @@ type Callbacks interface {
 	InitiateCall(number string) error // Start outgoing WebRTC call
 	AnswerCall()                // Accept incoming WebRTC call
 	HangupCall()                // Tear down WebRTC call
-	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered
+	NotifyCallConnected()       // Notify the Pico that the WebRTC peer answered (Pico -> CONNECTED)
+	NotifyPicoReset()           // Reset the Pico FSM to IDLE, releasing a CALL:CONNECTED hold taken for a peerless local session
 	MutePeer(phone string)                                // Silence both directions of the A↔B audio path (silent hold)
 	UnmutePeer(phone string)                              // Restore both directions of the A↔B audio path
 	TearDownPeer(phone string)                            // Hang up and tear down the connection to a peer
@@ -310,6 +311,15 @@ func (c *Controller) Reset() {
 func (c *Controller) ResetToDialtone() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Release the CALL:CONNECTED hold taken when entering a peerless voicemail
+	// session (see the *98/*97 transitions). Without this the Pico stays in
+	// CONNECTED, where it never re-collects a dial buffer or fires DIAL:, so the
+	// next call after voicemail (without a hook cycle) could not be placed.
+	// Hangup exits don't reach here: that path goes through StateIDLE and the
+	// Pico self-resets on HOOK:ON.
+	if c.state == StateVOICEMAIL_PLAYBACK || c.state == StateVOICEMAIL_RECORD_GREETING {
+		c.cb.NotifyPicoReset()
+	}
 	c.state = StateDIALTONE
 	c.digits = ""
 }
@@ -527,6 +537,14 @@ func (c *Controller) onKey(digit string) {
 				slog.Info("phone: retrieval code detected, entering VOICEMAIL_PLAYBACK", "code", code)
 				c.digits = ""
 				c.state = StateVOICEMAIL_PLAYBACK
+				// Voicemail playback is peerless and local, but the user still
+				// drives it with the keypad (7/9/#/*). The Pico only forwards
+				// keys in DIALING or CONNECTED, and a partial dial (e.g. "*98")
+				// trips its 15s inter-digit timeout into BUSY, which silently
+				// drops every subsequent key. Move the Pico to CONNECTED so it
+				// keeps forwarding DTMF for the whole session; ResetToDialtone
+				// releases it on exit.
+				c.cb.NotifyCallConnected()
 				c.cb.VoicemailEnterPlayback()
 				return
 			}
@@ -571,6 +589,10 @@ func (c *Controller) onKey(digit string) {
 				slog.Info("phone: *97 detected, entering greeting record")
 				c.digits = ""
 				c.state = StateVOICEMAIL_RECORD_GREETING
+				// Same Pico key-forwarding hold as *98 playback: greeting record
+				// ends on "#", which the Pico would drop once the partial-dial
+				// timeout flips it to BUSY. ResetToDialtone releases on exit.
+				c.cb.NotifyCallConnected()
 				go c.cb.VoicemailRecordGreeting()
 				return
 			}
