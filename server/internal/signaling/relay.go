@@ -279,6 +279,15 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 
 func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 	if !r.Hub.IsOnline(msg.To) {
+		// During the grace window a line's WebSocket is offline but its call
+		// is still tracked (Busy == true). Return busy instead of
+		// "phone not connected" so the caller gets the correct signal.
+		// Dashboard/presence remains transport-truth; this only corrects
+		// new-call routing to a grace-held line.
+		if r.Tracker != nil && r.Tracker.Busy(ctx, msg.To) {
+			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
+			return
+		}
 		r.observeError("peer_unreachable")
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
@@ -354,6 +363,14 @@ func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 	r.forward(ctx, msg)
 }
 
+// iceRestartDeliveryTimeout is how long handleICERestart waits for the
+// peer's send buffer to accept the offer before giving up. Losing the
+// ICE-restart offer during recovery stalls reconnection into a hangup, so a
+// short bounded retry is preferable to the silent drop that SendTo's
+// best-effort path would apply. When the peer has no local connection the
+// send falls back to Redis for cross-pod delivery, like SendTo.
+const iceRestartDeliveryTimeout = 2 * time.Second
+
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(ctx, from, msg.To) {
 		slog.WarnContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
@@ -361,7 +378,18 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
-	r.forward(ctx, msg)
+	if msg.To == "" {
+		slog.WarnContext(ctx, "no destination for ice_restart", "from", from)
+		r.observeError("invalid_message")
+		return
+	}
+	// Bounded retry so the offer is not silently dropped when the peer's send
+	// buffer is temporarily full during recovery. SendToWithTimeout falls back
+	// to Redis when the peer has no local connection (cross-pod delivery).
+	if err := r.Hub.SendToWithTimeout(msg.To, msg, iceRestartDeliveryTimeout); err != nil {
+		slog.ErrorContext(ctx, "ice_restart delivery failed", "to", msg.To, "err", err)
+		r.observeError("relay_delivery")
+	}
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
