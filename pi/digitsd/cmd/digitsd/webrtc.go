@@ -717,10 +717,10 @@ func (d *daemonCallbacks) tryResumeAfterReconnect(ctrlState phone.State) bool {
 
 	switch reconnectAction(ctrlState, hasMesh, pm != nil, connState) {
 	case reconnResumeNoop:
-		slog.Info("signal: media survived reconnect, call continues")
+		slog.Info("signal: media survived reconnect, call continues", "state", ctrlState)
 		return true
 	case reconnResumeRestart:
-		slog.Info("signal: media dropped during reconnect, driving ICE recovery")
+		slog.Info("signal: media dropped during reconnect, driving ICE recovery", "state", ctrlState)
 		d.enterICERecovery(pm, "ws-reconnect")
 		return true
 	default: // reconnTeardown

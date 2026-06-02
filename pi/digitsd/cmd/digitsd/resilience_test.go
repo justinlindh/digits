@@ -166,10 +166,26 @@ func TestHandleConnStateFailedWhileRecoveringDoesNotHangUp(t *testing.T) {
 	}
 }
 
-func TestTryResumeNonResumableReturnsFalse(t *testing.T) {
+func TestTryResumeNoPeerReturnsFalse(t *testing.T) {
 	d := &daemonCallbacks{} // no peerMgr
 	if d.tryResumeAfterReconnect(phone.StateCONNECTED) {
 		t.Fatal("resume reported true with no active peer")
+	}
+}
+
+func TestTryResumeNonConnectedStateReturnsFalse(t *testing.T) {
+	pm := newTestPeerManager(t)
+	// Active 2-party peerMgr, no mesh, but the controller is RINGING (not
+	// CONNECTED): must tear down, not resume, and must not start recovery.
+	d := &daemonCallbacks{peerMgr: pm, isCaller: true, callPeer: "x"}
+	if d.tryResumeAfterReconnect(phone.StateRINGING) {
+		t.Fatal("non-CONNECTED state must not resume")
+	}
+	d.mu.Lock()
+	recovering := d.isRestartingICE
+	d.mu.Unlock()
+	if recovering {
+		t.Fatal("teardown path must not start ICE recovery")
 	}
 }
 
