@@ -16,6 +16,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
+	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
 
@@ -672,6 +673,30 @@ func connStateAction(state webrtc.PeerConnectionState, recovering, debouncePendi
 	default:
 		return actionNone
 	}
+}
+
+// reconnAction is the decision output for a signaling-WebSocket reconnect that
+// happened while the phone was not idle.
+type reconnAction int
+
+const (
+	reconnTeardown      reconnAction = iota // not a resumable 2-party call: tear down
+	reconnResumeNoop                        // 2-party call, media survived: keep going
+	reconnResumeRestart                     // 2-party call, media dropped: drive ICE recovery
+)
+
+// reconnectAction decides what to do with an active call when the signaling
+// WebSocket reconnects. Only an established 2-party call (no mesh, has peer,
+// controller in CONNECTED) is resumable; everything else (ringing, calling,
+// voicemail, conference) tears down as before. Pure and table-tested.
+func reconnectAction(ctrlState phone.State, hasMesh, hasPeer bool, connState webrtc.PeerConnectionState) reconnAction {
+	if !hasPeer || hasMesh || ctrlState != phone.StateCONNECTED {
+		return reconnTeardown
+	}
+	if connState == webrtc.PeerConnectionStateConnected {
+		return reconnResumeNoop
+	}
+	return reconnResumeRestart
 }
 
 // handleConnectionStateChange is called (without d.mu held) from a pion
