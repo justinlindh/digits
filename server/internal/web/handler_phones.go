@@ -799,6 +799,9 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 // fail the request (the next OnRegistered reconciles). On success (including
 // the no-op case where next == ln.Settings) it returns true and mutates
 // ln.Settings in place so callers rendering ln see the latest values.
+//
+// The push uses effective settings (quiet-hours-aware SilentMode) so a device
+// is not un-silenced by an unrelated setting change during an active window.
 func (h *Handler) applyLineSettings(w http.ResponseWriter, r *http.Request, ln *line.Line, next line.Settings) bool {
 	if next == ln.Settings {
 		return true
@@ -808,7 +811,12 @@ func (h *Handler) applyLineSettings(w http.ResponseWriter, r *http.Request, ln *
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return false
 	}
-	if err := h.pushLineSettings(ln.Number, next); err != nil {
+	effective, err := h.lineStore.EffectiveSettingsByNumber(r.Context(), ln.Number)
+	if err != nil {
+		slog.WarnContext(r.Context(), "fetch effective settings failed, pushing raw settings", "number", ln.Number, "err", err)
+		effective = next
+	}
+	if err := h.pushLineSettings(ln.Number, effective); err != nil {
 		slog.WarnContext(r.Context(), "push line settings failed", "number", ln.Number, "err", err)
 	}
 	ln.Settings = next
