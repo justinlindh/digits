@@ -2345,9 +2345,7 @@ func main() {
 				}
 				cb.mu.Lock()
 				cb.isRestartingICE = true
-				if cb.restartTimer != nil {
-					cb.restartTimer.Stop()
-				}
+				cb.cancelRestartTimerLocked()
 				cb.startRestartTimeout()
 				cb.mu.Unlock()
 				if peer == "" {
