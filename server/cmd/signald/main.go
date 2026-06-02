@@ -192,6 +192,13 @@ func run(ctx context.Context) error {
 		slog.Info("TURN credential generation enabled", "domain", cfg.TURNDomain)
 	}
 
+	// Quiet-hours scheduler: re-evaluates each online line's effective silent
+	// state on a one-minute cadence and pushes updated line settings when a
+	// scheduled window opens or closes, so a device that stays online across a
+	// boundary reflects the new state without waiting for a reconnect.
+	quietHours := signaling.NewQuietHoursScheduler(hub, signaling.NewLineStoreAdapter(lineStore))
+	go quietHours.Run(ctx)
+
 	// Auth
 	authStore := auth.NewStore(database.DB)
 	authStore.CookieDomain = cfg.CookieDomain

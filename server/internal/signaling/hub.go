@@ -984,6 +984,17 @@ func (h *Hub) OnlineNumbers() []string {
 	if ds != nil {
 		return ds.OnlineNumbers(context.Background())
 	}
+	return h.LocalNumbers()
+}
+
+// LocalNumbers returns the line numbers with at least one connection on THIS
+// hub instance, regardless of Redis state. Unlike OnlineNumbers, it never
+// consults the shared online roster, so in a multi-replica deployment each
+// number is returned by exactly the one replica it is connected to. Unpaired
+// keys are excluded. Used by the quiet-hours scheduler so a line is evaluated
+// and pushed by a single replica (local push, no Redis fan-out, no
+// duplication).
+func (h *Hub) LocalNumbers() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	nums := make([]string, 0, len(h.conns))

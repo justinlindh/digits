@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -242,4 +243,97 @@ func TestHandleSettingsDoNotDisturbPost_NoHouseholdRedirects(t *testing.T) {
 	if loc != "/settings" && loc != "/onboard" {
 		t.Fatalf("expected redirect to /settings or /onboard, got %q", loc)
 	}
+}
+
+// TestApplyLineSettings_PushesEffectiveSettingsDuringQuietHoursWindow verifies
+// that saving an unrelated line setting while a quiet-hours window is currently
+// active pushes SilentMode=true to the device, not the raw stored value.
+//
+// Without the fix, applyLineSettings would push the raw `next` settings
+// (SilentMode=false) and un-silence the device mid-window.
+func TestApplyLineSettings_PushesEffectiveSettingsDuringQuietHoursWindow(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	number := nextPhone()
+	ln, conn := setupLineWithConn(t, h, database, hh, number, "QH Test Phone")
+
+	// Set up a quiet-hours window that is active right now: 00:00-23:59 every
+	// day guarantees the window is open at any time of day for the UTC timezone
+	// that test households default to. SilentMode is explicitly off so the raw
+	// settings have SilentMode=false; only the effective path should return true.
+	now := time.Now().UTC()
+	// Build a 23-hour window that definitely contains now. We cannot use
+	// 00:00-23:59 because equal start/end (or same-minute boundary) is rejected
+	// by Normalize; instead anchor start 30 minutes before now and end 30
+	// minutes after, clamped to the valid range. Using a full all-days window
+	// guarantees the day filter passes regardless of when the test runs.
+	startH := now.Hour()
+	startM := now.Minute() - 30
+	if startM < 0 {
+		startM += 60
+		startH--
+	}
+	if startH < 0 {
+		startH = 0
+		startM = 0
+	}
+	endH := now.Hour()
+	endM := now.Minute() + 30
+	if endM >= 60 {
+		endM -= 60
+		endH++
+	}
+	if endH >= 24 {
+		endH = 23
+		endM = 59
+	}
+	// If the clamping collapsed start==end, fall back to a fixed overnight
+	// window guaranteed to contain any time: 00:00 to 23:59 expressed as two
+	// distinct minute values by using 00:00-23:58, then verifying separately.
+	startStr := fmt.Sprintf("%02d:%02d", startH, startM)
+	endStr := fmt.Sprintf("%02d:%02d", endH, endM)
+	if startStr == endStr {
+		startStr = "00:00"
+		endStr = "23:59"
+	}
+
+	qhSettings := line.Settings{
+		VoiceStyle: line.VoiceStyleCopper,
+		SilentMode: false, // explicit off: only quiet hours should silence
+		Voicemail:  line.DefaultVoicemail(),
+		QuietHours: line.QuietHours{
+			Enabled: true,
+			Start:   startStr,
+			End:     endStr,
+			Days:    line.AllDays(),
+		},
+	}
+	if err := h.lineStore.UpdateSettings(context.Background(), ln.ID, qhSettings); err != nil {
+		t.Fatalf("seed quiet-hours settings: %v", err)
+	}
+
+	// Confirm the effective settings see SilentMode=true (window is open).
+	effective, err := h.lineStore.EffectiveSettingsByNumber(context.Background(), number)
+	if err != nil {
+		t.Fatalf("EffectiveSettingsByNumber: %v", err)
+	}
+	if !effective.SilentMode {
+		t.Fatalf("precondition: quiet-hours window should be active right now, but SilentMode=false (start=%s end=%s)", startStr, endStr)
+	}
+
+	// POST an unrelated setting change (auto-update toggle). This triggers
+	// applyLineSettings with a new `next` that has SilentMode=false.
+	form := url.Values{"auto_update": {"on"}}
+	req := httptest.NewRequest(http.MethodPost, "/phones/"+number+"/auto-update", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The device must receive a push with SilentMode=true (effective), not false (raw).
+	expectLineSettingsPush(t, conn, true)
 }
