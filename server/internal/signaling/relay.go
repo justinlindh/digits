@@ -429,30 +429,37 @@ func (r *Relay) handleHangup(ctx context.Context, from string, msg *Message) {
 	// Resolve the set of peers to notify. In pre-merge ADD_* flows the host
 	// may have multiple active 2-party calls (A-B held and A-C active); a
 	// single hook-on ends both. For the normal 2-party case this is one peer.
-	var peers []string
-	if r.Tracker != nil {
-		peers = r.Tracker.AllPeersOf(ctx, from)
+	r.endActiveCallsAsHangup(ctx, from)
+}
+
+// endActiveCallsAsHangup ends every active 2-party call involving number the
+// same way an explicit hangup does: it records each call end (DB persistence
+// plus the OnCallEndedNotify observer that drives *69 retries) and forwards a
+// Hangup to each peer, then clears extension state. Shared by the hangup
+// handler and the grace-window expiry path so the two cannot drift.
+func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
+	if r.Tracker == nil {
+		return
 	}
+	peers := r.Tracker.AllPeersOf(ctx, number)
 	if len(peers) == 0 {
-		slog.DebugContext(ctx, "hangup from phone not in any active call", "from", from)
+		slog.DebugContext(ctx, "end calls: phone not in any active call", "number", number)
 		return
 	}
 	for _, peer := range peers {
-		if r.Tracker != nil {
-			callID := r.Tracker.CallIDForPair(ctx, from, peer)
-			if err := r.Tracker.OnCallEnded(ctx, from, peer); err != nil {
-				slog.ErrorContext(ctx, "failed to track call end", "err", err)
-			}
-			if callID != 0 {
-				attrs := []any{"call_id", callID, "from", from, "to", peer}
-				attrs = append(attrs, r.lineAttrs(ctx, from)...)
-				slog.InfoContext(ctx, "call ended", attrs...)
-				setSpanCallID(ctx, callID)
-			}
+		callID := r.Tracker.CallIDForPair(ctx, number, peer)
+		if err := r.Tracker.OnCallEnded(ctx, number, peer); err != nil {
+			slog.ErrorContext(ctx, "failed to track call end", "err", err)
 		}
-		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: from, To: peer})
+		if callID != 0 {
+			attrs := []any{"call_id", callID, "from", number, "to", peer}
+			attrs = append(attrs, r.lineAttrs(ctx, number)...)
+			slog.InfoContext(ctx, "call ended", attrs...)
+			setSpanCallID(ctx, callID)
+		}
+		_ = r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer})
 	}
-	r.clearExtensionsForCall(ctx, from)
+	r.clearExtensionsForCall(ctx, number)
 }
 
 func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
@@ -793,13 +800,7 @@ func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
 
 		ctx := context.Background()
 		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
-		if r.Tracker != nil {
-			r.Tracker.ClearByNumber(ctx, number)
-		}
-		r.clearExtensionsForCall(ctx, number)
-		if err := r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer}); err != nil {
-			slog.DebugContext(ctx, "grace: hangup to peer failed", "peer", peer, "err", err)
-		}
+		r.endActiveCallsAsHangup(ctx, number)
 	})
 	r.graceTimers[key] = entry
 	r.graceMu.Unlock()

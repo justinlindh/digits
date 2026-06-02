@@ -19,6 +19,7 @@ func TestNewRelaySetsDefaultGraceWindow(t *testing.T) {
 func TestGraceTimerFiresTeardownAndHangsUpPeer(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.GraceWindow = 20 * time.Millisecond
 
@@ -36,14 +37,15 @@ func TestGraceTimerFiresTeardownAndHangsUpPeer(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("peer never received hangup after grace expiry")
 	}
-	if got := tracker.clearedNumbers(); len(got) != 1 || got[0] != "3140001" {
-		t.Fatalf("ClearByNumber calls = %v, want [3140001]", got)
+	if len(tracker.ended) != 1 || tracker.ended[0] != "3140001→3140002" {
+		t.Fatalf("OnCallEnded = %v, want [3140001->3140002]", tracker.ended)
 	}
 }
 
 func TestCancelGraceLocalPreventsTeardown(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.GraceWindow = 50 * time.Millisecond
 
@@ -60,14 +62,15 @@ func TestCancelGraceLocalPreventsTeardown(t *testing.T) {
 		t.Fatal("peer received a hangup; grace should have been canceled")
 	case <-time.After(120 * time.Millisecond):
 	}
-	if got := tracker.clearedNumbers(); len(got) != 0 {
-		t.Fatalf("ClearByNumber called %v; expected none", got)
+	if len(tracker.ended) != 0 {
+		t.Fatalf("OnCallEnded called %v; expected none", tracker.ended)
 	}
 }
 
 func TestStartGraceTimerReplacesExistingTimer(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.GraceWindow = 30 * time.Millisecond
 
@@ -96,8 +99,8 @@ loop:
 	if hangups != 1 {
 		t.Fatalf("got %d hangups, want exactly 1 (old timer replaced, not double-fired)", hangups)
 	}
-	if got := tracker.clearedNumbers(); len(got) != 1 {
-		t.Fatalf("ClearByNumber calls = %v, want exactly 1", got)
+	if len(tracker.ended) != 1 {
+		t.Fatalf("OnCallEnded = %v, want exactly 1", tracker.ended)
 	}
 }
 
@@ -112,6 +115,9 @@ func TestOnDisconnectHoldsInCall2Party(t *testing.T) {
 
 	if got := tracker.clearedNumbers(); len(got) != 0 {
 		t.Fatalf("ClearByNumber called immediately: %v", got)
+	}
+	if len(tracker.ended) != 0 {
+		t.Fatalf("OnCallEnded called immediately (held, nothing ended yet): %v", tracker.ended)
 	}
 	if !relay.cancelGraceLocal("3140001", "hw-1") {
 		t.Fatal("no grace timer pending after in-call disconnect")
@@ -230,8 +236,8 @@ func TestGraceLifecycleReconnectWithinWindowKeepsCall(t *testing.T) {
 	relay.OnReconnect(context.Background(), "3140001", "hw-1")
 
 	time.Sleep(120 * time.Millisecond)
-	if got := tracker.clearedNumbers(); len(got) != 0 {
-		t.Fatalf("call torn down despite reconnect: %v", got)
+	if len(tracker.ended) != 0 {
+		t.Fatalf("call torn down despite reconnect: ended=%v", tracker.ended)
 	}
 	select {
 	case <-peer.Send:
@@ -261,7 +267,7 @@ func TestGraceLifecycleExpiryTearsDownAndNotifiesPeer(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("peer never notified after grace expiry")
 	}
-	if got := tracker.clearedNumbers(); len(got) != 1 {
-		t.Fatalf("ClearByNumber calls = %v, want one", got)
+	if len(tracker.ended) != 1 || tracker.ended[0] != "3140001→3140002" {
+		t.Fatalf("OnCallEnded = %v, want [3140001->3140002]", tracker.ended)
 	}
 }
