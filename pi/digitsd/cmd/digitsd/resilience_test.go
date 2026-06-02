@@ -22,6 +22,7 @@ func TestConnStateAction(t *testing.T) {
 		{"disconnected while debouncing is noop", webrtc.PeerConnectionStateDisconnected, false, true, actionNone},
 		{"disconnected while recovering is noop", webrtc.PeerConnectionStateDisconnected, true, false, actionNone},
 		{"failed fresh enters recovery", webrtc.PeerConnectionStateFailed, false, false, actionEnterRecovery},
+		{"failed during debounce enters recovery", webrtc.PeerConnectionStateFailed, false, true, actionEnterRecovery},
 		{"failed while recovering is noop", webrtc.PeerConnectionStateFailed, true, false, actionNone},
 		{"connecting is noop", webrtc.PeerConnectionStateConnecting, false, false, actionNone},
 		{"closed is noop", webrtc.PeerConnectionStateClosed, false, false, actionNone},
