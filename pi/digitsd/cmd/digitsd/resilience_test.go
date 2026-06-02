@@ -138,3 +138,30 @@ func TestEnterICERecoveryIdempotentWhenAlreadyRecovering(t *testing.T) {
 		t.Fatal("second recovery armed a duplicate timer")
 	}
 }
+
+func TestHandleConnStateFailedWhileRecoveringDoesNotHangUp(t *testing.T) {
+	pm := newTestPeerManager(t)
+	// nil ctrl: triggerHangup would early-return on nil ctrl anyway, but the
+	// point is the actionNone branch must not even attempt teardown. We assert
+	// recovery state is left intact (isRestartingICE stays true, no panic).
+	d := &daemonCallbacks{peerMgr: pm, isCaller: true, callPeer: "x", isRestartingICE: true}
+	// restartTimer would normally be armed during recovery; simulate that.
+	d.mu.Lock()
+	d.startRestartTimeout()
+	d.mu.Unlock()
+
+	d.handleConnectionStateChange(pm, webrtc.PeerConnectionStateFailed)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.isRestartingICE {
+		t.Fatal("Failed-while-recovering cleared recovery state; it must let the deadline timer govern")
+	}
+	if d.restartTimer != nil {
+		// Timer is still armed (not stopped by a teardown); stop it so the test
+		// does not leave a 25s AfterFunc dangling.
+		d.restartTimer.Stop()
+	} else {
+		t.Fatal("Failed-while-recovering stopped the restart timer; deadline must still govern")
+	}
+}

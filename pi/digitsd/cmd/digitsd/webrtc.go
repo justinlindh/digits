@@ -340,6 +340,7 @@ func (d *daemonCallbacks) HangupCall() {
 		d.restartTimer.Stop()
 		d.restartTimer = nil
 	}
+	d.cancelDisconnectDebounceLocked()
 
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
 
