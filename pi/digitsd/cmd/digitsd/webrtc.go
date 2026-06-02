@@ -336,10 +336,7 @@ func (d *daemonCallbacks) HangupCall() {
 	d.isCaller = false
 	d.callReturnOrigin.Store(false)
 	d.isRestartingICE = false
-	if d.restartTimer != nil {
-		d.restartTimer.Stop()
-		d.restartTimer = nil
-	}
+	d.cancelRestartTimerLocked()
 	d.cancelDisconnectDebounceLocked()
 
 	sendSignal(d.sig, &sigclient.Message{Type: sigclient.TypeHangup, To: peer})
@@ -737,6 +734,15 @@ func (d *daemonCallbacks) cancelDisconnectDebounceLocked() {
 	}
 }
 
+// cancelRestartTimerLocked stops the ICE-restart deadline timer.
+// Must be called with d.mu held.
+func (d *daemonCallbacks) cancelRestartTimerLocked() {
+	if d.restartTimer != nil {
+		d.restartTimer.Stop()
+		d.restartTimer = nil
+	}
+}
+
 // enterICERecovery starts media recovery for the active 2-party call. The
 // caller side rotates ICE credentials and sends a fresh restart offer; the
 // callee side arms the wait timeout and waits for the caller's offer. Single
@@ -769,10 +775,7 @@ func (d *daemonCallbacks) enterICERecovery(pm *owebrtc.PeerManager, reason strin
 	if err != nil {
 		slog.Error("ice-recovery: create offer failed", "error", err, "reason", reason)
 		d.isRestartingICE = false
-		if d.restartTimer != nil {
-			d.restartTimer.Stop()
-			d.restartTimer = nil
-		}
+		d.cancelRestartTimerLocked()
 		d.mu.Unlock()
 		d.triggerHangup()
 		return
@@ -819,10 +822,7 @@ func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, s
 		wasRestarting := d.isRestartingICE
 		d.isRestartingICE = false
 		d.cancelDisconnectDebounceLocked()
-		if d.restartTimer != nil {
-			d.restartTimer.Stop()
-			d.restartTimer = nil
-		}
+		d.cancelRestartTimerLocked()
 		// Spawn the link-health reporter once per call (not on recovery).
 		if !d.linkHealthDisabled && d.reporterCancel == nil && d.peerMgr != nil {
 			rctx, cancel := context.WithCancel(context.Background())
