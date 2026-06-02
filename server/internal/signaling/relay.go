@@ -23,6 +23,12 @@ const (
 	callReturnExpiry = 30 * time.Minute
 	// googleSTUN is the public STUN server included in every ICE-servers response.
 	googleSTUN = "stun:stun.l.google.com:19302"
+	// graceWindow is how long the server holds a 2-party call open after a
+	// phone's signaling WebSocket drops, giving the phone time to reconnect
+	// before the call is torn down. The Pi-side ICE recovery timeout
+	// (iceRestartTimeout) must exceed this so a waiting peer does not give up
+	// before a dropped phone can return.
+	graceWindow = 20 * time.Second
 )
 
 // CallTracker is the subset of *calls.Tracker that the Relay needs to track
@@ -101,11 +107,33 @@ type Relay struct {
 	// in cmd/signald/main.go.
 	Errors SignalingErrorObserver
 
+	// GraceWindow is how long a 2-party call is held open after the last
+	// device on a line disconnects, before teardown. Defaults to
+	// graceWindow; overridable in tests. Must be set before the relay starts
+	// handling messages; it is read without synchronization.
+	GraceWindow time.Duration
+
 	extMu      sync.Mutex
 	extensions map[string]*activeExtension // hardware_id -> extension state
 
 	pendingReturnsMu sync.Mutex
 	pendingReturns   map[string]*pendingCallReturn // requester number -> pending retry
+
+	graceMu     sync.Mutex
+	graceTimers map[string]*graceEntry // key: graceKey(number, hardwareID)
+}
+
+// graceEntry holds a pending grace timer plus a cancel flag that closes the
+// time.AfterFunc race: a fire that is already past the deadline but blocked
+// on graceMu observes canceled == true (set by cancelGraceLocal under the
+// same lock) and bails instead of tearing down a call that just reconnected.
+type graceEntry struct {
+	timer    *time.Timer
+	canceled bool
+}
+
+func graceKey(number, hardwareID string) string {
+	return number + "\x00" + hardwareID
 }
 
 // observeError is a nil-safe pass-through to the SignalingErrorObserver.
@@ -154,6 +182,8 @@ func NewRelay(hub *Hub, tracker CallTracker, authorizer CallAuthorizer, lineStor
 		LineStore:      lineStore,
 		extensions:     make(map[string]*activeExtension),
 		pendingReturns: make(map[string]*pendingCallReturn),
+		GraceWindow:    graceWindow,
+		graceTimers:    make(map[string]*graceEntry),
 	}
 }
 
@@ -557,12 +587,24 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID stri
 	if r.Tracker == nil {
 		return
 	}
+	// Other devices remain on the line: the call is still held by a sibling.
 	if r.Hub.ConnectionCount(number) > 1 {
 		return
 	}
+	// Conferences are out of scope for the grace window: tear down now.
 	if conf := r.Tracker.Conferences().ConferenceByPhone(ctx, number); conf != nil {
 		r.endConference(ctx, conf.ID, "disconnect")
+		r.Tracker.ClearByNumber(ctx, number)
+		r.clearExtensionsForCall(ctx, number)
+		return
 	}
+	// Active 2-party call: hold it open through a reconnect grace window
+	// instead of tearing down immediately. The peer is NOT notified yet.
+	if peer := r.Tracker.PeerOf(ctx, number); peer != "" {
+		r.startGraceTimer(number, hardwareID, peer)
+		return
+	}
+	// Not in a call: nothing to hold; clear (no-op for an idle line).
 	r.Tracker.ClearByNumber(ctx, number)
 	r.clearExtensionsForCall(ctx, number)
 }
@@ -726,6 +768,73 @@ func (r *Relay) clearExtensionsForCall(ctx context.Context, lineNumber string) {
 		attrs = append(attrs, lineAttrs...)
 		slog.InfoContext(ctx, "extension cleared (call ended)", attrs...)
 	}
+}
+
+// startGraceTimer holds a 2-party call open for GraceWindow after the last
+// device on `number` disconnects. If the device re-registers within the
+// window (cancelGraceLocal), the call survives. Otherwise the call is torn
+// down and `peer` receives an explicit hangup.
+func (r *Relay) startGraceTimer(number, hardwareID, peer string) {
+	key := graceKey(number, hardwareID)
+	r.graceMu.Lock()
+	if old, ok := r.graceTimers[key]; ok {
+		old.canceled = true
+		old.timer.Stop()
+	}
+	entry := &graceEntry{}
+	entry.timer = time.AfterFunc(r.GraceWindow, func() {
+		r.graceMu.Lock()
+		if entry.canceled {
+			r.graceMu.Unlock()
+			return
+		}
+		delete(r.graceTimers, key)
+		r.graceMu.Unlock()
+
+		ctx := context.Background()
+		slog.InfoContext(ctx, "grace: window expired, tearing down call", "number", number, "peer", peer)
+		if r.Tracker != nil {
+			r.Tracker.ClearByNumber(ctx, number)
+		}
+		r.clearExtensionsForCall(ctx, number)
+		if err := r.Hub.SendTo(peer, &Message{Type: TypeHangup, From: number, To: peer}); err != nil {
+			slog.DebugContext(ctx, "grace: hangup to peer failed", "peer", peer, "err", err)
+		}
+	})
+	r.graceTimers[key] = entry
+	r.graceMu.Unlock()
+	slog.InfoContext(context.Background(), "grace: holding call through reconnect window", "number", number, "peer", peer, "window", r.GraceWindow)
+}
+
+// cancelGraceLocal stops a pending grace timer held by THIS pod. Returns
+// true if a live timer was found and canceled. Does not publish anything.
+func (r *Relay) cancelGraceLocal(number, hardwareID string) bool {
+	key := graceKey(number, hardwareID)
+	r.graceMu.Lock()
+	defer r.graceMu.Unlock()
+	entry, ok := r.graceTimers[key]
+	if !ok {
+		return false
+	}
+	entry.canceled = true
+	entry.timer.Stop()
+	delete(r.graceTimers, key)
+	slog.InfoContext(context.Background(), "grace: canceled by reconnect", "number", number)
+	return true
+}
+
+// OnReconnect is called when a paired device re-registers. It cancels any
+// grace timer held locally and broadcasts the reconnect so a sibling pod
+// holding the timer cancels too.
+func (r *Relay) OnReconnect(ctx context.Context, number, hardwareID string) {
+	r.cancelGraceLocal(number, hardwareID)
+	r.Hub.PublishReconnect(number, hardwareID)
+}
+
+// HandleRemoteReconnect is invoked from the Redis reconnect dispatch. It
+// cancels a locally held grace timer only; it never re-publishes.
+func (r *Relay) HandleRemoteReconnect(number, hardwareID string) {
+	r.cancelGraceLocal(number, hardwareID)
 }
 
 func (r *Relay) forward(ctx context.Context, msg *Message) {
