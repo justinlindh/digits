@@ -555,41 +555,77 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	return nil
 }
 
-// SendToWithTimeout attempts to deliver msg to every local device on number,
-// waiting up to timeout for each device's send buffer to have room. Unlike
-// SendTo it does NOT fall back to Redis on success (local-only delivery);
-// callers that need cross-pod delivery for the non-full case should use
-// SendTo. Returns ErrSendTimeout if any device's buffer stays full for the
-// entire timeout. Returns ErrNotConnected if no local device is present
-// (Redis paths are out of scope for timeout delivery).
+// sendRetryInterval is how long SendToWithTimeout sleeps between attempts to
+// re-offer a message to a device whose send buffer was full.
+const sendRetryInterval = 20 * time.Millisecond
+
+// SendToWithTimeout delivers msg to every local device on number, retrying
+// buffer-full devices until the buffer drains or the timeout elapses. Each
+// send is attempted under the read lock inside a non-blocking select, so a
+// concurrent Unregister (which closes conn.Send under the write lock) can
+// never close a channel out from under an in-flight send: a removed conn is
+// simply absent from the next iteration's list. delivered (keyed by *Conn)
+// prevents re-sending to a device that already accepted the message while a
+// sibling's buffer was still full.
+//
+// When no local device is connected the message is published to Redis for
+// cross-pod delivery, mirroring SendTo, so reliable callers (ICE-restart)
+// reach peers on other pods. Returns ErrSendTimeout if any device's buffer
+// stays full for the whole timeout, ErrNotConnected if there is neither a
+// local conn nor a Redis bridge.
 func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Duration) error {
 	data, err := msg.Marshal()
 	if err != nil {
 		return err
 	}
 
-	h.mu.RLock()
-	conns := h.conns[number]
-	if len(conns) == 0 {
-		h.mu.RUnlock()
-		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
-	}
-	// Snapshot so we release the lock before blocking.
-	targets := make([]*Conn, len(conns))
-	copy(targets, conns)
-	h.mu.RUnlock()
-
-	deadline := time.NewTimer(timeout)
-	defer deadline.Stop()
-
-	for _, conn := range targets {
-		select {
-		case conn.Send <- data:
-		case <-deadline.C:
-			return fmt.Errorf("phone %s hw %s: %w", number, conn.HardwareID, ErrSendTimeout)
+	deadline := time.Now().Add(timeout)
+	delivered := make(map[*Conn]bool)
+	for {
+		h.mu.RLock()
+		conns := h.conns[number]
+		bridge := h.redis
+		dropHook := h.dropHook
+		if len(conns) == 0 {
+			h.mu.RUnlock()
+			// No local conn: fall back to cross-pod delivery via Redis,
+			// best-effort, exactly as SendTo does.
+			if bridge != nil {
+				bridge.Publish(context.Background(), &Envelope{
+					TargetType: "number",
+					Target:     number,
+					Message:    msg,
+				})
+				return nil
+			}
+			return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 		}
+		pending := false
+		for _, conn := range conns {
+			if delivered[conn] {
+				continue
+			}
+			select {
+			case conn.Send <- data:
+				delivered[conn] = true
+			default:
+				pending = true
+			}
+		}
+		h.mu.RUnlock()
+
+		if !pending {
+			return nil
+		}
+		if !time.Now().Before(deadline) {
+			slog.Warn("SendToWithTimeout: send buffer full past deadline", "number", number)
+			if dropHook != nil {
+				dropHook()
+			}
+			return fmt.Errorf("phone %s: %w", number, ErrSendTimeout)
+		}
+		time.Sleep(sendRetryInterval)
 	}
-	return nil
 }
 
 func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
