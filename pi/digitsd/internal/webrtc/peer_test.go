@@ -173,3 +173,15 @@ func TestPeerManager_ICERestart(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPeerManagerConnectionStateInitiallyNew(t *testing.T) {
+	pm, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pm.Close() }()
+
+	if got := pm.ConnectionState(); got != webrtc.PeerConnectionStateNew {
+		t.Fatalf("fresh peer ConnectionState = %v, want New", got)
+	}
+}

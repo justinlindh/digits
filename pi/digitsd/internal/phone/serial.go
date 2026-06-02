@@ -245,6 +245,14 @@ func (sp *SerialPort) CallConnected() {
 	sp.SendFire("CALL:CONNECTED")
 }
 
+// Reset sends RESET to the Pico, returning its FSM to IDLE (RST:OK). Used to
+// release a CALL:CONNECTED hold taken for a peerless local session (voicemail)
+// so the Pico re-arms its dial path and can place the next call without a hook
+// cycle.
+func (sp *SerialPort) Reset() {
+	sp.SendFire("RESET")
+}
+
 // EnableFlashDetection opens the flash-detection window on the Pico: after
 // on-hook it waits up to 600ms to distinguish a flash from a hangup. The Pi
 // enables this only while in a call.

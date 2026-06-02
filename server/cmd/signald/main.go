@@ -181,6 +181,7 @@ func run(ctx context.Context) error {
 	relay.HealthStore = healthStore
 	relay.Errors = mreg
 	tracker.SetCallEndObserver(relay)
+	hub.SetReconnectHook(relay.HandleRemoteReconnect)
 	if cfg.TURNEnabled {
 		if cfg.TURNSecret == "" {
 			return errors.New("SIGNALD_TURN_SECRET must be set when TURN is enabled")
@@ -261,12 +262,12 @@ func run(ctx context.Context) error {
 	// Release index: prefer the static fixture (e2e/CI) over live GitHub data.
 	switch {
 	case cfg.FakeUpdates:
-		handler.Releases = updates.FakeReleaseIndex()
+		handler.SetReleases(updates.FakeReleaseIndex())
 		slog.Info("updates: using fake release index (TEST_FAKE_UPDATES=1)")
 	case cfg.GitHubRepo != "":
 		parts := strings.SplitN(cfg.GitHubRepo, "/", 2)
 		if len(parts) == 2 {
-			handler.Releases = updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, releaseCacheTTL,
+			handler.SetReleases(updates.NewGitHubReleases(ctx, parts[0], parts[1], cfg.GitHubToken, releaseCacheTTL,
 				func(piLatest, fwLatest string) {
 					slog.Info("updates: new release detected, broadcasting", "pi", piLatest, "fw", fwLatest)
 					handler.Hub().Broadcast(&signaling.Message{
@@ -274,7 +275,7 @@ func run(ctx context.Context) error {
 						LatestPiVersion: piLatest,
 						LatestFWVersion: fwLatest,
 					})
-				})
+				}))
 			slog.Info("updates: release index from GitHub", "repo", cfg.GitHubRepo)
 		} else {
 			slog.Warn("GITHUB_REPO must be in owner/repo format, ignoring", "value", cfg.GitHubRepo)

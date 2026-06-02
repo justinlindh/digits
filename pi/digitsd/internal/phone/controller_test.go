@@ -22,6 +22,7 @@ type mockCallbacks struct {
 	hangups            int
 	answers            int
 	callConnectedCalls int
+	picoResets         int
 	callReturns        int
 	ringPatterns       []int
 	callReturnCancels  int
@@ -96,6 +97,11 @@ func (m *mockCallbacks) NotifyCallConnected() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.callConnectedCalls++
+}
+func (m *mockCallbacks) NotifyPicoReset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.picoResets++
 }
 func (m *mockCallbacks) MutePeer(phone string) { m.setMuted(phone, true) }
 
@@ -293,6 +299,11 @@ func (m *mockCallbacks) CallConnectedCalls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callConnectedCalls
+}
+func (m *mockCallbacks) PicoResets() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.picoResets
 }
 func (m *mockCallbacks) VoicemailAutoAnswers() int {
 	m.mu.Lock()
@@ -2423,6 +2434,84 @@ func TestRetrievalCodeIntercept(t *testing.T) {
 	}
 	if len(cb.Calls()) != 0 {
 		t.Errorf("expected no InitiateCall, got %v", cb.Calls())
+	}
+}
+
+// TestVoicemailPlaybackPicoHoldAndRelease verifies the Pico key-forwarding
+// hold around a peerless *98 session: entering playback moves the Pico to
+// CONNECTED (NotifyCallConnected) so it keeps forwarding DTMF past its 15s
+// partial-dial timeout, and the exit-to-dialtone path releases that hold
+// (NotifyPicoReset) so the next call can be dialed without a hook cycle.
+func TestVoicemailPlaybackPicoHoldAndRelease(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:8")
+
+	if got := cb.CallConnectedCalls(); got != 1 {
+		t.Fatalf("expected 1 NotifyCallConnected (Pico hold) on *98 entry, got %d", got)
+	}
+	if got := cb.PicoResets(); got != 0 {
+		t.Fatalf("expected no NotifyPicoReset before exit, got %d", got)
+	}
+
+	c.ResetToDialtone()
+
+	if got := cb.PicoResets(); got != 1 {
+		t.Fatalf("expected 1 NotifyPicoReset on exit from playback, got %d", got)
+	}
+	if c.State() != StateDIALTONE {
+		t.Errorf("expected DIALTONE after reset, got %s", c.State())
+	}
+}
+
+// TestRecordGreetingPicoHold verifies that *97 greeting record takes the same
+// Pico hold (so "#" still terminates after 15s) and releases it on exit.
+func TestRecordGreetingPicoHold(t *testing.T) {
+	cb := &mockCallbacks{
+		voicemailEnabled: func() (bool, time.Duration) { return true, 20 * time.Second },
+	}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.HandleEvent("HOOK:OFF")
+	c.HandleEvent("KEY:*")
+	c.HandleEvent("KEY:9")
+	c.HandleEvent("KEY:7")
+
+	if c.State() != StateVOICEMAIL_RECORD_GREETING {
+		t.Fatalf("expected VOICEMAIL_RECORD_GREETING after *97, got %s", c.State())
+	}
+	if got := cb.CallConnectedCalls(); got != 1 {
+		t.Fatalf("expected 1 NotifyCallConnected (Pico hold) on *97 entry, got %d", got)
+	}
+
+	c.ResetToDialtone()
+
+	if got := cb.PicoResets(); got != 1 {
+		t.Fatalf("expected 1 NotifyPicoReset on exit from record greeting, got %d", got)
+	}
+}
+
+// TestResetToDialtoneNoPicoResetOutsideVoicemail guards the release: a plain
+// ResetToDialtone from a non-voicemail state (e.g. mid-dial) must NOT poke the
+// Pico, since no CALL:CONNECTED hold was taken for those flows.
+func TestResetToDialtoneNoPicoResetOutsideVoicemail(t *testing.T) {
+	cb := &mockCallbacks{}
+	c := newTestController(cb, "5551000")
+	defer c.Close()
+
+	c.setStateForTest(StateDIALING)
+	c.ResetToDialtone()
+
+	if got := cb.PicoResets(); got != 0 {
+		t.Errorf("expected no NotifyPicoReset from non-voicemail ResetToDialtone, got %d", got)
 	}
 }
 

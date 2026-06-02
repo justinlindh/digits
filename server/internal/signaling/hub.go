@@ -87,6 +87,7 @@ type Hub struct {
 	redis            redisPubSub  // nil = single-instance mode (no Redis)
 	state            *DeviceState // nil = single-instance mode (no cluster state)
 	draining         bool         // set by StartDraining; blocks new Register calls
+	reconnectHook    func(number, hardwareID string)
 }
 
 // NewHub creates a Hub ready for use. Call SetRedis and SetDeviceState before
@@ -108,6 +109,31 @@ func (h *Hub) SetRedis(bridge redisPubSub) {
 	h.mu.Lock()
 	h.redis = bridge
 	h.mu.Unlock()
+}
+
+// SetReconnectHook registers a callback invoked when a "reconnect" envelope
+// arrives from another pod. Used to cancel a grace timer held on this pod
+// for a device that re-registered elsewhere.
+func (h *Hub) SetReconnectHook(fn func(number, hardwareID string)) {
+	h.mu.Lock()
+	h.reconnectHook = fn
+	h.mu.Unlock()
+}
+
+// PublishReconnect broadcasts that a device re-registered, so any pod holding
+// a grace timer for it cancels. No-op in single-instance mode.
+func (h *Hub) PublishReconnect(number, hardwareID string) {
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge == nil {
+		return
+	}
+	bridge.Publish(context.Background(), &Envelope{
+		TargetType: "reconnect",
+		Target:     number,
+		Message:    &Message{HardwareID: hardwareID},
+	})
 }
 
 // SetDeviceState attaches a DeviceState to the hub, enabling cluster-wide
@@ -188,6 +214,16 @@ func (h *Hub) deliverFromRedis(env *Envelope) {
 		}
 		h.mu.RUnlock()
 		slog.Debug("redis: delivered broadcast from remote pod", "pod", env.PodID)
+
+	case "reconnect":
+		// env.Message is guaranteed non-nil by the early return at the top of
+		// deliverFromRedis.
+		h.mu.RLock()
+		hook := h.reconnectHook
+		h.mu.RUnlock()
+		if hook != nil {
+			hook(env.Target, env.Message.HardwareID)
+		}
 	}
 }
 

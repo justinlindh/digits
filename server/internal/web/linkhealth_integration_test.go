@@ -474,7 +474,7 @@ func TestForceDisconnect_WritesAuditAndTearsDown(t *testing.T) {
 	).Scan(&status, &endedAt); err != nil {
 		t.Fatalf("scan call: %v", err)
 	}
-	if status != "ended" {
+	if status != calls.CallStatusEnded {
 		t.Fatalf("status: got %q want ended", status)
 	}
 	if !endedAt.Valid {

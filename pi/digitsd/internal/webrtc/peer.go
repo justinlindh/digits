@@ -265,3 +265,9 @@ func (m *PeerManager) GetStats() webrtc.StatsReport {
 func (m *PeerManager) Close() error {
 	return m.pc.Close()
 }
+
+// ConnectionState reports the current peer connection state. Used by the
+// reconnect path to decide whether media survived a signaling blip.
+func (m *PeerManager) ConnectionState() webrtc.PeerConnectionState {
+	return m.pc.ConnectionState()
+}

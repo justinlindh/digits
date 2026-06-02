@@ -3,8 +3,6 @@ package web
 import (
 	"crypto/subtle"
 	"encoding/json"
-	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 
@@ -132,14 +130,7 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 
 	// Return HTML for htmx, JSON for API clients
 	if isHTMX(r) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if len(pairs) == 0 {
-			_, _ = fmt.Fprint(w, `<div class="px-4 py-8 text-center text-[#8b949e] text-sm">No active calls</div>`)
-			return
-		}
-		for _, p := range pairs {
-			_, _ = fmt.Fprintf(w, `<div class="px-4 py-3 border-b border-[#21262d] last:border-0"><div class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full bg-[#3fb950] animate-pulse shrink-0"></span><span class="font-mono text-sm text-[#e6edf3]">%s</span><span class="text-[#8b949e] text-xs">→</span><span class="font-mono text-sm text-[#e6edf3]">%s</span></div></div>`, template.HTMLEscapeString(p.Caller), template.HTMLEscapeString(p.Callee))
-		}
+		renderWith(r.Context(), w, h.tmplActiveCalls, "active-calls-fragment", pairs)
 		return
 	}
 
