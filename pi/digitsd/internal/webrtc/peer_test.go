@@ -185,3 +185,54 @@ func TestPeerManagerConnectionStateInitiallyNew(t *testing.T) {
 		t.Fatalf("fresh peer ConnectionState = %v, want New", got)
 	}
 }
+
+// TestUpdateICEServers verifies that UpdateICEServers does not error on a
+// live PeerConnection and that the peer remains usable (CreateRestartOffer
+// still works) after the update. We cannot easily assert the new URLs appear
+// in the SDP without a full ICE handshake, but a no-error round-trip through
+// SetConfiguration + CreateRestartOffer is sufficient to confirm the PC is
+// still healthy.
+func TestUpdateICEServers(t *testing.T) {
+	pm, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = pm.Close() }()
+
+	// Do a full offer/answer so the PC is in stable state (required for
+	// CreateRestartOffer to succeed).
+	remote, err := NewPeerManager(NewICEConfig(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = remote.Close() }()
+
+	offer, err := pm.CreateOffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, err := remote.AcceptOffer(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pm.SetAnswer(answer); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now update with a new server list (STUN only, no creds needed for test).
+	servers := []ICEServerConfig{
+		{URLs: []string{"stun:stun.l.google.com:19302"}},
+	}
+	if err := pm.UpdateICEServers(servers); err != nil {
+		t.Fatalf("UpdateICEServers: %v", err)
+	}
+
+	// The peer connection must still be usable after the update.
+	restartOffer, err := pm.CreateRestartOffer()
+	if err != nil {
+		t.Fatalf("CreateRestartOffer after UpdateICEServers: %v", err)
+	}
+	if restartOffer == "" {
+		t.Fatal("empty restart offer after UpdateICEServers")
+	}
+}
