@@ -165,3 +165,36 @@ func TestHandleConnStateFailedWhileRecoveringDoesNotHangUp(t *testing.T) {
 		t.Fatal("Failed-while-recovering stopped the restart timer; deadline must still govern")
 	}
 }
+
+func TestTryResumeNonResumableReturnsFalse(t *testing.T) {
+	d := &daemonCallbacks{} // no peerMgr
+	if d.tryResumeAfterReconnect(phone.StateCONNECTED) {
+		t.Fatal("resume reported true with no active peer")
+	}
+}
+
+func TestTryResumeMediaDownRequestsRecovery(t *testing.T) {
+	pm := newTestPeerManager(t)
+	sig := sigclient.NewClient("ws://127.0.0.1:0/ws", "3140000", "hw", "tok")
+	d := &daemonCallbacks{peerMgr: pm, isCaller: true, callPeer: "x", sig: sig}
+	// A fresh/handshaked PeerManager is not Connected, so a CONNECTED 2-party
+	// call with non-connected media must drive recovery and return true.
+	if !d.tryResumeAfterReconnect(phone.StateCONNECTED) {
+		t.Fatal("resume reported false for a CONNECTED 2-party call")
+	}
+	d.mu.Lock()
+	recovering := d.isRestartingICE
+	d.mu.Unlock()
+	if !recovering {
+		t.Fatal("resume did not drive ICE recovery for dropped media")
+	}
+}
+
+func TestTryResumeConferenceReturnsFalse(t *testing.T) {
+	pm := newTestPeerManager(t)
+	mesh := owebrtc.NewMeshManager(owebrtc.NewICEConfig(nil))
+	d := &daemonCallbacks{peerMgr: pm, mesh: mesh, isCaller: true, callPeer: "x"}
+	if d.tryResumeAfterReconnect(phone.StateCONFERENCE_MERGED) {
+		t.Fatal("conference must not resume via the 2-party path")
+	}
+}

@@ -2587,17 +2587,20 @@ func main() {
 				}
 				slog.Info("signal: reconnected")
 
-				// Tear down any active call. The server cleaned up its
-				// side on disconnect (OnDisconnect), but the local WebRTC
-				// peer connection and audio pipeline survive the WebSocket
-				// drop. Without this, the phone's ICE agent keeps sending
-				// renegotiation messages for a call the server no longer
-				// tracks, producing "sdp/ice without active call" errors.
+				// A 2-party call whose media survived the WebSocket drop is
+				// resumed in place; if media also dropped, drive ICE recovery.
+				// Anything else (conference, voicemail, ringing) is torn down:
+				// the server already cleared its side or will after its grace
+				// window, and stale renegotiation would error.
 				if ctrl.State() != phone.StateIDLE {
-					slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
-					cb.TearDownAllMeshPeers()
-					cb.HangupCall()
-					ctrl.Reset()
+					if cb.tryResumeAfterReconnect(ctrl.State()) {
+						slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
+					} else {
+						slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
+						cb.TearDownAllMeshPeers()
+						cb.HangupCall()
+						ctrl.Reset()
+					}
 				}
 
 				sendDeviceInfo(sig, fwVersion, fwCommit)

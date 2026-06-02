@@ -700,6 +700,34 @@ func reconnectAction(ctrlState phone.State, hasMesh, hasPeer bool, connState web
 	return reconnResumeRestart
 }
 
+// tryResumeAfterReconnect handles an active call when the signaling WebSocket
+// reconnects. It returns true if it took ownership of the call (resumed or
+// kept it), false if the caller should fall back to full teardown. Only an
+// established 2-party call resumes; conference/voicemail/ringing tear down.
+func (d *daemonCallbacks) tryResumeAfterReconnect(ctrlState phone.State) bool {
+	d.mu.Lock()
+	pm := d.peerMgr
+	hasMesh := d.mesh != nil
+	d.mu.Unlock()
+
+	var connState webrtc.PeerConnectionState
+	if pm != nil {
+		connState = pm.ConnectionState()
+	}
+
+	switch reconnectAction(ctrlState, hasMesh, pm != nil, connState) {
+	case reconnResumeNoop:
+		slog.Info("signal: media survived reconnect, call continues")
+		return true
+	case reconnResumeRestart:
+		slog.Info("signal: media dropped during reconnect, driving ICE recovery")
+		d.enterICERecovery(pm, "ws-reconnect")
+		return true
+	default: // reconnTeardown
+		return false
+	}
+}
+
 // cancelDisconnectDebounceLocked stops a pending Disconnected debounce timer.
 // Must be called with d.mu held.
 func (d *daemonCallbacks) cancelDisconnectDebounceLocked() {
