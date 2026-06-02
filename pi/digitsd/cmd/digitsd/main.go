@@ -67,6 +67,12 @@ const pairingRefreshInterval = 9 * time.Minute
 // first time.
 const pairingAnnouncementInterval = 15 * time.Second
 
+// activeCallReconnectBackoff is the fixed wait between WebSocket reconnect
+// attempts when a call is active. Short so the caller side re-establishes
+// signaling quickly enough for tryResumeAfterReconnect to send the ICE-restart
+// offer within the peer's 25s recovery window.
+const activeCallReconnectBackoff = 2 * time.Second
+
 func init() {
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 }
@@ -2364,7 +2370,19 @@ func main() {
 						Credential: s.Credential,
 					})
 				}
+				// Push fresh creds into the live 2-party PeerConnection so an
+				// ICE restart triggered after the TURN TTL (2h) uses valid creds.
+				// Mesh peers are not updated here; see PeerManager.UpdateICEServers.
+				pm := cb.peerMgr
+				servers := cb.iceServers
 				cb.mu.Unlock()
+				if pm != nil {
+					if err := pm.UpdateICEServers(servers); err != nil {
+						slog.Warn("ice: failed to update live peer connection", "error", err)
+					} else {
+						slog.Info("ice: updated live peer connection with fresh servers")
+					}
+				}
 				slog.Info("ice: cached servers from signald", "count", len(msg.Servers))
 
 			case sigclient.TypePairingCode:
@@ -2571,18 +2589,28 @@ func main() {
 
 		case <-sig.Done():
 			backoff := 3 * time.Second
+			first := true
 			for {
-				slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
-				time.Sleep(backoff)
+				if first {
+					// Attempt the first reconnect immediately: no sleep on the
+					// first try so a transient blip resolves as fast as possible.
+					// This is especially important during an active call so the
+					// caller can re-deliver the ICE-restart offer before the peer's
+					// 25s recovery window expires.
+					first = false
+				} else {
+					// Active calls use a short fixed interval to stay within the
+					// recovery window. Idle paths use standard exponential backoff.
+					backoff = nextReconnectBackoff(backoff, ctrl.IsCallActive())
+					slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
+					time.Sleep(backoff)
+				}
 				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
 				cb.mu.Lock()
 				cb.sig = sig
 				cb.mu.Unlock()
 				if err := sig.Connect(); err != nil {
 					slog.Warn("signal: reconnect failed", "error", err)
-					if backoff < 60*time.Second {
-						backoff *= 2
-					}
 					continue
 				}
 				slog.Info("signal: reconnected")
@@ -2610,6 +2638,21 @@ func main() {
 			}
 		}
 	}
+}
+
+// nextReconnectBackoff returns the backoff duration to use before the next
+// WebSocket reconnect attempt. When a call is active, a short fixed interval
+// keeps the caller within the peer's ICE-restart recovery window. When idle,
+// the backoff doubles each attempt up to a 60s cap (standard exponential).
+func nextReconnectBackoff(current time.Duration, callActive bool) time.Duration {
+	if callActive {
+		return activeCallReconnectBackoff
+	}
+	next := current * 2
+	if next > 60*time.Second {
+		return 60 * time.Second
+	}
+	return next
 }
 
 // requestICEServers asks signald for STUN/TURN server configs.
