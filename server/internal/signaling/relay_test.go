@@ -20,6 +20,7 @@ type mockTracker struct {
 	cleared           []string
 	calls             map[string]bool  // "a→b" keys for active calls
 	callIDs           map[string]int64 // "a→b" keys for active call IDs
+	peers             map[string]string
 	conferences       *calls.ConferenceTracker
 	lastInboundCaller string
 }
@@ -107,6 +108,12 @@ func (m *mockTracker) InCall(_ context.Context, a, b string) bool {
 }
 
 func (m *mockTracker) PeerOf(_ context.Context, number string) string {
+	// Explicit peers map takes precedence; used by OnDisconnect grace-window tests.
+	if peer, ok := m.peers[number]; ok {
+		return peer
+	}
+	// Fall back to the calls map so extension and call-flow tests continue to
+	// work without needing to pre-populate peers.
 	for k := range m.calls {
 		a, b, _ := strings.Cut(k, "→")
 		if a == number {
@@ -681,6 +688,7 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
 	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = 20 * time.Millisecond
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -698,16 +706,25 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 		t.Fatal("expected phone 2 to be busy after call initiated")
 	}
 
-	// Simulate Phone 2 disconnecting (WebSocket drops)
+	// Simulate Phone 2 disconnecting (WebSocket drops). Because a peer exists,
+	// the call is held for GraceWindow before teardown.
 	relay.OnDisconnect(context.Background(), "3140002", "")
 
-	// Phone 2 should no longer be busy
-	if tracker.Busy(context.Background(), "3140002") {
-		t.Fatal("expected phone 2 to not be busy after disconnect cleanup")
+	// Grace window is running: Phone 1 receives a hangup and state is cleared
+	// after the window expires.
+	select {
+	case data := <-conn1.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeHangup {
+			t.Fatalf("expected hangup for peer after grace expiry, got: %+v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("peer (phone 1) did not receive hangup after grace window expired")
 	}
-	// Phone 1 should also be freed (its call was with Phone 2)
-	if tracker.Busy(context.Background(), "3140001") {
-		t.Fatal("expected phone 1 to not be busy after peer disconnected")
+
+	// After grace expiry the tracker has cleared phone 2's call state.
+	if tracker.Busy(context.Background(), "3140002") {
+		t.Fatal("expected phone 2 to not be busy after grace expiry")
 	}
 
 	// Phone 3 can now call Phone 2 (once reconnected)
@@ -721,7 +738,7 @@ func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 		if msg.Type != TypeRing {
 			t.Fatalf("expected ring on reconnected phone 2, got: %+v", msg)
 		}
-	default:
+	case <-time.After(time.Second):
 		t.Fatal("reconnected phone 2 did not receive ring")
 	}
 }

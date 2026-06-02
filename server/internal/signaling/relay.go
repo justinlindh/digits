@@ -587,12 +587,24 @@ func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID stri
 	if r.Tracker == nil {
 		return
 	}
+	// Other devices remain on the line: the call is still held by a sibling.
 	if r.Hub.ConnectionCount(number) > 1 {
 		return
 	}
+	// Conferences are out of scope for the grace window: tear down now.
 	if conf := r.Tracker.Conferences().ConferenceByPhone(ctx, number); conf != nil {
 		r.endConference(ctx, conf.ID, "disconnect")
+		r.Tracker.ClearByNumber(ctx, number)
+		r.clearExtensionsForCall(ctx, number)
+		return
 	}
+	// Active 2-party call: hold it open through a reconnect grace window
+	// instead of tearing down immediately. The peer is NOT notified yet.
+	if peer := r.Tracker.PeerOf(ctx, number); peer != "" {
+		r.startGraceTimer(number, hardwareID, peer)
+		return
+	}
+	// Not in a call: nothing to hold; clear (no-op for an idle line).
 	r.Tracker.ClearByNumber(ctx, number)
 	r.clearExtensionsForCall(ctx, number)
 }

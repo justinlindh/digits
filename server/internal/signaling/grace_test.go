@@ -1,6 +1,7 @@
 package signaling
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -97,5 +98,38 @@ loop:
 	}
 	if got := tracker.clearedNumbers(); len(got) != 1 {
 		t.Fatalf("ClearByNumber calls = %v, want exactly 1", got)
+	}
+}
+
+func TestOnDisconnectHoldsInCall2Party(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = time.Hour // never fires during the test
+
+	relay.OnDisconnect(context.Background(), "3140001", "hw-1")
+
+	if got := tracker.clearedNumbers(); len(got) != 0 {
+		t.Fatalf("ClearByNumber called immediately: %v", got)
+	}
+	if !relay.cancelGraceLocal("3140001", "hw-1") {
+		t.Fatal("no grace timer pending after in-call disconnect")
+	}
+}
+
+func TestOnDisconnectIdlePhoneClearsImmediately(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{} // not in any call
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	relay.OnDisconnect(context.Background(), "3140009", "hw-9")
+
+	if got := tracker.clearedNumbers(); len(got) != 1 || got[0] != "3140009" {
+		t.Fatalf("idle disconnect ClearByNumber = %v, want [3140009]", got)
+	}
+	if relay.cancelGraceLocal("3140009", "hw-9") {
+		t.Fatal("idle disconnect should not arm a grace timer")
 	}
 }
