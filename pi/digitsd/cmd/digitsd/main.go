@@ -312,6 +312,10 @@ func (d *daemonCallbacks) NotifyCallConnected() {
 	d.serial.CallConnected()
 }
 
+func (d *daemonCallbacks) NotifyPicoReset() {
+	d.serial.Reset()
+}
+
 func (d *daemonCallbacks) EnableFlashDetection() {
 	d.serial.EnableFlashDetection()
 }
