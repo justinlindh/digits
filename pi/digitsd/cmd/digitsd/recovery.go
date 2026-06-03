@@ -212,6 +212,12 @@ func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.
 
 	mux.Handle("/", http.FileServer(http.FS(staticFS)))
 
+	// Redirect OS captive-portal probes to the recovery UI so it auto-launches
+	// on connect, the same way AP/setup mode does. Without this the probes fall
+	// through to the static file server, 404, and the device looks like a dead
+	// network instead of popping the sign-in page.
+	mountCaptivePortalRedirects(mux, "/")
+
 	mux.HandleFunc("/boot-status", func(w http.ResponseWriter, r *http.Request) {
 		count, _ := bootcount.Read(bootcount.DefaultPath)
 		w.Header().Set("Content-Type", "application/json")
