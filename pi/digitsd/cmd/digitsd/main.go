@@ -898,6 +898,26 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 	return regs, web, serial, audio
 }
 
+// reapplyCodecMixerState re-runs `alsactl restore` for the codec once the
+// playback device is open and its output is powered. See the call site in
+// main: the boot-time restore runs before playback opens, so the TLV320's
+// DAPM-gated output controls revert to register defaults afterward. Re-applying
+// with the output live makes them stick. Best-effort: alsactl can exit non-zero
+// on the benign "no UCM" warning while still applying every control, so a
+// non-zero result is logged, not treated as fatal.
+func reapplyCodecMixerState(card, statePath string) {
+	if _, err := os.Stat(statePath); err != nil {
+		slog.Info("mixer re-apply: no state file, skipping", "path", statePath)
+		return
+	}
+	out, err := exec.Command("alsactl", "restore", card, "-f", statePath).CombinedOutput()
+	if err != nil {
+		slog.Info("mixer re-apply after playback open (non-fatal)", "card", card, "err", err, "output", strings.TrimSpace(string(out)))
+		return
+	}
+	slog.Info("mixer re-apply after playback open: applied", "card", card)
+}
+
 func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
 	web := subsystem.NewWebModule()
 	gpclk0 := subsystem.NewGPCLK0Module()
@@ -1794,6 +1814,14 @@ func main() {
 	}
 
 	// 11. Ready
+	// Re-apply the codec mixer state now that the render loop has powered the
+	// output. The ExecStartPre `alsactl restore` in digitsd.service runs before
+	// we open playback, so the TLV320's DAPM-gated output controls (HP DAC, HP,
+	// HPCOM) revert to register defaults when the output powers up, leaving the
+	// earpiece path ~19 dB quiet. Re-applying with the output live makes them
+	// stick. This also resets PCM to the stored value, so RestoreVolume() below
+	// immediately re-applies the persisted user volume level.
+	reapplyCodecMixerState(audio.CodecCardName(), mixerStatePath)
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
 
