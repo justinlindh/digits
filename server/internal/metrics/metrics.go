@@ -52,8 +52,6 @@ type Registry struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
 
-	ActiveDevices   prometheus.Gauge
-	ActiveCalls     prometheus.Gauge
 	SignalingErrors *prometheus.CounterVec
 	BuildInfo       *prometheus.GaugeVec
 }
@@ -94,18 +92,6 @@ func New(version, commit string) *Registry {
 		},
 		[]string{"route", "method", "status"},
 	)
-	r.ActiveDevices = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "digits",
-		Subsystem: serviceName,
-		Name:      "active_devices",
-		Help:      "Currently connected phones. Count only; no identifiers.",
-	})
-	r.ActiveCalls = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "digits",
-		Subsystem: serviceName,
-		Name:      "active_calls",
-		Help:      "Currently active calls. Count only; no participants or routing.",
-	})
 	r.SignalingErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "digits",
@@ -129,8 +115,6 @@ func New(version, commit string) *Registry {
 	reg.MustRegister(
 		r.HTTPRequestsTotal,
 		r.HTTPRequestDuration,
-		r.ActiveDevices,
-		r.ActiveCalls,
 		r.SignalingErrors,
 		r.BuildInfo,
 	)
@@ -155,14 +139,14 @@ func (r *Registry) registerScrapeGauge(name, help string, read func() float64) {
 // count. Use a closure that returns len(hub.OnlineNumbers()).
 func (r *Registry) RegisterDevicesGauge(read func() float64) {
 	r.registerScrapeGauge("active_devices_current",
-		"Current active device count, sampled at scrape time. Identical in meaning to active_devices but read live; the static gauge exists for tests that drive it directly.",
+		"Current active device count, sampled at scrape time.",
 		read)
 }
 
 // RegisterCallsGauge mirrors RegisterDevicesGauge for active calls.
 func (r *Registry) RegisterCallsGauge(read func() float64) {
 	r.registerScrapeGauge("active_calls_current",
-		"Current active call count, sampled at scrape time. Identical in meaning to active_calls but read live.",
+		"Current active call count, sampled at scrape time.",
 		read)
 }
 
