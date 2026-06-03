@@ -50,11 +50,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 	}
 	mux.Handle("/", http.FileServer(http.FS(staticSub)))
 
-	for _, path := range []string{"/generate_204", "/hotspot-detect.html", "/connecttest.txt", "/library/test/success.html"} {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, "/", http.StatusFound)
-		})
-	}
+	mountCaptivePortalRedirects(mux, "/")
 
 	mux.HandleFunc("/api/networks", func(w http.ResponseWriter, r *http.Request) {
 		networks, err := wifi.Scan()
