@@ -2,6 +2,7 @@ package line
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/justinlindh/digits/server/internal/db"
 )
@@ -9,17 +10,17 @@ import (
 // Authorizer checks whether a call between two line numbers is permitted based
 // on household membership and active household links.
 type Authorizer struct {
-	db *db.Database
+	db *sql.DB
 }
 
 // NewAuthorizer returns an Authorizer backed by database.
 func NewAuthorizer(database *db.Database) *Authorizer {
-	return &Authorizer{db: database}
+	return &Authorizer{db: database.DB}
 }
 
 func (a *Authorizer) CanCall(ctx context.Context, fromNumber, toNumber string) (bool, error) {
 	var allowed bool
-	err := a.db.DB.QueryRowContext(ctx, `
+	err := a.db.QueryRowContext(ctx, `
         WITH caller AS (SELECT household_id FROM lines WHERE number = $1),
              callee AS (SELECT household_id FROM lines WHERE number = $2)
         SELECT EXISTS (

@@ -147,9 +147,13 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Configure pong handler to extend read deadline on each pong
-	_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+	if err := ws.SetReadDeadline(time.Now().Add(wsPongTimeout)); err != nil {
+		slog.WarnContext(ctx, "ws set pong deadline failed", "err", err)
+	}
 	ws.SetPongHandler(func(string) error {
-		_ = ws.SetReadDeadline(time.Now().Add(wsPongTimeout))
+		if err := ws.SetReadDeadline(time.Now().Add(wsPongTimeout)); err != nil {
+			return err
+		}
 		h.hub.TouchLastSeen(number, conn.HardwareID)
 		return nil
 	})
