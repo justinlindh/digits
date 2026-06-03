@@ -909,19 +909,21 @@ func applyDeviceInfo(conn *Conn, piVer, piCommit, fwVer, fwCommit, localAddr str
 	}
 }
 
-// TouchLastSeen updates the last-seen timestamp for a specific device on a
-// line. If hardwareID is empty, all devices on the line are touched.
+// TouchLastSeen updates the last-seen timestamp for the device identified
+// by hardwareID on the given line. hardwareID must be non-empty; the WS
+// handler enforces a hardware_id at register time, so every caller already
+// has one in scope.
 func (h *Hub) TouchLastSeen(number, hardwareID string) {
 	now := time.Now()
 	h.mu.Lock()
 	for _, c := range h.conns[number] {
-		if hardwareID == "" || c.HardwareID == hardwareID {
+		if c.HardwareID == hardwareID {
 			c.LastSeen = now
 		}
 	}
 	ds := h.state
 	h.mu.Unlock()
-	if ds != nil && hardwareID != "" {
+	if ds != nil {
 		ds.TouchLastSeen(context.Background(), number, hardwareID)
 	}
 }
