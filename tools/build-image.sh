@@ -52,6 +52,7 @@ CHROOT_PACKAGES=(
     openocd
     i2c-tools
     minicom
+    rfkill
 )
 
 # Packages to purge from the base Pi OS image (from pi-os-audit.md)
@@ -897,6 +898,19 @@ if [[ -f "${ROOTFS_MNT}/etc/asound.conf" ]]; then
     info "  Copied asound.conf to recovery partition"
 fi
 
+# Stage the ALSA mixer state at /mixer.state so the recovery audio subsystem
+# (recoveryRegistrations sets MixerStateFile="/mixer.state") can "alsactl
+# restore -f /mixer.state" to bring the codec output up at the right gains.
+# Normal mode reads /data/digits_mixer.state, but /data is reformatted during
+# factory reset, so recovery keeps its own canonical copy on the partition.
+# $MIXER_STATE is selected per PCB_MODE in step 14b above.
+if [[ -n "${MIXER_STATE:-}" && -f "$MIXER_STATE" ]]; then
+    cp "$MIXER_STATE" "${RECOVERY_MNT}/mixer.state"
+    info "  Staged mixer state at /mixer.state ($(basename "$MIXER_STATE"))"
+else
+    warn "  No mixer state file to stage on recovery partition -- recovery audio may be quiet"
+fi
+
 # Copy tones to recovery partition so recovery is fully self-contained.
 info "  Copying tones to recovery partition..."
 [[ -d "$TONES_DIR" ]] || die "Tones directory not found: $TONES_DIR"
@@ -928,7 +942,7 @@ mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
-for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar; do
+for tool in hostapd ip dnsmasq zstd dd mkfs.ext4 mount umount tar alsactl amixer rfkill; do
     # Use readlink -f inside chroot to resolve symlinks to the real binary
     TOOL_PATH=$(chroot "$ROOTFS_MNT" readlink -f "$(chroot "$ROOTFS_MNT" which "$tool" 2>/dev/null)" 2>/dev/null || true)
     if [[ -z "$TOOL_PATH" ]]; then
@@ -1066,6 +1080,7 @@ snd-compress.ko: snd.ko
 snd-timer.ko: snd.ko
 snd.ko:
 regmap-i2c.ko:
+i2c-bcm2835.ko:
 MODDEP
 
 cat > "${RECOVERY_KDIR}/modules.alias" << 'MODALIAS'
@@ -1092,7 +1107,8 @@ for mod_path in \
     kernel/sound/soc/codecs/snd-soc-tlv320aic3x-i2c.ko.xz \
     kernel/sound/soc/generic/snd-soc-simple-card.ko.xz \
     kernel/sound/soc/generic/snd-soc-simple-card-utils.ko.xz \
-    kernel/drivers/base/regmap/regmap-i2c.ko.xz; do
+    kernel/drivers/base/regmap/regmap-i2c.ko.xz \
+    kernel/drivers/i2c/busses/i2c-bcm2835.ko.xz; do
     NAME=$(basename "${mod_path%.xz}")
     if [[ -f "${KDIR}/${mod_path}" ]]; then
         xz -dk -c "${KDIR}/${mod_path}" > "${RECOVERY_KDIR}/${NAME}"

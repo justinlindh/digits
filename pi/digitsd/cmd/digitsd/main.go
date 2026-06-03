@@ -910,7 +910,12 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 		{Module: subsystem.NewKernModsModule(), Deps: []string{"mounts"}, Required: true},
 		{Module: gpclk0, Deps: []string{"kernel-modules"}},
 		{Module: serial, Deps: []string{"kernel-modules"}},
-		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}, Required: true},
+		// WiFi-AP is best-effort in recovery: the captive portal is a
+		// convenience, but the primary recovery path is the handset voice
+		// menu, which needs only serial + audio. A failed AP (no wlan0, driver
+		// wedged, rfkill) must not error mgr.Run and short-circuit to
+		// syncAndHalt before runRecoveryMode ever starts the voice loop.
+		{Module: subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Recovery"}), Deps: []string{"kernel-modules"}},
 		{Module: audio, Deps: []string{"gpclk0", "serial"}},
 		{Module: web, Required: true},
 		{Module: subsystem.NewReaperModule(), Required: true},
@@ -986,10 +991,21 @@ func main() {
 	}
 
 	if *modeFlag == "recovery" || os.Getpid() == 1 {
-		// Crash log to /data for SD card post-mortem. Must happen before
-		// mounts module since /data might already be mounted (normal boot
-		// triggering recovery) or will be mounted by the mounts module.
+		// Set a known PATH/LD_LIBRARY_PATH for the recovery rootfs. As PID 1
+		// after switch_root we inherit the environment from the initramfs
+		// /init, whose PATH is not contractually guaranteed to include the
+		// /bin and /sbin where the recovery partition stages its tools. Every
+		// exec.Command in the recovery path (insmod, ip, alsactl, mkfs.ext4,
+		// hostapd, dnsmasq, rfkill, ...) is invoked by bare name, so pin the
+		// search path here rather than relying on whatever the initramfs left
+		// behind. LD_LIBRARY_PATH=/lib matches where the build copies the
+		// shared libraries for those dynamically linked tools.
 		if os.Getpid() == 1 {
+			_ = os.Setenv("PATH", "/sbin:/bin:/usr/sbin:/usr/bin")
+			_ = os.Setenv("LD_LIBRARY_PATH", "/lib")
+			// Crash log to /data for SD card post-mortem. Must happen before
+			// the mounts module since /data might already be mounted (normal
+			// boot triggering recovery) or will be mounted by the mounts module.
 			_ = os.MkdirAll("/tmp", 0755)
 			_ = syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M")
 			_ = os.MkdirAll("/data", 0755)
