@@ -902,9 +902,9 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 // playback device is open and its output is powered. See the call site in
 // main: the boot-time restore runs before playback opens, so the TLV320's
 // DAPM-gated output controls revert to register defaults afterward. Re-applying
-// with the output live makes them stick. Best-effort: alsactl can exit non-zero
-// on the benign "no UCM" warning while still applying every control, so a
-// non-zero result is logged, not treated as fatal.
+// with the output live makes them stick. Best-effort: a failure is logged at
+// Warn and we continue, since the boot-time restore and RestoreVolume have
+// already run.
 func reapplyCodecMixerState(card, statePath string) {
 	if _, err := os.Stat(statePath); err != nil {
 		slog.Info("mixer re-apply: no state file, skipping", "path", statePath)
@@ -912,7 +912,7 @@ func reapplyCodecMixerState(card, statePath string) {
 	}
 	out, err := exec.Command("alsactl", "restore", card, "-f", statePath).CombinedOutput()
 	if err != nil {
-		slog.Info("mixer re-apply after playback open (non-fatal)", "card", card, "err", err, "output", strings.TrimSpace(string(out)))
+		slog.Warn("mixer re-apply after playback open failed", "card", card, "err", err, "output", strings.TrimSpace(string(out)))
 		return
 	}
 	slog.Info("mixer re-apply after playback open: applied", "card", card)

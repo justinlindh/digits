@@ -72,6 +72,22 @@ func (a *AudioModule) Init(ctx context.Context) error {
 	}
 	a.mixer.Start()
 
+	// Re-apply the mixer state now that playback is open and the render loop
+	// has powered the codec output. The restore above runs before NewPlayback,
+	// so the TLV320's DAPM-gated output controls (HP DAC, HP, HPCOM) come up at
+	// register defaults when the output powers on, leaving the earpiece path
+	// ~19 dB quiet. Re-applying with the output live makes them stick (same fix
+	// as the normal-mode path in cmd/digitsd). No-op when no state file is
+	// configured (setup mode), which is tracked separately.
+	if a.cfg.MixerStateFile != "" {
+		cmd := exec.Command("alsactl", "restore", audio.CodecCardName(), "-f", a.cfg.MixerStateFile)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Warn("subsystem audio: mixer re-apply after playback open failed", "error", err, "output", string(out))
+		} else {
+			slog.Info("subsystem audio: mixer re-applied after playback open")
+		}
+	}
+
 	a.status.State = StateReady
 	return nil
 }
