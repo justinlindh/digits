@@ -10,10 +10,10 @@ import (
 )
 
 // OpenSQLDB opens a *sql.DB through otelsql so every query produces a
-// child span on the surrounding HTTP request span. The driver name is
-// fixed to "postgres" (lib/pq) because that's the only driver we use;
-// passing a different name is a sign of a bug at the call site, not a
-// configuration knob.
+// child span on the surrounding HTTP request span. The driver is hardcoded
+// to "postgres" (lib/pq) and the db.name attribute to "digits"; both
+// would be configuration theater since signald only ever talks to one
+// Postgres database.
 //
 // Privacy: otelsql is configured with DisableQuery=true, which suppresses
 // the db.statement span attribute. The default behavior would echo the
@@ -28,20 +28,17 @@ import (
 // What otelsql still records:
 //
 //   - db.system: "postgresql"
-//   - db.name (the database identifier, e.g. "digits")
+//   - db.name: "digits"
 //   - the operation kind (db.connection.prepare, db.connection.query,
 //     etc.) plus duration
 //   - error attribute on failed calls
 //
 // None of those carry user identifiers.
-func OpenSQLDB(driverName, dataSourceName string, dbName string) (*sql.DB, error) {
-	if driverName == "" {
-		driverName = "postgres"
-	}
-	db, err := otelsql.Open(driverName, dataSourceName,
+func OpenSQLDB(dataSourceName string) (*sql.DB, error) {
+	db, err := otelsql.Open("postgres", dataSourceName,
 		otelsql.WithAttributes(
 			semconv.DBSystemPostgreSQL,
-			attribute.String("db.name", dbName),
+			attribute.String("db.name", "digits"),
 		),
 		otelsql.WithSpanOptions(otelsql.SpanOptions{
 			// DisableQuery suppresses the db.statement attribute so
@@ -61,7 +58,7 @@ func OpenSQLDB(driverName, dataSourceName string, dbName string) (*sql.DB, error
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("otelsql open %s: %w", driverName, err)
+		return nil, fmt.Errorf("otelsql open postgres: %w", err)
 	}
 	return db, nil
 }
