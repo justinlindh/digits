@@ -81,7 +81,9 @@ func attemptSerialBringup(probe func() bool, flash func(reason string) error, fi
 		if probe() {
 			return true
 		}
-		sleep()
+		if i < firstAttempts-1 {
+			sleep()
+		}
 	}
 
 	if flash == nil {
@@ -99,7 +101,9 @@ func attemptSerialBringup(probe func() bool, flash func(reason string) error, fi
 			slog.Info("subsystem serial: Pico reachable after flash")
 			return true
 		}
-		sleep()
+		if i < afterFlashAttempts-1 {
+			sleep()
+		}
 	}
 	return false
 }
