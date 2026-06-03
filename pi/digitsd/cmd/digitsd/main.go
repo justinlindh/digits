@@ -592,30 +592,42 @@ func readBundledFirmwareVersion() string {
 	return strings.TrimSpace(string(data))
 }
 
-// reflashPico delegates to flash-pico.sh (RESCUE retry, FLASHSIZE override,
-// PCB-rev marker write at 0x101FF000) and re-establishes the serial port.
-// Aborts on serial-reopen failure: nothing else digitsd does works without
-// UART. Returns the reopened port and whether the post-flash PING passed.
-func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logger, reason string) (*phone.SerialPort, bool) {
+// runPicoFlashScript invokes flash-pico.sh (RESCUE retry, FLASHSIZE override,
+// PCB-rev marker write at 0x101FF000) against the bundled firmware.
+// SKIP_SERVICE_CONTROL=1 stops the script from systemctl-stopping us (we ARE
+// digitsd) and from doing its own post-flash PING; callers own the serial port
+// and re-PING themselves. Returns an error if there is no firmware to flash or
+// the script fails, so callers can decide whether to retry the serial link.
+func runPicoFlashScript(reason string) error {
 	if _, err := os.Stat(defaultFirmwarePath); err != nil {
-		slog.Info("reflash: no firmware at path, skipping", "path", defaultFirmwarePath, "reason", reason)
-		return sp, false
+		return fmt.Errorf("no firmware at %s: %w", defaultFirmwarePath, err)
 	}
 	slog.Info("reflash: starting", "path", defaultFirmwarePath, "reason", reason)
-	if err := sp.Close(); err != nil {
-		slog.Warn("reflash: close serial failed", "error", err)
-	}
-	// SKIP_SERVICE_CONTROL=1 stops the script from systemctl-stopping us
-	// (we ARE digitsd) and from doing its own post-flash PING (we hold
-	// the serial port; we'll PING ourselves below).
 	cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
 	cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		slog.Error("reflash: flash script failed", "error", err, "reason", reason)
-	} else {
-		slog.Info("reflash: flash script succeeded", "reason", reason)
+		return fmt.Errorf("flash script failed: %w", err)
+	}
+	slog.Info("reflash: flash script succeeded", "reason", reason)
+	return nil
+}
+
+// reflashPico delegates to runPicoFlashScript and re-establishes the serial
+// port. Aborts on serial-reopen failure: nothing else digitsd does works
+// without UART. Returns the reopened port and whether the post-flash PING
+// passed.
+func reflashPico(sp *phone.SerialPort, serialDev string, serialLogger *slog.Logger, reason string) (*phone.SerialPort, bool) {
+	if _, err := os.Stat(defaultFirmwarePath); err != nil {
+		slog.Info("reflash: no firmware at path, skipping", "path", defaultFirmwarePath, "reason", reason)
+		return sp, false
+	}
+	if err := sp.Close(); err != nil {
+		slog.Warn("reflash: close serial failed", "error", err)
+	}
+	if err := runPicoFlashScript(reason); err != nil {
+		slog.Error("reflash: flash failed", "error", err, "reason", reason)
 	}
 	time.Sleep(2 * time.Second)
 	newSp, err := phone.OpenSerial(serialDev, 115200, serialLogger)
@@ -889,7 +901,15 @@ func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *s
 func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
 	web := subsystem.NewWebModule()
 	gpclk0 := subsystem.NewGPCLK0Module()
-	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	// A fresh device boots straight into setup/AP mode and never runs the
+	// normal-mode reflash path, so a board whose RP2040 was never programmed
+	// has a dead UART: no hook events, no setup voice prompts. Flash the Pico
+	// on the way up if it doesn't answer.
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{
+		Device:      *serialDev,
+		Baud:        115200,
+		FlashOnFail: runPicoFlashScript,
+	})
 	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
 		ToneDir:         *toneDir,
 		GPCLK0Retrigger: gpclk0.Retrigger,
