@@ -118,7 +118,7 @@ func (r *ring) latest() *Sample {
 // nil the store operates in memory-only mode. Zero-value is NOT valid; use
 // NewHealthStore.
 type HealthStore struct {
-	db            *db.Database
+	db            *sql.DB
 	mu            sync.Mutex
 	sessions      map[SessionKey]*sessionRings
 	flushDisabled bool
@@ -140,7 +140,7 @@ func WithFlushDisabled() HealthStoreOption {
 // WithFlushDisabled.
 func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	s := &HealthStore{
-		db:       d,
+		db:       unwrapDB(d),
 		sessions: make(map[SessionKey]*sessionRings),
 	}
 	for _, o := range opts {
@@ -520,7 +520,7 @@ func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpoi
 	} else {
 		callID = sql.NullInt64{Int64: key.CallID, Valid: key.CallID != 0}
 	}
-	_, err := s.db.DB.ExecContext(ctx,
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO call_link_health
 		   (call_id, conference_id, endpoint, peer, ts,
 		    loss_pct, jitter_ms, rtt_ms, conn_type, bytes_in, bytes_out)
@@ -624,7 +624,7 @@ func (s *HealthStore) readbackSession(ctx context.Context, where string, args []
 		 ORDER BY ts DESC
 		 LIMIT ` + limitPlaceholder
 
-	rows, err := s.db.DB.QueryContext(ctx, sqlStr, args...)
+	rows, err := s.db.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
 		return nil, fmt.Errorf("readback query: %w", err)
 	}

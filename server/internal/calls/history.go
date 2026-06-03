@@ -153,7 +153,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 		ph, ph, cursorSQL, limitIdx,
 	)
 
-	rows, err := t.db.DB.QueryContext(ctx, query, args...)
+	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 		ORDER BY c.created_at DESC, c.id DESC
 		LIMIT $%d`, cursorSQL, limitIdx)
 
-	rows, err := t.db.DB.QueryContext(ctx, query, args...)
+	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

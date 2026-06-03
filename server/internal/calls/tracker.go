@@ -86,7 +86,7 @@ type callEndObserver interface {
 // Tracker manages in-flight calls and conferences, persisting events to the
 // database and notifying registered observers (dashboard, relay, health store).
 type Tracker struct {
-	db          *db.Database
+	db          *sql.DB
 	mu          sync.Mutex
 	active      map[string]*ActiveCall // "caller→callee" → call
 	conferences *ConferenceTracker
@@ -96,11 +96,12 @@ type Tracker struct {
 	state       *CallState
 }
 
-// New returns a Tracker backed by d. Use the Set* methods to wire up optional
-// observers before the server begins accepting connections.
+// New returns a Tracker backed by d. Pass nil to operate without a database
+// (unit tests that expect no DB calls). Use the Set* methods to wire up
+// optional observers before the server begins accepting connections.
 func New(d *db.Database) *Tracker {
 	return &Tracker{
-		db:          d,
+		db:          unwrapDB(d),
 		active:      make(map[string]*ActiveCall),
 		conferences: NewConferenceTracker(),
 	}
@@ -145,13 +146,23 @@ func (t *Tracker) SetCallEndObserver(obs callEndObserver) {
 	t.mu.Unlock()
 }
 
+// unwrapDB extracts the *sql.DB from a *db.Database, returning nil when d is
+// nil. Used by constructors that need to store *sql.DB while accepting nil for
+// unit tests that expect no DB calls.
+func unwrapDB(d *db.Database) *sql.DB {
+	if d == nil {
+		return nil
+	}
+	return d.DB
+}
+
 func callKey(a, b string) string {
 	return a + "→" + b
 }
 
 func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, error) {
 	var id int64
-	if err := t.db.DB.QueryRowContext(ctx,
+	if err := t.db.QueryRowContext(ctx,
 		"INSERT INTO calls (caller, callee, status) VALUES ($1, $2, 'initiated') RETURNING id",
 		from, to,
 	).Scan(&id); err != nil {
@@ -183,7 +194,7 @@ func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, 
 }
 
 func (t *Tracker) OnCallAnswered(ctx context.Context, caller, callee string) error {
-	_, err := t.db.DB.ExecContext(ctx,
+	_, err := t.db.ExecContext(ctx,
 		`UPDATE calls SET status = 'connected', answered_at = CURRENT_TIMESTAMP
 		 WHERE id = (
 		   SELECT id FROM calls
@@ -226,7 +237,7 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		d.Notify()
 	}
 
-	_, err := t.db.DB.ExecContext(ctx,
+	_, err := t.db.ExecContext(ctx,
 		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
 		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
 		 WHERE id = (
@@ -280,7 +291,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 
 	// End any open calls in the database
-	if _, err := t.db.DB.ExecContext(ctx,
+	if _, err := t.db.ExecContext(ctx,
 		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
 		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
 		 WHERE (caller = $1 OR callee = $1)
@@ -297,7 +308,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 // RenameNumber updates all call history records from oldNumber to newNumber
 // in a single transaction.
 func (t *Tracker) RenameNumber(ctx context.Context, oldNumber, newNumber string) error {
-	return dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	return dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
 		queries := []string{
 			`UPDATE calls SET caller = $1 WHERE caller = $2`,
 			`UPDATE calls SET callee = $1 WHERE callee = $2`,
@@ -493,7 +504,7 @@ func scanCallRows(rows *sql.Rows) ([]Call, error) {
 // MarkForceEnded records which user force-ended a call. Returns nil error
 // even if no rows matched (idempotent against racing peer hangups).
 func (t *Tracker) MarkForceEnded(ctx context.Context, callID int64, userID string) error {
-	_, err := t.db.DB.ExecContext(ctx,
+	_, err := t.db.ExecContext(ctx,
 		`UPDATE calls SET force_ended_by = $1 WHERE id = $2`,
 		userID, callID,
 	)
@@ -524,7 +535,7 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil, err
 	}
 
-	txErr := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	txErr := dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO conferences (id, host_phone, originating_call_id, state) VALUES ($1, $2, $3, 'active')`,
 			conf.ID, conf.Host, conf.OriginatingCallID,
@@ -600,7 +611,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 	h := t.health
 	t.mu.Unlock()
 
-	if err := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	if err := dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conferences SET state = 'ended', ended_at = NOW(), end_reason = $1 WHERE id = $2`,
 			reason, confID,
@@ -634,7 +645,7 @@ func (t *Tracker) EndConferencePersistent(ctx context.Context, confID uuid.UUID,
 // intentional trade-off. Conference cascade delete cleans orphans when
 // the parent conference row is eventually removed.
 func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone, userID string) error {
-	_, err := t.db.DB.ExecContext(ctx,
+	_, err := t.db.ExecContext(ctx,
 		`INSERT INTO conference_kicks (conference_id, kicked_phone, kicked_by_user_id) VALUES ($1, $2, $3)`,
 		confID, kickedPhone, userID,
 	)
@@ -661,7 +672,7 @@ func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*Con
 	var cs ConferenceSummary
 	var endReason *string
 	var members pq.StringArray
-	err := t.db.DB.QueryRowContext(ctx, query, confID).Scan(
+	err := t.db.QueryRowContext(ctx, query, confID).Scan(
 		&cs.ID, &cs.Host, &cs.OriginatingCallID, &cs.CreatedAt, &cs.EndedAt,
 		&endReason, &cs.DurationS, &members,
 	)
@@ -697,7 +708,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	var continuationCallID int64
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
-	if txErr := dbutil.WithTx(ctx, t.db.DB, func(tx *sql.Tx) error {
+	if txErr := dbutil.WithTx(ctx, t.db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE conference_members SET left_at = NOW(), left_reason = $1
 			 WHERE conference_id = $2 AND phone = $3`,
@@ -773,7 +784,7 @@ func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
 	var c Call
 	var answered, ended sql.NullTime
 	var forceEndedBy sql.NullString
-	err := t.db.DB.QueryRowContext(ctx,
+	err := t.db.QueryRowContext(ctx,
 		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
 		        end_reason, originating_conference_id, force_ended_by
 		 FROM calls WHERE id = $1`, id,
@@ -803,7 +814,7 @@ func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
 // no qualifying call exists.
 func (t *Tracker) LastInboundCaller(ctx context.Context, number string) (string, error) {
 	var caller string
-	err := t.db.DB.QueryRowContext(ctx,
+	err := t.db.QueryRowContext(ctx,
 		`SELECT caller FROM calls
 		 WHERE callee = $1
 		   AND end_reason IS DISTINCT FROM 'merged_to_conference'
@@ -840,7 +851,7 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 	}
 	args = append(args, limit)
 
-	rows, err := t.db.DB.QueryContext(ctx, query, args...)
+	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
