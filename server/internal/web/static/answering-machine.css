@@ -2483,3 +2483,12 @@ body.am .pair-mode-field legend {
   align-self: flex-start;
   margin-top: 4px;
 }
+
+/* Quiet hours: collapse the window/day config until the enable toggle is on.
+   Scoped to the quiet-hours section so it never touches the voicemail
+   section's identically-classed field wrapper. Driven off the rendered
+   checkbox state, so the initial paint matches the saved setting and
+   toggling reacts instantly with no JS. */
+#quiet-hours-section form:not(:has(input[name="enabled"]:checked)) .am-voicemail-fields {
+  display: none;
+}
