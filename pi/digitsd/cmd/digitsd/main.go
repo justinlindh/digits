@@ -1984,6 +1984,16 @@ func main() {
 				slog.Info("phone: playing pairing code via voice", "code", code)
 				go func() {
 					for {
+						// Check cancellation at the top too: without this a
+						// cancel landing just after the interval wait would
+						// still queue one more full announcement before the
+						// next ctx.Done() check, so a service code that stops
+						// the announcement could be talked over.
+						select {
+						case <-ctx.Done():
+							return
+						default:
+						}
 						if cb.paired.Load() || code == "" {
 							return
 						}
@@ -2009,6 +2019,19 @@ func main() {
 			// via SendTone(ToneStop); we only queue the DTMF beep here.
 			if strings.HasPrefix(event, "KEY:") && len(event) > 4 {
 				key := string(event[4])
+				// An unpaired phone loops the pairing announcement on off-hook
+				// and skips the dialing FSM, which otherwise drowns out service
+				// codes and their confirmation prompts. The '*' that begins
+				// every service code (e.g. *#73887# to clear Wi-Fi, *#00000#
+				// to factory reset) doubles as the cue to stop the announcement
+				// so the keypad flow is usable while unpaired. Re-lifting the
+				// handset restarts the announcement via the HOOK:OFF branch.
+				if key == "*" && !cb.paired.Load() && pairingAnnouncementCancel != nil {
+					slog.Info("service code: '*' pressed while unpaired, stopping pairing announcement")
+					pairingAnnouncementCancel()
+					pairingAnnouncementCancel = nil
+					mixer.StopAll()
+				}
 				dtmfName := dtmfToneName(key)
 				if dtmfName != "" {
 					mixer.PlayOnce(dtmfName)
