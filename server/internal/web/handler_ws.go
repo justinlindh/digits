@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/justinlindh/digits/server/internal/pairing"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
@@ -89,8 +90,9 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 				slog.ErrorContext(r.Context(), "generate pairing code failed", "hardware_id", msg.HardwareID, "err", err)
 			} else {
 				_ = ws.WriteMessage(websocket.TextMessage, mustMarshal(&signaling.Message{
-					Type:        signaling.TypePairingCode,
-					PairingCode: code,
+					Type:           signaling.TypePairingCode,
+					PairingCode:    code,
+					PairingCodeTTL: int(pairing.CodeTTL.Seconds()),
 				}))
 			}
 			// Unpaired devices register under their hardware ID (not a line

@@ -26,8 +26,11 @@ import (
 const (
 	// CodeLength is the number of digits in a pairing code.
 	CodeLength = 6
-	// CodeTTL is how long a pairing code remains valid.
-	CodeTTL = 3 * time.Minute
+	// CodeTTL is how long a pairing code remains valid. The device is told
+	// this TTL (via PairingCodeTTL) so its spoken countdown matches and it
+	// refreshes before expiry; keep it comfortably longer than the time it
+	// takes a user to hear the code and type it into the web UI.
+	CodeTTL = 10 * time.Minute
 )
 
 var (

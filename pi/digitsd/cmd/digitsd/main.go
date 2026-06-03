@@ -55,10 +55,16 @@ const iceRestartTimeout = 25 * time.Second
 // checks) within this window, in which case no restart is needed.
 const disconnectDebounce = 4 * time.Second
 
-// pairingRefreshInterval is how often an unpaired device reconnects to
-// obtain a fresh pairing code. Must be shorter than the server-side
-// CodeTTL (10 min) so the code is refreshed before it expires.
+// pairingRefreshInterval is the fallback reconnect cadence for obtaining a
+// fresh pairing code, used only when the server does not report a TTL. When
+// the server sends PairingCodeTTL (it does), the device instead refreshes
+// pairingRefreshMargin before the reported expiry.
 const pairingRefreshInterval = 9 * time.Minute
+
+// pairingRefreshMargin is how far ahead of the server-reported code expiry the
+// device reconnects for a fresh code, so the announced code is still valid
+// while a user is typing it into the web UI.
+const pairingRefreshMargin = 60 * time.Second
 
 // pairingAnnouncementInterval is how long to wait between repeats of the
 // spoken pairing-code sequence while the phone is unpaired and off-hook.
@@ -119,7 +125,7 @@ type daemonCallbacks struct {
 	debugMode             bool                      // read from DIGITS_DEBUG env at startup
 	paired                atomic.Bool
 	pairingCode           string      // current pairing code from server
-	pairingCodeReceivedAt time.Time   // when the current pairing code was received
+	pairingCodeExpiresAt  time.Time   // server-reported expiry of the current pairing code
 	callPeer              string      // number of the remote party during an active call
 	isCaller              bool        // true if we initiated the current call
 	callReturnOrigin      atomic.Bool // true when the current call was initiated via *69
@@ -848,19 +854,19 @@ func resetPicoHardware(sp *phone.SerialPort) {
 
 // playPairingAnnouncement queues one full pairing-voice sequence on mixer:
 // silence pad, welcome, the code digits, and the "expires in N minute(s)"
-// tail. code and receivedAt are passed explicitly (not read from cb) so the
+// tail. code and expiresAt are passed explicitly (not read from cb) so the
 // caller controls the cross-goroutine read: the announcement runs from a
 // goroutine spawned on HOOK:OFF and reading cb.pairingCode there would race
-// the dispatcher's TypePairingCode handler. minutesLeft is computed from
-// receivedAt on each call so a long-listening user hears an accurate
-// countdown.
-func playPairingAnnouncement(mixer *audio.Mixer, code string, receivedAt time.Time) {
+// the dispatcher's TypePairingCode handler. minutesLeft is computed from the
+// server-reported expiry on each call so a long-listening user hears an
+// accurate countdown that matches when the server actually invalidates it.
+func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Time) {
 	mixer.PlayOnce("pairing_silence")
 	mixer.PlayOnce("pairing_welcome")
 	for _, ch := range code {
 		mixer.PlayOnce("spoken_" + string(ch))
 	}
-	minutesLeft := int(math.Ceil(pairingRefreshInterval.Minutes() - time.Since(receivedAt).Minutes()))
+	minutesLeft := int(math.Ceil(time.Until(expiresAt).Minutes()))
 	if minutesLeft < 1 {
 		minutesLeft = 1
 	} else if minutesLeft > 10 {
@@ -2002,13 +2008,13 @@ func main() {
 				// Snapshot the pairing-code state on the dispatcher goroutine
 				// (the same one TypePairingCode writes from) and pass into the
 				// announcement goroutine. Avoids cross-goroutine reads of
-				// cb.pairingCode + cb.pairingCodeReceivedAt. The code/receivedAt
+				// cb.pairingCode + cb.pairingCodeExpiresAt. The code/expiry
 				// won't change for this off-hook session: a new code only lands
-				// after pairingRefreshInterval, by which point HOOK:ON has
-				// cancelled this goroutine. cb.paired is atomic, so the
-				// post-pair exit check stays accurate without a snapshot.
+				// on the next refresh, by which point HOOK:ON has cancelled
+				// this goroutine. cb.paired is atomic, so the post-pair exit
+				// check stays accurate without a snapshot.
 				code := cb.pairingCode
-				receivedAt := cb.pairingCodeReceivedAt
+				expiresAt := cb.pairingCodeExpiresAt
 				slog.Info("phone: playing pairing code via voice", "code", code)
 				go func() {
 					for {
@@ -2025,7 +2031,7 @@ func main() {
 						if cb.paired.Load() || code == "" {
 							return
 						}
-						playPairingAnnouncement(mixer, code, receivedAt)
+						playPairingAnnouncement(mixer, code, expiresAt)
 						for mixer.OncePlaying() {
 							select {
 							case <-ctx.Done():
@@ -2456,9 +2462,24 @@ func main() {
 
 			case sigclient.TypePairingCode:
 				cb.pairingCode = msg.PairingCode
-				cb.pairingCodeReceivedAt = time.Now()
-				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode)
-				pairingRefresh.Reset(pairingRefreshInterval)
+				refresh := pairingRefreshInterval
+				if msg.PairingCodeTTL > 0 {
+					ttl := time.Duration(msg.PairingCodeTTL) * time.Second
+					cb.pairingCodeExpiresAt = time.Now().Add(ttl)
+					// Refresh a margin before expiry so the announced code is
+					// still valid while a user types it. Guard against a TTL
+					// shorter than the margin.
+					if d := ttl - pairingRefreshMargin; d > 0 {
+						refresh = d
+					} else {
+						refresh = ttl / 2
+					}
+				} else {
+					// Older server without a TTL: fall back to the fixed cadence.
+					cb.pairingCodeExpiresAt = time.Now().Add(pairingRefreshInterval)
+				}
+				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode, "ttl_s", msg.PairingCodeTTL)
+				pairingRefresh.Reset(refresh)
 
 			case sigclient.TypePaired:
 				pairingRefresh.Stop()
