@@ -881,10 +881,24 @@ func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Tim
 	mixer.PlayOnce(unitClip)
 }
 
+// recoverySerialDevice returns the raw UART node for the Pico. Recovery mode
+// runs as PID 1 without udev, so the /dev/serial0 symlink that normal boot
+// relies on does not exist; only the kernel-created device node does. Under
+// disable-bt the Pico is on the PL011 (/dev/ttyAMA0). Falls back to the
+// configured -serial value if neither raw node is present.
+func recoverySerialDevice() string {
+	for _, dev := range []string{"/dev/ttyAMA0", "/dev/ttyS0"} {
+		if _, err := os.Stat(dev); err == nil {
+			return dev
+		}
+	}
+	return *serialDev
+}
+
 func recoveryRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subsystem.SerialModule, *subsystem.AudioModule) {
 	web := subsystem.NewWebModule()
 	gpclk0 := subsystem.NewGPCLK0Module()
-	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: *serialDev, Baud: 115200})
+	serial := subsystem.NewSerialModule(subsystem.SerialConfig{Device: recoverySerialDevice(), Baud: 115200})
 	audio := subsystem.NewAudioModule(subsystem.AudioConfig{
 		ToneDir:         "/tones",
 		MixerStateFile:  "/mixer.state",

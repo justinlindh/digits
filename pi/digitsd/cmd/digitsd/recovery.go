@@ -263,7 +263,7 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 		}
 		state.startTryAgain()
 		dbg.add("action", "try-again via web")
-		_ = bootcount.Clear(bootcount.DefaultPath)
+		clearRecoveryBootState()
 		w.WriteHeader(http.StatusOK)
 		go doReboot()
 	})
@@ -309,7 +309,7 @@ func recoveryHandleKey(sp *phone.SerialPort, key string, events <-chan string, m
 		slog.Info("recovery: restart triggered via keypad")
 		mixer.PlayOnce("restarting")
 		waitForOnceComplete(mixer, 5*time.Second)
-		_ = bootcount.Clear(bootcount.DefaultPath)
+		clearRecoveryBootState()
 		doReboot()
 		return true
 
@@ -448,6 +448,17 @@ func syncAndHalt() {
 		_ = modeLogFile.Sync()
 	}
 	select {}
+}
+
+// clearRecoveryBootState clears the boot counter and removes the recovery-mode
+// flag so the next boot proceeds normally. Used by the try-again paths, which
+// run with /data already mounted; clearing only the boot counter (the previous
+// behavior) left the recovery-mode flag set, so boot-check re-entered recovery
+// on the next boot and "Try Again" looped. Unlike clearRecoveryFlags this does
+// not mount/unmount /data, so it must not be called before /data is mounted.
+func clearRecoveryBootState() {
+	_ = bootcount.Clear(bootcount.DefaultPath)
+	_ = os.Remove("/data/digits/recovery-mode")
 }
 
 // clearRecoveryFlags mounts /data temporarily to clear the boot counter
