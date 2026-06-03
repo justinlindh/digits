@@ -807,6 +807,13 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   background: var(--brass);
   border-radius: 50%;
 }
+
+/* Quiet hours: collapse the window/day config until the enable toggle is on.
+   Driven off the rendered checkbox state, so the initial paint matches the
+   saved setting and toggling reacts instantly with no JS. */
+#quiet-hours-section form:not(:has(input[name="enabled"]:checked)) .quiet-hours-fields {
+  display: none;
+}
 .radio-card__desc {
   margin: 3px 0 0 24px;
   font-size: 12.5px;

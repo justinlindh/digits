@@ -751,6 +751,13 @@ body.dialup:not(.crt-all) .dialup-window {
   inset: 2px;
   background: var(--dialup-accent-red);
 }
+
+/* Quiet hours: collapse the window/day config until the enable toggle is on.
+   Driven off the rendered checkbox state, so the initial paint matches the
+   saved setting and toggling reacts instantly with no JS. */
+#quiet-hours-section form:not(:has(input[name="enabled"]:checked)) .quiet-hours-fields {
+  display: none;
+}
 .radio-card__desc {
   margin: 3px 0 0 18px;
   font-size: 11px;

@@ -798,7 +798,7 @@
       household's timezone.
     </p>
 
-    <div class="quiet-hours-fields" {{if not .Line.Settings.QuietHours.Enabled}}style="opacity: 0.55;"{{end}}>
+    <div class="quiet-hours-fields">
       <div class="hstack hstack--wrap" style="gap: 16px; margin-top: 8px;">
         <div class="field">
           <label for="qh-start" class="field__label">From</label>
@@ -828,9 +828,9 @@
           {{end}}
         </div>
       </div>
-
-      <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 10px;">Save</button>
     </div>
+
+    <button type="submit" class="btn btn--primary btn--sm" style="margin-top: 10px;">Save</button>
   </form>
 </div>
 {{end}}
@@ -860,7 +860,7 @@
       </div>
     </div>
 
-    <div class="am-voicemail-fields" {{if not .Line.Settings.QuietHours.Enabled}}style="opacity: 0.55;"{{end}}>
+    <div class="am-voicemail-fields">
       <div class="am-settings__field">
         <label for="qh-start" class="am-label am-settings__field-label">From</label>
         <input type="time" id="qh-start" name="start"
@@ -886,12 +886,12 @@
           {{end}}
         </div>
       </div>
-
-      <button type="submit" class="am-key am-settings__submit">
-        <span class="am-key__symbol">&#x25B6;</span>
-        <span class="am-key__label">Save</span>
-      </button>
     </div>
+
+    <button type="submit" class="am-key am-settings__submit">
+      <span class="am-key__symbol">&#x25B6;</span>
+      <span class="am-key__label">Save</span>
+    </button>
   </form>
 </div>
 {{end}}
