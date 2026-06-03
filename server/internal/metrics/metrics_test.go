@@ -210,6 +210,8 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 	// at least one labelled child has been observed.
 	r.HTTPRequestsTotal.WithLabelValues("/api/status", "GET", "200").Inc()
 	r.HTTPRequestDuration.WithLabelValues("/api/status", "GET", "200").Observe(0.012)
+	r.RegisterDevicesGauge(func() float64 { return 0 })
+	r.RegisterCallsGauge(func() float64 { return 0 })
 	r.ObserveSignalingError("turn_alloc_failed")
 
 	srv := httptest.NewServer(promhttp.HandlerFor(r.Reg, promhttp.HandlerOpts{Registry: r.Reg}))
@@ -225,8 +227,8 @@ func TestPromhttpExportsExpectedMetrics(t *testing.T) {
 	for _, want := range []string{
 		"digits_signald_http_requests_total",
 		"digits_signald_http_request_duration_seconds",
-		"digits_signald_active_devices",
-		"digits_signald_active_calls",
+		"digits_signald_active_devices_current",
+		"digits_signald_active_calls_current",
 		"digits_signald_signaling_errors_total",
 		"digits_signald_build_info",
 		"go_goroutines",
