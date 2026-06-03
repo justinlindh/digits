@@ -20,10 +20,18 @@ async function readEnabledOnDetail(page: Page): Promise<boolean> {
 
 async function clickEnableCheckbox(page: Page) {
   const cb = page.locator('#voicemail-section input[name="enabled"]');
-  await cb.click();
-  await page.waitForResponse(
+  // Arm the response wait before the click. Registering it afterwards races a
+  // fast localhost response: the POST can complete before the listener attaches,
+  // so waitForResponse never sees the event and times out.
+  const wait = page.waitForResponse(
     (r) => r.url().includes('/voicemail-toggle') && r.request().method() === 'POST',
   );
+  await cb.click();
+  await wait;
+  // waitForResponse resolves when response bytes arrive, before htmx applies
+  // the swap. Wait for the swapped checkbox to settle so the next read reflects
+  // the new state rather than the pre-swap DOM.
+  await expect(cb).toBeAttached();
 }
 
 test.describe('Voicemail (intercom theme)', () => {
