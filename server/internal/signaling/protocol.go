@@ -164,8 +164,13 @@ type Message struct {
 	Error       string      `json:"error,omitempty"`
 	Servers     []ICEServer `json:"servers,omitempty"`
 	PairingCode string      `json:"pairing_code,omitempty"`
-	HardwareID  string      `json:"hardware_id,omitempty"`
-	DeviceToken string      `json:"device_token,omitempty"`
+	// PairingCodeTTL is how many seconds the accompanying PairingCode stays
+	// valid. Sent so the device can announce an accurate countdown and refresh
+	// the code before the server expires it, rather than guessing from a local
+	// constant.
+	PairingCodeTTL int    `json:"pairing_code_ttl,omitempty"`
+	HardwareID     string `json:"hardware_id,omitempty"`
+	DeviceToken    string `json:"device_token,omitempty"`
 
 	// Version info (device_info messages)
 	PiVersion       string `json:"pi_version,omitempty"`
