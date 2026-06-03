@@ -55,7 +55,7 @@ Your Digits phone creates its own temporary Wi-Fi network during setup. Look for
 Digits-XXXX
 ```
 
-(The `XXXX` is a unique code printed on the bottom of your phone.)
+(The `XXXX` is four characters unique to your phone. You don't need to know them in advance, just pick the `Digits-` network from the list.)
 
 Connect to it from your smartphone or laptop. **No password is needed to join this network.**
 
