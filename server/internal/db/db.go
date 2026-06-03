@@ -28,7 +28,7 @@ func Open(databaseURL string) (*Database, error) {
 	// into the active HTTP request span. otelsql's DisableQuery option is
 	// set there to prevent SQL text from reaching span attributes; see
 	// internal/tracing/db.go for the privacy rationale.
-	db, err := tracing.OpenSQLDB("postgres", databaseURL, "digits")
+	db, err := tracing.OpenSQLDB(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
