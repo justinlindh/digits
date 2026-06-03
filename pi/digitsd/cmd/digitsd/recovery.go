@@ -282,6 +282,7 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 		state.startTryAgain()
 		dbg.add("action", "try-again via web")
 		clearRecoveryBootState()
+		clearRecoveryPhase(sp)
 		w.WriteHeader(http.StatusOK)
 		go doReboot()
 	})
@@ -328,6 +329,7 @@ func recoveryHandleKey(sp *phone.SerialPort, key string, events <-chan string, m
 		mixer.PlayOnce("restarting")
 		waitForOnceComplete(mixer, 5*time.Second)
 		clearRecoveryBootState()
+		clearRecoveryPhase(sp)
 		doReboot()
 		return true
 
@@ -477,6 +479,20 @@ func syncAndHalt() {
 func clearRecoveryBootState() {
 	_ = bootcount.Clear(bootcount.DefaultPath)
 	_ = os.Remove("/data/digits/recovery-mode")
+}
+
+// clearRecoveryPhase overwrites the Pico's persisted RECOVERY phase byte (set
+// by StateSet("RECOVERY") on recovery entry) with a non-recovery value. Without
+// this, the try-again exits clear the /data flag but leave the Pico in the
+// RECOVERY phase, so the next normal boot's phase check sees RECOVERY, the
+// panic-button handler re-writes /data/digits/recovery-mode, and the device
+// bounces straight back into recovery. Normal boot re-sets the correct
+// paired/unpaired phase from the device token, so UNPAIRED is a safe neutral.
+// nil-safe: if serial never came up, recovery never set the phase.
+func clearRecoveryPhase(sp *phone.SerialPort) {
+	if sp != nil {
+		sp.StateSet("UNPAIRED")
+	}
 }
 
 // clearRecoveryFlags mounts /data temporarily to clear the boot counter
