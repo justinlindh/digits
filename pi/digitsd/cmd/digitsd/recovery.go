@@ -191,6 +191,24 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 	mux := web.Mux()
 	mountRecoveryRoutes(mux, state, mixer, sp, dbg)
 
+	// Honor an app/service-code triggered factory reset. triggerFactoryReset
+	// (normal mode) writes AutoFactoryResetFlag, sets the boot counter to its
+	// threshold, and reboots; boot-check then drops us into recovery. When the
+	// flag is present the user already confirmed the reset on the phone/app, so
+	// skip the menu and run the reset directly, clearing the flag first so a
+	// failed or interrupted reset does not loop back into an automatic reset on
+	// the next boot.
+	if _, err := os.Stat(bootcount.AutoFactoryResetFlag); err == nil {
+		dbg.add("action", "auto-factory-reset flag present, running factory reset")
+		slog.Info("recovery: auto-factory-reset flag set, running factory reset without menu")
+		_ = os.Remove(bootcount.AutoFactoryResetFlag)
+		if state.startReset() {
+			doRecoveryFactoryReset(sp, mixer, state, dbg)
+		}
+		// doRecoveryFactoryReset reboots on success. If it returned, the reset
+		// failed; fall through to the menu so the user can retry or inspect.
+	}
+
 	// Run voice menu event loop (only if serial and audio are available).
 	if sp != nil && mixer != nil {
 		runRecoveryVoiceLoop(sp, mixer, state, dbg)

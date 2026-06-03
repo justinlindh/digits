@@ -29,26 +29,39 @@ func (k *KernModsModule) Init(ctx context.Context) error {
 	kver := kernelVersion()
 	modDir := filepath.Join("/lib/modules", kver)
 
-	// WiFi module chain
+	// The build (tools/build-image.sh) decompresses every recovery module to a
+	// FLAT layout: /lib/modules/$KVER/<basename>.ko, with no kernel/ subtree.
+	// Load by basename so these paths match what is actually on disk; loading
+	// by the kernel-tree nested path would resolve to a nonexistent file and
+	// every insmod would silently fail (the codec card would never register).
+	//
+	// Order matters: insmod does no dependency resolution, so each module's
+	// symbol dependencies must already be loaded. The lists below are ordered
+	// leaf-deps-first to satisfy that.
+
+	// WiFi module chain.
 	for _, mod := range []string{"rfkill.ko", "cfg80211.ko", "brcmutil.ko", "brcmfmac.ko", "brcmfmac-wcc.ko"} {
 		insmod(filepath.Join(modDir, mod))
 	}
 
-	// I2C + audio module chain
+	// I2C + audio module chain. regmap-i2c and the i2c-bcm2835 bus controller
+	// load before the codec's I2C driver (snd-soc-tlv320aic3x-i2c) so the
+	// codec's control bus can bind; without i2c-bcm2835 the TLV320AIC3104
+	// never probes and the digitscodec card never appears.
 	i2cAudioMods := []string{
-		"kernel/drivers/i2c/busses/i2c-bcm2835.ko",
-		"kernel/sound/core/snd.ko",
-		"kernel/sound/core/snd-timer.ko",
-		"kernel/sound/core/snd-pcm.ko",
-		"kernel/sound/core/snd-pcm-dmaengine.ko",
-		"kernel/sound/core/snd-compress.ko",
-		"kernel/drivers/base/regmap/regmap-i2c.ko",
-		"kernel/sound/soc/snd-soc-core.ko",
-		"kernel/sound/soc/bcm/snd-soc-bcm2835-i2s.ko",
-		"kernel/sound/soc/codecs/snd-soc-tlv320aic3x.ko",
-		"kernel/sound/soc/codecs/snd-soc-tlv320aic3x-i2c.ko",
-		"kernel/sound/soc/generic/snd-soc-simple-card-utils.ko",
-		"kernel/sound/soc/generic/snd-soc-simple-card.ko",
+		"snd.ko",
+		"snd-timer.ko",
+		"snd-pcm.ko",
+		"snd-pcm-dmaengine.ko",
+		"snd-compress.ko",
+		"snd-soc-core.ko",
+		"regmap-i2c.ko",
+		"i2c-bcm2835.ko",
+		"snd-soc-bcm2835-i2s.ko",
+		"snd-soc-tlv320aic3x.ko",
+		"snd-soc-tlv320aic3x-i2c.ko",
+		"snd-soc-simple-card-utils.ko",
+		"snd-soc-simple-card.ko",
 	}
 	for _, mod := range i2cAudioMods {
 		insmod(filepath.Join(modDir, mod))
