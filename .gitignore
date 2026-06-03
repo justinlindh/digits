@@ -63,4 +63,9 @@ __pycache__/
 # STL preview renders for the keypad badges: kept so the GitHub file
 # browser shows what each printable mesh looks like.
 !hardware/badges/*.png
+# The printed device manual ships a cover image and reference screenshots.
+!docs/manual/static/images/
+!docs/manual/static/images/*.png
+!docs/manual/reference-screenshots/
+!docs/manual/reference-screenshots/*.png
 sd-backup-pre-factory-reset.img.zst

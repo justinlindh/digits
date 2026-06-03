@@ -24,12 +24,11 @@ It's a real telephone. It makes real calls. That's it.
 
 - **The phone** -- a vintage-style desk telephone, fully assembled
 - **Power adapter** -- 12V DC wall wart (the plug with the barrel connector)
-- **Your pairing code** -- printed on the card tucked inside the box; keep it safe
 
 **What you'll also need:**
 - A Wi-Fi network with internet access
-- A smartphone or laptop (just for the one-time setup)
-- Your phone number -- assigned to you when you registered (format: `XXX-XXXX`)
+- A smartphone or laptop (for the one-time setup, and to pair the phone)
+- A Digits account -- sign in at `app.digits.family` to pair the phone and choose its number
 
 ---
 
@@ -68,29 +67,36 @@ A setup page will load automatically. You'll see:
 
 ```
 ┌─────────────────────────────────────┐
-│         Digits Phone Setup          │
+│            Digits Setup             │
 │                                     │
-│  Your network:  [ dropdown ▼ ]      │
-│  Wi-Fi password: [______________]   │
-│  Pairing code:   [______________]   │
+│  Network:   [ dropdown ▼ ]          │
+│  Password:  [______________]        │
 │                                     │
 │            [ Connect ]              │
 └─────────────────────────────────────┘
 ```
 
-- **Your network** -- select your home Wi-Fi from the dropdown
-- **Wi-Fi password** -- your home Wi-Fi password
-- **Pairing code** -- the 6-digit code from the card in the box
+- **Network** -- select your home Wi-Fi from the dropdown
+- **Password** -- your home Wi-Fi password
 
-Tap **Connect**.
+Tap **Connect**. The Wi-Fi page asks for nothing else.
 
 ### Step 3 -- Wait for the reboot
 
 The phone saves your settings and reboots automatically. This takes about 30 seconds.
 
-When it's done, reconnect your phone/laptop to your normal Wi-Fi. Your Digits phone will now be online.
+When it's done, reconnect your phone/laptop to your normal Wi-Fi. Your Digits phone is now on your network.
 
-> ✅ **Setup is complete when you pick up the handset and hear a dial tone.**
+### Step 4 -- Pair the phone and pick your number
+
+Now that it's online, the phone needs to be paired to your account.
+
+1. **Lift the handset.** The phone reads out a **6-digit pairing code** aloud. It repeats, and a fresh code is issued every few minutes.
+2. On your phone or laptop, open the Digits app at **app.digits.family** and sign in.
+3. Go to **Lines -> Add a phone** and type the 6-digit code the handset read out.
+4. **Choose your line number** (format `XXX-XXXX`), name the handset, and tap **Pair**.
+
+> ✅ **Setup is complete** once it's paired: pick up the handset and you'll hear a dial tone.
 
 ---
 
@@ -159,7 +165,7 @@ Dial `*#*` followed by any digit `0`–`9` to set the volume level. The setting 
 
 | Code | Also written as | What it does |
 |------|----------------|-------------|
-| `*#8378#` | `*#TEST#` | **Audio test** -- records a 3-second clip and plays it back. Useful for checking mic/speaker. |
+| `*#8378#` | `*#TEST#` | **Audio test** -- records about 5 seconds and plays it back. Useful for checking mic/speaker. |
 | `*#73887#` | `*#SETUP#` | **Re-enter Wi-Fi setup mode.** Use this if you change your Wi-Fi network or password. The phone reboots into setup mode. |
 | `*#*#` | -- | **Safe shutdown.** Powers off the phone gracefully. Unplug after the LED goes dark. |
 | `*##*` | -- | **Reboot.** Restarts the phone's software. Takes about 60 seconds. |
@@ -268,7 +274,7 @@ There's nothing to tap, no account to log into, no data to harvest. The phone do
 
 ### The call sounds bad / echoey
 
-- Try adjusting the volume with `*#*5` or `*#*6` (a lower volume can reduce echo)
+- Try a lower volume level, e.g. `*#*3` (`*#*0` to `*#*9` set the level directly; a lower level can reduce echo)
 - Run the audio test: dial `*#8378#` (`*#TEST#`) while off-hook, speak into the handset, and listen to the playback. If it sounds distorted, the volume may be too high.
 - Move the phone away from the Wi-Fi router if they're right next to each other
 

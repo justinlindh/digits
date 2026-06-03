@@ -1,0 +1,475 @@
+/* =========================================================================
+   Digits — Getting Started manual.
+   A4 print booklet built on the 1997 dial-up theme (dialup.css supplies the
+   component vocabulary: panels, chips, tables, kv, bevels, channel colors).
+   This file adds the page/sheet system, window chrome per page, and the
+   print rules. Tuned for a home colour laserjet: paper-white interiors,
+   colour reserved for title bars, chips, and the cover.
+   ========================================================================= */
+
+/* --------- Page geometry --------- */
+:root {
+  --sheet-w: 210mm;
+  --sheet-h: 297mm;
+  --sheet-pad: 14mm;
+  --ink: #000;
+}
+
+html { font-size: 12px; }
+body.manual {
+  background: #6c6c6c; /* neutral grey "desk" behind the pages, screen only */
+  padding: 0;
+  margin: 0;
+  font-family: "Tahoma", "MS Sans Serif", Geneva, sans-serif;
+  color: var(--ink);
+}
+
+/* Screen scaffold: stacked sheets, centered, with a soft shadow. */
+.booklet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 28px 16px 60px;
+}
+
+/* --------- A sheet (one A4 page) --------- */
+.sheet {
+  width: var(--sheet-w);
+  height: var(--sheet-h);
+  background: #ffffff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The whole page is framed as a beveled application window. */
+.sheet__win {
+  flex: 1;
+  margin: var(--sheet-pad);
+  background: var(--dialup-chrome-l, #ece9d8);
+  border-top: 2px solid var(--dialup-bevel-hi, #fff);
+  border-left: 2px solid var(--dialup-bevel-hi, #fff);
+  border-right: 2px solid var(--dialup-bevel-ll, #404040);
+  border-bottom: 2px solid var(--dialup-bevel-ll, #404040);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Title bar */
+.win__title {
+  background: linear-gradient(90deg, var(--dialup-blue-dark, #003da7) 0%, var(--dialup-blue, #0066cc) 55%, var(--dialup-blue-light, #b8d0ed) 100%);
+  color: #fff;
+  padding: 4px 6px 4px 7px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: bold;
+  font-size: 13px;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.35);
+  flex-shrink: 0;
+}
+.win__title-icon {
+  width: 16px; height: 16px; flex-shrink: 0;
+  background:
+    radial-gradient(circle at 30% 30%, #fff 0 2px, transparent 2.5px),
+    conic-gradient(var(--dialup-gold, #fc0) 0 25%, var(--dialup-accent-red, #c41e16) 0 50%, var(--dialup-accent-grn, #007a1f) 0 75%, var(--dialup-blue-light, #b8d0ed) 0 100%);
+  border: 1px solid #000;
+}
+.win__title-text { flex: 1; min-width: 0; }
+.win__title-controls { display: flex; gap: 3px; }
+.win__title-btn {
+  width: 18px; height: 16px;
+  background: var(--dialup-chrome, #d4d0c8);
+  border-top: 1px solid var(--dialup-bevel-hi, #fff);
+  border-left: 1px solid var(--dialup-bevel-hi, #fff);
+  border-right: 1px solid var(--dialup-bevel-ll, #404040);
+  border-bottom: 1px solid var(--dialup-bevel-ll, #404040);
+  color: #000; font-size: 10px; line-height: 14px; text-align: center; font-weight: bold;
+}
+
+/* Section sub-bar: step number badge + section name in a "channel" colour. */
+.win__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--dialup-chrome, #d4d0c8);
+  border-bottom: 1px solid var(--dialup-bevel-lo, #808080);
+  flex-shrink: 0;
+}
+.win__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px; height: 26px;
+  padding: 0 7px;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  font-size: 16px;
+  color: #fff;
+  background: var(--sec, #0066cc);
+  border-top: 1px solid rgba(255,255,255,0.5);
+  border-left: 1px solid rgba(255,255,255,0.5);
+  border-right: 1px solid rgba(0,0,0,0.4);
+  border-bottom: 1px solid rgba(0,0,0,0.4);
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
+}
+.win__sec {
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-ink, #000);
+  letter-spacing: 0.01em;
+}
+.win__sec small {
+  display: block;
+  font-weight: normal;
+  font-size: 10.5px;
+  color: var(--dialup-ink-muted, #606060);
+  letter-spacing: 0;
+}
+.win__bar-tag { margin-left: auto; }
+
+/* Body — paper white, scrollable on screen, the readable surface. */
+.win__body {
+  flex: 1;
+  background: #fff;
+  padding: 12px 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Page footer status bar */
+.win__foot {
+  background: var(--dialup-chrome, #d4d0c8);
+  border-top: 1px solid var(--dialup-bevel-hi, #fff);
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10.5px;
+  color: var(--dialup-ink-soft, #333);
+  flex-shrink: 0;
+}
+.win__foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dialup-accent-grn, #007a1f); box-shadow: 0 0 3px var(--dialup-accent-grn, #007a1f); }
+.win__foot .spacer { flex: 1; }
+.win__foot .num { font-family: "Courier New", monospace; }
+
+/* --------- Section accent colours (mirror the dashboard channels) --------- */
+.sec-green { --sec: #18722a; }
+.sec-red   { --sec: #9b1e15; }
+.sec-gold  { --sec: #a97808; }
+.sec-teal  { --sec: #116670; }
+.sec-grey  { --sec: #4a4a4a; }
+.sec-blue  { --sec: #003da7; }
+
+/* --------- Content helpers --------- */
+.lead {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dialup-ink, #000);
+  margin: 0 0 10px;
+  text-wrap: pretty;
+}
+.h {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--dialup-blue-dark, #003da7);
+  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.h::before {
+  content: "";
+  width: 10px; height: 10px;
+  background: var(--sec, #0066cc);
+  flex-shrink: 0;
+  transform: rotate(45deg);
+}
+.muted { color: var(--dialup-ink-muted, #606060); }
+.mono { font-family: "Courier New", Courier, monospace; }
+
+/* Numbered step list, beveled tokens */
+.steps { counter-reset: step; list-style: none; margin: 0; padding: 0; }
+.steps > li {
+  position: relative;
+  padding: 4px 0 8px 34px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  min-height: 26px;
+  border-bottom: 1px dotted var(--dialup-chrome-d, #808080);
+}
+.steps > li:last-child { border-bottom: 0; }
+.steps > li::before {
+  counter-increment: step;
+  content: counter(step);
+  position: absolute;
+  left: 0; top: 3px;
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: "Courier New", monospace;
+  font-weight: bold; font-size: 13px;
+  color: #fff;
+  background: var(--sec, #0066cc);
+  border-top: 1px solid rgba(255,255,255,0.5);
+  border-left: 1px solid rgba(255,255,255,0.5);
+  border-right: 1px solid rgba(0,0,0,0.4);
+  border-bottom: 1px solid rgba(0,0,0,0.4);
+}
+.steps b { color: var(--dialup-blue-dark, #003da7); }
+
+/* Two-column grid for content blocks */
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid-side { display: grid; grid-template-columns: 1fr 150px; gap: 12px; align-items: start; }
+
+/* Keycap — render a phone key / service code as a beveled cap */
+.cap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px; height: 20px;
+  padding: 0 5px;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--dialup-ink, #000);
+  background: linear-gradient(180deg, #fafafa, #d2d2d2);
+  border-top: 1px solid #fff;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #888;
+  border-bottom: 1px solid #888;
+  vertical-align: middle;
+}
+.cap--blue { color: var(--dialup-blue-dark, #003da7); }
+.cap--red  { color: var(--dialup-accent-red, #c41e16); }
+.code {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  font-size: 13px;
+  color: var(--dialup-blue-dark, #003da7);
+  background: #eef3fb;
+  border: 1px solid #b8d0ed;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* Note / callout box */
+.note {
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  background: var(--dialup-chrome-l, #ece9d8);
+  border-top: 1px solid var(--dialup-bevel-hi, #fff);
+  border-left: 3px solid var(--sec, #0066cc);
+  border-right: 1px solid var(--dialup-bevel-ll, #404040);
+  border-bottom: 1px solid var(--dialup-bevel-ll, #404040);
+  margin: 8px 0 0;
+}
+.note__icon {
+  flex-shrink: 0;
+  font-family: "Courier New", monospace;
+  font-weight: bold;
+  color: var(--sec, #0066cc);
+  font-size: 14px;
+  line-height: 1.2;
+}
+.note--ok    { --sec: #18722a; background: #e2f3e6; }
+.note--warn  { --sec: #b07400; background: #fff3ce; }
+.note--tip   { --sec: #003da7; }
+
+/* Compact table tuned for the manual */
+.mtable { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.mtable th {
+  text-align: left;
+  background: var(--dialup-chrome, #d4d0c8);
+  color: #000;
+  font-size: 10.5px;
+  font-weight: bold;
+  padding: 3px 7px;
+  border-top: 1px solid var(--dialup-bevel-hi, #fff);
+  border-bottom: 1px solid var(--dialup-bevel-ll, #404040);
+  border-right: 1px solid var(--dialup-bevel-lo, #808080);
+}
+.mtable td {
+  padding: 4px 7px;
+  border-bottom: 1px solid #e6e3d8;
+  vertical-align: top;
+  line-height: 1.35;
+}
+.mtable tr:nth-child(even) td { background: #faf8f0; }
+.mtable td.k { white-space: nowrap; }
+
+/* LED swatch — static single dot for inline prose (print-safe) */
+.led {
+  display: inline-block;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #c41e16;
+  border: 1px solid #7d130d;
+  box-shadow: inset 0 0 2px rgba(255,255,255,0.55);
+  vertical-align: -1px;
+  margin-right: 5px;
+}
+.led--off { background: #f2ece0; border-color: #9a9a9a; box-shadow: inset 0 0 2px rgba(0,0,0,0.35); }
+
+/* LED cadence strip — a tiny static "filmstrip" of a blink pattern over time.
+   Left → right is time; filled cells are lit. Fully static so it prints
+   exactly as shown. Replaces the old animated swatches. */
+.ledpat {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 7px;
+  border: 1px solid #8a8a8a;
+  background: #fff;
+  flex-shrink: 0;
+}
+.ledpat i { width: 6px; height: 12px; display: block; background: #fff; }
+.ledpat i + i { border-left: 1px solid #e4e1d6; }
+.ledpat i.on { background: #c41e16; }      /* fully lit  */
+.ledpat i.f2 { background: #e08a85; }      /* mid (fade) */
+.ledpat i.f1 { background: #f3cdca; }      /* dim (fade) */
+
+/* =========================================================================
+   Cover & back-cover full-bleed treatments (one heavy-ink page each)
+   ========================================================================= */
+.sheet--cover { background: var(--dialup-desktop, #008080); }
+.cover {
+  flex: 1;
+  margin: var(--sheet-pad);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.cover__win {
+  background: var(--dialup-chrome, #d4d0c8);
+  border-top: 3px solid var(--dialup-bevel-hi, #fff);
+  border-left: 3px solid var(--dialup-bevel-hi, #fff);
+  border-right: 3px solid var(--dialup-bevel-ll, #404040);
+  border-bottom: 3px solid var(--dialup-bevel-ll, #404040);
+  box-shadow: 5px 5px 0 rgba(0,0,0,0.35);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.cover__title {
+  background: linear-gradient(90deg, #003da7, #0066cc 60%, #b8d0ed);
+  color: #fff;
+  padding: 6px 8px;
+  display: flex; align-items: center; gap: 8px;
+  font-weight: bold; font-size: 14px;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
+}
+.cover__body {
+  flex: 1;
+  background: linear-gradient(180deg, #fff 0%, #eef3fb 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20mm 16mm;
+  gap: 6mm;
+}
+.cover__kicker {
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--dialup-blue-dark, #003da7);
+}
+.cover__mark {
+  font-family: "Times New Roman", Times, serif;
+  font-weight: bold;
+  font-size: 78px;
+  line-height: 0.9;
+  color: var(--dialup-blue-dark, #003da7);
+  letter-spacing: -0.01em;
+}
+.cover__phone { width: 74mm; height: auto; filter: drop-shadow(3px 4px 0 rgba(0,0,0,0.18)); }
+.cover__sub {
+  font-size: 16px;
+  color: var(--dialup-ink, #000);
+  max-width: 120mm;
+  line-height: 1.45;
+}
+.cover__rule {
+  width: 60mm; height: 0;
+  border-top: 2px dashed var(--dialup-gold-dark, #d69e00);
+}
+.cover__foot {
+  background: var(--dialup-chrome, #d4d0c8);
+  border-top: 1px solid var(--dialup-bevel-hi, #fff);
+  padding: 5px 10px;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--dialup-ink-soft, #333);
+}
+.cover__foot .spacer { flex: 1; }
+.cover__badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: "Courier New", monospace; font-weight: bold;
+  background: var(--dialup-gold, #fc0);
+  color: #1a0e00;
+  padding: 2px 8px;
+  border-top: 1px solid #fff6c0; border-left: 1px solid #fff6c0;
+  border-right: 1px solid var(--dialup-gold-dark, #d69e00); border-bottom: 1px solid var(--dialup-gold-dark, #d69e00);
+}
+
+/* --------- Screen-only toolbar --------- */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--dialup-chrome, #d4d0c8);
+  border-bottom: 2px solid var(--dialup-bevel-ll, #404040);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.toolbar__brand { font-weight: bold; display: flex; align-items: center; gap: 6px; }
+.toolbar__brand .win__title-icon { width: 14px; height: 14px; }
+.toolbar__spacer { flex: 1; }
+.toolbar__hint { color: var(--dialup-ink-muted, #606060); font-style: italic; }
+.toolbar__btn {
+  font: inherit; font-weight: bold; cursor: pointer;
+  background: linear-gradient(180deg, var(--dialup-gold, #fc0), var(--dialup-gold-dark, #d69e00));
+  color: #1a0e00;
+  border-top: 2px solid #fff6c0; border-left: 2px solid #fff6c0;
+  border-right: 2px solid #8a6800; border-bottom: 2px solid #8a6800;
+  padding: 4px 14px;
+}
+.toolbar__btn:active {
+  border-top: 2px solid #8a6800; border-left: 2px solid #8a6800;
+  border-right: 2px solid #fff6c0; border-bottom: 2px solid #fff6c0;
+}
+
+/* =========================================================================
+   PRINT
+   ========================================================================= */
+@page { size: A4; margin: 0; }
+
+@media print {
+  html, body { background: #fff; }
+  .toolbar { display: none !important; }
+  .booklet { display: block; padding: 0; gap: 0; }
+  .sheet {
+    box-shadow: none;
+    page-break-after: always;
+    break-after: page;
+    width: 210mm;
+    height: 297mm;
+  }
+  .sheet:last-child { page-break-after: auto; break-after: auto; }
+  /* Force colour backgrounds (title bars, chips, cover) to actually print. */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}

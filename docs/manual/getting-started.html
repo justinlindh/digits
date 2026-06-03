@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digits: Getting Started</title>
+<link rel="stylesheet" href="static/dialup.css">
+<link rel="stylesheet" href="static/manual.css">
+</head>
+<body class="manual">
+
+<!-- Screen-only toolbar -->
+<div class="toolbar">
+  <span class="toolbar__brand"><span class="win__title-icon"></span> Digits: Getting Started Guide</span>
+  <span class="toolbar__hint">10 pages · A4 · prints in colour</span>
+  <span class="toolbar__spacer"></span>
+  <button type="button" class="toolbar__btn" onclick="window.print()">🖶 Print this guide</button>
+</div>
+
+<div class="booklet">
+
+  <!-- ================= PAGE 1: COVER ================= -->
+  <section class="sheet sheet--cover" data-screen-label="Cover">
+    <div class="cover">
+      <div class="cover__win">
+        <div class="cover__title">
+          <span class="win__title-icon"></span>
+          <span style="flex:1;">Digits Online: Owner's Guide</span>
+          <span class="win__title-controls">
+            <span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span>
+          </span>
+        </div>
+        <div class="cover__body">
+          <div class="cover__kicker">Owner's Guide</div>
+          <div class="cover__mark">Digits</div>
+          <img class="cover__phone" src="static/images/phone-silhouette.png" alt="Digits desk phone">
+          <div class="cover__rule"></div>
+          <p class="cover__sub">Your private, end-to-end encrypted home telephone.<br>A <b>real phone</b> that makes <b>real calls</b>: no apps, no logins, no tracking.</p>
+          <span class="cover__badge">★ GETTING STARTED ★</span>
+        </div>
+        <div class="cover__foot">
+          <span>Model: <b>Desk</b></span>
+          <span>·</span>
+          <span>7-digit dialing</span>
+          <span>·</span>
+          <span class="mono">v.90 · 56 000 bps</span>
+          <span class="spacer"></span>
+          <span>digits.family</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 2: POWER ON ================= -->
+  <section class="sheet sec-green" data-screen-label="Setup: Power on">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Getting Started: Plugging In</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">01</span>
+        <span class="win__sec">Plugging in &amp; powering on<small>Get the phone booted and ready</small></span>
+        <span class="win__bar-tag"><span class="chip chip--on"><span class="chip__dot"></span>Setup</span></span>
+      </div>
+      <div class="win__body">
+        <p class="lead">It's a real telephone. It makes real calls. That's it. Before your first call you'll plug the phone in, join it to your Wi-Fi once, and pair it with your account.</p>
+
+        <div class="grid-side">
+          <div>
+            <p class="h">What you'll need</p>
+            <table class="mtable" style="margin-bottom:10px;">
+              <tr><td class="k"><b>Wi-Fi</b></td><td>A 2.4&nbsp;GHz network with internet. The phone does not support 5&nbsp;GHz-only networks.</td></tr>
+              <tr><td class="k"><b>A phone or laptop</b></td><td>For the one-time setup, and to pair the phone afterwards.</td></tr>
+              <tr><td class="k"><b>Your account</b></td><td>Sign in to the Digits app at <span class="mono">app.digits.family</span> to pair the phone and choose its number.</td></tr>
+            </table>
+
+            <p class="h">Plug it in</p>
+            <ol class="steps">
+              <li>Place the phone on a flat surface with the <b>handset resting on the cradle</b>.</li>
+              <li>Plug the power adapter into the port on the <b>back of the phone</b>.</li>
+              <li>Plug the other end into a wall outlet.</li>
+              <li>The red <span class="led"></span><b>LED</b> on the front blinks briefly as the phone boots.</li>
+            </ol>
+          </div>
+          <div>
+            <img src="static/images/phone-silhouette.png" alt="Digits phone, top view" style="width:100%;height:auto;filter:drop-shadow(2px 3px 0 rgba(0,0,0,0.15));">
+            <p class="muted" style="font-size:10px;text-align:center;margin:4px 0 0;">The status LED sits to the<br>left of the keypad.</p>
+          </div>
+        </div>
+
+        <div class="note note--tip">
+          <span class="note__icon">i</span>
+          <span><b>First boot takes 30–60 seconds.</b> The phone is starting its internal computer. You'll know it's ready when the LED goes dark (idle, on-hook) and you hear a faint click from the ringer.</span>
+        </div>
+
+        <p class="h" style="margin-top:12px;">The LED while it starts up</p>
+        <p class="lead" style="font-size:11.5px;margin-bottom:6px;">For the first ~10 seconds the light shows the phone's last known state. <span class="muted">In the strips below, <span class="ledpat" style="margin:0 2px;"><i class="on"></i></span> = lit, <span class="ledpat" style="margin:0 2px;"><i></i></span> = dark; left → right is time.</span></p>
+        <table class="mtable">
+          <thead><tr><th style="width:38%;">LED pattern</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><span class="ledpat"><i class="f1"></i><i class="f2"></i><i class="on"></i><i class="f2"></i><i class="f1"></i></span>Smooth breathing</td><td>Paired and working normally</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i></i><i></i><i></i></span>Brief flash every 1.7&nbsp;s</td><td>Unpaired: waiting for a pairing code</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i class="on"></i><i></i><i></i></span>Two quick flashes, pause</td><td>In Wi-Fi setup mode</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i><i></i></span>Rapid blinking</td><td>Recovery mode or error</td></tr>
+            <tr><td><span class="ledpat"><i></i><i></i><i></i><i></i><i></i></span>Off</td><td>First boot (brand-new device)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 2 · Setup</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 3: WI-FI SETUP ================= -->
+  <section class="sheet sec-green" data-screen-label="Setup: Wi-Fi">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Getting Started: Wi-Fi Setup</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">02</span>
+        <span class="win__sec">Wi-Fi setup &amp; pairing<small>Tell the phone your network: you only do this once</small></span>
+        <span class="win__bar-tag"><span class="chip chip--on"><span class="chip__dot"></span>Setup</span></span>
+      </div>
+      <div class="win__body">
+        <p class="lead">Setup has two parts: first you join the phone to your Wi-Fi, then you pair it from the Digits app and pick its number. You only do this once.</p>
+
+        <div class="grid-side">
+          <div>
+            <p class="h">Step 1: Join the phone's hotspot</p>
+            <p class="lead" style="font-size:12px;">During setup your phone broadcasts its own temporary network. On your phone or laptop, join:</p>
+            <p style="margin:0 0 4px;"><span class="code">Digits-XXXX</span> <span class="muted">(no password needed)</span></p>
+            <p class="lead" style="font-size:11.5px;">The <span class="mono">XXXX</span> is printed on the bottom of your phone. Most devices pop a “Sign in to network” notification: tap it. If not, open a browser to <span class="mono">http://192.168.4.1</span>.</p>
+
+            <p class="h" style="margin-top:10px;">Step 2: Enter your Wi-Fi details</p>
+            <p class="lead" style="font-size:12px;">The setup page loads automatically. Pick your home network, type its password, then tap <b>Connect</b>. That's all this page asks for.</p>
+
+            <p class="h" style="margin-top:10px;">Step 3: Wait for the reboot</p>
+            <p class="lead" style="font-size:12px;">The phone saves and restarts (~30&nbsp;s). Reconnect your own device to your normal Wi-Fi. Your Digits phone is now on your network.</p>
+          </div>
+
+          <!-- captive portal mock: Wi-Fi only, matches the real setup page -->
+          <div>
+            <div style="background:var(--dialup-chrome);border-top:2px solid #fff;border-left:2px solid #fff;border-right:2px solid #404040;border-bottom:2px solid #404040;box-shadow:2px 2px 0 rgba(0,0,0,0.25);">
+              <div style="background:linear-gradient(90deg,#003da7,#0066cc);color:#fff;font-weight:bold;font-size:10.5px;padding:3px 5px;text-shadow:1px 1px 0 rgba(0,0,0,0.3);display:flex;gap:5px;align-items:center;">
+                <span class="win__title-icon" style="width:11px;height:11px;"></span> Digits Setup
+              </div>
+              <div style="background:#fff;padding:9px;">
+                <div style="font-size:10px;font-weight:bold;color:#003da7;margin-bottom:2px;">Network</div>
+                <div style="font-size:11px;padding:3px 5px;background:#fff;border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #fff;border-bottom:1px solid #fff;margin-bottom:7px;display:flex;justify-content:space-between;">Home-WiFi <span>▼</span></div>
+                <div style="font-size:10px;font-weight:bold;color:#003da7;margin-bottom:2px;">Password</div>
+                <div class="mono" style="font-size:11px;padding:3px 5px;background:#fff;border-top:1px solid #404040;border-left:1px solid #404040;border-right:1px solid #fff;border-bottom:1px solid #fff;margin-bottom:9px;">••••••••••</div>
+                <div style="text-align:center;"><span class="btn btn--primary btn--sm" style="display:inline-block;">Connect</span></div>
+              </div>
+            </div>
+            <p class="muted" style="font-size:9.5px;text-align:center;margin:4px 0 0;">The Wi-Fi setup page, shown in your<br>phone or laptop's browser.</p>
+          </div>
+        </div>
+
+        <p class="h" style="margin-top:12px;">Step 4: Pair the phone &amp; pick your number</p>
+        <p class="lead" style="font-size:12px;">Now that it's online, the phone needs pairing to your account. <b>Lift the handset</b> and the phone reads out a <b>6-digit pairing code</b> aloud (it repeats, and a fresh code is issued every few minutes). Then, on your phone or laptop:</p>
+        <ol class="steps">
+          <li>Open the Digits app at <span class="mono">app.digits.family</span> and sign in.</li>
+          <li>Go to <b>Lines</b>, then <b>Add a phone</b>, and type the 6-digit code the handset read out.</li>
+          <li><b>Choose your line number</b> (format <span class="mono">XXX-XXXX</span>), name the handset, then tap <b>Pair</b>.</li>
+        </ol>
+
+        <div class="note note--ok" style="margin-top:10px;">
+          <span class="note__icon">✓</span>
+          <span><b>Setup is complete</b> once it's paired: pick up the handset and you'll hear a <b>dial tone</b>, a steady hum. That's the phone telling you it's online and ready.</span>
+        </div>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 3 · Setup</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 4: CALLS ================= -->
+  <section class="sheet sec-red" data-screen-label="Calls">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Using Your Phone: Calls</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">03</span>
+        <span class="win__sec">Making &amp; receiving calls<small>The whole point of the thing</small></span>
+        <span class="win__bar-tag"><span class="chip chip--live"><span class="chip__dot"></span>Calls</span></span>
+      </div>
+      <div class="win__body">
+        <div class="grid2">
+          <div>
+            <p class="h">Make a call</p>
+            <ol class="steps">
+              <li><b>Pick up the handset</b>: lift it off the cradle.</li>
+              <li><b>Listen for the dial tone</b>: a steady hum means ready.</li>
+              <li><b>Dial the 7-digit number.</b> e.g. <span class="code">271-0001</span> → dial <span class="mono">2710001</span>.</li>
+              <li><b>Wait</b>: you'll hear ringing while their phone rings.</li>
+              <li><b>Talk!</b> When they pick up, you're connected.</li>
+            </ol>
+            <div class="note note--tip" style="margin-top:8px;">
+              <span class="note__icon">i</span>
+              <span>No apps, no logins, no hold music. Just a phone call.</span>
+            </div>
+          </div>
+          <div>
+            <p class="h">Answer a call</p>
+            <ol class="steps">
+              <li><b>The bell rings</b>: a real mechanical bell.</li>
+              <li><b>Pick up the handset.</b> That's it: you're connected.</li>
+            </ol>
+            <p class="h" style="margin-top:12px;">Hang up</p>
+            <ol class="steps">
+              <li><b>Place the handset back on the cradle.</b> The call ends immediately.</li>
+            </ol>
+            <div class="note note--warn" style="margin-top:8px;">
+              <span class="note__icon">!</span>
+              <span><b>Don't leave the handset off the cradle.</b> The other person hears silence, and your phone can't receive new calls.</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="h" style="margin-top:14px;">What the tones mean</p>
+        <table class="mtable">
+          <thead><tr><th style="width:34%;">Sound</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><b>Steady hum</b></td><td>Dial tone: ready to dial</td></tr>
+            <tr><td><b>Ringing</b> (brrring… brrring…)</td><td>Their phone is ringing</td></tr>
+            <tr><td><b>Busy signal</b> (fast beeping)</td><td>They're already on a call</td></tr>
+            <tr><td><b>Silence / error tone</b></td><td>Call couldn't connect: hang up and try again</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 4 · Calls</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 5: SERVICE CODES ================= -->
+  <section class="sheet sec-grey" data-screen-label="Service codes">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Using Your Phone: Service Codes</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">04</span>
+        <span class="win__sec">Service codes &amp; call return<small>Shortcuts you dial while off-hook</small></span>
+        <span class="win__bar-tag"><span class="chip"><span class="chip__dot"></span>Settings</span></span>
+      </div>
+      <div class="win__body">
+        <p class="lead">Service codes are hidden shortcuts. Lift the handset, dial the code like a phone number, and the phone responds with a voice prompt or a beep.</p>
+
+        <div class="grid2">
+          <div>
+            <p class="h">Volume</p>
+            <table class="mtable" style="margin-bottom:10px;">
+              <thead><tr><th style="width:42%;">Code</th><th>Level</th></tr></thead>
+              <tbody>
+                <tr><td><span class="code">*#*0</span></td><td>Mute</td></tr>
+                <tr><td><span class="code">*#*1</span></td><td>Quiet</td></tr>
+                <tr><td><span class="code">*#*5</span></td><td>Medium</td></tr>
+                <tr><td><span class="code">*#*9</span></td><td>Maximum</td></tr>
+              </tbody>
+            </table>
+            <p class="lead" style="font-size:11px;">Dial <span class="mono">*#*</span> then any digit <span class="cap">0</span>–<span class="cap">9</span>. Saved across reboots.</p>
+          </div>
+          <div>
+            <p class="h">How the phone answers</p>
+            <table class="mtable">
+              <tbody>
+                <tr><td class="k"><b>Double beep</b></td><td>Volume changed; also the start &amp; end of the audio test</td></tr>
+                <tr><td class="k"><b>Spoken prompt</b></td><td>Setup, re-pair, and factory reset ask you to press <span class="cap">*</span> to confirm</td></tr>
+                <tr><td class="k"><b>Silent</b></td><td>Reboot and shutdown make no beep; watch the LED instead</td></tr>
+              </tbody>
+            </table>
+            <div class="note note--tip" style="margin-top:8px;">
+              <span class="note__icon">i</span>
+              <span>The letter codes are mnemonics: <span class="mono">SETUP</span>=73887, <span class="mono">TEST</span>=8378 on the keypad.</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="h" style="margin-top:12px;">Other codes</p>
+        <table class="mtable">
+          <thead><tr><th style="width:20%;">Code</th><th style="width:18%;">Also</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td><span class="code">*#8378#</span></td><td class="mono">*#TEST#</td><td><b>Audio test</b>: records about 5 seconds and plays it back. Checks mic &amp; earpiece.</td></tr>
+            <tr><td><span class="code">*#73887#</span></td><td class="mono">*#SETUP#</td><td><b>Wi-Fi setup</b>: reboots into setup mode (press <span class="cap">*</span> to confirm). Use it when your network changes.</td></tr>
+            <tr><td><span class="code">*##*</span></td><td>&ndash;</td><td><b>Reboot</b>: restarts the phone (about a minute).</td></tr>
+            <tr><td><span class="code">*#*#</span></td><td>&ndash;</td><td><b>Safe shutdown</b>: powers off gracefully. Unplug after the LED goes dark.</td></tr>
+          </tbody>
+        </table>
+
+        <p class="h" style="margin-top:14px;">Call return: <span class="code">*69</span> &amp; <span class="code">*89</span></p>
+        <p class="lead" style="font-size:11.5px;margin-bottom:6px;">Dialed straight from dial tone (no <span class="mono">*#</span> prefix), just like a 1990s phone line.</p>
+        <ol class="steps">
+          <li>Pick up and dial <span class="code">*69</span>. A voice says: <i>“The last call you received was from [number].”</i></li>
+          <li>Press <span class="cap cap--blue">1</span> to call them back, or hang up to cancel.</li>
+          <li>If their line is busy, the phone keeps trying for 30 minutes and rings you with a <b>short-short-long</b> pattern when it's free: pick up and you're connected automatically.</li>
+          <li>To cancel a pending retry, pick up and dial <span class="code">*89</span>.</li>
+        </ol>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 5 · Settings</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 6: VOICEMAIL ================= -->
+  <section class="sheet sec-teal" data-screen-label="Voicemail">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Using Your Phone: Voicemail</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">05</span>
+        <span class="win__sec">Voicemail<small>A built-in answering machine</small></span>
+        <span class="win__bar-tag"><span class="chip"><span class="chip__dot"></span>Messages</span></span>
+      </div>
+      <div class="win__body">
+        <p class="lead">When a call rings unanswered past the timeout, the phone picks up, plays your greeting, and records a message. Your handset mic stays muted while it records, so a caller never hears your room.</p>
+
+        <div class="note note--tip">
+          <span class="note__icon">●</span>
+          <span><b>Message-waiting light.</b> When the phone is idle and you have an unheard message, the front LED gives a <b>slow pulse</b> instead of staying dark. A dark LED means no new messages.</span>
+        </div>
+
+        <div class="grid2" style="margin-top:12px;">
+          <div>
+            <p class="h">Listen: <span class="code">*98</span></p>
+            <p class="lead" style="font-size:11.5px;">Lift the handset and dial <span class="code">*98</span>. The phone says how many new messages you have, then plays them oldest first. While a message plays:</p>
+            <table class="mtable">
+              <thead><tr><th style="width:24%;">Key</th><th>Action</th></tr></thead>
+              <tbody>
+                <tr><td><span class="cap cap--red">7</span></td><td>Delete &amp; go to next (“Message deleted”)</td></tr>
+                <tr><td><span class="cap cap--blue">9</span></td><td>Save &amp; go to next (“Message saved”)</td></tr>
+                <tr><td><span class="cap">#</span></td><td>Skip: stays new, you'll hear it again</td></tr>
+                <tr><td><span class="cap">*</span></td><td>Replay from the start</td></tr>
+              </tbody>
+            </table>
+            <p class="lead" style="font-size:10.5px;margin-top:6px;">Letting a message finish marks it heard and keeps it. Only <span class="cap cap--red">7</span> deletes for good. Saved messages play after the new ones.</p>
+          </div>
+          <div>
+            <p class="h">Your greeting</p>
+            <table class="mtable">
+              <thead><tr><th style="width:30%;">Code</th><th>What it does</th></tr></thead>
+              <tbody>
+                <tr><td><span class="code">*96</span></td><td><b>Audition</b>: hear your current greeting as callers hear it.</td></tr>
+                <tr><td><span class="code">*97</span></td><td><b>Record</b>: speak after the tone, press <span class="cap">#</span> when done (“Greeting saved”). Up to 60&nbsp;s.</td></tr>
+                <tr><td><span class="code">*99</span></td><td><b>Delete</b>: remove your greeting, restore the standard one.</td></tr>
+              </tbody>
+            </table>
+            <div class="note">
+              <span class="note__icon">i</span>
+              <span>Pick up while the greeting or recording plays and the phone hands you the live call: the machine steps aside.</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="h" style="margin-top:12px;">Good to know</p>
+        <table class="mtable">
+          <tbody>
+            <tr><td class="k"><b>Storage</b></td><td>Keeps up to 50 messages. When full, the oldest is deleted to make room: clear messages regularly.</td></tr>
+            <tr><td class="k"><b>Message length</b></td><td>Ends when the caller hangs up (10-minute backstop cap).</td></tr>
+            <tr><td class="k"><b>Turning it on/off</b></td><td>Per line in the web app, along with the ring timeout (5–60&nbsp;s before it picks up).</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 6 · Messages</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 7: PARTY LINE ================= -->
+  <section class="sheet sec-gold" data-screen-label="Party line">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Using Your Phone: Party Line</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">06</span>
+        <span class="win__sec">Party line: three-way calling<small>Classic ’90s residential three-way</small></span>
+        <span class="win__bar-tag"><span class="chip chip--warn"><span class="chip__dot"></span>3-way</span></span>
+      </div>
+      <div class="win__body">
+        <p class="lead">Add a third person to a call the old-fashioned way: with a <b>“flash.”</b> A flash is a quick press-and-release of the hook switch (the cradle button), 100–600&nbsp;ms on-hook. Too short does nothing; too long hangs up.</p>
+
+        <p class="h">How to do it</p>
+        <table class="mtable">
+          <thead><tr><th style="width:42%;">Gesture</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td><b>Flash</b> during an active call</td><td>The person you're talking to drops to a silent hold; you hear a second dial tone</td></tr>
+            <tr><td><b>Dial</b> a third number</td><td>You hear ringback; their phone rings</td></tr>
+            <tr><td><b>Flash again</b> after they answer</td><td>All three are merged into one conversation</td></tr>
+            <tr><td><b>Flash</b> before they answer</td><td>Drops the attempt; returns you to the held person</td></tr>
+            <tr><td><b>Anyone hangs up</b> (host or guest)</td><td>The whole party line ends for all three; there is no drop back to a two-person call</td></tr>
+          </tbody>
+        </table>
+
+        <div class="note note--tip" style="margin-top:12px;">
+          <span class="note__icon">i</span>
+          <span><b>Hard-capped at three people</b>, matching residential three-way calling on the old telephone switches.</span>
+        </div>
+
+        <div class="note note--ok" style="margin-top:8px;">
+          <span class="note__icon">🔒</span>
+          <span><b>Still fully encrypted.</b> A party-line call runs as three independent encrypted connections, mixed locally on each phone. The server never hears the audio: even with three people on the line.</span>
+        </div>
+
+        <p class="h" style="margin-top:14px;">Practising the flash</p>
+        <p class="lead" style="font-size:12px;">It takes a moment to get the timing. Press the cradle button down and let it pop back up in well under a second: like tapping it. If the call ends, you held it too long. If nothing happens, you were too quick.</p>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 7 · 3-way</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 8: LED GUIDE + PRIVACY ================= -->
+  <section class="sheet sec-blue" data-screen-label="LED & Privacy">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Reference: Status Light &amp; Privacy</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">07</span>
+        <span class="win__sec">The status light &amp; your privacy<small>What the LED means, and what we never store</small></span>
+        <span class="win__bar-tag"><span class="chip"><span class="chip__dot"></span>Reference</span></span>
+      </div>
+      <div class="win__body">
+        <p class="h">LED indicator: normal operation</p>
+        <p class="lead" style="font-size:11.5px;margin-bottom:6px;">Once booted, the small red light shows what the phone is doing right now. <span class="muted">Read each strip left → right as the blink pattern over time:</span></p>
+        <table class="mtable">
+          <thead><tr><th style="width:42%;">LED pattern</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td><span class="ledpat"><i></i><i></i><i></i><i></i><i></i></span>Off</td><td>Idle, on-hook: ready to receive calls</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>Solid on</td><td>Handset off the cradle (dial tone or dialing)</td></tr>
+            <tr><td><span class="ledpat"><i class="f1"></i><i class="f2"></i><i class="on"></i><i class="f2"></i><i class="f1"></i></span>Smooth breathing</td><td>Active call in progress</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i></span>Blinking (~1/second)</td><td>Incoming call: pick up to answer</td></tr>
+            <tr><td><span class="ledpat"><i class="f1"></i><i class="f2"></i><i class="on"></i><i class="f2"></i><i class="f1"></i></span>Slow pulse</td><td>You have an unheard voicemail</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i></i><i></i><i></i></span>Brief flash every 1.7&nbsp;s</td><td>Unpaired: pick up to hear your pairing code</td></tr>
+            <tr><td><span class="ledpat"><i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i><i></i></span>Rapid blinking</td><td>Something went wrong: try rebooting</td></tr>
+          </tbody>
+        </table>
+
+        <p class="h" style="margin-top:14px;">Privacy: built in, not bolted on</p>
+        <div class="grid2">
+          <div>
+            <p class="lead" style="font-size:11.5px;"><b>End-to-end encrypted calls.</b> Voice is encrypted directly between the two phones. Not even the Digits network can listen.</p>
+            <p class="lead" style="font-size:11.5px;"><b>No call recordings.</b> Live calls are never recorded or stored. When a call ends, it's gone. (If you turn on voicemail, messages are saved only on your own phone, never on our servers.)</p>
+            <p class="lead" style="font-size:11.5px;"><b>Hardware mic disconnect.</b> When the handset rests on the cradle, the microphone is <b>physically disconnected</b>: an electrical cut, not a software mute. A phone on the hook cannot listen.</p>
+          </div>
+          <div>
+            <div class="note" style="margin-top:0;">
+              <span class="note__icon">✓</span>
+              <span><b>What we store:</b> your account, household, line assignments, and call metadata (who, when, how long).</span>
+            </div>
+            <div class="note note--warn" style="margin-top:8px;">
+              <span class="note__icon">✕</span>
+              <span><b>What we never store:</b> voice audio, recordings, transcripts, or location. There is no mechanism in the server to capture call audio.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 8 · Reference</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 9: TROUBLESHOOTING ================= -->
+  <section class="sheet sec-grey" data-screen-label="Troubleshooting">
+    <div class="sheet__win">
+      <div class="win__title">
+        <span class="win__title-icon"></span>
+        <span class="win__title-text">Help: Troubleshooting</span>
+        <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+      </div>
+      <div class="win__bar">
+        <span class="win__step">08</span>
+        <span class="win__sec">Troubleshooting<small>When something isn't right</small></span>
+        <span class="win__bar-tag"><span class="chip chip--err"><span class="chip__dot"></span>Help</span></span>
+      </div>
+      <div class="win__body">
+        <table class="mtable">
+          <tbody>
+            <tr><td class="k" style="width:38%;"><b>No dial tone when I pick up</b></td><td>Wait 60&nbsp;s: it may still be booting. Check the power adapter (both ends) and that your Wi-Fi works. If the LED blinks rapidly and won't stop, reboot: dial <span class="code">*##*</span> and wait ~60&nbsp;s.</td></tr>
+            <tr><td class="k"><b>No dial tone after setup</b></td><td>The Wi-Fi password may be wrong. Dial <span class="code">*#73887#</span> to re-enter setup. Make sure it's a <b>2.4&nbsp;GHz</b> network: 5&nbsp;GHz-only won't work.</td></tr>
+            <tr><td class="k"><b>Can't join the Digits-XXXX hotspot</b></td><td>The hotspot is only on in setup mode. If already set up, dial <span class="code">*#73887#</span> first. On some devices, “forget” old networks or toggle Wi-Fi off/on.</td></tr>
+            <tr><td class="k"><b>Setup page didn't load</b></td><td>Wait 10–15&nbsp;s after joining for the captive-portal prompt. Otherwise open a browser to <span class="mono">http://192.168.4.1</span>. Confirm you're on <span class="mono">Digits-XXXX</span>, not your home network.</td></tr>
+            <tr><td class="k"><b>Bell rings but no one's there</b></td><td>The caller likely hung up before you answered. Confirm your number with whoever's calling.</td></tr>
+            <tr><td class="k"><b>Call sounds bad / echoey</b></td><td>Set a lower volume level (try <span class="code">*#*3</span>; <span class="mono">*#*0</span>–<span class="mono">*#*9</span> set the level directly). Run the audio test (<span class="code">*#8378#</span>) and listen back. Move the phone away from the Wi-Fi router if they're touching.</td></tr>
+            <tr><td class="k"><b>Not ringing for incoming calls</b></td><td>Make sure the handset is fully seated on the cradle: slightly off and the phone thinks you're using it. The idle LED should be off.</td></tr>
+            <tr><td class="k"><b>Need to change Wi-Fi network</b></td><td>Dial <span class="code">*#73887#</span> (<span class="mono">*#SETUP#</span>) while off-hook. The phone reboots into setup mode; follow the Wi-Fi steps on page 3.</td></tr>
+          </tbody>
+        </table>
+
+        <div class="note note--tip" style="margin-top:12px;">
+          <span class="note__icon">i</span>
+          <span>Still stuck? Visit <b>digits.family</b> or email <b>support@digits.family</b>. Have your phone number and pairing code handy.</span>
+        </div>
+      </div>
+      <div class="win__foot">
+        <span class="dot"></span><span>Digits: Getting Started</span>
+        <span class="spacer"></span>
+        <span class="num">Page 9 · Help</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PAGE 10: QUICK REFERENCE (BACK COVER) ================= -->
+  <section class="sheet sheet--cover" data-screen-label="Quick reference">
+    <div class="cover">
+      <div class="cover__win">
+        <div class="cover__title">
+          <span class="win__title-icon"></span>
+          <span style="flex:1;">Quick Reference: keep near your phone</span>
+          <span class="win__title-controls"><span class="win__title-btn">_</span><span class="win__title-btn">▢</span><span class="win__title-btn">✕</span></span>
+        </div>
+        <div style="flex:1;background:#fff;padding:14mm 14mm 10mm;display:flex;flex-direction:column;gap:7mm;">
+          <div style="text-align:center;">
+            <div class="cover__kicker" style="margin-bottom:3mm;">Digits Quick Reference</div>
+            <div style="font-family:'Times New Roman',serif;font-weight:bold;font-size:40px;color:#003da7;line-height:1;">Digits</div>
+          </div>
+
+          <div class="grid2" style="gap:7mm;">
+            <div>
+              <p class="h">Everyday</p>
+              <table class="mtable">
+                <tbody>
+                  <tr><td class="k"><b>Make a call</b></td><td>Pick up → dial 7 digits</td></tr>
+                  <tr><td class="k"><b>Answer</b></td><td>Pick up when the bell rings</td></tr>
+                  <tr><td class="k"><b>Hang up</b></td><td>Handset on the cradle</td></tr>
+                  <tr><td class="k"><b>Three-way</b></td><td>Flash → dial → flash to merge</td></tr>
+                </tbody>
+              </table>
+              <p class="h" style="margin-top:8px;">Voicemail</p>
+              <table class="mtable">
+                <tbody>
+                  <tr><td><span class="code">*98</span></td><td>Listen to messages</td></tr>
+                  <tr><td><span class="code">*97</span></td><td>Record your greeting</td></tr>
+                  <tr><td><span class="code">*96</span></td><td>Hear your greeting</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <p class="h">Codes</p>
+              <table class="mtable">
+                <tbody>
+                  <tr><td><span class="code">*#*0</span>–<span class="code">9</span></td><td>Volume (mute → max)</td></tr>
+                  <tr><td><span class="code">*#8378#</span></td><td>Audio test</td></tr>
+                  <tr><td><span class="code">*#73887#</span></td><td>Wi-Fi setup</td></tr>
+                  <tr><td><span class="code">*##*</span></td><td>Reboot</td></tr>
+                  <tr><td><span class="code">*#*#</span></td><td>Shutdown</td></tr>
+                  <tr><td><span class="code">*69</span> / <span class="code">*89</span></td><td>Call return / cancel</td></tr>
+                </tbody>
+              </table>
+              <p class="h" style="margin-top:8px;">The light</p>
+              <table class="mtable">
+                <tbody>
+                  <tr><td><span class="ledpat"><i></i><i></i><i></i><i></i></span>Off</td><td>Idle, ready</td></tr>
+                  <tr><td><span class="ledpat"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>On</td><td>In use</td></tr>
+                  <tr><td><span class="ledpat"><i class="on"></i><i></i><i class="on"></i><i></i></span>Blink</td><td>Incoming call</td></tr>
+                  <tr><td><span class="ledpat"><i class="f1"></i><i class="f2"></i><i class="on"></i><i class="f2"></i></span>Pulse</td><td>New voicemail</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="margin-top:auto;">
+            <div style="display:flex;gap:8mm;">
+              <div style="flex:1;border-top:2px solid #003da7;padding-top:3px;">
+                <span class="muted" style="font-size:10px;">My number</span>
+                <div class="mono" style="font-size:18px;letter-spacing:0.12em;color:#003da7;">_____ – _______</div>
+              </div>
+              <div style="flex:1;border-top:2px solid #003da7;padding-top:3px;">
+                <span class="muted" style="font-size:10px;">Pairing code</span>
+                <div class="mono" style="font-size:18px;letter-spacing:0.18em;color:#003da7;">_ _ _ _ _ _</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cover__foot">
+          <span class="cover__badge">★ KEEP THIS CARD ★</span>
+          <span class="spacer"></span>
+          <span>Support: <b>support@digits.family</b></span>
+          <span>·</span>
+          <span>digits.family</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <rect width="100" height="100" fill="#008080"/>
+    <rect x="30" y="22" width="40" height="56" fill="#d4d0c8" stroke="#404040"/>
+    <rect x="30" y="22" width="40" height="8" fill="#0066cc"/>
+    <text x="50" y="58" font-family="Times New Roman, serif" font-size="13" font-weight="bold" fill="#003da7" text-anchor="middle">Digits</text>
+  </svg>
+</template>
+
+</body>
+</html>
