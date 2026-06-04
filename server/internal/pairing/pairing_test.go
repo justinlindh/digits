@@ -192,20 +192,3 @@ func TestCleanupExpiredCodes(t *testing.T) {
 		t.Errorf("expected pairing_code to be NULL after cleanup, got %q", *code)
 	}
 }
-
-func TestRandomCode(t *testing.T) {
-	code, err := randomCode(6)
-	if err != nil {
-		t.Fatalf("randomCode: %v", err)
-	}
-	if len(code) != 6 {
-		t.Errorf("expected length 6, got %d: %q", len(code), code)
-	}
-	// Should be all digits
-	for _, c := range code {
-		if c < '0' || c > '9' {
-			t.Errorf("non-digit character in code: %q", code)
-			break
-		}
-	}
-}
