@@ -23,7 +23,7 @@ It's a real telephone. It makes real calls. That's it.
 ## 1. What's in the Box
 
 - **The phone** -- a vintage-style desk telephone, fully assembled
-- **Power adapter** -- 12V DC wall wart (the plug with the barrel connector)
+- **Power adapter** -- the wall wart that came in the box (5V 2A on V3 boards; 12V 2A on V1 and V2)
 
 **What you'll also need:**
 - A Wi-Fi network with internet access
