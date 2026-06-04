@@ -10,9 +10,8 @@ The printed "Getting Started" guide that ships with each Digits phone. It is a
   the "Print this guide" button, or print to PDF.
 - `getting-started.pdf` rendered output, ready to print or mail.
 - `static/` stylesheets (`dialup.css`, `manual.css`) and the phone image.
-- `reference-screenshots/` real captures used to keep the content accurate:
-  the web-app pairing page, the per-line answering-machine panel, and the
-  device's Wi-Fi captive portal. Reference only, not embedded in the booklet.
+- `reference-screenshots/` real captures (dial-up theme) embedded in the
+  booklet: the web-app pairing page and the per-line answering-machine panel.
 
 ## Regenerating the PDF
 
