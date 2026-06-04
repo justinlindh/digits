@@ -860,25 +860,34 @@ func resetPicoHardware(sp *phone.SerialPort) {
 // the dispatcher's TypePairingCode handler. minutesLeft is computed from the
 // server-reported expiry on each call so a long-listening user hears an
 // accurate countdown that matches when the server actually invalidates it.
-func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Time) {
-	mixer.PlayOnce("pairing_silence")
-	mixer.PlayOnce("pairing_welcome")
-	for _, ch := range code {
-		mixer.PlayOnce("spoken_" + string(ch))
-	}
-	minutesLeft := int(math.Ceil(time.Until(expiresAt).Minutes()))
+// pairingAnnouncementClips returns the ordered mixer clip names for one pairing
+// announcement: silence pad, welcome, the code digits, "expires in", the minute
+// count, and the singular/plural unit. minutesLeft is capped at 9 because the
+// spoken number clips only exist for spoken_0..spoken_9; a fresh code (TTL 10m)
+// would otherwise reference a nonexistent spoken_10 and play a silent number.
+// Pure (no mixer) so the clamp and sequence are unit-testable.
+func pairingAnnouncementClips(code string, minutesLeft int) []string {
 	if minutesLeft < 1 {
 		minutesLeft = 1
-	} else if minutesLeft > 10 {
-		minutesLeft = 10
+	} else if minutesLeft > 9 {
+		minutesLeft = 9
+	}
+	clips := []string{"pairing_silence", "pairing_welcome"}
+	for _, ch := range code {
+		clips = append(clips, "spoken_"+string(ch))
 	}
 	unitClip := "pairing_expires_minutes"
 	if minutesLeft == 1 {
 		unitClip = "pairing_expires_minute"
 	}
-	mixer.PlayOnce("pairing_expires_prefix")
-	mixer.PlayOnce(fmt.Sprintf("spoken_%d", minutesLeft))
-	mixer.PlayOnce(unitClip)
+	return append(clips, "pairing_expires_prefix", fmt.Sprintf("spoken_%d", minutesLeft), unitClip)
+}
+
+func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Time) {
+	minutesLeft := int(math.Ceil(time.Until(expiresAt).Minutes()))
+	for _, clip := range pairingAnnouncementClips(code, minutesLeft) {
+		mixer.PlayOnce(clip)
+	}
 }
 
 // recoverySerialDevice returns the raw UART node for the Pico. Recovery mode
