@@ -17,21 +17,19 @@ type AudioConfig struct {
 }
 
 type AudioModule struct {
-	cfg    AudioConfig
-	pb     *audio.Playback
-	mixer  *audio.Mixer
-	status ModuleStatus
+	cfg   AudioConfig
+	pb    *audio.Playback
+	mixer *audio.Mixer
+	ready bool
 }
 
 func NewAudioModule(cfg AudioConfig) *AudioModule {
-	return &AudioModule{cfg: cfg, status: ModuleStatus{State: StatePending}}
+	return &AudioModule{cfg: cfg}
 }
 
 func (a *AudioModule) Name() string { return "audio" }
 
 func (a *AudioModule) Init(ctx context.Context) error {
-	a.status.State = StateInitializing
-
 	if a.cfg.MixerStateFile != "" {
 		cmd := exec.Command("alsactl", "restore", "-f", a.cfg.MixerStateFile)
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -51,7 +49,6 @@ func (a *AudioModule) Init(ctx context.Context) error {
 		pbCfg.Device = "hw:CARD=digitscodec,DEV=0"
 		pb, err = audio.NewPlayback(pbCfg)
 		if err != nil {
-			a.status = ModuleStatus{State: StateFailed, Message: err.Error()}
 			return fmt.Errorf("playback open: %w", err)
 		}
 	}
@@ -88,12 +85,12 @@ func (a *AudioModule) Init(ctx context.Context) error {
 		}
 	}
 
-	a.status.State = StateReady
+	a.ready = true
 	return nil
 }
 
-func (a *AudioModule) Mixer() *audio.Mixer  { return a.mixer }
-func (a *AudioModule) Status() ModuleStatus { return a.status }
+func (a *AudioModule) Mixer() *audio.Mixer { return a.mixer }
+func (a *AudioModule) IsReady() bool       { return a.ready }
 
 func (a *AudioModule) Shutdown(ctx context.Context) error {
 	if a.mixer != nil {

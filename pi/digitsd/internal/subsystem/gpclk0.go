@@ -25,22 +25,20 @@ const (
 // GPCLK0Module configures BCM2835 GPCLK0 on GPIO4 at 12.288 MHz for the
 // TLV320AIC3104 MCLK.
 type GPCLK0Module struct {
-	status ModuleStatus
+	ready bool
 }
 
 func NewGPCLK0Module() *GPCLK0Module {
-	return &GPCLK0Module{status: ModuleStatus{State: StatePending}}
+	return &GPCLK0Module{}
 }
 
 func (g *GPCLK0Module) Name() string { return "gpclk0" }
 
 func (g *GPCLK0Module) Init(ctx context.Context) error {
-	g.status.State = StateInitializing
 	if err := enableGPCLK0(); err != nil {
-		g.status = ModuleStatus{State: StateFailed, Message: err.Error()}
 		return err
 	}
-	g.status.State = StateReady
+	g.ready = true
 	return nil
 }
 
@@ -50,7 +48,7 @@ func (g *GPCLK0Module) Retrigger() error {
 	return enableGPCLK0()
 }
 
-func (g *GPCLK0Module) Status() ModuleStatus               { return g.status }
+func (g *GPCLK0Module) IsReady() bool                      { return g.ready }
 func (g *GPCLK0Module) Shutdown(ctx context.Context) error { return nil }
 
 // EnableGPCLK0 configures BCM2835 GPCLK0 on GPIO4 at 12.288 MHz. Exported

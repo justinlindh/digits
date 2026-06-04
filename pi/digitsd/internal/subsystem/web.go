@@ -18,14 +18,13 @@ type WebModule struct {
 	mgr     *Manager
 	ln      net.Listener
 	logPath string
-	status  ModuleStatus
+	ready   bool
 }
 
 func NewWebModule() *WebModule {
 	return &WebModule{
 		mux:     http.NewServeMux(),
 		logPath: "/tmp/subsystem.log",
-		status:  ModuleStatus{State: StatePending},
 	}
 }
 
@@ -36,14 +35,11 @@ func (w *WebModule) Name() string { return "web" }
 func (w *WebModule) SetManager(mgr *Manager) { w.mgr = mgr }
 
 func (w *WebModule) Init(ctx context.Context) error {
-	w.status.State = StateInitializing
-
 	w.mux.HandleFunc("/status", w.handleStatus)
 	w.mux.HandleFunc("/log/raw", w.handleLogRaw)
 
 	ln, err := net.Listen("tcp", ":80")
 	if err != nil {
-		w.status = ModuleStatus{State: StateFailed, Message: err.Error()}
 		return fmt.Errorf("listen :80: %w", err)
 	}
 	w.ln = ln
@@ -54,13 +50,13 @@ func (w *WebModule) Init(ctx context.Context) error {
 		}
 	}()
 
-	w.status.State = StateReady
+	w.ready = true
 	slog.Info("subsystem web: listening on :80")
 	return nil
 }
 
-func (w *WebModule) Mux() *http.ServeMux  { return w.mux }
-func (w *WebModule) Status() ModuleStatus { return w.status }
+func (w *WebModule) Mux() *http.ServeMux { return w.mux }
+func (w *WebModule) IsReady() bool       { return w.ready }
 
 func (w *WebModule) Shutdown(ctx context.Context) error {
 	if w.ln != nil {

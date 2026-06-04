@@ -14,18 +14,16 @@ import (
 // KernModsModule loads the kernel modules needed for WiFi and audio on the
 // recovery partition, where udev is not running.
 type KernModsModule struct {
-	status ModuleStatus
+	ready bool
 }
 
 func NewKernModsModule() *KernModsModule {
-	return &KernModsModule{status: ModuleStatus{State: StatePending}}
+	return &KernModsModule{}
 }
 
 func (k *KernModsModule) Name() string { return "kernel-modules" }
 
 func (k *KernModsModule) Init(ctx context.Context) error {
-	k.status.State = StateInitializing
-
 	kver := kernelVersion()
 	modDir := filepath.Join("/lib/modules", kver)
 
@@ -81,11 +79,11 @@ func (k *KernModsModule) Init(ctx context.Context) error {
 	// Wait for sound card to register.
 	waitForSoundCard("digitscodec", 3*time.Second)
 
-	k.status.State = StateReady
+	k.ready = true
 	return nil
 }
 
-func (k *KernModsModule) Status() ModuleStatus               { return k.status }
+func (k *KernModsModule) IsReady() bool                      { return k.ready }
 func (k *KernModsModule) Shutdown(ctx context.Context) error { return nil }
 
 func kernelVersion() string {
@@ -130,4 +128,3 @@ func waitForSoundCard(name string, timeout time.Duration) {
 	}
 	slog.Warn("subsystem kernel-modules: sound card not found", "name", name, "timeout", timeout)
 }
-
