@@ -1,13 +1,13 @@
 # Device manual
 
-The printed "Getting Started" guide that ships with each Digits phone. It is a
-10-page A4 booklet in the dial-up theme, designed to print on a home laserjet
-(paper-white interiors, color reserved for title bars and the two covers).
+The printed "Getting Started" guide that ships with each Digits phone. It is an
+11-page US Letter booklet in the dial-up theme, designed to print on a home
+laserjet (paper-white interiors, color reserved for title bars and the two covers).
 
 ## Files
 
-- `getting-started.html` source booklet (10 A4 pages). Open in a browser and use
-  the "Print this guide" button, or print to PDF.
+- `getting-started.html` source booklet (11 US Letter pages). Open in a browser and
+  use the "Print this guide" button, or print to PDF.
 - `getting-started.pdf` rendered output, ready to print or mail.
 - `static/` stylesheets (`dialup.css`, `manual.css`) and the phone image.
 - `reference-screenshots/` real captures (dial-up theme) embedded in the
@@ -15,7 +15,7 @@ The printed "Getting Started" guide that ships with each Digits phone. It is a
 
 ## Regenerating the PDF
 
-The booklet's print CSS sets A4 page size, one page per sheet, and forces the
+The booklet's print CSS sets US Letter page size, one page per sheet, and forces the
 title-bar backgrounds through (`print-color-adjust: exact`). Render with headless
 Chrome:
 

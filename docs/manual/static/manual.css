@@ -1,6 +1,6 @@
 /* =========================================================================
-   Digits — Getting Started manual.
-   A4 print booklet built on the 1997 dial-up theme (dialup.css supplies the
+   Digits: Getting Started manual.
+   US Letter print booklet built on the 1997 dial-up theme (dialup.css supplies the
    component vocabulary: panels, chips, tables, kv, bevels, channel colors).
    This file adds the page/sheet system, window chrome per page, and the
    print rules. Tuned for a home colour laserjet: paper-white interiors,
@@ -9,8 +9,8 @@
 
 /* --------- Page geometry --------- */
 :root {
-  --sheet-w: 210mm;
-  --sheet-h: 297mm;
+  --sheet-w: 8.5in;
+  --sheet-h: 11in;
   --sheet-pad: 14mm;
   --ink: #000;
 }
@@ -33,7 +33,7 @@ body.manual {
   padding: 28px 16px 60px;
 }
 
-/* --------- A sheet (one A4 page) --------- */
+/* --------- A sheet (one US Letter page) --------- */
 .sheet {
   width: var(--sheet-w);
   height: var(--sheet-h);
@@ -133,7 +133,7 @@ body.manual {
 }
 .win__bar-tag { margin-left: auto; }
 
-/* Body — paper white, scrollable on screen, the readable surface. */
+/* Body: paper white, scrollable on screen, the readable surface. */
 .win__body {
   flex: 1;
   background: #fff;
@@ -226,7 +226,7 @@ body.manual {
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid-side { display: grid; grid-template-columns: 1fr 150px; gap: 12px; align-items: start; }
 
-/* Keycap — render a phone key / service code as a beveled cap */
+/* Keycap: render a phone key / service code as a beveled cap */
 .cap {
   display: inline-flex;
   align-items: center;
@@ -308,7 +308,7 @@ body.manual {
 .mtable tr:nth-child(even) td { background: #faf8f0; }
 .mtable td.k { white-space: nowrap; }
 
-/* LED swatch — static single dot for inline prose (print-safe) */
+/* LED swatch: static single dot for inline prose (print-safe) */
 .led {
   display: inline-block;
   width: 11px; height: 11px; border-radius: 50%;
@@ -320,7 +320,7 @@ body.manual {
 }
 .led--off { background: #f2ece0; border-color: #9a9a9a; box-shadow: inset 0 0 2px rgba(0,0,0,0.35); }
 
-/* LED cadence strip — a tiny static "filmstrip" of a blink pattern over time.
+/* LED cadence strip: a tiny static "filmstrip" of a blink pattern over time.
    Left → right is time; filled cells are lit. Fully static so it prints
    exactly as shown. Replaces the old animated swatches. */
 .ledpat {
@@ -456,7 +456,7 @@ body.manual {
 /* =========================================================================
    PRINT
    ========================================================================= */
-@page { size: A4; margin: 0; }
+@page { size: letter; margin: 0; }
 
 @media print {
   html, body { background: #fff; }
@@ -466,8 +466,8 @@ body.manual {
     box-shadow: none;
     page-break-after: always;
     break-after: page;
-    width: 210mm;
-    height: 297mm;
+    width: 8.5in;
+    height: 11in;
   }
   .sheet:last-child { page-break-after: auto; break-after: auto; }
   /* Force colour backgrounds (title bars, chips, cover) to actually print. */
