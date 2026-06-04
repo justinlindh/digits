@@ -31,8 +31,25 @@ restore_ro() {
 }
 trap restore_ro EXIT
 
-# --- 1. Generate unique hostname (digits-XXXX, 4 random hex chars) ---
-HEX_SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
+# --- 1. Generate a stable hostname (digits-XXXX) from the Pi serial ---
+# Derive the suffix from the unchanging hardware serial, not /dev/urandom, so
+# the hostname is identical every time first-boot runs. A factory reset
+# restores the rootfs and wipes /data, leaving no writable store to remember a
+# random name, so a random suffix would change on every reset and the same
+# physical device (same MAC) would churn between hostnames in the network's
+# client list. The serial is stable across resets, so the name never changes.
+SERIAL=$(grep -m1 -iE '^Serial' /proc/cpuinfo 2>/dev/null | awk '{print $NF}' | tr -d '[:space:]')
+if [[ -z "${SERIAL}" || "${SERIAL}" =~ ^0+$ ]]; then
+    # /proc/cpuinfo had no usable serial; try the device tree.
+    SERIAL=$(tr -d '\0' < /proc/device-tree/serial-number 2>/dev/null)
+fi
+if [[ -n "${SERIAL}" && ! "${SERIAL}" =~ ^0+$ ]]; then
+    HEX_SUFFIX="${SERIAL: -4}"
+else
+    # Last resort if no serial is readable; logged so the churn cause is clear.
+    log "WARNING: no usable Pi serial; falling back to a random hostname suffix"
+    HEX_SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 4)
+fi
 HOSTNAME="digits-${HEX_SUFFIX}"
 
 log "Setting hostname: ${HOSTNAME}"
