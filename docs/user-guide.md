@@ -39,7 +39,7 @@ It's a real telephone. It makes real calls. That's it.
 3. Plug the other end into a wall outlet.
 4. The **red LED** on the front of the phone will blink briefly as the phone boots up.
 
-> **First boot takes about 30–60 seconds.** The phone is starting up its internal computer. Be patient -- you'll know it's ready when the LED goes dark (idle, on-hook) and you hear a faint click from the ringer.
+> **First boot takes about 30–60 seconds.** The phone is starting up its internal computer. Be patient -- you'll know it's done when the red LED stops its boot flicker and settles into a steady pattern (see the LED guide below).
 
 ---
 
