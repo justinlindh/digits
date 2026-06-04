@@ -1085,7 +1085,9 @@ func main() {
 		// Setup mode is pre-pairing, so pass an empty device token.
 		if subsystem.IsReady(serial) {
 			if sp := serial.Port(); sp != nil {
-				if phase, err := queryPicoPhase(sp); err == nil && phase == phone.PhaseRecovery {
+				if phase, err := queryPicoPhase(sp); err != nil {
+					slog.Error("setup: phase query failed, proceeding without panic-button check", "error", err)
+				} else if phase == phone.PhaseRecovery {
 					enterPanicRecovery(sp, "")
 				}
 			}
