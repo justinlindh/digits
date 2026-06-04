@@ -128,7 +128,7 @@ func (m *Manager) Shutdown(ctx context.Context) {
 		var wg sync.WaitGroup
 		for _, r := range layer {
 			r := r
-			if !IsReady(r.Module) {
+			if !r.Module.IsReady() {
 				continue
 			}
 			wg.Add(1)

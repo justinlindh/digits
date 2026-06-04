@@ -19,8 +19,8 @@ type WiFiAPConfig struct {
 }
 
 type WiFiAPModule struct {
-	cfg    WiFiAPConfig
-	status ModuleStatus
+	cfg   WiFiAPConfig
+	ready bool
 }
 
 func NewWiFiAPModule(cfg WiFiAPConfig) *WiFiAPModule {
@@ -36,25 +36,29 @@ func NewWiFiAPModule(cfg WiFiAPConfig) *WiFiAPModule {
 	if cfg.InterfaceWait == 0 {
 		cfg.InterfaceWait = 15 * time.Second
 	}
-	return &WiFiAPModule{cfg: cfg, status: ModuleStatus{State: StatePending}}
+	return &WiFiAPModule{cfg: cfg}
 }
 
 func (w *WiFiAPModule) Name() string { return "wifi-ap" }
 
 func (w *WiFiAPModule) Init(ctx context.Context) error {
-	w.status.State = StateInitializing
-
 	slog.Info("subsystem wifi-ap: waiting for wlan0")
 	if err := waitForInterface("wlan0", w.cfg.InterfaceWait); err != nil {
-		w.status = ModuleStatus{State: StateFailed, Message: err.Error()}
 		return err
 	}
 	unblockWifi()
 
+	var initErr error
 	if w.cfg.UseSystemd {
-		return w.initSystemd()
+		initErr = w.initSystemd()
+	} else {
+		initErr = w.initDirect()
 	}
-	return w.initDirect()
+	if initErr != nil {
+		return initErr
+	}
+	w.ready = true
+	return nil
 }
 
 func (w *WiFiAPModule) initDirect() error {
@@ -95,7 +99,6 @@ func (w *WiFiAPModule) initDirect() error {
 		return fmt.Errorf("dnsmasq: %w", err)
 	}
 
-	w.status.State = StateReady
 	slog.Info("subsystem wifi-ap: AP started", "ssid", w.cfg.SSID)
 	return nil
 }
@@ -106,7 +109,6 @@ func (w *WiFiAPModule) initSystemd() error {
 			return fmt.Errorf("start %s: %w", svc, err)
 		}
 	}
-	w.status.State = StateReady
 	slog.Info("subsystem wifi-ap: AP started via systemd", "ssid", w.cfg.SSID)
 	return nil
 }
@@ -123,7 +125,7 @@ func (w *WiFiAPModule) Teardown() error {
 	return nil
 }
 
-func (w *WiFiAPModule) Status() ModuleStatus               { return w.status }
+func (w *WiFiAPModule) IsReady() bool                      { return w.ready }
 func (w *WiFiAPModule) Shutdown(ctx context.Context) error { return w.Teardown() }
 
 func waitForInterface(name string, timeout time.Duration) error {

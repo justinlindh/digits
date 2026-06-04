@@ -32,14 +32,10 @@ func (s *stubModule) Init(_ context.Context) error {
 	return nil
 }
 
-func (s *stubModule) Status() ModuleStatus {
+func (s *stubModule) IsReady() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st := StatePending
-	if s.ready {
-		st = StateReady
-	}
-	return ModuleStatus{State: st}
+	return s.ready
 }
 
 func (s *stubModule) Shutdown(_ context.Context) error {

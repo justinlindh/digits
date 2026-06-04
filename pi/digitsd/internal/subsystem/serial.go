@@ -21,20 +21,18 @@ type SerialConfig struct {
 }
 
 type SerialModule struct {
-	cfg    SerialConfig
-	port   *phone.SerialPort
-	status ModuleStatus
+	cfg   SerialConfig
+	port  *phone.SerialPort
+	ready bool
 }
 
 func NewSerialModule(cfg SerialConfig) *SerialModule {
-	return &SerialModule{cfg: cfg, status: ModuleStatus{State: StatePending}}
+	return &SerialModule{cfg: cfg}
 }
 
 func (s *SerialModule) Name() string { return "serial" }
 
 func (s *SerialModule) Init(ctx context.Context) error {
-	s.status.State = StateInitializing
-
 	// probe opens the port and PINGs the Pico, stashing the port on success.
 	probe := func() bool {
 		sp, err := phone.OpenSerial(s.cfg.Device, s.cfg.Baud, slog.Default())
@@ -63,13 +61,11 @@ func (s *SerialModule) Init(ctx context.Context) error {
 	if attemptSerialBringup(probe, s.cfg.FlashOnFail, firstAttempts, 10, func() {
 		time.Sleep(500 * time.Millisecond)
 	}) {
-		s.status.State = StateReady
+		s.ready = true
 		return nil
 	}
 
-	err := fmt.Errorf("failed to open and ping after retries")
-	s.status = ModuleStatus{State: StateFailed, Message: err.Error()}
-	return err
+	return fmt.Errorf("failed to open and ping after retries")
 }
 
 // attemptSerialBringup probes for a reachable Pico, flashing the firmware once
@@ -109,7 +105,7 @@ func attemptSerialBringup(probe func() bool, flash func(reason string) error, fi
 }
 
 func (s *SerialModule) Port() *phone.SerialPort { return s.port }
-func (s *SerialModule) Status() ModuleStatus    { return s.status }
+func (s *SerialModule) IsReady() bool            { return s.ready }
 
 func (s *SerialModule) Shutdown(ctx context.Context) error {
 	if s.port != nil {

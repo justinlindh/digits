@@ -8,18 +8,16 @@ import (
 )
 
 type MountsModule struct {
-	status ModuleStatus
+	ready bool
 }
 
 func NewMountsModule() *MountsModule {
-	return &MountsModule{status: ModuleStatus{State: StatePending}}
+	return &MountsModule{}
 }
 
 func (m *MountsModule) Name() string { return "mounts" }
 
 func (m *MountsModule) Init(ctx context.Context) error {
-	m.status.State = StateInitializing
-
 	_ = os.MkdirAll("/tmp", 0755)
 	if err := syscall.Mount("tmpfs", "/tmp", "tmpfs", 0, "size=64M"); err != nil {
 		slog.Warn("mounts: /tmp mount failed (may already be mounted)", "error", err)
@@ -30,9 +28,9 @@ func (m *MountsModule) Init(ctx context.Context) error {
 		slog.Warn("mounts: /data mount failed (non-fatal)", "error", err)
 	}
 
-	m.status.State = StateReady
+	m.ready = true
 	return nil
 }
 
-func (m *MountsModule) Status() ModuleStatus               { return m.status }
+func (m *MountsModule) IsReady() bool                      { return m.ready }
 func (m *MountsModule) Shutdown(ctx context.Context) error { return nil }

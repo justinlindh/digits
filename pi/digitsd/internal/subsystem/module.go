@@ -2,7 +2,6 @@ package subsystem
 
 import (
 	"context"
-	"time"
 )
 
 type State int
@@ -32,24 +31,19 @@ func (s State) String() string {
 	}
 }
 
-type ModuleStatus struct {
-	State    State
-	Message  string
-	Duration time.Duration
-}
-
+// Module is a unit of initialization managed by Manager. IsReady reports
+// whether the module's Init completed successfully; the rich state (message,
+// duration) is tracked by the Manager and exposed via Manager.Status.
 type Module interface {
 	Name() string
 	Init(ctx context.Context) error
-	Status() ModuleStatus
+	IsReady() bool
 	Shutdown(ctx context.Context) error
 }
 
-// IsReady reports whether m has finished its Init successfully and has not
-// since failed or been disabled.
-func IsReady(m Module) bool {
-	return m.Status().State == StateReady
-}
+// IsReady is a convenience wrapper so callers that hold a Module can write
+// `subsystem.IsReady(m)` to match the natural "is X ready?" reading order.
+func IsReady(m Module) bool { return m.IsReady() }
 
 // Registration declares a module and how the Manager should treat it.
 // The zero value is the common case: enabled, not required, no deps. Set
