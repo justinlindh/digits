@@ -867,10 +867,14 @@ func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Tim
 		mixer.PlayOnce("spoken_" + string(ch))
 	}
 	minutesLeft := int(math.Ceil(time.Until(expiresAt).Minutes()))
+	// Spoken number clips only exist for 0-9, so cap at 9. A fresh code (TTL
+	// 10m) reads "9 minutes" for its first minute, which is true and
+	// conservative (it is valid for at least that long); without the cap it
+	// would play the nonexistent spoken_10 and the number would be silent.
 	if minutesLeft < 1 {
 		minutesLeft = 1
-	} else if minutesLeft > 10 {
-		minutesLeft = 10
+	} else if minutesLeft > 9 {
+		minutesLeft = 9
 	}
 	unitClip := "pairing_expires_minutes"
 	if minutesLeft == 1 {
