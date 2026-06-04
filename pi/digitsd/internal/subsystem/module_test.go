@@ -2,7 +2,7 @@ package subsystem
 
 import "testing"
 
-func TestModuleStatusString(t *testing.T) {
+func TestStateString(t *testing.T) {
 	tests := []struct {
 		state State
 		want  string
