@@ -975,6 +975,43 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 	return regs, web, serial, audio
 }
 
+// queryPicoPhase reads the Pico's persisted phase byte, retrying briefly since
+// the link may still be settling right after POST.
+func queryPicoPhase(sp *phone.SerialPort) (uint8, error) {
+	const phaseRetries = 5
+	var phase uint8
+	var err error
+	for i := 1; i <= phaseRetries; i++ {
+		phase, err = sp.QueryPhase()
+		if err == nil {
+			return phase, nil
+		}
+		slog.Warn("phase query failed", "attempt", i, "max", phaseRetries, "error", err)
+		time.Sleep(500 * time.Millisecond)
+	}
+	return 0, err
+}
+
+// enterPanicRecovery handles a Pico phase of RECOVERY (the user held * at
+// power-on): flag recovery for the next boot, clear the panic phase to a
+// non-recovery value so it does not loop, and reboot. Called from both normal
+// and setup mode so the panic button works regardless of whether WiFi is
+// configured: a device that boots into setup/AP mode must still reach recovery.
+func enterPanicRecovery(sp *phone.SerialPort, deviceToken string) {
+	slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")
+	if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
+		slog.Warn("panic button: failed to set boot counter", "error", err)
+	}
+	_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
+	if deviceToken == "" {
+		sp.StateSet("UNPAIRED")
+	} else {
+		sp.StateSet("PAIRED")
+	}
+	time.Sleep(500 * time.Millisecond)
+	doReboot()
+}
+
 func main() {
 	flag.Parse()
 
@@ -1038,6 +1075,22 @@ func main() {
 		if err := mgr.Run(context.Background()); err != nil {
 			slog.Error("setup init failed", "error", err)
 			os.Exit(1)
+		}
+		// Honor the panic button (* held at power-on) even with no WiFi
+		// configured. A fresh device boots straight into setup/AP mode, which
+		// never reaches the normal-mode phase check, so without this the LED
+		// flashes RECOVERY but the device just proceeds to AP config. The
+		// serial subsystem has brought the Pico up (flashing it if needed), so
+		// the phase byte the firmware wrote when * was held is readable here.
+		// Setup mode is pre-pairing, so pass an empty device token.
+		if subsystem.IsReady(serial) {
+			if sp := serial.Port(); sp != nil {
+				if phase, err := queryPicoPhase(sp); err != nil {
+					slog.Error("setup: phase query failed, proceeding without panic-button check", "error", err)
+				} else if phase == phone.PhaseRecovery {
+					enterPanicRecovery(sp, "")
+				}
+			}
 		}
 		runSetupMode(web, serial, audioMod)
 		return
@@ -1368,17 +1421,7 @@ func main() {
 	// so the device doesn't loop back into recovery on every boot.
 	cachedPhase := "unknown"
 	if postOk {
-		const phaseRetries = 5
-		var phase uint8
-		var phaseErr error
-		for i := 1; i <= phaseRetries; i++ {
-			phase, phaseErr = sp.QueryPhase()
-			if phaseErr == nil {
-				break
-			}
-			slog.Warn("phase query failed", "attempt", i, "max", phaseRetries, "error", phaseErr)
-			time.Sleep(500 * time.Millisecond)
-		}
+		phase, phaseErr := queryPicoPhase(sp)
 		if phaseErr != nil {
 			slog.Error("phase query: all retries exhausted, proceeding without phase check", "error", phaseErr)
 		} else {
@@ -1396,18 +1439,7 @@ func main() {
 			}
 			slog.Info("pico phase", "phase", fmt.Sprintf("0x%02X", phase))
 			if phase == phone.PhaseRecovery {
-				slog.Info("panic button: Pico phase is RECOVERY (* held at boot), entering recovery mode")
-				if err := bootcount.SetThreshold(bootcount.DefaultPath, 3); err != nil {
-					slog.Warn("panic button: failed to set boot counter", "error", err)
-				}
-				_ = os.WriteFile("/data/digits/recovery-mode", []byte("panic-button\n"), 0644)
-				if cfg.DeviceToken == "" {
-					sp.StateSet("UNPAIRED")
-				} else {
-					sp.StateSet("PAIRED")
-				}
-				time.Sleep(500 * time.Millisecond)
-				doReboot()
+				enterPanicRecovery(sp, cfg.DeviceToken)
 			}
 		}
 	}
