@@ -173,6 +173,19 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household, errMs
 	}
 }
 
+// renderPhonesError renders the full phones page with a top-level error banner.
+func (h *Handler) renderPhonesError(w http.ResponseWriter, r *http.Request, hh *household.Household, msg string) {
+	data := h.buildLinesData(r, hh, msg)
+	renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+}
+
+// renderPairError renders the full phones page with a pairing-specific error.
+func (h *Handler) renderPairError(w http.ResponseWriter, r *http.Request, hh *household.Household, msg string) {
+	data := h.buildLinesData(r, hh, "")
+	data.PairError = msg
+	renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+}
+
 func (h *Handler) handlePhonesGet(w http.ResponseWriter, r *http.Request) {
 	data := h.buildLinesData(r, h.activeHousehold(r), "")
 	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
@@ -198,13 +211,11 @@ func (h *Handler) handlePhonesPost(w http.ResponseWriter, r *http.Request) {
 	householdID := hh.ID
 
 	if err := line.ValidateNumber(number); err != nil {
-		data := h.buildLinesData(r, hh, err.Error())
-		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+		h.renderPhonesError(w, r, hh, err.Error())
 		return
 	}
 	if nameErr != nil {
-		data := h.buildLinesData(r, hh, nameErr.Error())
-		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+		h.renderPhonesError(w, r, hh, nameErr.Error())
 		return
 	}
 
@@ -240,9 +251,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	existingLineID := strings.TrimSpace(r.FormValue("existing_line_id"))
 
 	if h.pairingStore == nil {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = "pairing is not enabled"
-		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+		h.renderPairError(w, r, hh, "pairing is not enabled")
 		return
 	}
 
@@ -259,9 +268,7 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		// Add device to an existing line (POTS extension)
 		lineID, parseErr := strconv.ParseInt(existingLineID, 10, 64)
 		if parseErr != nil {
-			data := h.buildLinesData(r, hh, "")
-			data.PairError = "invalid line selection"
-			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			h.renderPairError(w, r, hh, "invalid line selection")
 			return
 		}
 		token, hwID, err = h.pairingStore.ClaimDeviceToLine(r.Context(), code, lineID, deviceName, householdID)
@@ -275,25 +282,19 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 		// Create a new line and pair the device
 		number = line.StripNumber(strings.TrimSpace(r.FormValue("number")))
 		if verr := line.ValidateNumber(number); verr != nil {
-			data := h.buildLinesData(r, hh, "")
-			data.PairError = "invalid phone number: " + verr.Error()
-			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			h.renderPairError(w, r, hh, "invalid phone number: "+verr.Error())
 			return
 		}
 		lineName, verr := validateLineName(deviceName)
 		if verr != nil {
-			data := h.buildLinesData(r, hh, "")
-			data.PairError = "handset name: " + verr.Error()
-			renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+			h.renderPairError(w, r, hh, "handset name: "+verr.Error())
 			return
 		}
 		token, hwID, err = h.pairingStore.ClaimDevice(r.Context(), code, number, lineName, deviceName, householdID)
 	}
 
 	if err != nil {
-		data := h.buildLinesData(r, hh, "")
-		data.PairError = err.Error()
-		renderWith(r.Context(), w, h.tmplPhones, layoutFor(r), data)
+		h.renderPairError(w, r, hh, err.Error())
 		return
 	}
 
