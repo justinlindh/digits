@@ -91,21 +91,14 @@ type Deployer struct {
 	Now    func() time.Time
 }
 
-func (d *Deployer) log() *slog.Logger {
-	if d.Logger == nil {
-		return slog.Default()
-	}
-	return d.Logger
-}
-
-func (d *Deployer) now() time.Time {
-	if d.Now == nil {
-		return time.Now().UTC()
-	}
-	return d.Now().UTC()
-}
-
 func (d *Deployer) Run(ctx context.Context) (Result, error) {
+	if d.Logger == nil {
+		d.Logger = slog.Default()
+	}
+	if d.Now == nil {
+		d.Now = func() time.Time { return time.Now().UTC() }
+	}
+
 	state, err := d.Store.Read()
 	if err != nil {
 		return Result{}, fmt.Errorf("read state: %w", err)
@@ -127,13 +120,13 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 			// Don't fail the run for an ETag-only write, but log so a
 			// persistent disk issue is visible before the next real deploy.
 			if err := d.Store.Write(state); err != nil {
-				d.log().Warn("persist etag", "err", err)
+				d.Logger.Warn("persist etag", "err", err)
 			}
 		}
 		return Result{Action: ActionNoop}, nil
 	}
 	if rel.TagName == state.LastAttemptTag && isFailed(state.LastAttemptStatus) {
-		d.log().Info("skipping known-failed tag", "tag", rel.TagName, "status", state.LastAttemptStatus)
+		d.Logger.Info("skipping known-failed tag", "tag", rel.TagName, "status", state.LastAttemptStatus)
 		return Result{Action: ActionSkipFailed, Tag: rel.TagName}, nil
 	}
 
@@ -150,17 +143,17 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 		if err := d.Runner.Run(ctx, RunSpec{
 			Name: "docker", Args: []string{"manifest", "inspect", img},
 		}); err != nil {
-			d.log().Info("images not yet pushed for tag, will retry",
+			d.Logger.Info("images not yet pushed for tag, will retry",
 				"tag", rel.TagName, "service", svc, "image", img, "err", err)
 			return Result{Action: ActionImagesNotReady, Tag: rel.TagName}, nil
 		}
 	}
 
-	d.log().Info("new release, deploying", "tag", rel.TagName, "commit", rel.CommitSHA, "version", version)
+	d.Logger.Info("new release, deploying", "tag", rel.TagName, "commit", rel.CommitSHA, "version", version)
 
 	state.LastAttemptTag = rel.TagName
 	state.LastAttemptStatus = StatusInProgress
-	state.LastAttemptAt = d.now()
+	state.LastAttemptAt = d.Now()
 	state.LastAttemptError = ""
 	if err := d.Store.Write(state); err != nil {
 		return Result{}, fmt.Errorf("write in-progress state: %w", err)
@@ -168,7 +161,7 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 
 	if err := d.deployVersion(ctx, version, d.Cfg.HealthTimeout); err != nil {
 		step := stepOf(err)
-		d.log().Error("deploy failed", "err", err, "step", step)
+		d.Logger.Error("deploy failed", "err", err, "step", step)
 
 		if prevVersion != "" && step.needsRevert() {
 			// Revert must not inherit a cancelled parent context: a user-
@@ -176,7 +169,7 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 			// without actually trying to bring the old container back.
 			revertCtx := context.WithoutCancel(ctx)
 			if revertErr := d.deployVersion(revertCtx, prevVersion, d.Cfg.RevertHealthTimeout); revertErr != nil {
-				d.log().Error("revert also failed", "err", revertErr)
+				d.Logger.Error("revert also failed", "err", revertErr)
 				state.LastAttemptStatus = StatusCritical
 				state.LastAttemptError = fmt.Sprintf("deploy: %v; revert: %v", err, revertErr)
 				d.finalize(&state, rel, "critical")
@@ -199,7 +192,7 @@ func (d *Deployer) Run(ctx context.Context) (Result, error) {
 
 	state.LastDeployedTag = rel.TagName
 	state.LastDeployedCommitSHA = rel.CommitSHA
-	state.LastDeployedAt = d.now()
+	state.LastDeployedAt = d.Now()
 	state.LastAttemptStatus = StatusSuccess
 	state.LastAttemptError = ""
 	state.LastEmailAt = time.Time{}
@@ -272,8 +265,8 @@ func (d *Deployer) finalize(state *State, rel Release, errorClass string) {
 
 	if !state.LastEmailAt.IsZero() &&
 		state.LastEmailErrorClass == errorClass &&
-		d.now().Sub(state.LastEmailAt) < d.Cfg.EmailDebounce {
-		d.log().Info("email debounced", "class", errorClass)
+		d.Now().Sub(state.LastEmailAt) < d.Cfg.EmailDebounce {
+		d.Logger.Info("email debounced", "class", errorClass)
 		return
 	}
 
@@ -283,10 +276,10 @@ func (d *Deployer) finalize(state *State, rel Release, errorClass string) {
 	// the payload so docker/git error text can't break the markup.
 	htmlBody := "<pre>" + html.EscapeString(body) + "</pre>"
 	if err := d.Mailer.Send(d.Cfg.AlertTo, subject, htmlBody); err != nil {
-		d.log().Error("email send failed", "err", err)
+		d.Logger.Error("email send failed", "err", err)
 		return
 	}
-	state.LastEmailAt = d.now()
+	state.LastEmailAt = d.Now()
 	state.LastEmailErrorClass = errorClass
 }
 
