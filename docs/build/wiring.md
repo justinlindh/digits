@@ -249,7 +249,7 @@ Full mixer documentation: `pi/README-mixer.md`
 | `digits-ap.service`       | hostapd AP mode (setup only)              | Conditional |
 | `digits-dnsmasq-ap.service` | dnsmasq DHCP/DNS for AP mode            | Conditional |
 | `digits-setup.service`    | Captive portal web server (setup only)    | Conditional |
-| `digits-first-boot.service` | First-boot hostname/SSH key randomization | Conditional (oneshot) |
+| `digits-first-boot.service` | First-boot identity setup: stable hostname from Pi serial, fresh SSH host keys | Conditional (oneshot) |
 | `dtmf-uart.service`       | *(DISABLED)* -- replaced by digitsd       | Disabled |
 | `digits-dac-keepalive.service` | *(DISABLED)* -- moved into digitsd    | Disabled |
 
