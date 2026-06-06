@@ -251,6 +251,8 @@ func RouteOf(path string) string {
 		return "/api/conference/{uuid}"
 	case strings.HasPrefix(path, "/api/updates/"):
 		return "/api/updates"
+	case strings.HasPrefix(path, "/api/release-audio/"):
+		return "/api/release-audio"
 	case strings.HasPrefix(path, "/api/"):
 		return "/api/other"
 
@@ -275,6 +277,10 @@ func RouteOf(path string) string {
 		return "/onboard"
 	case path == "/connecting":
 		return "/connecting"
+	case path == "/changelog":
+		return "/changelog"
+	case strings.HasPrefix(path, "/invite/"):
+		return "/invite/{token}"
 
 	default:
 		return "other"

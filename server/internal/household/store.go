@@ -39,14 +39,30 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
 }
 
+const householdColumns = `id, name, call_history_enabled, timezone, created_at`
+
+// scanHousehold materializes a Household from any row whose columns match
+// householdColumns in order. Works for both *sql.Row and *sql.Rows via
+// the dbutil.RowScanner interface.
+func scanHousehold(row dbutil.RowScanner) (*Household, error) {
+	h := &Household{}
+	if err := row.Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
 // Create inserts a new household and adds ownerUserID as an admin member in a single transaction.
 func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Household, error) {
-	h := &Household{}
+	var h *Household
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
-		if err := tx.QueryRowContext(ctx,
-			`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
+		row := tx.QueryRowContext(ctx,
+			`INSERT INTO households (name) VALUES ($1) RETURNING `+householdColumns,
 			name,
-		).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt); err != nil {
+		)
+		var err error
+		h, err = scanHousehold(row)
+		if err != nil {
 			return fmt.Errorf("insert household: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -64,11 +80,11 @@ func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Househol
 
 // GetByID retrieves a household by its UUID.
 func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
-	h := &Household{}
-	err := s.db.QueryRowContext(ctx,
-		`SELECT id, name, call_history_enabled, timezone, created_at FROM households WHERE id = $1`,
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+householdColumns+` FROM households WHERE id = $1`,
 		id,
-	).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt)
+	)
+	h, err := scanHousehold(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -95,8 +111,8 @@ func (s *Store) GetForUser(ctx context.Context, userID string) ([]*Household, er
 
 	var households []*Household
 	for rows.Next() {
-		h := &Household{}
-		if err := rows.Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt); err != nil {
+		h, err := scanHousehold(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan household: %w", err)
 		}
 		households = append(households, h)
