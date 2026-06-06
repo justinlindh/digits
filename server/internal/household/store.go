@@ -44,9 +44,9 @@ func (s *Store) Create(ctx context.Context, name, ownerUserID string) (*Househol
 	h := &Household{}
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx,
-			`INSERT INTO households (name) VALUES ($1) RETURNING id, name, timezone, created_at`,
+			`INSERT INTO households (name) VALUES ($1) RETURNING id, name, call_history_enabled, timezone, created_at`,
 			name,
-		).Scan(&h.ID, &h.Name, &h.Timezone, &h.CreatedAt); err != nil {
+		).Scan(&h.ID, &h.Name, &h.CallHistoryEnabled, &h.Timezone, &h.CreatedAt); err != nil {
 			return fmt.Errorf("insert household: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx,
