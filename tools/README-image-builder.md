@@ -106,8 +106,8 @@ The final image is ~7 GB uncompressed. An **8 GB microSD card** is the minimum r
 
 On first power-on, the device will:
 
-1. **Generate unique identity** -- hostname `digits-XXXX`, SSH keys, device ID
-2. **Start AP mode** -- broadcasts `Digits-XXXX` Wi-Fi network
+1. **Generate unique identity** -- stable hostname `digits-<serial>` derived from the Pi's hardware serial (so it survives factory resets), SSH keys, device ID
+2. **Start AP mode** -- broadcasts `Digits-XXXX` Wi-Fi network (XXXX from the device UUID)
 3. **Serve captive portal** -- user connects, configures home network + pairing code
 4. **Reboot to normal mode** -- connects to configured Wi-Fi, pairs with server
 
