@@ -97,7 +97,7 @@ func (s *Store) GetByID(ctx context.Context, id string) (*Household, error) {
 // GetForUser returns all households the given user belongs to.
 func (s *Store) GetForUser(ctx context.Context, userID string) ([]*Household, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+householdColumns+`
+		`SELECT h.id, h.name, h.call_history_enabled, h.timezone, h.created_at
 		 FROM households h
 		 JOIN household_members m ON m.household_id = h.id
 		 WHERE m.user_id = $1
