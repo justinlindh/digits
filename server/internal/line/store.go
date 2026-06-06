@@ -341,7 +341,7 @@ func (s *Store) UpdateSettings(ctx context.Context, id int64, settings Settings)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
-		return fmt.Errorf("line %d not found", id)
+		return ErrNotFound
 	}
 	return nil
 }
