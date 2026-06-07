@@ -203,7 +203,10 @@ func (t *Tracker) OnCallAnswered(ctx context.Context, caller, callee string) err
 		 )`,
 		caller, callee,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("update call answered: %w", err)
+	}
+	return nil
 }
 
 func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error {

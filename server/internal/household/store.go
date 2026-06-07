@@ -240,7 +240,10 @@ func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) er
 	if err != nil {
 		return fmt.Errorf("remove member: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("remove member: %w", err)
+	}
 	if n == 0 {
 		return ErrNotMember
 	}
@@ -276,7 +279,10 @@ func (s *Store) Delete(ctx context.Context, householdID string) error {
 	if err != nil {
 		return fmt.Errorf("delete household: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete household: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}

@@ -100,7 +100,10 @@ func (s *Store) Reassign(ctx context.Context, deviceID, newLineID int64) error {
 	if err != nil {
 		return fmt.Errorf("reassign device: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reassign device: %w", err)
+	}
 	if n == 0 {
 		return fmt.Errorf("reassign device: device %d not found", deviceID)
 	}

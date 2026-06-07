@@ -96,11 +96,11 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
-	if !parseForm(w, r) {
-		return
-	}
 	_, hh, ok := h.requireHouseholdAdmin(w, r)
 	if !ok {
+		return
+	}
+	if !parseForm(w, r) {
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"

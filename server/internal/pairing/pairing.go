@@ -70,7 +70,10 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("upsert pairing code: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("upsert pairing code: %w", err)
+	}
 	if n == 0 {
 		return "", ErrAlreadyPaired
 	}
@@ -110,8 +113,11 @@ func bindDeviceToLine(ctx context.Context, tx *sql.Tx, deviceID, lineID int64, t
 	if err != nil {
 		return fmt.Errorf("bind device to line: %w", err)
 	}
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("bind device to line: %w", err)
+	}
+	if n == 0 {
 		return ErrInvalidCode
 	}
 	return nil
