@@ -17,7 +17,6 @@ import (
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/codec"
-	"github.com/justinlindh/digits/pi/digitsd/internal/config"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
@@ -774,12 +773,6 @@ func (d *daemonCallbacks) VoicemailDeleteGreeting() {
 		d.playAnnouncementSequence("vm_greeting_deleted")
 		d.SendTone(phone.ToneDial)
 	}
-}
-
-// VoicemailRetrievalCode returns the hardcoded retrieval code that the
-// controller uses to intercept dial-collection and enter VOICEMAIL_PLAYBACK.
-func (d *daemonCallbacks) VoicemailRetrievalCode() string {
-	return config.VoicemailRetrievalCode
 }
 
 // VoicemailEnterPlayback opens the first unheard message and streams it to

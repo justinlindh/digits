@@ -23,7 +23,6 @@ const (
 // Voicemail constants that are no longer server-configurable.
 const (
 	VoicemailMaxStoredMessages = 50
-	VoicemailRetrievalCode     = "*98"
 )
 
 // WiFiFallback configures the wifi auto-fallback supervisor.

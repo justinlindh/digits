@@ -493,9 +493,9 @@ func (d *daemonCallbacks) publishVoicemailStateInitial() {
 //
 // Live consumption: both fields, Enabled and RingTimeout, are read per ring,
 // so they take effect on the next inbound call without any further wiring.
-// The storage cap and retrieval code are no longer pushed; they are fixed
-// config.VoicemailMaxStoredMessages and config.VoicemailRetrievalCode
-// constants and never flow through this helper.
+// The storage cap is no longer pushed; it is the fixed
+// config.VoicemailMaxStoredMessages constant and never flows through this
+// helper. The retrieval code lives in the phone package as a constant.
 func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
 	d.mu.Lock()
 	d.cfg.Voicemail = vm
