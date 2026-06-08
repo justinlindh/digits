@@ -37,6 +37,7 @@ var (
 	ErrInvalidCode   = errors.New("invalid or expired pairing code")
 	ErrAlreadyPaired = errors.New("device is already paired")
 	ErrNumberTaken   = errors.New("line number is already in use")
+	ErrLineNotOwned  = errors.New("line does not belong to this household")
 )
 
 // Store handles device pairing operations.
@@ -189,7 +190,7 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 			return fmt.Errorf("verify line ownership: %w", err)
 		}
 		if ownerHH != householdID {
-			return fmt.Errorf("line does not belong to this household")
+			return ErrLineNotOwned
 		}
 
 		return bindDeviceToLine(ctx, tx, deviceID, lineID, tokenHash, deviceName)

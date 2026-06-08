@@ -292,7 +292,7 @@ func ensureHousehold(ctx context.Context, s *household.Store, userID, name strin
 			return nil, err
 		}
 		if len(hs) == 0 {
-			return nil, fmt.Errorf("user reports not needing onboarding but has no households")
+			return nil, errors.New("user reports not needing onboarding but has no households")
 		}
 		return hs[0], nil
 	}

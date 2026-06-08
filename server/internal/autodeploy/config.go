@@ -145,10 +145,10 @@ func LoadConfig(path string) (Config, error) {
 		}
 	}
 	if len(c.Services) == 0 {
-		return Config{}, fmt.Errorf("missing required field: SERVICES")
+		return Config{}, errors.New("missing required field: SERVICES")
 	}
 	if len(c.HealthURLs) == 0 {
-		return Config{}, fmt.Errorf("missing required field: HEALTH_URLS")
+		return Config{}, errors.New("missing required field: HEALTH_URLS")
 	}
 	return c, nil
 }
