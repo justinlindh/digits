@@ -249,7 +249,10 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
 	if n == 0 {
 		return ErrUserNotFound
 	}

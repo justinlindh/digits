@@ -280,7 +280,10 @@ func (s *Store) Update(ctx context.Context, id int64, number, name string) error
 	if err != nil {
 		return fmt.Errorf("update line: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update line: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -293,7 +296,10 @@ func (s *Store) Delete(ctx context.Context, id int64) error {
 	if err != nil {
 		return fmt.Errorf("delete line: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete line: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
@@ -339,7 +345,10 @@ func (s *Store) UpdateSettings(ctx context.Context, id int64, settings Settings)
 	if err != nil {
 		return fmt.Errorf("update settings: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update settings: %w", err)
+	}
 	if n == 0 {
 		return ErrNotFound
 	}
