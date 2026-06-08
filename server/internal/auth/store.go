@@ -222,7 +222,7 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, er
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invalid or expired session")
+		return nil, errors.New("invalid or expired session")
 	}
 	if err != nil {
 		return nil, err
@@ -264,7 +264,7 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invalid or expired session")
+		return nil, errors.New("invalid or expired session")
 	}
 	if err != nil {
 		return nil, err
@@ -305,7 +305,7 @@ func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, st
 		hash,
 	).Scan(&email, &returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", fmt.Errorf("invalid, expired, or already used magic link")
+		return "", "", errors.New("invalid, expired, or already used magic link")
 	}
 	if err != nil {
 		return "", "", err

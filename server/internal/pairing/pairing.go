@@ -189,7 +189,7 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 			return fmt.Errorf("verify line ownership: %w", err)
 		}
 		if ownerHH != householdID {
-			return fmt.Errorf("line does not belong to this household")
+			return errors.New("line does not belong to this household")
 		}
 
 		return bindDeviceToLine(ctx, tx, deviceID, lineID, tokenHash, deviceName)
