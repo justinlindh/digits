@@ -63,6 +63,11 @@ const (
 // so the controller self-fires here once it has the full number.
 const addDialDigitsRequired = 7
 
+// voicemailRetrievalCode is the fixed dial sequence that intercepts an
+// outbound call attempt and enters VOICEMAIL_PLAYBACK while voicemail is
+// enabled. Not user-configurable.
+const voicemailRetrievalCode = "*98"
+
 type controllerTiming struct {
 	AutoDialDelay          time.Duration // silence between last digit and first ringback
 	RejectWait             time.Duration // simulated connection attempt before intercept
@@ -120,7 +125,6 @@ type Callbacks interface {
 	VoicemailEnterPlayback()                                      // *98: enter retrieval playback; daemon opens first unheard and streams to mixer
 	VoicemailExitPlayback()                                       // hook-on during playback; daemon tears down player + mixer source
 	VoicemailKey(digit string)                                    // DTMF key during playback (7=delete, 9=mark heard, #=skip, *=replay)
-	VoicemailRetrievalCode() string                               // fixed retrieval code ("*98")
 }
 
 // ContactChecker determines whether a number is in the local contact list.
@@ -527,14 +531,13 @@ func (c *Controller) onKey(digit string) {
 	case StateDIALING:
 		c.digits += digit
 		// Voicemail retrieval-code intercept. Evaluated before the service-code
-		// reset and the 7-digit dial logic so *98 (or whatever the user
-		// configured) short-circuits the outbound call attempt. Exact match
-		// only: if the user dials a number that happens to begin with the
-		// retrieval-code prefix, the accumulator keeps growing past it and the
-		// match never fires.
+		// reset and the 7-digit dial logic so *98 short-circuits the outbound
+		// call attempt. Exact match only: if the user dials a number that
+		// happens to begin with the retrieval-code prefix, the accumulator
+		// keeps growing past it and the match never fires.
 		if enabled, _ := c.cb.VoicemailEnabled(); enabled {
-			if code := c.cb.VoicemailRetrievalCode(); code != "" && c.digits == code {
-				slog.Info("phone: retrieval code detected, entering VOICEMAIL_PLAYBACK", "code", code)
+			if c.digits == voicemailRetrievalCode {
+				slog.Info("phone: retrieval code detected, entering VOICEMAIL_PLAYBACK", "code", voicemailRetrievalCode)
 				c.digits = ""
 				c.state = StateVOICEMAIL_PLAYBACK
 				// Voicemail playback is peerless and local, but the user still
