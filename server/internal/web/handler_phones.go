@@ -68,11 +68,9 @@ type pairSuccess struct {
 
 type linesData struct {
 	chromeData
-	Lines                 []lineRow
-	AllSilent             bool
-	PairError             string
-	LatestPiVersion       string
-	LatestFirmwareVersion string
+	Lines     []lineRow
+	AllSilent bool
+	PairError string
 }
 
 type lineRow struct {
@@ -94,9 +92,11 @@ type lineRow struct {
 	VoicemailUnheard int
 }
 
-// buildLinesData assembles the line-list page payload. hh may be nil; when
-// nil or lookup fails the handler shows an empty list rather than leaking
-// every line on the server.
+// buildLinesData assembles the household's line roster with per-line status
+// (online state, devices, update notes, voicemail counts). It feeds the
+// Overview line cards, the pairing page's extension dropdown, the dashboard
+// SSE status, and the status API. hh may be nil; when nil or lookup fails
+// the caller gets an empty list rather than every line on the server.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household) linesData {
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
@@ -162,11 +162,9 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household) lines
 	cd := h.newChromeDataWithHouseholds(r, "phones")
 	cd.allSilent = allSilent
 	return linesData{
-		chromeData:            cd,
-		Lines:                 rows,
-		AllSilent:             allSilent,
-		LatestPiVersion:       latestPi,
-		LatestFirmwareVersion: latestFw,
+		chromeData: cd,
+		Lines:      rows,
+		AllSilent:  allSilent,
 	}
 }
 

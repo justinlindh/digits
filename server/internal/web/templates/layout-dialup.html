@@ -102,7 +102,7 @@
     <!-- Channel list sidebar -->
     <aside class="dialup-channels" aria-label="Channels">
       <div class="dialup-channels__header">★ CHANNELS ★</div>
-      <a href="/" class="dialup-channel dialup-channel--green {{if or (eq .Page "dashboard") (eq .Page "phones")}}is-active{{end}}">
+      <a href="/" class="dialup-channel dialup-channel--green {{if .OverviewActive}}is-active{{end}}">
         <div class="dialup-channel__icon dialup-ic-welcome" aria-hidden="true"></div>
         <span>WELCOME</span>
       </a>

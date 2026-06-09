@@ -24,7 +24,7 @@
 
     <div class="am-shell__drawer" id="am-nav-drawer">
       <nav class="am-tabs" aria-label="Sections">
-        <a class="am-tab {{if or (eq .Page "dashboard") (eq .Page "phones")}}is-active{{end}}" href="/">Overview</a>
+        <a class="am-tab {{if .OverviewActive}}is-active{{end}}" href="/">Overview</a>
         <a class="am-tab {{if eq .Page "links"}}is-active{{end}}" href="/links">Families</a>
         {{if .CallHistoryEnabled}}
         <a class="am-tab {{if eq .Page "calls"}}is-active{{end}}" href="/calls">Calls</a>

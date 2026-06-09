@@ -41,7 +41,7 @@
   <button class="rail__toggle" type="button" aria-label="Open navigation" onclick="document.querySelector('.rail__nav').classList.toggle('is-open')">Menu</button>
 
   <nav class="rail__nav" aria-label="Primary">
-    <a href="/"         class="{{if or (eq .Page "dashboard") (eq .Page "phones")}}is-active{{end}}">Overview</a>
+    <a href="/"         class="{{if .OverviewActive}}is-active{{end}}">Overview</a>
     <a href="/links"    class="{{if eq .Page "links"}}is-active{{end}}">Families</a>
     {{if .CallHistoryEnabled}}
     <a href="/calls"    class="{{if eq .Page "calls"}}is-active{{end}}">Calls</a>
