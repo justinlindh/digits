@@ -40,13 +40,13 @@ func createMinimalWAV(t *testing.T, path string, samples []int16) {
 	binary.LittleEndian.PutUint32(header[4:8], uint32(riffSize))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16)     // fmt chunk size
-	binary.LittleEndian.PutUint16(header[20:22], 1)      // PCM
-	binary.LittleEndian.PutUint16(header[22:24], 1)      // mono
-	binary.LittleEndian.PutUint32(header[24:28], 48000)  // sample rate
-	binary.LittleEndian.PutUint32(header[28:32], 96000)  // byte rate (48000 * 1 * 2)
-	binary.LittleEndian.PutUint16(header[32:34], 2)      // block align
-	binary.LittleEndian.PutUint16(header[34:36], 16)     // bits per sample
+	binary.LittleEndian.PutUint32(header[16:20], 16)    // fmt chunk size
+	binary.LittleEndian.PutUint16(header[20:22], 1)     // PCM
+	binary.LittleEndian.PutUint16(header[22:24], 1)     // mono
+	binary.LittleEndian.PutUint32(header[24:28], 48000) // sample rate
+	binary.LittleEndian.PutUint32(header[28:32], 96000) // byte rate (48000 * 1 * 2)
+	binary.LittleEndian.PutUint16(header[32:34], 2)     // block align
+	binary.LittleEndian.PutUint16(header[34:36], 16)    // bits per sample
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
 	_, _ = f.Write(header)
@@ -72,6 +72,61 @@ func TestMixerWritesSilenceWhenIdle(t *testing.T) {
 				t.Fatalf("period %d sample %d: expected 0 (silence), got %d", i, j, s)
 			}
 		}
+	}
+}
+
+// --- PCM capture cap ---
+
+func TestMixerCaptureRespectsMaxBytes(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+
+	path := t.TempDir() + "/capture.pcm"
+	// One frame is 960 int16 == 1920 bytes; cap at 3 frames worth so the loop
+	// writes a few frames, then stops.
+	maxBytes := int64(3 * 960 * 2)
+	if err := mx.EnableCapture(path, maxBytes); err != nil {
+		t.Fatalf("EnableCapture: %v", err)
+	}
+
+	mx.Start()
+	time.Sleep(150 * time.Millisecond) // many more than 3 frames at 20ms each
+	mx.Stop()
+	mx.DisableCapture()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat capture file: %v", err)
+	}
+	if info.Size() > maxBytes {
+		t.Fatalf("capture file %d bytes exceeds cap %d", info.Size(), maxBytes)
+	}
+	if info.Size() == 0 {
+		t.Fatal("capture file is empty; expected some frames written before the cap")
+	}
+}
+
+func TestMixerCaptureUnboundedWhenMaxZero(t *testing.T) {
+	w := &mockWriter{}
+	mx := NewMixer(w)
+
+	path := t.TempDir() + "/capture.pcm"
+	if err := mx.EnableCapture(path, 0); err != nil {
+		t.Fatalf("EnableCapture: %v", err)
+	}
+
+	mx.Start()
+	time.Sleep(100 * time.Millisecond)
+	mx.Stop()
+	mx.DisableCapture()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat capture file: %v", err)
+	}
+	// With no cap the file should hold several frames (well over one frame).
+	if info.Size() < int64(2*960*2) {
+		t.Fatalf("unbounded capture wrote only %d bytes; expected multiple frames", info.Size())
 	}
 }
 
@@ -391,13 +446,13 @@ func TestLoadWAV(t *testing.T) {
 	binary.LittleEndian.PutUint32(header[4:8], uint32(riffSize))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16)     // fmt chunk size
-	binary.LittleEndian.PutUint16(header[20:22], 1)      // PCM
-	binary.LittleEndian.PutUint16(header[22:24], 1)      // mono
-	binary.LittleEndian.PutUint32(header[24:28], 48000)  // sample rate
-	binary.LittleEndian.PutUint32(header[28:32], 96000)  // byte rate
-	binary.LittleEndian.PutUint16(header[32:34], 2)      // block align
-	binary.LittleEndian.PutUint16(header[34:36], 16)     // bits per sample
+	binary.LittleEndian.PutUint32(header[16:20], 16)    // fmt chunk size
+	binary.LittleEndian.PutUint16(header[20:22], 1)     // PCM
+	binary.LittleEndian.PutUint16(header[22:24], 1)     // mono
+	binary.LittleEndian.PutUint32(header[24:28], 48000) // sample rate
+	binary.LittleEndian.PutUint32(header[28:32], 96000) // byte rate
+	binary.LittleEndian.PutUint16(header[32:34], 2)     // block align
+	binary.LittleEndian.PutUint16(header[34:36], 16)    // bits per sample
 	copy(header[36:40], "data")
 	binary.LittleEndian.PutUint32(header[40:44], uint32(dataSize))
 	_, _ = f.Write(header)
