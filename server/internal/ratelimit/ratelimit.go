@@ -19,20 +19,24 @@ type bucket struct {
 
 // Limiter is an in-memory IP-based rate limiter using a fixed-window token bucket.
 type Limiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	limit   int
-	window  time.Duration
+	mu             sync.Mutex
+	buckets        map[string]*bucket
+	limit          int
+	window         time.Duration
+	trustedProxies int
 }
 
 // New creates a rate limiter that allows `limit` requests per `window` per IP.
-// It starts a background goroutine that evicts stale entries every 5 minutes
-// and runs for the lifetime of the process.
-func New(limit int, window time.Duration) *Limiter {
+// trustedProxies is the reverse-proxy hop count used to resolve the client IP
+// from X-Forwarded-For (see httputil.ClientIP). It starts a background
+// goroutine that evicts stale entries every 5 minutes and runs for the
+// lifetime of the process.
+func New(limit int, window time.Duration, trustedProxies int) *Limiter {
 	l := &Limiter{
-		buckets: make(map[string]*bucket),
-		limit:   limit,
-		window:  window,
+		buckets:        make(map[string]*bucket),
+		limit:          limit,
+		window:         window,
+		trustedProxies: trustedProxies,
 	}
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -76,7 +80,7 @@ func (l *Limiter) evictExpired() {
 // Middleware returns an http.Handler that rejects requests over the rate limit with 429.
 func (l *Limiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := httputil.ClientIP(r)
+		ip := httputil.ClientIP(r, l.trustedProxies)
 		if !l.Allow(ip) {
 			http.Error(w, "Too many requests. Please try again later.", http.StatusTooManyRequests)
 			return
