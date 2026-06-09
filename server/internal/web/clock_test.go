@@ -51,7 +51,7 @@ func TestFmtElapsed(t *testing.T) {
 }
 
 func TestFmtDurationClock(t *testing.T) {
-	funcs := baseTemplateFuncs()
+	funcs := TemplateFuncs()
 	fn := funcs["fmtDurationClock"].(func(int) string)
 
 	tests := []struct {
