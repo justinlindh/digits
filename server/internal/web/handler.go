@@ -100,12 +100,6 @@ func TemplateFuncs() template.FuncMap {
 				{4, "Thu"}, {5, "Fri"}, {6, "Sat"},
 			}
 		},
-		"mod": func(a, b int) int {
-			if b == 0 {
-				return 0
-			}
-			return a % b
-		},
 		"humanBytes": func(n int64) string {
 			switch {
 			case n > 1024*1024:
@@ -385,6 +379,9 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := tmplDashboard.ParseFS(templateFS, "templates/dnd-toggle.html"); err != nil {
+		return nil, fmt.Errorf("parse dnd-toggle partial into dashboard: %w", err)
+	}
 	// Merge the AM status partial so {{template "dashboard-am-status"}} resolves
 	// inside the dashboard page.
 	if _, err := tmplDashboard.ParseFS(templateFS, "templates/_dashboard-am-status.html"); err != nil {
@@ -397,9 +394,6 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	tmplPhones, err := parsePage("phones.html")
 	if err != nil {
 		return nil, err
-	}
-	if _, err := tmplPhones.ParseFS(templateFS, "templates/dnd-toggle.html"); err != nil {
-		return nil, fmt.Errorf("parse dnd-toggle partial into phones: %w", err)
 	}
 	tmplCalls, err := parsePage("calls.html")
 	if err != nil {
@@ -598,11 +592,8 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("GET /onboard", h.handleOnboardGet)
 	protected.HandleFunc("POST /onboard", h.handleOnboardPost)
 	protected.HandleFunc("GET /phones", h.handlePhonesGet)
-	protected.HandleFunc("POST /phones", h.handlePhonesPost)
 	protected.Handle("POST /phones/pair", h.pairingLimiter.Middleware(http.HandlerFunc(h.handlePhonesPairPost)))
 	protected.HandleFunc("GET /phones/{number}", h.handlePhoneDetail)
-	protected.HandleFunc("GET /phones/{number}/edit", h.handlePhoneEditGet)
-	protected.HandleFunc("POST /phones/{number}/edit", h.handlePhoneEditPost)
 	protected.HandleFunc("GET /phones/{number}/name", h.handlePhoneNameGet)
 	protected.HandleFunc("GET /phones/{number}/name/edit", h.handlePhoneNameEditGet)
 	protected.HandleFunc("POST /phones/{number}/name", h.handlePhoneNamePost)

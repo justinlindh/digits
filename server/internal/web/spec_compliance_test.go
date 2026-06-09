@@ -117,9 +117,9 @@ func TestSpecLines(t *testing.T) {
 	h.Router().ServeHTTP(w, req)
 	body := w.Body.String()
 
-	// When lines exist, the pair section title is "Add a phone".
-	if !strings.Contains(body, "Add a phone") {
-		t.Errorf("Lines missing pair panel title 'Add a phone'")
+	// The pairing page leads with the pair panel.
+	if !strings.Contains(body, "Pair a new handset") {
+		t.Errorf("pairing page missing panel title 'Pair a new handset'")
 	}
 
 	// Field label, placeholder, helper (Spec: the core pair-flow nudge).
@@ -134,11 +134,6 @@ func TestSpecLines(t *testing.T) {
 	}
 	if strings.Contains(body, ">Line name<") {
 		t.Errorf("Lines still shows old field label 'Line name'")
-	}
-
-	// Firmware column on Your lines table (Spec: placeholder-only in this round).
-	if !strings.Contains(body, ">Firmware<") {
-		t.Errorf("Lines table missing Firmware column header")
 	}
 }
 

@@ -1,10 +1,12 @@
 /**
- * 04-phones.spec.ts — Phone management golden path.
+ * 04-phones.spec.ts: Pairing page golden path.
+ *
+ * The "Lines" page was merged into Overview; /phones is now pairing-only.
  *
  * Tests:
- *   - Phones list page renders
- *   - Pair a Phone form is present with correct fields
- *   - Navigation from phones list to phone detail (if a phone exists)
+ *   - Pairing page renders heading, back link, and the pair form
+ *   - Pair form is present with correct fields
+ *   - Navigation from Overview line card to phone detail (if a phone exists)
  */
 
 import { test, expect } from '@playwright/test';
@@ -19,21 +21,38 @@ function isAuthOrOnboard(url: string) {
   return url.includes('/auth/login') || url.includes('/onboard');
 }
 
-test.describe('Phones list', () => {
-  test('phones page renders heading and pair form', async ({ page }) => {
+test.describe('Pairing page', () => {
+  test('pairing page renders heading, back link, and pair form', async ({ page }) => {
     await page.goto('/phones');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    // Page heading: <h1 class="page__title">Lines</h1>
-    await expect(page.locator('h1', { hasText: 'Lines' })).toBeVisible();
+    // Page heading: <h1 class="page__title">Pair a handset</h1>
+    await expect(page.locator('h1.page__title', { hasText: /pair a handset/i })).toBeVisible();
 
-    // When lines exist, the pair section shows as "Add a phone".
-    // When no lines exist, it renders as "Pair a new handset".
-    const pairHeading = page.locator('h2.panel__title', { hasText: /pair a new handset|add a phone/i });
-    await expect(pairHeading).toBeVisible();
+    // Back link to Overview replaces the old "Lines" back link. Scope to
+    // the page body: the nav's Overview link also points at "/".
+    await expect(page.locator('main a[href="/"]', { hasText: /overview/i })).toBeVisible();
+
+    // The single pair panel.
+    await expect(page.locator('h2.panel__title', { hasText: /pair a new handset/i })).toBeVisible();
+  });
+
+  test('pairing page has no lines table or DND toggle', async ({ page }) => {
+    await page.goto('/phones');
+    if (isAuthOrOnboard(page.url())) {
+      test.skip(true, 'No authenticated session or needs onboarding');
+      return;
+    }
+
+    // The "Your lines" roster moved to Overview; /phones is pairing-only.
+    await expect(page.locator('h2.panel__title', { hasText: /your lines/i })).toHaveCount(0);
+    // No "Lines" h1 anymore.
+    await expect(page.locator('h1', { hasText: /^Lines$/ })).toHaveCount(0);
+    // The "Silence all" DND toggle lives on Overview, not here.
+    await expect(page.locator('#dnd-toggle')).toHaveCount(0);
   });
 
   test('pair form has visible manual code, line number, and line name inputs', async ({ page }) => {
@@ -43,8 +62,8 @@ test.describe('Phones list', () => {
       return;
     }
 
-    // The redesigned pair form splits the pairing code into two inputs: a
-    // hidden input[name="code"] submitted to the server, and a visible
+    // The pair form splits the pairing code into two inputs: a hidden
+    // input[name="code"] submitted to the server, and a visible
     // input[name="code_manual"] that the keypad and typed digits drive. The
     // keypad + pin display are the primary UI; the manual input is a
     // secondary typing affordance. Assert the visible manual input here.
@@ -52,16 +71,16 @@ test.describe('Phones list', () => {
     await expect(codeInput).toBeVisible();
     expect(await codeInput.getAttribute('placeholder')).toMatch(/\d+/);
 
-    // Line number input — visible.
+    // Line number input, visible.
     const numberInput = page.locator('input[name="number"]');
     await expect(numberInput).toBeVisible();
 
-    // Line name input — visible.
+    // Line name input, visible.
     const nameInput = page.locator('input[name="name"]');
     await expect(nameInput).toBeVisible();
 
     // The Pair button (starts disabled until a 6-digit code, a 7-digit
-    // number, and a name are all present — covered by the dedicated test
+    // number, and a name are all present, covered by the dedicated test
     // below).
     const pairBtn = page.locator('button[type="submit"]', { hasText: /pair/i });
     await expect(pairBtn).toBeVisible();
@@ -91,7 +110,7 @@ test.describe('Phones list', () => {
       return;
     }
 
-    // Fresh load: no code, no number, no name — submit is disabled.
+    // Fresh load: no code, no number, no name, submit is disabled.
     const pairBtn = page.locator('button#pair-submit');
     await expect(pairBtn).toBeDisabled();
 
@@ -123,50 +142,36 @@ test.describe('Phones list', () => {
     expect(page.url()).toContain('/phones');
   });
 
-  test('registered phones panel renders with header', async ({ page }) => {
+  test('nav highlights Overview as active on /phones', async ({ page }) => {
     await page.goto('/phones');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    // The phones-table partial always renders its panel header even when
-    // there are no lines yet (empty state). Copy is "Your lines".
-    await expect(page.locator('h2.panel__title', { hasText: /your lines/i })).toBeVisible();
-  });
-
-  test('nav shows Phones (Lines) as active on /phones', async ({ page }) => {
-    await page.goto('/phones');
-    if (isAuthOrOnboard(page.url())) {
-      test.skip(true, 'No authenticated session or needs onboarding');
-      return;
-    }
-
-    // Both layouts mark the current page with .is-active. Label differs:
-    //   v2     -> "Lines"
-    //   dialup -> "MY PHONES" (channels sidebar) — uppercase via markup
-    // So we match either.
+    // The pairing page now highlights the Overview nav item (.Page is
+    // "phones", which the templates treat as Overview-active).
     const active = activeNavLink(page).first();
     await expect(active).toBeVisible();
     const text = (await active.textContent()) ?? '';
-    expect(text).toMatch(/lines|my phones/i);
+    expect(text).toMatch(/overview/i);
   });
 });
 
 test.describe('Phone detail', () => {
   test('phone detail page renders for existing phone', async ({ page }) => {
-    await page.goto('/phones');
+    await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    // Check if there are any phones listed
-    const phoneLinks = page.locator('a[href^="/phones/"]');
+    // The line roster lives on Overview now. Find a line card link.
+    const phoneLinks = page.locator('a[href^="/phones/"]:not([href="/phones"])');
     const count = await phoneLinks.count();
 
     if (count === 0) {
-      test.skip(true, 'No phones registered — skipping phone detail test');
+      test.skip(true, 'No phones registered, skipping phone detail test');
       return;
     }
 
@@ -186,18 +191,18 @@ test.describe('Phone detail', () => {
     const statusBadge = page.locator('text=online, text=offline').first();
     await expect(statusBadge).toBeVisible();
 
-    // Back link to /phones
-    await expect(page.locator('a[href="/phones"]')).toBeVisible();
+    // Back link to Overview (was "Lines" / href="/phones").
+    await expect(page.locator('main a[href="/"]', { hasText: /overview/i })).toBeVisible();
   });
 
   test('phone detail shows hardware & software card', async ({ page }) => {
-    await page.goto('/phones');
+    await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
 
-    const phoneLinks = page.locator('a[href^="/phones/"]');
+    const phoneLinks = page.locator('a[href^="/phones/"]:not([href="/phones"])');
     if (await phoneLinks.count() === 0) {
       test.skip(true, 'No phones registered');
       return;
