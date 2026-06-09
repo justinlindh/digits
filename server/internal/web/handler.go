@@ -50,10 +50,6 @@ func TemplateFS() embed.FS {
 // Exposed so test helpers that parse templates directly (without going through
 // NewHandler) get the same {{static}}, {{fmtPhone}}, etc. helpers as prod.
 func TemplateFuncs() template.FuncMap {
-	return baseTemplateFuncs()
-}
-
-func baseTemplateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"fmtPhone": line.FormatNumber,
 		"fmtDuration": func(seconds int) string {
@@ -332,6 +328,11 @@ type HandlerConfig struct {
 	// WSRateLimitPerMin overrides the default WebSocket upgrade rate limit
 	// (per IP, per minute). Zero uses the default (30).
 	WSRateLimitPerMin int
+	// TrustedProxies is the reverse-proxy hop count used to resolve the client
+	// IP from X-Forwarded-For for rate limiting (see httputil.ClientIP). It is
+	// passed verbatim to the rate limiters; the default of 1 is supplied by the
+	// config loader.
+	TrustedProxies int
 }
 
 // Deps bundles the stores, hub, and other collaborators the web Handler
@@ -366,7 +367,7 @@ func wsRateLimit(cfg HandlerConfig) int {
 // NewHandler constructs a Handler, parses all embedded HTML templates, and
 // wires up rate limiters. Returns an error if any template fails to parse.
 func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
-	funcMap := baseTemplateFuncs()
+	funcMap := TemplateFuncs()
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
 	parsePage := func(page string) (*template.Template, error) {
@@ -514,12 +515,12 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		linkStore:                deps.LinkStore,
 		inviteStore:              deps.InviteStore,
 		emailer:                  deps.Emailer,
-		authLimiter:              ratelimit.New(5, time.Minute),
-		magicVerifyLimiter:       ratelimit.New(10, time.Minute),
-		googleLoginLimiter:       ratelimit.New(10, time.Minute),
-		pairingLimiter:           ratelimit.New(5, time.Minute),
-		inviteLimiter:            ratelimit.New(5, time.Minute),
-		wsLimiter:                ratelimit.New(wsRateLimit(cfg), time.Minute),
+		authLimiter:              ratelimit.New(5, time.Minute, cfg.TrustedProxies),
+		magicVerifyLimiter:       ratelimit.New(10, time.Minute, cfg.TrustedProxies),
+		googleLoginLimiter:       ratelimit.New(10, time.Minute, cfg.TrustedProxies),
+		pairingLimiter:           ratelimit.New(5, time.Minute, cfg.TrustedProxies),
+		inviteLimiter:            ratelimit.New(5, time.Minute, cfg.TrustedProxies),
+		wsLimiter:                ratelimit.New(wsRateLimit(cfg), time.Minute, cfg.TrustedProxies),
 		metrics:                  deps.Metrics,
 	}, nil
 }

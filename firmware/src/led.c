@@ -96,6 +96,14 @@ void led_set_mode(led_mode_t mode) {
     } else if (mode == LED_MODE_ON) {
         s_led_on = true;
         pwm_set_gpio_level(board->led_pin, PWM_WRAP);
+    } else if (mode == LED_MODE_BREATHING) {
+        // Breathing is driven from a LUT in led_update starting at phase 0 (the
+        // ramp's dim end). Seed the output to that same starting level instead
+        // of full brightness so there is no one-tick full-bright flash on mode
+        // entry, including at boot when PHASE_PAIRED selects breathing.
+        s_led_on = true;
+        pwm_set_gpio_level(board->led_pin, s_breathe_lut[0]);
+        s_last_toggle = get_absolute_time();
     } else {
         s_led_on = true;
         pwm_set_gpio_level(board->led_pin, PWM_WRAP);

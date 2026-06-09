@@ -527,24 +527,17 @@ func (s *HealthStore) writeSample(ctx context.Context, key SessionKey, ep endpoi
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 ON CONFLICT DO NOTHING`,
 		callID, confID, ep.From, peer, sample.TS,
-		nullableFloat(sample.LossPct),
-		nullableFloat(sample.JitterMs),
-		nullableFloat(sample.RttMs),
+		nullablePtr(sample.LossPct),
+		nullablePtr(sample.JitterMs),
+		nullablePtr(sample.RttMs),
 		nullableString(sample.ConnType),
-		nullableInt(sample.BytesIn),
-		nullableInt(sample.BytesOut),
+		nullablePtr(sample.BytesIn),
+		nullablePtr(sample.BytesOut),
 	)
 	return err
 }
 
-func nullableFloat(p *float32) any {
-	if p == nil {
-		return nil
-	}
-	return *p
-}
-
-func nullableInt(p *int64) any {
+func nullablePtr[T any](p *T) any {
 	if p == nil {
 		return nil
 	}
