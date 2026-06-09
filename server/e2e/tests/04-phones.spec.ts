@@ -32,8 +32,9 @@ test.describe('Pairing page', () => {
     // Page heading: <h1 class="page__title">Pair a handset</h1>
     await expect(page.locator('h1.page__title', { hasText: /pair a handset/i })).toBeVisible();
 
-    // Back link to Overview replaces the old "Lines" back link.
-    await expect(page.locator('a[href="/"]', { hasText: /overview/i })).toBeVisible();
+    // Back link to Overview replaces the old "Lines" back link. Scope to
+    // the page body: the nav's Overview link also points at "/".
+    await expect(page.locator('main a[href="/"]', { hasText: /overview/i })).toBeVisible();
 
     // The single pair panel.
     await expect(page.locator('h2.panel__title', { hasText: /pair a new handset/i })).toBeVisible();
@@ -191,7 +192,7 @@ test.describe('Phone detail', () => {
     await expect(statusBadge).toBeVisible();
 
     // Back link to Overview (was "Lines" / href="/phones").
-    await expect(page.locator('a[href="/"]', { hasText: /overview/i })).toBeVisible();
+    await expect(page.locator('main a[href="/"]', { hasText: /overview/i })).toBeVisible();
   });
 
   test('phone detail shows hardware & software card', async ({ page }) => {
