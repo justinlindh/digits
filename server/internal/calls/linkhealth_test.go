@@ -422,6 +422,20 @@ func TestSessionKeyIsConfConfIDWins(t *testing.T) {
 	}
 }
 
+func TestNullablePtr(t *testing.T) {
+	if nullablePtr[float32](nil) != nil {
+		t.Error("nil pointer: want nil any")
+	}
+	v := float32(1.5)
+	if nullablePtr(&v) != float32(1.5) {
+		t.Errorf("non-nil pointer: got %v, want 1.5", nullablePtr(&v))
+	}
+	n := int64(42)
+	if nullablePtr(&n) != int64(42) {
+		t.Errorf("int64 pointer: got %v, want 42", nullablePtr(&n))
+	}
+}
+
 func TestHealthStoreConferenceRoundTrip(t *testing.T) {
 	s := NewHealthStore(nil)
 	confID := uuid.New()
