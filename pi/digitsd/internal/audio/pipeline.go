@@ -271,7 +271,13 @@ func (p *Pipeline) captureLoop() {
 
 		mono := ExtractChannel(stereo, 2, p.cfg.MicChannel)
 
-		mono = p.filters.Process(mono)
+		// On the default config the bandpass is off and p.filters is nil; skip
+		// the call so we do not allocate + copy a fresh buffer 50x/sec to no-op.
+		// ExtractChannel already returns a fresh slice, so the in-place denoiser
+		// below is safe operating on it directly.
+		if p.filters != nil {
+			mono = p.filters.Process(mono)
+		}
 
 		if p.denoiser != nil {
 			mono = p.denoiser.Process(mono)

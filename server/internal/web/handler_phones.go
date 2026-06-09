@@ -416,14 +416,14 @@ func (h *Handler) handlePhoneNameEditGet(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if !parseForm(w, r) {
-		return
-	}
-	raw := r.FormValue("name")
 	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
 		return
 	}
+	if !parseForm(w, r) {
+		return
+	}
+	raw := r.FormValue("name")
 	name, verr := validateLineName(raw)
 	if verr != nil {
 		renderWithStatus(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "name-section-edit", "am-name-section-edit"), nameSectionData{Line: *ln, Value: raw, Error: verr.Error()}, http.StatusBadRequest)
@@ -446,15 +446,14 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
 	oldNumber := r.PathValue("number")
-	if !parseForm(w, r) {
-		return
-	}
-	newNumber := line.StripNumber(r.FormValue("number"))
-
 	ln, _ := h.requireLineOwnershipAdmin(w, r, oldNumber)
 	if ln == nil {
 		return
 	}
+	if !parseForm(w, r) {
+		return
+	}
+	newNumber := line.StripNumber(r.FormValue("number"))
 
 	if h.tracker != nil && h.tracker.Busy(r.Context(), oldNumber) {
 		http.Redirect(w, r, "/phones/"+oldNumber+"?number_error="+url.QueryEscape("cannot change number while on an active call"), http.StatusSeeOther)
@@ -546,12 +545,12 @@ func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Reque
 // form. On success the new settings persist and push, then the quiet-hours
 // section partial is swapped (htmx) or the detail page reloads.
 func (h *Handler) handlePhoneQuietHoursPost(w http.ResponseWriter, r *http.Request) {
-	if !parseForm(w, r) {
-		return
-	}
 	number := r.PathValue("number")
 	ln := h.requireLineOwnership(w, r, number)
 	if ln == nil {
+		return
+	}
+	if !parseForm(w, r) {
 		return
 	}
 
@@ -593,6 +592,11 @@ func (h *Handler) handlePhoneQuietHoursPost(w http.ResponseWriter, r *http.Reque
 // then either the voicemail-section partial is swapped (htmx) or the user
 // is redirected back to the phone detail page (regular form post).
 func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
+		return
+	}
 	if !parseForm(w, r) {
 		return
 	}
@@ -601,12 +605,6 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 	ring, ok := parseClampedInt(w, r, "ring_timeout_seconds",
 		line.VoicemailRingTimeoutMin, line.VoicemailRingTimeoutMax)
 	if !ok {
-		return
-	}
-
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
 		return
 	}
 
@@ -896,6 +894,10 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
+	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
+	if srcLn == nil {
+		return
+	}
 	if !parseForm(w, r) {
 		return
 	}
@@ -908,11 +910,6 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	targetLineID, err := strconv.ParseInt(targetLineIDStr, 10, 64)
 	if err != nil {
 		http.Error(w, "invalid target line", http.StatusBadRequest)
-		return
-	}
-
-	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
-	if srcLn == nil {
 		return
 	}
 	if srcLn.ID == targetLineID {

@@ -367,14 +367,13 @@ func (h *Hub) Register(number string, conn *Conn) error {
 			if old.WS != nil {
 				_ = old.WS.Close()
 			}
-			select {
-			case _, ok := <-old.Send:
-				if ok {
-					close(old.Send)
-				}
-			default:
-				close(old.Send)
-			}
+			// Close the old connection's send channel so its write pump exits
+			// (the pump returns on the !ok branch). Double-close is impossible:
+			// replacing the slot in place below makes the old conn invisible to
+			// any later Unregister, and every send into old.Send happens under
+			// h.mu, which we hold here. Draining first would silently drop a
+			// queued outbound frame, so we close unconditionally instead.
+			close(old.Send)
 			existing[i] = conn
 			replaced = true
 			break

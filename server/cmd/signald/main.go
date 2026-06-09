@@ -255,6 +255,7 @@ func run(ctx context.Context) error {
 		AdminSecret:       cfg.AdminSecret,
 		DevMode:           cfg.DevMode,
 		WSRateLimitPerMin: cfg.WSRateLimitPerMin,
+		TrustedProxies:    cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("create handler: %w", err)

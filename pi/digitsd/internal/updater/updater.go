@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +17,41 @@ import (
 	"strings"
 	"time"
 )
+
+const (
+	// dialTimeout bounds TCP connection establishment.
+	dialTimeout = 15 * time.Second
+	// responseHeaderTimeout bounds how long we wait for the server to send
+	// response headers after the request is written. This catches a server
+	// that accepts the connection then stalls before replying, the classic
+	// half-open hang, without capping the time spent streaming a large body.
+	responseHeaderTimeout = 30 * time.Second
+	// downloadTimeout is the generous absolute deadline for a single artifact
+	// download. Large enough for a multi-megabyte binary over a slow link, but
+	// finite so a connection that goes silent mid-body cannot latch update
+	// state forever.
+	downloadTimeout = 10 * time.Minute
+)
+
+// newHTTPClient builds the shared client. It sets connection-setup and
+// response-header timeouts on the transport rather than a single
+// Client.Timeout, so legitimate large downloads are not killed by an absolute
+// cap while half-open connections still fail fast. Per-request deadlines are
+// supplied via context (see CheckVersion and Download).
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   dialTimeout,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   dialTimeout,
+			ResponseHeaderTimeout: responseHeaderTimeout,
+			ExpectContinueTimeout: 1 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+		},
+	}
+}
 
 type CheckResult struct {
 	PiAvailable bool
@@ -41,6 +77,9 @@ type Config struct {
 type Updater struct {
 	cfg    Config
 	client *http.Client
+	// downloadTimeout bounds a single Download. Defaults to the package
+	// downloadTimeout const; overridable in tests.
+	downloadTimeout time.Duration
 }
 
 func New(cfg Config) *Updater {
@@ -63,8 +102,9 @@ func New(cfg Config) *Updater {
 		cfg.FirmwarePath = "/data/digits/firmware.elf"
 	}
 	return &Updater{
-		cfg:    cfg,
-		client: &http.Client{},
+		cfg:             cfg,
+		client:          newHTTPClient(),
+		downloadTimeout: downloadTimeout,
 	}
 }
 
@@ -160,7 +200,16 @@ func (u *Updater) Download(url, localName, expectedSHA string) (string, error) {
 	}
 	destPath := filepath.Join(u.cfg.StagingDir, localName)
 
-	resp, err := u.client.Get(url)
+	// Bound the whole download so a connection that stalls mid-body cannot
+	// block io.Copy forever and latch update state. The deadline covers the
+	// body stream too: cancelling the context unblocks an in-flight Read.
+	ctx, cancel := context.WithTimeout(context.Background(), u.downloadTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("download %s: %w", url, err)
+	}
+	resp, err := u.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download %s: %w", url, err)
 	}

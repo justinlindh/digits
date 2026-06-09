@@ -34,7 +34,7 @@ jobs:
             --set ingress.enabled=true \
             --set ingress.signald.host=app.example.com \
             --set cnpg.enabled=true \
-            --set redis.url=redis://redis:6379 \
+            --set redis.enabled=true \
             --set observability.enabled=true \
             --set observability.otelEndpoint=otel:4317 \
             --set observability.serviceMonitor.enabled=true
@@ -53,7 +53,7 @@ jobs:
             --set cnpg.backup.destinationPath=s3://backups \
             --set cnpg.backup.endpointURL=http://minio:9000 \
             --set cnpg.backup.s3CredentialsSecret=minio-creds \
-            --set redis.url=redis://redis:6379 \
+            --set redis.enabled=true \
             --set observability.enabled=true \
             --set observability.otelEndpoint=otel:4317 \
             --set observability.pyroscopeEndpoint=http://pyroscope:4040 \

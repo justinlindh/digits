@@ -410,7 +410,7 @@ func (d *daemonCallbacks) VoicemailAutoAnswer() {
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
-		sendSignal(d.sig, &sigclient.Message{
+		sendSignal(d.currentSig(), &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        caller,
 			Candidate: candidate,
