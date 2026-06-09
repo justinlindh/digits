@@ -84,6 +84,12 @@ type sessionRings struct {
 	mu          sync.Mutex
 	byEndpoint  map[endpointKey]*ring
 	subscribers map[*subscriber]struct{} // nil until first Subscribe
+	// lastActivity is the wall-clock time of the most recent init, sample
+	// append, or subscribe. The idle sweep in Run evicts sessions whose
+	// lastActivity is older than idleSessionTTL and that have no live
+	// subscribers, bounding memory when an end event never reaches this
+	// pod (it may have been handled by a different replica).
+	lastActivity time.Time
 }
 
 type subscriber struct {
@@ -117,11 +123,24 @@ func (r *ring) latest() *Sample {
 // accepted by the constructor for use by the periodic DB flusher; when
 // nil the store operates in memory-only mode. Zero-value is NOT valid; use
 // NewHealthStore.
+//
+// Multi-replica operation: sessions and rings are pod-local memory. When
+// Redis is configured via SetRedis, every locally ingested sample and every
+// locally triggered evict/disconnect is also published on a shared channel;
+// RunRedis applies events from other pods to the local rings and
+// subscribers. This keeps the live observation deck and the in-memory
+// windows complete on every pod even though each phone's WebSocket (and
+// therefore its link_health ingest) lands on exactly one pod.
 type HealthStore struct {
 	db            *sql.DB
 	mu            sync.Mutex
 	sessions      map[SessionKey]*sessionRings
 	flushDisabled bool
+	now           func() time.Time // injectable for idle-sweep tests
+
+	rmu    sync.Mutex
+	client redisPublisher
+	podID  string
 }
 
 // HealthStoreOption configures a HealthStore at construction time.
@@ -142,6 +161,7 @@ func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	s := &HealthStore{
 		db:       unwrapDB(d),
 		sessions: make(map[SessionKey]*sessionRings),
+		now:      time.Now,
 	}
 	for _, o := range opts {
 		o(s)
@@ -152,16 +172,34 @@ func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 // initSession creates an empty rings entry for the given session key.
 // Idempotent: no-op if the key already exists.
 func (s *HealthStore) initSession(key SessionKey) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.sessions[key]; ok {
-		return
-	}
-	s.sessions[key] = &sessionRings{byEndpoint: make(map[endpointKey]*ring)}
+	s.getOrCreateSession(key)
 }
 
-// recordSession appends a sample for the given session key and endpoint pair.
-// No-op if the session was not initialized or has been evicted.
+// getOrCreateSession returns the rings entry for key, creating it if absent,
+// and stamps lastActivity. Sessions are created lazily because the
+// "call started" hook (Tracker.StartCall -> Init) runs only on the pod that
+// handled the caller's signaling message; samples and subscribers on the
+// other replicas must not depend on it. The idle sweep bounds the lifetime
+// of sessions whose end event never reaches this pod.
+func (s *HealthStore) getOrCreateSession(key SessionKey) *sessionRings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sr, ok := s.sessions[key]
+	if !ok {
+		sr = &sessionRings{byEndpoint: make(map[endpointKey]*ring)}
+		s.sessions[key] = sr
+	}
+	sr.mu.Lock()
+	sr.lastActivity = s.now()
+	sr.mu.Unlock()
+	return sr
+}
+
+// recordSession appends a sample for the given session key and endpoint
+// pair, creating the session if this pod has not seen it yet. remote marks
+// samples applied from the Redis fan-out: they update the rings and local
+// subscribers but advance lastFlushed so only the ingesting pod writes the
+// sample to the database, and they are not re-published.
 //
 // Race note: between releasing the top-level map lock and acquiring the
 // per-session lock, a concurrent evictSession can remove the sessionRings
@@ -169,24 +207,26 @@ func (s *HealthStore) initSession(key SessionKey) {
 // (the struct is not freed) but is no longer reachable from the map; the
 // sample appended to it will be silently dropped -- never flushed, eventually
 // GC'd. This is intentional telemetry loss on a racing session-end.
-func (s *HealthStore) recordSession(key SessionKey, from, peer string, sample Sample) {
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		return
-	}
+func (s *HealthStore) recordSession(key SessionKey, from, peer string, sample Sample, remote bool) {
+	sr := s.getOrCreateSession(key)
 
 	epKey := endpointKey{From: from, Peer: peer}
 	sr.mu.Lock()
-	defer sr.mu.Unlock()
 	r, ok := sr.byEndpoint[epKey]
 	if !ok {
 		r = &ring{}
 		sr.byEndpoint[epKey] = r
 	}
 	r.append(sample)
+	if remote && sample.TS.After(r.lastFlushed) {
+		r.lastFlushed = sample.TS
+	}
 	sr.broadcastLocked(Event{Kind: SampleKind, Endpoint: from, Peer: peer, Sample: sample})
+	sr.mu.Unlock()
+
+	if !remote {
+		s.publishSample(key, from, peer, sample)
+	}
 }
 
 // windowSession returns a copy of the retained sample ring for the given
@@ -210,8 +250,14 @@ func (s *HealthStore) windowSession(key SessionKey, from, peer string) []Sample 
 }
 
 // evictSession drops all in-memory state for a session. Broadcasts EndedKind
-// to every live subscriber and closes their channels. Idempotent.
-func (s *HealthStore) evictSession(key SessionKey) {
+// to every live subscriber and closes their channels. Idempotent. When
+// publish is true the eviction also fans out to other pods so their
+// subscribers see the call end too; remote-applied and sweep-driven evicts
+// pass false.
+func (s *HealthStore) evictSession(key SessionKey, publish bool) {
+	if publish {
+		s.publishLifecycle(wireKindEvict, key, "")
+	}
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	delete(s.sessions, key)
@@ -238,18 +284,13 @@ func (s *HealthStore) evictSession(key SessionKey) {
 	sr.subscribers = nil
 }
 
-// subscribeSession opens an event stream for a session. If the session is not
-// currently initialized (or has been evicted), returns a Subscription whose
-// channel is already closed.
+// subscribeSession opens an event stream for a session, creating the
+// session if this pod has not seen it yet. Callers gate on the call being
+// active (the SSE handlers 404 ended calls before subscribing), so lazy
+// creation cannot resurrect a finished call for longer than the idle sweep
+// allows.
 func (s *HealthStore) subscribeSession(key SessionKey) *Subscription {
-	s.mu.Lock()
-	sr, ok := s.sessions[key]
-	s.mu.Unlock()
-	if !ok {
-		ch := make(chan Event)
-		close(ch)
-		return &Subscription{C: ch, close: func() {}}
-	}
+	sr := s.getOrCreateSession(key)
 
 	sub := &subscriber{ch: make(chan Event, subscriberBufferSize)}
 
@@ -275,19 +316,21 @@ func (s *HealthStore) subscribeSession(key SessionKey) *Subscription {
 }
 
 // Init creates an empty rings entry for a call. Called by Tracker on
-// OnCallInitiated so that subsequent Record calls have a place to land
-// without needing auto-creation (which would resurrect evicted calls).
-// Safe to call multiple times; idempotent.
+// OnCallInitiated so subscribers attaching before the first sample find a
+// live session. Record and Subscribe also create sessions lazily, so Init
+// is an optimization, not a precondition. Safe to call multiple times;
+// idempotent.
 func (s *HealthStore) Init(callID int64) {
 	s.initSession(SessionKey{CallID: callID})
 }
 
-// Record appends a sample for the given call and endpoint. Safe for
-// concurrent use. No-op if Init was not called for this callID first
-// or if the call has been Evicted -- this matches the tracker-authoritative
-// lifecycle and prevents post-Evict resurrection of map entries.
+// Record appends a sample for the given call and endpoint, creating the
+// session if this pod has not seen the call (with multiple replicas, call
+// setup usually ran on a different pod). Safe for concurrent use. A sample
+// racing the call's eviction can recreate the session; the idle sweep in
+// Run bounds the lifetime of such stragglers.
 func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
-	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample)
+	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample, false)
 }
 
 // Window returns a copy of the retained sample ring for an endpoint, oldest
@@ -302,7 +345,7 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 //
 // Called by Tracker on call end via the SetHealthStore-registered interface.
 func (s *HealthStore) Evict(callID int64) {
-	s.evictSession(SessionKey{CallID: callID})
+	s.evictSession(SessionKey{CallID: callID}, true)
 }
 
 // InitConference registers a conference for in-memory sample retention.
@@ -312,11 +355,10 @@ func (s *HealthStore) InitConference(confID uuid.UUID) {
 }
 
 // RecordEdge appends a per-edge sample for a conference. from is the
-// phone that emitted the sample; peer is the remote endpoint the
-// sample describes. No-op if InitConference was not called for this
-// conference (mirrors Record's behavior for unknown callID).
+// phone that emitted the sample; peer is the remote endpoint the sample
+// describes. Creates the session lazily, mirroring Record.
 func (s *HealthStore) RecordEdge(confID uuid.UUID, from, peer string, sample Sample) {
-	s.recordSession(SessionKey{ConfID: confID}, from, peer, sample)
+	s.recordSession(SessionKey{ConfID: confID}, from, peer, sample, false)
 }
 
 // WindowEdge returns a copy of the retained sample ring for a conference
@@ -328,7 +370,7 @@ func (s *HealthStore) WindowEdge(confID uuid.UUID, from, peer string) []Sample {
 // EvictConference drops in-memory state for a conference and broadcasts
 // EndedKind to subscribers.
 func (s *HealthStore) EvictConference(confID uuid.UUID) {
-	s.evictSession(SessionKey{ConfID: confID})
+	s.evictSession(SessionKey{ConfID: confID}, true)
 }
 
 // SubscribeConference returns an event stream for a conference's samples,
@@ -364,10 +406,11 @@ func (s *Subscription) Close() {
 // consumer on a LAN.
 const subscriberBufferSize = 16
 
-// Subscribe opens a stream of telemetry events for a call. If the call is
-// not currently Init'd (or has already been Evicted), returns a Subscription
-// whose channel is already closed -- callers see this the same way as a
-// mid-stream Evict and can treat it uniformly.
+// Subscribe opens a stream of telemetry events for a call, creating the
+// session if this pod has not seen the call yet. Callers must gate on the
+// call being active first (the SSE handlers 404 ended calls before
+// subscribing); the idle sweep reaps sessions a stray subscriber created
+// for a dead call.
 func (s *HealthStore) Subscribe(callID int64) *Subscription {
 	return s.subscribeSession(SessionKey{CallID: callID})
 }
@@ -379,7 +422,7 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 //
 // No-op for unknown callIDs.
 func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
-	s.notifyDisconnectedSession(SessionKey{CallID: callID}, endedBy)
+	s.notifyDisconnectedSession(SessionKey{CallID: callID}, endedBy, true)
 }
 
 // NotifyDisconnectedConference broadcasts a DisconnectKind event to every
@@ -389,10 +432,16 @@ func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
 //
 // No-op for unknown conference IDs.
 func (s *HealthStore) NotifyDisconnectedConference(confID uuid.UUID, endedBy string) {
-	s.notifyDisconnectedSession(SessionKey{ConfID: confID}, endedBy)
+	s.notifyDisconnectedSession(SessionKey{ConfID: confID}, endedBy, true)
 }
 
-func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string) {
+// notifyDisconnectedSession broadcasts DisconnectKind to local subscribers.
+// When publish is true it also fans out to other pods; remote-applied
+// notifications pass false.
+func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string, publish bool) {
+	if publish {
+		s.publishLifecycle(wireKindDisconnect, key, endedBy)
+	}
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	s.mu.Unlock()
@@ -551,26 +600,65 @@ func nullableString(s string) any {
 	return s
 }
 
-// Run blocks until ctx is canceled, flushing every flushInterval. On ctx
-// cancellation it runs one final flush before returning (bounded at 2s so
-// a graceful shutdown doesn't hang). If flushDisabled is true, Run still
-// blocks until ctx is canceled but skips all DB writes (periodic and final).
+// Run blocks until ctx is canceled, flushing and sweeping every
+// flushInterval. On ctx cancellation it runs one final flush before
+// returning (bounded at 2s so a graceful shutdown doesn't hang). If
+// flushDisabled is true (or the store is memory-only), DB writes are
+// skipped but the idle sweep still runs so lazily created sessions cannot
+// accumulate.
 func (s *HealthStore) Run(ctx context.Context) {
-	if s.db == nil || s.flushDisabled {
-		<-ctx.Done()
-		return
-	}
+	flush := s.db != nil && !s.flushDisabled
 	t := time.NewTicker(flushInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			_ = s.FlushOnce(shutdownCtx)
-			cancel()
+			if flush {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				_ = s.FlushOnce(shutdownCtx)
+				cancel()
+			}
 			return
 		case <-t.C:
-			_ = s.FlushOnce(ctx)
+			if flush {
+				_ = s.FlushOnce(ctx)
+			}
+			s.sweepIdleSessions()
+		}
+	}
+}
+
+// idleSessionTTL bounds how long a session with no new samples and no live
+// subscribers survives in memory. End events normally evict promptly; the
+// TTL covers sessions whose end was handled by another replica before
+// cross-pod eviction existed, plus stragglers recreated by late samples.
+const idleSessionTTL = 15 * time.Minute
+
+// sweepIdleSessions evicts sessions idle for longer than idleSessionTTL
+// that have no live subscribers. Sweep evictions are pod-local: every pod
+// runs its own sweep, so nothing is published.
+func (s *HealthStore) sweepIdleSessions() {
+	cutoff := s.now().Add(-idleSessionTTL)
+
+	s.mu.Lock()
+	keys := make([]SessionKey, 0, len(s.sessions))
+	for k := range s.sessions {
+		keys = append(keys, k)
+	}
+	s.mu.Unlock()
+
+	for _, k := range keys {
+		s.mu.Lock()
+		sr := s.sessions[k]
+		s.mu.Unlock()
+		if sr == nil {
+			continue
+		}
+		sr.mu.Lock()
+		idle := sr.lastActivity.Before(cutoff) && len(sr.subscribers) == 0
+		sr.mu.Unlock()
+		if idle {
+			s.evictSession(k, false)
 		}
 	}
 }

@@ -168,6 +168,11 @@ func run(ctx context.Context) error {
 	}
 	healthStore := calls.NewHealthStore(database, healthOpts...)
 	tracker.SetHealthStore(healthStore)
+	if redisBridge != nil {
+		healthStore.SetRedis(redisBridge.Client(), redisBridge.PodID())
+		go healthStore.RunRedis(ctx)
+		slog.Info("redis fan-out enabled for cross-pod link health")
+	}
 
 	healthDone := make(chan struct{})
 	go func() {
