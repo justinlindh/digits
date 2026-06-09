@@ -437,7 +437,9 @@ func (s *HealthStore) NotifyDisconnectedConference(confID uuid.UUID, endedBy str
 }
 
 // notifyDisconnectedSession broadcasts DisconnectKind to local subscribers.
-// Pod-local: the public Notify methods fan out to other pods first.
+// Pod-local: the public Notify methods fan out to other pods first. Unlike
+// Record/Subscribe this does NOT lazily create the session: a disconnect
+// only matters where a subscriber (hence a session) already exists.
 func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
@@ -627,15 +629,26 @@ func (s *HealthStore) Run(ctx context.Context) {
 
 // idleSessionTTL bounds how long a session with no new samples and no live
 // subscribers survives in memory. End events normally evict promptly; the
-// TTL covers sessions whose end was handled by another replica before
-// cross-pod eviction existed, plus stragglers recreated by late samples.
+// TTL covers stragglers recreated by late samples and sessions whose end
+// event predates this pod's subscription (e.g. a pod restart mid-call).
 const idleSessionTTL = 15 * time.Minute
 
+// subscribedSessionTTL is the self-heal bound for sessions that hold live
+// subscribers but see no samples. The SSE handlers re-check call liveness
+// after subscribing, so a phantom "live" session on an ended call should
+// not occur; if one slips through anyway, the sweep closes its streams
+// with EndedKind after this much silence. Real calls report every couple
+// of seconds, so an hour of total silence means the deck is dead weight.
+const subscribedSessionTTL = 4 * idleSessionTTL
+
 // sweepIdleSessions evicts sessions idle for longer than idleSessionTTL
-// that have no live subscribers. Sweep evictions are pod-local: every pod
-// runs its own sweep, so nothing is published.
+// that have no live subscribers, and sessions idle past
+// subscribedSessionTTL regardless of subscribers. Sweep evictions are
+// pod-local: every pod runs its own sweep, so nothing is published.
 func (s *HealthStore) sweepIdleSessions() {
-	cutoff := s.now().Add(-idleSessionTTL)
+	now := s.now()
+	cutoff := now.Add(-idleSessionTTL)
+	stuckCutoff := now.Add(-subscribedSessionTTL)
 
 	s.mu.Lock()
 	keys := make([]SessionKey, 0, len(s.sessions))
@@ -653,8 +666,9 @@ func (s *HealthStore) sweepIdleSessions() {
 		}
 		sr.mu.Lock()
 		idle := sr.lastActivity.Before(cutoff) && len(sr.subscribers) == 0
+		stuck := sr.lastActivity.Before(stuckCutoff)
 		sr.mu.Unlock()
-		if idle {
+		if idle || stuck {
 			s.evictSession(k)
 		}
 	}

@@ -551,3 +551,44 @@ func TestHealthStoreRecordLazilyCreatesSession(t *testing.T) {
 		t.Fatalf("Record without Init should lazily create the session: got %d samples", len(w))
 	}
 }
+
+func TestHealthStoreSweepReapsStuckSubscribedSession(t *testing.T) {
+	s := NewHealthStore(nil)
+
+	// Race shape from the multi-pod world: the call ended on another pod
+	// (its evict already fanned out and no-op'd here), then a viewer
+	// subscribed, lazily creating a session that will never receive an
+	// EndedKind from the call lifecycle.
+	sub := s.Subscribe(31)
+	defer sub.Close()
+
+	// Under the normal idle TTL the subscriber protects the session.
+	base := time.Now()
+	s.now = func() time.Time { return base.Add(idleSessionTTL + time.Minute) }
+	s.sweepIdleSessions()
+	select {
+	case _, ok := <-sub.C:
+		if !ok {
+			t.Fatal("session with subscriber swept before subscribedSessionTTL")
+		}
+	default:
+	}
+
+	// Past the subscribed backstop the sweep closes the stream.
+	s.now = func() time.Time { return base.Add(subscribedSessionTTL + time.Minute) }
+	s.sweepIdleSessions()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev, ok := <-sub.C:
+			if !ok {
+				return // closed: phantom session self-healed
+			}
+			if ev.Kind != EndedKind {
+				t.Fatalf("unexpected event before close: %+v", ev)
+			}
+		case <-deadline:
+			t.Fatal("sweep did not close the stuck subscribed session")
+		}
+	}
+}
