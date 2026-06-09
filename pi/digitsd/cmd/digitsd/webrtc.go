@@ -96,7 +96,7 @@ func (d *daemonCallbacks) InitiateCall(targetNumber string) error {
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
-		sendSignal(d.sig, &sigclient.Message{
+		sendSignal(d.currentSig(), &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        targetNumber,
 			Candidate: candidate,
@@ -180,7 +180,7 @@ func (d *daemonCallbacks) AnswerCall() {
 
 		// Any candidates still gathering after promotion should be sent directly.
 		pm.OnICECandidate = func(candidate string) {
-			sendSignal(d.sig, &sigclient.Message{
+			sendSignal(d.currentSig(), &sigclient.Message{
 				Type:      sigclient.TypeICE,
 				To:        caller,
 				Candidate: candidate,
@@ -230,7 +230,7 @@ func (d *daemonCallbacks) AnswerCall() {
 	sdpSent := make(chan struct{})
 	d.peerMgr.OnICECandidate = func(candidate string) {
 		<-sdpSent
-		sendSignal(d.sig, &sigclient.Message{
+		sendSignal(d.currentSig(), &sigclient.Message{
 			Type:      sigclient.TypeICE,
 			To:        caller,
 			Candidate: candidate,

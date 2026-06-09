@@ -121,17 +121,17 @@ type daemonCallbacks struct {
 		candidates []string // local ICE candidates gathered during ring, sent on pickup
 		caller     string   // pendingCaller at time of preparation
 	}
-	iceServers            []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
-	debugMode             bool                      // read from DIGITS_DEBUG env at startup
-	paired                atomic.Bool
-	pairingCode           string      // current pairing code from server
-	pairingCodeExpiresAt  time.Time   // server-reported expiry of the current pairing code
-	callPeer              string      // number of the remote party during an active call
-	isCaller              bool        // true if we initiated the current call
-	callReturnOrigin      atomic.Bool // true when the current call was initiated via *69
-	isRestartingICE       bool        // true while an ICE restart is in progress
-	restartTimer          *time.Timer // timeout for ICE restart attempt
-	disconnectTimer       *time.Timer // debounce before reacting to pion Disconnected
+	iceServers           []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
+	debugMode            bool                      // read from DIGITS_DEBUG env at startup
+	paired               atomic.Bool
+	pairingCode          string      // current pairing code from server
+	pairingCodeExpiresAt time.Time   // server-reported expiry of the current pairing code
+	callPeer             string      // number of the remote party during an active call
+	isCaller             bool        // true if we initiated the current call
+	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
+	isRestartingICE      bool        // true while an ICE restart is in progress
+	restartTimer         *time.Timer // timeout for ICE restart attempt
+	disconnectTimer      *time.Timer // debounce before reacting to pion Disconnected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.
@@ -261,6 +261,16 @@ func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
 	}
 }
 
+// currentSig returns the active signaling client under cb.mu. The reconnect
+// goroutine swaps d.sig on every reconnect, so pion callbacks and FSM
+// goroutines must read it through this accessor rather than touching d.sig
+// directly, which would race with that writer.
+func (d *daemonCallbacks) currentSig() *sigclient.Client {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sig
+}
+
 // recoverGoroutine logs a panic with its stack trace so a single bad frame
 // doesn't crash an audio/WebRTC goroutine silently.
 func recoverGoroutine(name string) {
@@ -344,7 +354,7 @@ func (d *daemonCallbacks) EnableFlashDetection() {
 
 func (d *daemonCallbacks) OnCallReturn() {
 	d.callReturnOrigin.Store(true)
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
+	if err := d.currentSig().Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
 		slog.Error("call_return: server unreachable", "error", err)
 		d.callReturnOrigin.Store(false)
 		d.mixer.PlayOnce("disconnected")
@@ -354,7 +364,7 @@ func (d *daemonCallbacks) OnCallReturn() {
 }
 
 func (d *daemonCallbacks) OnCallReturnCancel() {
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
+	if err := d.currentSig().Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
 		slog.Error("call_return_cancel: server unreachable", "error", err)
 	}
 }
@@ -465,11 +475,12 @@ func publishVoicemailStateOnce(sender sigSender, store *voicemail.Store, last *i
 func (d *daemonCallbacks) publishVoicemailState() {
 	d.mu.Lock()
 	store := d.voicemailStore
+	sig := d.sig
 	d.mu.Unlock()
 
 	d.publishVMMu.Lock()
 	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, false)
+	publishVoicemailStateOnce(sig, store, &d.publishVMLast, false)
 }
 
 // publishVoicemailStateInitial is the (re)connect wrapper. It sends the
@@ -479,11 +490,12 @@ func (d *daemonCallbacks) publishVoicemailState() {
 func (d *daemonCallbacks) publishVoicemailStateInitial() {
 	d.mu.Lock()
 	store := d.voicemailStore
+	sig := d.sig
 	d.mu.Unlock()
 
 	d.publishVMMu.Lock()
 	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, true)
+	publishVoicemailStateOnce(sig, store, &d.publishVMLast, true)
 }
 
 // setVoicemailConfig replaces the local voicemail config under d.mu and
@@ -1496,17 +1508,29 @@ func main() {
 			slog.Warn("could not load pairing tones", "error", err)
 		}
 	}
-	mixer.Start()
-	defer mixer.Stop()
-
-	// Debug: capture raw PCM output if CAPTURE_PCM is set
+	// Debug: capture raw PCM output if CAPTURE_PCM is set. Bounded so a forgotten
+	// capture cannot fill /data (raw 48kHz stereo S16LE is ~345 MB/hr). Default
+	// cap 512 MB; override the megabyte limit with CAPTURE_PCM_MAX_MB (0 = off).
+	// Set up before Start() so the render goroutine observes the capture fields
+	// from its first iteration without any cross-goroutine write to race on.
 	if capPath := os.Getenv("CAPTURE_PCM"); capPath != "" {
-		if err := mixer.EnableCapture(capPath); err != nil {
+		maxBytes := int64(512) * 1024 * 1024
+		if v := os.Getenv("CAPTURE_PCM_MAX_MB"); v != "" {
+			if mb, err := strconv.ParseInt(v, 10, 64); err == nil {
+				maxBytes = mb * 1024 * 1024
+			} else {
+				slog.Warn("CAPTURE_PCM_MAX_MB invalid, using default", "value", v)
+			}
+		}
+		if err := mixer.EnableCapture(capPath, maxBytes); err != nil {
 			slog.Warn("PCM capture failed", "error", err)
 		} else {
 			defer mixer.DisableCapture()
 		}
 	}
+
+	mixer.Start()
+	defer mixer.Stop()
 
 	deviceID, err := config.LoadOrCreateDeviceID()
 	if err != nil {
@@ -2004,8 +2028,26 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// reconnected hands a freshly connected client back from the reconnect
+	// goroutine to the main loop. Buffered so the goroutine never blocks if
+	// the loop is momentarily busy. reconnecting is true while that goroutine
+	// is in flight: it gates sig.Done() out of the select so the loop neither
+	// spins on the dead client's already-closed done channel nor blocks on
+	// time.Sleep, leaving it free to service sp.Events() and quit throughout
+	// the backoff/connect.
+	reconnected := make(chan *sigclient.Client, 1)
+	reconnecting := false
+
 	// Main select loop
 	for {
+		// During reconnect, sig points at the dead client whose Done() is
+		// already closed; nil out doneCh so the select does not busy-loop on
+		// it. Completion arrives on the reconnected channel instead.
+		var doneCh <-chan struct{}
+		if !reconnecting {
+			doneCh = sig.Done()
+		}
+
 		select {
 		case <-quit:
 			slog.Info("digitsd shutting down")
@@ -2015,6 +2057,13 @@ func main() {
 				slog.Warn("sig close failed", "error", err)
 			}
 			return
+
+		case newSig := <-reconnected:
+			// The reconnect goroutine established a new client and ran the
+			// post-reconnect resume/teardown. Swap it in as the loop's active
+			// client; subsequent iterations select on its channels.
+			sig = newSig
+			reconnecting = false
 
 		case event := <-sp.Events():
 			// Confirmer intercept: when a sensitive op is awaiting "press *
@@ -2748,56 +2797,76 @@ func main() {
 				_ = sig.Close()
 			}
 
-		case <-sig.Done():
-			backoff := 3 * time.Second
-			first := true
-			for {
-				if first {
-					// Attempt the first reconnect immediately: no sleep on the
-					// first try so a transient blip resolves as fast as possible.
-					// This is especially important during an active call so the
-					// caller can re-deliver the ICE-restart offer before the peer's
-					// 25s recovery window expires.
-					first = false
-				} else {
-					// Active calls use a short fixed interval to stay within the
-					// recovery window. Idle paths use standard exponential backoff.
-					backoff = nextReconnectBackoff(backoff, ctrl.IsCallActive())
-					slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
-					time.Sleep(backoff)
-				}
-				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
-				cb.mu.Lock()
-				cb.sig = sig
-				cb.mu.Unlock()
-				if err := sig.Connect(); err != nil {
-					slog.Warn("signal: reconnect failed", "error", err)
-					continue
-				}
-				slog.Info("signal: reconnected")
+		case <-doneCh:
+			// Reconnect off the main loop so the select keeps servicing UART
+			// events and quit during the backoff/connect. The goroutine runs
+			// the connect with backoff, performs the post-reconnect resume or
+			// teardown, then hands the live client back via reconnected.
+			reconnecting = true
+			go reconnectLoop(reconnected, cb, ctrl, effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken, fwVersion, fwCommit)
+		}
+	}
+}
 
-				// A 2-party call whose media survived the WebSocket drop is
-				// resumed in place; if media also dropped, drive ICE recovery.
-				// Anything else (conference, voicemail, ringing) is torn down:
-				// the server already cleared its side or will after its grace
-				// window, and stale renegotiation would error.
-				if ctrl.State() != phone.StateIDLE {
-					if cb.tryResumeAfterReconnect(ctrl.State()) {
-						slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
-					} else {
-						slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
-						cb.TearDownAllMeshPeers()
-						cb.HangupCall()
-						ctrl.Reset()
-					}
-				}
+// reconnectLoop re-establishes the signald WebSocket after a drop, applying
+// the active-call fast backoff vs idle exponential backoff, runs the resume or
+// teardown for any in-progress call, then hands the connected client back to
+// the main loop on done. It runs on its own goroutine so the main select loop
+// stays free to service UART events and shutdown during the backoff/connect.
+func reconnectLoop(
+	done chan<- *sigclient.Client,
+	cb *daemonCallbacks,
+	ctrl *phone.Controller,
+	serverURL, number, deviceID, deviceToken, fwVersion, fwCommit string,
+) {
+	backoff := 3 * time.Second
+	first := true
+	for {
+		if first {
+			// Attempt the first reconnect immediately: no sleep on the
+			// first try so a transient blip resolves as fast as possible.
+			// This is especially important during an active call so the
+			// caller can re-deliver the ICE-restart offer before the peer's
+			// 25s recovery window expires.
+			first = false
+		} else {
+			// Active calls use a short fixed interval to stay within the
+			// recovery window. Idle paths use standard exponential backoff.
+			backoff = nextReconnectBackoff(backoff, ctrl.IsCallActive())
+			slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
+			time.Sleep(backoff)
+		}
+		sig := sigclient.NewClient(serverURL, number, deviceID, deviceToken)
+		cb.mu.Lock()
+		cb.sig = sig
+		cb.mu.Unlock()
+		if err := sig.Connect(); err != nil {
+			slog.Warn("signal: reconnect failed", "error", err)
+			continue
+		}
+		slog.Info("signal: reconnected")
 
-				sendDeviceInfo(sig, fwVersion, fwCommit)
-				cb.publishVoicemailState()
-				requestICEServers(sig)
-				break
+		// A 2-party call whose media survived the WebSocket drop is
+		// resumed in place; if media also dropped, drive ICE recovery.
+		// Anything else (conference, voicemail, ringing) is torn down:
+		// the server already cleared its side or will after its grace
+		// window, and stale renegotiation would error.
+		if ctrl.State() != phone.StateIDLE {
+			if cb.tryResumeAfterReconnect(ctrl.State()) {
+				slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
+			} else {
+				slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
+				cb.TearDownAllMeshPeers()
+				cb.HangupCall()
+				ctrl.Reset()
 			}
 		}
+
+		sendDeviceInfo(sig, fwVersion, fwCommit)
+		cb.publishVoicemailState()
+		requestICEServers(sig)
+		done <- sig
+		return
 	}
 }
 
