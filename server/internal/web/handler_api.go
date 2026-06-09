@@ -86,11 +86,11 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	hh := h.activeHousehold(r)
-	ld := h.buildLinesData(r, hh)
+	lineRows, _ := h.buildLineRows(r, hh)
 
-	nums := make(map[string]bool, len(ld.Lines))
+	nums := make(map[string]bool, len(lineRows))
 	var onlineCount int
-	for _, row := range ld.Lines {
+	for _, row := range lineRows {
 		nums[row.Line.Number] = true
 		if row.Online {
 			onlineCount++
@@ -107,7 +107,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
-		"total_lines":  len(ld.Lines),
+		"total_lines":  len(lineRows),
 		"online_lines": onlineCount,
 		"active_calls": activeCount,
 	}); err != nil {

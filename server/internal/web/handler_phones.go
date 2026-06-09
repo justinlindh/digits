@@ -92,12 +92,28 @@ type lineRow struct {
 	VoicemailUnheard int
 }
 
-// buildLinesData assembles the household's line roster with per-line status
-// (online state, devices, update notes, voicemail counts). It feeds the
-// Overview line cards, the pairing page's extension dropdown, the dashboard
-// SSE status, and the status API. hh may be nil; when nil or lookup fails
-// the caller gets an empty list rather than every line on the server.
+// buildLinesData wraps buildLineRows with the page chrome for the pairing
+// page and its error re-renders.
 func (h *Handler) buildLinesData(r *http.Request, hh *household.Household) linesData {
+	rows, allSilent := h.buildLineRows(r, hh)
+	cd := h.newChromeDataWithHouseholds(r, "phones")
+	cd.allSilent = allSilent
+	return linesData{
+		chromeData: cd,
+		Lines:      rows,
+		AllSilent:  allSilent,
+	}
+}
+
+// buildLineRows assembles the household's line roster with per-line status
+// (online state, devices, update notes, voicemail counts), plus whether every
+// line is silenced. It feeds the Overview line cards, the pairing page's
+// extension dropdown, the dashboard SSE status, and the status API. It builds
+// no chromeData, so callers that render a full page (the Overview) build
+// their own exactly once instead of twice per request. hh may be nil; when
+// nil or lookup fails the caller gets an empty list rather than every line
+// on the server.
+func (h *Handler) buildLineRows(r *http.Request, hh *household.Household) (rows []lineRow, allSilent bool) {
 	var lines []line.Line
 	if hh != nil && h.lineStore != nil {
 		var err error
@@ -129,7 +145,7 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household) lines
 		latestFw = idx.Firmware.Latest
 	}
 
-	rows := make([]lineRow, len(lines))
+	rows = make([]lineRow, len(lines))
 	for i, l := range lines {
 		infos := h.hub.AllDeviceInfo(l.Number)
 		var info *signaling.DeviceInfoSnapshot
@@ -152,20 +168,14 @@ func (h *Handler) buildLinesData(r *http.Request, hh *household.Household) lines
 		row.PiUpdateNotes, row.FirmwareUpdateNotes = updateNotes(idx, infos, latestPi, latestFw)
 		rows[i] = row
 	}
-	allSilent := len(rows) > 0
+	allSilent = len(rows) > 0
 	for _, row := range rows {
 		if !row.Line.Settings.SilentMode {
 			allSilent = false
 			break
 		}
 	}
-	cd := h.newChromeDataWithHouseholds(r, "phones")
-	cd.allSilent = allSilent
-	return linesData{
-		chromeData: cd,
-		Lines:      rows,
-		AllSilent:  allSilent,
-	}
+	return rows, allSilent
 }
 
 // renderPairError renders the full phones page with a pairing-specific error.
