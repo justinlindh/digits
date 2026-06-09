@@ -150,9 +150,9 @@ func (s *HealthStore) RunRedis(ctx context.Context) {
 	}
 }
 
-// applyRemote dispatches one cross-pod event into the local store. Remote
-// events never re-publish (the publish flag is false on every path), so
-// there is no echo loop.
+// applyRemote dispatches one cross-pod event into the local store. It calls
+// the pod-local session operations directly, never the publishing public
+// methods, so there is no echo loop.
 func (s *HealthStore) applyRemote(env *healthEnvelope) {
 	key, ok := sessionKeyFromEnvelope(env)
 	if !ok {
@@ -166,9 +166,9 @@ func (s *HealthStore) applyRemote(env *healthEnvelope) {
 		}
 		s.recordSession(key, env.From, env.Peer, env.Sample.toSample(), true)
 	case wireKindDisconnect:
-		s.notifyDisconnectedSession(key, env.EndedBy, false)
+		s.notifyDisconnectedSession(key, env.EndedBy)
 	case wireKindEvict:
-		s.evictSession(key, false)
+		s.evictSession(key)
 	default:
 		slog.Warn("link_health: unknown redis event kind", "kind", env.Kind)
 	}
@@ -198,11 +198,12 @@ func (s *HealthStore) publishLifecycle(kind uint8, key SessionKey, endedBy strin
 func (s *HealthStore) publish(env *healthEnvelope) {
 	s.rmu.Lock()
 	client := s.client
-	env.PodID = s.podID
+	podID := s.podID
 	s.rmu.Unlock()
 	if client == nil {
 		return
 	}
+	env.PodID = podID
 	payload, err := json.Marshal(env)
 	if err != nil {
 		slog.Error("link_health: marshal redis envelope failed", "err", err)

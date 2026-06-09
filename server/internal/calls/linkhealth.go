@@ -169,12 +169,6 @@ func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
 	return s
 }
 
-// initSession creates an empty rings entry for the given session key.
-// Idempotent: no-op if the key already exists.
-func (s *HealthStore) initSession(key SessionKey) {
-	s.getOrCreateSession(key)
-}
-
 // getOrCreateSession returns the rings entry for key, creating it if absent,
 // and stamps lastActivity. Sessions are created lazily because the
 // "call started" hook (Tracker.StartCall -> Init) runs only on the pod that
@@ -199,7 +193,10 @@ func (s *HealthStore) getOrCreateSession(key SessionKey) *sessionRings {
 // pair, creating the session if this pod has not seen it yet. remote marks
 // samples applied from the Redis fan-out: they update the rings and local
 // subscribers but advance lastFlushed so only the ingesting pod writes the
-// sample to the database, and they are not re-published.
+// sample to the database. Advancing on every remote sample is safe because
+// a given endpoint's samples come from a single publisher (the pod holding
+// that phone's WebSocket), and Redis pub/sub preserves per-publisher order;
+// the unique indexes behind writeSample's ON CONFLICT are the backstop.
 //
 // Race note: between releasing the top-level map lock and acquiring the
 // per-session lock, a concurrent evictSession can remove the sessionRings
@@ -223,10 +220,6 @@ func (s *HealthStore) recordSession(key SessionKey, from, peer string, sample Sa
 	}
 	sr.broadcastLocked(Event{Kind: SampleKind, Endpoint: from, Peer: peer, Sample: sample})
 	sr.mu.Unlock()
-
-	if !remote {
-		s.publishSample(key, from, peer, sample)
-	}
 }
 
 // windowSession returns a copy of the retained sample ring for the given
@@ -250,14 +243,10 @@ func (s *HealthStore) windowSession(key SessionKey, from, peer string) []Sample 
 }
 
 // evictSession drops all in-memory state for a session. Broadcasts EndedKind
-// to every live subscriber and closes their channels. Idempotent. When
-// publish is true the eviction also fans out to other pods so their
-// subscribers see the call end too; remote-applied and sweep-driven evicts
-// pass false.
-func (s *HealthStore) evictSession(key SessionKey, publish bool) {
-	if publish {
-		s.publishLifecycle(wireKindEvict, key, "")
-	}
+// to every live subscriber and closes their channels. Idempotent. Pod-local:
+// the public Evict methods fan the eviction out to other pods; remote
+// applies and the idle sweep call this directly.
+func (s *HealthStore) evictSession(key SessionKey) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	delete(s.sessions, key)
@@ -321,7 +310,7 @@ func (s *HealthStore) subscribeSession(key SessionKey) *Subscription {
 // is an optimization, not a precondition. Safe to call multiple times;
 // idempotent.
 func (s *HealthStore) Init(callID int64) {
-	s.initSession(SessionKey{CallID: callID})
+	s.getOrCreateSession(SessionKey{CallID: callID})
 }
 
 // Record appends a sample for the given call and endpoint, creating the
@@ -330,7 +319,9 @@ func (s *HealthStore) Init(callID int64) {
 // racing the call's eviction can recreate the session; the idle sweep in
 // Run bounds the lifetime of such stragglers.
 func (s *HealthStore) Record(callID int64, endpoint string, sample Sample) {
-	s.recordSession(SessionKey{CallID: callID}, endpoint, "", sample, false)
+	key := SessionKey{CallID: callID}
+	s.recordSession(key, endpoint, "", sample, false)
+	s.publishSample(key, endpoint, "", sample)
 }
 
 // Window returns a copy of the retained sample ring for an endpoint, oldest
@@ -345,20 +336,24 @@ func (s *HealthStore) Window(callID int64, endpoint string) []Sample {
 //
 // Called by Tracker on call end via the SetHealthStore-registered interface.
 func (s *HealthStore) Evict(callID int64) {
-	s.evictSession(SessionKey{CallID: callID}, true)
+	key := SessionKey{CallID: callID}
+	s.publishLifecycle(wireKindEvict, key, "")
+	s.evictSession(key)
 }
 
 // InitConference registers a conference for in-memory sample retention.
 // Mirrors Init for 2-party calls. Safe to call multiple times.
 func (s *HealthStore) InitConference(confID uuid.UUID) {
-	s.initSession(SessionKey{ConfID: confID})
+	s.getOrCreateSession(SessionKey{ConfID: confID})
 }
 
 // RecordEdge appends a per-edge sample for a conference. from is the
 // phone that emitted the sample; peer is the remote endpoint the sample
 // describes. Creates the session lazily, mirroring Record.
 func (s *HealthStore) RecordEdge(confID uuid.UUID, from, peer string, sample Sample) {
-	s.recordSession(SessionKey{ConfID: confID}, from, peer, sample, false)
+	key := SessionKey{ConfID: confID}
+	s.recordSession(key, from, peer, sample, false)
+	s.publishSample(key, from, peer, sample)
 }
 
 // WindowEdge returns a copy of the retained sample ring for a conference
@@ -370,7 +365,9 @@ func (s *HealthStore) WindowEdge(confID uuid.UUID, from, peer string) []Sample {
 // EvictConference drops in-memory state for a conference and broadcasts
 // EndedKind to subscribers.
 func (s *HealthStore) EvictConference(confID uuid.UUID) {
-	s.evictSession(SessionKey{ConfID: confID}, true)
+	key := SessionKey{ConfID: confID}
+	s.publishLifecycle(wireKindEvict, key, "")
+	s.evictSession(key)
 }
 
 // SubscribeConference returns an event stream for a conference's samples,
@@ -422,7 +419,9 @@ func (s *HealthStore) Subscribe(callID int64) *Subscription {
 //
 // No-op for unknown callIDs.
 func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
-	s.notifyDisconnectedSession(SessionKey{CallID: callID}, endedBy, true)
+	key := SessionKey{CallID: callID}
+	s.publishLifecycle(wireKindDisconnect, key, endedBy)
+	s.notifyDisconnectedSession(key, endedBy)
 }
 
 // NotifyDisconnectedConference broadcasts a DisconnectKind event to every
@@ -432,16 +431,14 @@ func (s *HealthStore) NotifyDisconnected(callID int64, endedBy string) {
 //
 // No-op for unknown conference IDs.
 func (s *HealthStore) NotifyDisconnectedConference(confID uuid.UUID, endedBy string) {
-	s.notifyDisconnectedSession(SessionKey{ConfID: confID}, endedBy, true)
+	key := SessionKey{ConfID: confID}
+	s.publishLifecycle(wireKindDisconnect, key, endedBy)
+	s.notifyDisconnectedSession(key, endedBy)
 }
 
 // notifyDisconnectedSession broadcasts DisconnectKind to local subscribers.
-// When publish is true it also fans out to other pods; remote-applied
-// notifications pass false.
-func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string, publish bool) {
-	if publish {
-		s.publishLifecycle(wireKindDisconnect, key, endedBy)
-	}
+// Pod-local: the public Notify methods fan out to other pods first.
+func (s *HealthStore) notifyDisconnectedSession(key SessionKey, endedBy string) {
 	s.mu.Lock()
 	sr, ok := s.sessions[key]
 	s.mu.Unlock()
@@ -658,7 +655,7 @@ func (s *HealthStore) sweepIdleSessions() {
 		idle := sr.lastActivity.Before(cutoff) && len(sr.subscribers) == 0
 		sr.mu.Unlock()
 		if idle {
-			s.evictSession(k, false)
+			s.evictSession(k)
 		}
 	}
 }
