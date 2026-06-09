@@ -4,30 +4,46 @@ Build a flashable SD card image for Digits Pi phones from a stock Raspberry Pi O
 
 ## Quick Start (Docker)
 
-The easiest way to build. Only requires Docker on your machine.
+The easiest way to build. The Docker container handles the base Pi OS download, QEMU for ARM64 chroot, partitioning, and packaging. The one host dependency is Go, used to run `make embed` (stages the rootfs overlay, tones, and mixer state) before the container runs.
+
+### Release mode (default)
+
+By default the builder downloads pre-built artifacts from GitHub Releases: the Pi binaries from the latest `pi/v*` release and the Pico firmware from the latest `fw/v*` release. This produces a clean production image without a local cross-compile of digitsd or the firmware. Because it hits the GitHub API, it requires a `GITHUB_TOKEN` with read access to `justinlindh/digits`:
 
 ```bash
-# Build the image (downloads Pi OS automatically on first run)
-./pi/image/build-docker.sh
+# Build the image (downloads Pi OS, Pi binaries, and firmware on first run)
+GITHUB_TOKEN=ghp_... ./pi/image/build-docker.sh
 
 # Flash to SD card
 gunzip -c digits-pi-*.img.gz | sudo dd of=/dev/sdX bs=4M status=progress
 ```
 
-The Docker container handles everything: downloading the base Pi OS image, cross-compiling the Go binaries, setting up QEMU for ARM64 chroot, partitioning, and packaging. No host dependencies needed beyond Docker.
+Pin specific releases instead of taking the latest:
+
+```bash
+RELEASE_TAG=pi/v1.21.0 FIRMWARE_TAG=fw/v0.9.0 GITHUB_TOKEN=ghp_... ./pi/image/build-docker.sh
+```
 
 The base Pi OS image is cached in a Docker volume (`digits-image-cache`) so it's only downloaded once. You can also provide your own:
 
 ```bash
-./pi/image/build-docker.sh path/to/raspios-lite.img.xz
+GITHUB_TOKEN=ghp_... ./pi/image/build-docker.sh path/to/raspios-lite.img.xz
+```
+
+### Local build mode (no token)
+
+Set `BUILD_LOCAL=1` to cross-compile digitsd from the working tree instead of downloading release artifacts. No `GITHUB_TOKEN` is needed unless the firmware also has to come from a release (stage it locally first with `make stage-firmware`, or the dev `make` targets do it for you):
+
+```bash
+BUILD_LOCAL=1 ./pi/image/build-docker.sh
 ```
 
 ### Dev mode
 
-Adds SSH access with user `dev` / password `digits` for debugging:
+Adds SSH access with user `dev` / password `digits` for debugging. The `--dev` flag is paired with `BUILD_LOCAL=1` (the top-level `make image-dev` / `make image-v2-dev` targets set both and stage firmware for you):
 
 ```bash
-./pi/image/build-docker.sh --dev
+BUILD_LOCAL=1 ./pi/image/build-docker.sh --dev
 ```
 
 ## Manual Build (No Docker)
