@@ -60,10 +60,6 @@
       <div class="dialup-toolbar__icon dialup-ic-welcome" aria-hidden="true"></div>
       <span>Home</span>
     </a>
-    <a href="/phones" class="dialup-toolbar__btn">
-      <div class="dialup-toolbar__icon dialup-ic-phone" aria-hidden="true"></div>
-      <span>Phones</span>
-    </a>
     <a href="/links" class="dialup-toolbar__btn">
       <div class="dialup-toolbar__icon dialup-ic-people" aria-hidden="true"></div>
       <span>Families</span>
@@ -94,7 +90,7 @@
     <span class="dialup-keyword__fav">▼ Favorites</span>
     <label class="dialup-keyword__label">Keyword:</label>
     <div class="dialup-keyword__wrap">
-      <input type="text" class="dialup-keyword__input" value="digits {{if eq .Page "phones"}}phones{{else if eq .Page "links"}}families{{else if eq .Page "calls"}}call log{{else if eq .Page "settings"}}preferences{{else}}home{{end}}">
+      <input type="text" class="dialup-keyword__input" value="digits {{if eq .Page "phones"}}phone center{{else if eq .Page "links"}}families{{else if eq .Page "calls"}}call log{{else if eq .Page "settings"}}preferences{{else}}home{{end}}">
     </div>
     <button type="button" class="dialup-keyword__go">▶ GO</button>
     <span class="dialup-keyword__history">History ▼</span>
@@ -106,13 +102,9 @@
     <!-- Channel list sidebar -->
     <aside class="dialup-channels" aria-label="Channels">
       <div class="dialup-channels__header">★ CHANNELS ★</div>
-      <a href="/" class="dialup-channel dialup-channel--green {{if eq .Page "dashboard"}}is-active{{end}}">
+      <a href="/" class="dialup-channel dialup-channel--green {{if or (eq .Page "dashboard") (eq .Page "phones")}}is-active{{end}}">
         <div class="dialup-channel__icon dialup-ic-welcome" aria-hidden="true"></div>
         <span>WELCOME</span>
-      </a>
-      <a href="/phones" class="dialup-channel dialup-channel--red {{if eq .Page "phones"}}is-active{{end}}">
-        <div class="dialup-channel__icon dialup-ic-phone" aria-hidden="true"></div>
-        <span>MY PHONES</span>
       </a>
       <a href="/links" class="dialup-channel dialup-channel--gold {{if eq .Page "links"}}is-active{{end}}">
         <div class="dialup-channel__icon dialup-ic-people" aria-hidden="true"></div>

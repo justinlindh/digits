@@ -396,6 +396,14 @@ body.dialup:not(.crt-all) .dialup-window {
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
 .page__head .dnd-toggle__label { color: #fff; }
+.page__head .btn--quiet { color: #fff; }
+.page__head .btn--quiet:hover { color: var(--dialup-gold, #ffcc00); background: transparent; }
+.page__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .page__title {
   font-family: inherit;
   font-weight: bold;
@@ -1698,6 +1706,13 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   font-family: var(--font-mono, "Courier New", Courier, monospace);
   font-size: 11px;
   color: var(--dialup-ink-muted);
+}
+
+.rooms__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .rooms__callout {

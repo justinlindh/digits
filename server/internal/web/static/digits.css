@@ -236,6 +236,12 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   font-size: 13px;
   color: var(--ink-muted);
 }
+.page__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 
 /* --------- Stat strip (compressed, not KPI tiles) --------- */
 
@@ -1588,6 +1594,7 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .rooms__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rooms__name { font-family: var(--font-display); font-style: italic; font-size: 17px; font-weight: 500; }
 .rooms__num { font-size: 13px; color: var(--ink-muted); }
+.rooms__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rooms__callout {
   margin-top: auto;
   padding: 10px 12px;

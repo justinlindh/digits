@@ -280,7 +280,7 @@ sudo systemctl restart digitsd
 
 ### Pairing Flow
 
-1. In the web app, complete onboarding to create a household, then add a line on `/phones`.
+1. In the web app, complete onboarding to create a household, then click "Pair a handset" on the Overview to add a line.
 2. The system generates a pairing code.
 3. On the Pi, the pairing code is exchanged automatically on first connect.
 4. Once paired, the phone is ready to dial.

@@ -212,10 +212,9 @@ See `.env.example` for a starter config file.
 
 | Route                       | Description                                  |
 |-----------------------------|----------------------------------------------|
-| `/`                         | Dashboard -- stats, active calls, recent history |
-| `/phones`                   | Phone directory -- add, pair, manage phones  |
-| `/phones/{number}`          | Phone detail -- device info, update status   |
-| `/phones/{number}/edit`     | Edit phone name                              |
+| `/`                         | Overview -- line list, active calls, recent history |
+| `/phones`                   | Pair a handset (button-launched from the Overview) |
+| `/phones/{number}`          | Phone detail -- device info, settings, update status |
 | `/calls`                    | Call history -- full log, auto-refreshes     |
 | `/settings`                 | Household settings, call history toggle      |
 | `/links`                    | Household links -- invite and connect households |

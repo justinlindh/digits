@@ -17,8 +17,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { isServerUp, setTheme, Theme } from './helpers';
 
-const DND_TEST_LINE = '5550199';
-
 test.beforeEach(async ({ page }, testInfo) => {
   const up = await isServerUp();
   testInfo.skip(!up, 'Dev server not running');
@@ -29,17 +27,20 @@ function isAuthOrOnboard(url: string): boolean {
 }
 
 /**
- * Ensure the household has at least one phone line so "Silence All" can
- * derive its state. Idempotent: a second call for the same number is a
- * harmless no-op (the server returns 303 either way).
+ * "Silence All" derives its state from the household's lines, so the chip only
+ * appears when at least one line exists. The legacy POST /phones add-without-
+ * pairing endpoint is gone, so we no longer seed a line: instead we read the
+ * Overview line cards and skip the test when the dev household has none.
  */
-async function ensureLine(page: Page): Promise<void> {
-  const resp = await page.request.post('/phones', {
-    form: { number: DND_TEST_LINE, name: 'DND Test' },
-    maxRedirects: 0,
-  });
-  if (resp.status() >= 500) {
-    test.skip(true, 'Could not seed phone line for DND test');
+async function requireLines(page: Page): Promise<void> {
+  await page.goto('/');
+  if (isAuthOrOnboard(page.url())) {
+    test.skip(true, 'Overview not reachable');
+    return;
+  }
+  const cards = page.locator('a.rooms__card[href^="/phones/"]');
+  if ((await cards.count()) === 0) {
+    test.skip(true, 'No phone lines in the dev household for DND test');
   }
 }
 
@@ -109,7 +110,7 @@ function runDNDFlow(theme: Theme): void {
     }) => {
       // The household needs at least one line for "Silence All" to have
       // any effect (derived state requires lines to exist).
-      await ensureLine(page);
+      await requireLines(page);
 
       // Make sure silence starts off so the on/off transition is real.
       await setDoNotDisturb(page, 'off');

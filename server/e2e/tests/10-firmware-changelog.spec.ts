@@ -1,15 +1,17 @@
 /**
- * 10-firmware-changelog.spec.ts -- Firmware update chip and pair banner (issue #TBD).
+ * 10-firmware-changelog.spec.ts: Firmware update chip and pair banner.
  *
  * Tests:
- *   - Pair confirmation banner appears when arriving on /phones with ?paired= param
+ *   - Pair confirmation banner appears when arriving on Overview ("/") with the
+ *     ?paired= param (POST /phones/pair now redirects to /?paired=...)
  *   - Banner dismisses via the close button
- *   - Update chip is visible and expands to show release notes for a behind device
+ *   - Update chip is visible and expands to show release notes for a behind
+ *     device, on the Overview line cards
  *   - Chip collapses on second click
  *
  * The chip tests require:
  *   - TEST_FAKE_UPDATES=1 on the server (fake release index: latest fw 1.4.0)
- *   - DEV_MODE=true on the server (enables POST /dev/seed-firmware and POST /phones direct add)
+ *   - DEV_MODE=true on the server (enables POST /dev/seed-firmware)
  *
  * Both flags are set by the e2e-ci Makefile target. If the server is running
  * without them the chip test is skipped gracefully.
@@ -18,8 +20,6 @@
 import { test, expect, Page } from '@playwright/test';
 import { isServerUp, BASE_URL } from './helpers';
 
-// 7-digit local number as used by the Digits network.
-const TEST_LINE_NUMBER = '5559001';
 const OLD_FW = '1.2.0';
 
 test.beforeEach(async ({}, testInfo) => {
@@ -37,7 +37,7 @@ function isAuthOrOnboard(url: string) {
 
 test.describe('Pair confirmation banner', () => {
   test('banner appears with line name and fw version', async ({ page }) => {
-    await page.goto('/phones?paired=Kitchen&fw=1.4.0');
+    await page.goto('/?paired=Kitchen&fw=1.4.0');
 
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session');
@@ -51,7 +51,7 @@ test.describe('Pair confirmation banner', () => {
   });
 
   test('banner dismisses when close button is clicked', async ({ page }) => {
-    await page.goto('/phones?paired=Kitchen&fw=1.4.0');
+    await page.goto('/?paired=Kitchen&fw=1.4.0');
 
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session');
@@ -66,7 +66,7 @@ test.describe('Pair confirmation banner', () => {
   });
 
   test('banner renders without fw version when fw param is absent', async ({ page }) => {
-    await page.goto('/phones?paired=Kitchen');
+    await page.goto('/?paired=Kitchen');
 
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session');
@@ -105,67 +105,65 @@ async function hasFakeReleaseIndex(): Promise<boolean> {
 }
 
 /**
- * Seed a line in the DB via the direct POST /phones endpoint, then register
- * a fake hub entry at the given firmware version via POST /dev/seed-firmware.
- * Returns the 7-digit number that was seeded, or null on failure.
+ * Read an existing line number off the Overview line cards. The legacy POST
+ * /phones add-without-pairing endpoint is gone, so we no longer create a line;
+ * we reuse one the dev household already has and mark its firmware old via
+ * POST /dev/seed-firmware. Returns the 7-digit number, or null when no line
+ * exists or seeding fails.
  */
 async function seedOutdatedHandset(page: Page): Promise<string | null> {
-  // Create the line record (requires auth session). The form expects a
-  // 7-digit local number (Digits network convention).
-  const addResp = await page.request.post('/phones', {
-    form: {
-      number: TEST_LINE_NUMBER,
-      name: 'E2E Test Handset',
-    },
-    maxRedirects: 0,
-  });
-  // Accept 200 (line added or already exists) or 303 (redirect after success).
-  if (addResp.status() >= 500) {
+  await page.goto('/');
+  if (isAuthOrOnboard(page.url())) {
+    return null;
+  }
+  const href = await page
+    .locator('a.rooms__card[href^="/phones/"]')
+    .first()
+    .getAttribute('href')
+    .catch(() => null);
+  if (!href) {
+    return null;
+  }
+  // href is /phones/<number>; pull the trailing path segment.
+  const number = href.split('/').pop() ?? '';
+  if (!number) {
     return null;
   }
 
   // Register a fake hub connection at the old firmware version. The hub key
   // matches the number stored in the DB (7-digit local format).
   const seedResp = await page.request.post(
-    `/dev/seed-firmware?number=${encodeURIComponent(TEST_LINE_NUMBER)}&fw=${OLD_FW}`,
+    `/dev/seed-firmware?number=${encodeURIComponent(number)}&fw=${OLD_FW}`,
   );
   if (!seedResp.ok()) {
     return null;
   }
 
-  return TEST_LINE_NUMBER;
+  return number;
 }
 
 test.describe('Firmware update chip', () => {
-  // Clean up the seeded test line after each chip test so it does not
-  // interfere with tests in later spec files that look for phones.
-  test.afterEach(async ({ page }) => {
-    await page.request.post(`/phones/${TEST_LINE_NUMBER}/delete`).catch(() => undefined);
-  });
-
   test('update chip expands to show release notes', async ({ page }) => {
     if (!(await hasFakeReleaseIndex())) {
       test.skip(true, 'Server does not have fake release index (TEST_FAKE_UPDATES=1 not set)');
       return;
     }
 
-    await page.goto('/phones');
+    // Seed an existing line at the old firmware version.
+    const number = await seedOutdatedHandset(page);
+    if (!number) {
+      test.skip(true, 'No line to seed (DEV_MODE off or empty household)');
+      return;
+    }
+
+    // Reload Overview so the server picks up the freshly seeded hub entry.
+    await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session');
       return;
     }
 
-    // Seed a handset at the old firmware version.
-    const number = await seedOutdatedHandset(page);
-    if (!number) {
-      test.skip(true, 'Could not seed test handset -- DEV_MODE may not be enabled');
-      return;
-    }
-
-    // Reload so the server picks up the freshly seeded hub entry.
-    await page.reload();
-
-    // The update chip summary should be visible for at least one row.
+    // The update chip summary should be visible for at least one card.
     const summary = page.locator('.update-details > summary').first();
     await expect(summary).toBeVisible({ timeout: 5000 });
 
@@ -187,19 +185,17 @@ test.describe('Firmware update chip', () => {
       return;
     }
 
-    await page.goto('/phones');
+    const number = await seedOutdatedHandset(page);
+    if (!number) {
+      test.skip(true, 'No line to seed (DEV_MODE off or empty household)');
+      return;
+    }
+
+    await page.goto('/');
     if (isAuthOrOnboard(page.url())) {
       test.skip(true, 'No authenticated session');
       return;
     }
-
-    const number = await seedOutdatedHandset(page);
-    if (!number) {
-      test.skip(true, 'Could not seed test handset -- DEV_MODE may not be enabled');
-      return;
-    }
-
-    await page.reload();
 
     const summary = page.locator('.update-details > summary').first();
     await expect(summary).toBeVisible({ timeout: 5000 });

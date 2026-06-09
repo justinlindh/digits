@@ -86,7 +86,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	hh := h.activeHousehold(r)
-	ld := h.buildLinesData(r, hh, "")
+	ld := h.buildLinesData(r, hh)
 
 	nums := make(map[string]bool, len(ld.Lines))
 	var onlineCount int

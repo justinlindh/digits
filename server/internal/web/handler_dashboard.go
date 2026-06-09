@@ -12,6 +12,8 @@ import (
 type dashboardData struct {
 	chromeData
 	Lines              []lineRow
+	AllSilent          bool
+	PairSuccess        *pairSuccess
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
 	LinkedFamilies     []linkedFamilyRow
@@ -57,7 +59,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	active := h.tracker.Active(ctx)
 	hh := h.activeHousehold(r)
-	ld := h.buildLinesData(r, hh, "")
+	ld := h.buildLinesData(r, hh)
 	loc := hh.Location()
 	now := time.Now().In(loc)
 
@@ -165,9 +167,21 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Post-pairing success flash: POST /phones/pair redirects here with the
+	// new handset's name so the banner renders next to the updated line list.
+	var paired *pairSuccess
+	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
+		paired = &pairSuccess{
+			Name:            pairedName,
+			FirmwareVersion: r.URL.Query().Get("fw"),
+		}
+	}
+
 	data := dashboardData{
 		chromeData:         h.newChromeDataWithHouseholds(r, "dashboard"),
 		Lines:              ld.Lines,
+		AllSilent:          ld.AllSilent,
+		PairSuccess:        paired,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
