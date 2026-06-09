@@ -57,8 +57,11 @@
       </a>
       {{end}}
     {{else}}
-      <div class="rooms__empty">
-        No lines registered. <a href="/phones">Pair a handset</a>.
+      <div class="rooms__empty rooms__welcome">
+        <svg class="rooms__welcome-icon" viewBox="0 0 36 48" fill="currentColor" aria-hidden="true">{{template "keypad-icon"}}</svg>
+        <h2 class="rooms__welcome-title">Pair your first handset</h2>
+        <p class="rooms__welcome-text">Lift the handset and it reads a 6-digit pairing code aloud. Enter that code here to bring the phone online.</p>
+        <a class="btn btn--brass" href="/phones">+ Pair a handset</a>
       </div>
     {{end}}
   </section>
@@ -183,10 +186,12 @@
     {{/* RIGHT column: Lines panel */}}
     <div class="am-plate am-overview__lines">
       <div class="am-plate__label">Lines</div>
+      {{if .Lines}}
       <div class="am-overview__lines-actions">
         {{template "dnd-toggle-am" .}}
         <a class="am-key" href="/phones"><span class="am-key__symbol">+</span><span class="am-key__label">Pair</span></a>
       </div>
+      {{end}}
       {{if .Lines}}
         {{range $l := .Lines}}
         <a class="am-overview__line" href="{{if and $l.OnCall $l.OnCallID}}/call/live/{{$l.OnCallID}}{{else}}/phones/{{$l.Line.Number}}{{end}}">
@@ -208,7 +213,11 @@
         </a>
         {{end}}
       {{else}}
-        <div class="am-hint">No lines paired. <a href="/phones">Pair a handset</a>.</div>
+        <div class="am-overview__lines-empty">
+          <span class="am-label">No handsets yet</span>
+          <p class="am-hint">Lift the handset and it reads a 6-digit pairing code aloud. Patch it in to bring the phone online.</p>
+          <a class="am-key am-key--blue" href="/phones"><span class="am-key__symbol">+</span><span class="am-key__label">Pair a handset</span></a>
+        </div>
       {{end}}
     </div>
   </div>
