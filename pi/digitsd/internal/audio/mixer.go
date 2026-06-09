@@ -186,10 +186,10 @@ func (m *Mixer) renderLoop(stop, done chan struct{}) {
 	}
 }
 
-// clampAdd adds two int16 values with saturation (no overflow wrap-around).
-// EnableCapture starts writing raw S16LE PCM to path. Call from main, not render
-// loop. maxBytes caps the total written so a long-running debug capture cannot
-// fill /data; pass 0 for unbounded.
+// EnableCapture starts writing raw S16LE PCM to path. Call from main before
+// Start so the render loop observes the capture fields without racing their
+// initialization. maxBytes caps the total written so a long-running debug
+// capture cannot fill /data; pass 0 for unbounded.
 func (m *Mixer) EnableCapture(path string, maxBytes int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -220,6 +220,7 @@ func (m *Mixer) DisableCapture() {
 	}
 }
 
+// clampAdd adds two int16 values with saturation (no overflow wrap-around).
 func clampAdd(a, b int16) int16 {
 	sum := int32(a) + int32(b)
 	if sum > 32767 {

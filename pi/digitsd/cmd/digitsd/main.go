@@ -1508,12 +1508,11 @@ func main() {
 			slog.Warn("could not load pairing tones", "error", err)
 		}
 	}
-	mixer.Start()
-	defer mixer.Stop()
-
 	// Debug: capture raw PCM output if CAPTURE_PCM is set. Bounded so a forgotten
 	// capture cannot fill /data (raw 48kHz stereo S16LE is ~345 MB/hr). Default
 	// cap 512 MB; override the megabyte limit with CAPTURE_PCM_MAX_MB (0 = off).
+	// Set up before Start() so the render goroutine observes the capture fields
+	// from its first iteration without any cross-goroutine write to race on.
 	if capPath := os.Getenv("CAPTURE_PCM"); capPath != "" {
 		maxBytes := int64(512) * 1024 * 1024
 		if v := os.Getenv("CAPTURE_PCM_MAX_MB"); v != "" {
@@ -1529,6 +1528,9 @@ func main() {
 			defer mixer.DisableCapture()
 		}
 	}
+
+	mixer.Start()
+	defer mixer.Stop()
 
 	deviceID, err := config.LoadOrCreateDeviceID()
 	if err != nil {
