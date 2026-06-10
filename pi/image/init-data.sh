@@ -14,7 +14,7 @@
 #   ├── digits/           # config and tones (binary lives on read-only rootfs)
 #   │   ├── config.json   # placeholder — filled by captive portal
 #   │   └── tones/        # audio tone files
-#   ├── wifi/             # wpa_supplicant.conf (written by setup portal)
+#   ├── wifi/             # NetworkManager connection backups (digitsd-managed)
 #   ├── log/              # persistent logs (bind → /var/log)
 #   ├── tmp/              # tmp files (bind → /tmp)
 #   └── ssh/              # SSH host keys (bind → /etc/ssh)
@@ -64,7 +64,7 @@ info "Creating /data directory structure at $MOUNT_POINT..."
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits"
 install -d -m 755 -o 999 -g 992 "${MOUNT_POINT}/digits/tones"
 
-# wifi/ — wpa_supplicant.conf written by setup portal
+# wifi/ holds NetworkManager connection backups written by digitsd
 install -d -m 750 -o root -g root "${MOUNT_POINT}/wifi"
 
 # log/ — persistent logs (bind-mounted to /var/log)
