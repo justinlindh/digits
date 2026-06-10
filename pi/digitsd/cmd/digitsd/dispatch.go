@@ -84,8 +84,8 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				if ctrl.State() != phone.StateCALLING {
 					return
 				}
-				d.mixer.StopTone()
-				d.mixer.PlayOnce("call_return_retry")
+				mixer.StopTone()
+				mixer.PlayOnce("call_return_retry")
 				sendSignal(d.currentSig(), &sigclient.Message{
 					Type:   sigclient.TypeCallReturnRetry,
 					Number: target,
@@ -513,23 +513,23 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		number := msg.Number
 		if number == "" {
 			slog.Info("call_return: no calls available")
-			d.mixer.PlayOnce("call_return_none")
+			mixer.PlayOnce("call_return_none")
 			go func() {
 				time.Sleep(3 * time.Second)
 				if ctrl.State() != phone.StateCALL_RETURN {
 					return
 				}
 				ctrl.ResetToDialtone()
-				d.mixer.PlayLoop("tone_dial")
+				mixer.PlayLoop("tone_dial")
 			}()
 		} else {
 			slog.Info("call_return: announcing last caller", "number", number)
 			ctrl.SetCallReturnNumber(number)
-			d.mixer.PlayOnce("call_return_prefix")
+			mixer.PlayOnce("call_return_prefix")
 			for _, ch := range number {
-				d.mixer.PlayOnce("spoken_" + string(ch))
+				mixer.PlayOnce("spoken_" + string(ch))
 			}
-			d.mixer.PlayOnce("call_return_suffix")
+			mixer.PlayOnce("call_return_suffix")
 		}
 
 	case sigclient.TypeCallReturnRing:
@@ -539,14 +539,14 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 
 	case sigclient.TypeCallReturnCancelled:
 		slog.Info("call_return: retry cancelled by server")
-		d.mixer.PlayOnce("call_return_cancel")
+		mixer.PlayOnce("call_return_cancel")
 		go func() {
 			time.Sleep(3 * time.Second)
 			if ctrl.State() != phone.StateCALL_RETURN {
 				return
 			}
 			ctrl.ResetToDialtone()
-			d.mixer.PlayLoop("tone_dial")
+			mixer.PlayLoop("tone_dial")
 		}()
 
 	default:
