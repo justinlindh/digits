@@ -22,7 +22,6 @@ PARTUUID=PARTUUID-OF-P4  /data           ext4    defaults,rw,noatime,x-systemd.a
 
 # ── Bind mounts from /data to expected locations ─────────────────────────────
 # These are ordered after /data — systemd respects mount ordering via After=
-# See also: etc/systemd/system/data-*.mount for explicit unit files
 #
 # /var/log → /data/log
 /data/log  /var/log  none  bind,x-systemd.requires=/data  0  0

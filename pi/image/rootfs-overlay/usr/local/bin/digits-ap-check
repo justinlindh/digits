@@ -57,6 +57,7 @@ validate_nmconnection() {
 has_any() {
     local dir="$1"
     shopt -s nullglob
+    # shellcheck disable=SC2206  # intentional glob expansion under nullglob
     local files=("$dir"/$NM_CONN_PATTERN)
     shopt -u nullglob
     [ ${#files[@]} -gt 0 ]

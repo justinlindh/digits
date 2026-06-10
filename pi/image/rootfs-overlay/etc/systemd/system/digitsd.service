@@ -1,5 +1,6 @@
 [Unit]
 Description=Digits Phone Daemon
+Documentation=https://github.com/justinlindh/digits
 # Wait for sysinit and digits-first-boot before starting; digitsd's asset
 # extractor flips the rootfs rw/ro mid-boot, which races with first-boot's
 # own rw remount and causes first-boot's writes to fail with EROFS.

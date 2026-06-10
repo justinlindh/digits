@@ -1,6 +1,6 @@
 [Unit]
 Description=Digits Wi-Fi Access Point (hostapd)
-Documentation=https://github.com/digits/digits
+Documentation=https://github.com/justinlindh/digits
 After=digits-ap-check.service
 
 [Service]

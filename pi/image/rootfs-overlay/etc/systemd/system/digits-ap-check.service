@@ -1,6 +1,6 @@
 [Unit]
 Description=Digits AP Mode Boot Check
-Documentation=https://github.com/digits/digits
+Documentation=https://github.com/justinlindh/digits
 # Run after filesystem and first-boot are done, before networking
 DefaultDependencies=no
 Wants=digits-first-boot.service

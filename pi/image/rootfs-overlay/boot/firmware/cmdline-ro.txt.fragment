@@ -19,7 +19,7 @@
 #
 # NOTE: Do NOT use raspi-config overlay — it has a Bookworm bug that makes
 #       all partitions read-only. The `ro` flag here only affects the root
-#       filesystem (p2). /data (p3) remains read-write.
+#       filesystem (p2). /data (p4) remains read-write.
 #
 # The image builder uses sed to apply this:
 #   sed -i 's/fsck\.repair=yes //g; s/rootwait/rootwait ro/' /boot/firmware/cmdline.txt
