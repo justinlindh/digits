@@ -17,4 +17,12 @@ void fake_uart_rx_reset(void);
 int fake_uart_rx_readable(void);
 char fake_uart_rx_getc(void);
 
+// Captures bytes the firmware sends over the fake UART TX (uart_proto_send)
+// so tests can assert on emitted lines. fake_uart_tx_write appends; tests
+// reset and query through the helpers below.
+void fake_uart_tx_write(const char *s);
+void fake_uart_tx_reset(void);
+// Count of completed TX lines (newline-terminated) that begin with `prefix`.
+int fake_uart_tx_count_lines_with_prefix(const char *prefix);
+
 #endif  // DIGITS_TEST_SDK_SHIM_H

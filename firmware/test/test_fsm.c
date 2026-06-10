@@ -85,6 +85,7 @@ static void test_buf_appendf_zero_size_is_noop(void) {
 static void fsm_reset_idle(void) {
     fake_env_reset();
     fake_uart_rx_reset();
+    fake_uart_tx_reset();
     fake_board_use_v2();
     fake_phase_set(PHASE_PAIRED);
 
@@ -151,6 +152,57 @@ static void test_fsm_dialtone_to_dialing_on_key(void) {
     fake_gpio_set_level(7, false);  // col1 => '0' (bottom row)
     run_for_ms(120);                // past 80ms keypad debounce
     CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_DIALING);
+}
+
+static void test_fsm_dialing_timeout_to_busy(void) {
+    fsm_reset_idle();
+    set_hook(true);
+    run_for_ms(100);
+    CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_DIAL_TONE);
+
+    // Enter DIALING with a partial number (fewer than DIAL_DIGITS_REQUIRED).
+    // process_key on the first digit transitions DIAL_TONE -> DIALING.
+    process_key('5');
+    process_key('5');
+    process_key('5');
+    CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_DIALING);
+    CHECK_EQ(s_digits_len, 3);
+    CHECK(!s_dial_sent);
+
+    // Hold off-hook in DIALING for DIAL_TIMEOUT_MS (15s) with no completing
+    // digits. The off-hook timeout fires TIMEOUT:DIAL_TONE and lands BUSY.
+    run_for_ms(15100);
+    CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_BUSY);
+    CHECK_EQ(fake_uart_tx_count_lines_with_prefix("TIMEOUT:DIAL_TONE"), 1);
+}
+
+static void test_fsm_full_dial_emits_single_dial_line(void) {
+    fsm_reset_idle();
+    set_hook(true);
+    run_for_ms(100);
+    CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_DIAL_TONE);
+
+    fake_uart_tx_reset();
+
+    // Drive seven distinct digits. The first call transitions DIAL_TONE ->
+    // DIALING; the accumulator fills to DIAL_DIGITS_REQUIRED on the seventh.
+    const char *digits = "1234567";
+    for (int i = 0; digits[i] != '\0'; ++i) {
+        process_key(digits[i]);
+    }
+    CHECK_EQ(phone_fsm_get_state(), PHONE_STATE_DIALING);
+    CHECK_EQ(s_digits_len, DIAL_DIGITS_REQUIRED);
+    CHECK(s_dial_sent);
+
+    // Exactly one DIAL:<digits> line is emitted (the s_dial_sent latch prevents
+    // a duplicate), and it carries the full accumulated number.
+    CHECK_EQ(fake_uart_tx_count_lines_with_prefix("DIAL:1234567"), 1);
+    CHECK_EQ(fake_uart_tx_count_lines_with_prefix("DIAL:"), 1);
+
+    // An eighth keypress does not re-fire DIAL (latch holds, buffer is full).
+    process_key('8');
+    CHECK_EQ(fake_uart_tx_count_lines_with_prefix("DIAL:"), 1);
+    CHECK_EQ(s_digits_len, DIAL_DIGITS_REQUIRED);
 }
 
 static void test_fsm_hangup_returns_to_idle(void) {
@@ -249,6 +301,8 @@ static const test_case_t k_fsm_tests[] = {
     TEST_CASE(test_buf_appendf_zero_size_is_noop),
     TEST_CASE(test_fsm_offhook_to_dialtone),
     TEST_CASE(test_fsm_dialtone_to_dialing_on_key),
+    TEST_CASE(test_fsm_dialing_timeout_to_busy),
+    TEST_CASE(test_fsm_full_dial_emits_single_dial_line),
     TEST_CASE(test_fsm_hangup_returns_to_idle),
     TEST_CASE(test_fsm_ring_then_offhook_connects),
     TEST_CASE(test_fsm_ring_stop_from_pi),

@@ -96,6 +96,30 @@ static void test_keypad_same_key_after_release(void) {
     CHECK_EQ(keypad_scan(), '*');
 }
 
+static void test_keypad_same_key_midpress_bounce_rejected(void) {
+    setup();
+
+    // Accept '*'.
+    hold_col(COL0);
+    CHECK_EQ(keypad_scan(), '*');
+
+    // Contact chatter: the key momentarily reads open for ~40ms (below the 80ms
+    // confirm window) then re-closes. The open scan does not confirm the
+    // release, so the latch stays on '*'.
+    release_keys();
+    fake_clock_advance_ms(40);
+    CHECK_EQ(keypad_scan(), '\0');
+
+    // Re-close of the same key: it equals the still-latched key, so it is a held
+    // no-op, not a fresh accept. The bounce must not produce a second '*'.
+    hold_col(COL0);
+    CHECK_EQ(keypad_scan(), '\0');
+
+    // Even after more time, with the key continuously held there is no repeat.
+    fake_clock_advance_ms(200);
+    CHECK_EQ(keypad_scan(), '\0');
+}
+
 static void test_keypad_distinct_key_within_debounce_rejected(void) {
     setup();
 
@@ -128,6 +152,7 @@ static void test_keypad_no_press_returns_null(void) {
 static const test_case_t k_keypad_tests[] = {
     TEST_CASE(test_keypad_distinct_key_accepted_once),
     TEST_CASE(test_keypad_same_key_after_release),
+    TEST_CASE(test_keypad_same_key_midpress_bounce_rejected),
     TEST_CASE(test_keypad_distinct_key_within_debounce_rejected),
     TEST_CASE(test_keypad_no_press_returns_null),
 };
