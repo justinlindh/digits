@@ -67,11 +67,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	t.Logf("Generated pairing code: %s", code)
 
 	// Step 2: Verify not yet paired
-	paired, err := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired before claim: %v", err)
-	}
-	if paired {
+	if isPaired(t, pairingStore, "e2e-test-hw-001") {
 		t.Fatal("phone should not be paired yet")
 	}
 
@@ -88,11 +84,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	}
 
 	// Step 4: Verify paired
-	paired, err = pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired after claim: %v", err)
-	}
-	if !paired {
+	if !isPaired(t, pairingStore, "e2e-test-hw-001") {
 		t.Fatal("phone should be paired after claim")
 	}
 
@@ -121,8 +113,8 @@ func TestE2EPairingFlow(t *testing.T) {
 	}
 
 	// Step 9: Verify both phones paired
-	paired1, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	paired2, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-002")
+	paired1 := isPaired(t, pairingStore, "e2e-test-hw-001")
+	paired2 := isPaired(t, pairingStore, "e2e-test-hw-002")
 	if !paired1 || !paired2 {
 		t.Fatalf("both phones should be paired: hw-001=%v, hw-002=%v", paired1, paired2)
 	}
