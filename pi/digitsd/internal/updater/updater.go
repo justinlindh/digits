@@ -157,39 +157,47 @@ func (u *Updater) CheckVersion(targetPi, targetFW string) (*CheckResult, error) 
 
 	result := &CheckResult{}
 
-	// Resolve Pi target
-	piTarget := targetPi
-	if piTarget == "" {
-		piTarget = idx.Pi.Latest
+	piRel, err := resolveTargetRelease("pi", targetPi, u.cfg.CurrentPiVersion, idx.Pi)
+	if err != nil {
+		return nil, err
 	}
-	if piTarget != "" && piTarget != u.cfg.CurrentPiVersion {
-		rel, ok := idx.Pi.Releases[piTarget]
-		if !ok {
-			return nil, fmt.Errorf("pi version %s not found in release index", piTarget)
-		}
+	if piRel != nil {
 		result.PiAvailable = true
-		result.PiVersion = rel.Version
-		result.PiSHA256 = rel.SHA256
-		result.PiURL = rel.URL
+		result.PiVersion = piRel.Version
+		result.PiSHA256 = piRel.SHA256
+		result.PiURL = piRel.URL
 	}
 
-	// Resolve FW target
-	fwTarget := targetFW
-	if fwTarget == "" {
-		fwTarget = idx.Firmware.Latest
+	fwRel, err := resolveTargetRelease("firmware", targetFW, u.cfg.CurrentFWVersion, idx.Firmware)
+	if err != nil {
+		return nil, err
 	}
-	if fwTarget != "" && fwTarget != u.cfg.CurrentFWVersion {
-		rel, ok := idx.Firmware.Releases[fwTarget]
-		if !ok {
-			return nil, fmt.Errorf("firmware version %s not found in release index", fwTarget)
-		}
+	if fwRel != nil {
 		result.FWAvailable = true
-		result.FWVersion = rel.Version
-		result.FWSHA256 = rel.SHA256
-		result.FWURL = rel.URL
+		result.FWVersion = fwRel.Version
+		result.FWSHA256 = fwRel.SHA256
+		result.FWURL = fwRel.URL
 	}
 
 	return result, nil
+}
+
+// resolveTargetRelease picks the release a component should move to. An empty
+// target means "use the component's Latest". Returns (nil, nil) when no update
+// is needed (no target known, or the resolved target equals current). Returns
+// an error only when an explicit target is set but missing from the index.
+func resolveTargetRelease(label, target, current string, comp ComponentIndex) (*Release, error) {
+	if target == "" {
+		target = comp.Latest
+	}
+	if target == "" || target == current {
+		return nil, nil
+	}
+	rel, ok := comp.Releases[target]
+	if !ok {
+		return nil, fmt.Errorf("%s version %s not found in release index", label, target)
+	}
+	return rel, nil
 }
 
 // Download downloads an artifact from a URL, verifies SHA256, and writes it
