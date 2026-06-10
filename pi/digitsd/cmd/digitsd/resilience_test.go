@@ -248,3 +248,33 @@ func TestNextReconnectBackoff(t *testing.T) {
 		}
 	}
 }
+
+func TestCurrentSigReturnsActiveClientUnderLock(t *testing.T) {
+	a := sigclient.NewClient("ws://127.0.0.1:0/a", "n", "hw", "tok")
+	b := sigclient.NewClient("ws://127.0.0.1:0/b", "n", "hw", "tok")
+	d := &daemonCallbacks{sig: a}
+
+	if got := d.currentSig(); got != a {
+		t.Fatalf("currentSig() = %p, want %p", got, a)
+	}
+
+	// Concurrent reader + writer: with -race this asserts the accessor and the
+	// reconnect-style writer agree on d.mu so the swap is not a data race.
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 1000; i++ {
+			_ = d.currentSig()
+		}
+		close(done)
+	}()
+	for i := 0; i < 1000; i++ {
+		d.mu.Lock()
+		d.sig = b
+		d.mu.Unlock()
+	}
+	<-done
+
+	if got := d.currentSig(); got != b {
+		t.Fatalf("currentSig() after swap = %p, want %p", got, b)
+	}
+}

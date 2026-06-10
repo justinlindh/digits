@@ -1,10 +1,14 @@
 package updater
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
+	"time"
 )
 
 func newTestServer(idx ReleaseIndex) *httptest.Server {
@@ -143,5 +147,62 @@ func TestCheckVersion_UnknownVersion(t *testing.T) {
 	_, err := u.CheckVersion("9.9.9", "")
 	if err == nil {
 		t.Error("expected error for unknown version")
+	}
+}
+
+func TestDownload_VerifiesAndWrites(t *testing.T) {
+	body := []byte("digitsd-binary-payload")
+	sum := sha256.Sum256(body)
+	wantSHA := hex.EncodeToString(sum[:])
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	u := New(Config{ServerBaseURL: srv.URL, StagingDir: t.TempDir()})
+
+	dest, err := u.Download(srv.URL+"/artifact", "digitsd", wantSHA)
+	if err != nil {
+		t.Fatalf("Download() error: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read downloaded file: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("downloaded content = %q, want %q", got, body)
+	}
+}
+
+func TestDownload_StalledBodyHitsDeadline(t *testing.T) {
+	// Server sends headers then stalls forever without sending the body. The
+	// per-request context deadline must abort the download instead of blocking
+	// io.Copy indefinitely.
+	block := make(chan struct{})
+	// srv.Close() (deferred first, so runs last) waits for in-flight handlers;
+	// unblock the handler before that by deferring close(block) afterwards so
+	// LIFO runs it first.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1024")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-block // never send the body until the test unblocks on cleanup
+	}))
+	defer srv.Close()
+	defer close(block)
+
+	u := New(Config{ServerBaseURL: srv.URL, StagingDir: t.TempDir()})
+	u.downloadTimeout = 200 * time.Millisecond
+
+	start := time.Now()
+	_, err := u.Download(srv.URL+"/artifact", "digitsd", "")
+	if err == nil {
+		t.Fatal("expected error from stalled download, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Download took %v; deadline was not enforced", elapsed)
 	}
 }
