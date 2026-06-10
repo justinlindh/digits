@@ -19,14 +19,11 @@ set -euo pipefail
 
 # -- helpers ------------------------------------------------------------------
 
-die() { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "==> $*"; }
-
-require_cmd() {
-    for cmd in "$@"; do
-        command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
-    done
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Shared die/info/warn (see pi/image/lib/log.sh).
+# shellcheck source=lib/log.sh
+. "${SCRIPT_DIR}/lib/log.sh"
+# require_cmd comes from pi/image/lib/log.sh, sourced above.
 
 USING_KPARTX=false
 

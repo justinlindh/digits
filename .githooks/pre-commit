@@ -1,9 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+REPO_ROOT=$(git rev-parse --show-toplevel)
+FAILED=0
+
+# ── shellcheck staged shell scripts ───────────────────────────────────────────
+# Mirrors the Shellcheck CI gate (.github/workflows/shellcheck-ci.yml): same
+# -S warning -x severity, scoped to the tools/, scripts/, and pi/image/ trees.
+# Only the files this commit touches are checked. Skips gracefully (never
+# blocks the commit) when shellcheck is not installed.
+if command -v shellcheck &>/dev/null; then
+    SHELL_FILES=()
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        # Only files under the CI-covered trees. In a case glob, * spans /,
+        # so pi/image/*.sh already covers lib/ and initramfs/ at any depth.
+        case "$f" in
+            pi/image/rootfs-overlay/*.sh|pi/image/rootfs-overlay/*)
+                # rootfs-overlay holds no-extension executables in several
+                # shells plus one Python script shellcheck cannot parse, so
+                # select by shebang.
+                [ -f "$REPO_ROOT/$f" ] && head -1 "$REPO_ROOT/$f" | grep -qE '^#!.*(bash|/bin/sh|busybox sh)' \
+                    && SHELL_FILES+=("$f") ;;
+            tools/*.sh|scripts/*.sh|pi/image/*.sh)
+                SHELL_FILES+=("$f") ;;
+        esac
+    done < <(git diff --cached --name-only --diff-filter=ACM)
+
+    if [ "${#SHELL_FILES[@]}" -gt 0 ]; then
+        echo "shellcheck: ${#SHELL_FILES[@]} staged shell file(s)..."
+        if ! (cd "$REPO_ROOT" && shellcheck -S warning -x "${SHELL_FILES[@]}"); then
+            FAILED=1
+        fi
+    fi
+else
+    echo "warning: shellcheck not installed, skipping shell lint check"
+    echo "  install: https://github.com/koalaman/shellcheck#installing"
+fi
+
+# ── golangci-lint staged Go files ─────────────────────────────────────────────
 if ! command -v golangci-lint &>/dev/null; then
     echo "warning: golangci-lint not installed, skipping lint check"
     echo "  install: https://golangci-lint.run/docs/welcome/install/"
+    [ "$FAILED" -ne 0 ] && exit 1
     exit 0
 fi
 
@@ -11,11 +50,9 @@ fi
 STAGED_GO_FILES=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
 
 if [ -z "$STAGED_GO_FILES" ]; then
+    [ "$FAILED" -ne 0 ] && exit 1
     exit 0
 fi
-
-REPO_ROOT=$(git rev-parse --show-toplevel)
-FAILED=0
 
 # Determine which modules have staged Go files
 MODULES=""

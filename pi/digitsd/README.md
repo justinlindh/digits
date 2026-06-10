@@ -71,14 +71,11 @@ Requires supplementary groups: `dialout` (serial), `audio` (ALSA), `gpio`, `i2c`
 
 ## Debug utilities
 
-The `cmd/` directory contains additional binaries for hardware debugging and latency profiling. These are not built by default and are not deployed to devices.
+The `cmd/` directory contains additional binaries for hardware debugging and latency profiling. These are not built by default and are not deployed to devices. See `cmd/README.md` for what each is for.
 
 | Binary | Purpose |
 |--------|---------|
 | `alsatest` | 440 Hz ALSA playback test |
-| `clocksync` | One-way clock offset measurement between hosts |
 | `dmixlat` | ALSA output latency via `snd_pcm_delay()` |
-| `latbench` | End-to-end Opus encode/decode/playback latency |
 | `latclient` | WebRTC call latency measurement |
 | `memprofile` | WebRTC peer connection memory profiling |
-| `pipetest` | Opus pipeline throughput test |

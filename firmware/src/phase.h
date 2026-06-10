@@ -1,5 +1,5 @@
-#ifndef PHASE_H
-#define PHASE_H
+#ifndef DIGITS_PHASE_H
+#define DIGITS_PHASE_H
 
 #include <stdint.h>
 
@@ -19,4 +19,4 @@ uint8_t phase_read(void);
 // Write a new phase byte to flash. No-op if value matches current contents.
 void phase_write(uint8_t value);
 
-#endif  // PHASE_H
+#endif  // DIGITS_PHASE_H

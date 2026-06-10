@@ -504,6 +504,10 @@ func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Request) {
+	ln := h.requireLineOwnership(w, r, r.PathValue("number"))
+	if ln == nil {
+		return
+	}
 	if !parseForm(w, r) {
 		return
 	}
@@ -512,27 +516,35 @@ func (h *Handler) handlePhoneVoiceStylePost(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "missing voice_style", http.StatusBadRequest)
 		return
 	}
-	h.updateLineSetting(w, r, "voice-style-section", "am-voice-style-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, ln, "voice-style-section", "am-voice-style-section", func(s *line.Settings) {
 		s.VoiceStyle = raw
 	})
 }
 
 func (h *Handler) handlePhoneSilentModePost(w http.ResponseWriter, r *http.Request) {
+	ln := h.requireLineOwnership(w, r, r.PathValue("number"))
+	if ln == nil {
+		return
+	}
 	if !parseForm(w, r) {
 		return
 	}
 	silent := strings.TrimSpace(r.FormValue("silent_mode")) == "on"
-	h.updateLineSetting(w, r, "silent-mode-section", "am-silent-mode-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, ln, "silent-mode-section", "am-silent-mode-section", func(s *line.Settings) {
 		s.SilentMode = silent
 	})
 }
 
 func (h *Handler) handlePhoneAutoUpdatePost(w http.ResponseWriter, r *http.Request) {
+	ln := h.requireLineOwnership(w, r, r.PathValue("number"))
+	if ln == nil {
+		return
+	}
 	if !parseForm(w, r) {
 		return
 	}
 	autoUpdate := strings.TrimSpace(r.FormValue("auto_update")) == "on"
-	h.updateLineSetting(w, r, "auto-update-section", "am-auto-update-section", func(s *line.Settings) {
+	h.updateLineSetting(w, r, ln, "auto-update-section", "am-auto-update-section", func(s *line.Settings) {
 		s.AutoUpdate = autoUpdate
 	})
 }
@@ -677,17 +689,13 @@ func parseClampedInt(w http.ResponseWriter, r *http.Request, name string, min, m
 	return v, true
 }
 
-// updateLineSetting applies a mutation to the Settings of the line identified
-// by the {number} path value, persists and pushes it if anything changed, and
-// then renders the theme-appropriate partial (or redirects to the phone detail
-// page for non-htmx callers). Handlers are expected to have already called
-// ParseForm and extracted the field they need before invoking this helper.
-func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, intercom, am string, mutate func(*line.Settings)) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
+// updateLineSetting applies a mutation to the Settings of ln, persists and
+// pushes it if anything changed, and then renders the theme-appropriate
+// partial (or redirects to the phone detail page for non-htmx callers).
+// Handlers are expected to have already verified ownership (ln comes from
+// requireLineOwnership), then called ParseForm and extracted the field they
+// need before invoking this helper.
+func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, ln *line.Line, intercom, am string, mutate func(*line.Settings)) {
 	next := ln.Settings
 	mutate(&next)
 	next = next.Normalize()
@@ -700,7 +708,7 @@ func (h *Handler) updateLineSetting(w http.ResponseWriter, r *http.Request, inte
 		}{Line: *ln})
 		return
 	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	http.Redirect(w, r, "/phones/"+ln.Number, http.StatusSeeOther)
 }
 
 // applyLineSettings persists `next` and pushes it to the connected device if

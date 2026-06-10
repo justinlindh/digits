@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
+#include "pico/stdlib.h"
+#include "pico/time.h"
+
 #include "board.h"
 #include "hook.h"
 #include "keypad.h"
@@ -32,11 +37,6 @@ static void fsm_led_set(led_mode_t mode) {
     }
     led_set_mode(mode);
 }
-
-#include "hardware/watchdog.h"
-#include "pico/bootrom.h"
-#include "pico/stdlib.h"
-#include "pico/time.h"
 
 #define DIAL_DIGITS_REQUIRED 7
 #define DIAL_TIMEOUT_MS 15000        // 15s between digits before partial dial → off-hook timeout
@@ -178,7 +178,7 @@ static void process_pi_command(const char *cmd) {
         set_state(PHONE_STATE_RINGING);
         ringer_start_pattern(pat);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
-        // Direct hardware test — bypass FSM entirely.
+        // Direct hardware test: bypass FSM entirely.
         // Drives ringer + LED regardless of hook state.
         ringer_start();
         fsm_led_set(LED_MODE_BLINK);
@@ -543,22 +543,6 @@ void phone_fsm_update(void) {
     led_update();
     tone_update();
     ringer_update();
-}
-
-void phone_fsm_reset(void) {
-    s_keytest_mode = false;
-    set_state(PHONE_STATE_IDLE);
-}
-
-void phone_fsm_set_keytest(bool enable) {
-    s_keytest_mode = enable;
-    if (enable) {
-        set_state(PHONE_STATE_IDLE);
-    }
-}
-
-bool phone_fsm_is_keytest(void) {
-    return s_keytest_mode;
 }
 
 phone_state_t phone_fsm_get_state(void) {

@@ -94,7 +94,7 @@ func TestExtract_SkipsWhenMarkerMatches(t *testing.T) {
 // Regression: a rebuild under the same version string but with different
 // embedded content must re-extract. Before the content-hash marker, the
 // extractor skipped because the version string matched, leaving stale
-// files (e.g. an old digits-mixer.service) on disk forever.
+// files (e.g. a renamed or removed overlay unit) on disk forever.
 func TestExtract_ReExtractsWhenContentChangesUnderSameVersion(t *testing.T) {
 	root := t.TempDir()
 	dataDir := t.TempDir()

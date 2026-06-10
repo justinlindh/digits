@@ -32,30 +32,30 @@
 # Output: digits-pi-YYYYMMDD.img.gz in the current directory.
 set -euo pipefail
 
-die()  { echo "ERROR: $*" >&2; exit 1; }
-warn() { echo "WARNING: $*" >&2; }
-info() { echo "==> $*"; }
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CACHE_VOLUME="digits-image-cache"
 
-# Parse args
+# Shared die/info/warn (see pi/image/lib/log.sh). This script runs on the
+# host, where the whole repo is present.
+# shellcheck source=lib/log.sh
+. "${SCRIPT_DIR}/lib/log.sh"
+
+# Parse args: leading flags, then an optional positional base image.
+# Same while+case shape as build-image.sh, entrypoint.sh, and init-data.sh.
 BUILD_FLAGS=()
-SOURCE_IMAGE=""
-for arg in "$@"; do
-    case "$arg" in
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
         --dev|--pcb)
-            BUILD_FLAGS+=("$arg")
-            ;;
-        --*)
-            die "Unknown flag: $arg"
+            BUILD_FLAGS+=("$1")
             ;;
         *)
-            SOURCE_IMAGE="$arg"
+            die "Unknown flag: $1"
             ;;
     esac
+    shift
 done
+SOURCE_IMAGE="${1:-}"
 
 # Generate embedded assets on the host (avoids root-owned files from Docker).
 # make embed populates rootfs overlay, tones, and mixer state regardless of

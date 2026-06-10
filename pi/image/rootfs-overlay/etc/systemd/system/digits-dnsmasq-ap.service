@@ -1,6 +1,6 @@
 [Unit]
 Description=Digits AP mode DHCP/DNS (dnsmasq)
-Documentation=https://github.com/digits/digits
+Documentation=https://github.com/justinlindh/digits
 After=digits-ap.service
 Requires=digits-ap.service
 
