@@ -33,6 +33,11 @@ type signalController interface {
 	HandleConferenceRejected(confID, reason string)
 }
 
+// Compile-time check that the real controller satisfies the dispatch's view
+// of it, so a future signature drift fails here rather than only at the
+// cb.ctrlSignal assignment in main().
+var _ signalController = (*phone.Controller)(nil)
+
 // handleSignal routes a single inbound signaling message to its handler.
 // It is the body of what used to be the inline switch in main()'s event
 // loop: same case ordering, same locking, same logging. The loop now reads a

@@ -25,7 +25,6 @@ type fakeController struct {
 	contactSetN    int
 	callReturnNum  string
 	callReturnRing string
-	resetCount     int
 	confMember     []confMemberCall
 	confConnect    []confConnectCall
 	confLeave      []confLeaveCall
@@ -71,11 +70,11 @@ func (f *fakeController) SetCallReturnNumber(number string) {
 	f.callReturnNum = number
 }
 
-func (f *fakeController) ResetToDialtone() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.resetCount++
-}
+// ResetToDialtone is a no-op fake: the dispatch paths that call it (the
+// empty / cancelled call-return arms) do so from a spawned goroutine guarded
+// by a State() check, and no test drives that goroutine, so there is nothing
+// to record. It exists only to satisfy signalController.
+func (f *fakeController) ResetToDialtone() {}
 
 func (f *fakeController) HandleCallReturnRing(target string) {
 	f.mu.Lock()
