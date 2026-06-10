@@ -342,6 +342,26 @@ detach_loop() {
     fi
 }
 
+# Prepare $ROOTFS_MNT for chroot: install the qemu interpreter and bind the
+# pseudo-filesystems chrooted commands expect.
+chroot_setup() {
+    cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
+    mount -t proc proc "${ROOTFS_MNT}/proc"
+    mount -t sysfs sys "${ROOTFS_MNT}/sys"
+    mount --bind /dev "${ROOTFS_MNT}/dev"
+    mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
+    mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+}
+
+# Undo chroot_setup. Callers must not invoke this with an empty/unset
+# ROOTFS_MNT (the cleanup trap has its own guarded unmount loop).
+chroot_teardown() {
+    for mp in dev/pts dev/shm dev proc sys; do
+        umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
+    done
+    rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
+}
+
 trap cleanup EXIT
 
 # ── host-side helper: add user to passwd/shadow/group ────────────────────────
@@ -567,15 +587,7 @@ mount "$P4" "$DATA_MNT"
 
 info "Preparing chroot environment (for apt-get operations only)..."
 
-# Copy qemu-user-static into the chroot
-cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
-
-# Mount necessary filesystems for chroot
-mount -t proc proc "${ROOTFS_MNT}/proc"
-mount -t sysfs sys "${ROOTFS_MNT}/sys"
-mount --bind /dev "${ROOTFS_MNT}/dev"
-mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
-mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+chroot_setup
 
 # Prevent services from starting during chroot operations
 cat > "${ROOTFS_MNT}/usr/sbin/policy-rc.d" << 'POLICY'
@@ -617,12 +629,8 @@ chroot "$ROOTFS_MNT" /bin/bash -c "
 
 info "Tearing down chroot (all remaining work is host-side)..."
 
-for mp in dev/pts dev/shm dev proc sys; do
-    umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
-done
-
+chroot_teardown
 rm -f "${ROOTFS_MNT}/usr/sbin/policy-rc.d"
-rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
 
 # Restore resolv.conf (will be replaced with NM symlink later)
 if [[ -f "${ROOTFS_MNT}/etc/resolv.conf.bak" ]]; then
@@ -928,12 +936,7 @@ install -m 755 "$BOOT_CHECK_SRC"   "${ROOTFS_MNT}/etc/initramfs-tools/scripts/in
 install -m 755 "$RECOVERY_ROOT_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom/recovery-root"
 
 # Set up chroot for tool path resolution, library copying, and initramfs rebuild
-cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
-mount -t proc proc "${ROOTFS_MNT}/proc"
-mount -t sysfs sys "${ROOTFS_MNT}/sys"
-mount --bind /dev "${ROOTFS_MNT}/dev"
-mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
-mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+chroot_setup
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
@@ -1136,10 +1139,7 @@ ln -sf /run "${RECOVERY_MNT}/var/run"
 info "  Rebuilding initramfs (chroot)..."
 chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
 
-for mp in dev/pts dev/shm dev proc sys; do
-    umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
-done
-rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
+chroot_teardown
 
 info "  Unmounting recovery partition..."
 umount "$RECOVERY_MNT"
