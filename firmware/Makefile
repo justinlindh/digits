@@ -13,7 +13,7 @@ DOCKER_BUILD_DIR = build/docker
 DIGITS_VERSION ?= $(shell git describe --tags --always --dirty --match 'fw/v*' 2>/dev/null | sed 's|^fw/v||')
 DIGITS_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
-.PHONY: build build-local builder clean
+.PHONY: build build-local builder test clean
 
 builder:
 	@docker build -q -t $(BUILDER_IMG) -f Dockerfile.builder .
@@ -30,5 +30,12 @@ build: builder
 build-local:
 	@$(REPO_ROOT)/scripts/build.sh
 
+# Host-side unit tests for the pure-logic modules (hook, keypad, uart_proto,
+# phone_fsm). Native build, no Pico SDK and no cross toolchain required.
+test:
+	@cmake -S test -B test/build >/dev/null
+	@cmake --build test/build
+	@./test/build/fw_tests
+
 clean:
-	rm -rf build
+	rm -rf build test/build

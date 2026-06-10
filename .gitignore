@@ -1,5 +1,6 @@
 # Build output
 firmware/build/
+firmware/test/build/
 tools/build/
 artifacts/*
 
