@@ -1,0 +1,57 @@
+name: Shellcheck CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - 'scripts/**'
+      - 'pi/image/**'
+      - '.github/workflows/shellcheck-ci.yml'
+  pull_request:
+    paths:
+      - 'tools/**'
+      - 'scripts/**'
+      - 'pi/image/**'
+      - '.github/workflows/shellcheck-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          set -euo pipefail
+
+          # Collect the shell scripts to lint. The .sh-suffixed scripts under
+          # tools/, scripts/, and pi/image/ are explicit. The executables in
+          # pi/image/rootfs-overlay have no extension and mix shells, so select
+          # them by shebang and exclude the one Python script
+          # (digits-pico-monitor, which shellcheck cannot parse).
+          mapfile -t files < <(
+            ls tools/*.sh scripts/*.sh pi/image/*.sh pi/image/initramfs/*.sh 2>/dev/null
+            grep -rIlE '^#!.*(bash|/bin/sh|busybox sh)' pi/image/rootfs-overlay/ 2>/dev/null || true
+          )
+
+          printf 'Linting %d files:\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+
+          # -S warning: fail on warning and above. Pre-existing info-level
+          # findings in untouched scripts are allowed (documented in the PR).
+          # -x: follow `source`d files so the shared pi/image/lib/log.sh
+          # helpers resolve instead of tripping SC1091.
+          shellcheck -S warning -x "${files[@]}"
