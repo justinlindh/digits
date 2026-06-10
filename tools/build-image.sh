@@ -258,11 +258,7 @@ else
     OUTPUT_NAME="digits-pi-v1-${DATE_STAMP}.img"
 fi
 
-require_cmd() {
-    for cmd in "$@"; do
-        command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
-    done
-}
+# require_cmd comes from pi/image/lib/log.sh, sourced above.
 
 # ── cleanup ──────────────────────────────────────────────────────────────────
 
