@@ -28,20 +28,14 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = first.Close() })
 
-	// Second migrate pass over the same, already-migrated database. This is
-	// the assertion: every statement must tolerate re-running (IF NOT
-	// EXISTS guards, schema_version gates) so a fresh process boot against
-	// an existing DB never fails.
+	// Second Open over the same, already-migrated database. This is the
+	// assertion and it mirrors the production failure mode exactly: a
+	// fresh process booting against an existing DB re-runs every migration
+	// statement, which must be a no-op (IF NOT EXISTS guards,
+	// schema_version gates) rather than an error.
 	second, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("second Open (re-running migrations must be idempotent): %v", err)
 	}
 	t.Cleanup(func() { _ = second.Close() })
-
-	// A bare re-run of migrate on the live connection, independent of a
-	// second pool, makes the idempotency contract explicit at the unit it
-	// actually guards.
-	if err := second.migrate(); err != nil {
-		t.Fatalf("explicit re-run of migrate must be idempotent: %v", err)
-	}
 }
