@@ -18,10 +18,15 @@ static void feed(const char *s) {
     fake_uart_rx_push(s, (unsigned)strlen(s));
 }
 
-static void test_uart_single_line(void) {
+// Clean RX queue and proto state before each test.
+static void setup(void) {
     fake_env_reset();
     fake_uart_rx_reset();
     uart_proto_init();
+}
+
+static void test_uart_single_line(void) {
+    setup();
 
     feed("RING:START\n");
     const char *line = uart_proto_recv();
@@ -32,9 +37,7 @@ static void test_uart_single_line(void) {
 }
 
 static void test_uart_multiple_lines_one_buffer(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     feed("PING\nSTATE?\nLED:ON\n");
     CHECK_STREQ(uart_proto_recv(), "PING");
@@ -44,9 +47,7 @@ static void test_uart_multiple_lines_one_buffer(void) {
 }
 
 static void test_uart_crlf_and_blank_lines_skipped(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     // CRLF terminators and stray blank lines must not produce empty tokens.
     feed("PING\r\n\r\n\nPONG\r\n");
@@ -56,9 +57,7 @@ static void test_uart_crlf_and_blank_lines_skipped(void) {
 }
 
 static void test_uart_partial_then_completed(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     // A line can arrive in fragments across multiple recv() calls; recv()
     // returns NULL until the terminator shows up.
@@ -71,9 +70,7 @@ static void test_uart_partial_then_completed(void) {
 }
 
 static void test_uart_overflow_discarded_and_resyncs(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     // Build a line longer than PROTO_MAX_LINE (128) with no terminator, then
     // terminate it, then send a clean command. The oversized line must be
@@ -94,9 +91,7 @@ static void test_uart_overflow_discarded_and_resyncs(void) {
 }
 
 static void test_uart_max_length_line_fits(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     // Exactly PROTO_MAX_LINE-1 (127) payload bytes is the largest line that
     // fits without tripping overflow.
@@ -115,9 +110,7 @@ static void test_uart_max_length_line_fits(void) {
 }
 
 static void test_uart_inject_takes_priority(void) {
-    fake_env_reset();
-    fake_uart_rx_reset();
-    uart_proto_init();
+    setup();
 
     // An injected console command is returned before UART bytes.
     feed("FROM_UART\n");
@@ -126,20 +119,14 @@ static void test_uart_inject_takes_priority(void) {
     CHECK_STREQ(uart_proto_recv(), "FROM_UART");
 }
 
-#define T(fn) {#fn, fn}
 static const test_case_t k_uart_tests[] = {
-    T(test_uart_single_line),
-    T(test_uart_multiple_lines_one_buffer),
-    T(test_uart_crlf_and_blank_lines_skipped),
-    T(test_uart_partial_then_completed),
-    T(test_uart_overflow_discarded_and_resyncs),
-    T(test_uart_max_length_line_fits),
-    T(test_uart_inject_takes_priority),
+    TEST_CASE(test_uart_single_line),
+    TEST_CASE(test_uart_multiple_lines_one_buffer),
+    TEST_CASE(test_uart_crlf_and_blank_lines_skipped),
+    TEST_CASE(test_uart_partial_then_completed),
+    TEST_CASE(test_uart_overflow_discarded_and_resyncs),
+    TEST_CASE(test_uart_max_length_line_fits),
+    TEST_CASE(test_uart_inject_takes_priority),
 };
-#undef T
 
-const test_case_t *uart_tests(int *count);
-const test_case_t *uart_tests(int *count) {
-    *count = (int)(sizeof(k_uart_tests) / sizeof(k_uart_tests[0]));
-    return k_uart_tests;
-}
+DEFINE_SUITE(uart)

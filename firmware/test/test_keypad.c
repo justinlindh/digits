@@ -7,18 +7,11 @@
 // the last-key latch so the same key can be pressed again.
 //
 // The fake V2 profile uses rows GP{2,3,4,5} and cols GP{6,7,8}, num_cols=3,
-// with the standard 4x3 telephone keychars. A pressed key (row, col) is
-// modeled by holding that column LOW while the matching row is driven LOW.
-// Because keypad_scan_raw() drives one row low at a time and restores it high,
-// we model a held key as: column C is LOW. That reports a press in EVERY row
-// that is scanned, so to pin down a specific key we instead drive the column
-// low only while its row is selected. The fake can't see which row is active
-// mid-scan, so we emulate a single held key by setting the column low; the
-// last row scanned with that column low wins. To get deterministic keys we
-// press keys whose column is unique per intended row by toggling the column
-// around the scan. Simpler and faithful: hold a column low and accept that the
-// reported char is the bottom-most row sharing that column. We use that mapping
-// explicitly below.
+// with the standard 4x3 telephone keychars. We model a held key by holding one
+// column LOW. keypad_scan_raw() drives each row low in turn and reads that
+// column low for every row, so the reported char is the bottom-most row sharing
+// the column (row 3): col0='*', col1='0', col2='#'. held_key_for_col() below
+// encodes that mapping.
 
 #include "test_harness.h"
 
@@ -53,14 +46,18 @@ static void hold_col(int col) {
     fake_gpio_set_level(col, false);
 }
 
-static void test_keypad_distinct_key_accepted_once(void) {
+// Fresh keypad on the V2 profile with all keys released, then advance past the
+// debounce window so the first press is eligible.
+static void setup(void) {
     fake_env_reset();
     fake_board_use_v2();
     release_keys();
     keypad_init();
-
-    // Advance well past the debounce window so the first press is eligible.
     fake_clock_advance_ms(200);
+}
+
+static void test_keypad_distinct_key_accepted_once(void) {
+    setup();
 
     hold_col(COL1);  // '0'
     char k = keypad_scan();
@@ -73,11 +70,7 @@ static void test_keypad_distinct_key_accepted_once(void) {
 }
 
 static void test_keypad_same_key_after_release(void) {
-    fake_env_reset();
-    fake_board_use_v2();
-    release_keys();
-    keypad_init();
-    fake_clock_advance_ms(200);
+    setup();
 
     hold_col(COL0);  // '*'
     CHECK_EQ(keypad_scan(), '*');
@@ -93,11 +86,7 @@ static void test_keypad_same_key_after_release(void) {
 }
 
 static void test_keypad_distinct_key_within_debounce_rejected(void) {
-    fake_env_reset();
-    fake_board_use_v2();
-    release_keys();
-    keypad_init();
-    fake_clock_advance_ms(200);
+    setup();
 
     // Accept '0'.
     hold_col(COL1);
@@ -117,11 +106,7 @@ static void test_keypad_distinct_key_within_debounce_rejected(void) {
 }
 
 static void test_keypad_no_press_returns_null(void) {
-    fake_env_reset();
-    fake_board_use_v2();
-    release_keys();
-    keypad_init();
-    fake_clock_advance_ms(200);
+    setup();
 
     for (int i = 0; i < 5; ++i) {
         CHECK_EQ(keypad_scan(), '\0');
@@ -129,17 +114,11 @@ static void test_keypad_no_press_returns_null(void) {
     }
 }
 
-#define T(fn) {#fn, fn}
 static const test_case_t k_keypad_tests[] = {
-    T(test_keypad_distinct_key_accepted_once),
-    T(test_keypad_same_key_after_release),
-    T(test_keypad_distinct_key_within_debounce_rejected),
-    T(test_keypad_no_press_returns_null),
+    TEST_CASE(test_keypad_distinct_key_accepted_once),
+    TEST_CASE(test_keypad_same_key_after_release),
+    TEST_CASE(test_keypad_distinct_key_within_debounce_rejected),
+    TEST_CASE(test_keypad_no_press_returns_null),
 };
-#undef T
 
-const test_case_t *keypad_tests(int *count);
-const test_case_t *keypad_tests(int *count) {
-    *count = (int)(sizeof(k_keypad_tests) / sizeof(k_keypad_tests[0]));
-    return k_keypad_tests;
-}
+DEFINE_SUITE(keypad)

@@ -206,23 +206,15 @@ static void test_hook_force_and_release_resync(void) {
     CHECK_EQ(hook_get_event(), HOOK_EVENT_OFF);
 }
 
-void register_hook_tests(void);
-
-#define T(fn) {#fn, fn}
 static const test_case_t k_hook_tests[] = {
-    T(test_hook_debounce_requires_stable_window),
-    T(test_hook_flash_disabled_is_instant_hangup),
-    T(test_hook_flash_in_window_emits_flash),
-    T(test_hook_short_pulse_suppressed_as_bounce),
-    T(test_hook_long_pulse_times_out_to_hangup),
-    T(test_hook_flash_disabled_midwindow_commits_on),
-    T(test_hook_invert_resyncs_state),
-    T(test_hook_force_and_release_resync),
+    TEST_CASE(test_hook_debounce_requires_stable_window),
+    TEST_CASE(test_hook_flash_disabled_is_instant_hangup),
+    TEST_CASE(test_hook_flash_in_window_emits_flash),
+    TEST_CASE(test_hook_short_pulse_suppressed_as_bounce),
+    TEST_CASE(test_hook_long_pulse_times_out_to_hangup),
+    TEST_CASE(test_hook_flash_disabled_midwindow_commits_on),
+    TEST_CASE(test_hook_invert_resyncs_state),
+    TEST_CASE(test_hook_force_and_release_resync),
 };
-#undef T
 
-const test_case_t *hook_tests(int *count);
-const test_case_t *hook_tests(int *count) {
-    *count = (int)(sizeof(k_hook_tests) / sizeof(k_hook_tests[0]));
-    return k_hook_tests;
-}
+DEFINE_SUITE(hook)

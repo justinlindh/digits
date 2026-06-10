@@ -242,26 +242,20 @@ static void test_fsm_state_name_mapping(void) {
     CHECK_STREQ(phone_fsm_state_name((phone_state_t)99), "UNKNOWN");
 }
 
-#define T(fn) {#fn, fn}
 static const test_case_t k_fsm_tests[] = {
-    T(test_buf_appendf_basic_concat),
-    T(test_buf_appendf_saturates_without_underflow),
-    T(test_buf_appendf_exact_truncation_boundary),
-    T(test_buf_appendf_zero_size_is_noop),
-    T(test_fsm_offhook_to_dialtone),
-    T(test_fsm_dialtone_to_dialing_on_key),
-    T(test_fsm_hangup_returns_to_idle),
-    T(test_fsm_ring_then_offhook_connects),
-    T(test_fsm_ring_stop_from_pi),
-    T(test_fsm_dialtone_timeout_to_busy),
-    T(test_fsm_reset_command_returns_idle),
-    T(test_fsm_idle_led_follows_phase),
-    T(test_fsm_state_name_mapping),
+    TEST_CASE(test_buf_appendf_basic_concat),
+    TEST_CASE(test_buf_appendf_saturates_without_underflow),
+    TEST_CASE(test_buf_appendf_exact_truncation_boundary),
+    TEST_CASE(test_buf_appendf_zero_size_is_noop),
+    TEST_CASE(test_fsm_offhook_to_dialtone),
+    TEST_CASE(test_fsm_dialtone_to_dialing_on_key),
+    TEST_CASE(test_fsm_hangup_returns_to_idle),
+    TEST_CASE(test_fsm_ring_then_offhook_connects),
+    TEST_CASE(test_fsm_ring_stop_from_pi),
+    TEST_CASE(test_fsm_dialtone_timeout_to_busy),
+    TEST_CASE(test_fsm_reset_command_returns_idle),
+    TEST_CASE(test_fsm_idle_led_follows_phase),
+    TEST_CASE(test_fsm_state_name_mapping),
 };
-#undef T
 
-const test_case_t *fsm_tests(int *count);
-const test_case_t *fsm_tests(int *count) {
-    *count = (int)(sizeof(k_fsm_tests) / sizeof(k_fsm_tests[0]));
-    return k_fsm_tests;
-}
+DEFINE_SUITE(fsm)

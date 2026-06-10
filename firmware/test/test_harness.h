@@ -19,7 +19,21 @@ typedef struct {
     test_fn_t fn;
 } test_case_t;
 
-// Filled in by the runner's REGISTER table; see test_main.c.
+// Table-entry shorthand: TEST_CASE(foo) expands to {"foo", foo}.
+#define TEST_CASE(fn) {#fn, fn}
+
+// Defines the suite accessor a per-module test file exposes to test_main.c. Use
+// after declaring `static const test_case_t k_<suite>_tests[]`, e.g.
+// DEFINE_SUITE(hook). The runner calls <suite>_tests(&count).
+#define DEFINE_SUITE(suite)                                            \
+    const test_case_t *suite##_tests(int *count);                      \
+    const test_case_t *suite##_tests(int *count) {                     \
+        *count = (int)(sizeof(k_##suite##_tests) /                     \
+                       sizeof(k_##suite##_tests[0]));                  \
+        return k_##suite##_tests;                                      \
+    }
+
+// Filled in by the runner; see test_main.c.
 extern int g_test_failures;
 extern int g_test_checks;
 
