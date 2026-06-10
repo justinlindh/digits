@@ -18,8 +18,8 @@
 
 #define FAKE_GPIO_COUNT 30
 
-// Reset the entire fake environment to a known state: clock at 0us, every GPIO
-// level low, every GPIO pull cleared. Call at the start of each test.
+// Reset the entire fake environment to a known state: clock at 0us and every
+// GPIO level low. Call at the start of each test.
 void fake_env_reset(void);
 
 // Virtual monotonic clock.
@@ -27,9 +27,10 @@ void fake_clock_advance_us(int64_t us);
 void fake_clock_advance_ms(int64_t ms);
 uint64_t fake_clock_now_us(void);
 
-// Raw GPIO level control. fake_gpio_set_level mirrors what the physical pin
-// would read; fake_gpio_get_level reports the last value the firmware drove on
-// an output pin (used to inspect ringer H-bridge phase).
+// Raw GPIO level access against a single shared level array. fake_gpio_set_level
+// sets the level a pin reads (an external source driving an input, or a test
+// asserting a starting level); fake_gpio_get_level reads it back, including a
+// level the firmware itself drove on an output pin.
 void fake_gpio_set_level(unsigned pin, bool high);
 bool fake_gpio_get_level(unsigned pin);
 
