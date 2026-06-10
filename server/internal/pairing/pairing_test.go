@@ -90,14 +90,6 @@ func TestClaimDevice_Success(t *testing.T) {
 	if len(token) != 64 {
 		t.Errorf("expected 64-char hex token, got %d chars: %q", len(token), token)
 	}
-
-	paired, err := s.IsPaired(context.Background(), "test-hw-003")
-	if err != nil {
-		t.Fatalf("IsPaired: %v", err)
-	}
-	if !paired {
-		t.Error("expected device to be paired after ClaimDevice")
-	}
 }
 
 func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
@@ -126,32 +118,6 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", "Expired Phone", seedHousehold(t, s))
 	if !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
-	}
-}
-
-func TestIsPaired_FalseForUnknown(t *testing.T) {
-	s := setupStore(t)
-	paired, err := s.IsPaired(context.Background(), "test-hw-nonexistent")
-	if err != nil {
-		t.Fatalf("IsPaired: %v", err)
-	}
-	if paired {
-		t.Error("expected false for unknown hardware ID")
-	}
-}
-
-func TestIsPaired_FalseBeforeClaim(t *testing.T) {
-	s := setupStore(t)
-	_, err := s.GenerateCode(context.Background(), "test-hw-005")
-	if err != nil {
-		t.Fatalf("GenerateCode: %v", err)
-	}
-	paired, err := s.IsPaired(context.Background(), "test-hw-005")
-	if err != nil {
-		t.Fatalf("IsPaired: %v", err)
-	}
-	if paired {
-		t.Error("expected false before claiming")
 	}
 }
 

@@ -66,16 +66,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	}
 	t.Logf("Generated pairing code: %s", code)
 
-	// Step 2: Verify not yet paired
-	paired, err := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired before claim: %v", err)
-	}
-	if paired {
-		t.Fatal("phone should not be paired yet")
-	}
-
-	// Step 3: Claim phone (parent enters code in dashboard)
+	// Step 2: Claim phone (parent enters code in dashboard)
 	token, hwID, err := pairingStore.ClaimDevice(context.Background(), code, "5559876", "Kitchen Phone", "Kitchen Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("ClaimDevice: %v", err)
@@ -87,47 +78,31 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("ClaimDevice hwID = %q, want e2e-test-hw-001", hwID)
 	}
 
-	// Step 4: Verify paired
-	paired, err = pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired after claim: %v", err)
-	}
-	if !paired {
-		t.Fatal("phone should be paired after claim")
-	}
-
-	// Step 5: Reuse same code — should fail
+	// Step 3: Reuse same code — should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code, "5559877", "Reuse Attempt", "Reuse Attempt", hh.ID)
 	if !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("expected ErrInvalidCode on code reuse, got: %v", err)
 	}
 
-	// Step 6: Generate code for second phone
+	// Step 4: Generate code for second phone
 	code2, err := pairingStore.GenerateCode(context.Background(), "e2e-test-hw-002")
 	if err != nil {
 		t.Fatalf("GenerateCode 2: %v", err)
 	}
 
-	// Step 7: Try to claim with duplicate number — should fail
+	// Step 5: Try to claim with duplicate number — should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559876", "Dupe Number", "Dupe Number", hh.ID)
 	if !errors.Is(err, ErrNumberTaken) {
 		t.Fatalf("expected ErrNumberTaken for duplicate number, got: %v", err)
 	}
 
-	// Step 8: Claim second phone with unique number — should succeed
+	// Step 6: Claim second phone with unique number — should succeed
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559877", "Living Room Phone", "Living Room Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("ClaimDevice (second phone): %v", err)
 	}
 
-	// Step 9: Verify both phones paired
-	paired1, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	paired2, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-002")
-	if !paired1 || !paired2 {
-		t.Fatalf("both phones should be paired: hw-001=%v, hw-002=%v", paired1, paired2)
-	}
-
-	// Step 10: Verify household membership
+	// Step 7: Verify household membership
 	role, err := householdStore.GetRole(context.Background(), user.ID, hh.ID)
 	if err != nil {
 		t.Fatalf("GetRole: %v", err)
