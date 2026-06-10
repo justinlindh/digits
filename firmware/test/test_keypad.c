@@ -2,9 +2,14 @@
 //
 // The matrix is scanned row by row: a row is driven LOW, then each column is
 // read; a pressed key pulls its column LOW. keypad_scan() returns a key once,
-// on a fresh distinct press, and only if KEYPAD_DEBOUNCE_MS (80ms) has elapsed
-// since the previous accepted press. Releasing all keys (no column low) resets
-// the last-key latch so the same key can be pressed again.
+// on the press edge. A held key produces no repeat. A release is confirmed only
+// after KEYPAD_DEBOUNCE_MS (80ms) of stable open, which rejects same-key
+// contact bounce (a brief mid-press open that re-closes inside the window never
+// confirms the release, so the re-close stays a held no-op). Once a release is
+// confirmed the latch clears and a fresh press of any key is accepted
+// immediately, so distinct-digit dialing is not throttled. A different key
+// arriving while one is still believed held is accepted only after the debounce
+// window since the last accept, rejecting electrical cross-talk.
 //
 // The fake V2 profile uses rows GP{2,3,4,5} and cols GP{6,7,8}, num_cols=3,
 // with the standard 4x3 telephone keychars. We model a held key by holding one
@@ -75,12 +80,18 @@ static void test_keypad_same_key_after_release(void) {
     hold_col(COL0);  // '*'
     CHECK_EQ(keypad_scan(), '*');
 
-    // Release: latch clears.
+    // Release. The release edge is only confirmed once the debounce window has
+    // elapsed since the accept, so scanning immediately keeps the key latched.
     release_keys();
     CHECK_EQ(keypad_scan(), '\0');
 
-    // Press the same key again after the debounce interval: accepted again.
-    fake_clock_advance_ms(200);
+    // Advance past the debounce window and scan again: now the release is
+    // confirmed and the latch clears.
+    fake_clock_advance_ms(100);
+    CHECK_EQ(keypad_scan(), '\0');
+
+    // Press the same key again: with the release confirmed it is a genuine new
+    // press and is accepted.
     hold_col(COL0);
     CHECK_EQ(keypad_scan(), '*');
 }
