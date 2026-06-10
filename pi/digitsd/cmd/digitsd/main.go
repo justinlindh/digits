@@ -97,11 +97,15 @@ var (
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
 type daemonCallbacks struct {
-	serial        *phone.SerialPort
-	sig           *sigclient.Client
-	mixer         *audio.Mixer
-	serviceCodes  *phone.ServiceCodeHandler
-	ctrl          *phone.Controller
+	serial       *phone.SerialPort
+	sig          *sigclient.Client
+	mixer        *audio.Mixer
+	serviceCodes *phone.ServiceCodeHandler
+	ctrl         *phone.Controller
+	// ctrlSignal is the controller seen by the signaling dispatch. It points
+	// at ctrl in the running daemon; tests inject a recording fake to verify
+	// routing without a real FSM, serial port, or audio path.
+	ctrlSignal    signalController
 	mu            sync.Mutex
 	peerMgr       *owebrtc.PeerManager
 	mesh          *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
@@ -156,6 +160,18 @@ type daemonCallbacks struct {
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+
+	// Signaling-dispatch dependencies owned by the run loop and wired once
+	// before the event loop starts. These are stable for the life of the
+	// daemon (set-once) and are read by handleSignal; flashCapable and
+	// pairingRefresh are shared by identity with the run loop so a reset or
+	// load in either place is seen by the other.
+	deviceID        string          // hardware device ID, reported on factory reset
+	serverURL       string          // effective signaling server URL
+	flashCapable    *atomic.Bool    // SWD-flash capability (shared with run loop)
+	requeryFirmware func()          // re-query Pico firmware version off the main loop
+	contactsCache   *contacts.Cache // local contact list cache
+	pairingRefresh  *time.Timer     // pairing-code refresh timer (shared with run loop)
 
 	// Voicemail state. voicemailStore is opened once at startup and is nil
 	// when the feature is disabled or initialization failed. recorder is the
@@ -2018,6 +2034,17 @@ func main() {
 		<-pairingRefresh.C
 	}
 
+	// Wire the signaling-dispatch dependencies. handleSignal reads these off
+	// daemonCallbacks; flashCapable and pairingRefresh are shared by identity
+	// so a Store/Reset in the run loop and in a handler refer to the same one.
+	cb.ctrlSignal = ctrl
+	cb.deviceID = deviceID
+	cb.serverURL = effectiveServerURL
+	cb.flashCapable = &flashCapable
+	cb.requeryFirmware = requeryFirmware
+	cb.contactsCache = contactsCache
+	cb.pairingRefresh = pairingRefresh
+
 	// pairingAnnouncementCancel cancels the in-flight pairing-announcement
 	// repeat goroutine spawned on HOOK:OFF (unpaired). nil when no goroutine
 	// is running. Only the dispatcher select case touches this var, so no
@@ -2288,508 +2315,7 @@ func main() {
 			}
 
 		case msg := <-sig.Inbox():
-			slog.Info("signal rx", "type", msg.Type, "from", msg.From)
-			switch msg.Type {
-			case sigclient.TypeRing:
-				cb.mu.Lock()
-				cb.pendingCaller = msg.From
-				cb.mu.Unlock()
-				ctrl.HandleSignal("ring", "")
-			case sigclient.TypeAnswer:
-				// Set remote description from the answer SDP before poking the FSM.
-				cb.mu.Lock()
-				if cb.peerMgr != nil && msg.SDP != "" {
-					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc: set answer failed", "error", err)
-					} else {
-						slog.Info("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
-					}
-				}
-				cb.mu.Unlock()
-				ctrl.HandleSignal("answer", msg.From)
-			case sigclient.TypeHangup:
-				ctrl.HandleSignal("hangup", msg.From)
-			case sigclient.TypeBusy:
-				if cb.callReturnOrigin.Load() {
-					cb.callReturnOrigin.Store(false)
-					target := msg.From
-					slog.Info("call_return: target busy, registering retry", "target", target)
-					ctrl.HandleSignal("busy", msg.From)
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						if ctrl.State() != phone.StateCALLING {
-							return
-						}
-						cb.mixer.StopTone()
-						cb.mixer.PlayOnce("call_return_retry")
-						sendSignal(sig, &sigclient.Message{
-							Type:   sigclient.TypeCallReturnRetry,
-							Number: target,
-						})
-					}()
-				} else {
-					ctrl.HandleSignal("busy", msg.From)
-				}
-			case sigclient.TypeDTMF:
-				// Remote peer pressed a digit during the call. Play the local
-				// DTMF sample so the user hears what their peer is pressing,
-				// matching real-phone behavior.
-				if ctrl.State() != phone.StateCONNECTED {
-					slog.Debug("dtmf: ignoring (not connected)", "from", msg.From)
-					break
-				}
-				cb.mu.Lock()
-				peer := cb.callPeer
-				cb.mu.Unlock()
-				if msg.From != peer {
-					slog.Debug("dtmf: ignoring (wrong peer)", "from", msg.From, "expected", peer)
-					break
-				}
-				if msg.Digit == "" {
-					slog.Warn("dtmf: empty digit in message")
-					break
-				}
-				dtmfName := dtmfToneName(msg.Digit)
-				if dtmfName == "" {
-					slog.Warn("dtmf: unrecognized digit", "digit", msg.Digit)
-					break
-				}
-				mixer.PlayOnce(dtmfName)
-			case sigclient.TypeError:
-				slog.Warn("signal error", "error", msg.Error)
-				// ADD_CALLING: route through the controller so state transitions
-				// to ADD_INTERCEPT and the added peer is torn down. The user
-				// flashes to return to the held party.
-				if ctrl.State() == phone.StateADD_CALLING {
-					ctrl.HandleSignal("error", msg.From)
-					break
-				}
-				// 2-party CALLING: emulate real phone -- ringback -> SIT -> busy
-				go func() {
-					// 1. Brief silence (call setup delay, ~1s)
-					time.Sleep(1 * time.Second)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					// 2. Ringback for ~8s (simulates 1-2 rings)
-					slog.Info("playing ringback (number unreachable)")
-					mixer.PlayLoop("tone_ringback")
-					time.Sleep(8 * time.Second)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					// 3. SIT tones + "number not in service" announcement
-					slog.Info("playing disconnected announcement")
-					mixer.StopTone()
-					mixer.PlayOnce("disconnected")
-					// Wait for announcement to finish (poll rather than guess duration)
-					for mixer.OncePlaying() {
-						time.Sleep(200 * time.Millisecond)
-						if ctrl.State() != phone.StateCALLING {
-							return
-						}
-					}
-					// 4. Brief silence, then reorder tone (fast busy) until hang-up
-					time.Sleep(500 * time.Millisecond)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					slog.Info("playing reorder tone")
-					mixer.PlayLoop("tone_busy")
-				}()
-			case sigclient.TypeSDP:
-				if msg.ConfID != "" {
-					// Conference SDP: route to the mesh peer for this member.
-					cb.mu.Lock()
-					mesh := cb.mesh
-					cb.mu.Unlock()
-
-					if mesh == nil || mesh.GetPeer(msg.From) == nil {
-						// No peer yet: we are the responder receiving the initiator's offer.
-						answerSDP, err := cb.setupMeshResponder(msg.From, msg.SDP, msg.ConfID)
-						if err != nil {
-							slog.Error("conference: setupMeshResponder failed", "from", msg.From, "err", err)
-							break
-						}
-						cb.mu.Lock()
-						s := cb.sig
-						cb.mu.Unlock()
-						sendSignal(s, &sigclient.Message{
-							Type:   sigclient.TypeSDP,
-							To:     msg.From,
-							ConfID: msg.ConfID,
-							SDP:    answerSDP,
-						})
-						slog.Info("conference: sent SDP answer to initiator", "to", msg.From, "conf_id", msg.ConfID)
-					} else {
-						// Peer already exists: we were the initiator and this is the answer.
-						if err := mesh.GetPeer(msg.From).SetAnswer(msg.SDP); err != nil {
-							slog.Error("conference: set answer failed", "from", msg.From, "err", err)
-						} else {
-							slog.Info("conference: applied SDP answer from peer", "from", msg.From)
-						}
-					}
-					break
-				}
-				cb.mu.Lock()
-				switch {
-				case cb.peerMgr == nil:
-					// Incoming call: offer arrived before we've answered.
-					// Stash it for AnswerCall to pick up.
-					cb.pendingOffer = msg.SDP
-					if cb.pendingCaller == "" && msg.From != "" {
-						cb.pendingCaller = msg.From
-						slog.Info("set pendingCaller from SDP", "from", msg.From)
-					}
-					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
-					cb.prepareAnswer()
-				case cb.isRestartingICE:
-					// Mid-call: the only legitimate reason to receive an SDP
-					// with an active peerMgr is the restart-answer we asked
-					// for when we initiated an ICE restart.
-					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc: set restart answer failed", "error", err)
-					} else {
-						slog.Info("webrtc: applied restart answer", "from", msg.From, "bytes", len(msg.SDP))
-					}
-				default:
-					slog.Warn("webrtc: unexpected SDP with active peer, ignoring", "from", msg.From, "bytes", len(msg.SDP))
-				}
-				cb.mu.Unlock()
-			case sigclient.TypeICE:
-				if msg.ConfID != "" {
-					// Conference ICE: route to the mesh peer for this member.
-					cb.mu.Lock()
-					mesh := cb.mesh
-					cb.mu.Unlock()
-					if mesh == nil {
-						slog.Warn("conference: ICE candidate before mesh initialized", "from", msg.From)
-						break
-					}
-					pm := mesh.GetPeer(msg.From)
-					if pm == nil {
-						slog.Warn("conference: ICE candidate before peer created", "from", msg.From)
-						break
-					}
-					if err := pm.AddICECandidate(msg.Candidate); err != nil {
-						slog.Error("conference: add ICE candidate failed", "from", msg.From, "err", err)
-					}
-					break
-				}
-				cb.mu.Lock()
-				if cb.peerMgr != nil {
-					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-						slog.Warn("webrtc: add ICE candidate failed", "error", err)
-					}
-				} else if cb.preAnswer.peerMgr != nil {
-					if err := cb.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-						slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
-					}
-				} else {
-					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
-					slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
-				}
-				cb.mu.Unlock()
-			case sigclient.TypeUpdateTrigger:
-				slog.Info("signal: received update trigger from server", "target_pi", msg.TargetPiVersion, "target_fw", msg.TargetFWVersion)
-				statusReporter := func(status, detail string) {
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: status,
-						UpdateDetail: detail,
-					})
-				}
-				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
-
-			case sigclient.TypeReleaseAvailable:
-				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-					go cb.triggerAutoUpdate()
-				}
-
-			case sigclient.TypeFactoryReset:
-				slog.Info("factory reset: triggered by server")
-				go triggerFactoryReset(sig, deviceID)
-
-			case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
-				entries := make([]contacts.Entry, 0, len(msg.Contacts))
-				for _, c := range msg.Contacts {
-					entries = append(entries, contacts.Entry{Number: c.Number, Name: c.Name})
-				}
-				contactsCache.Update(entries)
-				if len(entries) > 0 {
-					ctrl.SetContactChecker(contactsCache)
-				} else {
-					ctrl.SetContactChecker(nil)
-				}
-				slog.Info("contacts: updated", "count", len(entries), "type", msg.Type)
-
-			case sigclient.TypeICERestart:
-				cb.mu.Lock()
-				pm := cb.peerMgr
-				peer := cb.callPeer
-				cb.mu.Unlock()
-				if pm == nil {
-					slog.Info("ice-restart: no active peer connection, ignoring")
-					break
-				}
-				slog.Info("ice-restart: received restart offer", "from", msg.From, "bytes", len(msg.SDP))
-				answerSDP, err := pm.AcceptOffer(msg.SDP)
-				if err != nil {
-					slog.Error("ice-restart: accept offer failed", "error", err)
-					break
-				}
-				cb.mu.Lock()
-				cb.isRestartingICE = true
-				cb.cancelRestartTimerLocked()
-				cb.startRestartTimeout()
-				cb.mu.Unlock()
-				if peer == "" {
-					peer = msg.From
-				}
-				slog.Info("ice-restart: sending restart answer", "peer", peer, "bytes", len(answerSDP))
-				sendSignal(sig, &sigclient.Message{
-					Type: sigclient.TypeSDP,
-					To:   peer,
-					SDP:  answerSDP,
-				})
-
-			case sigclient.TypeICEServers:
-				cb.mu.Lock()
-				cb.iceServers = nil
-				for _, s := range msg.Servers {
-					cb.iceServers = append(cb.iceServers, owebrtc.ICEServerConfig{
-						URLs:       s.URLs,
-						Username:   s.Username,
-						Credential: s.Credential,
-					})
-				}
-				// Push fresh creds into the live 2-party PeerConnection so an
-				// ICE restart triggered after the TURN TTL (2h) uses valid creds.
-				// Mesh peers are not updated here; see PeerManager.UpdateICEServers.
-				pm := cb.peerMgr
-				servers := cb.iceServers
-				cb.mu.Unlock()
-				if pm != nil {
-					if err := pm.UpdateICEServers(servers); err != nil {
-						slog.Warn("ice: failed to update live peer connection", "error", err)
-					} else {
-						slog.Info("ice: updated live peer connection with fresh servers")
-					}
-				}
-				slog.Info("ice: cached servers from signald", "count", len(msg.Servers))
-
-			case sigclient.TypePairingCode:
-				cb.pairingCode = msg.PairingCode
-				refresh := pairingRefreshInterval
-				if msg.PairingCodeTTL > 0 {
-					ttl := time.Duration(msg.PairingCodeTTL) * time.Second
-					cb.pairingCodeExpiresAt = time.Now().Add(ttl)
-					// Refresh a margin before expiry so the announced code is
-					// still valid while a user types it. Guard against a TTL
-					// shorter than the margin.
-					if d := ttl - pairingRefreshMargin; d > 0 {
-						refresh = d
-					} else {
-						refresh = ttl / 2
-					}
-				} else {
-					// Older server without a TTL: fall back to the fixed cadence.
-					cb.pairingCodeExpiresAt = time.Now().Add(pairingRefreshInterval)
-				}
-				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode, "ttl_s", msg.PairingCodeTTL)
-				pairingRefresh.Reset(refresh)
-
-			case sigclient.TypePaired:
-				pairingRefresh.Stop()
-				if msg.DeviceToken != "" && cb.cfg != nil {
-					cb.cfg.DeviceToken = msg.DeviceToken
-					cb.cfg.PairingCode = ""
-					if msg.Number != "" {
-						cb.cfg.PhoneNumber = msg.Number
-						cb.number = msg.Number
-					}
-					if err := cb.cfg.Save(); err != nil {
-						slog.Warn("signal: paired -- failed to save config", "error", err)
-					} else {
-						slog.Info("signal: paired", "number", msg.Number, "config", cb.cfg.Path())
-					}
-					cb.paired.Store(true)
-					cb.pairingCode = ""
-					sp.StateSet("PAIRED")
-					mixer.StopAll()
-					sp.SendFire("TONE:DIAL")
-					slog.Info("signal: restarting to register", "number", msg.Number)
-					go func() {
-						time.Sleep(1 * time.Second)
-						os.Exit(0) // systemd restarts; Pico tone survives
-					}()
-				}
-
-			case sigclient.TypeRestart:
-				mode := msg.RestartMode
-				slog.Info("received restart command", "mode", mode)
-				switch mode {
-				case "service":
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: "restarting",
-						UpdateDetail: "Service restart requested",
-					})
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						slog.Info("restarting service via exit (systemd will restart)")
-						os.Exit(0)
-					}()
-				case "reboot":
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: "rebooting",
-						UpdateDetail: "Device reboot requested",
-					})
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						slog.Info("rebooting device")
-						if err := exec.Command("sudo", "reboot").Run(); err != nil {
-							slog.Error("reboot command failed", "err", err)
-						}
-					}()
-				default:
-					slog.Warn("unknown restart mode", "mode", mode)
-				}
-
-			case sigclient.TypeRingTest:
-				slog.Info("ring test: triggering 1s bell")
-				sp.SendFire("RING:TEST")
-				go func() {
-					time.Sleep(1 * time.Second)
-					sp.SendFire("RING:STOP")
-					slog.Info("ring test: stopped")
-				}()
-
-			case sigclient.TypeLineSettings:
-				if msg.LineSettings == nil {
-					slog.Warn("line_settings message missing payload", "from", msg.From)
-					break
-				}
-
-				style := msg.LineSettings.VoiceStyle
-				if style == "" {
-					style = config.VoiceStyleCopper
-				}
-				cb.mu.Lock()
-				currentStyle := cb.cfg.VoiceStyle
-				currentSilent := cb.cfg.SilentMode
-				cb.mu.Unlock()
-
-				if style != currentStyle {
-					slog.Info("line_settings applied", "voice_style", style)
-					cb.applyVoiceStyleLive(style)
-					if err := cb.setVoiceStyleConfig(style); err != nil {
-						slog.Warn("line_settings: voice-style save failed", "err", err)
-					}
-				}
-
-				silent := msg.LineSettings.SilentMode
-				if silent != currentSilent {
-					slog.Info("line_settings applied", "silent_mode", silent)
-					cb.applySilentModeLive(silent)
-					if err := cb.setSilentModeConfig(silent); err != nil {
-						slog.Warn("line_settings: silent-mode save failed", "err", err)
-					}
-				}
-
-				au := msg.LineSettings.AutoUpdate
-				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
-				} else if au != cb.autoUpdateEnabled.Load() {
-					cb.autoUpdateEnabled.Store(au)
-					slog.Info("line_settings applied", "auto_update", au)
-					if err := cb.setAutoUpdateConfig(au); err != nil {
-						slog.Warn("line_settings: auto-update save failed", "err", err)
-					}
-					if au && cb.triggerAutoUpdate != nil {
-						go cb.triggerAutoUpdate()
-					}
-				}
-
-				if vm := msg.LineSettings.Voicemail; vm != nil {
-					target := config.Voicemail{
-						Enabled:     vm.Enabled,
-						RingTimeout: time.Duration(vm.RingTimeoutSeconds) * time.Second,
-					}
-					cb.mu.Lock()
-					current := cb.cfg.Voicemail
-					cb.mu.Unlock()
-
-					if target != current {
-						if target.Enabled != current.Enabled {
-							slog.Info("line_settings applied", "voicemail_enabled", target.Enabled)
-						}
-						if target.RingTimeout != current.RingTimeout {
-							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
-						}
-						if err := cb.setVoicemailConfig(target); err != nil {
-							slog.Warn("line_settings: voicemail save failed", "err", err)
-						}
-					}
-				}
-
-			case sigclient.TypeConferenceMember:
-				ctrl.HandleConferenceMember(msg.ConfID, msg.Members)
-			case sigclient.TypeConferenceConnect:
-				ctrl.HandleConferenceConnect(msg.ConfID, msg.Peer, msg.Initiator)
-			case sigclient.TypeConferenceLeave:
-				ctrl.HandleConferenceLeave(msg.ConfID, msg.Peer, msg.Reason)
-			case sigclient.TypeConferenceEnd:
-				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
-			case sigclient.TypeConferenceRejected:
-				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
-
-			case sigclient.TypeCallReturnResult:
-				number := msg.Number
-				if number == "" {
-					slog.Info("call_return: no calls available")
-					cb.mixer.PlayOnce("call_return_none")
-					go func() {
-						time.Sleep(3 * time.Second)
-						if ctrl.State() != phone.StateCALL_RETURN {
-							return
-						}
-						ctrl.ResetToDialtone()
-						cb.mixer.PlayLoop("tone_dial")
-					}()
-				} else {
-					slog.Info("call_return: announcing last caller", "number", number)
-					ctrl.SetCallReturnNumber(number)
-					cb.mixer.PlayOnce("call_return_prefix")
-					for _, ch := range number {
-						cb.mixer.PlayOnce("spoken_" + string(ch))
-					}
-					cb.mixer.PlayOnce("call_return_suffix")
-				}
-
-			case sigclient.TypeCallReturnRing:
-				target := msg.Number
-				slog.Info("call_return: target free, ringing", "target", target)
-				ctrl.HandleCallReturnRing(target)
-
-			case sigclient.TypeCallReturnCancelled:
-				slog.Info("call_return: retry cancelled by server")
-				cb.mixer.PlayOnce("call_return_cancel")
-				go func() {
-					time.Sleep(3 * time.Second)
-					if ctrl.State() != phone.StateCALL_RETURN {
-						return
-					}
-					ctrl.ResetToDialtone()
-					cb.mixer.PlayLoop("tone_dial")
-				}()
-
-			default:
-				slog.Warn("signal: unhandled message type", "type", msg.Type)
-			}
+			cb.handleSignal(msg)
 
 		case <-pairingRefresh.C:
 			if !cb.paired.Load() {
