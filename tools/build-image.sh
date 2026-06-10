@@ -29,6 +29,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Shared die/info/warn. Reachable on the host and inside the Docker
+# image-builder, which bind-mounts the whole repo at /digits.
+# shellcheck source=../pi/image/lib/log.sh
+. "${REPO_DIR}/pi/image/lib/log.sh"
+
 OVERLAY_DIR="${REPO_DIR}/pi/image/rootfs-overlay"
 EMBED_DIR="${REPO_DIR}/pi/digitsd/internal/assets/embed"
 ASSET_MARKER_TOOL="${SCRIPT_DIR}/compute-asset-marker.py"
@@ -218,10 +224,7 @@ PURGE_PACKAGES=(
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-die()  { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "==> $*"; }
-warn() { echo "WARNING: $*" >&2; }
+# die/info/warn come from pi/image/lib/log.sh, sourced above.
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
 # PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
@@ -1023,6 +1026,7 @@ fi
 info "  Installing busybox and symlinks..."
 install -m 755 "${ROOTFS_MNT}/bin/busybox" "${RECOVERY_MNT}/bin/busybox"
 # libresolv is busybox's only extra dependency beyond libc
+# shellcheck disable=SC2043  # single-entry list kept as a loop for future libs
 for lib in libresolv.so.2; do
     LIBPATH=$(chroot "$ROOTFS_MNT" readlink -f "/usr/lib/aarch64-linux-gnu/${lib}" 2>/dev/null || true)
     if [[ -n "$LIBPATH" && -f "${ROOTFS_MNT}${LIBPATH}" ]]; then
@@ -1037,6 +1041,7 @@ done
 # The recovery binary loads brcmfmac via modprobe; the kernel's
 # request_module("brcmfmac-wcc") also needs modprobe infrastructure.
 info "  Copying WiFi kernel modules..."
+# shellcheck disable=SC2010  # kernel dir names are well-known, no special chars
 KVER=$(ls "${ROOTFS_MNT}/lib/modules/" | grep rpi-v8 | head -1)
 KDIR="${ROOTFS_MNT}/lib/modules/${KVER}"
 RECOVERY_KDIR="${RECOVERY_MNT}/lib/modules/${KVER}"

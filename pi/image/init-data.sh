@@ -21,8 +21,10 @@
 
 set -euo pipefail
 
-die()  { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "==> $*"; }
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Shared die/info/warn (see pi/image/lib/log.sh).
+# shellcheck source=lib/log.sh
+. "${SCRIPT_DIR}/lib/log.sh"
 
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 

@@ -23,6 +23,9 @@
 # downloads a known-good Raspberry Pi OS Lite image to /cache.
 set -euo pipefail
 
+# Local copies, intentionally not pi/image/lib/log.sh: this script is COPYed
+# into the Docker image as /entrypoint.sh and runs before the repo bind-mount
+# is in play for sourcing, so it cannot rely on the shared lib being present.
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
