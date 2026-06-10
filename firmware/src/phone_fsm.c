@@ -11,7 +11,6 @@
 #include "led.h"
 #include "phase.h"
 #include "ringer.h"
-#include "tone.h"
 #include "uart_proto.h"
 
 // fsm_led_set resolves the LED pattern from (phase, fsm_state). When the Pi
@@ -115,7 +114,6 @@ static void set_state(phone_state_t next) {
     switch (s_state) {
         case PHONE_STATE_IDLE:
             fsm_led_set(LED_MODE_OFF);
-            tone_stop();
             ringer_stop();
             clear_dialing_buffer();
             break;
@@ -124,19 +122,16 @@ static void set_state(phone_state_t next) {
             fsm_led_set(LED_MODE_ON);
             ringer_stop();
             clear_dialing_buffer();
-            tone_play(TONE_DIAL);
             s_dial_tone_start_ms = now_ms();
             break;
 
         case PHONE_STATE_DIALING:
             fsm_led_set(LED_MODE_ON);
             ringer_stop();
-            tone_stop();
             s_dialing_start_ms = now_ms();
             break;
 
         case PHONE_STATE_RINGING:
-            tone_stop();
             fsm_led_set(LED_MODE_BLINK);
             ringer_start();
             uart_proto_send("RING:ACK");
@@ -144,14 +139,12 @@ static void set_state(phone_state_t next) {
 
         case PHONE_STATE_CONNECTED:
             ringer_stop();
-            tone_stop();
             fsm_led_set(LED_MODE_BREATHING);
             break;
 
         case PHONE_STATE_BUSY:
             ringer_stop();
             fsm_led_set(LED_MODE_ON);
-            tone_play(TONE_BUSY);
             break;
 
         default:
@@ -214,12 +207,6 @@ static void process_pi_command(const char *cmd) {
         led_set_locked(true);
     } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
         led_set_locked(false);
-    } else if (strcmp(cmd, "TONE:DIAL") == 0) {
-        tone_play(TONE_DIAL);
-    } else if (strcmp(cmd, "TONE:RINGBACK") == 0) {
-        tone_play(TONE_RINGBACK);
-    } else if (strcmp(cmd, "TONE:STOP") == 0) {
-        tone_stop();
     } else if (strcmp(cmd, "CALL:CONNECTED") == 0) {
         // Caller-side: Pi sends this after the WebRTC peer answers.
         // RINGING is accepted defensively; callees normally self-transition
@@ -417,8 +404,6 @@ static void process_key(char key) {
         return;
     }
 
-    tone_play_dtmf(key);
-
     char key_msg[8];
     snprintf(key_msg, sizeof(key_msg), "KEY:%c", key);
     uart_proto_send(key_msg);
@@ -433,7 +418,6 @@ static void process_key(char key) {
             char dial_msg[16];
             snprintf(dial_msg, sizeof(dial_msg), "DIAL:%s", s_digits);
             uart_proto_send(dial_msg);
-            tone_play(TONE_RINGBACK);
             s_dial_sent = true;
         }
     }
@@ -541,7 +525,6 @@ void phone_fsm_update(void) {
     }
 
     led_update();
-    tone_update();
     ringer_update();
 }
 
