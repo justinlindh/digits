@@ -143,7 +143,7 @@ around what is and is not collected.
 
 | Variable                | Description                                                    |
 |-------------------------|----------------------------------------------------------------|
-| `REDIS_URL`             | Redis connection URL (`redis://host:port` or `rediss://...`), or a comma-separated list of Sentinel addresses for failover mode. When set, signald enables both cross-pod signaling (pub/sub) and shared cluster state (device presence, active calls and conferences, dashboard SSE events). Empty disables Redis (single-instance mode). |
+| `REDIS_URL`             | Redis connection URL (`redis://host:port` or `rediss://...`), or a comma-separated list of Sentinel addresses for failover mode. When set, signald enables both cross-pod signaling (pub/sub) and shared cluster state (device presence, active calls and conferences, dashboard SSE events, link-health telemetry). Empty disables Redis (single-instance mode). |
 | `REDIS_SENTINEL_MASTER` | Sentinel master name. When set together with a comma-separated `REDIS_URL`, the client switches to failover-aware mode. Leave empty for a direct connection. |
 
 Without `REDIS_URL`, behavior is identical to the single-instance default
@@ -160,10 +160,17 @@ into Redis so multi-pod queries see a consistent view:
 - **Dashboard events:** the SSE broadcaster fans out across pods via Redis
   pub/sub so `/api/dashboard/stream` re-renders counters regardless of which
   pod the SSE client connected to.
+- **Link-health telemetry:** each pod ingests its own phones' call-quality
+  samples and fans them out over the `digits:linkhealth` channel, so the
+  in-memory windows behind `/call/live` screens and link-health SSE streams
+  stay complete even when the caller and callee hold WebSockets on
+  different pods.
 
 Running multiple replicas without Redis silently breaks all of these:
-calls land on the wrong pod, devices appear offline to other pods, and
-dashboard counters reflect only the local pod's events.
+calls land on the wrong pod, devices appear offline to other pods,
+dashboard counters reflect only the local pod's events, and live
+call-quality screens show one silent side whenever the two phones in a
+call connected to different pods.
 
 ### Tracing and Profiling
 
