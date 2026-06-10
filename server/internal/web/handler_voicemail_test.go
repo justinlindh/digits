@@ -322,7 +322,7 @@ func TestPhoneVoicemailTogglePushesToConnectedDevice(t *testing.T) {
 	}
 }
 
-func TestPhonesListShowsVoicemailUnheardBadge(t *testing.T) {
+func TestOverviewShowsVoicemailUnheardBadge(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
@@ -331,7 +331,7 @@ func TestPhonesListShowsVoicemailUnheardBadge(t *testing.T) {
 	// default on a new line, so the badge should render.
 	h.hub.SetVoicemailUnheard("3140042", "hw-fake", 3)
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -341,20 +341,20 @@ func TestPhonesListShowsVoicemailUnheardBadge(t *testing.T) {
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "chip--msg") {
-		t.Errorf("expected chip--msg unheard badge on phones list:\n%s", body)
+		t.Errorf("expected chip--msg unheard badge on Overview:\n%s", body)
 	}
 	if !strings.Contains(body, "3 unheard") {
-		t.Errorf("expected '3 unheard' label on phones list:\n%s", body)
+		t.Errorf("expected '3 unheard' label on Overview:\n%s", body)
 	}
 }
 
-func TestPhonesListOmitsVoicemailBadgeWhenNoUnheard(t *testing.T) {
+func TestOverviewOmitsVoicemailBadgeWhenNoUnheard(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
 
 	// No SetVoicemailUnheard call: the hub reports a zero count.
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)

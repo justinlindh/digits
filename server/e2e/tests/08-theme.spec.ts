@@ -42,7 +42,7 @@ test.describe('Theme switcher', () => {
 
     expect(await getLayout(page)).toBe('v2');
     await expect(page.locator('header.rail')).toBeVisible();
-    // Direction-C rail nav labels are capitalised: Overview, Lines, ...
+    // Direction-C rail nav labels are capitalised: Overview, Families, ...
     await expect(page.locator('.rail__nav a', { hasText: /overview/i })).toBeVisible();
   });
 
@@ -64,7 +64,8 @@ test.describe('Theme switcher', () => {
     expect(await getLayout(page)).toBe('dialup');
     await expect(page.locator('.dialup-window')).toBeVisible();
     await expect(page.locator('.dialup-channels')).toBeVisible();
-    // Channel labels are uppercase in the markup: WELCOME, MY PHONES, ...
+    // Channel labels are uppercase in the markup: WELCOME, FAMILIES, ...
+    // (the "MY PHONES" channel was removed when Lines merged into Overview).
     await expect(page.locator('.dialup-channels a', { hasText: /welcome/i })).toBeVisible();
   });
 
@@ -118,7 +119,7 @@ test.describe('Theme switcher', () => {
 
 const CORE_PAGES = [
   { path: '/',         h1: /./ },                    // any non-empty h1 (household name)
-  { path: '/phones',   h1: /^Lines$/ },
+  { path: '/phones',   h1: /pair a handset/i },
   { path: '/links',    h1: /connected families/i },
   { path: '/settings', h1: /^Settings$/ },
 ];

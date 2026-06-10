@@ -43,6 +43,12 @@ type Config struct {
 	// (per IP, per minute). Default is 30. Set higher for load testing.
 	WSRateLimitPerMin int
 
+	// TrustedProxies is the number of reverse-proxy hops between signald and
+	// the real client, used to resolve the client IP from X-Forwarded-For for
+	// rate limiting. Default is 1 (a single Traefik in front of signald). Set
+	// to 0 to ignore X-Forwarded-For entirely (direct exposure).
+	TrustedProxies int
+
 	// Release index source. Exactly one of FakeUpdates or GitHubRepo (owner/repo)
 	// should be set. FakeUpdates wins if both are set and is intended for e2e
 	// tests. An unset GitHubRepo disables the release endpoint entirely.
@@ -61,6 +67,7 @@ func Load() *Config {
 		SMTPFrom:          "noreply@digits.family",
 		BaseURL:           "https://app.digits.family",
 		WSRateLimitPerMin: 30,
+		TrustedProxies:    1,
 	}
 	StringEnv("SIGNALD_ADDR", &c.Addr)
 	StringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
@@ -91,6 +98,7 @@ func Load() *Config {
 	StringEnv("REDIS_URL", &c.RedisURL)
 	// Rate limits
 	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
+	IntEnv("SIGNALD_TRUSTED_PROXIES", &c.TrustedProxies)
 	// Release index
 	OneEnv("TEST_FAKE_UPDATES", &c.FakeUpdates)
 	StringEnv("GITHUB_REPO", &c.GitHubRepo)

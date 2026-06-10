@@ -1,4 +1,4 @@
-{{define "title"}}Lines{{end}}
+{{define "title"}}Pair a handset{{end}}
 
 {{define "pair-form"}}
     <div class="panel__body">
@@ -123,39 +123,23 @@
 <div class="page">
 
   <header class="page__head">
-    <h1 class="page__title">Lines</h1>
-    {{template "dnd-toggle" .}}
+    <div>
+      <a href="/" class="btn btn--quiet btn--sm" style="padding-left: 0;">&larr; Overview</a>
+      <h1 class="page__title">Pair a handset</h1>
+    </div>
   </header>
 
   {{if .PairError}}
   <div class="banner banner--err">{{.PairError}}</div>
   {{end}}
 
-  {{if .PairSuccess}}
-  <div class="pair-banner" role="status">
-    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
-    <span class="pair-banner__text">
-      Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.
-    </span>
-    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
-  </div>
-  {{end}}
-
-  {{if .Lines}}
-  {{template "phones-table" .}}
-  {{end}}
-
-  <section class="panel" style="margin-top: 20px;">
+  <section class="panel">
     <header class="panel__head">
-      <h2 class="panel__title">{{if .Lines}}Add a phone{{else}}Pair a new handset{{end}}</h2>
+      <h2 class="panel__title">Pair a new handset</h2>
       <span class="panel__title-sub">Enter the 6-digit code from the handset.</span>
     </header>
     {{template "pair-form" .}}
   </section>
-
-  {{if not .Lines}}
-  {{template "phones-table" .}}
-  {{end}}
 
 </div>
 {{end}}
@@ -310,248 +294,6 @@
 </script>
 {{end}}
 
-{{/* Unheard-voicemail count badge for a line row in the phones list (intercom
-     and dialup themes). Renders nothing unless voicemail is enabled and the
-     count is positive. Expects a lineRow as the dot. */}}
-{{define "voicemail-unheard-badge"}}{{if and .Line.Settings.Voicemail.Enabled (gt .VoicemailUnheard 0)}}<span class="chip chip--msg" role="status" aria-label="{{.VoicemailUnheard}} unheard answering machine message{{if ne .VoicemailUnheard 1}}s{{end}}"><span class="chip__dot"></span>{{.VoicemailUnheard}} unheard</span>{{end}}{{end}}
-
-{{define "phones-table"}}
-<div id="phones-table" class="panel">
-  <header class="panel__head">
-    <h2 class="panel__title">Your lines</h2>
-    <span class="panel__title-sub">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}}</span>
-  </header>
-  {{if .Lines}}
-  <!-- Desktop table -->
-  <div style="display: block;" class="hide-sm">
-    <table class="t">
-      <thead>
-        <tr>
-          <th>Number</th>
-          <th>Handsets</th>
-          <th>Status</th>
-          <th>Pi</th>
-          <th>Firmware</th>
-          <th>Added</th>
-          <th class="r">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{range .Lines}}
-        <tr>
-          <td class="num">
-            <a href="/phones/{{.Line.Number}}">{{fmtPhone .Line.Number}}</a>
-            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
-              <span class="num muted" style="display: block; font-size: 11px; margin-top: 2px;">{{.DeviceInfo.RemoteAddr}}</span>
-            {{end}}
-          </td>
-          <td>
-            {{if gt (len .Devices) 1}}
-              <a href="/phones/{{.Line.Number}}" style="font-weight: 500;">{{.Line.Name}}</a>
-              <div style="margin-top: 4px; padding-left: 12px; border-left: 2px solid var(--rule-soft);">
-                {{range .Devices}}
-                <div style="font-size: 12px; color: var(--ink-muted); line-height: 1.6;">{{if .Name}}{{.Name}}{{else}}Unnamed{{end}}</div>
-                {{end}}
-              </div>
-            {{else}}
-              <a href="/phones/{{.Line.Number}}">{{.Line.Name}}</a>
-            {{end}}
-            {{if .Line.Settings.SilentMode}}
-            <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
-              <span class="phone-silent__dot" aria-hidden="true"></span>
-              <span class="phone-silent__text">SILENT</span>
-            </span>
-            {{end}}
-          </td>
-          <td>
-            {{if .Online}}
-              {{if gt (len .Devices) 1}}
-                <span class="chip chip--on"><span class="chip__dot"></span>{{.OnlineDeviceCount}}/{{len .Devices}} online</span>
-              {{else}}
-                <span class="chip chip--on"><span class="chip__dot"></span>online</span>
-              {{end}}
-            {{else}}
-              <span class="chip"><span class="chip__dot"></span>offline</span>
-            {{end}}
-            {{template "voicemail-unheard-badge" .}}
-          </td>
-          <td style="font-size: 12px;">
-            {{if and .DeviceInfo .DeviceInfo.PiVersion}}
-              <span class="num">{{.DeviceInfo.PiVersion}}</span>
-              {{if .PiUpdateNotes}}
-                <details class="update-details" style="margin-left: 6px; display: inline-block;">
-                  <summary class="chip chip--warn"><span class="chip__dot"></span>pi {{$.LatestPiVersion}} available</summary>
-                  <div class="update-notes">
-                    {{range .PiUpdateNotes}}
-                      <article class="update-note">
-                        <span class="update-note__version">pi {{.Version}}</span>
-                        {{if .Notes}}
-                          {{renderNotes .Notes}}
-                        {{else}}
-                          <p class="update-note__empty">Notes not available yet.</p>
-                        {{end}}
-                      </article>
-                    {{end}}
-                  </div>
-                </details>
-              {{end}}
-            {{else}}
-              <span class="muted">unknown</span>
-            {{end}}
-          </td>
-          <td style="font-size: 12px;">
-            {{if and .DeviceInfo .DeviceInfo.FirmwareVersion}}
-              <span class="num">{{.DeviceInfo.FirmwareVersion}}</span>
-              {{if .FirmwareUpdateNotes}}
-                <details class="update-details" style="margin-left: 6px; display: inline-block;">
-                  <summary class="chip chip--warn"><span class="chip__dot"></span>fw {{$.LatestFirmwareVersion}} available</summary>
-                  <div class="update-notes">
-                    {{range .FirmwareUpdateNotes}}
-                      <article class="update-note">
-                        <span class="update-note__version">fw {{.Version}}</span>
-                        {{if .Notes}}
-                          {{renderNotes .Notes}}
-                        {{else}}
-                          <p class="update-note__empty">Notes not available yet.</p>
-                        {{end}}
-                      </article>
-                    {{end}}
-                  </div>
-                </details>
-              {{end}}
-            {{else}}
-              <span class="muted">unknown</span>
-            {{end}}
-          </td>
-          <td class="num muted">{{.Line.CreatedAt.Format "Jan 2, 2006"}}</td>
-          <td class="r">
-            <button class="btn btn--quiet btn--sm"
-                    hx-get="/phones/{{.Line.Number}}/edit" hx-target="closest tr" hx-swap="outerHTML">Edit</button>
-            <button class="btn btn--quiet btn--sm"
-                    style="color: var(--rust);"
-                    hx-post="/phones/{{.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML"
-                    hx-confirm="Delete {{fmtPhone .Line.Number}}?">Delete</button>
-          </td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
-  </div>
-  <!-- Mobile card list -->
-  <ul class="lines show-sm">
-    {{range .Lines}}
-    <li>
-      <a class="lines__row" href="/phones/{{.Line.Number}}">
-        <span class="lines__dot{{if .Online}} lines__dot--on{{end}}"></span>
-        <span class="lines__name">
-          {{.Line.Name}}
-          {{if gt (len .Devices) 1}}<span class="muted" style="font-size: 11px; font-weight: normal;"> ({{len .Devices}} handsets)</span>{{end}}
-          {{if .Line.Settings.SilentMode}}<span class="phone-silent" aria-label="Silent mode on" title="Silent mode on"><span class="phone-silent__dot" aria-hidden="true"></span><span class="phone-silent__text">SILENT</span></span>{{end}}
-          {{template "voicemail-unheard-badge" .}}
-        </span>
-        <span class="lines__num">{{fmtPhone .Line.Number}}{{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}<span class="lines__ip num muted" style="display: block; font-size: 11px;">{{.DeviceInfo.RemoteAddr}}</span>{{end}}</span>
-        <span class="lines__state{{if .Online}} lines__state--on{{end}}">{{if .Online}}{{if gt (len .Devices) 1}}{{.OnlineDeviceCount}}/{{len .Devices}}{{else}}online{{end}}{{else}}offline{{end}}</span>
-      </a>
-      {{if or .FirmwareUpdateNotes .PiUpdateNotes}}
-        <details class="update-details update-details--mobile">
-          <summary class="chip chip--warn"><span class="chip__dot"></span>update available</summary>
-          <div class="update-notes">
-            {{range .FirmwareUpdateNotes}}
-              <article class="update-note">
-                <span class="update-note__version">fw {{.Version}}</span>
-                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-              </article>
-            {{end}}
-            {{range .PiUpdateNotes}}
-              <article class="update-note">
-                <span class="update-note__version">pi {{.Version}}</span>
-                {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-              </article>
-            {{end}}
-          </div>
-        </details>
-      {{end}}
-    </li>
-    {{end}}
-  </ul>
-  {{else}}
-  <div class="empty">
-    <svg class="empty__icon" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
-    </svg>
-    <div>No lines registered.</div>
-    <div class="muted" style="font-size: 12px; margin-top: 4px;">Pair a new handset above to get started.</div>
-  </div>
-  {{end}}
-</div>
-{{end}}
-
-{{define "phone-edit-row"}}
-<tr>
-  <td class="num">{{fmtPhone .Line.Number}}</td>
-  <td colspan="5">
-    <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML"
-          class="hstack hstack--wrap">
-      <input type="text" name="name" value="{{.Line.Name}}" required maxlength="50" class="field__input" style="width: 240px;">
-      <button type="submit" class="btn btn--primary btn--sm">Save</button>
-      <a href="/phones" class="btn btn--quiet btn--sm">Cancel</a>
-    </form>
-  </td>
-  <td></td>
-</tr>
-{{end}}
-
-{{define "am-phones-table"}}
-<div class="am-plate am-roster am-phones__roster" id="phones-table">
-  <div class="am-roster__head"><span class="am-label">Handsets</span></div>
-  {{if .Lines}}
-  {{range $i, $l := .Lines}}
-  <div class="am-roster__row am-phones__row">
-    <span class="am-roster__num">{{printf "%02d" (inc $i)}}</span>
-    <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
-    <div class="am-roster__body">
-      <div class="am-roster__name am-phones__row-name"><a href="/phones/{{$l.Line.Number}}">{{$l.Line.Name}}</a></div>
-      <div class="am-phones__row-num-caption">{{fmtPhone $l.Line.Number}}</div>
-      <div class="am-roster__meta">
-        {{if $l.OnCall}}IN SESSION
-        {{else if $l.Online}}ONLINE{{if and $l.DeviceInfo $l.DeviceInfo.FirmwareVersion}} &middot; FW {{$l.DeviceInfo.FirmwareVersion}}{{end}}{{if and $l.DeviceInfo $l.DeviceInfo.RemoteAddr}} &middot; {{$l.DeviceInfo.RemoteAddr}}{{end}}
-        {{else}}OFFLINE
-        {{end}}
-        {{if $l.Line.Settings.SilentMode}} &middot; SILENT{{end}}
-        {{if and $l.Line.Settings.Voicemail.Enabled (gt $l.VoicemailUnheard 0)}}
-        <span class="am-led am-voicemail-led" role="status" aria-label="{{$l.VoicemailUnheard}} unheard answering machine message{{if ne $l.VoicemailUnheard 1}}s{{end}}">MSG {{$l.VoicemailUnheard}}</span>
-        {{end}}
-        {{if or $l.PiUpdateNotes $l.FirmwareUpdateNotes}}
-        <span class="am-phones__update-flag" title="Software update available">
-          <span class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span class="am-led am-phones__update-cap">UPDATE</span>
-        </span>
-        {{end}}
-      </div>
-    </div>
-    <div class="am-roster__actions">
-      <button class="am-tab" hx-get="/phones/{{$l.Line.Number}}/edit" hx-target="closest .am-phones__row" hx-swap="outerHTML">Edit</button>
-      <button class="am-tab" hx-post="/phones/{{$l.Line.Number}}/delete" hx-target="#phones-table" hx-swap="outerHTML" hx-confirm="Delete {{$l.Line.Name}}?">Delete</button>
-    </div>
-  </div>
-  {{end}}
-  {{else}}
-  <div class="am-hint am-phones__empty">No lines paired. Use the pair panel on the right to patch a handset in.</div>
-  {{end}}
-</div>
-{{end}}
-
-{{define "am-phone-edit-row"}}
-<div class="am-roster__row am-phones__row am-phones__row--edit">
-  <span class="am-roster__num">{{fmtPhone .Line.Number}}</span>
-  <form hx-post="/phones/{{.Line.Number}}/edit" hx-target="#phones-table" hx-swap="outerHTML" class="am-phones__edit-form">
-    <input type="text" name="name" value="{{.Line.Name}}" required maxlength="50" class="am-phones__edit-input" autofocus>
-    <button type="submit" class="am-tab">Save</button>
-    <a href="/phones" class="am-tab">Cancel</a>
-  </form>
-</div>
-{{end}}
-
 {{define "phones-am"}}
 <div class="am-phones">
 
@@ -559,71 +301,11 @@
   <div class="banner banner--err">{{.PairError}}</div>
   {{end}}
 
-  {{if .PairSuccess}}
-  <div class="pair-banner" role="status">
-    <span class="pair-banner__icon" aria-hidden="true">&#x2713;</span>
-    <span class="pair-banner__text">Paired <strong>{{.PairSuccess.Name}}</strong>{{if .PairSuccess.FirmwareVersion}}, running fw {{.PairSuccess.FirmwareVersion}}{{end}}.</span>
-    <button type="button" class="pair-banner__close" aria-label="Dismiss" onclick="this.parentElement.remove()">&#x00D7;</button>
-  </div>
-  {{end}}
-
-  <div class="am-plate am-page-header">
-    <div class="am-page-header__info">
-      <span class="am-label">Patchbay</span>
-      <span class="am-title">{{len .Lines}} line{{if ne (len .Lines) 1}}s{{end}} paired</span>
-    </div>
-    <div class="am-page-header__spacer"></div>
-    <div class="am-well am-page-header__well">
-      <div class="am-led am-page-header__led">{{printf "%02d" (len .Lines)}}</div>
-      <div class="am-led am-led--dim am-page-header__cap">PAIRED</div>
-    </div>
-    <a class="am-key" href="#pair-new"><span class="am-key__symbol">+</span><span class="am-key__label">Patch new</span></a>
-    {{template "dnd-toggle-am" .}}
-  </div>
-
-  {{/* Patchbay rail sizing. N=0 shows a dark rail with a pair-me-in hint.
-       N=1..4 shows a 4-jack rail. N>=5 shows an 8-jack rail. N>8 renders the
-       first 8 here; the rest are always visible in the Handsets roster below. */}}
-  {{$n := len .Lines}}
-  {{if eq $n 0}}
-  <div class="am-plate am-phones__empty-rail">
-    <span class="am-label">Patchbay idle</span>
-    <span class="am-hint">No handsets patched yet. Use the pair panel to bring one online.</span>
-  </div>
-  {{else}}
-  {{$total := 4}}{{if gt $n 4}}{{$total = 8}}{{end}}
-  {{$shown := $n}}{{if gt $shown $total}}{{$shown = $total}}{{end}}
-  <div class="am-patchbay am-phones__rail">
-    <div class="am-patchbay__rail">
-      {{range $i, $l := .Lines}}
-      {{if lt $i $shown}}
-      <div class="am-jack">
-        <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
-        <div class="am-jack__socket"><span class="am-jack__plug am-jack__plug--c{{mod $i 6}}"></span></div>
-        <span class="am-jack__label-bot">{{$l.Line.Name}}</span>
-        <span class="am-jack__lamp am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
-      </div>
-      {{end}}
-      {{end}}
-      {{range $i := iter $total}}
-      {{if ge $i $shown}}
-      <div class="am-jack am-jack--unpatched">
-        <span class="am-jack__label-top">{{printf "%02d" (inc $i)}}</span>
-        <div class="am-jack__socket"></div>
-        <span class="am-jack__label-bot">&ndash;</span>
-        <span class="am-jack__lamp am-lamp"></span>
-      </div>
-      {{end}}
-      {{end}}
-    </div>
-  </div>
-  {{end}}
+  <a href="/" class="am-tab am-phones__back" aria-label="Back to overview">&larr; Overview</a>
 
   <div class="am-phones__body">
 
-    {{template "am-phones-table" .}}
-
-    <div class="am-plate am-phones__pair" id="pair-new">
+    <div class="am-plate am-phones__pair">
       <div class="am-phones__pair-label">Pair a new handset</div>
       <div class="am-phones__pair-hint">Enter the 6-digit code from the handset.</div>
 

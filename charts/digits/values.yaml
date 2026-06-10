@@ -26,6 +26,8 @@ redis:
   enabled: false
   replicas: 3
   sentinelMasterName: digits
+  # Storage class for the sentinel-state PVC. Empty string uses the cluster default.
+  sentinelStorageClass: ""
   resources:
     requests:
       cpu: 50m
@@ -44,6 +46,8 @@ cnpg:
     database: digits
     owner: digits
     sharedPreloadLibraries: []
+    # parameters: {}  # e.g. { pg_stat_statements.max: "10000" }
+    parameters: {}
     customQueriesConfigMap: []
     postInitSQL: []
     postInitApplicationSQL: []

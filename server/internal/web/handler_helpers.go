@@ -351,6 +351,13 @@ func (c chromeData) HouseholdDND() bool {
 	return c.allSilent
 }
 
+// OverviewActive reports whether the Overview nav item should highlight.
+// The pairing page and per-line detail pages (Page "phones") live under the
+// Overview now that the standalone Lines nav item is gone.
+func (c chromeData) OverviewActive() bool {
+	return c.Page == "dashboard" || c.Page == "phones"
+}
+
 func (c chromeData) CallHistoryEnabled() bool {
 	if c.Household == nil {
 		return false
