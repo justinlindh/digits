@@ -215,21 +215,8 @@ func (s *Store) BeginRecording() (*Recorder, error) {
 	defer s.mu.Unlock()
 
 	id := s.opts.Now().UnixMilli()
-	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	tmpPath := framesPath + ".tmp"
-
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return nil, fmt.Errorf("voicemail: open tmp: %w", err)
-	}
-	return &Recorder{
-		store:    s,
-		id:       id,
-		tmpPath:  tmpPath,
-		finalPath: framesPath,
-		file:     f,
-		maxFrames: framesForDuration(messageMaxDuration),
-	}, nil
+	finalPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
+	return s.openRecorderLocked(id, finalPath, messageMaxDuration)
 }
 
 // ErrRecorderClosed is returned by Recorder.AppendFrame when the recorder has
@@ -460,21 +447,24 @@ func (s *Store) DeleteGreeting() error {
 func (s *Store) BeginGreetingRecording() (*Recorder, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.openRecorderLocked(0, s.greetingPath(), greetingMaxDuration)
+}
 
-	finalPath := s.greetingPath()
+// openRecorderLocked opens the .tmp sibling of finalPath and wraps it in a
+// Recorder. Caller must hold s.mu.
+func (s *Store) openRecorderLocked(id int64, finalPath string, maxDuration time.Duration) (*Recorder, error) {
 	tmpPath := finalPath + ".tmp"
-
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("voicemail: open greeting tmp: %w", err)
+		return nil, fmt.Errorf("voicemail: open tmp %s: %w", tmpPath, err)
 	}
 	return &Recorder{
 		store:     s,
-		id:        0,
+		id:        id,
 		tmpPath:   tmpPath,
 		finalPath: finalPath,
 		file:      f,
-		maxFrames: framesForDuration(greetingMaxDuration),
+		maxFrames: framesForDuration(maxDuration),
 	}, nil
 }
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -495,19 +496,51 @@ func clearRecoveryPhase(sp *phone.SerialPort) {
 	}
 }
 
-// clearRecoveryFlags mounts /data temporarily to clear the boot counter
-// and recovery-mode flag so the next boot proceeds normally.
+// dataMounted reports whether /data is already a mount point. The try-again
+// exits run with /data mounted by the recovery boot; the cold path (called via
+// doReboot from contexts where /data is not mounted) is not. clearRecoveryFlags
+// uses this to avoid stacking a second mount over an existing one and then
+// unmounting only one layer, which would leave the original mount live.
+func dataMounted() bool {
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	return mountsContain(string(data), "/data")
+}
+
+// mountsContain reports whether the /proc/mounts content lists target as a
+// mount point. Split out so the parsing is unit-testable without /proc.
+func mountsContain(procMounts, target string) bool {
+	for _, line := range strings.Split(procMounts, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[1] == target {
+			return true
+		}
+	}
+	return false
+}
+
+// clearRecoveryFlags clears the boot counter and recovery-mode flag so the next
+// boot proceeds normally. If /data is already mounted (the try-again exits), it
+// operates on the live mount and leaves it as-is. Only the cold path, where
+// /data is not mounted, mounts it temporarily and unmounts when done.
 func clearRecoveryFlags() {
-	_ = os.MkdirAll("/data", 0755)
-	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
-		slog.Warn("recovery: mount /data for flag cleanup failed", "error", err)
-		return
+	if !dataMounted() {
+		_ = os.MkdirAll("/data", 0755)
+		if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
+			slog.Warn("recovery: mount /data for flag cleanup failed", "error", err)
+			return
+		}
+		defer func() {
+			syscall.Sync()
+			_ = syscall.Unmount("/data", 0)
+		}()
 	}
 	_ = bootcount.Clear(bootcount.DefaultPath)
 	_ = os.Remove("/data/digits/recovery-mode")
 	slog.Info("recovery: boot counter and recovery flag cleared")
 	syscall.Sync()
-	_ = syscall.Unmount("/data", 0)
 }
 
 // doReboot reboots the system. If running as PID 1 (init in initramfs),

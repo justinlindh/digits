@@ -91,6 +91,7 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `DATABASE_URL` | (required)                       | Postgres connection string            |
 | `BASE_URL`     | `https://app.digits.family`      | Public base URL for links and OAuth   |
 | `ADMIN_SECRET` | (required)                       | Shared secret for internal stats API  |
+| `SIGNALD_TRUSTED_PROXIES` | `1`                   | Reverse-proxy hops between signald and clients, used to resolve the real client IP from `X-Forwarded-For` for rate limiting. The default fits one proxy in front (Caddy or Traefik). Set to `0` when signald is exposed directly; raise it when another proxy (CDN, load balancer) sits in front of yours. |
 
 ### TLS (optional)
 
@@ -212,10 +213,9 @@ See `.env.example` for a starter config file.
 
 | Route                       | Description                                  |
 |-----------------------------|----------------------------------------------|
-| `/`                         | Dashboard -- stats, active calls, recent history |
-| `/phones`                   | Phone directory -- add, pair, manage phones  |
-| `/phones/{number}`          | Phone detail -- device info, update status   |
-| `/phones/{number}/edit`     | Edit phone name                              |
+| `/`                         | Overview -- line list, active calls, recent history |
+| `/phones`                   | Pair a handset (button-launched from the Overview) |
+| `/phones/{number}`          | Phone detail -- device info, settings, update status |
 | `/calls`                    | Call history -- full log, auto-refreshes     |
 | `/settings`                 | Household settings, call history toggle      |
 | `/links`                    | Household links -- invite and connect households |

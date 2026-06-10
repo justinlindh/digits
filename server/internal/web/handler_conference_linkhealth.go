@@ -153,6 +153,16 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	sub := h.healthStore.SubscribeConference(confID)
 	defer sub.Close()
 
+	// Re-check liveness AFTER subscribing. SubscribeConference lazily
+	// creates the session, so if the conference ended on another pod
+	// between the ownership check and the Subscribe, the cross-pod evict
+	// has already passed and this session would never receive EndedKind.
+	if cur, err := h.tracker.GetConferenceByID(r.Context(), confID); err == nil && cur != nil && cur.EndedAt != nil {
+		_ = writeSSE(w, "ended", renderEndedConferenceFragment(""))
+		flusher.Flush()
+		return
+	}
+
 	// Initial snapshot.
 	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)

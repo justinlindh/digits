@@ -396,6 +396,14 @@ body.dialup:not(.crt-all) .dialup-window {
   text-shadow: 1px 1px 0 rgba(0,0,0,0.4);
 }
 .page__head .dnd-toggle__label { color: #fff; }
+.page__head .btn--quiet { color: #fff; }
+.page__head .btn--quiet:hover { color: var(--dialup-gold, #ffcc00); background: transparent; }
+.page__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .page__title {
   font-family: inherit;
   font-weight: bold;
@@ -1700,6 +1708,13 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   color: var(--dialup-ink-muted);
 }
 
+.rooms__badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
 .rooms__callout {
   margin-top: auto;
   padding: 6px 8px;
@@ -1747,6 +1762,23 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
   border-right: 2px solid var(--dialup-bevel-hi);
   border-bottom: 2px solid var(--dialup-bevel-hi);
 }
+
+/* First-run welcome card layout inside the empty panel. */
+.rooms__welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 30px 22px;
+}
+.rooms__welcome-icon { width: 28px; height: 38px; color: var(--dialup-blue); }
+.rooms__welcome-title {
+  font-size: 14px;
+  font-weight: bold;
+  margin: 0;
+  color: var(--dialup-ink);
+}
+.rooms__welcome-text { margin: 0 0 4px; max-width: 400px; }
 
 /* Scoped chip restyle: inside a room card, chips render as a small
    square LED + uppercase caption. Chips outside .rooms__card keep
