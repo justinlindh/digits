@@ -79,7 +79,7 @@ void hook_poll(void) {
     bool raw = read_physical_off_hook();
 
     if (raw != s_raw_last) {
-        // Pin changed — reset stability timer.
+        // Pin changed: reset stability timer.
         s_raw_last = raw;
         s_stable_since = get_absolute_time();
         return;
@@ -241,10 +241,6 @@ void hook_set_flash_enabled(bool enabled) {
         s_flash_pending = false;
         s_event = HOOK_EVENT_ON;
     }
-}
-
-bool hook_is_flash_enabled(void) {
-    return s_flash_enabled;
 }
 
 bool hook_is_flash_pending(void) {

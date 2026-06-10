@@ -125,7 +125,7 @@ int main(void) {
             printf("All subsystems initialized.\n");
             printf("Type commands: RING:START RING:STOP RING:TEST LED:ON LED:OFF LED:BLINK PING\n");
             printf("Debug: RESET STATE? HOOK:FORCE:OFF HOOK:FORCE:ON HOOK:RELEASE KEYTEST KEYTEST:OFF\n");
-            printf("RING:TEST bypasses FSM+hook — rings regardless of hook state.\n");
+            printf("RING:TEST bypasses FSM+hook: rings regardless of hook state.\n");
             printf("> ");
             stdio_flush();
             banner_printed = true;

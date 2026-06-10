@@ -1,6 +1,6 @@
 #include "tone.h"
 
-// Pico-side PWM tones are DEPRECATED — all tone generation moved to Pi-side
+// Pico-side PWM tones are DEPRECATED. All tone generation moved to Pi-side
 // (dtmf_uart.py). These are no-op stubs so the FSM compiles without changes.
 
 void tone_init(void) {}
