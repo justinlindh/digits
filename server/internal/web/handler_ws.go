@@ -336,7 +336,12 @@ func (h *Handler) handleDevSeedFirmware(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 		return
 	}
-	h.hub.UpdateDeviceInfo(number, pi, "", fw, "", ip, dm)
+	h.hub.UpdateDeviceInfo(number, signaling.DeviceInfoParams{
+		PiVersion:       pi,
+		FirmwareVersion: fw,
+		RemoteAddr:      ip,
+		DevMode:         dm,
+	})
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"ok":true,"number":%q,"fw":%q,"pi":%q}`, number, fw, pi)
 }
