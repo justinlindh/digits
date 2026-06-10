@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # init-data.sh — Create /data directory structure on the data partition
 #
-# Usage: sudo ./init-data.sh [--pcb] <data-partition-or-mountpoint>
+# Usage: sudo ./init-data.sh <data-partition-or-mountpoint>
 #
 # Can be run two ways:
 #   1. Pass a block device: sudo ./init-data.sh /dev/sdX3
@@ -26,14 +26,8 @@ info() { echo "==> $*"; }
 
 [[ $EUID -eq 0 ]] || die "Must run as root (sudo $0 $*)"
 
-PCB_MODE=false
-if [[ "${1:-}" == "--pcb" ]]; then
-    PCB_MODE=true
-    shift
-fi
-
 TARGET="${1:-}"
-[[ -n "$TARGET" ]] || die "Usage: $0 [--pcb] <block-device|mount-point>"
+[[ -n "$TARGET" ]] || die "Usage: $0 <block-device|mount-point>"
 
 MOUNTED_BY_US=false
 MOUNT_POINT=""

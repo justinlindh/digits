@@ -800,11 +800,7 @@ fi
 # ── step 15: initialize /data partition (host-side) ─────────────────────────
 
 info "Initializing /data directory structure..."
-if [[ "$PCB_MODE" == true ]]; then
-    bash "$INIT_DATA" --pcb "$DATA_MNT"
-else
-    bash "$INIT_DATA" "$DATA_MNT"
-fi
+bash "$INIT_DATA" "$DATA_MNT"
 
 # Pre-write the asset-version marker so digitsd's first-boot Extract sees
 # matching marker and skips the rw/ro remount + asset-rewrite pass entirely.
