@@ -78,7 +78,7 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("ClaimDevice hwID = %q, want e2e-test-hw-001", hwID)
 	}
 
-	// Step 3: Reuse same code — should fail
+	// Step 3: Reuse same code, which should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code, "5559877", "Reuse Attempt", "Reuse Attempt", hh.ID)
 	if !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("expected ErrInvalidCode on code reuse, got: %v", err)
@@ -90,13 +90,13 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("GenerateCode 2: %v", err)
 	}
 
-	// Step 5: Try to claim with duplicate number — should fail
+	// Step 5: Try to claim with duplicate number, which should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559876", "Dupe Number", "Dupe Number", hh.ID)
 	if !errors.Is(err, ErrNumberTaken) {
 		t.Fatalf("expected ErrNumberTaken for duplicate number, got: %v", err)
 	}
 
-	// Step 6: Claim second phone with unique number — should succeed
+	// Step 6: Claim second phone with unique number, which should succeed
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559877", "Living Room Phone", "Living Room Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("ClaimDevice (second phone): %v", err)
