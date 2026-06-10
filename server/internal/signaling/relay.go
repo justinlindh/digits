@@ -205,10 +205,8 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	switch msg.Type {
 	case TypeCall:
 		r.handleCall(ctx, from, msg)
-	case TypeSDP:
-		r.handleSDP(ctx, from, msg)
-	case TypeICE:
-		r.handleICE(ctx, from, msg)
+	case TypeSDP, TypeICE:
+		r.handleSignalingForward(ctx, from, msg)
 	case TypeICERestart:
 		r.handleICERestart(ctx, from, msg)
 	case TypeAnswer:
@@ -497,38 +495,12 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 	r.clearExtensionsForCall(ctx, number)
 }
 
-func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
-	if msg.Extension && r.routeExtensionSignaling(from, msg) {
-		return
-	}
-	if msg.ConfID != "" {
-		id, err := uuid.Parse(msg.ConfID)
-		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(ctx, id, from, msg.To) {
-			_ = r.Hub.SendTo(msg.To, &Message{
-				Type:   msg.Type,
-				From:   from,
-				To:     msg.To,
-				ConfID: msg.ConfID,
-				SDP:    msg.SDP,
-			})
-			return
-		}
-	}
-	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "sdp without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
-		return
-	}
-	if r.Tracker != nil {
-		if callID := r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
-			slog.DebugContext(ctx, "sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
-			setSpanCallID(ctx, callID)
-		}
-	}
-	r.forward(ctx, msg)
-}
-
-func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
+// handleSignalingForward relays an SDP or ICE message between in-call peers.
+// msg.Type ("sdp" or "ice") is used verbatim in log lines. The conference
+// fast path copies both payload fields; the one not set for this type is
+// empty and omitted from the encoded message, so the wire format per type
+// is unchanged.
+func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Message) {
 	if msg.Extension && r.routeExtensionSignaling(from, msg) {
 		return
 	}
@@ -540,19 +512,20 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 				From:      from,
 				To:        msg.To,
 				ConfID:    msg.ConfID,
+				SDP:       msg.SDP,
 				Candidate: msg.Candidate,
 			})
 			return
 		}
 	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "ice without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, msg.Type+" without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
-			slog.DebugContext(ctx, "ice forwarded", "call_id", callID, "from", from, "to", msg.To)
+			slog.DebugContext(ctx, msg.Type+" forwarded", "call_id", callID, "from", from, "to", msg.To)
 			setSpanCallID(ctx, callID)
 		}
 	}
