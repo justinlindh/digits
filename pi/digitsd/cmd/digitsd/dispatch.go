@@ -49,7 +49,6 @@ var _ signalController = (*phone.Controller)(nil)
 // daemonCallbacks and wired once before the loop starts.
 func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 	ctrl := d.ctrlSignal
-	sig := d.sig
 	mixer := d.mixer
 	sp := d.serial
 
@@ -87,7 +86,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				}
 				d.mixer.StopTone()
 				d.mixer.PlayOnce("call_return_retry")
-				sendSignal(sig, &sigclient.Message{
+				sendSignal(d.currentSig(), &sigclient.Message{
 					Type:   sigclient.TypeCallReturnRetry,
 					Number: target,
 				})
@@ -176,10 +175,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 					slog.Error("conference: setupMeshResponder failed", "from", msg.From, "err", err)
 					break
 				}
-				d.mu.Lock()
-				s := d.sig
-				d.mu.Unlock()
-				sendSignal(s, &sigclient.Message{
+				sendSignal(d.currentSig(), &sigclient.Message{
 					Type:   sigclient.TypeSDP,
 					To:     msg.From,
 					ConfID: msg.ConfID,
@@ -258,7 +254,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 	case sigclient.TypeUpdateTrigger:
 		slog.Info("signal: received update trigger from server", "target_pi", msg.TargetPiVersion, "target_fw", msg.TargetFWVersion)
 		statusReporter := func(status, detail string) {
-			sendSignal(sig, &sigclient.Message{
+			sendSignal(d.currentSig(), &sigclient.Message{
 				Type:         sigclient.TypeUpdateStatus,
 				UpdateStatus: status,
 				UpdateDetail: detail,
@@ -276,7 +272,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 
 	case sigclient.TypeFactoryReset:
 		slog.Info("factory reset: triggered by server")
-		go triggerFactoryReset(sig, d.deviceID)
+		go triggerFactoryReset(d.currentSig(), d.deviceID)
 
 	case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
 		entries := make([]contacts.Entry, 0, len(msg.Contacts))
@@ -315,7 +311,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			peer = msg.From
 		}
 		slog.Info("ice-restart: sending restart answer", "peer", peer, "bytes", len(answerSDP))
-		sendSignal(sig, &sigclient.Message{
+		sendSignal(d.currentSig(), &sigclient.Message{
 			Type: sigclient.TypeSDP,
 			To:   peer,
 			SDP:  answerSDP,
@@ -398,7 +394,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		slog.Info("received restart command", "mode", mode)
 		switch mode {
 		case "service":
-			sendSignal(sig, &sigclient.Message{
+			sendSignal(d.currentSig(), &sigclient.Message{
 				Type:         sigclient.TypeUpdateStatus,
 				UpdateStatus: "restarting",
 				UpdateDetail: "Service restart requested",
@@ -409,7 +405,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 				os.Exit(0)
 			}()
 		case "reboot":
-			sendSignal(sig, &sigclient.Message{
+			sendSignal(d.currentSig(), &sigclient.Message{
 				Type:         sigclient.TypeUpdateStatus,
 				UpdateStatus: "rebooting",
 				UpdateDetail: "Device reboot requested",
