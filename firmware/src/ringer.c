@@ -9,7 +9,6 @@
 
 static bool s_active = false;
 static bool s_phase = false;  // alternates between two H-bridge states
-static uint32_t s_start_ms = 0;
 static absolute_time_t s_last_toggle;
 
 // Pattern tables: alternating on/off durations in ms, terminated by 0.
@@ -55,7 +54,6 @@ void ringer_init(void) {
 
     s_active = false;
     s_phase = false;
-    s_start_ms = now_ms();
     s_last_toggle = get_absolute_time();
 }
 
@@ -65,8 +63,7 @@ void ringer_start(void) {
     stop_hbridge();
     s_pattern = pattern_standard;
     s_seg_idx = 0;
-    s_start_ms = now_ms();
-    s_seg_start_ms = s_start_ms;
+    s_seg_start_ms = now_ms();
     s_last_toggle = get_absolute_time();
 }
 
@@ -79,8 +76,7 @@ void ringer_start_pattern(uint8_t pattern_id) {
     stop_hbridge();
     s_pattern = patterns[pattern_id];
     s_seg_idx = 0;
-    s_start_ms = now_ms();
-    s_seg_start_ms = s_start_ms;
+    s_seg_start_ms = now_ms();
     s_last_toggle = get_absolute_time();
 }
 
@@ -88,10 +84,6 @@ void ringer_stop(void) {
     s_active = false;
     s_phase = false;
     stop_hbridge();
-}
-
-bool ringer_is_active(void) {
-    return s_active;
 }
 
 void ringer_update(void) {

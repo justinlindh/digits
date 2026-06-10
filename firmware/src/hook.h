@@ -39,7 +39,6 @@ bool hook_is_forced(void);
 // HOOK_EVENT_FLASH). The Pi daemon only enables this while in an active call
 // state, so hangup/pickup outside calls stay instantaneous.
 void hook_set_flash_enabled(bool enabled);
-bool hook_is_flash_enabled(void);
 
 // Returns true while a flash window is open (user has depressed the hookswitch
 // but we haven't decided yet whether it's a flash or a hangup). During this

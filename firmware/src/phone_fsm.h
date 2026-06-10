@@ -18,11 +18,4 @@ void phone_fsm_update(void);
 phone_state_t phone_fsm_get_state(void);
 const char *phone_fsm_state_name(phone_state_t state);
 
-// Debug: force FSM to IDLE regardless of current state
-void phone_fsm_reset(void);
-
-// Debug: raw keypad test mode — bypasses FSM, reports all keys directly
-void phone_fsm_set_keytest(bool enable);
-bool phone_fsm_is_keytest(void);
-
 #endif  // DIGITS_PHONE_FSM_H

@@ -1,5 +1,5 @@
-#ifndef RINGER_H
-#define RINGER_H
+#ifndef DIGITS_RINGER_H
+#define DIGITS_RINGER_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -15,7 +15,6 @@ void ringer_init(void);
 void ringer_start(void);
 void ringer_start_pattern(uint8_t pattern_id);
 void ringer_stop(void);
-bool ringer_is_active(void);
 void ringer_update(void);
 
-#endif  // RINGER_H
+#endif  // DIGITS_RINGER_H

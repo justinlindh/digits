@@ -1,9 +1,9 @@
-#ifndef TONE_H
-#define TONE_H
+#ifndef DIGITS_TONE_H
+#define DIGITS_TONE_H
 
 #include <stdint.h>
 
-// Pico-side PWM tones are DEPRECATED — all tone generation moved to Pi-side
+// Pico-side PWM tones are DEPRECATED. All tone generation moved to Pi-side
 // (dtmf_uart.py). These stubs remain so the FSM compiles without changes.
 // GP12 is unused. GP13 reassigned to LED.
 
@@ -21,4 +21,4 @@ void tone_play_dtmf(char key);
 void tone_stop(void);
 void tone_update(void);
 
-#endif  // TONE_H
+#endif  // DIGITS_TONE_H
