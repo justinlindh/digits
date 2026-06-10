@@ -196,16 +196,16 @@ func TestE2EWebUIWithData(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	// Phones page should list phones
-	resp2, err := client.Get(srv.URL + "/phones")
+	// Overview should list the registered lines
+	resp2, err := client.Get(srv.URL + "/")
 	if err != nil {
-		t.Fatalf("GET /phones: %v", err)
+		t.Fatalf("GET /: %v", err)
 	}
 	defer func() { _ = resp2.Body.Close() }()
 	var bodyBuf strings.Builder
 	_, _ = io.Copy(&bodyBuf, resp2.Body)
 	body := bodyBuf.String()
-	if !strings.Contains(body, "3140001") || !strings.Contains(body, "3140002") {
-		t.Fatalf("phones page missing registered phones")
+	if !strings.Contains(body, "Kitchen") || !strings.Contains(body, "Bedroom") {
+		t.Fatalf("overview missing registered lines")
 	}
 }

@@ -406,11 +406,10 @@ to `/phones/{number}` for a plain form post.
 
 ### Web UI
 
-The voicemail UI lives entirely on the phone detail page,
-`/phones/{number}`. The `/phones` list view does not carry it. It is rendered
-by the `voicemail-section` partial (intercom and dialup themes) or
-`am-voicemail-section` partial (answering-machine theme) in
-`web/templates/phone-detail.html`:
+The voicemail settings UI lives on the phone detail page,
+`/phones/{number}`. It is rendered by the `voicemail-section` partial
+(intercom and dialup themes) or `am-voicemail-section` partial
+(answering-machine theme) in `web/templates/phone-detail.html`:
 
 - An enabled checkbox that `hx-post`s to `/voicemail-toggle` and swaps
   `#voicemail-section`.
@@ -418,7 +417,8 @@ by the `voicemail-section` partial (intercom and dialup themes) or
   voicemail is disabled the field is dimmed and the input is `disabled`.
 - An unheard-count badge ("N unheard" chip, or "MSG N" LED in the
   answering-machine theme) that renders only when voicemail is enabled and the
-  unheard count is greater than zero.
+  unheard count is greater than zero. The same badge also appears on the
+  line's card on the Overview page (`/`).
 
 The unheard count is not stored in the DB. It comes from
 `hub.LineVoicemailUnheard(number)`, the sum of per-handset counts the hub last

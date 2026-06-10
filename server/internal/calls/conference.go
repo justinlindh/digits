@@ -146,12 +146,15 @@ func (ct *ConferenceTracker) IsBusy(ctx context.Context, phone string) bool {
 	return false
 }
 
-// ConferenceByPhone returns the active conference for a phone, or nil.
+// ConferenceByPhone returns the active conference for a phone, or nil. The
+// returned value is a deep copy: callers read it after the tracker mutex is
+// released while other methods mutate the live conference under lock, so
+// handing back the live pointer would be a data race.
 func (ct *ConferenceTracker) ConferenceByPhone(ctx context.Context, phone string) *Conference {
 	ct.mu.Lock()
 	id, ok := ct.memberIndex[phone]
 	if ok {
-		conf := ct.active[id]
+		conf := ct.snapshotLocked(id)
 		ct.mu.Unlock()
 		return conf
 	}
@@ -229,6 +232,12 @@ func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, p
 func (ct *ConferenceTracker) Snapshot(id uuid.UUID) *Conference {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
+	return ct.snapshotLocked(id)
+}
+
+// snapshotLocked deep-copies the active conference with the given ID, or
+// returns nil if none exists. Callers must hold ct.mu.
+func (ct *ConferenceTracker) snapshotLocked(id uuid.UUID) *Conference {
 	c, ok := ct.active[id]
 	if !ok {
 		return nil

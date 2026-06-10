@@ -106,12 +106,13 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var info struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Name  string `json:"name"`
-	}
-	if err := json.Unmarshal(body, &info); err != nil {
+	info, err := parseGoogleUserinfo(body)
+	switch {
+	case errors.Is(err, errUnverifiedEmail):
+		slog.WarnContext(r.Context(), "auth: google callback rejected unverified email", "google_id", info.ID)
+		http.Error(w, "Google account email is not verified", http.StatusForbidden)
+		return
+	case err != nil:
 		http.Error(w, "failed to parse user info", http.StatusInternalServerError)
 		return
 	}
@@ -174,4 +175,33 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
+}
+
+// googleUserinfo is the subset of Google's userinfo response we consume.
+type googleUserinfo struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	Name          string `json:"name"`
+	VerifiedEmail bool   `json:"verified_email"`
+}
+
+// errUnverifiedEmail is returned by parseGoogleUserinfo when Google reports the
+// account's email as unverified. Google lets an account hold an unverified
+// address, so trusting it would let an attacker set a victim's email as their
+// own unverified address and then link to or sign in as the victim's
+// magic-link account.
+var errUnverifiedEmail = errors.New("google account email is not verified")
+
+// parseGoogleUserinfo decodes the userinfo response and enforces that the email
+// is verified. The decoded info is returned even on errUnverifiedEmail so the
+// caller can log the offending Google ID.
+func parseGoogleUserinfo(body []byte) (googleUserinfo, error) {
+	var info googleUserinfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return info, err
+	}
+	if !info.VerifiedEmail {
+		return info, errUnverifiedEmail
+	}
+	return info, nil
 }

@@ -1,11 +1,12 @@
 /**
- * 09-silent-mode.spec.ts -- Per-phone silent-mode toggle (issue #217).
+ * 09-silent-mode.spec.ts: Per-phone silent-mode toggle (issue #217).
  *
  * Tests:
  *   - Ringer panel renders on phone detail page
  *   - Toggling silent on via the checkbox updates the partial inline (htmx swap)
  *     and persists across reload
- *   - /phones list shows the silent badge for silent phones, not for others
+ *   - The Overview line cards show the silent badge for silent phones, not for
+ *     others (the line roster moved from /phones to Overview)
  *   - Toggling silent off removes the badge
  *   - Same flow under the dialup theme
  *
@@ -25,11 +26,12 @@ function isAuthOrOnboard(url: string) {
 }
 
 /**
- * Returns the href of the first phone on the /phones list, or null when the
- * household has none. The caller should skip in the null case.
+ * Returns the href of the first line card on Overview, or null when the
+ * household has none. The caller should skip in the null case. The line roster
+ * lives on Overview now, not on /phones (which is pairing-only).
  */
 async function firstPhoneHref(page: Page): Promise<string | null> {
-  await page.goto('/phones');
+  await page.goto('/');
   if (isAuthOrOnboard(page.url())) {
     return null;
   }
@@ -80,7 +82,7 @@ test.describe('Silent mode (intercom theme)', () => {
     ).toBeVisible();
   });
 
-  test('toggling silent on persists and shows the list badge', async ({ page }) => {
+  test('toggling silent on persists and shows the Overview card badge', async ({ page }) => {
     const href = await firstPhoneHref(page);
     if (!href) {
       test.skip(true, 'No phones registered');
@@ -97,20 +99,20 @@ test.describe('Silent mode (intercom theme)', () => {
       page.locator('#silent-mode-section input[name="silent_mode"]'),
     ).toBeChecked();
 
-    // Badge appears on the list.
-    await page.goto('/phones');
-    const badge = page.locator(`a[href="${href}"]`).locator('..').locator('.phone-silent').first();
-    await expect(badge).toBeVisible();
+    // Badge appears on the Overview line card.
+    await page.goto('/');
+    const card = page.locator(`a.rooms__card[href="${href}"]`);
+    await expect(card.locator('.rooms__badges .phone-silent').first()).toBeVisible();
 
     // Toggle off and confirm badge disappears.
     await page.goto(href);
     await setSilentOnDetailPage(page, 'off');
-    await page.goto('/phones');
-    const offRow = page.locator(`a[href="${href}"]`).locator('..');
-    await expect(offRow.locator('.phone-silent')).toHaveCount(0);
+    await page.goto('/');
+    const offCard = page.locator(`a.rooms__card[href="${href}"]`);
+    await expect(offCard.locator('.phone-silent')).toHaveCount(0);
   });
 
-  test('list badge is absent when silent is off across all rows', async ({ page }) => {
+  test('card badge is absent when silent is off across all rows', async ({ page }) => {
     // After cleanup from the prior test the line is silent=off. This test
     // pins the negative case explicitly, so a regression that always emits
     // the badge is caught.
@@ -121,8 +123,8 @@ test.describe('Silent mode (intercom theme)', () => {
     }
     await page.goto(href);
     await setSilentOnDetailPage(page, 'off');
-    await page.goto('/phones');
-    await expect(page.locator('.phone-silent')).toHaveCount(0);
+    await page.goto('/');
+    await expect(page.locator('.rooms .phone-silent')).toHaveCount(0);
   });
 });
 
@@ -150,12 +152,12 @@ test.describe('Silent mode (dialup theme)', () => {
     await expect(page.locator('#silent-mode-section')).toBeVisible();
     await setSilentOnDetailPage(page, 'on');
 
-    await page.goto('/phones');
-    const row = page.locator(`a[href="${href}"]`).locator('..');
-    const badge = row.locator('.phone-silent').first();
+    await page.goto('/');
+    const card = page.locator(`a.rooms__card[href="${href}"]`);
+    const badge = card.locator('.phone-silent').first();
     await expect(badge).toBeVisible();
     // Dialup shows the SILENT label; intercom hides it via display:none.
-    await expect(row.locator('.phone-silent__text')).toBeVisible();
+    await expect(card.locator('.phone-silent__text')).toBeVisible();
 
     // Restore baseline so the next theme block starts clean.
     await page.goto(href);

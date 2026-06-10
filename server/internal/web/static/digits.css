@@ -236,6 +236,12 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
   font-size: 13px;
   color: var(--ink-muted);
 }
+.page__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 
 /* --------- Stat strip (compressed, not KPI tiles) --------- */
 
@@ -1588,6 +1594,7 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 .rooms__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rooms__name { font-family: var(--font-display); font-style: italic; font-size: 17px; font-weight: 500; }
 .rooms__num { font-size: 13px; color: var(--ink-muted); }
+.rooms__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .rooms__callout {
   margin-top: auto;
   padding: 10px 12px;
@@ -1623,6 +1630,29 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
   color: var(--ink-muted);
   font-size: 13px;
 }
+
+/* First-run welcome card: shown in place of the card grid when the
+   household has no lines yet. */
+.rooms__welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 44px 24px;
+  background: var(--paper);
+  border: 1px dashed var(--rule);
+  border-radius: 12px;
+}
+.rooms__welcome-icon { width: 30px; height: 40px; color: var(--brass); }
+.rooms__welcome-title {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 20px;
+  margin: 0;
+  color: var(--ink);
+}
+.rooms__welcome-text { margin: 0 0 6px; max-width: 400px; }
 
 /* Today list */
 .today-list { list-style: none; margin: 0; padding: 0; }

@@ -192,6 +192,17 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	sub := h.healthStore.Subscribe(callID)
 	defer sub.Close()
 
+	// Re-check liveness AFTER subscribing. Subscribe lazily creates the
+	// session, so if the call ended on another pod between the ownership
+	// check and the Subscribe, the cross-pod evict has already passed and
+	// this session would never receive EndedKind. The DB status is
+	// authoritative; flip straight to the terminal state.
+	if cur, err := h.tracker.GetCall(r.Context(), callID); err == nil && cur.Status == calls.CallStatusEnded {
+		_ = writeSSE(w, "ended", renderEndedFragment(""))
+		flusher.Flush()
+		return
+	}
+
 	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 

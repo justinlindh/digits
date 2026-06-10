@@ -523,8 +523,19 @@ void phone_fsm_update(void) {
 
     process_key(keypad_scan());
 
-    if (s_state == PHONE_STATE_DIALING && !s_dial_sent && s_digits_len > 0) {
+    // Off-hook timeout in DIALING: fire regardless of accumulated digit count.
+    // s_dialing_start_ms is set on DIALING entry and is not reset per digit, so
+    // this bounds total time in DIALING before a completed DIAL. It covers the
+    // partial-dial case (some digits, never reached the required count) and the
+    // zero-digit case where the first key was '*' or '#' (a service-code or
+    // recovery prefix that does not increment s_digits_len), which would
+    // otherwise sit silently in DIALING until the handset is cradled. Preserves
+    // the Bellcore off-hook-timeout intent the DIAL_TONE path cites. Reuses the
+    // TIMEOUT:DIAL_TONE event so digitsd applies its existing off-hook
+    // permanent-signal treatment rather than seeing a new unhandled event.
+    if (s_state == PHONE_STATE_DIALING && !s_dial_sent) {
         if ((now_ms() - s_dialing_start_ms) >= DIAL_TIMEOUT_MS) {
+            uart_proto_send("TIMEOUT:DIAL_TONE");
             set_state(PHONE_STATE_BUSY);
         }
     }

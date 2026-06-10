@@ -87,11 +87,11 @@ func (h *Handler) writeDashStatus(w http.ResponseWriter, flusher http.Flusher, r
 // handleDashboard: only the user's own lines count toward ON·CALL and
 // LINES·ONLINE; FAMILIES is the count of accepted household links.
 func (h *Handler) computeDashStatus(r *http.Request, hh *household.Household) dashStatusVM {
-	ld := h.buildLinesData(r, hh, "")
+	lineRows, _ := h.buildLineRows(r, hh)
 
-	ownNums := make(map[string]struct{}, len(ld.Lines))
+	ownNums := make(map[string]struct{}, len(lineRows))
 	onlineCount := 0
-	for _, l := range ld.Lines {
+	for _, l := range lineRows {
 		ownNums[l.Line.Number] = struct{}{}
 		if l.Online {
 			onlineCount++

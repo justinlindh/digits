@@ -8,8 +8,9 @@ async function setTheme(request: APIRequestContext, theme: string) {
 }
 
 async function firstPhoneHref(page: Page): Promise<string | null> {
-  await page.goto('/phones');
-  const link = page.locator('a[href^="/phones/"]').first();
+  // The line roster lives on Overview now; /phones is pairing-only.
+  await page.goto('/');
+  const link = page.locator('a[href^="/phones/"]:not([href="/phones"])').first();
   if (!(await link.isVisible())) return null;
   return (await link.getAttribute('href'))!;
 }
@@ -118,15 +119,18 @@ test.describe('Voicemail (intercom theme)', () => {
     await clickEnableCheckbox(page);
   });
 
-  test('list page does NOT show a voicemail badge', async ({ page }) => {
-    const href = await firstPhoneHref(page);
-    if (!href) {
-      test.skip(true, 'No phones registered');
+  test('pairing page does NOT show any line voicemail UI', async ({ page }) => {
+    await page.goto('/phones');
+    if (page.url().includes('/auth/login') || page.url().includes('/onboard')) {
+      test.skip(true, 'No authenticated session or needs onboarding');
       return;
     }
-    await page.goto('/phones');
+    // /phones is pairing-only now: no line roster, so no per-line voicemail
+    // controls or unheard chips should render here. The unheard chip lives on
+    // the Overview line cards instead.
     await expect(page.locator('form[data-voicemail]')).toHaveCount(0);
     await expect(page.locator('.phone-voicemail')).toHaveCount(0);
+    await expect(page.locator('.chip--msg')).toHaveCount(0);
   });
 });
 

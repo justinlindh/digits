@@ -130,7 +130,13 @@ func (b *RedisBridge) Subscribe(ctx context.Context) <-chan *Envelope {
 				if env.PodID == b.podID {
 					continue
 				}
-				ch <- &env
+				// Guard the send so a stalled consumer (full buffer) cannot
+				// pin this goroutine open past context cancellation.
+				select {
+				case ch <- &env:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
