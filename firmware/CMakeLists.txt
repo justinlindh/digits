@@ -41,7 +41,11 @@ target_link_libraries(digits
     hardware_watchdog
 )
 
-# Version info — CI passes DIGITS_VERSION; fallback to git describe with fw/ tags
+# Build the firmware sources with warnings enabled. PRIVATE so this applies to
+# the digits target's own translation units; the SDK builds under its own flags.
+target_compile_options(digits PRIVATE -Wall -Wextra)
+
+# Version info. CI passes DIGITS_VERSION; fallback to git describe with fw/ tags
 if(NOT DIGITS_VERSION)
     execute_process(
         COMMAND git describe --tags --always --dirty --match "fw/v*"

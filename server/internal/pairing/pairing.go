@@ -206,21 +206,6 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 	return token, hardwareID, nil
 }
 
-// IsPaired returns whether the device with the given hardware ID has been paired.
-func (s *Store) IsPaired(ctx context.Context, hardwareID string) (bool, error) {
-	var pairedAt sql.NullTime
-	err := s.db.QueryRowContext(ctx, `
-		SELECT paired_at FROM devices WHERE hardware_id = $1
-	`, hardwareID).Scan(&pairedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("check paired: %w", err)
-	}
-	return pairedAt.Valid, nil
-}
-
 // CleanupExpired nulls out pairing codes that have passed their expiry time
 // on unpaired devices. Returns the number of codes cleaned.
 func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {

@@ -1,0 +1,39 @@
+name: Firmware CI
+
+# Host-side firmware unit tests. Path-filtered to firmware changes so nothing
+# runs unless the firmware moved. These tests are native (no Pico SDK, no ARM
+# toolchain), so the job stays cheap.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/fw-ci.yml'
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/fw-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  host-tests:
+    name: host-tests
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Ensure build tools
+        run: |
+          if ! command -v cmake >/dev/null || ! command -v gcc >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y cmake gcc make
+          fi
+      - name: Build and run host tests
+        working-directory: firmware
+        run: make test

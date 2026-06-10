@@ -102,7 +102,7 @@ else
 
     # Fallback: search /media and /run/media for any RPI-RP2
     if [ -z "$MOUNT_POINT" ]; then
-        MOUNT_POINT="$(find /media /run/media /Volumes 2>/dev/null -maxdepth 3 -type d -name "RPI-RP2" | head -1)"
+        MOUNT_POINT="$(find /media /run/media /Volumes -maxdepth 3 -type d -name "RPI-RP2" 2>/dev/null | head -1)"
     fi
 
     if [ -z "$MOUNT_POINT" ]; then

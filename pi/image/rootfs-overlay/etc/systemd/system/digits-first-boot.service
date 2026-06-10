@@ -1,6 +1,6 @@
 [Unit]
 Description=Digits First-Boot Device Identity Initialization
-Documentation=https://github.com/digits/digits
+Documentation=https://github.com/justinlindh/digits
 # Must complete before AP check decides boot mode
 Before=digits-ap-check.service
 # Ensure /data and bind mounts are ready

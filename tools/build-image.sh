@@ -29,6 +29,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Shared die/info/warn. Reachable on the host and inside the Docker
+# image-builder, which bind-mounts the whole repo at /digits.
+# shellcheck source=../pi/image/lib/log.sh
+. "${REPO_DIR}/pi/image/lib/log.sh"
+
 OVERLAY_DIR="${REPO_DIR}/pi/image/rootfs-overlay"
 EMBED_DIR="${REPO_DIR}/pi/digitsd/internal/assets/embed"
 ASSET_MARKER_TOOL="${SCRIPT_DIR}/compute-asset-marker.py"
@@ -218,10 +224,7 @@ PURGE_PACKAGES=(
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
-die()  { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "==> $*"; }
-warn() { echo "WARNING: $*" >&2; }
+# die/info/warn come from pi/image/lib/log.sh, sourced above.
 
 # Dev mode: pass --dev to enable SSH + default user for debugging
 # PCB mode: pass --pcb to target the V2 carrier board. Enables the onboard
@@ -255,11 +258,7 @@ else
     OUTPUT_NAME="digits-pi-v1-${DATE_STAMP}.img"
 fi
 
-require_cmd() {
-    for cmd in "$@"; do
-        command -v "$cmd" &>/dev/null || die "Required command not found: $cmd"
-    done
-}
+# require_cmd comes from pi/image/lib/log.sh, sourced above.
 
 # ── cleanup ──────────────────────────────────────────────────────────────────
 
@@ -341,6 +340,26 @@ detach_loop() {
         LOOP_DEV=""
         USING_KPARTX=false
     fi
+}
+
+# Prepare $ROOTFS_MNT for chroot: install the qemu interpreter and bind the
+# pseudo-filesystems chrooted commands expect.
+chroot_setup() {
+    cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
+    mount -t proc proc "${ROOTFS_MNT}/proc"
+    mount -t sysfs sys "${ROOTFS_MNT}/sys"
+    mount --bind /dev "${ROOTFS_MNT}/dev"
+    mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
+    mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+}
+
+# Undo chroot_setup. Callers must not invoke this with an empty/unset
+# ROOTFS_MNT (the cleanup trap has its own guarded unmount loop).
+chroot_teardown() {
+    for mp in dev/pts dev/shm dev proc sys; do
+        umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
+    done
+    rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
 }
 
 trap cleanup EXIT
@@ -568,15 +587,7 @@ mount "$P4" "$DATA_MNT"
 
 info "Preparing chroot environment (for apt-get operations only)..."
 
-# Copy qemu-user-static into the chroot
-cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
-
-# Mount necessary filesystems for chroot
-mount -t proc proc "${ROOTFS_MNT}/proc"
-mount -t sysfs sys "${ROOTFS_MNT}/sys"
-mount --bind /dev "${ROOTFS_MNT}/dev"
-mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
-mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+chroot_setup
 
 # Prevent services from starting during chroot operations
 cat > "${ROOTFS_MNT}/usr/sbin/policy-rc.d" << 'POLICY'
@@ -618,12 +629,8 @@ chroot "$ROOTFS_MNT" /bin/bash -c "
 
 info "Tearing down chroot (all remaining work is host-side)..."
 
-for mp in dev/pts dev/shm dev proc sys; do
-    umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
-done
-
+chroot_teardown
 rm -f "${ROOTFS_MNT}/usr/sbin/policy-rc.d"
-rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
 
 # Restore resolv.conf (will be replaced with NM symlink later)
 if [[ -f "${ROOTFS_MNT}/etc/resolv.conf.bak" ]]; then
@@ -800,11 +807,7 @@ fi
 # ── step 15: initialize /data partition (host-side) ─────────────────────────
 
 info "Initializing /data directory structure..."
-if [[ "$PCB_MODE" == true ]]; then
-    bash "$INIT_DATA" --pcb "$DATA_MNT"
-else
-    bash "$INIT_DATA" "$DATA_MNT"
-fi
+bash "$INIT_DATA" "$DATA_MNT"
 
 # Pre-write the asset-version marker so digitsd's first-boot Extract sees
 # matching marker and skips the rw/ro remount + asset-rewrite pass entirely.
@@ -933,12 +936,7 @@ install -m 755 "$BOOT_CHECK_SRC"   "${ROOTFS_MNT}/etc/initramfs-tools/scripts/in
 install -m 755 "$RECOVERY_ROOT_SRC" "${ROOTFS_MNT}/etc/initramfs-tools/scripts/local-bottom/recovery-root"
 
 # Set up chroot for tool path resolution, library copying, and initramfs rebuild
-cp "$(which qemu-aarch64-static)" "${ROOTFS_MNT}/usr/bin/"
-mount -t proc proc "${ROOTFS_MNT}/proc"
-mount -t sysfs sys "${ROOTFS_MNT}/sys"
-mount --bind /dev "${ROOTFS_MNT}/dev"
-mount --bind /dev/pts "${ROOTFS_MNT}/dev/pts"
-mount --bind /dev/shm "${ROOTFS_MNT}/dev/shm" 2>/dev/null || true
+chroot_setup
 
 # Copy required tools from rootfs into recovery partition bin/
 info "  Copying required tools to recovery/bin/..."
@@ -1027,6 +1025,7 @@ fi
 info "  Installing busybox and symlinks..."
 install -m 755 "${ROOTFS_MNT}/bin/busybox" "${RECOVERY_MNT}/bin/busybox"
 # libresolv is busybox's only extra dependency beyond libc
+# shellcheck disable=SC2043  # single-entry list kept as a loop for future libs
 for lib in libresolv.so.2; do
     LIBPATH=$(chroot "$ROOTFS_MNT" readlink -f "/usr/lib/aarch64-linux-gnu/${lib}" 2>/dev/null || true)
     if [[ -n "$LIBPATH" && -f "${ROOTFS_MNT}${LIBPATH}" ]]; then
@@ -1041,6 +1040,7 @@ done
 # The recovery binary loads brcmfmac via modprobe; the kernel's
 # request_module("brcmfmac-wcc") also needs modprobe infrastructure.
 info "  Copying WiFi kernel modules..."
+# shellcheck disable=SC2010  # kernel dir names are well-known, no special chars
 KVER=$(ls "${ROOTFS_MNT}/lib/modules/" | grep rpi-v8 | head -1)
 KDIR="${ROOTFS_MNT}/lib/modules/${KVER}"
 RECOVERY_KDIR="${RECOVERY_MNT}/lib/modules/${KVER}"
@@ -1139,10 +1139,7 @@ ln -sf /run "${RECOVERY_MNT}/var/run"
 info "  Rebuilding initramfs (chroot)..."
 chroot "$ROOTFS_MNT" /bin/bash -c "update-initramfs -u"
 
-for mp in dev/pts dev/shm dev proc sys; do
-    umount "${ROOTFS_MNT}/${mp}" 2>/dev/null || true
-done
-rm -f "${ROOTFS_MNT}/usr/bin/qemu-aarch64-static"
+chroot_teardown
 
 info "  Unmounting recovery partition..."
 umount "$RECOVERY_MNT"

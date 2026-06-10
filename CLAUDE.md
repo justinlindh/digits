@@ -20,7 +20,7 @@ These override default behavior and apply to every output: chat, code, commits, 
 firmware/       Pico H firmware (C, CMake, Pico SDK)
 pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64); handles all modes: normal, recovery, setup, gpclk0
 pi/image/       Pi OS image builder
-server/         Signaling server + web UI (Go, htmx, Tailwind)
+server/         Signaling server + web UI (Go, htmx, custom CSS)
 tools/          Build scripts for firmware, Pi binaries, and OS images
 scripts/        Firmware build/flash helpers
 docs/           Hardware notes, protocol specs, architecture
@@ -127,7 +127,7 @@ docs: update wiring notes
 
 **`gh` PR/issue bodies.** With a single-quoted heredoc (`<<'EOF'`), the shell does no interpretation, so write backticks and quotes literally. Escaping them as `\`` or `\"` ships the backslashes to GitHub verbatim and breaks the rendered formatting (symptom: published body shows `\`foo\`` everywhere instead of `foo` in inline code).
 
-**Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
+**Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx with custom CSS (`digits.css` plus per-theme `dialup.css` and `answering-machine.css` in `internal/web/static/`), templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 
 ## Definition of done for substantial work
 
