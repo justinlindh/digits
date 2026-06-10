@@ -38,12 +38,13 @@ jobs:
           set -euo pipefail
 
           # Collect the shell scripts to lint. The .sh-suffixed scripts under
-          # tools/, scripts/, and pi/image/ are explicit. The executables in
-          # pi/image/rootfs-overlay have no extension and mix shells, so select
-          # them by shebang and exclude the one Python script
-          # (digits-pico-monitor, which shellcheck cannot parse).
+          # tools/, scripts/, and pi/image/ (including the sourced lib/ helper)
+          # are explicit. The executables in pi/image/rootfs-overlay have no
+          # extension and mix shells, so select them by shebang and exclude the
+          # one Python script (digits-pico-monitor, which shellcheck cannot
+          # parse).
           mapfile -t files < <(
-            ls tools/*.sh scripts/*.sh pi/image/*.sh pi/image/initramfs/*.sh 2>/dev/null
+            ls tools/*.sh scripts/*.sh pi/image/*.sh pi/image/lib/*.sh pi/image/initramfs/*.sh 2>/dev/null
             grep -rIlE '^#!.*(bash|/bin/sh|busybox sh)' pi/image/rootfs-overlay/ 2>/dev/null || true
           )
 
