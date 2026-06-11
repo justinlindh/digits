@@ -843,13 +843,46 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	}
 }
 
+// picoStateResyncer is the subset of *phone.SerialPort that the Pico
+// hardware-reset and state-resync helpers need. Declaring it as an interface
+// lets tests fake the serial boundary and record the commands emitted, the same
+// way linkhealth fakes its sigSender.
+type picoStateResyncer interface {
+	StopRing()
+	LED(mode string)
+	StateSet(state string)
+}
+
 // resetPicoHardware clears any residual ring or LED state on the Pico in case
 // the Pi rebooted mid-call. Safe no-op on clean boots where none of these
 // hardware states were active.
-func resetPicoHardware(sp *phone.SerialPort) {
-	slog.Info("pico: clearing residual hardware state on startup")
+func resetPicoHardware(sp picoStateResyncer) {
+	slog.Info("pico: clearing residual hardware state")
 	sp.StopRing()
 	sp.LED("UNLOCK")
+}
+
+// picoStateForToken derives the persisted Pico phase from the pairing state the
+// same way the startup path does: an empty device token means the phone is not
+// yet paired. Kept as a pure function so the mapping has a single source of
+// truth shared by startup and the post-flash resync.
+func picoStateForToken(deviceToken string) string {
+	if deviceToken == "" {
+		return "UNPAIRED"
+	}
+	return "PAIRED"
+}
+
+// resyncPicoState restores the Pico's residual hardware state and persisted
+// phase byte, mirroring exactly what the startup path does after POST. The Pico
+// boots PHASE_PAIRED as LED_MODE_BREATHING and relies on the Pi to clear it; a
+// runtime firmware flash reboots the chip without a daemon restart, so without
+// this the LED is left breathing at idle. deviceToken is read live (pairing can
+// change it at runtime) and mapped through picoStateForToken so this stays in
+// lockstep with the startup StateSet.
+func resyncPicoState(sp picoStateResyncer, deviceToken string) {
+	resetPicoHardware(sp)
+	sp.StateSet(picoStateForToken(deviceToken))
 }
 
 // playPairingAnnouncement queues one full pairing-voice sequence on mixer:
@@ -1455,12 +1488,7 @@ func main() {
 
 	// Clear any residual Pico hardware state from before the last reboot.
 	if postOk {
-		resetPicoHardware(sp)
-		if cfg.DeviceToken == "" {
-			sp.StateSet("UNPAIRED")
-		} else {
-			sp.StateSet("PAIRED")
-		}
+		resyncPicoState(sp, cfg.DeviceToken)
 	}
 
 	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
@@ -2236,6 +2264,25 @@ func main() {
 				cb.publishVoicemailStateInitial()
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
+			}
+
+			// A successful version re-query proves the Pico finished rebooting
+			// and is answering UART again. Any reboot (runtime firmware flash,
+			// external SWD, power cycle) leaves the chip booted into
+			// PHASE_PAIRED as LED_MODE_BREATHING, expecting the Pi to clear it.
+			// Startup does this after POST; without it here, a runtime
+			// firmware-only OTA (no daemon restart) leaves the LED breathing at
+			// idle. Skip while a call is active so a mid-call Pico power cycle
+			// does not stomp the call LED; the OTA path is already idle-gated by
+			// runAutoUpdate, so this only guards the external-reboot case.
+			cb.mu.Lock()
+			inCall := cb.callPeer != ""
+			cb.mu.Unlock()
+			if inCall {
+				slog.Info("pico: skipping state resync after reboot, call in progress")
+			} else {
+				slog.Info("pico: resyncing state after reboot")
+				resyncPicoState(sp, cfg.DeviceToken)
 			}
 
 		case msg := <-sig.Inbox():
