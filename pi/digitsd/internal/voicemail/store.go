@@ -196,15 +196,7 @@ func (s *Store) MarkHeard(id int64) error {
 func (s *Store) Delete(id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	metaPath := filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
-	if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+	return s.removeMessageLocked(id)
 }
 
 // BeginRecording opens a fresh Recorder. AppendFrame queues raw Opus payloads
@@ -215,8 +207,7 @@ func (s *Store) BeginRecording() (*Recorder, error) {
 	defer s.mu.Unlock()
 
 	id := s.opts.Now().UnixMilli()
-	finalPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	return s.openRecorderLocked(id, finalPath, messageMaxDuration)
+	return s.openRecorderLocked(id, s.framesPath(id), messageMaxDuration)
 }
 
 // ErrRecorderClosed is returned by Recorder.AppendFrame when the recorder has
@@ -360,8 +351,7 @@ type Player struct {
 
 // OpenPlayer returns a Player for the given message ID.
 func (s *Store) OpenPlayer(id int64) (*Player, error) {
-	path := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	f, err := os.Open(path)
+	f, err := os.Open(s.framesPath(id))
 	if err != nil {
 		return nil, err
 	}
@@ -474,6 +464,22 @@ func (s *Store) metaPath(id int64) string {
 	return filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
 }
 
+func (s *Store) framesPath(id int64) string {
+	return filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
+}
+
+// removeMessageLocked deletes a message's frames and metadata files,
+// tolerating either being already gone. Caller holds s.mu.
+func (s *Store) removeMessageLocked(id int64) error {
+	if err := os.Remove(s.framesPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(s.metaPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
 func (s *Store) readMeta(id int64) (metaFile, error) {
 	var m metaFile
 	data, err := os.ReadFile(s.metaPath(id))
@@ -530,12 +536,7 @@ func (s *Store) evictLocked() error {
 		return nil
 	}
 	for i := 0; i < excess; i++ {
-		framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", msgs[i].ID))
-		metaPath := s.metaPath(msgs[i].ID)
-		if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := s.removeMessageLocked(msgs[i].ID); err != nil {
 			return err
 		}
 	}
