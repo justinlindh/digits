@@ -96,8 +96,10 @@ type Tracker struct {
 	state       *CallState
 }
 
-// New returns a Tracker backed by d. Pass nil to operate without a database
-// (unit tests that expect no DB calls). Use the Set* methods to wire up
+// New returns a Tracker backed by d. Pass nil only for unit tests that
+// exercise the pure in-memory methods (Busy, Active, ClearByNumber, etc.);
+// any call to a DB-backed method (OnCallInitiated, OnCallEnded, GetCall,
+// etc.) on a nil-DB tracker will panic. Use the Set* methods to wire up
 // optional observers before the server begins accepting connections.
 func New(d *db.Database) *Tracker {
 	return &Tracker{
