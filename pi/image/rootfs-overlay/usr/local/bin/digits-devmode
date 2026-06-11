@@ -27,14 +27,22 @@ FLAG=/data/digits/dev-mode
 SSH_KEY_DIR=/data/ssh
 SSHD_DROPIN=/etc/ssh/sshd_config.d/digits-dev.conf
 SUDOERS_DROPIN=/etc/sudoers.d/dev-nopasswd
+# Defense-in-depth floor, mirrors the server's validateDevModePassword. The
+# web handler is the primary gate; this guards any other producer of a
+# dev_mode command on the signaling channel.
+MIN_PASSWORD_LEN=8
+
+# Tracks whether the rootfs is currently remounted rw so the EXIT trap can
+# restore it on any early/error exit (set -e) without leaving / writable.
+_need_ro=0
+restore_ro_on_exit() { if [[ "$_need_ro" == 1 ]]; then remount_ro; fi; }
 
 remount_rw() { mount -o remount,rw / ; }
 # The rootfs sometimes refuses an immediate ro transition (a just-written file's
 # page cache is still dirty). Mirror the OTA path: sync and retry a few times,
 # and never fail the whole operation if it stays rw -- the next boot mounts ro.
 remount_ro() {
-  local i
-  for i in 1 2 3 4; do
+  for _ in 1 2 3 4; do
     sync
     if mount -o remount,ro / 2>/dev/null; then
       return 0
@@ -85,31 +93,58 @@ cmd_enable() {
     echo "digits-devmode: enable requires a password on stdin" >&2
     exit 2
   fi
+  if [[ "${#password}" -lt "$MIN_PASSWORD_LEN" ]]; then
+    echo "digits-devmode: password must be at least $MIN_PASSWORD_LEN characters" >&2
+    exit 2
+  fi
 
-  remount_rw
-  mkdir -p /data/digits
-  touch "$FLAG"
+  # All persistent rootfs changes happen in one rw window. The EXIT trap
+  # restores ro if any step fails under set -e, so a partial enable never
+  # leaves / writable, and the flag below is only set on full success.
+  trap restore_ro_on_exit EXIT
+  remount_rw; _need_ro=1
   ensure_host_keys
   ensure_ssh_symlinks
   ensure_password_auth
   ensure_dev_user
   printf '%s:%s\n' "$DEV_USER" "$password" | chpasswd
   passwd -u "$DEV_USER" >/dev/null 2>&1 || true
-  remount_ro
-
-  # Raspbian masks/auto-generates host keys via this unit; we manage our own.
+  # Raspbian's regenerate_ssh_host_keys.service would ssh-keygen into the
+  # read-only /etc/ssh and pollute it; we supply our own keys, so mask it
+  # (matches the --dev image build). `enable` (not --now) writes the rootfs
+  # symlink while we still hold rw; the service is started after remount-ro.
+  systemctl mask regenerate_ssh_host_keys.service >/dev/null 2>&1 || true
   systemctl unmask ssh.service >/dev/null 2>&1 || true
-  systemctl enable --now ssh.service
+  systemctl enable ssh.service
+  remount_ro; _need_ro=0
+  trap - EXIT
+
+  # Start outside the rw window (no rootfs writes) and confirm it actually
+  # came up before declaring success. The flag is written last, so the
+  # device only reports dev mode on once SSH is genuinely listening.
+  systemctl start ssh.service
+  systemctl is-active --quiet ssh.service
+  mkdir -p /data/digits
+  touch "$FLAG"
   echo "digits-devmode: enabled"
 }
 
 cmd_disable() {
   systemctl disable --now ssh.service >/dev/null 2>&1 || true
+  # Stopping the unit only blocks new logins; forked sshd children survive.
+  # Kill the dev user's live sessions so "off" actually ends SSH access.
+  pkill -KILL -u "$DEV_USER" >/dev/null 2>&1 || true
 
-  remount_rw
+  # Remove the standing-privilege artifacts enable created so "off" leaves no
+  # passwordless-sudo grant or global password-auth setting on disk.
+  trap restore_ro_on_exit EXIT
+  remount_rw; _need_ro=1
   passwd -l "$DEV_USER" >/dev/null 2>&1 || true
+  rm -f "$SUDOERS_DROPIN" "$SSHD_DROPIN"
+  remount_ro; _need_ro=0
+  trap - EXIT
+
   rm -f "$FLAG"
-  remount_ro
   echo "digits-devmode: disabled"
 }
 

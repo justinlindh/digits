@@ -868,10 +868,13 @@ func validateDevModePassword(pw string) error {
 	if strings.TrimSpace(pw) == "" {
 		return errors.New("password is required")
 	}
-	if len(pw) < devModePasswordMin {
+	// Count runes, not bytes, so the "characters" bounds match what the user
+	// typed (and the browser's length check) for non-ASCII passwords.
+	n := utf8.RuneCountInString(pw)
+	if n < devModePasswordMin {
 		return errors.New("password must be at least 8 characters")
 	}
-	if len(pw) > devModePasswordMax {
+	if n > devModePasswordMax {
 		return errors.New("password must be at most 72 characters")
 	}
 	return nil

@@ -785,6 +785,13 @@
       }).catch(function() {});
     }, 2000);
   }
+
+  window.addEventListener('pagehide', function() {
+    if (piPollTimer) clearInterval(piPollTimer);
+    if (fwPollTimer) clearInterval(fwPollTimer);
+    if (restartPollTimer) clearInterval(restartPollTimer);
+    if (devModePollTimer) clearInterval(devModePollTimer);
+  });
   </script>
 
 </div>
