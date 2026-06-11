@@ -23,7 +23,7 @@ import (
 
 // devModeHelperPath is the privileged helper that performs the root-level work
 // of toggling developer mode (SSH host keys, the dev user, ssh.service). It is
-// invoked via the single sudoers allowlist entry in /etc/sudoers.d/digits-updater.
+// invoked via the single sudoers allowlist entry in /etc/sudoers.d/digits-devmode.
 const devModeHelperPath = "/usr/local/bin/digits-devmode"
 
 // runDevModeHelper shells out to the privileged helper to enable or disable
