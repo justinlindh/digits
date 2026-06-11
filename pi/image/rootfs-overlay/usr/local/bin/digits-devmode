@@ -10,6 +10,12 @@
 # sudoers allowlist entry. The enable password is read from stdin so it never
 # appears in the process list.
 #
+# This mirrors, at runtime, what tools/build-image.sh does host-side for --dev
+# images (the "dev mode" step that creates the dev user, host keys, the SSH
+# password-auth drop-in, and the sudoers entry). Keep the two in sync: the
+# dropin path/contents, sudoers line, symlink targets, and group list below
+# must match that step.
+#
 # Usage:
 #   digits-devmode enable   # reads the dev login password from stdin
 #   digits-devmode disable

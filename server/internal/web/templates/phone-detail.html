@@ -511,6 +511,7 @@
   var piPollTimer = null;
   var fwPollTimer = null;
   var restartPollTimer = null;
+  var devModePollTimer = null;
   var restartMode = null;
 
   function doRingTest() {
@@ -768,20 +769,21 @@
     .catch(function(err) { devModeError('Network error: ' + err.message); });
   }
   function pollDevMode(target) {
+    if (devModePollTimer) clearInterval(devModePollTimer);
     var attempts = 0;
-    var timer = setInterval(function() {
+    devModePollTimer = setInterval(function() {
       attempts++;
-      if (attempts > 30) { clearInterval(timer); devModeError('Timed out waiting for the device to apply the change.'); return; }
+      if (attempts > 15) { clearInterval(devModePollTimer); devModeError('Timed out waiting for the device to apply the change.'); return; }
       fetch('/phones/' + phoneNumber + '/dev-mode-status')
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.enabled === target) {
-          clearInterval(timer);
+          clearInterval(devModePollTimer);
           devModeProgress('Done. Reloading...');
           setTimeout(function() { location.reload(); }, 1000);
         }
       }).catch(function() {});
-    }, 1000);
+    }, 2000);
   }
   </script>
 
@@ -1698,6 +1700,7 @@
 
     var amRestartMode = null;
     var amRestartPollTimer = null;
+    var amDevModePollTimer = null;
 
     window.amShowRestartConfirm = function(mode) {
       amRestartMode = mode;
@@ -1871,24 +1874,26 @@
       .catch(function(err) { amDevModeError('Network error: ' + err.message); });
     }
     function amPollDevMode(target) {
+      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
       var attempts = 0;
-      var timer = setInterval(function() {
+      amDevModePollTimer = setInterval(function() {
         attempts++;
-        if (attempts > 30) { clearInterval(timer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
+        if (attempts > 15) { clearInterval(amDevModePollTimer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
         fetch('/phones/' + phoneNumber + '/dev-mode-status')
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.enabled === target) {
-            clearInterval(timer);
+            clearInterval(amDevModePollTimer);
             amDevModeProgress('Done. Reloading...');
             setTimeout(function() { location.reload(); }, 1000);
           }
         }).catch(function() {});
-      }, 1000);
+      }, 2000);
     }
 
     window.addEventListener('pagehide', function() {
       if (amRestartPollTimer) clearInterval(amRestartPollTimer);
+      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
       Object.keys(pollers).forEach(function(p) { if (pollers[p]) clearInterval(pollers[p]); });
     });
   })();

@@ -36,9 +36,7 @@ func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Reque
 	if ln == nil {
 		return nil, nil
 	}
-	user := auth.UserFromContext(r.Context())
-	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
-	if err != nil || role != "admin" {
+	if !h.isHouseholdAdmin(r, hh.ID) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return nil, nil
 	}
