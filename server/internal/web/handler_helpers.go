@@ -45,6 +45,19 @@ func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Reque
 	return ln, hh
 }
 
+// isHouseholdAdmin reports whether the request's user is an admin of the given
+// household. Best-effort: returns false on any lookup error or missing user.
+// Used to gate the rendering of admin-only UI (the result is advisory; the
+// POST handlers still enforce admin via requireLineOwnershipAdmin).
+func (h *Handler) isHouseholdAdmin(r *http.Request, householdID string) bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return false
+	}
+	role, err := h.householdStore.GetRole(r.Context(), user.ID, householdID)
+	return err == nil && role == "admin"
+}
+
 // requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
 // household value, for callers that need the household state (e.g., DND)
 // without an extra DB round-trip. On any failure it writes 404 and returns
