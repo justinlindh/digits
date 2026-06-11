@@ -210,11 +210,8 @@ These three MUST be OFF or audio has fade-in latency:
 | 39    | Headphone Gain Ramping Switch | off   |
 | 40    | Lineout Gain Ramping Switch | off     |
 
-Mixer state file: `/home/digits/digits_mixer.state`
-Restore script: `/home/digits/restore_mixer.sh`
-Systemd service: `digits-mixer.service` (runs on boot)
-
-Full mixer documentation: `pi/README-mixer.md`
+Mixer state file: `/data/digits_mixer.state`
+Restored on boot by `digitsd.service` (its `ExecStartPre` runs `alsactl restore`)
 
 ## Power Architecture
 
@@ -243,8 +240,7 @@ Full mixer documentation: `pi/README-mixer.md`
 
 | Service                    | Purpose                                   | Status   |
 |----------------------------|-------------------------------------------|----------|
-| `digitsd.service`          | Main daemon -- serial, tones, WebRTC, keepalive | Active |
-| `digits-mixer.service`    | Restore ALSA mixer state on boot          | Active   |
+| `digitsd.service`          | Main daemon -- serial, tones, mixer restore, WebRTC, keepalive | Active |
 | `digits-ap-check.service` | Boot-time check: AP mode vs normal boot   | Active (oneshot) |
 | `digits-ap.service`       | hostapd AP mode (setup only)              | Conditional |
 | `digits-dnsmasq-ap.service` | dnsmasq DHCP/DNS for AP mode            | Conditional |

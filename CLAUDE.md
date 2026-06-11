@@ -96,7 +96,7 @@ When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static
 
 ## Linting
 
-golangci-lint v2 with `standard` defaults (`.golangci.yml` at repo root). Run `golangci-lint run ./...` from each module directory before pushing Go changes; CI enforces errcheck that `go vet` does not. Pre-commit hook: `git config core.hooksPath .githooks`.
+golangci-lint v2 with `standard` defaults (`.golangci.yml` at repo root). Run `golangci-lint run ./...` from each module directory before pushing Go changes; CI enforces errcheck that `go vet` does not. Shell scripts under `tools/`, `scripts/`, and `pi/image/` are gated by shellcheck (`-S warning -x`) in CI. Pre-commit hook (`git config core.hooksPath .githooks`) runs both on staged files.
 
 ## Production deployment
 
@@ -144,4 +144,6 @@ Small fixes, docs, dep bumps, and typo PRs do not need this pass; their plans ma
 GitHub Actions workflows in `.github/workflows/`:
 - `server-ci.yml`: build, test, vet (triggers on `server/` changes); required for merge.
 - `server-integration.yml`: integration tests (Postgres service containers); required for merge to main.
+- `fw-ci.yml`: host-side firmware unit tests, no Pico SDK needed (triggers on `firmware/` changes).
+- `shellcheck-ci.yml`: shellcheck `-S warning -x` over `tools/`, `scripts/`, and `pi/image/` (including shebang-detected `rootfs-overlay` executables).
 - `fw-release` / `pi-release` / `server-release`: tag-triggered release pipelines.

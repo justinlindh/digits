@@ -14,7 +14,7 @@ Build and deploy Pi binaries to phone devices over SSH. Handles the read-only ro
 | `digitsd` | `pi/digitsd/` | `make build` | `bin/digitsd` | `/usr/local/bin/digitsd` | `digitsd` |
 | diagnostic tools | `pi/digitsd/` | `GOOS=linux GOARCH=arm64 go build -o bin/<name> ./cmd/<name>` | `bin/<name>` | `/tmp/<name>` | none |
 
-Diagnostic tools: `alsatest`, `latbench`, `latclient`, `memprofile`, `pipetest`, `dmixlat`, `clocksync`. Deploy to `/tmp/` -- they are throwaway debugging utilities, not permanent system binaries.
+Diagnostic tools: `alsatest`, `latclient`, `memprofile`, `dmixlat`. Deploy to `/tmp/` -- they are throwaway debugging utilities, not permanent system binaries. The full list with per-tool purpose lives in `pi/digitsd/cmd/README.md`.
 
 `digitsd` handles all modes via the `--mode` flag: `normal` (default), `recovery`, `setup`, and `gpclk0`. There is no separate `digits-setup` or `digits-recovery` binary.
 
