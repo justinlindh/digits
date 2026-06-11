@@ -166,11 +166,12 @@ type daemonCallbacks struct {
 	// daemon (set-once) and are read by handleSignal; flashCapable and
 	// pairingRefresh are shared by identity with the run loop so a reset or
 	// load in either place is seen by the other.
-	deviceID        string       // hardware device ID, reported on factory reset
-	serverURL       string       // effective signaling server URL
-	flashCapable    *atomic.Bool // SWD-flash capability (shared with run loop)
-	requeryFirmware func()       // re-query Pico firmware version off the main loop
-	pairingRefresh  *time.Timer  // pairing-code refresh timer (shared with run loop)
+	deviceID        string          // hardware device ID, reported on factory reset
+	serverURL       string          // effective signaling server URL
+	flashCapable    *atomic.Bool    // SWD-flash capability (shared with run loop)
+	requeryFirmware func()          // re-query Pico firmware version off the main loop
+	pairingRefresh  *time.Timer     // pairing-code refresh timer (shared with run loop)
+	devMode         *devModeManager // dev-mode (SSH + dev web UI) lifecycle; nil outside normal mode
 
 	// Voicemail state. voicemailStore is opened once at startup and is nil
 	// when the feature is disabled or initialization failed. recorder is the
@@ -1969,55 +1970,57 @@ func main() {
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
 
-	// Dev-mode web UI on :8080 (only when the flag file is present).
+	// Dev-mode web UI on :8080. The manager is always constructed so a runtime
+	// dev_mode command can start it without a restart; the listener only comes
+	// up when the flag is present (now, at boot) or when enabled later.
+	//
+	// Snapshot the phase once at startup; it rarely changes during normal
+	// operation and querying UART on every HTTP poll is wasteful.
+	startupPhase := cachedPhase
+	devCfg := &devModeConfig{
+		FlagPath:           devmode.DefaultFlagPath,
+		SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
+		SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
+		UARTLogPath:        uartLogPath,
+		CaptureDevice:      audio.CodecCaptureDevice(),
+		StatusFunc: func() devModeStatus {
+			fwVer, fwCom := cb.getFirmwareVersion()
+			return devModeStatus{
+				DigitsdVersion:   version.Version,
+				FirmwareVersion:  fwVer,
+				FirmwareCommit:   fwCom,
+				Phase:            startupPhase,
+				Online:           cb.paired.Load(),
+				PhoneNumber:      effectiveNumber,
+				ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
+			}
+		},
+	}
+	if flashCapable.Load() {
+		devCfg.FlashFunc = func(elfPath string) error {
+			// Move the uploaded ELF to the standard firmware path, then
+			// invoke the same flash script the OTA updater uses.
+			if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
+				return fmt.Errorf("stage firmware: %w", err)
+			}
+			cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+			cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("flash script: %w", err)
+			}
+			slog.Info("devmode: flash script succeeded")
+			requeryFirmware()
+			return nil
+		}
+	}
+	cb.devMode = newDevModeManager(devCfg)
+	defer cb.devMode.Close()
 	if devmode.Enabled(devmode.DefaultFlagPath) {
 		slog.Info("devmode: flag present, starting dev-mode web UI")
-		// Snapshot the phase once at startup; it rarely changes during
-		// normal operation and querying UART on every HTTP poll is wasteful.
-		startupPhase := cachedPhase
-		devCfg := &devModeConfig{
-			FlagPath:           devmode.DefaultFlagPath,
-			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
-			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
-			UARTLogPath:        uartLogPath,
-			CaptureDevice:      audio.CodecCaptureDevice(),
-			StatusFunc: func() devModeStatus {
-				fwVer, fwCom := cb.getFirmwareVersion()
-				return devModeStatus{
-					DigitsdVersion:   version.Version,
-					FirmwareVersion:  fwVer,
-					FirmwareCommit:   fwCom,
-					Phase:            startupPhase,
-					Online:           cb.paired.Load(),
-					PhoneNumber:      effectiveNumber,
-					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
-				}
-			},
-		}
-		if flashCapable.Load() {
-			devCfg.FlashFunc = func(elfPath string) error {
-				// Move the uploaded ELF to the standard firmware path, then
-				// invoke the same flash script the OTA updater uses.
-				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
-					return fmt.Errorf("stage firmware: %w", err)
-				}
-				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
-				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("flash script: %w", err)
-				}
-				slog.Info("devmode: flash script succeeded")
-				requeryFirmware()
-				return nil
-			}
-		}
-		devLn, devErr := startDevModeServer(devCfg)
-		if devErr != nil {
-			slog.Warn("devmode: failed to start web UI", "error", devErr)
-		} else {
-			defer func() { _ = devLn.Close() }()
+		if err := cb.devMode.EnsureListener(); err != nil {
+			slog.Warn("devmode: failed to start web UI", "error", err)
 		}
 	}
 

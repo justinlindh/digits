@@ -415,6 +415,31 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			slog.Info("ring test: stopped")
 		}()
 
+	case sigclient.TypeDevMode:
+		enable := msg.DevMode
+		password := msg.DevModePassword
+		slog.Info("dev mode: command received", "enable", enable)
+		if d.devMode == nil {
+			slog.Warn("dev mode: manager unavailable, ignoring command")
+			break
+		}
+		go func() {
+			var err error
+			if enable {
+				err = d.devMode.Enable(password)
+			} else {
+				err = d.devMode.Disable()
+			}
+			if err != nil {
+				slog.Error("dev mode: apply failed", "enable", enable, "error", err)
+				return
+			}
+			// Re-report device_info so the server reflects the new state;
+			// sendDeviceInfo reads the flag the helper just wrote.
+			fwVer, fwCom := d.getFirmwareVersion()
+			sendDeviceInfo(d.currentSig(), fwVer, fwCom)
+		}()
+
 	case sigclient.TypeLineSettings:
 		if msg.LineSettings == nil {
 			slog.Warn("line_settings message missing payload", "from", msg.From)

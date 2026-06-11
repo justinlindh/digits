@@ -25,6 +25,7 @@ const (
 	TypeFactoryReset        = "factory_reset"         // Server → Phone: trigger factory reset
 	TypeRestart             = "restart"               // Server → Phone: restart service or reboot
 	TypeRingTest            = "ring_test"             // Server → Phone: brief ring for hardware verification
+	TypeDevMode             = "dev_mode"              // Server → Phone: enable/disable developer mode (SSH + dev web UI)
 	TypeLineSettings        = "line_settings"         // Server → Phone: per-line config update
 	TypeLinkHealth          = "link_health"           // Phone → Server: per-call stats snapshot
 	TypeRepair              = "repair"                // Phone → Server: invalidate pairing (used by *#0* before reboot)
@@ -203,7 +204,12 @@ type Message struct {
 	LineSettings *LineSettings `json:"line_settings,omitempty"`
 
 	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	// and, on dev_mode command messages, the requested on/off state.
 	DevMode bool `json:"dev_mode,omitempty"`
+
+	// DevModePassword is the new SSH login password carried on a dev_mode
+	// command when enabling. Server -> device only.
+	DevModePassword string `json:"dev_mode_password,omitempty"`
 
 	// Extension pickup fields (POTS extension model).
 	// Extension is true when this SDP/ICE message belongs to an extension

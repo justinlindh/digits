@@ -168,8 +168,7 @@ func (h *Handler) handleLinksRevokePost(w http.ResponseWriter, r *http.Request) 
 	isAdmin := false
 	for _, hh := range households {
 		if hh.ID == link.HouseholdAID || (link.HouseholdBID != nil && hh.ID == *link.HouseholdBID) {
-			role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
-			if err == nil && role == "admin" {
+			if h.isHouseholdAdmin(r, hh.ID) {
 				isAdmin = true
 				break
 			}

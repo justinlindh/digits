@@ -48,6 +48,11 @@ const (
 	// TypeRingTest is sent by the server to briefly ring the bell for hardware verification.
 	TypeRingTest = "ring_test"
 
+	// TypeDevMode is sent by the server to enable or disable developer mode
+	// (SSH + the on-device dev web UI). DevMode carries the on/off intent and,
+	// when enabling, DevModePassword carries the new SSH login password.
+	TypeDevMode = "dev_mode"
+
 	// TypeLineSettings is sent by the server to push an updated Settings blob
 	// for the line this device is registered as. Applied live.
 	TypeLineSettings = "line_settings"
@@ -204,7 +209,12 @@ type Message struct {
 	UpdateDetail string `json:"update_detail,omitempty"` // human-readable detail
 
 	// DevMode indicates the device has dev-mode enabled (device_info messages)
+	// and, on dev_mode command messages, the requested on/off state.
 	DevMode bool `json:"dev_mode,omitempty"`
+
+	// DevModePassword is the new SSH login password carried on a dev_mode
+	// command when enabling. Server -> device only.
+	DevModePassword string `json:"dev_mode_password,omitempty"`
 
 	// Restart fields (restart messages)
 	RestartMode string `json:"restart_mode,omitempty"` // "service" or "reboot"

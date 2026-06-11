@@ -371,6 +371,46 @@
             </div>
           </div>
 
+          {{if .IsAdmin}}
+          <!-- Developer mode -->
+          <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+            <div class="field__label" style="margin-bottom: 6px;">Developer mode</div>
+            {{if and .DeviceInfo .DeviceInfo.DevMode}}
+            <p class="muted" style="font-size: 12.5px; margin: 0 0 8px;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+            <div id="devmode-on-default">
+              <button type="button" onclick="showDevModeDisableConfirm()" class="btn btn--danger">Disable developer mode</button>
+            </div>
+            <div id="devmode-disable-confirm" class="hidden">
+              <p style="font-size: 13.5px; color: var(--ink); margin: 8px 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+              <div class="hstack" style="gap: 8px;">
+                <button type="button" onclick="doDevModeDisable()" class="btn btn--danger">Confirm</button>
+                <button type="button" onclick="cancelDevModeDisable()" class="btn">Cancel</button>
+              </div>
+            </div>
+            {{else}}
+            <p class="muted" style="font-size: 12.5px; margin: 0 0 8px;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
+            <div id="devmode-off-default">
+              <button type="button" onclick="showDevModeEnableForm()" class="btn">Enable developer mode</button>
+            </div>
+            <div id="devmode-enable-form" class="hidden">
+              <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
+              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" style="max-width: 280px;" placeholder="At least 8 characters">
+              <span class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+              <div class="hstack" style="gap: 8px; margin-top: 10px;">
+                <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
+                <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
+              </div>
+            </div>
+            {{end}}
+            <div id="devmode-progress" class="hidden" style="margin-top: 10px;">
+              <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+                <div id="devmode-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                <span id="devmode-text" style="font-size: 13px; color: var(--ink);">Sending command...</span>
+              </div>
+            </div>
+          </div>
+          {{end}}
+
         </div>
       </section>
       {{end}}
@@ -471,6 +511,7 @@
   var piPollTimer = null;
   var fwPollTimer = null;
   var restartPollTimer = null;
+  var devModePollTimer = null;
   var restartMode = null;
 
   function doRingTest() {
@@ -670,6 +711,87 @@
       text.style.color = 'var(--rust)';
     });
   }
+
+  function showDevModeEnableForm() {
+    document.getElementById('devmode-off-default').classList.add('hidden');
+    document.getElementById('devmode-enable-form').classList.remove('hidden');
+    document.getElementById('devmode-password').focus();
+  }
+  function cancelDevModeEnable() {
+    document.getElementById('devmode-enable-form').classList.add('hidden');
+    document.getElementById('devmode-off-default').classList.remove('hidden');
+  }
+  function showDevModeDisableConfirm() {
+    document.getElementById('devmode-on-default').classList.add('hidden');
+    document.getElementById('devmode-disable-confirm').classList.remove('hidden');
+  }
+  function cancelDevModeDisable() {
+    document.getElementById('devmode-disable-confirm').classList.add('hidden');
+    document.getElementById('devmode-on-default').classList.remove('hidden');
+  }
+  function devModeProgress(msg) {
+    var p = document.getElementById('devmode-progress');
+    if (p) p.classList.remove('hidden');
+    var t = document.getElementById('devmode-text');
+    if (t) { t.textContent = msg; t.style.color = 'var(--ink)'; }
+  }
+  function devModeError(msg) {
+    var spinner = document.getElementById('devmode-spinner');
+    if (spinner) spinner.classList.add('hidden');
+    var t = document.getElementById('devmode-text');
+    if (t) { t.textContent = msg; t.style.color = 'var(--rust)'; }
+  }
+  function doDevModeEnable() {
+    var pw = document.getElementById('devmode-password').value;
+    if (pw.length < 8 || pw.length > 72) { devModeError('Password must be 8 to 72 characters.'); return; }
+    document.getElementById('devmode-enable-form').classList.add('hidden');
+    devModeProgress('Enabling developer mode...');
+    var body = new URLSearchParams({enabled: 'true', password: pw});
+    sendDevMode(body, true);
+  }
+  function doDevModeDisable() {
+    document.getElementById('devmode-disable-confirm').classList.add('hidden');
+    devModeProgress('Disabling developer mode...');
+    sendDevMode(new URLSearchParams({enabled: 'false'}), false);
+  }
+  function sendDevMode(body, target) {
+    fetch('/phones/' + phoneNumber + '/dev-mode', {
+      method: 'POST',
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+      if (!res.ok) { devModeError('Failed: ' + (res.data.error || 'request rejected')); return; }
+      devModeProgress(target ? 'Waiting for device to enable SSH...' : 'Waiting for device to disable SSH...');
+      pollDevMode(target);
+    })
+    .catch(function(err) { devModeError('Network error: ' + err.message); });
+  }
+  function pollDevMode(target) {
+    if (devModePollTimer) clearInterval(devModePollTimer);
+    var attempts = 0;
+    devModePollTimer = setInterval(function() {
+      attempts++;
+      if (attempts > 15) { clearInterval(devModePollTimer); devModeError('Timed out waiting for the device to apply the change.'); return; }
+      fetch('/phones/' + phoneNumber + '/dev-mode-status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.enabled === target) {
+          clearInterval(devModePollTimer);
+          devModeProgress('Done. Reloading...');
+          setTimeout(function() { location.reload(); }, 1000);
+        }
+      }).catch(function() {});
+    }, 2000);
+  }
+
+  window.addEventListener('pagehide', function() {
+    if (piPollTimer) clearInterval(piPollTimer);
+    if (fwPollTimer) clearInterval(fwPollTimer);
+    if (restartPollTimer) clearInterval(restartPollTimer);
+    if (devModePollTimer) clearInterval(devModePollTimer);
+  });
   </script>
 
 </div>
@@ -1305,6 +1427,61 @@
           </div>
         </div>
       </div>
+      {{if .IsAdmin}}
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+        <span class="am-plate__label">Developer mode</span>
+        {{if and .DeviceInfo .DeviceInfo.DevMode}}
+        <p class="am-hint" style="margin: 6px 0 8px;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+        <div id="am-devmode-on-default">
+          <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x26D4;</span>
+            <span class="am-key__label">Disable dev mode</span>
+          </button>
+        </div>
+        <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
+          <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+          <div class="am-handset__actions-row" style="gap: 8px;">
+            <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+              <span class="am-key__symbol">&#x2713;</span>
+              <span class="am-key__label">Confirm</span>
+            </button>
+            <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+              <span class="am-key__symbol">&#x2715;</span>
+              <span class="am-key__label">Cancel</span>
+            </button>
+          </div>
+        </div>
+        {{else}}
+        <p class="am-hint" style="margin: 6px 0 8px;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
+        <div id="am-devmode-off-default">
+          <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+            <span class="am-key__symbol">&#x1F527;</span>
+            <span class="am-key__label">Enable dev mode</span>
+          </button>
+        </div>
+        <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
+          <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
+          <input type="password" id="am-devmode-password" autocomplete="new-password" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+          <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
+            <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+              <span class="am-key__symbol">&#x2713;</span>
+              <span class="am-key__label">Enable</span>
+            </button>
+            <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+              <span class="am-key__symbol">&#x2715;</span>
+              <span class="am-key__label">Cancel</span>
+            </button>
+          </div>
+        </div>
+        {{end}}
+        <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
+          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+            <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+            <span id="am-devmode-text" class="am-led">Sending command...</span>
+          </div>
+        </div>
+      </div>
+      {{end}}
     </section>
     {{end}}
 
@@ -1530,6 +1707,7 @@
 
     var amRestartMode = null;
     var amRestartPollTimer = null;
+    var amDevModePollTimer = null;
 
     window.amShowRestartConfirm = function(mode) {
       amRestartMode = mode;
@@ -1642,8 +1820,87 @@
       });
     };
 
+    window.amShowDevModeEnable = function() {
+      document.getElementById('am-devmode-off-default').classList.add('hidden');
+      document.getElementById('am-devmode-enable-form').classList.remove('hidden');
+      document.getElementById('am-devmode-password').focus();
+    };
+    window.amCancelDevModeEnable = function() {
+      document.getElementById('am-devmode-enable-form').classList.add('hidden');
+      document.getElementById('am-devmode-off-default').classList.remove('hidden');
+    };
+    window.amShowDevModeDisable = function() {
+      document.getElementById('am-devmode-on-default').classList.add('hidden');
+      document.getElementById('am-devmode-disable-confirm').classList.remove('hidden');
+    };
+    window.amCancelDevModeDisable = function() {
+      document.getElementById('am-devmode-disable-confirm').classList.add('hidden');
+      document.getElementById('am-devmode-on-default').classList.remove('hidden');
+    };
+    function amDevModeProgress(msg) {
+      document.getElementById('am-devmode-progress').classList.remove('hidden');
+      var lamp = document.getElementById('am-devmode-lamp');
+      lamp.classList.remove('am-lamp--on-red');
+      lamp.classList.add('am-lamp--on-amber');
+      var t = document.getElementById('am-devmode-text');
+      t.classList.remove('am-led--red');
+      t.textContent = msg;
+    }
+    function amDevModeError(msg) {
+      var lamp = document.getElementById('am-devmode-lamp');
+      lamp.classList.remove('am-lamp--on-amber');
+      lamp.classList.add('am-lamp--on-red');
+      var t = document.getElementById('am-devmode-text');
+      t.classList.add('am-led--red');
+      t.textContent = msg;
+    }
+    window.amDoDevModeEnable = function() {
+      var pw = document.getElementById('am-devmode-password').value;
+      if (pw.length < 8 || pw.length > 72) { amDevModeProgress(''); amDevModeError('Password must be 8 to 72 characters.'); return; }
+      document.getElementById('am-devmode-enable-form').classList.add('hidden');
+      amDevModeProgress('Enabling developer mode...');
+      amSendDevMode(new URLSearchParams({enabled: 'true', password: pw}), true);
+    };
+    window.amDoDevModeDisable = function() {
+      document.getElementById('am-devmode-disable-confirm').classList.add('hidden');
+      amDevModeProgress('Disabling developer mode...');
+      amSendDevMode(new URLSearchParams({enabled: 'false'}), false);
+    };
+    function amSendDevMode(body, target) {
+      fetch('/phones/' + phoneNumber + '/dev-mode', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: body.toString()
+      })
+      .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+      .then(function(res) {
+        if (!res.ok) { amDevModeError('Failed: ' + (res.data.error || 'request rejected')); return; }
+        amDevModeProgress(target ? 'Waiting for device to enable SSH...' : 'Waiting for device to disable SSH...');
+        amPollDevMode(target);
+      })
+      .catch(function(err) { amDevModeError('Network error: ' + err.message); });
+    }
+    function amPollDevMode(target) {
+      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
+      var attempts = 0;
+      amDevModePollTimer = setInterval(function() {
+        attempts++;
+        if (attempts > 15) { clearInterval(amDevModePollTimer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
+        fetch('/phones/' + phoneNumber + '/dev-mode-status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.enabled === target) {
+            clearInterval(amDevModePollTimer);
+            amDevModeProgress('Done. Reloading...');
+            setTimeout(function() { location.reload(); }, 1000);
+          }
+        }).catch(function() {});
+      }, 2000);
+    }
+
     window.addEventListener('pagehide', function() {
       if (amRestartPollTimer) clearInterval(amRestartPollTimer);
+      if (amDevModePollTimer) clearInterval(amDevModePollTimer);
       Object.keys(pollers).forEach(function(p) { if (pollers[p]) clearInterval(pollers[p]); });
     });
   })();

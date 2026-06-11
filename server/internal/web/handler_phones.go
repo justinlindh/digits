@@ -281,6 +281,7 @@ type lineDetailData struct {
 	FirmwareUpdateNotes   []updates.Release
 	OtherLines            []line.Line
 	NumberError           string
+	IsAdmin               bool
 }
 
 func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
@@ -366,6 +367,7 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		FirmwareUpdateNotes:   firmwareUpdateNotes,
 		OtherLines:            otherLines,
 		NumberError:           r.URL.Query().Get("number_error"),
+		IsAdmin:               h.isHouseholdAdmin(r, hh.ID),
 	})
 }
 
@@ -848,6 +850,88 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		RestartMode: mode,
 	}
 	h.sendPhoneCommandAndRespond(w, r, number, msg, "restart command", "mode", mode)
+}
+
+// devModePasswordMin and devModePasswordMax bound the SSH login password set
+// when enabling developer mode. The lower bound is a basic strength floor; the
+// upper bound keeps parity with common password-field limits (chpasswd itself
+// has no hard cap).
+const (
+	devModePasswordMin = 8
+	devModePasswordMax = 72
+)
+
+// validateDevModePassword checks a proposed dev-mode SSH password. It does not
+// trim the password (leading/trailing characters may be intentional) but
+// rejects all-whitespace input and enforces the length bounds.
+func validateDevModePassword(pw string) error {
+	if strings.TrimSpace(pw) == "" {
+		return errors.New("password is required")
+	}
+	// Count runes, not bytes, so the "characters" bounds match what the user
+	// typed (and the browser's length check) for non-ASCII passwords.
+	n := utf8.RuneCountInString(pw)
+	if n < devModePasswordMin {
+		return errors.New("password must be at least 8 characters")
+	}
+	if n > devModePasswordMax {
+		return errors.New("password must be at most 72 characters")
+	}
+	return nil
+}
+
+// handlePhoneDevMode enables or disables developer mode (SSH + the on-device
+// dev web UI) on the line's device. Admin-only. When enabling, an SSH login
+// password is required and is forwarded to the device over the authenticated
+// signaling channel.
+func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if ln, _ := h.requireLineOwnershipAdmin(w, r, number); ln == nil {
+		return
+	}
+	if !parseForm(w, r) {
+		return
+	}
+	enabled := r.FormValue("enabled") == "true"
+
+	msg := &signaling.Message{
+		Type:    signaling.TypeDevMode,
+		DevMode: enabled,
+	}
+	if enabled {
+		pw := r.FormValue("password")
+		if err := validateDevModePassword(pw); err != nil {
+			jsonError(r.Context(), w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		msg.DevModePassword = pw
+	}
+	h.sendPhoneCommandAndRespond(w, r, number, msg, "dev mode command", "enabled", enabled)
+}
+
+// handlePhoneDevModeStatus reports the device's current developer-mode state so
+// the UI can confirm a toggle took effect. Owner scope. Returns only the
+// boolean and the fixed SSH username; the LAN IP is rendered in owner-scope
+// HTML on page reload, never in JSON (see DeviceInfoSnapshot.RemoteAddr).
+func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Request) {
+	number := r.PathValue("number")
+	if h.requireLineOwnership(w, r, number) == nil {
+		return
+	}
+	enabled := false
+	for _, info := range h.hub.AllDeviceInfo(number) {
+		if info.DevMode {
+			enabled = true
+			break
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"enabled":  enabled,
+		"ssh_user": "dev",
+	}); err != nil {
+		slog.ErrorContext(r.Context(), "dev mode status: json encode failed", "number", number, "err", err)
+	}
 }
 
 // sendPhoneCommandAndRespond pushes msg to the device, logs the outcome
