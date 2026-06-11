@@ -393,8 +393,9 @@
             </div>
             <div id="devmode-enable-form" class="hidden">
               <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
-              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" style="max-width: 280px;" placeholder="At least 8 characters">
-              <span class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" minlength="8" maxlength="72" required aria-describedby="devmode-pw-hint" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
+              <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+              <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
               <div class="hstack" style="gap: 8px; margin-top: 10px;">
                 <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
                 <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
@@ -719,6 +720,10 @@
   function cancelDevModeEnable() {
     document.getElementById('devmode-enable-form').classList.add('hidden');
     document.getElementById('devmode-off-default').classList.remove('hidden');
+    clearDevModePwError();
+  }
+  function clearDevModePwError() {
+    document.getElementById('devmode-pw-error').classList.add('hidden');
   }
   function showDevModeDisableConfirm() {
     document.getElementById('devmode-on-default').classList.add('hidden');
@@ -742,7 +747,11 @@
   }
   function doDevModeEnable() {
     var pw = document.getElementById('devmode-password').value;
-    if (pw.length < 8 || pw.length > 72) { devModeError('Password must be 8 to 72 characters.'); return; }
+    if (pw.length < 8 || pw.length > 72) {
+      document.getElementById('devmode-pw-error').classList.remove('hidden');
+      document.getElementById('devmode-password').focus();
+      return;
+    }
     document.getElementById('devmode-enable-form').classList.add('hidden');
     devModeProgress('Enabling developer mode...');
     var body = new URLSearchParams({enabled: 'true', password: pw});
@@ -1462,7 +1471,8 @@
       </div>
       <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
         <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-        <input type="password" id="am-devmode-password" autocomplete="new-password" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+        <input type="password" id="am-devmode-password" autocomplete="new-password" minlength="8" maxlength="72" required oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+        <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
         <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
           <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
             <span class="am-key__symbol">&#x2713;</span>
@@ -1828,6 +1838,10 @@
     window.amCancelDevModeEnable = function() {
       document.getElementById('am-devmode-enable-form').classList.add('hidden');
       document.getElementById('am-devmode-off-default').classList.remove('hidden');
+      amClearDevModePwError();
+    };
+    window.amClearDevModePwError = function() {
+      document.getElementById('am-devmode-pw-error').classList.add('hidden');
     };
     window.amShowDevModeDisable = function() {
       document.getElementById('am-devmode-on-default').classList.add('hidden');
@@ -1856,7 +1870,11 @@
     }
     window.amDoDevModeEnable = function() {
       var pw = document.getElementById('am-devmode-password').value;
-      if (pw.length < 8 || pw.length > 72) { amDevModeProgress(''); amDevModeError('Password must be 8 to 72 characters.'); return; }
+      if (pw.length < 8 || pw.length > 72) {
+        document.getElementById('am-devmode-pw-error').classList.remove('hidden');
+        document.getElementById('am-devmode-password').focus();
+        return;
+      }
       document.getElementById('am-devmode-enable-form').classList.add('hidden');
       amDevModeProgress('Enabling developer mode...');
       amSendDevMode(new URLSearchParams({enabled: 'true', password: pw}), true);
