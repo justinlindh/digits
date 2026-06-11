@@ -393,7 +393,7 @@
             </div>
             <div id="devmode-enable-form" class="hidden">
               <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
-              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" minlength="8" maxlength="72" required aria-describedby="devmode-pw-hint" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
+              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
               <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
               <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
               <div class="hstack" style="gap: 8px; margin-top: 10px;">
@@ -1467,11 +1467,11 @@
           <span class="am-key__symbol">&#x1F527;</span>
           <span class="am-key__label">Enable dev mode</span>
         </button>
-        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
+        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
       </div>
       <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
         <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-        <input type="password" id="am-devmode-password" autocomplete="new-password" minlength="8" maxlength="72" required oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+        <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
         <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
         <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
           <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
