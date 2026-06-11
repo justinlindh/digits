@@ -17,7 +17,7 @@
 #   ├── wifi/             # NetworkManager connection backups (digitsd-managed)
 #   ├── log/              # persistent logs (bind → /var/log)
 #   ├── tmp/              # tmp files (bind → /tmp)
-#   └── ssh/              # SSH host keys (bind → /etc/ssh)
+#   └── ssh/              # SSH host keys for developer mode (/etc/ssh/ssh_host_* symlink here)
 
 set -euo pipefail
 
@@ -77,7 +77,7 @@ install -d -m 2755 -o root -g adm "${MOUNT_POINT}/log/journal"
 # tmp/ — tmp files (bind-mounted to /tmp)
 install -d -m 1777 -o root -g root "${MOUNT_POINT}/tmp"
 
-# ssh/ — SSH host keys (bind-mounted to /etc/ssh)
+# ssh/ — SSH host keys for developer mode (/etc/ssh/ssh_host_* symlink here, not a bind mount; empty on production)
 install -d -m 755 -o root -g root "${MOUNT_POINT}/ssh"
 
 # ── create placeholder config.json ───────────────────────────────────────────

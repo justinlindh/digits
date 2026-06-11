@@ -1278,6 +1278,13 @@ hostside_disable_service "$ROOTFS_MNT" "systemd-networkd-wait-online.service"
 hostside_disable_service "$ROOTFS_MNT" "hostapd.service"
 hostside_disable_service "$ROOTFS_MNT" "dnsmasq.service"
 
+# Production images ship with SSH off; it is turned on only at runtime by the
+# digits-devmode helper (web-app developer-mode toggle) or re-enabled below for
+# --dev builds. Disable it explicitly here rather than relying on the base
+# image's default, so a production device never runs sshd until an admin opts
+# in. The dev-mode block (step 22) runs later and re-enables it for dev images.
+hostside_disable_service "$ROOTFS_MNT" "ssh.service"
+
 # Mask systemd-rfkill — reads stale state file on ro root and re-blocks WiFi
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.service"
 hostside_mask_service "$ROOTFS_MNT" "systemd-rfkill.socket"

@@ -29,8 +29,9 @@ PARTUUID=PARTUUID-OF-P4  /data           ext4    defaults,rw,noatime,x-systemd.a
 # /tmp → /data/tmp
 /data/tmp  /tmp      none  bind,x-systemd.requires=/data  0  0
 
-# /etc/ssh → /data/ssh
-/data/ssh  /etc/ssh  none  bind,x-systemd.requires=/data  0  0
+# NOTE: /etc/ssh is intentionally NOT bind-mounted. Production images keep SSH
+# off, so host keys just live on the rootfs. --dev images (and runtime
+# developer mode) symlink /etc/ssh/ssh_host_* to /data/ssh instead.
 
 # /home/digits → /data/digits
 /data/digits  /home/digits  none  bind,x-systemd.requires=/data  0  0
