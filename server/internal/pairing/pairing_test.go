@@ -4,6 +4,7 @@ package pairing
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"regexp"
@@ -35,6 +36,25 @@ func setupStore(t *testing.T) *Store {
 	})
 
 	return NewStore(database.DB)
+}
+
+// isPaired reports whether the device row has paired_at set. Production code
+// never reads pairing state back by hardware ID (the device learns it is
+// paired from the claim response pushed over its WebSocket), so this check
+// lives in the tests.
+func isPaired(t *testing.T, s *Store, hardwareID string) bool {
+	t.Helper()
+	var pairedAt sql.NullTime
+	err := s.db.QueryRowContext(context.Background(), `
+		SELECT paired_at FROM devices WHERE hardware_id = $1
+	`, hardwareID).Scan(&pairedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("check paired %s: %v", hardwareID, err)
+	}
+	return pairedAt.Valid
 }
 
 // seedHousehold inserts a fresh household row and returns its UUID. Tests that
@@ -90,6 +110,10 @@ func TestClaimDevice_Success(t *testing.T) {
 	if len(token) != 64 {
 		t.Errorf("expected 64-char hex token, got %d chars: %q", len(token), token)
 	}
+
+	if !isPaired(t, s, "test-hw-003") {
+		t.Error("expected device to be paired after ClaimDevice")
+	}
 }
 
 func TestClaimDevice_FailOnInvalidCode(t *testing.T) {
@@ -118,6 +142,17 @@ func TestClaimDevice_FailOnExpiredCode(t *testing.T) {
 	_, _, err = s.ClaimDevice(context.Background(), code, "5550102", "Expired Phone", "Expired Phone", seedHousehold(t, s))
 	if !errors.Is(err, ErrInvalidCode) {
 		t.Errorf("expected ErrInvalidCode for expired code, got %v", err)
+	}
+}
+
+func TestGenerateCode_DoesNotPair(t *testing.T) {
+	s := setupStore(t)
+	_, err := s.GenerateCode(context.Background(), "test-hw-005")
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+	if isPaired(t, s, "test-hw-005") {
+		t.Error("expected device to stay unpaired before claiming")
 	}
 }
 
