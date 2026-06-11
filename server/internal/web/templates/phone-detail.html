@@ -374,11 +374,10 @@
           {{if .IsAdmin}}
           <!-- Developer mode -->
           <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-            <div class="field__label" style="margin-bottom: 6px;">Developer mode</div>
             {{if and .DeviceInfo .DeviceInfo.DevMode}}
-            <p class="muted" style="font-size: 12.5px; margin: 0 0 8px;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
             <div id="devmode-on-default">
               <button type="button" onclick="showDevModeDisableConfirm()" class="btn btn--danger">Disable developer mode</button>
+              <p class="muted" style="font-size: 12px; margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
             </div>
             <div id="devmode-disable-confirm" class="hidden">
               <p style="font-size: 13.5px; color: var(--ink); margin: 8px 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
@@ -388,14 +387,15 @@
               </div>
             </div>
             {{else}}
-            <p class="muted" style="font-size: 12.5px; margin: 0 0 8px;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
             <div id="devmode-off-default">
               <button type="button" onclick="showDevModeEnableForm()" class="btn">Enable developer mode</button>
+              <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
             </div>
             <div id="devmode-enable-form" class="hidden">
               <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
-              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" style="max-width: 280px;" placeholder="At least 8 characters">
-              <span class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
+              <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+              <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
               <div class="hstack" style="gap: 8px; margin-top: 10px;">
                 <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
                 <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
@@ -720,6 +720,10 @@
   function cancelDevModeEnable() {
     document.getElementById('devmode-enable-form').classList.add('hidden');
     document.getElementById('devmode-off-default').classList.remove('hidden');
+    clearDevModePwError();
+  }
+  function clearDevModePwError() {
+    document.getElementById('devmode-pw-error').classList.add('hidden');
   }
   function showDevModeDisableConfirm() {
     document.getElementById('devmode-on-default').classList.add('hidden');
@@ -743,7 +747,11 @@
   }
   function doDevModeEnable() {
     var pw = document.getElementById('devmode-password').value;
-    if (pw.length < 8 || pw.length > 72) { devModeError('Password must be 8 to 72 characters.'); return; }
+    if (pw.length < 8 || pw.length > 72) {
+      document.getElementById('devmode-pw-error').classList.remove('hidden');
+      document.getElementById('devmode-password').focus();
+      return;
+    }
     document.getElementById('devmode-enable-form').classList.add('hidden');
     devModeProgress('Enabling developer mode...');
     var body = new URLSearchParams({enabled: 'true', password: pw});
@@ -1427,62 +1435,64 @@
           </div>
         </div>
       </div>
-      {{if .IsAdmin}}
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-        <span class="am-plate__label">Developer mode</span>
-        {{if and .DeviceInfo .DeviceInfo.DevMode}}
-        <p class="am-hint" style="margin: 6px 0 8px;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
-        <div id="am-devmode-on-default">
-          <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x26D4;</span>
-            <span class="am-key__label">Disable dev mode</span>
+    </section>
+
+    {{if .IsAdmin}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Developer mode</span>
+      {{if and .DeviceInfo .DeviceInfo.DevMode}}
+      <div id="am-devmode-on-default">
+        <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x26D4;</span>
+          <span class="am-key__label">Disable dev mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+      </div>
+      <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
+        <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
+          </button>
+          <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
           </button>
         </div>
-        <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
-          <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
-          <div class="am-handset__actions-row" style="gap: 8px;">
-            <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Confirm</span>
-            </button>
-            <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        {{else}}
-        <p class="am-hint" style="margin: 6px 0 8px;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
-        <div id="am-devmode-off-default">
-          <button type="button" onclick="amShowDevModeEnable()" class="am-key">
-            <span class="am-key__symbol">&#x1F527;</span>
-            <span class="am-key__label">Enable dev mode</span>
+      </div>
+      {{else}}
+      <div id="am-devmode-off-default">
+        <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+          <span class="am-key__symbol">&#x1F527;</span>
+          <span class="am-key__label">Enable dev mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
+      </div>
+      <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
+        <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
+        <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+        <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
+        <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
+          <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Enable</span>
           </button>
-        </div>
-        <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
-          <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-          <input type="password" id="am-devmode-password" autocomplete="new-password" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
-          <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
-            <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Enable</span>
-            </button>
-            <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        {{end}}
-        <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
-          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-            <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-            <span id="am-devmode-text" class="am-led">Sending command...</span>
-          </div>
+          <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
         </div>
       </div>
       {{end}}
+      <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-devmode-text" class="am-led">Sending command...</span>
+        </div>
+      </div>
     </section>
+    {{end}}
     {{end}}
 
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
@@ -1828,6 +1838,10 @@
     window.amCancelDevModeEnable = function() {
       document.getElementById('am-devmode-enable-form').classList.add('hidden');
       document.getElementById('am-devmode-off-default').classList.remove('hidden');
+      amClearDevModePwError();
+    };
+    window.amClearDevModePwError = function() {
+      document.getElementById('am-devmode-pw-error').classList.add('hidden');
     };
     window.amShowDevModeDisable = function() {
       document.getElementById('am-devmode-on-default').classList.add('hidden');
@@ -1856,7 +1870,11 @@
     }
     window.amDoDevModeEnable = function() {
       var pw = document.getElementById('am-devmode-password').value;
-      if (pw.length < 8 || pw.length > 72) { amDevModeProgress(''); amDevModeError('Password must be 8 to 72 characters.'); return; }
+      if (pw.length < 8 || pw.length > 72) {
+        document.getElementById('am-devmode-pw-error').classList.remove('hidden');
+        document.getElementById('am-devmode-password').focus();
+        return;
+      }
       document.getElementById('am-devmode-enable-form').classList.add('hidden');
       amDevModeProgress('Enabling developer mode...');
       amSendDevMode(new URLSearchParams({enabled: 'true', password: pw}), true);
