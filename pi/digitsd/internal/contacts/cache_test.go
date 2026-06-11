@@ -13,12 +13,25 @@ func TestCache_IsContact_Empty(t *testing.T) {
 	}
 }
 
-func TestCache_Update_And_IsContact(t *testing.T) {
-	c := NewCache("")
-	c.Update([]Entry{
-		{Number: "5551234", Name: "Emma"},
-		{Number: "5559876", Name: "Liam"},
-	})
+// writeContacts writes a contacts JSON file and returns its path.
+func writeContacts(t *testing.T, json string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "contacts.json")
+	if err := os.WriteFile(path, []byte(json), 0600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return path
+}
+
+func TestCache_Load_And_IsContact(t *testing.T) {
+	path := writeContacts(t, `[
+		{"number":"5551234","name":"Emma"},
+		{"number":"5559876","name":"Liam"}
+	]`)
+	c := NewCache(path)
+	if err := c.Load(); err != nil {
+		t.Fatalf("load: %v", err)
+	}
 
 	if !c.IsContact("5551234") {
 		t.Error("expected 5551234 to be a contact")
@@ -31,67 +44,22 @@ func TestCache_Update_And_IsContact(t *testing.T) {
 	}
 }
 
-func TestCache_Update_Replaces(t *testing.T) {
-	c := NewCache("")
-	c.Update([]Entry{
-		{Number: "5551234", Name: "Emma"},
-		{Number: "5559876", Name: "Liam"},
-	})
-	c.Update([]Entry{
-		{Number: "5550000", Name: "Olivia"},
-	})
-
-	if c.IsContact("5551234") {
-		t.Error("old contact 5551234 should be gone after update")
-	}
-	if !c.IsContact("5550000") {
-		t.Error("new contact 5550000 should be present")
-	}
-}
-
 func TestCache_Count(t *testing.T) {
 	c := NewCache("")
 	if c.Count() != 0 {
 		t.Errorf("expected 0, got %d", c.Count())
 	}
-	c.Update([]Entry{
-		{Number: "5551234", Name: "Emma"},
-		{Number: "5559876", Name: "Liam"},
-	})
-	if c.Count() != 2 {
-		t.Errorf("expected 2, got %d", c.Count())
-	}
-}
 
-func TestCache_PersistAndLoad(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "contacts.json")
-
-	c1 := NewCache(path)
-	c1.Update([]Entry{
-		{Number: "5551234", Name: "Emma"},
-		{Number: "5559876", Name: "Liam"},
-	})
-	if err := c1.Save(); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected file at %s: %v", path, err)
-	}
-
-	c2 := NewCache(path)
-	if err := c2.Load(); err != nil {
+	path := writeContacts(t, `[
+		{"number":"5551234","name":"Emma"},
+		{"number":"5559876","name":"Liam"}
+	]`)
+	c = NewCache(path)
+	if err := c.Load(); err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if c2.Count() != 2 {
-		t.Fatalf("expected 2 contacts after load, got %d", c2.Count())
-	}
-	if !c2.IsContact("5551234") {
-		t.Error("expected 5551234 after load")
-	}
-	if !c2.IsContact("5559876") {
-		t.Error("expected 5559876 after load")
+	if c.Count() != 2 {
+		t.Errorf("expected 2, got %d", c.Count())
 	}
 }
 
@@ -105,9 +73,13 @@ func TestCache_Load_NoFile(t *testing.T) {
 	}
 }
 
-func TestCache_Save_NoPath(t *testing.T) {
-	c := NewCache("")
-	if err := c.Save(); err != nil {
-		t.Fatalf("save with no path should succeed, got: %v", err)
+func TestCache_Load_InvalidJSON(t *testing.T) {
+	path := writeContacts(t, `{not json`)
+	c := NewCache(path)
+	if err := c.Load(); err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+	if c.Count() != 0 {
+		t.Errorf("failed load should leave cache empty, got %d", c.Count())
 	}
 }

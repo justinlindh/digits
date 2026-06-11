@@ -78,10 +78,6 @@ func (d *Database) migrate() error {
 			ended_at    TIMESTAMPTZ,
 			duration_s  INTEGER DEFAULT 0
 		)`,
-		`CREATE TABLE IF NOT EXISTS settings (
-			key   TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)`,
 		// v2: user accounts + auth
 		`CREATE TABLE IF NOT EXISTS users (
 			id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -493,6 +489,10 @@ END $$;`,
 		// v29: remove household-level do_not_disturb flag. "Silence All" is
 		// now derived from per-line silent_mode settings.
 		`ALTER TABLE households DROP COLUMN IF EXISTS do_not_disturb`,
+		// v30: drop the settings key/value table, a v1 SQLite-port artifact
+		// that no code ever read or wrote. Its CREATE is gone from v1 above
+		// so fresh databases never get it; this drop covers existing ones.
+		`DROP TABLE IF EXISTS settings`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {

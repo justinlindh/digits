@@ -170,7 +170,6 @@ type daemonCallbacks struct {
 	serverURL       string          // effective signaling server URL
 	flashCapable    *atomic.Bool    // SWD-flash capability (shared with run loop)
 	requeryFirmware func()          // re-query Pico firmware version off the main loop
-	contactsCache   *contacts.Cache // local contact list cache
 	pairingRefresh  *time.Timer     // pairing-code refresh timer (shared with run loop)
 	devMode         *devModeManager // dev-mode (SSH + dev web UI) lifecycle; nil outside normal mode
 
@@ -1912,9 +1911,9 @@ func main() {
 	}
 	getPhoneState = func() phone.State { return ctrl.State() }
 
-	// 8b. Contacts cache: optional dial safelist, persisted to disk.
-	// An empty cache leaves the checker nil so no-contacts phones allow
-	// every call (matching the pre-wiring behavior).
+	// 8b. Contacts cache: optional dial safelist, loaded from a hand-placed
+	// contacts.json. An empty cache leaves the checker nil so no-contacts
+	// phones allow every call (matching the pre-wiring behavior).
 	contactsPath := filepath.Join(filepath.Dir(*configPath), "contacts.json")
 	contactsCache := contacts.NewCache(contactsPath)
 	if err := contactsCache.Load(); err != nil {
@@ -2073,7 +2072,6 @@ func main() {
 	cb.serverURL = effectiveServerURL
 	cb.flashCapable = &flashCapable
 	cb.requeryFirmware = requeryFirmware
-	cb.contactsCache = contactsCache
 	cb.pairingRefresh = pairingRefresh
 
 	// pairingAnnouncementCancel cancels the in-flight pairing-announcement

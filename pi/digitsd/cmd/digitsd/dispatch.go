@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
-	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
@@ -22,7 +21,6 @@ import (
 type signalController interface {
 	HandleSignal(msgType, sender string)
 	State() phone.State
-	SetContactChecker(cc phone.ContactChecker)
 	SetCallReturnNumber(number string)
 	ResetToDialtone()
 	HandleCallReturnRing(target string)
@@ -45,8 +43,8 @@ var _ signalController = (*phone.Controller)(nil)
 //
 // Dependencies that the handlers need but that are owned by the run loop
 // (serial port, signaling client, mixer, controller, the firmware-update
-// closures, the pairing-refresh timer, the contacts cache) are stored on
-// daemonCallbacks and wired once before the loop starts.
+// closures, the pairing-refresh timer) are stored on daemonCallbacks and
+// wired once before the loop starts.
 func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 	ctrl := d.ctrlSignal
 	mixer := d.mixer
@@ -273,19 +271,6 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 	case sigclient.TypeFactoryReset:
 		slog.Info("factory reset: triggered by server")
 		go triggerFactoryReset(d.currentSig(), d.deviceID)
-
-	case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
-		entries := make([]contacts.Entry, 0, len(msg.Contacts))
-		for _, c := range msg.Contacts {
-			entries = append(entries, contacts.Entry{Number: c.Number, Name: c.Name})
-		}
-		d.contactsCache.Update(entries)
-		if len(entries) > 0 {
-			ctrl.SetContactChecker(d.contactsCache)
-		} else {
-			ctrl.SetContactChecker(nil)
-		}
-		slog.Info("contacts: updated", "count", len(entries), "type", msg.Type)
 
 	case sigclient.TypeICERestart:
 		d.mu.Lock()
