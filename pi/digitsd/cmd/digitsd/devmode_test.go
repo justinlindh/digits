@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,99 @@ import (
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 )
+
+// newTestListener returns a real, closeable loopback listener for manager tests
+// so they never bind the fixed :8080 dev-UI port.
+func newTestListener(t *testing.T) net.Listener {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	return ln
+}
+
+func TestDevModeManager_EnablePassesPasswordAndStartsListener(t *testing.T) {
+	var gotEnable bool
+	var gotPassword string
+	startCalls := 0
+	m := &devModeManager{
+		cfg: &devModeConfig{},
+		apply: func(enable bool, password string) error {
+			gotEnable = enable
+			gotPassword = password
+			return nil
+		},
+		start: func(*devModeConfig) (net.Listener, error) {
+			startCalls++
+			return newTestListener(t), nil
+		},
+	}
+
+	if err := m.Enable("hunter2pw"); err != nil {
+		t.Fatalf("Enable: %v", err)
+	}
+	if !gotEnable {
+		t.Error("apply called with enable=false, want true")
+	}
+	if gotPassword != "hunter2pw" {
+		t.Errorf("password = %q, want hunter2pw", gotPassword)
+	}
+	if startCalls != 1 {
+		t.Errorf("start calls = %d, want 1", startCalls)
+	}
+
+	// Re-enabling does not start a second listener.
+	if err := m.Enable("hunter2pw"); err != nil {
+		t.Fatalf("Enable (2nd): %v", err)
+	}
+	if startCalls != 1 {
+		t.Errorf("start calls after re-enable = %d, want 1", startCalls)
+	}
+	m.Close()
+}
+
+func TestDevModeManager_DisableStopsListener(t *testing.T) {
+	var gotEnable = true
+	m := &devModeManager{
+		cfg:   &devModeConfig{},
+		apply: func(enable bool, _ string) error { gotEnable = enable; return nil },
+		start: func(*devModeConfig) (net.Listener, error) { return newTestListener(t), nil },
+	}
+	if err := m.EnsureListener(); err != nil {
+		t.Fatalf("EnsureListener: %v", err)
+	}
+	if m.ln == nil {
+		t.Fatal("listener not started by EnsureListener")
+	}
+	if err := m.Disable(); err != nil {
+		t.Fatalf("Disable: %v", err)
+	}
+	if gotEnable {
+		t.Error("apply called with enable=true on Disable, want false")
+	}
+	if m.ln != nil {
+		t.Error("listener not stopped by Disable")
+	}
+}
+
+func TestDevModeManager_ApplyErrorLeavesListenerUnchanged(t *testing.T) {
+	startCalls := 0
+	m := &devModeManager{
+		cfg:   &devModeConfig{},
+		apply: func(bool, string) error { return errors.New("helper boom") },
+		start: func(*devModeConfig) (net.Listener, error) { startCalls++; return newTestListener(t), nil },
+	}
+	if err := m.Enable("pw12345678"); err == nil {
+		t.Fatal("Enable: want error, got nil")
+	}
+	if startCalls != 0 {
+		t.Errorf("start calls = %d, want 0 (apply failed)", startCalls)
+	}
+	if m.ln != nil {
+		t.Error("listener started despite apply failure")
+	}
+}
 
 func TestDevModeStatusHandler(t *testing.T) {
 	dir := t.TempDir()
