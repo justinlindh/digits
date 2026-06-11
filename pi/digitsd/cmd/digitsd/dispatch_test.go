@@ -7,7 +7,6 @@ import (
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
-	"github.com/justinlindh/digits/pi/digitsd/internal/contacts"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 )
@@ -21,8 +20,6 @@ type fakeController struct {
 	mu             sync.Mutex
 	state          phone.State
 	signals        []signalCall
-	contactChecker phone.ContactChecker
-	contactSetN    int
 	callReturnNum  string
 	callReturnRing string
 	confMember     []confMemberCall
@@ -55,13 +52,6 @@ func (f *fakeController) State() phone.State {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.state
-}
-
-func (f *fakeController) SetContactChecker(cc phone.ContactChecker) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.contactChecker = cc
-	f.contactSetN++
 }
 
 func (f *fakeController) SetCallReturnNumber(number string) {
@@ -131,7 +121,6 @@ func newDispatchDaemon(t *testing.T, fc *fakeController) *daemonCallbacks {
 	d := &daemonCallbacks{}
 	d.mixer = audio.NewMixer(nopWriter{})
 	d.ctrlSignal = fc
-	d.contactsCache = contacts.NewCache(filepath.Join(t.TempDir(), "contacts.json"))
 	return d
 }
 
@@ -264,49 +253,6 @@ func TestDispatchRouting_FSMDelegating(t *testing.T) {
 	})
 }
 
-// TestDispatchRouting_ContactsUpdatesCacheAndChecker checks both the cache
-// write and the controller wiring for the contacts path, including the
-// distinction between a populated update (install checker) and an empty one
-// (clear checker).
-func TestDispatchRouting_ContactsUpdatesCacheAndChecker(t *testing.T) {
-	for _, mt := range []string{sigclient.TypeContacts, sigclient.TypeContactsUpdated} {
-		t.Run(mt+" populated", func(t *testing.T) {
-			fc := &fakeController{}
-			d := newDispatchDaemon(t, fc)
-			d.handleSignal(&sigclient.Message{
-				Type:     mt,
-				Contacts: []sigclient.ContactEntry{{Number: "3140001", Name: "Alice"}},
-			})
-			if d.contactsCache.Count() != 1 {
-				t.Errorf("cache count = %d, want 1", d.contactsCache.Count())
-			}
-			if !d.contactsCache.IsContact("3140001") {
-				t.Errorf("expected 3140001 to be a contact")
-			}
-			if fc.contactChecker == nil {
-				t.Errorf("expected contact checker to be installed for populated update")
-			}
-		})
-	}
-
-	t.Run("empty update clears checker", func(t *testing.T) {
-		fc := &fakeController{}
-		d := newDispatchDaemon(t, fc)
-		// Seed a checker first, then clear it with an empty update.
-		d.handleSignal(&sigclient.Message{
-			Type:     sigclient.TypeContacts,
-			Contacts: []sigclient.ContactEntry{{Number: "3140001"}},
-		})
-		d.handleSignal(&sigclient.Message{Type: sigclient.TypeContactsUpdated})
-		if d.contactsCache.Count() != 0 {
-			t.Errorf("cache count = %d after empty update, want 0", d.contactsCache.Count())
-		}
-		if fc.contactChecker != nil {
-			t.Errorf("expected contact checker cleared for empty update")
-		}
-	})
-}
-
 // TestDispatchRouting_ICEServersCached confirms the ICE-servers handler
 // stashes the server list on the daemon for the next peer connection.
 func TestDispatchRouting_ICEServersCached(t *testing.T) {
@@ -404,7 +350,7 @@ func TestDispatchRouting_UnknownTypeIsInertDefault(t *testing.T) {
 	if _, ok := fc.lastSignal(); ok {
 		t.Errorf("unknown type reached a controller handler: %+v", fc.signals)
 	}
-	if fc.contactSetN != 0 || len(fc.confMember) != 0 {
+	if fc.callReturnNum != "" || len(fc.confMember) != 0 {
 		t.Errorf("unknown type produced side effects on the controller")
 	}
 }

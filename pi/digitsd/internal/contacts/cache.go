@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"log/slog"
 	"os"
 	"sync"
 )
@@ -15,39 +14,18 @@ type Entry struct {
 	Name   string `json:"name"`
 }
 
-// Cache is a thread-safe in-memory contact list with optional JSON file persistence.
+// Cache is a thread-safe in-memory contact list loaded from a JSON file.
 type Cache struct {
 	mu       sync.RWMutex
 	contacts map[string]string // number → name
-	path     string            // file path for persistence (empty = no persistence)
+	path     string            // file path to load from (empty = always empty cache)
 }
 
-// NewCache creates a new Cache. If path is non-empty, Save/Load will use that file.
+// NewCache creates a new Cache. If path is non-empty, Load will read that file.
 func NewCache(path string) *Cache {
 	return &Cache{
 		contacts: make(map[string]string),
 		path:     path,
-	}
-}
-
-// setLocked replaces the contact map. Caller must hold c.mu write lock.
-func (c *Cache) setLocked(entries []Entry) {
-	c.contacts = make(map[string]string, len(entries))
-	for _, e := range entries {
-		c.contacts[e.Number] = e.Name
-	}
-}
-
-// Update replaces the entire contact list and persists to disk.
-func (c *Cache) Update(entries []Entry) {
-	c.mu.Lock()
-	c.setLocked(entries)
-	c.mu.Unlock()
-
-	if c.path != "" {
-		if err := c.Save(); err != nil {
-			slog.Error("contacts: save failed", "error", err)
-		}
 	}
 }
 
@@ -64,25 +42,6 @@ func (c *Cache) Count() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.contacts)
-}
-
-// Save writes the contact list to the configured file path as JSON.
-func (c *Cache) Save() error {
-	if c.path == "" {
-		return nil
-	}
-	c.mu.RLock()
-	entries := make([]Entry, 0, len(c.contacts))
-	for num, name := range c.contacts {
-		entries = append(entries, Entry{Number: num, Name: name})
-	}
-	c.mu.RUnlock()
-
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(c.path, data, 0600)
 }
 
 // Load reads the contact list from the configured file path.
@@ -102,8 +61,12 @@ func (c *Cache) Load() error {
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return err
 	}
+	contacts := make(map[string]string, len(entries))
+	for _, e := range entries {
+		contacts[e.Number] = e.Name
+	}
 	c.mu.Lock()
-	c.setLocked(entries)
+	c.contacts = contacts
 	c.mu.Unlock()
 	return nil
 }
