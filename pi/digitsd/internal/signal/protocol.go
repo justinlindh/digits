@@ -4,21 +4,18 @@ import "encoding/json"
 
 // Message types (must match server/internal/signaling/protocol.go)
 const (
-	TypeRegister        = "register"
-	TypeCall            = "call"
-	TypeRing            = "ring"
-	TypeSDP             = "sdp"
-	TypeICE             = "ice"
-	TypeAnswer          = "answer"
-	TypeHangup          = "hangup"
-	TypeBusy            = "busy"
-	TypeDTMF            = "dtmf"
-	TypeError           = "error"
-	TypeICEServers      = "ice-servers"
-	TypeRequestICE      = "request-ice-servers"
-	TypeSync            = "sync"
-	TypeContacts        = "contacts"
-	TypeContactsUpdated = "contacts_updated"
+	TypeRegister   = "register"
+	TypeCall       = "call"
+	TypeRing       = "ring"
+	TypeSDP        = "sdp"
+	TypeICE        = "ice"
+	TypeAnswer     = "answer"
+	TypeHangup     = "hangup"
+	TypeBusy       = "busy"
+	TypeDTMF       = "dtmf"
+	TypeError      = "error"
+	TypeICEServers = "ice-servers"
+	TypeRequestICE = "request-ice-servers"
 
 	// TypePairingCode is sent by the server during registration when a device
 	// is not yet paired. The client should display the code (e.g. on an LED
@@ -127,12 +124,6 @@ type LinkHealthPayload struct {
 	Peer string `json:"peer,omitempty"`
 }
 
-// ContactEntry represents a single contact in a sync payload.
-type ContactEntry struct {
-	Number string `json:"number"`
-	Name   string `json:"name"`
-}
-
 // LineSettings is the wire-format copy of server-side line.Settings used in
 // signaling messages. Mirrors the server definition so digitsd doesn't need
 // to import any server code.
@@ -172,22 +163,21 @@ type ICEServer struct {
 
 // Message is the shared signaling envelope used between client and server.
 type Message struct {
-	Type        string         `json:"type"`
-	From        string         `json:"from,omitempty"`
-	To          string         `json:"to,omitempty"`
-	Number      string         `json:"number,omitempty"`
-	Digit       string         `json:"digit,omitempty"`
-	SDP         string         `json:"sdp,omitempty"`
-	Candidate   string         `json:"candidate,omitempty"`
-	Error       string         `json:"error,omitempty"`
-	Servers     []ICEServer    `json:"servers,omitempty"`
-	Contacts    []ContactEntry `json:"contacts,omitempty"`
-	PairingCode string         `json:"pairing_code,omitempty"`
+	Type        string      `json:"type"`
+	From        string      `json:"from,omitempty"`
+	To          string      `json:"to,omitempty"`
+	Number      string      `json:"number,omitempty"`
+	Digit       string      `json:"digit,omitempty"`
+	SDP         string      `json:"sdp,omitempty"`
+	Candidate   string      `json:"candidate,omitempty"`
+	Error       string      `json:"error,omitempty"`
+	Servers     []ICEServer `json:"servers,omitempty"`
+	PairingCode string      `json:"pairing_code,omitempty"`
 	// PairingCodeTTL is the server-reported validity of PairingCode, in
 	// seconds. Drives the spoken countdown and the pre-expiry refresh.
-	PairingCodeTTL int            `json:"pairing_code_ttl,omitempty"`
-	HardwareID     string         `json:"hardware_id,omitempty"`
-	DeviceToken    string         `json:"device_token,omitempty"`
+	PairingCodeTTL int    `json:"pairing_code_ttl,omitempty"`
+	HardwareID     string `json:"hardware_id,omitempty"`
+	DeviceToken    string `json:"device_token,omitempty"`
 
 	// Version info (device_info messages)
 	PiVersion       string `json:"pi_version,omitempty"`

@@ -111,37 +111,6 @@ func TestParseMessage_Invalid(t *testing.T) {
 	}
 }
 
-func TestParseContactsMessage(t *testing.T) {
-	raw := `{"type":"contacts","contacts":[{"number":"5551234","name":"Emma"},{"number":"5559876","name":"Liam"}]}`
-	msg, err := ParseMessage([]byte(raw))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if msg.Type != TypeContacts {
-		t.Errorf("expected type %q, got %q", TypeContacts, msg.Type)
-	}
-	if len(msg.Contacts) != 2 {
-		t.Fatalf("expected 2 contacts, got %d", len(msg.Contacts))
-	}
-	if msg.Contacts[0].Number != "5551234" || msg.Contacts[0].Name != "Emma" {
-		t.Errorf("unexpected contact[0]: %+v", msg.Contacts[0])
-	}
-	if msg.Contacts[1].Number != "5559876" || msg.Contacts[1].Name != "Liam" {
-		t.Errorf("unexpected contact[1]: %+v", msg.Contacts[1])
-	}
-}
-
-func TestParseContactsUpdatedNudge(t *testing.T) {
-	raw := `{"type":"contacts_updated"}`
-	msg, err := ParseMessage([]byte(raw))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if msg.Type != TypeContactsUpdated {
-		t.Errorf("expected type %q, got %q", TypeContactsUpdated, msg.Type)
-	}
-}
-
 func TestParseICERestartMessage(t *testing.T) {
 	raw := `{"type":"ice_restart","from":"3140001","to":"3140002","sdp":"v=0\r\n"}`
 	msg, err := ParseMessage([]byte(raw))
@@ -156,21 +125,6 @@ func TestParseICERestartMessage(t *testing.T) {
 	}
 	if msg.SDP != "v=0\r\n" {
 		t.Errorf("expected SDP %q, got %q", "v=0\r\n", msg.SDP)
-	}
-}
-
-func TestParseSyncRequest(t *testing.T) {
-	msg := &Message{Type: TypeSync}
-	data, err := msg.Marshal()
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	parsed, err := ParseMessage(data)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if parsed.Type != TypeSync {
-		t.Errorf("expected type %q, got %q", TypeSync, parsed.Type)
 	}
 }
 
