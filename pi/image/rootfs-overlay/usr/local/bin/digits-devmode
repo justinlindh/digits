@@ -130,15 +130,20 @@ cmd_enable() {
 }
 
 cmd_disable() {
-  systemctl disable --now ssh.service >/dev/null 2>&1 || true
-  # Stopping the unit only blocks new logins; forked sshd children survive.
-  # Kill the dev user's live sessions so "off" actually ends SSH access.
+  # Runtime teardown first (no rootfs writes): stop the listener and kill the
+  # dev user's live sessions so "off" actually ends SSH access immediately.
+  systemctl stop ssh.service >/dev/null 2>&1 || true
   pkill -KILL -u "$DEV_USER" >/dev/null 2>&1 || true
 
-  # Remove the standing-privilege artifacts enable created so "off" leaves no
-  # passwordless-sudo grant or global password-auth setting on disk.
+  # Persistent teardown inside the rw window. `systemctl disable` removes the
+  # boot-time wants-symlink under /etc, so it MUST run while the rootfs is rw
+  # (mirroring cmd_enable's `systemctl enable`); doing it before remount would
+  # silently fail and leave ssh.service enabled for the next boot. Also drop
+  # the standing-privilege artifacts so "off" leaves no passwordless-sudo grant
+  # or global password-auth setting on disk.
   trap restore_ro_on_exit EXIT
   remount_rw; _need_ro=1
+  systemctl disable ssh.service >/dev/null 2>&1 || true
   passwd -l "$DEV_USER" >/dev/null 2>&1 || true
   rm -f "$SUDOERS_DROPIN" "$SSHD_DROPIN"
   remount_ro; _need_ro=0

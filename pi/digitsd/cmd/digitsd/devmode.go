@@ -94,25 +94,27 @@ func (m *devModeManager) EnsureListener() error {
 
 // Enable runs the privileged helper to turn dev mode on (creating the dev user,
 // setting its SSH password, starting ssh.service) and then starts the dev web
-// UI listener.
+// UI listener. The lock is held across apply so concurrent dev_mode commands
+// can't run two helper processes that race on the rootfs remount.
 func (m *devModeManager) Enable(password string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.apply(true, password); err != nil {
 		return err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	return m.startListenerLocked()
 }
 
 // Disable runs the privileged helper to turn dev mode off (stopping
 // ssh.service, locking the dev account, clearing the flag) and then stops the
-// dev web UI listener.
+// dev web UI listener. The lock is held across apply for the same reason as
+// Enable: serialize the privileged transition.
 func (m *devModeManager) Disable() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := m.apply(false, ""); err != nil {
 		return err
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.stopListenerLocked()
 	return nil
 }
