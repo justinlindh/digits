@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+# digits-devmode: enable or disable developer mode on a Digits phone at runtime.
+#
+# Developer mode means: SSH login as user "dev" (password auth), the on-device
+# dev web UI on :8080 (gated by /data/digits/dev-mode), and passwordless sudo
+# for "dev". Release images ship with none of this; this script creates it on
+# demand and tears it back down. Every step is idempotent so re-running is safe.
+#
+# digitsd (running as the unprivileged "digits" user) invokes this via a single
+# sudoers allowlist entry. The enable password is read from stdin so it never
+# appears in the process list.
+#
+# Usage:
+#   digits-devmode enable   # reads the dev login password from stdin
+#   digits-devmode disable
+#   digits-devmode status
+set -euo pipefail
+
+DEV_USER="dev"
+FLAG=/data/digits/dev-mode
+SSH_KEY_DIR=/data/ssh
+SSHD_DROPIN=/etc/ssh/sshd_config.d/digits-dev.conf
+SUDOERS_DROPIN=/etc/sudoers.d/dev-nopasswd
+
+remount_rw() { mount -o remount,rw / ; }
+# The rootfs sometimes refuses an immediate ro transition (a just-written file's
+# page cache is still dirty). Mirror the OTA path: sync and retry a few times,
+# and never fail the whole operation if it stays rw -- the next boot mounts ro.
+remount_ro() {
+  local i
+  for i in 1 2 3 4; do
+    sync
+    if mount -o remount,ro / 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.3
+  done
+  echo "digits-devmode: WARNING: could not remount / read-only (will be ro on next boot)" >&2
+  return 0
+}
+
+ensure_host_keys() {
+  mkdir -p "$SSH_KEY_DIR"
+  if [[ ! -f "$SSH_KEY_DIR/ssh_host_ed25519_key" ]]; then
+    ssh-keygen -t ed25519 -f "$SSH_KEY_DIR/ssh_host_ed25519_key" -N '' -q
+  fi
+  if [[ ! -f "$SSH_KEY_DIR/ssh_host_rsa_key" ]]; then
+    ssh-keygen -t rsa -b 4096 -f "$SSH_KEY_DIR/ssh_host_rsa_key" -N '' -q
+  fi
+}
+
+ensure_ssh_symlinks() {
+  mkdir -p /etc/ssh
+  ln -sf "$SSH_KEY_DIR/ssh_host_rsa_key"         /etc/ssh/ssh_host_rsa_key
+  ln -sf "$SSH_KEY_DIR/ssh_host_rsa_key.pub"     /etc/ssh/ssh_host_rsa_key.pub
+  ln -sf "$SSH_KEY_DIR/ssh_host_ed25519_key"     /etc/ssh/ssh_host_ed25519_key
+  ln -sf "$SSH_KEY_DIR/ssh_host_ed25519_key.pub" /etc/ssh/ssh_host_ed25519_key.pub
+}
+
+ensure_password_auth() {
+  mkdir -p /etc/ssh/sshd_config.d
+  printf 'PasswordAuthentication yes\n' > "$SSHD_DROPIN"
+}
+
+ensure_dev_user() {
+  if ! id "$DEV_USER" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash \
+      -G sudo,audio,video,dialout,gpio,i2c,spi "$DEV_USER"
+  fi
+  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$DEV_USER" > "$SUDOERS_DROPIN"
+  chmod 0440 "$SUDOERS_DROPIN"
+}
+
+cmd_enable() {
+  # Read the new password from stdin (single line).
+  local password
+  IFS= read -r password || true
+  if [[ -z "$password" ]]; then
+    echo "digits-devmode: enable requires a password on stdin" >&2
+    exit 2
+  fi
+
+  remount_rw
+  mkdir -p /data/digits
+  touch "$FLAG"
+  ensure_host_keys
+  ensure_ssh_symlinks
+  ensure_password_auth
+  ensure_dev_user
+  printf '%s:%s\n' "$DEV_USER" "$password" | chpasswd
+  passwd -u "$DEV_USER" >/dev/null 2>&1 || true
+  remount_ro
+
+  # Raspbian masks/auto-generates host keys via this unit; we manage our own.
+  systemctl unmask ssh.service >/dev/null 2>&1 || true
+  systemctl enable --now ssh.service
+  echo "digits-devmode: enabled"
+}
+
+cmd_disable() {
+  systemctl disable --now ssh.service >/dev/null 2>&1 || true
+
+  remount_rw
+  passwd -l "$DEV_USER" >/dev/null 2>&1 || true
+  rm -f "$FLAG"
+  remount_ro
+  echo "digits-devmode: disabled"
+}
+
+cmd_status() {
+  if [[ -f "$FLAG" ]] && systemctl is-active --quiet ssh.service; then
+    echo "enabled"
+  else
+    echo "disabled"
+  fi
+}
+
+case "${1:-}" in
+  enable)  cmd_enable ;;
+  disable) cmd_disable ;;
+  status)  cmd_status ;;
+  *)
+    echo "usage: digits-devmode {enable|disable|status}" >&2
+    exit 64
+    ;;
+esac
