@@ -71,7 +71,12 @@ else
 fi
 
 # --- 2. Generate SSH host keys ---
-# /etc/ssh is bind-mounted from /data/ssh, so keys land on writable /data
+# Keys are written to /etc/ssh on the (currently rw) rootfs. /etc/ssh is NOT a
+# bind mount: the generated fstab only binds /var/log, /tmp, and /home/digits.
+# Production images keep SSH disabled, so these keys go unused unless an admin
+# later enables developer mode, which regenerates host keys on /data and points
+# /etc/ssh/ssh_host_* symlinks at them (see the digits-devmode helper and the
+# --dev path in build-image.sh).
 log "Generating SSH host keys"
 ssh-keygen -A
 
