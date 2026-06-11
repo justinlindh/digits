@@ -25,7 +25,6 @@ add_executable(digits
     src/keypad.c
     src/led.c
     src/phase.c
-    src/tone.c
     src/ringer.c
     src/uart_proto.c
     src/phone_fsm.c

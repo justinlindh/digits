@@ -35,7 +35,6 @@ add_executable(fw_tests
     ${SRC_DIR}/keypad.c
     ${SRC_DIR}/uart_proto.c
     ${SRC_DIR}/ringer.c
-    ${SRC_DIR}/tone.c
 )
 
 target_include_directories(fw_tests PRIVATE

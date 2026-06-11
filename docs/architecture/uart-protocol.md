@@ -30,9 +30,8 @@ Commands use colon-separated tokens (no spaces). All uppercase.
 | `RING:PATTERN:<id>` | `RING:ACK` | Start ringing with a named cadence pattern. Pattern 0 = standard (2s on, 4s off). Pattern 1 = distinctive (short-short-long: 0.4s/0.2s/0.4s/0.2s/0.8s/4s off). Used for *69 callback notifications. |
 | `RING:STOP`     | `RING:DONE`    | Stop ringing. Works from any state -- always stops ringer hardware. Cleans up LED. |
 | `RING:TEST`     | `RING:TEST:ACK`| **Bypass FSM entirely.** Drives ringer + blinks LED regardless of hook state. Use `RING:STOP` to stop. For bench testing. |
-| `TONE:DIAL`     | --              | Play dial tone                                    |
-| `TONE:RINGBACK` | --              | Play ringback tone                                |
-| `TONE:STOP`     | --              | Stop all tones                                    |
+
+Tone generation lives entirely on the Pi (digitsd drives the audio mixer); the Pico has no tone commands.
 
 ### LED Control
 

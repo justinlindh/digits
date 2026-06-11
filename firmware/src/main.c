@@ -11,7 +11,6 @@
 #include "phase.h"
 #include "phone_fsm.h"
 #include "ringer.h"
-#include "tone.h"
 #include "uart_proto.h"
 
 // Drive both candidate UART_TX pins high so the Pi sees a clean idle line
@@ -98,7 +97,6 @@ int main(void) {
         break;
     }
 
-    tone_init();
     ringer_init();
     uart_proto_init();
     phone_fsm_init();

@@ -47,7 +47,7 @@ virtual clock and GPIO array (`fakes/fake_env.c`) plus a fake UART RX queue
 (`fakes/fake_uart.c`). The hardware-bound modules the FSM depends on (board
 profile, LED, phase) have in-memory fakes (`fakes/fake_board.c`,
 `fakes/fake_led.c`, `fakes/fake_phase.c`) that expose state for assertions. The
-real `ringer.c` and `tone.c` link directly.
+real `ringer.c` links directly.
 
 `test_fsm.c` includes `phone_fsm.c` directly rather than linking it separately,
 so the tests can reach the file-static `buf_appendf` and `s_state` while still
