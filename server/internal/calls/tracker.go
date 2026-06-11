@@ -261,10 +261,13 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		 )`,
 		caller, callee, callee, caller,
 	)
+	if err != nil {
+		return err
+	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, caller, callee)
 	}
-	return err
+	return nil
 }
 
 // ClearByNumber removes all active calls involving the given number and ends
@@ -304,14 +307,16 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 
 	// End any open calls in the database
-	if _, err := t.db.ExecContext(ctx,
-		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
+	if t.db != nil {
+		if _, err := t.db.ExecContext(ctx,
+			`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
 		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
 		 WHERE (caller = $1 OR callee = $1)
 		 AND status IN ('initiated', 'ringing', 'connected')`,
-		number,
-	); err != nil {
-		slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
+			number,
+		); err != nil {
+			slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
+		}
 	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, number, "")
@@ -582,7 +587,9 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil
 	})
 	if txErr != nil {
-		_, _ = t.conferences.EndConference(ctx, conf.ID, "db_error")
+		if _, endErr := t.conferences.EndConference(ctx, conf.ID, "db_error"); endErr != nil {
+			slog.ErrorContext(ctx, "conference: failed to roll back in-memory state after DB error", "conf_id", conf.ID, "err", endErr)
+		}
 		return nil, txErr
 	}
 

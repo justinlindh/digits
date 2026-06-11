@@ -22,11 +22,15 @@ import (
 // Callers that want find-or-create semantics must check for this explicitly
 // so that real DB errors (connection loss, context cancellation, etc.) are
 // not silently treated as "user missing".
+//
+// ErrInvalidSession and ErrInvalidMagicLink are returned by ValidateSession,
+// ValidateAndRefreshSession, and ValidateMagicLink when the token does not
+// match a valid, unexpired, unused record. They are distinct from nil so
+// callers can use errors.Is to distinguish "bad token" from a real DB error.
 var (
-	ErrUserNotFound = errors.New("user not found")
-
-	errInvalidSession   = errors.New("invalid or expired session")
-	errInvalidMagicLink = errors.New("invalid, expired, or already used magic link")
+	ErrUserNotFound     = errors.New("user not found")
+	ErrInvalidSession   = errors.New("invalid or expired session")
+	ErrInvalidMagicLink = errors.New("invalid, expired, or already used magic link")
 )
 
 // User represents a registered user account.
@@ -227,7 +231,7 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, er
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errInvalidSession
+		return nil, ErrInvalidSession
 	}
 	if err != nil {
 		return nil, err
@@ -272,7 +276,7 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errInvalidSession
+		return nil, ErrInvalidSession
 	}
 	if err != nil {
 		return nil, err
@@ -313,7 +317,7 @@ func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, st
 		hash,
 	).Scan(&email, &returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", errInvalidMagicLink
+		return "", "", ErrInvalidMagicLink
 	}
 	if err != nil {
 		return "", "", err

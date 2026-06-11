@@ -197,8 +197,8 @@ func TestCreateAndValidateSession(t *testing.T) {
 func TestValidateSession_Invalid(t *testing.T) {
 	s := testDB(t)
 	_, err := s.ValidateSession(context.Background(), "totally-fake-token")
-	if err == nil {
-		t.Error("expected error for invalid token, got nil")
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Errorf("expected ErrInvalidSession, got %v", err)
 	}
 }
 
@@ -218,8 +218,8 @@ func TestDeleteSession(t *testing.T) {
 	}
 
 	_, err = s.ValidateSession(context.Background(), token)
-	if err == nil {
-		t.Error("session should be invalid after deletion")
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Errorf("expected ErrInvalidSession after deletion, got %v", err)
 	}
 }
 
@@ -262,8 +262,8 @@ func TestValidateAndRefreshSession_Expired(t *testing.T) {
 	_, _ = s.db.Exec(`UPDATE sessions SET expires_at = NOW() - interval '1 second' WHERE token_hash = $1`, hash)
 
 	_, err = s.ValidateAndRefreshSession(context.Background(), token, 48*time.Hour)
-	if err == nil {
-		t.Error("expected error for expired session, got nil")
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Errorf("expected ErrInvalidSession for expired session, got %v", err)
 	}
 }
 
@@ -289,16 +289,16 @@ func TestCreateAndValidateMagicLink(t *testing.T) {
 
 	// Second use should fail (single-use enforcement)
 	_, _, err = s.ValidateMagicLink(context.Background(), token)
-	if err == nil {
-		t.Error("expected error on reuse of magic link, got nil")
+	if !errors.Is(err, ErrInvalidMagicLink) {
+		t.Errorf("expected ErrInvalidMagicLink on reuse, got %v", err)
 	}
 }
 
 func TestValidateMagicLink_InvalidToken(t *testing.T) {
 	s := testDB(t)
 	_, _, err := s.ValidateMagicLink(context.Background(), "fake-magic-token")
-	if err == nil {
-		t.Error("expected error for invalid magic link token, got nil")
+	if !errors.Is(err, ErrInvalidMagicLink) {
+		t.Errorf("expected ErrInvalidMagicLink for invalid token, got %v", err)
 	}
 }
 
@@ -331,8 +331,8 @@ func TestCleanupExpired(t *testing.T) {
 
 	// Session should be gone (validate returns error)
 	_, err = s.ValidateSession(context.Background(), token)
-	if err == nil {
-		t.Error("expired session should be invalid after cleanup")
+	if !errors.Is(err, ErrInvalidSession) {
+		t.Errorf("expected ErrInvalidSession after cleanup, got %v", err)
 	}
 }
 
