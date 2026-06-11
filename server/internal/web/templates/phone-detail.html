@@ -1426,61 +1426,63 @@
           </div>
         </div>
       </div>
-      {{if .IsAdmin}}
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-        {{if and .DeviceInfo .DeviceInfo.DevMode}}
-        <div id="am-devmode-on-default">
-          <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x26D4;</span>
-            <span class="am-key__label">Disable dev mode</span>
+    </section>
+
+    {{if .IsAdmin}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide">
+      <span class="am-plate__label">Developer mode</span>
+      {{if and .DeviceInfo .DeviceInfo.DevMode}}
+      <div id="am-devmode-on-default">
+        <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x26D4;</span>
+          <span class="am-key__label">Disable dev mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+      </div>
+      <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
+        <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
           </button>
-          <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
-        </div>
-        <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
-          <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
-          <div class="am-handset__actions-row" style="gap: 8px;">
-            <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Confirm</span>
-            </button>
-            <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        {{else}}
-        <div id="am-devmode-off-default">
-          <button type="button" onclick="amShowDevModeEnable()" class="am-key">
-            <span class="am-key__symbol">&#x1F527;</span>
-            <span class="am-key__label">Enable dev mode</span>
+          <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
           </button>
-          <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
         </div>
-        <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
-          <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-          <input type="password" id="am-devmode-password" autocomplete="new-password" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
-          <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
-            <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Enable</span>
-            </button>
-            <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        {{end}}
-        <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
-          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-            <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-            <span id="am-devmode-text" class="am-led">Sending command...</span>
-          </div>
+      </div>
+      {{else}}
+      <div id="am-devmode-off-default">
+        <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+          <span class="am-key__symbol">&#x1F527;</span>
+          <span class="am-key__label">Enable dev mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. Set an SSH password to turn it on.</p>
+      </div>
+      <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
+        <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
+        <input type="password" id="am-devmode-password" autocomplete="new-password" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+        <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
+          <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Enable</span>
+          </button>
+          <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
         </div>
       </div>
       {{end}}
+      <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-devmode-text" class="am-led">Sending command...</span>
+        </div>
+      </div>
     </section>
+    {{end}}
     {{end}}
 
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
