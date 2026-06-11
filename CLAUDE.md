@@ -55,6 +55,7 @@ Firmware (from repo root):
 ```
 make firmware         # builds in Docker
 make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
+make firmware-test    # host-side unit tests (native cmake + gcc, no Pico SDK; see firmware/test/README.md)
 ./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
 

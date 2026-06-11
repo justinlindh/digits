@@ -1,4 +1,4 @@
-.PHONY: help server server-test pi-build pi-test firmware firmware-local fetch-tags stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
+.PHONY: help server server-test pi-build pi-test firmware firmware-local firmware-test fetch-tags stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
 
 # Refresh tags from origin so version derivation in firmware and pi-build
 # resolves to the latest published release, not whatever the local clone
@@ -36,6 +36,9 @@ firmware: fetch-tags ## Build Pico firmware (Docker, no host toolchain needed)
 
 firmware-local: ## Build Pico firmware on host (requires arm-none-eabi-gcc + Pico SDK)
 	$(MAKE) -C firmware build-local
+
+firmware-test: ## Run firmware host tests (native cmake + gcc, no Pico SDK needed)
+	$(MAKE) -C firmware test
 
 # Mirror firmware/Makefile's DIGITS_VERSION derivation so the .version file we
 # stage matches the version string the firmware reports over UART after boot.
@@ -117,7 +120,7 @@ image-v2-flash: ## Build V2 dev image and flash
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 
-test: server-test pi-test ## Run all tests
+test: server-test pi-test firmware-test ## Run all tests
 
 clean: ## Clean build artifacts
 	$(MAKE) -C server clean
