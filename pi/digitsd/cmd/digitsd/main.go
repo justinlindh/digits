@@ -854,8 +854,8 @@ type picoStateResyncer interface {
 }
 
 // resetPicoHardware clears any residual ring or LED state on the Pico in case
-// the Pi rebooted mid-call. Safe no-op on clean boots where none of these
-// hardware states were active.
+// the Pi or Pico rebooted mid-call. Safe no-op on clean boots where none of
+// these hardware states were active.
 func resetPicoHardware(sp picoStateResyncer) {
 	slog.Info("pico: clearing residual hardware state")
 	sp.StopRing()
