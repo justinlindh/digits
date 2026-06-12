@@ -3,6 +3,8 @@ package calls
 import (
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestHistoryCursor_RoundTripCall(t *testing.T) {
@@ -71,5 +73,40 @@ func TestDecodeHistoryCursor_BadFields(t *testing.T) {
 		if _, err := DecodeHistoryCursor(tok); err == nil {
 			t.Errorf("expected error for %q", raw)
 		}
+	}
+}
+
+func TestCursorForEntryCall(t *testing.T) {
+	ts := time.Date(2026, 4, 27, 15, 4, 5, 0, time.UTC)
+	e := HistoryEntry{
+		Kind:     HistoryEntryCall,
+		Call:     &Call{ID: 42},
+		SortTime: ts,
+	}
+	c := CursorForEntry(e)
+	if c.Kind != HistoryEntryCall || c.ID != "42" || !c.Time.Equal(ts) {
+		t.Errorf("CursorForEntry(call) = %+v", c)
+	}
+}
+
+func TestCursorForEntryConference(t *testing.T) {
+	ts := time.Date(2026, 4, 27, 15, 4, 5, 0, time.UTC)
+	confID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
+	e := HistoryEntry{
+		Kind:       HistoryEntryConference,
+		Conference: &ConferenceSummary{ID: confID},
+		SortTime:   ts,
+	}
+	c := CursorForEntry(e)
+	if c.Kind != HistoryEntryConference || c.ID != confID.String() || !c.Time.Equal(ts) {
+		t.Errorf("CursorForEntry(conference) = %+v", c)
+	}
+	// The produced cursor must survive the wire round trip.
+	got, err := DecodeHistoryCursor(c.Encode())
+	if err != nil {
+		t.Fatalf("DecodeHistoryCursor: %v", err)
+	}
+	if got.ID != confID.String() {
+		t.Errorf("round trip ID = %q, want %q", got.ID, confID.String())
 	}
 }
