@@ -32,7 +32,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/dashboard/events"
+	"github.com/justinlindh/digits/server/internal/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email/emailtest"

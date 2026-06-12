@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/justinlindh/digits/server/internal/dashboard/events"
+	"github.com/justinlindh/digits/server/internal/events"
 )
 
 func TestBroadcaster_NotifyDeliversToSingleSubscriber(t *testing.T) {
