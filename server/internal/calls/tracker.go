@@ -65,7 +65,7 @@ type healthLifecycle interface {
 	EvictConference(confID uuid.UUID)
 }
 
-// dashNotifier is the subset of *dashboard/events.Broadcaster the Tracker
+// dashNotifier is the subset of *events.Broadcaster the Tracker
 // uses to wake dashboard SSE subscribers when active-call count changes.
 // Optional; nil disables notifications.
 type dashNotifier interface {

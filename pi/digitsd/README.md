@@ -53,7 +53,7 @@ The build embeds assets from `pi/image/rootfs-overlay/` and `pi/tones/` into the
 
 `make embed` copies rootfs overlay files (systemd services, hostapd config, SWD config, boot scripts) and tone WAVs into `internal/assets/embed/`. These are compiled into the binary with `//go:embed` so digitsd can deploy them to the filesystem for OTA updates and factory resets.
 
-Some overlay files are excluded from embedding (boot fragments, sudoers) because they're only needed at image build time, not runtime.
+Some overlay files are excluded from embedding (boot fragments, the `digits-updater` sudoers file, the PCB revision marker) because they're only needed at image build time or, in the case of `digits-updater`, because the asset extractor's own permissions come from it. Other sudoers files such as `digits-devmode` are embedded on purpose so OTA updates deliver them to already-flashed devices.
 
 ## Runtime
 
