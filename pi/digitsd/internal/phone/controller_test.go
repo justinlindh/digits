@@ -1718,7 +1718,7 @@ func TestController_DoubleFlashFromConnectedIsStable(t *testing.T) {
 
 // TestController_FlashRaceWithAnswerFlashFirst simulates the user flashing
 // out of ADD_CALLING at the exact moment the added party's answer arrives.
-// The flash wins: state -> CONNECTED (via abortAddCalling) and C is torn
+// The flash wins: state -> CONNECTED (via abortAdd) and C is torn
 // down. A subsequent answer signal from the now-defunct C must be ignored;
 // the controller must not fall into ADD_PRIVATE or CONFERENCE_MERGED on
 // stale input.
