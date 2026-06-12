@@ -284,6 +284,34 @@ static void test_fsm_idle_led_follows_phase(void) {
     CHECK_EQ(fake_led_mode(), LED_MODE_DOUBLE_PULSE);
 }
 
+static void test_fsm_state_set_writes_phase_and_acks(void) {
+    fsm_reset_idle();
+
+    static const struct {
+        const char *cmd;
+        uint8_t phase;
+    } cases[] = {
+        {"STATE:SET:UNPAIRED", PHASE_UNPAIRED},
+        {"STATE:SET:SETUP", PHASE_SETUP},
+        {"STATE:SET:RECOVERY", PHASE_RECOVERY},
+        {"STATE:SET:PAIRED", PHASE_PAIRED},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        fake_uart_tx_reset();
+        send_cmd(cases[i].cmd);
+        run_for_ms(20);
+        CHECK_EQ(phase_read(), cases[i].phase);
+        CHECK_EQ(fake_uart_tx_count_lines_with_prefix("STATE:SET:OK"), 1);
+    }
+
+    // An unrecognized phase name neither writes the phase nor acks.
+    fake_uart_tx_reset();
+    send_cmd("STATE:SET:BOGUS");
+    run_for_ms(20);
+    CHECK_EQ(phase_read(), PHASE_PAIRED);
+    CHECK_EQ(fake_uart_tx_count_lines_with_prefix("STATE:SET:"), 0);
+}
+
 static void test_fsm_state_name_mapping(void) {
     CHECK_STREQ(phone_fsm_state_name(PHONE_STATE_IDLE), "IDLE");
     CHECK_STREQ(phone_fsm_state_name(PHONE_STATE_DIAL_TONE), "DIAL_TONE");
@@ -309,6 +337,7 @@ static const test_case_t k_fsm_tests[] = {
     TEST_CASE(test_fsm_dialtone_timeout_to_busy),
     TEST_CASE(test_fsm_reset_command_returns_idle),
     TEST_CASE(test_fsm_idle_led_follows_phase),
+    TEST_CASE(test_fsm_state_set_writes_phase_and_acks),
     TEST_CASE(test_fsm_state_name_mapping),
 };
 

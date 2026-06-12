@@ -258,22 +258,27 @@ static void process_pi_command(const char *cmd) {
         // a stale prefix.
         clear_dialing_buffer();
         uart_proto_send("DIAL:RESET:OK");
-    } else if (strcmp(cmd, "STATE:SET:PAIRED") == 0) {
-        phase_write(PHASE_PAIRED);
-        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
-        uart_proto_send("STATE:SET:OK");
-    } else if (strcmp(cmd, "STATE:SET:UNPAIRED") == 0) {
-        phase_write(PHASE_UNPAIRED);
-        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
-        uart_proto_send("STATE:SET:OK");
-    } else if (strcmp(cmd, "STATE:SET:SETUP") == 0) {
-        phase_write(PHASE_SETUP);
-        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
-        uart_proto_send("STATE:SET:OK");
-    } else if (strcmp(cmd, "STATE:SET:RECOVERY") == 0) {
-        phase_write(PHASE_RECOVERY);
-        if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
-        uart_proto_send("STATE:SET:OK");
+    } else if (strncmp(cmd, "STATE:SET:", 10) == 0) {
+        static const struct {
+            const char *name;
+            uint8_t phase;
+        } phase_names[] = {
+            {"PAIRED", PHASE_PAIRED},
+            {"UNPAIRED", PHASE_UNPAIRED},
+            {"SETUP", PHASE_SETUP},
+            {"RECOVERY", PHASE_RECOVERY},
+        };
+        // Unknown phase names fall through silently, matching the chain's
+        // behavior for any other unrecognized command.
+        for (size_t i = 0; i < sizeof(phase_names) / sizeof(phase_names[0]); ++i) {
+            if (strcmp(cmd + 10, phase_names[i].name) == 0) {
+                phase_write(phase_names[i].phase);
+                // Re-resolve the idle LED pattern, which is phase-dependent.
+                if (s_state == PHONE_STATE_IDLE) fsm_led_set(LED_MODE_OFF);
+                uart_proto_send("STATE:SET:OK");
+                break;
+            }
+        }
     } else if (strcmp(cmd, "PHASE?") == 0) {
         char buf[16];
         snprintf(buf, sizeof(buf), "PHASE:0x%02X", phase_read());
