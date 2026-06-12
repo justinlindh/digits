@@ -32,10 +32,10 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
-	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/email/emailtest"
+	"github.com/justinlindh/digits/server/internal/events"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/pairing"
@@ -143,7 +143,7 @@ func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	pairingStore := pairing.NewStore(database.DB)
 	linkStore := household.NewLinkStore(database.DB)
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
-	emailSender := email.NewNoopSender()
+	emailSender := emailtest.NewSender()
 	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")
 	if err != nil {
 		t.Fatalf("parse login template: %v", err)

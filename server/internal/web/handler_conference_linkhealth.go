@@ -286,8 +286,7 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	kickedPhone := r.PostForm.Get("phone")
@@ -306,6 +305,10 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return
+	}
 
 	// Audit first: if downstream teardown fails, the record still lands.
 	if err := h.tracker.RecordKick(r.Context(), confID, kickedPhone, user.ID); err != nil {

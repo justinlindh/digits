@@ -1,12 +1,10 @@
-.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy dev-up dev-down dev-seed dev-logs lint vet
+.PHONY: build build-autodeploy build-dev run test test-integration test-db-up test-db-down test-db-reset e2e e2e-ci clean deploy dev-up dev-down dev-seed dev-logs lint vet print-version
 
 # Version resolution: VERSION file > git describe > "dev"
 VERSION ?= $(shell cat VERSION 2>/dev/null || git describe --tags --match 'server/v*' --abbrev=0 2>/dev/null | sed 's|^server/v||' || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 LDFLAGS  = -X github.com/justinlindh/digits/server/internal/version.Version=$(VERSION) \
            -X github.com/justinlindh/digits/server/internal/version.Commit=$(COMMIT)
-
-TAILWINDCSS ?= $(shell command -v tailwindcss 2>/dev/null || echo /tmp/tailwindcss-cli-linux-x64)
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/signald ./cmd/signald/

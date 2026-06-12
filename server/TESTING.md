@@ -22,7 +22,7 @@ The blank line between the build tag and the `package` declaration is required b
 
 ## End-to-end tests
 
-Playwright suite in `internal/web/e2e/` driven by `make e2e`. Spins up the full stack (signald + Postgres via `docker compose`) and drives a real browser. Outside the Go test runner.
+Playwright suite in `e2e/` driven by `make e2e`. Spins up the full stack (signald + Postgres via `docker compose`) and drives a real browser. Outside the Go test runner.
 
 ## Running tests locally
 

@@ -2,6 +2,7 @@ package signaling
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -242,7 +243,7 @@ func (s *DeviceState) LastSeenAt(ctx context.Context, number string) *time.Time 
 	for i, hwID := range hwIDs {
 		cmds[i] = pipe.HGet(ctx, deviceKeyPrefix+hwID, "last_seen")
 	}
-	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		slog.ErrorContext(ctx, "redis: LastSeenAt pipeline failed", "number", number, "err", err)
 		return nil
 	}

@@ -13,7 +13,7 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/email/emailtest"
 	"github.com/justinlindh/digits/server/internal/signaling"
 )
 
@@ -39,7 +39,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	googleAuth := auth.NewGoogleAuth("", "", "", "", authStore)
 
 	// Noop email sender
-	emailSender := email.NewNoopSender()
+	emailSender := emailtest.NewSender()
 
 	// Parse login template from the embedded FS
 	loginTmpl, err := template.New("").Funcs(TemplateFuncs()).ParseFS(TemplateFS(), "templates/layout-v2.html", "templates/_partials.html", "templates/login.html")

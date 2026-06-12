@@ -108,11 +108,28 @@ func TestEvictExpiredRemovesStaleEntries(t *testing.T) {
 	lim := New(1, 50*time.Millisecond, 1)
 	lim.Allow("stale-ip")
 	time.Sleep(60 * time.Millisecond)
-	lim.evictExpired()
 	lim.mu.Lock()
+	lim.evictExpiredLocked(time.Now())
 	_, exists := lim.buckets["stale-ip"]
 	lim.mu.Unlock()
 	if exists {
 		t.Fatal("stale entry should have been cleaned up")
+	}
+}
+
+func TestAllowEvictsLazily(t *testing.T) {
+	lim := New(1, 50*time.Millisecond, 1)
+	lim.Allow("stale-ip")
+	time.Sleep(60 * time.Millisecond)
+	// Force the next Allow to run an eviction sweep.
+	lim.mu.Lock()
+	lim.lastEvict = time.Now().Add(-evictInterval)
+	lim.mu.Unlock()
+	lim.Allow("fresh-ip")
+	lim.mu.Lock()
+	_, exists := lim.buckets["stale-ip"]
+	lim.mu.Unlock()
+	if exists {
+		t.Fatal("stale entry should have been evicted by Allow")
 	}
 }

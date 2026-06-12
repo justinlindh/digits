@@ -16,6 +16,12 @@ type RowScanner interface {
 	Scan(dest ...any) error
 }
 
+// RowQuerier is satisfied by both *sql.DB and *sql.Tx, so single-row query
+// helpers can run standalone or inside a transaction.
+type RowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 // Placeholders returns a comma-separated string of PostgreSQL positional
 // placeholders ($1, $2, …, $n) for use in SQL IN clauses.
 func Placeholders(n int) string {
