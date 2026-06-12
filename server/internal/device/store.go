@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -71,6 +73,41 @@ func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) 
 		devices = append(devices, d)
 	}
 	return devices, rows.Err()
+}
+
+// ListByLines returns all devices for the given line IDs, grouped by line ID
+// and ordered by created_at within each group. Batch variant of ListByLine
+// for callers that render many lines at once.
+func (s *Store) ListByLines(ctx context.Context, lineIDs []int64) (map[int64][]Device, error) {
+	if len(lineIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, line_id, name, hardware_id, device_id, device_token,
+			pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		FROM devices
+		WHERE line_id = ANY($1)
+		ORDER BY created_at
+	`, pq.Array(lineIDs))
+	if err != nil {
+		return nil, fmt.Errorf("list devices by lines: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[int64][]Device, len(lineIDs))
+	for rows.Next() {
+		var d Device
+		if err := rows.Scan(
+			&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
+			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan device: %w", err)
+		}
+		if d.LineID != nil {
+			result[*d.LineID] = append(result[*d.LineID], d)
+		}
+	}
+	return result, rows.Err()
 }
 
 // Unpair invalidates the device's paired_at and device_token so the next

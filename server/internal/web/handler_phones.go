@@ -145,6 +145,19 @@ func (h *Handler) buildLineRows(r *http.Request, hh *household.Household) (rows 
 		latestFw = idx.Firmware.Latest
 	}
 
+	var devicesByLine map[int64][]device.Device
+	if h.deviceStore != nil {
+		lineIDs := make([]int64, len(lines))
+		for i, l := range lines {
+			lineIDs[i] = l.ID
+		}
+		var err error
+		devicesByLine, err = h.deviceStore.ListByLines(r.Context(), lineIDs)
+		if err != nil {
+			slog.ErrorContext(r.Context(), "list devices for lines", "err", err)
+		}
+	}
+
 	rows = make([]lineRow, len(lines))
 	for i, l := range lines {
 		infos := h.hub.AllDeviceInfo(l.Number)
@@ -155,16 +168,7 @@ func (h *Handler) buildLineRows(r *http.Request, hh *household.Household) (rows 
 		row := lineRow{Line: l, Online: onlineSet[l.Number], DeviceInfo: info}
 		row.OnlineDeviceCount = h.hub.ConnectionCount(l.Number)
 		row.VoicemailUnheard = h.hub.LineVoicemailUnheard(l.Number)
-
-		if h.deviceStore != nil {
-			devs, err := h.deviceStore.ListByLine(r.Context(), l.ID)
-			if err != nil {
-				slog.ErrorContext(r.Context(), "list devices for line", "line_id", l.ID, "err", err)
-			} else {
-				row.Devices = devs
-			}
-		}
-
+		row.Devices = devicesByLine[l.ID]
 		row.PiUpdateNotes, row.FirmwareUpdateNotes = updateNotes(idx, infos, latestPi, latestFw)
 		rows[i] = row
 	}
@@ -575,27 +579,15 @@ func (h *Handler) handlePhoneQuietHoursPost(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	next := ln.Settings
-	next.QuietHours = line.QuietHours{
+	qh := line.QuietHours{
 		Enabled: strings.TrimSpace(r.FormValue("enabled")) == "on",
 		Start:   strings.TrimSpace(r.FormValue("start")),
 		End:     strings.TrimSpace(r.FormValue("end")),
 		Days:    days,
 	}
-	next = next.Normalize()
-	if !h.applyLineSettings(w, r, ln, next) {
-		return
-	}
-
-	if isHTMX(r) {
-		renderWith(r.Context(), w, h.tmplPhoneDetail,
-			partialFor(r, "quiet-hours-section", "am-quiet-hours-section"),
-			struct {
-				Line line.Line
-			}{Line: *ln})
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.updateLineSetting(w, r, ln, "quiet-hours-section", "am-quiet-hours-section", func(s *line.Settings) {
+		s.QuietHours = qh
+	})
 }
 
 // handlePhoneVoicemailPost accepts a form submission with the full voicemail
@@ -622,25 +614,12 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	next := ln.Settings
-	next.Voicemail = line.Voicemail{
-		Enabled:            enabled,
-		RingTimeoutSeconds: ring,
-	}
-	next = next.Normalize()
-	if !h.applyLineSettings(w, r, ln, next) {
-		return
-	}
-
-	if isHTMX(r) {
-		renderWith(r.Context(), w, h.tmplPhoneDetail,
-			partialFor(r, "voicemail-section", "am-voicemail-section"),
-			struct {
-				Line line.Line
-			}{Line: *ln})
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.updateLineSetting(w, r, ln, "voicemail-section", "am-voicemail-section", func(s *line.Settings) {
+		s.Voicemail = line.Voicemail{
+			Enabled:            enabled,
+			RingTimeoutSeconds: ring,
+		}
+	})
 }
 
 // handlePhoneVoicemailTogglePost flips Voicemail.Enabled for a line and
@@ -655,36 +634,22 @@ func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.
 	if ln == nil {
 		return
 	}
-
-	next := ln.Settings
-	next.Voicemail.Enabled = !next.Voicemail.Enabled
-	next = next.Normalize()
-	if !h.applyLineSettings(w, r, ln, next) {
-		return
-	}
-
-	if isHTMX(r) {
-		renderWith(r.Context(), w, h.tmplPhoneDetail,
-			partialFor(r, "voicemail-section", "am-voicemail-section"),
-			struct {
-				Line line.Line
-			}{Line: *ln})
-		return
-	}
-	http.Redirect(w, r, "/phones/"+number, http.StatusSeeOther)
+	h.updateLineSetting(w, r, ln, "voicemail-section", "am-voicemail-section", func(s *line.Settings) {
+		s.Voicemail.Enabled = !s.Voicemail.Enabled
+	})
 }
 
 // parseClampedInt reads form field `name`, parses it as an integer, and
-// requires it to fall in [min, max]. On any failure it writes a 400 with a
+// requires it to fall in [lo, hi]. On any failure it writes a 400 with a
 // friendly message naming the field and the allowed range, then returns
 // (0, false). Helper for handlePhoneVoicemailPost so the three numeric
 // validations don't repeat the same boilerplate.
-func parseClampedInt(w http.ResponseWriter, r *http.Request, name string, min, max int) (int, bool) {
+func parseClampedInt(w http.ResponseWriter, r *http.Request, name string, lo, hi int) (int, bool) {
 	raw := strings.TrimSpace(r.FormValue(name))
 	v, err := strconv.Atoi(raw)
-	if err != nil || v < min || v > max {
+	if err != nil || v < lo || v > hi {
 		http.Error(w,
-			name+" must be an integer between "+strconv.Itoa(min)+" and "+strconv.Itoa(max),
+			name+" must be an integer between "+strconv.Itoa(lo)+" and "+strconv.Itoa(hi),
 			http.StatusBadRequest)
 		return 0, false
 	}
@@ -1022,6 +987,7 @@ func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 
 	devices, listErr := h.deviceStore.ListByLine(r.Context(), srcLn.ID)
 	if listErr != nil {
+		slog.ErrorContext(r.Context(), "list devices for line", "line_id", srcLn.ID, "err", listErr)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
