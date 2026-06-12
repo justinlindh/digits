@@ -15,11 +15,10 @@ import (
 
 const inviteTTL = 7 * 24 * time.Hour
 
-const (
-	InviteStatusPending   = "pending"
-	InviteStatusAccepted  = "accepted"
-	InviteStatusCancelled = "cancelled"
-)
+// InviteStatusPending is the only invite status compared in Go; the SQL in
+// this file also writes 'accepted' and 'cancelled', matching the DB CHECK
+// constraint defined in db.go.
+const InviteStatusPending = "pending"
 
 var ErrInviteNotFound = errors.New("invite not found")
 

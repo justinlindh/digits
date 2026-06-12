@@ -66,30 +66,6 @@ func (s *SMTPSender) Send(to, subject, htmlBody string) error {
 	return smtp.SendMail(s.host+":"+s.port, auth, fromAddr.Address, []string{toAddr.Address}, []byte(msg))
 }
 
-// NoopSender captures emails in memory for test inspection. Not safe for
-// production: Sent grows unboundedly. Use LogSender as the production
-// fallback when SMTP is not configured.
-type NoopSender struct {
-	Sent []SentEmail
-}
-
-// SentEmail holds the details of a captured email.
-type SentEmail struct {
-	To      string
-	Subject string
-	Body    string
-}
-
-// NewNoopSender returns a NoopSender with an empty Sent slice.
-func NewNoopSender() *NoopSender {
-	return &NoopSender{}
-}
-
-func (s *NoopSender) Send(to, subject, htmlBody string) error {
-	s.Sent = append(s.Sent, SentEmail{To: to, Subject: subject, Body: htmlBody})
-	return nil
-}
-
 // LogSender writes each outbound email to the structured logger and drops
 // it. Intended as the production fallback when SMTP is intentionally
 // unconfigured (single-tenant deployments, local demos), so the operator

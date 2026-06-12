@@ -84,7 +84,7 @@ func TestE2EHouseholdLinkFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
-	if accepted.Status != LinkStatusActive {
+	if accepted.Status != "active" {
 		t.Fatalf("accepted status = %q, want active", accepted.Status)
 	}
 

@@ -16,14 +16,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
-// Call status values written to and read from the calls table. Must match the
+// CallStatusEnded is the terminal call status. The full status set written by
+// the SQL in this file is initiated/ringing/connected/ended and must match the
 // DB CHECK constraint defined in db.go.
-const (
-	CallStatusInitiated = "initiated"
-	CallStatusRinging   = "ringing"
-	CallStatusConnected = "connected"
-	CallStatusEnded     = "ended"
-)
+const CallStatusEnded = "ended"
 
 // role strings written to the conference_members table. Must match the DB
 // CHECK constraint defined in db.go and the wire constants in
@@ -264,7 +260,7 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		caller, callee, callee, caller,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("end call: %w", err)
 	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, caller, callee)
@@ -798,28 +794,20 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 // if not found (callers should test Call.ID == 0).
 func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
 	var c Call
-	var answered, ended sql.NullTime
-	var forceEndedBy sql.NullString
+	var feb sql.NullString
 	err := t.db.QueryRowContext(ctx,
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS,
-		&c.EndReason, &c.OriginatingConferenceID, &forceEndedBy)
+		`SELECT `+callColumns+` FROM calls WHERE id = $1`, id,
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
+		&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
+		&c.EndReason, &c.OriginatingConferenceID, &feb)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Call{}, nil
 	}
 	if err != nil {
 		return Call{}, fmt.Errorf("get call: %w", err)
 	}
-	if answered.Valid {
-		c.AnsweredAt = &answered.Time
-	}
-	if ended.Valid {
-		c.EndedAt = &ended.Time
-	}
-	if forceEndedBy.Valid {
-		s := forceEndedBy.String
+	if feb.Valid {
+		s := feb.String
 		c.ForceEndedBy = &s
 	}
 	return c, nil

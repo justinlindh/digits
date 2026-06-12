@@ -63,12 +63,12 @@ type HealthRecorder interface {
 	RecordEdge(confID uuid.UUID, from, peer string, sample calls.Sample)
 }
 
-// SignalingErrorObserver counts signaling errors by category. Implemented
+// ErrorObserver counts signaling errors by category. Implemented
 // by *metrics.Registry; the interface lives here so internal/signaling does
 // not import internal/metrics directly. Categories are defined as untyped
 // strings on this surface so the relay package stays independent; the
 // metrics package validates them by exposing only a fixed set of constants.
-type SignalingErrorObserver interface {
+type ErrorObserver interface {
 	ObserveSignalingError(category string)
 }
 
@@ -105,7 +105,7 @@ type Relay struct {
 	// for the cases the relay can categorize cleanly (auth failed, peer
 	// unreachable, etc). nil disables instrumentation; production wires it
 	// in cmd/signald/main.go.
-	Errors SignalingErrorObserver
+	Errors ErrorObserver
 
 	// GraceWindow is how long a 2-party call is held open after the last
 	// device on a line disconnects, before teardown. Defaults to
@@ -136,7 +136,7 @@ func graceKey(number, hardwareID string) string {
 	return number + "\x00" + hardwareID
 }
 
-// observeError is a nil-safe pass-through to the SignalingErrorObserver.
+// observeError is a nil-safe pass-through to the ErrorObserver.
 // Centralizing it here means a missing observer never panics, and there is
 // only one place to look when reviewing what categories the relay emits.
 func (r *Relay) observeError(category string) {
@@ -696,28 +696,32 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 // Extension signaling is identified by the Extension flag on the message.
 // Returns true if the message was handled.
 func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
+	// Resolve the target in one critical section, then send after unlock.
+	var toPeer string
+	var toHardware string
 	r.extMu.Lock()
-	ext := r.extensions[msg.HardwareID]
-	r.extMu.Unlock()
-
-	if ext != nil {
-		if msg.To == ext.PeerNumber {
-			_ = r.Hub.SendTo(ext.PeerNumber, msg)
-			return true
-		}
-	}
-
-	// The message might be from the remote peer going back to the extension device.
-	// Find which extension expects traffic from this sender.
-	r.extMu.Lock()
-	for _, e := range r.extensions {
-		if e.PeerNumber == from && e.LineNumber == msg.To {
-			r.extMu.Unlock()
-			_ = r.Hub.SendToHardware(e.HardwareID, msg)
-			return true
+	if ext := r.extensions[msg.HardwareID]; ext != nil && msg.To == ext.PeerNumber {
+		toPeer = ext.PeerNumber
+	} else {
+		// The message might be from the remote peer going back to the extension
+		// device. Find which extension expects traffic from this sender.
+		for _, e := range r.extensions {
+			if e.PeerNumber == from && e.LineNumber == msg.To {
+				toHardware = e.HardwareID
+				break
+			}
 		}
 	}
 	r.extMu.Unlock()
+
+	switch {
+	case toPeer != "":
+		_ = r.Hub.SendTo(toPeer, msg)
+		return true
+	case toHardware != "":
+		_ = r.Hub.SendToHardware(toHardware, msg)
+		return true
+	}
 	return false
 }
 

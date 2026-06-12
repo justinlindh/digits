@@ -155,7 +155,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("recent calls for history: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -215,7 +215,7 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("recent conferences for history: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
