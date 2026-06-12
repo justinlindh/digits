@@ -46,10 +46,12 @@ spec:
         compression: gzip
     retentionPolicy: {{ .Values.cnpg.backup.retentionPolicy | quote }}
   {{- end }}
-  {{- if .Values.cnpg.userdb.sharedPreloadLibraries }}
+  {{- if or .Values.cnpg.userdb.sharedPreloadLibraries .Values.cnpg.userdb.parameters }}
   postgresql:
+    {{- if .Values.cnpg.userdb.sharedPreloadLibraries }}
     shared_preload_libraries:
       {{- toYaml .Values.cnpg.userdb.sharedPreloadLibraries | nindent 6 }}
+    {{- end }}
     {{- if .Values.cnpg.userdb.parameters }}
     parameters:
       {{- toYaml .Values.cnpg.userdb.parameters | nindent 6 }}

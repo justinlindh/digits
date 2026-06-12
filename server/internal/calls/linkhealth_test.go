@@ -170,18 +170,50 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 	}
 }
 
-func TestHealthStoreRecordIsNoOpAfterEvict(t *testing.T) {
+func TestHealthStoreRecordAfterEvictIsReapedBySweep(t *testing.T) {
 	s := NewHealthStore(nil)
 	s.Init(1)
 	s.Record(1, "A", sample(100, 0.5))
 	s.Evict(1)
-	s.Record(1, "A", sample(200, 0.9)) // should NOT resurrect map entry
-	if win := s.Window(1, "A"); len(win) != 0 {
-		t.Fatalf("post-evict Record must not create entry; got window len %d", len(win))
+	// A late sample (e.g. in flight while another replica handled the
+	// hangup) lazily recreates the session rather than vanishing.
+	s.Record(1, "A", sample(200, 0.9))
+	if win := s.Window(1, "A"); len(win) != 1 {
+		t.Fatalf("post-evict Record should lazily recreate the session; got window len %d", len(win))
 	}
-	a, b := s.latest(1, "A", "B")
-	if a != nil || b != nil {
-		t.Fatalf("post-evict Record must not resurrect rings; got (%v,%v)", a, b)
+	// The idle sweep reaps it once it goes quiet.
+	s.now = func() time.Time { return time.Now().Add(idleSessionTTL + time.Minute) }
+	s.sweepIdleSessions()
+	if win := s.Window(1, "A"); len(win) != 0 {
+		t.Fatalf("idle sweep should evict the recreated session; got window len %d", len(win))
+	}
+}
+
+func TestHealthStoreSweepSparesActiveAndSubscribed(t *testing.T) {
+	s := NewHealthStore(nil)
+
+	s.Init(1) // fresh session: activity is now
+	s.Init(2) // will go idle but holds a subscriber
+	sub := s.Subscribe(2)
+	defer sub.Close()
+
+	// Both sessions sit past the TTL except session 1, which records a
+	// sample "now" to refresh its activity.
+	base := time.Now()
+	s.now = func() time.Time { return base.Add(idleSessionTTL + time.Minute) }
+	s.Record(1, "A", sample(100, 0.5))
+	s.sweepIdleSessions()
+
+	if win := s.Window(1, "A"); len(win) != 1 {
+		t.Fatalf("recently active session must survive the sweep; got window len %d", len(win))
+	}
+	select {
+	case _, ok := <-sub.C:
+		if !ok {
+			t.Fatal("sweep must not evict a session with live subscribers")
+		}
+	default:
+		// no event delivered: still subscribed, as expected
 	}
 }
 
@@ -294,17 +326,24 @@ func TestHealthStoreEvictClosesSubscribers(t *testing.T) {
 	}
 }
 
-func TestHealthStoreSubscribeOnMissingCallReturnsClosedChannel(t *testing.T) {
+func TestHealthStoreSubscribeOnUnseenCallReceivesLaterSamples(t *testing.T) {
 	s := NewHealthStore(nil)
+	// No Init: with multiple replicas the viewer's pod may not have seen
+	// any state for the call yet. Subscribe must still attach.
 	sub := s.Subscribe(999)
 	defer sub.Close()
+
+	s.Record(999, "A", sample(100, 0.5))
 	select {
-	case _, ok := <-sub.C:
-		if ok {
-			t.Fatal("expected closed channel, got event")
+	case ev, ok := <-sub.C:
+		if !ok {
+			t.Fatal("subscription closed unexpectedly")
+		}
+		if ev.Kind != SampleKind || ev.Endpoint != "A" {
+			t.Fatalf("got event %+v, want SampleKind from A", ev)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("expected closed channel, got block")
+		t.Fatal("timeout waiting for sample on lazily created session")
 	}
 }
 
@@ -422,6 +461,20 @@ func TestSessionKeyIsConfConfIDWins(t *testing.T) {
 	}
 }
 
+func TestNullablePtr(t *testing.T) {
+	if nullablePtr[float32](nil) != nil {
+		t.Error("nil pointer: want nil any")
+	}
+	v := float32(1.5)
+	if nullablePtr(&v) != float32(1.5) {
+		t.Errorf("non-nil pointer: got %v, want 1.5", nullablePtr(&v))
+	}
+	n := int64(42)
+	if nullablePtr(&n) != int64(42) {
+		t.Errorf("int64 pointer: got %v, want 42", nullablePtr(&n))
+	}
+}
+
 func TestHealthStoreConferenceRoundTrip(t *testing.T) {
 	s := NewHealthStore(nil)
 	confID := uuid.New()
@@ -480,11 +533,62 @@ func TestHealthStoreConferenceSubscribeReceivesPeer(t *testing.T) {
 	}
 }
 
-func TestHealthStoreRecordEdgeDropsIfNotInit(t *testing.T) {
+func TestHealthStoreRecordEdgeLazilyCreatesSession(t *testing.T) {
 	s := NewHealthStore(nil)
-	confID := uuid.New() // never InitConference'd
+	confID := uuid.New() // never InitConference'd: ingest pod may differ from setup pod
 	s.RecordEdge(confID, "A", "B", Sample{TS: time.Unix(0, 1)})
-	if w := s.WindowEdge(confID, "A", "B"); len(w) != 0 {
-		t.Fatalf("RecordEdge without InitConference should be a no-op: got %d", len(w))
+	if w := s.WindowEdge(confID, "A", "B"); len(w) != 1 {
+		t.Fatalf("RecordEdge without InitConference should lazily create the session: got %d samples", len(w))
+	}
+}
+
+func TestHealthStoreRecordLazilyCreatesSession(t *testing.T) {
+	s := NewHealthStore(nil)
+	// No Init: with multiple replicas the ingesting pod is often not the
+	// pod that handled call setup.
+	s.Record(42, "A", Sample{TS: time.Unix(0, 1)})
+	if w := s.Window(42, "A"); len(w) != 1 {
+		t.Fatalf("Record without Init should lazily create the session: got %d samples", len(w))
+	}
+}
+
+func TestHealthStoreSweepReapsStuckSubscribedSession(t *testing.T) {
+	s := NewHealthStore(nil)
+
+	// Race shape from the multi-pod world: the call ended on another pod
+	// (its evict already fanned out and no-op'd here), then a viewer
+	// subscribed, lazily creating a session that will never receive an
+	// EndedKind from the call lifecycle.
+	sub := s.Subscribe(31)
+	defer sub.Close()
+
+	// Under the normal idle TTL the subscriber protects the session.
+	base := time.Now()
+	s.now = func() time.Time { return base.Add(idleSessionTTL + time.Minute) }
+	s.sweepIdleSessions()
+	select {
+	case _, ok := <-sub.C:
+		if !ok {
+			t.Fatal("session with subscriber swept before subscribedSessionTTL")
+		}
+	default:
+	}
+
+	// Past the subscribed backstop the sweep closes the stream.
+	s.now = func() time.Time { return base.Add(subscribedSessionTTL + time.Minute) }
+	s.sweepIdleSessions()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case ev, ok := <-sub.C:
+			if !ok {
+				return // closed: phantom session self-healed
+			}
+			if ev.Kind != EndedKind {
+				t.Fatalf("unexpected event before close: %+v", ev)
+			}
+		case <-deadline:
+			t.Fatal("sweep did not close the stuck subscribed session")
+		}
 	}
 }

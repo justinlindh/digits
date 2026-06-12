@@ -13,6 +13,9 @@
 #
 # Installed to /etc/initramfs-tools/scripts/local-bottom/recovery-root
 
+# rootmnt and ROOT are exported by the initramfs-tools framework, not this
+# script, so shellcheck cannot see their assignment.
+# shellcheck disable=SC2154
 PREREQ=""
 prereqs() { echo "$PREREQ"; }
 case "$1" in prereqs) prereqs; exit 0;; esac

@@ -8,7 +8,15 @@
 
   <header class="page__head">
     <h1 class="page__title">{{if .HouseholdName}}{{.HouseholdName}}{{else}}Overview{{end}}</h1>
+    <div class="page__head-actions">
+      {{template "dnd-toggle" .}}
+      <a class="btn btn--quiet btn--sm" href="/phones">+ Pair a handset</a>
+    </div>
   </header>
+
+  {{if .PairSuccess}}
+  {{template "pair-banner" .PairSuccess}}
+  {{end}}
 
   <section class="rooms" aria-label="Lines">
     {{if .Lines}}
@@ -25,6 +33,20 @@
           {{end}}
         </div>
         <div class="rooms__num num">{{fmtPhone .Line.Number}}</div>
+        {{if or (and .Line.Settings.Voicemail.Enabled (gt .VoicemailUnheard 0)) .Line.Settings.SilentMode .PiUpdateNotes .FirmwareUpdateNotes}}
+        <div class="rooms__badges">
+          {{template "voicemail-unheard-badge" .}}
+          {{if .Line.Settings.SilentMode}}
+          <span class="phone-silent" aria-label="Silent mode on" title="Silent mode on">
+            <span class="phone-silent__dot" aria-hidden="true"></span>
+            <span class="phone-silent__text">SILENT</span>
+          </span>
+          {{end}}
+          {{if or .PiUpdateNotes .FirmwareUpdateNotes}}
+          <span class="chip chip--warn" title="Software update available"><span class="chip__dot"></span>update available</span>
+          {{end}}
+        </div>
+        {{end}}
         {{if .OnCall}}
           <div class="rooms__callout">
             <div class="rooms__callout-kicker">Talking to</div>
@@ -35,8 +57,11 @@
       </a>
       {{end}}
     {{else}}
-      <div class="rooms__empty">
-        No lines registered. <a href="/phones">Pair a handset</a>.
+      <div class="rooms__empty rooms__welcome">
+        <svg class="rooms__welcome-icon" viewBox="0 0 36 48" fill="currentColor" aria-hidden="true">{{template "keypad-icon"}}</svg>
+        <h2 class="rooms__welcome-title">Pair your first handset</h2>
+        <p class="rooms__welcome-text">Lift the handset and it reads a 6-digit pairing code aloud. Enter that code here to bring the phone online.</p>
+        <a class="btn btn--brass" href="/phones">+ Pair a handset</a>
       </div>
     {{end}}
   </section>
@@ -89,6 +114,10 @@
 
 {{define "dashboard-am"}}
 <div class="am-overview">
+
+  {{if .PairSuccess}}
+  {{template "pair-banner" .PairSuccess}}
+  {{end}}
 
   {{/* Top row swaps live via SSE: counters tick on call start/end and
        handset online/offline; LOCAL TIME advances at least every minute. */}}
@@ -158,12 +187,25 @@
     <div class="am-plate am-overview__lines">
       <div class="am-plate__label">Lines</div>
       {{if .Lines}}
+      <div class="am-overview__lines-actions">
+        {{template "dnd-toggle-am" .}}
+        <a class="am-key" href="/phones"><span class="am-key__symbol">+</span><span class="am-key__label">Pair</span></a>
+      </div>
+      {{end}}
+      {{if .Lines}}
         {{range $l := .Lines}}
         <a class="am-overview__line" href="{{if and $l.OnCall $l.OnCallID}}/call/live/{{$l.OnCallID}}{{else}}/phones/{{$l.Line.Number}}{{end}}">
           <span class="am-lamp{{if $l.OnCall}} am-lamp--on-red{{else if $l.Online}} am-lamp--on-green{{end}}"></span>
           <div class="am-overview__line-body">
             <div class="am-title am-overview__line-name">{{$l.Line.Name}}</div>
-            <div class="am-mono am-muted am-overview__line-num">{{fmtPhone $l.Line.Number}}</div>
+            <div class="am-mono am-muted am-overview__line-num">
+              {{fmtPhone $l.Line.Number}}
+              {{if $l.Line.Settings.SilentMode}}<span class="am-led am-led--dim am-overview__line-flag">SILENT</span>{{end}}
+              {{if and $l.Line.Settings.Voicemail.Enabled (gt $l.VoicemailUnheard 0)}}
+              <span class="am-led am-voicemail-led" role="status" aria-label="{{$l.VoicemailUnheard}} unheard answering machine message{{if ne $l.VoicemailUnheard 1}}s{{end}}">MSG {{$l.VoicemailUnheard}}</span>
+              {{end}}
+              {{if or $l.PiUpdateNotes $l.FirmwareUpdateNotes}}<span class="am-led am-led--dim am-overview__line-flag" title="Software update available">UPDATE</span>{{end}}
+            </div>
           </div>
           <span class="am-overview__line-status{{if $l.OnCall}} am-overview__line-status--live{{else if $l.Online}} am-overview__line-status--online{{else}} am-overview__line-status--idle{{end}}">
             {{if $l.OnCall}}In session{{else if $l.Online}}Online{{else}}Idle{{end}}
@@ -171,7 +213,11 @@
         </a>
         {{end}}
       {{else}}
-        <div class="am-hint">No lines paired. <a href="/phones">Pair a handset</a>.</div>
+        <div class="am-overview__lines-empty">
+          <span class="am-label">No handsets yet</span>
+          <p class="am-hint">Lift the handset and it reads a 6-digit pairing code aloud. Patch it in to bring the phone online.</p>
+          <a class="am-key am-key--blue" href="/phones"><span class="am-key__symbol">+</span><span class="am-key__label">Pair a handset</span></a>
+        </div>
       {{end}}
     </div>
   </div>

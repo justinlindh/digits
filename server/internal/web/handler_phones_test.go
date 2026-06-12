@@ -5,6 +5,36 @@ import (
 	"testing"
 )
 
+func TestValidateDevModePassword(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      string
+		wantErr string
+	}{
+		{name: "ok", in: "hunter2pw"},
+		{name: "exactly min", in: "12345678"},
+		{name: "exactly max", in: strings.Repeat("a", 72)},
+		{name: "empty", in: "", wantErr: "password is required"},
+		{name: "whitespace only", in: "   \t  ", wantErr: "password is required"},
+		{name: "too short", in: "short", wantErr: "password must be at least 8 characters"},
+		{name: "too long", in: strings.Repeat("a", 73), wantErr: "password must be at most 72 characters"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateDevModePassword(tc.in)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != tc.wantErr {
+				t.Fatalf("want error %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestValidateLineName(t *testing.T) {
 	cases := []struct {
 		in      string

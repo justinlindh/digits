@@ -143,7 +143,7 @@ func TestAcceptInvite_ActivatesLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
-	if link.Status != LinkStatusActive {
+	if link.Status != "active" {
 		t.Errorf("expected status 'active', got %q", link.Status)
 	}
 	if link.HouseholdBID == nil {
@@ -235,7 +235,7 @@ func TestRevokeLink_ChangesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if updated.Status != LinkStatusRevoked {
+	if updated.Status != "revoked" {
 		t.Errorf("expected status 'revoked', got %q", updated.Status)
 	}
 	if updated.RevokedAt == nil {

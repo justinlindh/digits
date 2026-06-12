@@ -22,7 +22,16 @@ import (
 // Callers that want find-or-create semantics must check for this explicitly
 // so that real DB errors (connection loss, context cancellation, etc.) are
 // not silently treated as "user missing".
-var ErrUserNotFound = errors.New("user not found")
+//
+// ErrInvalidSession and ErrInvalidMagicLink are returned by ValidateSession,
+// ValidateAndRefreshSession, and ValidateMagicLink when the token does not
+// match a valid, unexpired, unused record. They are distinct from nil so
+// callers can use errors.Is to distinguish "bad token" from a real DB error.
+var (
+	ErrUserNotFound     = errors.New("user not found")
+	ErrInvalidSession   = errors.New("invalid or expired session")
+	ErrInvalidMagicLink = errors.New("invalid, expired, or already used magic link")
+)
 
 // User represents a registered user account.
 type User struct {
@@ -222,7 +231,7 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, er
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invalid or expired session")
+		return nil, ErrInvalidSession
 	}
 	if err != nil {
 		return nil, err
@@ -244,7 +253,10 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 	if err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
 	if n == 0 {
 		return ErrUserNotFound
 	}
@@ -264,7 +276,7 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 	)
 	sess, err := scanSession(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("invalid or expired session")
+		return nil, ErrInvalidSession
 	}
 	if err != nil {
 		return nil, err
@@ -305,7 +317,7 @@ func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, st
 		hash,
 	).Scan(&email, &returnTo)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", fmt.Errorf("invalid, expired, or already used magic link")
+		return "", "", ErrInvalidMagicLink
 	}
 	if err != nil {
 		return "", "", err

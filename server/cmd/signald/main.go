@@ -18,10 +18,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
 	"github.com/justinlindh/digits/server/internal/config"
-	"github.com/justinlindh/digits/server/internal/dashboard/events"
 	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/events"
 	"github.com/justinlindh/digits/server/internal/household"
 	"github.com/justinlindh/digits/server/internal/line"
 	"github.com/justinlindh/digits/server/internal/logging"
@@ -168,6 +168,11 @@ func run(ctx context.Context) error {
 	}
 	healthStore := calls.NewHealthStore(database, healthOpts...)
 	tracker.SetHealthStore(healthStore)
+	if redisBridge != nil {
+		healthStore.SetRedis(redisBridge.Client(), redisBridge.PodID())
+		go healthStore.RunRedis(ctx)
+		slog.Info("redis fan-out enabled for cross-pod link health")
+	}
 
 	healthDone := make(chan struct{})
 	go func() {
@@ -255,6 +260,7 @@ func run(ctx context.Context) error {
 		AdminSecret:       cfg.AdminSecret,
 		DevMode:           cfg.DevMode,
 		WSRateLimitPerMin: cfg.WSRateLimitPerMin,
+		TrustedProxies:    cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("create handler: %w", err)

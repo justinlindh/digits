@@ -37,6 +37,7 @@ var (
 	ErrInvalidCode   = errors.New("invalid or expired pairing code")
 	ErrAlreadyPaired = errors.New("device is already paired")
 	ErrNumberTaken   = errors.New("line number is already in use")
+	ErrLineNotOwned  = errors.New("line does not belong to this household")
 )
 
 // Store handles device pairing operations.
@@ -70,7 +71,10 @@ func (s *Store) GenerateCode(ctx context.Context, hardwareID string) (string, er
 	if err != nil {
 		return "", fmt.Errorf("upsert pairing code: %w", err)
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return "", fmt.Errorf("upsert pairing code: %w", err)
+	}
 	if n == 0 {
 		return "", ErrAlreadyPaired
 	}
@@ -110,8 +114,11 @@ func bindDeviceToLine(ctx context.Context, tx *sql.Tx, deviceID, lineID int64, t
 	if err != nil {
 		return fmt.Errorf("bind device to line: %w", err)
 	}
-	rows, _ := res.RowsAffected()
-	if rows == 0 {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("bind device to line: %w", err)
+	}
+	if n == 0 {
 		return ErrInvalidCode
 	}
 	return nil
@@ -189,7 +196,7 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 			return fmt.Errorf("verify line ownership: %w", err)
 		}
 		if ownerHH != householdID {
-			return fmt.Errorf("line does not belong to this household")
+			return ErrLineNotOwned
 		}
 
 		return bindDeviceToLine(ctx, tx, deviceID, lineID, tokenHash, deviceName)
@@ -197,21 +204,6 @@ func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64
 		return "", "", err
 	}
 	return token, hardwareID, nil
-}
-
-// IsPaired returns whether the device with the given hardware ID has been paired.
-func (s *Store) IsPaired(ctx context.Context, hardwareID string) (bool, error) {
-	var pairedAt sql.NullTime
-	err := s.db.QueryRowContext(ctx, `
-		SELECT paired_at FROM devices WHERE hardware_id = $1
-	`, hardwareID).Scan(&pairedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("check paired: %w", err)
-	}
-	return pairedAt.Valid, nil
 }
 
 // CleanupExpired nulls out pairing codes that have passed their expiry time

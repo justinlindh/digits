@@ -91,6 +91,7 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `DATABASE_URL` | (required)                       | Postgres connection string            |
 | `BASE_URL`     | `https://app.digits.family`      | Public base URL for links and OAuth   |
 | `ADMIN_SECRET` | (required)                       | Shared secret for internal stats API  |
+| `SIGNALD_TRUSTED_PROXIES` | `1`                   | Reverse-proxy hops between signald and clients, used to resolve the real client IP from `X-Forwarded-For` for rate limiting. The default fits one proxy in front (Caddy or Traefik). Set to `0` when signald is exposed directly; raise it when another proxy (CDN, load balancer) sits in front of yours. |
 
 ### TLS (optional)
 
@@ -142,7 +143,7 @@ around what is and is not collected.
 
 | Variable                | Description                                                    |
 |-------------------------|----------------------------------------------------------------|
-| `REDIS_URL`             | Redis connection URL (`redis://host:port` or `rediss://...`), or a comma-separated list of Sentinel addresses for failover mode. When set, signald enables both cross-pod signaling (pub/sub) and shared cluster state (device presence, active calls and conferences, dashboard SSE events). Empty disables Redis (single-instance mode). |
+| `REDIS_URL`             | Redis connection URL (`redis://host:port` or `rediss://...`), or a comma-separated list of Sentinel addresses for failover mode. When set, signald enables both cross-pod signaling (pub/sub) and shared cluster state (device presence, active calls and conferences, dashboard SSE events, link-health telemetry). Empty disables Redis (single-instance mode). |
 | `REDIS_SENTINEL_MASTER` | Sentinel master name. When set together with a comma-separated `REDIS_URL`, the client switches to failover-aware mode. Leave empty for a direct connection. |
 
 Without `REDIS_URL`, behavior is identical to the single-instance default
@@ -159,10 +160,17 @@ into Redis so multi-pod queries see a consistent view:
 - **Dashboard events:** the SSE broadcaster fans out across pods via Redis
   pub/sub so `/api/dashboard/stream` re-renders counters regardless of which
   pod the SSE client connected to.
+- **Link-health telemetry:** each pod ingests its own phones' call-quality
+  samples and fans them out over the `digits:linkhealth` channel, so the
+  in-memory windows behind `/call/live` screens and link-health SSE streams
+  stay complete even when the caller and callee hold WebSockets on
+  different pods.
 
 Running multiple replicas without Redis silently breaks all of these:
-calls land on the wrong pod, devices appear offline to other pods, and
-dashboard counters reflect only the local pod's events.
+calls land on the wrong pod, devices appear offline to other pods,
+dashboard counters reflect only the local pod's events, and live
+call-quality screens show one silent side whenever the two phones in a
+call connected to different pods.
 
 ### Tracing and Profiling
 
@@ -212,10 +220,9 @@ See `.env.example` for a starter config file.
 
 | Route                       | Description                                  |
 |-----------------------------|----------------------------------------------|
-| `/`                         | Dashboard -- stats, active calls, recent history |
-| `/phones`                   | Phone directory -- add, pair, manage phones  |
-| `/phones/{number}`          | Phone detail -- device info, update status   |
-| `/phones/{number}/edit`     | Edit phone name                              |
+| `/`                         | Overview -- line list, active calls, recent history |
+| `/phones`                   | Pair a handset (button-launched from the Overview) |
+| `/phones/{number}`          | Phone detail -- device info, settings, update status |
 | `/calls`                    | Call history -- full log, auto-refreshes     |
 | `/settings`                 | Household settings, call history toggle      |
 | `/links`                    | Household links -- invite and connect households |

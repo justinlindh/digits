@@ -11,7 +11,6 @@
 #include "phase.h"
 #include "phone_fsm.h"
 #include "ringer.h"
-#include "tone.h"
 #include "uart_proto.h"
 
 // Drive both candidate UART_TX pins high so the Pi sees a clean idle line
@@ -98,7 +97,6 @@ int main(void) {
         break;
     }
 
-    tone_init();
     ringer_init();
     uart_proto_init();
     phone_fsm_init();
@@ -125,7 +123,7 @@ int main(void) {
             printf("All subsystems initialized.\n");
             printf("Type commands: RING:START RING:STOP RING:TEST LED:ON LED:OFF LED:BLINK PING\n");
             printf("Debug: RESET STATE? HOOK:FORCE:OFF HOOK:FORCE:ON HOOK:RELEASE KEYTEST KEYTEST:OFF\n");
-            printf("RING:TEST bypasses FSM+hook — rings regardless of hook state.\n");
+            printf("RING:TEST bypasses FSM+hook: rings regardless of hook state.\n");
             printf("> ");
             stdio_flush();
             banner_printed = true;

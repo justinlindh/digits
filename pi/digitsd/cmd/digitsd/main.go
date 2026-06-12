@@ -97,11 +97,15 @@ var (
 
 // daemonCallbacks implements phone.Callbacks and wires hardware + WebRTC.
 type daemonCallbacks struct {
-	serial        *phone.SerialPort
-	sig           *sigclient.Client
-	mixer         *audio.Mixer
-	serviceCodes  *phone.ServiceCodeHandler
-	ctrl          *phone.Controller
+	serial       *phone.SerialPort
+	sig          *sigclient.Client
+	mixer        *audio.Mixer
+	serviceCodes *phone.ServiceCodeHandler
+	ctrl         *phone.Controller
+	// ctrlSignal is the controller seen by the signaling dispatch. It points
+	// at ctrl in the running daemon; tests inject a recording fake to verify
+	// routing without a real FSM, serial port, or audio path.
+	ctrlSignal    signalController
 	mu            sync.Mutex
 	peerMgr       *owebrtc.PeerManager
 	mesh          *owebrtc.MeshManager // conference-only peer pool; 2-party calls use peerMgr
@@ -121,17 +125,17 @@ type daemonCallbacks struct {
 		candidates []string // local ICE candidates gathered during ring, sent on pickup
 		caller     string   // pendingCaller at time of preparation
 	}
-	iceServers            []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
-	debugMode             bool                      // read from DIGITS_DEBUG env at startup
-	paired                atomic.Bool
-	pairingCode           string      // current pairing code from server
-	pairingCodeExpiresAt  time.Time   // server-reported expiry of the current pairing code
-	callPeer              string      // number of the remote party during an active call
-	isCaller              bool        // true if we initiated the current call
-	callReturnOrigin      atomic.Bool // true when the current call was initiated via *69
-	isRestartingICE       bool        // true while an ICE restart is in progress
-	restartTimer          *time.Timer // timeout for ICE restart attempt
-	disconnectTimer       *time.Timer // debounce before reacting to pion Disconnected
+	iceServers           []owebrtc.ICEServerConfig // cached STUN/TURN servers from signald
+	debugMode            bool                      // read from DIGITS_DEBUG env at startup
+	paired               atomic.Bool
+	pairingCode          string      // current pairing code from server
+	pairingCodeExpiresAt time.Time   // server-reported expiry of the current pairing code
+	callPeer             string      // number of the remote party during an active call
+	isCaller             bool        // true if we initiated the current call
+	callReturnOrigin     atomic.Bool // true when the current call was initiated via *69
+	isRestartingICE      bool        // true while an ICE restart is in progress
+	restartTimer         *time.Timer // timeout for ICE restart attempt
+	disconnectTimer      *time.Timer // debounce before reacting to pion Disconnected
 
 	// Link-health reporter: spawned when a call reaches Connected, canceled on teardown.
 	// Protected by mu.
@@ -156,6 +160,18 @@ type daemonCallbacks struct {
 	autoUpdateEnabled atomic.Bool
 	pendingAutoUpdate atomic.Bool
 	triggerAutoUpdate func() // set in run(), calls runAutoUpdate with captured vars
+
+	// Signaling-dispatch dependencies owned by the run loop and wired once
+	// before the event loop starts. These are stable for the life of the
+	// daemon (set-once) and are read by handleSignal; flashCapable and
+	// pairingRefresh are shared by identity with the run loop so a reset or
+	// load in either place is seen by the other.
+	deviceID        string          // hardware device ID, reported on factory reset
+	serverURL       string          // effective signaling server URL
+	flashCapable    *atomic.Bool    // SWD-flash capability (shared with run loop)
+	requeryFirmware func()          // re-query Pico firmware version off the main loop
+	pairingRefresh  *time.Timer     // pairing-code refresh timer (shared with run loop)
+	devMode         *devModeManager // dev-mode (SSH + dev web UI) lifecycle; nil outside normal mode
 
 	// Voicemail state. voicemailStore is opened once at startup and is nil
 	// when the feature is disabled or initialization failed. recorder is the
@@ -261,6 +277,16 @@ func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
 	}
 }
 
+// currentSig returns the active signaling client under cb.mu. The reconnect
+// goroutine swaps d.sig on every reconnect, so pion callbacks and FSM
+// goroutines must read it through this accessor rather than touching d.sig
+// directly, which would race with that writer.
+func (d *daemonCallbacks) currentSig() *sigclient.Client {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.sig
+}
+
 // recoverGoroutine logs a panic with its stack trace so a single bad frame
 // doesn't crash an audio/WebRTC goroutine silently.
 func recoverGoroutine(name string) {
@@ -344,7 +370,7 @@ func (d *daemonCallbacks) EnableFlashDetection() {
 
 func (d *daemonCallbacks) OnCallReturn() {
 	d.callReturnOrigin.Store(true)
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
+	if err := d.currentSig().Send(&sigclient.Message{Type: sigclient.TypeCallReturn}); err != nil {
 		slog.Error("call_return: server unreachable", "error", err)
 		d.callReturnOrigin.Store(false)
 		d.mixer.PlayOnce("disconnected")
@@ -354,7 +380,7 @@ func (d *daemonCallbacks) OnCallReturn() {
 }
 
 func (d *daemonCallbacks) OnCallReturnCancel() {
-	if err := d.sig.Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
+	if err := d.currentSig().Send(&sigclient.Message{Type: sigclient.TypeCallReturnCancel}); err != nil {
 		slog.Error("call_return_cancel: server unreachable", "error", err)
 	}
 }
@@ -465,11 +491,12 @@ func publishVoicemailStateOnce(sender sigSender, store *voicemail.Store, last *i
 func (d *daemonCallbacks) publishVoicemailState() {
 	d.mu.Lock()
 	store := d.voicemailStore
+	sig := d.sig
 	d.mu.Unlock()
 
 	d.publishVMMu.Lock()
 	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, false)
+	publishVoicemailStateOnce(sig, store, &d.publishVMLast, false)
 }
 
 // publishVoicemailStateInitial is the (re)connect wrapper. It sends the
@@ -479,11 +506,12 @@ func (d *daemonCallbacks) publishVoicemailState() {
 func (d *daemonCallbacks) publishVoicemailStateInitial() {
 	d.mu.Lock()
 	store := d.voicemailStore
+	sig := d.sig
 	d.mu.Unlock()
 
 	d.publishVMMu.Lock()
 	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(d.sig, store, &d.publishVMLast, true)
+	publishVoicemailStateOnce(sig, store, &d.publishVMLast, true)
 }
 
 // setVoicemailConfig replaces the local voicemail config under d.mu and
@@ -493,9 +521,9 @@ func (d *daemonCallbacks) publishVoicemailStateInitial() {
 //
 // Live consumption: both fields, Enabled and RingTimeout, are read per ring,
 // so they take effect on the next inbound call without any further wiring.
-// The storage cap and retrieval code are no longer pushed; they are fixed
-// config.VoicemailMaxStoredMessages and config.VoicemailRetrievalCode
-// constants and never flow through this helper.
+// The storage cap is no longer pushed; it is the fixed
+// config.VoicemailMaxStoredMessages constant and never flows through this
+// helper. The retrieval code lives in the phone package as a constant.
 func (d *daemonCallbacks) setVoicemailConfig(vm config.Voicemail) error {
 	d.mu.Lock()
 	d.cfg.Voicemail = vm
@@ -843,13 +871,46 @@ func runTargetedUpdate(serverURL, piVersion, fwVersion, targetPi, targetFW strin
 	}
 }
 
+// picoStateResyncer is the subset of *phone.SerialPort that the Pico
+// hardware-reset and state-resync helpers need. Declaring it as an interface
+// lets tests fake the serial boundary and record the commands emitted, the same
+// way linkhealth fakes its sigSender.
+type picoStateResyncer interface {
+	StopRing()
+	LED(mode string)
+	StateSet(state string)
+}
+
 // resetPicoHardware clears any residual ring or LED state on the Pico in case
-// the Pi rebooted mid-call. Safe no-op on clean boots where none of these
-// hardware states were active.
-func resetPicoHardware(sp *phone.SerialPort) {
-	slog.Info("pico: clearing residual hardware state on startup")
+// the Pi or Pico rebooted mid-call. Safe no-op on clean boots where none of
+// these hardware states were active.
+func resetPicoHardware(sp picoStateResyncer) {
+	slog.Info("pico: clearing residual hardware state")
 	sp.StopRing()
 	sp.LED("UNLOCK")
+}
+
+// picoStateForToken derives the persisted Pico phase from the pairing state the
+// same way the startup path does: an empty device token means the phone is not
+// yet paired. Kept as a pure function so the mapping has a single source of
+// truth shared by startup and the post-flash resync.
+func picoStateForToken(deviceToken string) string {
+	if deviceToken == "" {
+		return "UNPAIRED"
+	}
+	return "PAIRED"
+}
+
+// resyncPicoState restores the Pico's residual hardware state and persisted
+// phase byte, mirroring exactly what the startup path does after POST. The Pico
+// boots PHASE_PAIRED as LED_MODE_BREATHING and relies on the Pi to clear it; a
+// runtime firmware flash reboots the chip without a daemon restart, so without
+// this the LED is left breathing at idle. deviceToken is read live (pairing can
+// change it at runtime) and mapped through picoStateForToken so this stays in
+// lockstep with the startup StateSet.
+func resyncPicoState(sp picoStateResyncer, deviceToken string) {
+	resetPicoHardware(sp)
+	sp.StateSet(picoStateForToken(deviceToken))
 }
 
 // playPairingAnnouncement queues one full pairing-voice sequence on mixer:
@@ -1455,12 +1516,7 @@ func main() {
 
 	// Clear any residual Pico hardware state from before the last reboot.
 	if postOk {
-		resetPicoHardware(sp)
-		if cfg.DeviceToken == "" {
-			sp.StateSet("UNPAIRED")
-		} else {
-			sp.StateSet("PAIRED")
-		}
+		resyncPicoState(sp, cfg.DeviceToken)
 	}
 
 	// 2. Open ALSA playback. V1 uses plughw direct to the codec; V2 routes
@@ -1496,17 +1552,29 @@ func main() {
 			slog.Warn("could not load pairing tones", "error", err)
 		}
 	}
-	mixer.Start()
-	defer mixer.Stop()
-
-	// Debug: capture raw PCM output if CAPTURE_PCM is set
+	// Debug: capture raw PCM output if CAPTURE_PCM is set. Bounded so a forgotten
+	// capture cannot fill /data (raw 48kHz stereo S16LE is ~345 MB/hr). Default
+	// cap 512 MB; override the megabyte limit with CAPTURE_PCM_MAX_MB (0 = off).
+	// Set up before Start() so the render goroutine observes the capture fields
+	// from its first iteration without any cross-goroutine write to race on.
 	if capPath := os.Getenv("CAPTURE_PCM"); capPath != "" {
-		if err := mixer.EnableCapture(capPath); err != nil {
+		maxBytes := int64(512) * 1024 * 1024
+		if v := os.Getenv("CAPTURE_PCM_MAX_MB"); v != "" {
+			if mb, err := strconv.ParseInt(v, 10, 64); err == nil {
+				maxBytes = mb * 1024 * 1024
+			} else {
+				slog.Warn("CAPTURE_PCM_MAX_MB invalid, using default", "value", v)
+			}
+		}
+		if err := mixer.EnableCapture(capPath, maxBytes); err != nil {
 			slog.Warn("PCM capture failed", "error", err)
 		} else {
 			defer mixer.DisableCapture()
 		}
 	}
+
+	mixer.Start()
+	defer mixer.Stop()
 
 	deviceID, err := config.LoadOrCreateDeviceID()
 	if err != nil {
@@ -1843,9 +1911,9 @@ func main() {
 	}
 	getPhoneState = func() phone.State { return ctrl.State() }
 
-	// 8b. Contacts cache: optional dial safelist, persisted to disk.
-	// An empty cache leaves the checker nil so no-contacts phones allow
-	// every call (matching the pre-wiring behavior).
+	// 8b. Contacts cache: optional dial safelist, loaded from a hand-placed
+	// contacts.json. An empty cache leaves the checker nil so no-contacts
+	// phones allow every call (matching the pre-wiring behavior).
 	contactsPath := filepath.Join(filepath.Dir(*configPath), "contacts.json")
 	contactsCache := contacts.NewCache(contactsPath)
 	if err := contactsCache.Load(); err != nil {
@@ -1902,55 +1970,57 @@ func main() {
 	phone.RestoreVolume()
 	slog.Info("digitsd ready")
 
-	// Dev-mode web UI on :8080 (only when the flag file is present).
+	// Dev-mode web UI on :8080. The manager is always constructed so a runtime
+	// dev_mode command can start it without a restart; the listener only comes
+	// up when the flag is present (now, at boot) or when enabled later.
+	//
+	// Snapshot the phase once at startup; it rarely changes during normal
+	// operation and querying UART on every HTTP poll is wasteful.
+	startupPhase := cachedPhase
+	devCfg := &devModeConfig{
+		FlagPath:           devmode.DefaultFlagPath,
+		SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
+		SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
+		UARTLogPath:        uartLogPath,
+		CaptureDevice:      audio.CodecCaptureDevice(),
+		StatusFunc: func() devModeStatus {
+			fwVer, fwCom := cb.getFirmwareVersion()
+			return devModeStatus{
+				DigitsdVersion:   version.Version,
+				FirmwareVersion:  fwVer,
+				FirmwareCommit:   fwCom,
+				Phase:            startupPhase,
+				Online:           cb.paired.Load(),
+				PhoneNumber:      effectiveNumber,
+				ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
+			}
+		},
+	}
+	if flashCapable.Load() {
+		devCfg.FlashFunc = func(elfPath string) error {
+			// Move the uploaded ELF to the standard firmware path, then
+			// invoke the same flash script the OTA updater uses.
+			if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
+				return fmt.Errorf("stage firmware: %w", err)
+			}
+			cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
+			cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("flash script: %w", err)
+			}
+			slog.Info("devmode: flash script succeeded")
+			requeryFirmware()
+			return nil
+		}
+	}
+	cb.devMode = newDevModeManager(devCfg)
+	defer cb.devMode.Close()
 	if devmode.Enabled(devmode.DefaultFlagPath) {
 		slog.Info("devmode: flag present, starting dev-mode web UI")
-		// Snapshot the phase once at startup; it rarely changes during
-		// normal operation and querying UART on every HTTP poll is wasteful.
-		startupPhase := cachedPhase
-		devCfg := &devModeConfig{
-			FlagPath:           devmode.DefaultFlagPath,
-			SkipFWReflashPath:  devmode.DefaultSkipFWReflashPath,
-			SkipAutoUpdatePath: devmode.DefaultSkipAutoUpdatePath,
-			UARTLogPath:        uartLogPath,
-			CaptureDevice:      audio.CodecCaptureDevice(),
-			StatusFunc: func() devModeStatus {
-				fwVer, fwCom := cb.getFirmwareVersion()
-				return devModeStatus{
-					DigitsdVersion:   version.Version,
-					FirmwareVersion:  fwVer,
-					FirmwareCommit:   fwCom,
-					Phase:            startupPhase,
-					Online:           cb.paired.Load(),
-					PhoneNumber:      effectiveNumber,
-					ConfigAutoUpdate: cb.autoUpdateEnabled.Load(),
-				}
-			},
-		}
-		if flashCapable.Load() {
-			devCfg.FlashFunc = func(elfPath string) error {
-				// Move the uploaded ELF to the standard firmware path, then
-				// invoke the same flash script the OTA updater uses.
-				if err := os.Rename(elfPath, defaultFirmwarePath); err != nil {
-					return fmt.Errorf("stage firmware: %w", err)
-				}
-				cmd := exec.Command("setsid", "bash", defaultFlashScript, defaultFirmwarePath)
-				cmd.Env = append(os.Environ(), "SKIP_SERVICE_CONTROL=1")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("flash script: %w", err)
-				}
-				slog.Info("devmode: flash script succeeded")
-				requeryFirmware()
-				return nil
-			}
-		}
-		devLn, devErr := startDevModeServer(devCfg)
-		if devErr != nil {
-			slog.Warn("devmode: failed to start web UI", "error", devErr)
-		} else {
-			defer func() { _ = devLn.Close() }()
+		if err := cb.devMode.EnsureListener(); err != nil {
+			slog.Warn("devmode: failed to start web UI", "error", err)
 		}
 	}
 
@@ -1994,6 +2064,16 @@ func main() {
 		<-pairingRefresh.C
 	}
 
+	// Wire the signaling-dispatch dependencies. handleSignal reads these off
+	// daemonCallbacks; flashCapable and pairingRefresh are shared by identity
+	// so a Store/Reset in the run loop and in a handler refer to the same one.
+	cb.ctrlSignal = ctrl
+	cb.deviceID = deviceID
+	cb.serverURL = effectiveServerURL
+	cb.flashCapable = &flashCapable
+	cb.requeryFirmware = requeryFirmware
+	cb.pairingRefresh = pairingRefresh
+
 	// pairingAnnouncementCancel cancels the in-flight pairing-announcement
 	// repeat goroutine spawned on HOOK:OFF (unpaired). nil when no goroutine
 	// is running. Only the dispatcher select case touches this var, so no
@@ -2004,8 +2084,26 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
+	// reconnected hands a freshly connected client back from the reconnect
+	// goroutine to the main loop. Buffered so the goroutine never blocks if
+	// the loop is momentarily busy. reconnecting is true while that goroutine
+	// is in flight: it gates sig.Done() out of the select so the loop neither
+	// spins on the dead client's already-closed done channel nor blocks on
+	// time.Sleep, leaving it free to service sp.Events() and quit throughout
+	// the backoff/connect.
+	reconnected := make(chan *sigclient.Client, 1)
+	reconnecting := false
+
 	// Main select loop
 	for {
+		// During reconnect, sig points at the dead client whose Done() is
+		// already closed; nil out doneCh so the select does not busy-loop on
+		// it. Completion arrives on the reconnected channel instead.
+		var doneCh <-chan struct{}
+		if !reconnecting {
+			doneCh = sig.Done()
+		}
+
 		select {
 		case <-quit:
 			slog.Info("digitsd shutting down")
@@ -2015,6 +2113,13 @@ func main() {
 				slog.Warn("sig close failed", "error", err)
 			}
 			return
+
+		case newSig := <-reconnected:
+			// The reconnect goroutine established a new client and ran the
+			// post-reconnect resume/teardown. Swap it in as the loop's active
+			// client; subsequent iterations select on its channels.
+			sig = newSig
+			reconnecting = false
 
 		case event := <-sp.Events():
 			// Confirmer intercept: when a sensitive op is awaiting "press *
@@ -2238,509 +2343,27 @@ func main() {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 			}
 
-		case msg := <-sig.Inbox():
-			slog.Info("signal rx", "type", msg.Type, "from", msg.From)
-			switch msg.Type {
-			case sigclient.TypeRing:
-				cb.mu.Lock()
-				cb.pendingCaller = msg.From
-				cb.mu.Unlock()
-				ctrl.HandleSignal("ring", "")
-			case sigclient.TypeAnswer:
-				// Set remote description from the answer SDP before poking the FSM.
-				cb.mu.Lock()
-				if cb.peerMgr != nil && msg.SDP != "" {
-					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc: set answer failed", "error", err)
-					} else {
-						slog.Info("webrtc: set remote answer", "from", msg.From, "bytes", len(msg.SDP))
-					}
-				}
-				cb.mu.Unlock()
-				ctrl.HandleSignal("answer", msg.From)
-			case sigclient.TypeHangup:
-				ctrl.HandleSignal("hangup", msg.From)
-			case sigclient.TypeBusy:
-				if cb.callReturnOrigin.Load() {
-					cb.callReturnOrigin.Store(false)
-					target := msg.From
-					slog.Info("call_return: target busy, registering retry", "target", target)
-					ctrl.HandleSignal("busy", msg.From)
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						if ctrl.State() != phone.StateCALLING {
-							return
-						}
-						cb.mixer.StopTone()
-						cb.mixer.PlayOnce("call_return_retry")
-						sendSignal(sig, &sigclient.Message{
-							Type:   sigclient.TypeCallReturnRetry,
-							Number: target,
-						})
-					}()
-				} else {
-					ctrl.HandleSignal("busy", msg.From)
-				}
-			case sigclient.TypeDTMF:
-				// Remote peer pressed a digit during the call. Play the local
-				// DTMF sample so the user hears what their peer is pressing,
-				// matching real-phone behavior.
-				if ctrl.State() != phone.StateCONNECTED {
-					slog.Debug("dtmf: ignoring (not connected)", "from", msg.From)
-					break
-				}
-				cb.mu.Lock()
-				peer := cb.callPeer
-				cb.mu.Unlock()
-				if msg.From != peer {
-					slog.Debug("dtmf: ignoring (wrong peer)", "from", msg.From, "expected", peer)
-					break
-				}
-				if msg.Digit == "" {
-					slog.Warn("dtmf: empty digit in message")
-					break
-				}
-				dtmfName := dtmfToneName(msg.Digit)
-				if dtmfName == "" {
-					slog.Warn("dtmf: unrecognized digit", "digit", msg.Digit)
-					break
-				}
-				mixer.PlayOnce(dtmfName)
-			case sigclient.TypeError:
-				slog.Warn("signal error", "error", msg.Error)
-				// ADD_CALLING: route through the controller so state transitions
-				// to ADD_INTERCEPT and the added peer is torn down. The user
-				// flashes to return to the held party.
-				if ctrl.State() == phone.StateADD_CALLING {
-					ctrl.HandleSignal("error", msg.From)
-					break
-				}
-				// 2-party CALLING: emulate real phone -- ringback -> SIT -> busy
-				go func() {
-					// 1. Brief silence (call setup delay, ~1s)
-					time.Sleep(1 * time.Second)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					// 2. Ringback for ~8s (simulates 1-2 rings)
-					slog.Info("playing ringback (number unreachable)")
-					mixer.PlayLoop("tone_ringback")
-					time.Sleep(8 * time.Second)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					// 3. SIT tones + "number not in service" announcement
-					slog.Info("playing disconnected announcement")
-					mixer.StopTone()
-					mixer.PlayOnce("disconnected")
-					// Wait for announcement to finish (poll rather than guess duration)
-					for mixer.OncePlaying() {
-						time.Sleep(200 * time.Millisecond)
-						if ctrl.State() != phone.StateCALLING {
-							return
-						}
-					}
-					// 4. Brief silence, then reorder tone (fast busy) until hang-up
-					time.Sleep(500 * time.Millisecond)
-					if ctrl.State() != phone.StateCALLING {
-						return
-					}
-					slog.Info("playing reorder tone")
-					mixer.PlayLoop("tone_busy")
-				}()
-			case sigclient.TypeSDP:
-				if msg.ConfID != "" {
-					// Conference SDP: route to the mesh peer for this member.
-					cb.mu.Lock()
-					mesh := cb.mesh
-					cb.mu.Unlock()
-
-					if mesh == nil || mesh.GetPeer(msg.From) == nil {
-						// No peer yet: we are the responder receiving the initiator's offer.
-						answerSDP, err := cb.setupMeshResponder(msg.From, msg.SDP, msg.ConfID)
-						if err != nil {
-							slog.Error("conference: setupMeshResponder failed", "from", msg.From, "err", err)
-							break
-						}
-						cb.mu.Lock()
-						s := cb.sig
-						cb.mu.Unlock()
-						sendSignal(s, &sigclient.Message{
-							Type:   sigclient.TypeSDP,
-							To:     msg.From,
-							ConfID: msg.ConfID,
-							SDP:    answerSDP,
-						})
-						slog.Info("conference: sent SDP answer to initiator", "to", msg.From, "conf_id", msg.ConfID)
-					} else {
-						// Peer already exists: we were the initiator and this is the answer.
-						if err := mesh.GetPeer(msg.From).SetAnswer(msg.SDP); err != nil {
-							slog.Error("conference: set answer failed", "from", msg.From, "err", err)
-						} else {
-							slog.Info("conference: applied SDP answer from peer", "from", msg.From)
-						}
-					}
-					break
-				}
-				cb.mu.Lock()
-				switch {
-				case cb.peerMgr == nil:
-					// Incoming call: offer arrived before we've answered.
-					// Stash it for AnswerCall to pick up.
-					cb.pendingOffer = msg.SDP
-					if cb.pendingCaller == "" && msg.From != "" {
-						cb.pendingCaller = msg.From
-						slog.Info("set pendingCaller from SDP", "from", msg.From)
-					}
-					slog.Info("stored pending SDP offer", "from", msg.From, "bytes", len(msg.SDP))
-					cb.prepareAnswer()
-				case cb.isRestartingICE:
-					// Mid-call: the only legitimate reason to receive an SDP
-					// with an active peerMgr is the restart-answer we asked
-					// for when we initiated an ICE restart.
-					if err := cb.peerMgr.SetAnswer(msg.SDP); err != nil {
-						slog.Error("webrtc: set restart answer failed", "error", err)
-					} else {
-						slog.Info("webrtc: applied restart answer", "from", msg.From, "bytes", len(msg.SDP))
-					}
-				default:
-					slog.Warn("webrtc: unexpected SDP with active peer, ignoring", "from", msg.From, "bytes", len(msg.SDP))
-				}
-				cb.mu.Unlock()
-			case sigclient.TypeICE:
-				if msg.ConfID != "" {
-					// Conference ICE: route to the mesh peer for this member.
-					cb.mu.Lock()
-					mesh := cb.mesh
-					cb.mu.Unlock()
-					if mesh == nil {
-						slog.Warn("conference: ICE candidate before mesh initialized", "from", msg.From)
-						break
-					}
-					pm := mesh.GetPeer(msg.From)
-					if pm == nil {
-						slog.Warn("conference: ICE candidate before peer created", "from", msg.From)
-						break
-					}
-					if err := pm.AddICECandidate(msg.Candidate); err != nil {
-						slog.Error("conference: add ICE candidate failed", "from", msg.From, "err", err)
-					}
-					break
-				}
-				cb.mu.Lock()
-				if cb.peerMgr != nil {
-					if err := cb.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-						slog.Warn("webrtc: add ICE candidate failed", "error", err)
-					}
-				} else if cb.preAnswer.peerMgr != nil {
-					if err := cb.preAnswer.peerMgr.AddICECandidate(msg.Candidate); err != nil {
-						slog.Warn("webrtc: add ICE candidate to preAnswer failed", "error", err)
-					}
-				} else {
-					cb.pendingICE = append(cb.pendingICE, msg.Candidate)
-					slog.Info("queued ICE candidate (peerMgr not ready)", "total_queued", len(cb.pendingICE))
-				}
-				cb.mu.Unlock()
-			case sigclient.TypeUpdateTrigger:
-				slog.Info("signal: received update trigger from server", "target_pi", msg.TargetPiVersion, "target_fw", msg.TargetFWVersion)
-				statusReporter := func(status, detail string) {
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: status,
-						UpdateDetail: detail,
-					})
-				}
-				go runTargetedUpdate(effectiveServerURL, version.Version, fwVersion,
-					msg.TargetPiVersion, msg.TargetFWVersion, flashCapable.Load(), statusReporter, requeryFirmware)
-
-			case sigclient.TypeReleaseAvailable:
-				slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-				if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-					go cb.triggerAutoUpdate()
-				}
-
-			case sigclient.TypeFactoryReset:
-				slog.Info("factory reset: triggered by server")
-				go triggerFactoryReset(sig, deviceID)
-
-			case sigclient.TypeContacts, sigclient.TypeContactsUpdated:
-				entries := make([]contacts.Entry, 0, len(msg.Contacts))
-				for _, c := range msg.Contacts {
-					entries = append(entries, contacts.Entry{Number: c.Number, Name: c.Name})
-				}
-				contactsCache.Update(entries)
-				if len(entries) > 0 {
-					ctrl.SetContactChecker(contactsCache)
-				} else {
-					ctrl.SetContactChecker(nil)
-				}
-				slog.Info("contacts: updated", "count", len(entries), "type", msg.Type)
-
-			case sigclient.TypeICERestart:
-				cb.mu.Lock()
-				pm := cb.peerMgr
-				peer := cb.callPeer
-				cb.mu.Unlock()
-				if pm == nil {
-					slog.Info("ice-restart: no active peer connection, ignoring")
-					break
-				}
-				slog.Info("ice-restart: received restart offer", "from", msg.From, "bytes", len(msg.SDP))
-				answerSDP, err := pm.AcceptOffer(msg.SDP)
-				if err != nil {
-					slog.Error("ice-restart: accept offer failed", "error", err)
-					break
-				}
-				cb.mu.Lock()
-				cb.isRestartingICE = true
-				cb.cancelRestartTimerLocked()
-				cb.startRestartTimeout()
-				cb.mu.Unlock()
-				if peer == "" {
-					peer = msg.From
-				}
-				slog.Info("ice-restart: sending restart answer", "peer", peer, "bytes", len(answerSDP))
-				sendSignal(sig, &sigclient.Message{
-					Type: sigclient.TypeSDP,
-					To:   peer,
-					SDP:  answerSDP,
-				})
-
-			case sigclient.TypeICEServers:
-				cb.mu.Lock()
-				cb.iceServers = nil
-				for _, s := range msg.Servers {
-					cb.iceServers = append(cb.iceServers, owebrtc.ICEServerConfig{
-						URLs:       s.URLs,
-						Username:   s.Username,
-						Credential: s.Credential,
-					})
-				}
-				// Push fresh creds into the live 2-party PeerConnection so an
-				// ICE restart triggered after the TURN TTL (2h) uses valid creds.
-				// Mesh peers are not updated here; see PeerManager.UpdateICEServers.
-				pm := cb.peerMgr
-				servers := cb.iceServers
-				cb.mu.Unlock()
-				if pm != nil {
-					if err := pm.UpdateICEServers(servers); err != nil {
-						slog.Warn("ice: failed to update live peer connection", "error", err)
-					} else {
-						slog.Info("ice: updated live peer connection with fresh servers")
-					}
-				}
-				slog.Info("ice: cached servers from signald", "count", len(msg.Servers))
-
-			case sigclient.TypePairingCode:
-				cb.pairingCode = msg.PairingCode
-				refresh := pairingRefreshInterval
-				if msg.PairingCodeTTL > 0 {
-					ttl := time.Duration(msg.PairingCodeTTL) * time.Second
-					cb.pairingCodeExpiresAt = time.Now().Add(ttl)
-					// Refresh a margin before expiry so the announced code is
-					// still valid while a user types it. Guard against a TTL
-					// shorter than the margin.
-					if d := ttl - pairingRefreshMargin; d > 0 {
-						refresh = d
-					} else {
-						refresh = ttl / 2
-					}
-				} else {
-					// Older server without a TTL: fall back to the fixed cadence.
-					cb.pairingCodeExpiresAt = time.Now().Add(pairingRefreshInterval)
-				}
-				slog.Info("PAIRING REQUIRED: pick up handset to hear it", "code", msg.PairingCode, "ttl_s", msg.PairingCodeTTL)
-				pairingRefresh.Reset(refresh)
-
-			case sigclient.TypePaired:
-				pairingRefresh.Stop()
-				if msg.DeviceToken != "" && cb.cfg != nil {
-					cb.cfg.DeviceToken = msg.DeviceToken
-					cb.cfg.PairingCode = ""
-					if msg.Number != "" {
-						cb.cfg.PhoneNumber = msg.Number
-						cb.number = msg.Number
-					}
-					if err := cb.cfg.Save(); err != nil {
-						slog.Warn("signal: paired -- failed to save config", "error", err)
-					} else {
-						slog.Info("signal: paired", "number", msg.Number, "config", cb.cfg.Path())
-					}
-					cb.paired.Store(true)
-					cb.pairingCode = ""
-					sp.StateSet("PAIRED")
-					mixer.StopAll()
-					sp.SendFire("TONE:DIAL")
-					slog.Info("signal: restarting to register", "number", msg.Number)
-					go func() {
-						time.Sleep(1 * time.Second)
-						os.Exit(0) // systemd restarts; Pico tone survives
-					}()
-				}
-
-			case sigclient.TypeRestart:
-				mode := msg.RestartMode
-				slog.Info("received restart command", "mode", mode)
-				switch mode {
-				case "service":
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: "restarting",
-						UpdateDetail: "Service restart requested",
-					})
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						slog.Info("restarting service via exit (systemd will restart)")
-						os.Exit(0)
-					}()
-				case "reboot":
-					sendSignal(sig, &sigclient.Message{
-						Type:         sigclient.TypeUpdateStatus,
-						UpdateStatus: "rebooting",
-						UpdateDetail: "Device reboot requested",
-					})
-					go func() {
-						time.Sleep(500 * time.Millisecond)
-						slog.Info("rebooting device")
-						if err := exec.Command("sudo", "reboot").Run(); err != nil {
-							slog.Error("reboot command failed", "err", err)
-						}
-					}()
-				default:
-					slog.Warn("unknown restart mode", "mode", mode)
-				}
-
-			case sigclient.TypeRingTest:
-				slog.Info("ring test: triggering 1s bell")
-				sp.SendFire("RING:TEST")
-				go func() {
-					time.Sleep(1 * time.Second)
-					sp.SendFire("RING:STOP")
-					slog.Info("ring test: stopped")
-				}()
-
-			case sigclient.TypeLineSettings:
-				if msg.LineSettings == nil {
-					slog.Warn("line_settings message missing payload", "from", msg.From)
-					break
-				}
-
-				style := msg.LineSettings.VoiceStyle
-				if style == "" {
-					style = config.VoiceStyleCopper
-				}
-				cb.mu.Lock()
-				currentStyle := cb.cfg.VoiceStyle
-				currentSilent := cb.cfg.SilentMode
-				cb.mu.Unlock()
-
-				if style != currentStyle {
-					slog.Info("line_settings applied", "voice_style", style)
-					cb.applyVoiceStyleLive(style)
-					if err := cb.setVoiceStyleConfig(style); err != nil {
-						slog.Warn("line_settings: voice-style save failed", "err", err)
-					}
-				}
-
-				silent := msg.LineSettings.SilentMode
-				if silent != currentSilent {
-					slog.Info("line_settings applied", "silent_mode", silent)
-					cb.applySilentModeLive(silent)
-					if err := cb.setSilentModeConfig(silent); err != nil {
-						slog.Warn("line_settings: silent-mode save failed", "err", err)
-					}
-				}
-
-				au := msg.LineSettings.AutoUpdate
-				if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
-					slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
-				} else if au != cb.autoUpdateEnabled.Load() {
-					cb.autoUpdateEnabled.Store(au)
-					slog.Info("line_settings applied", "auto_update", au)
-					if err := cb.setAutoUpdateConfig(au); err != nil {
-						slog.Warn("line_settings: auto-update save failed", "err", err)
-					}
-					if au && cb.triggerAutoUpdate != nil {
-						go cb.triggerAutoUpdate()
-					}
-				}
-
-				if vm := msg.LineSettings.Voicemail; vm != nil {
-					target := config.Voicemail{
-						Enabled:     vm.Enabled,
-						RingTimeout: time.Duration(vm.RingTimeoutSeconds) * time.Second,
-					}
-					cb.mu.Lock()
-					current := cb.cfg.Voicemail
-					cb.mu.Unlock()
-
-					if target != current {
-						if target.Enabled != current.Enabled {
-							slog.Info("line_settings applied", "voicemail_enabled", target.Enabled)
-						}
-						if target.RingTimeout != current.RingTimeout {
-							slog.Info("line_settings applied", "voicemail_ring_timeout", target.RingTimeout)
-						}
-						if err := cb.setVoicemailConfig(target); err != nil {
-							slog.Warn("line_settings: voicemail save failed", "err", err)
-						}
-					}
-				}
-
-			case sigclient.TypeConferenceMember:
-				ctrl.HandleConferenceMember(msg.ConfID, msg.Members)
-			case sigclient.TypeConferenceConnect:
-				ctrl.HandleConferenceConnect(msg.ConfID, msg.Peer, msg.Initiator)
-			case sigclient.TypeConferenceLeave:
-				ctrl.HandleConferenceLeave(msg.ConfID, msg.Peer, msg.Reason)
-			case sigclient.TypeConferenceEnd:
-				ctrl.HandleConferenceEnd(msg.ConfID, msg.Reason)
-			case sigclient.TypeConferenceRejected:
-				ctrl.HandleConferenceRejected(msg.ConfID, msg.Reason)
-
-			case sigclient.TypeCallReturnResult:
-				number := msg.Number
-				if number == "" {
-					slog.Info("call_return: no calls available")
-					cb.mixer.PlayOnce("call_return_none")
-					go func() {
-						time.Sleep(3 * time.Second)
-						if ctrl.State() != phone.StateCALL_RETURN {
-							return
-						}
-						ctrl.ResetToDialtone()
-						cb.mixer.PlayLoop("tone_dial")
-					}()
-				} else {
-					slog.Info("call_return: announcing last caller", "number", number)
-					ctrl.SetCallReturnNumber(number)
-					cb.mixer.PlayOnce("call_return_prefix")
-					for _, ch := range number {
-						cb.mixer.PlayOnce("spoken_" + string(ch))
-					}
-					cb.mixer.PlayOnce("call_return_suffix")
-				}
-
-			case sigclient.TypeCallReturnRing:
-				target := msg.Number
-				slog.Info("call_return: target free, ringing", "target", target)
-				ctrl.HandleCallReturnRing(target)
-
-			case sigclient.TypeCallReturnCancelled:
-				slog.Info("call_return: retry cancelled by server")
-				cb.mixer.PlayOnce("call_return_cancel")
-				go func() {
-					time.Sleep(3 * time.Second)
-					if ctrl.State() != phone.StateCALL_RETURN {
-						return
-					}
-					ctrl.ResetToDialtone()
-					cb.mixer.PlayLoop("tone_dial")
-				}()
-
-			default:
-				slog.Warn("signal: unhandled message type", "type", msg.Type)
+			// A successful version re-query proves the Pico finished rebooting
+			// and is answering UART again. Any reboot (runtime firmware flash,
+			// external SWD, power cycle) leaves the chip booted into
+			// PHASE_PAIRED as LED_MODE_BREATHING, expecting the Pi to clear it.
+			// Startup does this after POST; without it here, a runtime
+			// firmware-only OTA (no daemon restart) leaves the LED breathing at
+			// idle. Skip while a call is active so a mid-call Pico power cycle
+			// does not stomp the call LED; the OTA path is already idle-gated by
+			// runAutoUpdate, so this only guards the external-reboot case.
+			cb.mu.Lock()
+			inCall := cb.callPeer != ""
+			cb.mu.Unlock()
+			if inCall {
+				slog.Info("pico: skipping state resync after reboot, call in progress")
+			} else {
+				slog.Info("pico: resyncing state after reboot")
+				resyncPicoState(sp, cfg.DeviceToken)
 			}
+
+		case msg := <-sig.Inbox():
+			cb.handleSignal(msg)
 
 		case <-pairingRefresh.C:
 			if !cb.paired.Load() {
@@ -2748,56 +2371,76 @@ func main() {
 				_ = sig.Close()
 			}
 
-		case <-sig.Done():
-			backoff := 3 * time.Second
-			first := true
-			for {
-				if first {
-					// Attempt the first reconnect immediately: no sleep on the
-					// first try so a transient blip resolves as fast as possible.
-					// This is especially important during an active call so the
-					// caller can re-deliver the ICE-restart offer before the peer's
-					// 25s recovery window expires.
-					first = false
-				} else {
-					// Active calls use a short fixed interval to stay within the
-					// recovery window. Idle paths use standard exponential backoff.
-					backoff = nextReconnectBackoff(backoff, ctrl.IsCallActive())
-					slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
-					time.Sleep(backoff)
-				}
-				sig = sigclient.NewClient(effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken)
-				cb.mu.Lock()
-				cb.sig = sig
-				cb.mu.Unlock()
-				if err := sig.Connect(); err != nil {
-					slog.Warn("signal: reconnect failed", "error", err)
-					continue
-				}
-				slog.Info("signal: reconnected")
+		case <-doneCh:
+			// Reconnect off the main loop so the select keeps servicing UART
+			// events and quit during the backoff/connect. The goroutine runs
+			// the connect with backoff, performs the post-reconnect resume or
+			// teardown, then hands the live client back via reconnected.
+			reconnecting = true
+			go reconnectLoop(reconnected, cb, ctrl, effectiveServerURL, effectiveNumber, deviceID, cfg.DeviceToken, fwVersion, fwCommit)
+		}
+	}
+}
 
-				// A 2-party call whose media survived the WebSocket drop is
-				// resumed in place; if media also dropped, drive ICE recovery.
-				// Anything else (conference, voicemail, ringing) is torn down:
-				// the server already cleared its side or will after its grace
-				// window, and stale renegotiation would error.
-				if ctrl.State() != phone.StateIDLE {
-					if cb.tryResumeAfterReconnect(ctrl.State()) {
-						slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
-					} else {
-						slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
-						cb.TearDownAllMeshPeers()
-						cb.HangupCall()
-						ctrl.Reset()
-					}
-				}
+// reconnectLoop re-establishes the signald WebSocket after a drop, applying
+// the active-call fast backoff vs idle exponential backoff, runs the resume or
+// teardown for any in-progress call, then hands the connected client back to
+// the main loop on done. It runs on its own goroutine so the main select loop
+// stays free to service UART events and shutdown during the backoff/connect.
+func reconnectLoop(
+	done chan<- *sigclient.Client,
+	cb *daemonCallbacks,
+	ctrl *phone.Controller,
+	serverURL, number, deviceID, deviceToken, fwVersion, fwCommit string,
+) {
+	backoff := 3 * time.Second
+	first := true
+	for {
+		if first {
+			// Attempt the first reconnect immediately: no sleep on the
+			// first try so a transient blip resolves as fast as possible.
+			// This is especially important during an active call so the
+			// caller can re-deliver the ICE-restart offer before the peer's
+			// 25s recovery window expires.
+			first = false
+		} else {
+			// Active calls use a short fixed interval to stay within the
+			// recovery window. Idle paths use standard exponential backoff.
+			backoff = nextReconnectBackoff(backoff, ctrl.IsCallActive())
+			slog.Info("signal: connection lost, reconnecting", "backoff", backoff)
+			time.Sleep(backoff)
+		}
+		sig := sigclient.NewClient(serverURL, number, deviceID, deviceToken)
+		cb.mu.Lock()
+		cb.sig = sig
+		cb.mu.Unlock()
+		if err := sig.Connect(); err != nil {
+			slog.Warn("signal: reconnect failed", "error", err)
+			continue
+		}
+		slog.Info("signal: reconnected")
 
-				sendDeviceInfo(sig, fwVersion, fwCommit)
-				cb.publishVoicemailState()
-				requestICEServers(sig)
-				break
+		// A 2-party call whose media survived the WebSocket drop is
+		// resumed in place; if media also dropped, drive ICE recovery.
+		// Anything else (conference, voicemail, ringing) is torn down:
+		// the server already cleared its side or will after its grace
+		// window, and stale renegotiation would error.
+		if ctrl.State() != phone.StateIDLE {
+			if cb.tryResumeAfterReconnect(ctrl.State()) {
+				slog.Info("signal: resumed call after reconnect", "state", ctrl.State())
+			} else {
+				slog.Info("signal: tearing down stale call after reconnect", "state", ctrl.State())
+				cb.TearDownAllMeshPeers()
+				cb.HangupCall()
+				ctrl.Reset()
 			}
 		}
+
+		sendDeviceInfo(sig, fwVersion, fwCommit)
+		cb.publishVoicemailState()
+		requestICEServers(sig)
+		done <- sig
+		return
 	}
 }
 

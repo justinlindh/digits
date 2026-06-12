@@ -75,19 +75,30 @@ func TestHubGetReturnsConnForOnline(t *testing.T) {
 	}
 }
 
-func TestRegisterHandlesAlreadyClosedSendChannel(t *testing.T) {
+func TestRegisterSameHardwareReplacesAndClosesOld(t *testing.T) {
 	hub := NewHub()
 	number := "3140001"
-	oldConn := &Conn{Send: make(chan []byte), HardwareID: "hw-001"}
-	close(oldConn.Send)
-	hub.conns[number] = []*Conn{oldConn}
-	hub.hwConns["hw-001"] = oldConn
+	oldConn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001"}
+	// Queue an outbound frame so the test would catch a regression that
+	// drains (and silently discards) the old connection's buffer instead of
+	// closing it and letting the write pump flush.
+	oldConn.Send <- []byte("queued")
+	_ = hub.Register(number, oldConn)
 
 	newConn := &Conn{Send: make(chan []byte, 1), HardwareID: "hw-001"}
 	_ = hub.Register(number, newConn)
 
 	if got := hub.Get(number); got != newConn {
 		t.Fatalf("expected new connection to be registered")
+	}
+
+	// The old channel must be closed (write pump exits on !ok) and any queued
+	// frame still readable before the close is observed.
+	if got := <-oldConn.Send; string(got) != "queued" {
+		t.Fatalf("queued frame lost: got %q", got)
+	}
+	if _, ok := <-oldConn.Send; ok {
+		t.Fatal("expected old connection's Send channel to be closed")
 	}
 }
 

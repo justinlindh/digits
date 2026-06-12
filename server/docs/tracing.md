@@ -60,21 +60,6 @@ set is enforced at the integration boundary.
 entirely. They are high-frequency, low-information requests that would
 dominate the exporter without diagnostic value.
 
-### HTTP client spans
-
-One span per outbound request, emitted by
-`internal/tracing.HTTPClientTransport`. Attributes:
-
-- `http.method`
-- `http.status_code`
-- `server.address`: destination host (configured service hostname for
-  internal calls; never user-derived).
-
-`traceparent` is injected via the global propagator so any inbound span
-on signald becomes a child of the caller's span. As with the server
-middleware, we do NOT use `otelhttp.NewTransport` because it records
-`url.full` and `url.path` raw.
-
 ### Database spans
 
 One span per SQL operation, emitted by `XSAM/otelsql` configured in
@@ -202,9 +187,6 @@ Privacy invariants are pinned by:
 - `internal/tracing/tracing_test.go::TestSpanAttrsForbidPII`: a wildcard
   unknown path collapses to the `other` route bucket, never echoing the
   raw URL.
-- `internal/tracing/tracing_test.go::TestHTTPClientTransportInjectsTraceparent`:
-  outbound requests carry the W3C `traceparent` header so cross-service
-  spans link in Tempo.
 - `internal/profiling/profiling_test.go::TestTagsAreClosedSet`: the
   reserved `service` / `version` / `hostname` profile labels cannot be
   overwritten by operator-supplied tags.

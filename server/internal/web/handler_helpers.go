@@ -36,13 +36,24 @@ func (h *Handler) requireLineOwnershipAdmin(w http.ResponseWriter, r *http.Reque
 	if ln == nil {
 		return nil, nil
 	}
-	user := auth.UserFromContext(r.Context())
-	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)
-	if err != nil || role != "admin" {
+	if !h.isHouseholdAdmin(r, hh.ID) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return nil, nil
 	}
 	return ln, hh
+}
+
+// isHouseholdAdmin reports whether the request's user is an admin of the given
+// household. Best-effort: returns false on any lookup error or missing user.
+// Used to gate the rendering of admin-only UI (the result is advisory; the
+// POST handlers still enforce admin via requireLineOwnershipAdmin).
+func (h *Handler) isHouseholdAdmin(r *http.Request, householdID string) bool {
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		return false
+	}
+	role, err := h.householdStore.GetRole(r.Context(), user.ID, householdID)
+	return err == nil && role == "admin"
 }
 
 // requireLineOwnershipWithHousehold is requireLineOwnership plus the matched
@@ -349,6 +360,13 @@ func (c chromeData) HouseholdName() string {
 
 func (c chromeData) HouseholdDND() bool {
 	return c.allSilent
+}
+
+// OverviewActive reports whether the Overview nav item should highlight.
+// The pairing page and per-line detail pages (Page "phones") live under the
+// Overview now that the standalone Lines nav item is gone.
+func (c chromeData) OverviewActive() bool {
+	return c.Page == "dashboard" || c.Page == "phones"
 }
 
 func (c chromeData) CallHistoryEnabled() bool {

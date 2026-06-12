@@ -86,6 +86,9 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
+	if !parseForm(w, r) {
+		return
+	}
 	enabled := r.FormValue("enabled") == "true"
 	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), hh.ID, enabled); err != nil {
 		slog.ErrorContext(r.Context(), "set call history failed", "err", err)
@@ -96,11 +99,11 @@ func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
-	if !parseForm(w, r) {
-		return
-	}
 	_, hh, ok := h.requireHouseholdAdmin(w, r)
 	if !ok {
+		return
+	}
+	if !parseForm(w, r) {
 		return
 	}
 	enabled := r.FormValue("enabled") == "true"
@@ -123,8 +126,8 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	if isHTMX(r) {
-		data := h.buildLinesData(r, hh, "")
-		renderWith(r.Context(), w, h.tmplPhones, partialFor(r, "dnd-response", "dnd-response-am"), data)
+		data := h.buildLinesData(r, hh)
+		renderWith(r.Context(), w, h.tmplDashboard, partialFor(r, "dnd-response", "dnd-response-am"), data)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
@@ -141,7 +144,7 @@ func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request)
 	tz := strings.TrimSpace(r.FormValue("timezone"))
 	if tz != "" {
 		if err := h.householdStore.SetTimezone(r.Context(), hh.ID, tz); err != nil {
-			slog.WarnContext(r.Context(), "set timezone failed", "err", err)
+			slog.ErrorContext(r.Context(), "set timezone failed", "err", err)
 			http.Redirect(w, r, "/settings", http.StatusSeeOther)
 			return
 		}

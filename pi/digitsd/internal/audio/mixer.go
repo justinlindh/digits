@@ -32,10 +32,13 @@ type FrameWriter interface {
 // debugPCMFile is a raw PCM capture of everything sent to the DAC.
 // Set via EnableCapture/DisableCapture. Only written from render loop.
 type Mixer struct {
-	capturePath string   // if non-empty, render loop writes raw PCM here
-	captureFile *os.File // open file handle (nil when not capturing)
-	w      FrameWriter
-	period int
+	capturePath  string   // if non-empty, render loop writes raw PCM here
+	captureFile  *os.File // open file handle (nil when not capturing)
+	captureMax   int64    // stop writing once this many bytes are on disk (0 = unbounded)
+	captureBytes int64    // bytes written so far this session
+	captureFull  bool     // true once captureMax is hit; logged once, then writes stop
+	w            FrameWriter
+	period       int
 
 	mu      sync.Mutex
 	stopCh  chan struct{}
@@ -167,16 +170,27 @@ func (m *Mixer) renderLoop(stop, done chan struct{}) {
 		// 4. Write the mixed period to hardware (only this goroutine does this)
 		m.w.WriteFrame(buf) //nolint:errcheck
 
-		// 5. Capture raw PCM if enabled (same goroutine, no lock needed for file write)
-		if m.captureFile != nil {
-			binary.Write(m.captureFile, binary.LittleEndian, buf) //nolint:errcheck
+		// 5. Capture raw PCM if enabled (same goroutine, no lock needed for file
+		// write). Bounded by captureMax so a long-lived daemon cannot fill /data:
+		// once the cap is reached, stop writing and log the cutoff once.
+		if m.captureFile != nil && !m.captureFull {
+			if m.captureMax > 0 && m.captureBytes >= m.captureMax {
+				m.captureFull = true
+				slog.Warn("mixer: PCM capture size cap reached, stopping writes",
+					"path", m.capturePath, "bytes", m.captureBytes, "max", m.captureMax)
+			} else {
+				binary.Write(m.captureFile, binary.LittleEndian, buf) //nolint:errcheck
+				m.captureBytes += int64(len(buf)) * 2                 // int16 == 2 bytes
+			}
 		}
 	}
 }
 
-// clampAdd adds two int16 values with saturation (no overflow wrap-around).
-// EnableCapture starts writing raw S16LE PCM to path. Call from main, not render loop.
-func (m *Mixer) EnableCapture(path string) error {
+// EnableCapture starts writing raw S16LE PCM to path. Call from main before
+// Start so the render loop observes the capture fields without racing their
+// initialization. maxBytes caps the total written so a long-running debug
+// capture cannot fill /data; pass 0 for unbounded.
+func (m *Mixer) EnableCapture(path string, maxBytes int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	f, err := os.Create(path)
@@ -185,7 +199,10 @@ func (m *Mixer) EnableCapture(path string) error {
 	}
 	m.captureFile = f
 	m.capturePath = path
-	slog.Info("mixer: PCM capture enabled", "path", path)
+	m.captureMax = maxBytes
+	m.captureBytes = 0
+	m.captureFull = false
+	slog.Info("mixer: PCM capture enabled", "path", path, "max_bytes", maxBytes)
 	return nil
 }
 
@@ -203,6 +220,7 @@ func (m *Mixer) DisableCapture() {
 	}
 }
 
+// clampAdd adds two int16 values with saturation (no overflow wrap-around).
 func clampAdd(a, b int16) int16 {
 	sum := int32(a) + int32(b)
 	if sum > 32767 {

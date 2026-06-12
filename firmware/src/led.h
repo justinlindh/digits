@@ -1,5 +1,5 @@
-#ifndef LED_H
-#define LED_H
+#ifndef DIGITS_LED_H
+#define DIGITS_LED_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -22,4 +22,4 @@ void led_update(void);
 void led_set_locked(bool locked);
 bool led_is_locked(void);
 
-#endif  // LED_H
+#endif  // DIGITS_LED_H

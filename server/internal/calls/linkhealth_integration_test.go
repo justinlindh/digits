@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+
 	"github.com/justinlindh/digits/server/internal/db"
 )
 
@@ -530,5 +533,67 @@ func TestFlushOnceWritesConferenceRows(t *testing.T) {
 	want := []string{"+15555550001|+15555550002", "+15555550002|+15555550001"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("edges: got %v want %v", got, want)
+	}
+}
+
+// TestFlusherSkipsRemoteSamples covers the multi-replica split: a sample
+// ingested on pod A fans out to pod B over Redis for live views, but only
+// pod A writes it to the database. Pod B's flusher must treat the
+// remote-applied sample as already flushed.
+func TestFlusherSkipsRemoteSamples(t *testing.T) {
+	d := setupTestDB(t)
+	mr := miniredis.RunT(t)
+	clientA := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	clientB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = clientA.Close(); _ = clientB.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	a := NewHealthStore(d)
+	a.SetRedis(clientA, "pod-a")
+	go a.RunRedis(ctx)
+	b := NewHealthStore(d)
+	b.SetRedis(clientB, "pod-b")
+	go b.RunRedis(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	callID := insertCall(t, d, "555-1111", "555-2222")
+	loss := float32(0.4)
+	a.Record(callID, "555-1111", Sample{TS: time.Now(), LossPct: &loss})
+
+	// Wait for the fan-out to land on B.
+	deadline := time.Now().Add(2 * time.Second)
+	for len(b.Window(callID, "555-1111")) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timeout waiting for cross-pod sample")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	countRows := func() int {
+		var n int
+		if err := d.DB.QueryRow(
+			"SELECT count(*) FROM call_link_health WHERE call_id = $1", callID,
+		).Scan(&n); err != nil {
+			t.Fatalf("count rows: %v", err)
+		}
+		return n
+	}
+
+	// The remote pod flushes first: it must not write the sample.
+	if err := b.FlushOnce(ctx); err != nil {
+		t.Fatalf("flush B: %v", err)
+	}
+	if n := countRows(); n != 0 {
+		t.Fatalf("remote pod wrote %d rows, want 0", n)
+	}
+
+	// The ingesting pod owns the write.
+	if err := a.FlushOnce(ctx); err != nil {
+		t.Fatalf("flush A: %v", err)
+	}
+	if n := countRows(); n != 1 {
+		t.Fatalf("ingest pod rows = %d, want 1", n)
 	}
 }

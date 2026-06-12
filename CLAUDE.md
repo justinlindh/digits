@@ -20,7 +20,7 @@ These override default behavior and apply to every output: chat, code, commits, 
 firmware/       Pico H firmware (C, CMake, Pico SDK)
 pi/digitsd/     Pi-side daemon (Go, cross-compiled to arm64); handles all modes: normal, recovery, setup, gpclk0
 pi/image/       Pi OS image builder
-server/         Signaling server + web UI (Go, htmx, Tailwind)
+server/         Signaling server + web UI (Go, htmx, custom CSS)
 tools/          Build scripts for firmware, Pi binaries, and OS images
 scripts/        Firmware build/flash helpers
 docs/           Hardware notes, protocol specs, architecture
@@ -55,6 +55,7 @@ Firmware (from repo root):
 ```
 make firmware         # builds in Docker
 make firmware-local   # builds on host (requires arm-none-eabi-gcc + Pico SDK)
+make firmware-test    # host-side unit tests (native cmake + gcc, no Pico SDK; see firmware/test/README.md)
 ./scripts/flash.sh    # copies UF2 to mounted Pico
 ```
 
@@ -96,7 +97,7 @@ When `DEV_MODE=true`, signald serves `/static/*` from disk (`internal/web/static
 
 ## Linting
 
-golangci-lint v2 with `standard` defaults (`.golangci.yml` at repo root). Run `golangci-lint run ./...` from each module directory before pushing Go changes; CI enforces errcheck that `go vet` does not. Pre-commit hook: `git config core.hooksPath .githooks`.
+golangci-lint v2 with `standard` defaults (`.golangci.yml` at repo root). Run `golangci-lint run ./...` from each module directory before pushing Go changes; CI enforces errcheck that `go vet` does not. Shell scripts under `tools/`, `scripts/`, and `pi/image/` are gated by shellcheck (`-S warning -x`) in CI. Pre-commit hook (`git config core.hooksPath .githooks`) runs both on staged files.
 
 ## Production deployment
 
@@ -127,7 +128,7 @@ docs: update wiring notes
 
 **`gh` PR/issue bodies.** With a single-quoted heredoc (`<<'EOF'`), the shell does no interpretation, so write backticks and quotes literally. Escaping them as `\`` or `\"` ships the backslashes to GitHub verbatim and breaks the rendered formatting (symptom: published body shows `\`foo\`` everywhere instead of `foo` in inline code).
 
-**Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx + Tailwind, templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
+**Style.** Go uses standard project layout, raw SQL with `database/sql` (no ORM), errors returned not panicked. Server web UI uses htmx with custom CSS (`digits.css` plus per-theme `dialup.css` and `answering-machine.css` in `internal/web/static/`), templates in `internal/web/templates/`. Firmware uses C with Pico SDK conventions.
 
 ## Definition of done for substantial work
 
@@ -144,4 +145,6 @@ Small fixes, docs, dep bumps, and typo PRs do not need this pass; their plans ma
 GitHub Actions workflows in `.github/workflows/`:
 - `server-ci.yml`: build, test, vet (triggers on `server/` changes); required for merge.
 - `server-integration.yml`: integration tests (Postgres service containers); required for merge to main.
+- `fw-ci.yml`: host-side firmware unit tests, no Pico SDK needed (triggers on `firmware/` changes).
+- `shellcheck-ci.yml`: shellcheck `-S warning -x` over `tools/`, `scripts/`, and `pi/image/` (including shebang-detected `rootfs-overlay` executables).
 - `fw-release` / `pi-release` / `server-release`: tag-triggered release pipelines.

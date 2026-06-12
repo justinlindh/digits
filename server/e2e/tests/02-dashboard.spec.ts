@@ -73,8 +73,9 @@ test.describe('Dashboard', () => {
 
     // Both layouts (v2 rail, dialup channels/toolbar) expose anchors to the
     // core pages in the page chrome. Use the layout-agnostic navLink helper
-    // so this test survives a theme switch.
-    for (const href of ['/', '/phones', '/links', '/settings']) {
+    // so this test survives a theme switch. /phones is no longer a nav item
+    // (it merged into Overview), so it is not in this list.
+    for (const href of ['/', '/links', '/settings']) {
       await expect(navLink(page, href).first()).toBeAttached();
     }
   });

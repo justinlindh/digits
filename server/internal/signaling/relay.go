@@ -63,12 +63,12 @@ type HealthRecorder interface {
 	RecordEdge(confID uuid.UUID, from, peer string, sample calls.Sample)
 }
 
-// SignalingErrorObserver counts signaling errors by category. Implemented
+// ErrorObserver counts signaling errors by category. Implemented
 // by *metrics.Registry; the interface lives here so internal/signaling does
 // not import internal/metrics directly. Categories are defined as untyped
 // strings on this surface so the relay package stays independent; the
 // metrics package validates them by exposing only a fixed set of constants.
-type SignalingErrorObserver interface {
+type ErrorObserver interface {
 	ObserveSignalingError(category string)
 }
 
@@ -105,7 +105,7 @@ type Relay struct {
 	// for the cases the relay can categorize cleanly (auth failed, peer
 	// unreachable, etc). nil disables instrumentation; production wires it
 	// in cmd/signald/main.go.
-	Errors SignalingErrorObserver
+	Errors ErrorObserver
 
 	// GraceWindow is how long a 2-party call is held open after the last
 	// device on a line disconnects, before teardown. Defaults to
@@ -136,7 +136,7 @@ func graceKey(number, hardwareID string) string {
 	return number + "\x00" + hardwareID
 }
 
-// observeError is a nil-safe pass-through to the SignalingErrorObserver.
+// observeError is a nil-safe pass-through to the ErrorObserver.
 // Centralizing it here means a missing observer never panics, and there is
 // only one place to look when reviewing what categories the relay emits.
 func (r *Relay) observeError(category string) {
@@ -205,10 +205,8 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	switch msg.Type {
 	case TypeCall:
 		r.handleCall(ctx, from, msg)
-	case TypeSDP:
-		r.handleSDP(ctx, from, msg)
-	case TypeICE:
-		r.handleICE(ctx, from, msg)
+	case TypeSDP, TypeICE:
+		r.handleSignalingForward(ctx, from, msg)
 	case TypeICERestart:
 		r.handleICERestart(ctx, from, msg)
 	case TypeAnswer:
@@ -226,7 +224,14 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeDeviceInfo:
 		// msg.HardwareID is always set: the WS handler stamps it from
 		// conn.HardwareID and rejects registrations without a hardware_id.
-		updated := r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, msg.PiVersion, msg.PiCommit, msg.FirmwareVersion, msg.FirmwareCommit, msg.LocalAddr, msg.DevMode)
+		updated := r.Hub.UpdateDeviceInfoByHardware(msg.HardwareID, DeviceInfoParams{
+			PiVersion:       msg.PiVersion,
+			PiCommit:        msg.PiCommit,
+			FirmwareVersion: msg.FirmwareVersion,
+			FirmwareCommit:  msg.FirmwareCommit,
+			RemoteAddr:      msg.LocalAddr,
+			DevMode:         msg.DevMode,
+		})
 		if updated {
 			slog.InfoContext(ctx, "device_info", "number", from,
 				"hardware_id", msg.HardwareID,
@@ -490,38 +495,12 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 	r.clearExtensionsForCall(ctx, number)
 }
 
-func (r *Relay) handleSDP(ctx context.Context, from string, msg *Message) {
-	if msg.Extension && r.routeExtensionSignaling(from, msg) {
-		return
-	}
-	if msg.ConfID != "" {
-		id, err := uuid.Parse(msg.ConfID)
-		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(ctx, id, from, msg.To) {
-			_ = r.Hub.SendTo(msg.To, &Message{
-				Type:   msg.Type,
-				From:   from,
-				To:     msg.To,
-				ConfID: msg.ConfID,
-				SDP:    msg.SDP,
-			})
-			return
-		}
-	}
-	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "sdp without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
-		return
-	}
-	if r.Tracker != nil {
-		if callID := r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
-			slog.DebugContext(ctx, "sdp forwarded", "call_id", callID, "from", from, "to", msg.To)
-			setSpanCallID(ctx, callID)
-		}
-	}
-	r.forward(ctx, msg)
-}
-
-func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
+// handleSignalingForward relays an SDP or ICE message between in-call peers.
+// msg.Type ("sdp" or "ice") is used verbatim in log lines. The conference
+// fast path copies both payload fields; the one not set for this type is
+// empty and omitted from the encoded message, so the wire format per type
+// is unchanged.
+func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Message) {
 	if msg.Extension && r.routeExtensionSignaling(from, msg) {
 		return
 	}
@@ -533,19 +512,20 @@ func (r *Relay) handleICE(ctx context.Context, from string, msg *Message) {
 				From:      from,
 				To:        msg.To,
 				ConfID:    msg.ConfID,
+				SDP:       msg.SDP,
 				Candidate: msg.Candidate,
 			})
 			return
 		}
 	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "ice without active call", "from", from, "to", msg.To)
+		slog.WarnContext(ctx, msg.Type+" without active call", "from", from, "to", msg.To)
 		r.observeError("invalid_message")
 		return
 	}
 	if r.Tracker != nil {
 		if callID := r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
-			slog.DebugContext(ctx, "ice forwarded", "call_id", callID, "from", from, "to", msg.To)
+			slog.DebugContext(ctx, msg.Type+" forwarded", "call_id", callID, "from", from, "to", msg.To)
 			setSpanCallID(ctx, callID)
 		}
 	}
@@ -716,28 +696,32 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 // Extension signaling is identified by the Extension flag on the message.
 // Returns true if the message was handled.
 func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
+	// Resolve the target in one critical section, then send after unlock.
+	var toPeer string
+	var toHardware string
 	r.extMu.Lock()
-	ext := r.extensions[msg.HardwareID]
-	r.extMu.Unlock()
-
-	if ext != nil {
-		if msg.To == ext.PeerNumber {
-			_ = r.Hub.SendTo(ext.PeerNumber, msg)
-			return true
-		}
-	}
-
-	// The message might be from the remote peer going back to the extension device.
-	// Find which extension expects traffic from this sender.
-	r.extMu.Lock()
-	for _, e := range r.extensions {
-		if e.PeerNumber == from && e.LineNumber == msg.To {
-			r.extMu.Unlock()
-			_ = r.Hub.SendToHardware(e.HardwareID, msg)
-			return true
+	if ext := r.extensions[msg.HardwareID]; ext != nil && msg.To == ext.PeerNumber {
+		toPeer = ext.PeerNumber
+	} else {
+		// The message might be from the remote peer going back to the extension
+		// device. Find which extension expects traffic from this sender.
+		for _, e := range r.extensions {
+			if e.PeerNumber == from && e.LineNumber == msg.To {
+				toHardware = e.HardwareID
+				break
+			}
 		}
 	}
 	r.extMu.Unlock()
+
+	switch {
+	case toPeer != "":
+		_ = r.Hub.SendTo(toPeer, msg)
+		return true
+	case toHardware != "":
+		_ = r.Hub.SendToHardware(toHardware, msg)
+		return true
+	}
 	return false
 }
 

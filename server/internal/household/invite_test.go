@@ -54,7 +54,7 @@ func TestInviteStore_AcceptInvite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept invite: %v", err)
 	}
-	if accepted.Status != InviteStatusAccepted {
+	if accepted.Status != "accepted" {
 		t.Errorf("expected accepted, got %q", accepted.Status)
 	}
 	if accepted.AcceptedAt == nil {
@@ -89,7 +89,7 @@ func TestInviteStore_CancelInvite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get after cancel: %v", err)
 	}
-	if got.Status != InviteStatusCancelled {
+	if got.Status != "cancelled" {
 		t.Errorf("expected cancelled, got %q", got.Status)
 	}
 }

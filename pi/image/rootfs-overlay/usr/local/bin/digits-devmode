@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# digits-devmode: enable or disable developer mode on a Digits phone at runtime.
+#
+# Developer mode means: SSH login as user "dev" (password auth), the on-device
+# dev web UI on :8080 (gated by /data/digits/dev-mode), and passwordless sudo
+# for "dev". Release images ship with none of this; this script creates it on
+# demand and tears it back down. Every step is idempotent so re-running is safe.
+#
+# digitsd (running as the unprivileged "digits" user) invokes this via a single
+# sudoers allowlist entry. The enable password is read from stdin so it never
+# appears in the process list.
+#
+# This mirrors, at runtime, what tools/build-image.sh does host-side for --dev
+# images (the "dev mode" step that creates the dev user, host keys, the SSH
+# password-auth drop-in, and the sudoers entry). Keep the two in sync: the
+# dropin path/contents, sudoers line, symlink targets, and group list below
+# must match that step.
+#
+# Usage:
+#   digits-devmode enable   # reads the dev login password from stdin
+#   digits-devmode disable
+#   digits-devmode status
+set -euo pipefail
+
+DEV_USER="dev"
+FLAG=/data/digits/dev-mode
+SSH_KEY_DIR=/data/ssh
+SSHD_DROPIN=/etc/ssh/sshd_config.d/digits-dev.conf
+SUDOERS_DROPIN=/etc/sudoers.d/dev-nopasswd
+# Defense-in-depth floor, mirrors the server's validateDevModePassword. The
+# web handler is the primary gate; this guards any other producer of a
+# dev_mode command on the signaling channel.
+MIN_PASSWORD_LEN=8
+
+# Tracks whether the rootfs is currently remounted rw so the EXIT trap can
+# restore it on any early/error exit (set -e) without leaving / writable.
+_need_ro=0
+restore_ro_on_exit() { if [[ "$_need_ro" == 1 ]]; then remount_ro; fi; }
+
+remount_rw() { mount -o remount,rw / ; }
+# The rootfs sometimes refuses an immediate ro transition (a just-written file's
+# page cache is still dirty). Mirror the OTA path: sync and retry a few times,
+# and never fail the whole operation if it stays rw -- the next boot mounts ro.
+remount_ro() {
+  for _ in 1 2 3 4; do
+    sync
+    if mount -o remount,ro / 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.3
+  done
+  echo "digits-devmode: WARNING: could not remount / read-only (will be ro on next boot)" >&2
+  return 0
+}
+
+ensure_host_keys() {
+  mkdir -p "$SSH_KEY_DIR"
+  if [[ ! -f "$SSH_KEY_DIR/ssh_host_ed25519_key" ]]; then
+    ssh-keygen -t ed25519 -f "$SSH_KEY_DIR/ssh_host_ed25519_key" -N '' -q
+  fi
+  if [[ ! -f "$SSH_KEY_DIR/ssh_host_rsa_key" ]]; then
+    ssh-keygen -t rsa -b 4096 -f "$SSH_KEY_DIR/ssh_host_rsa_key" -N '' -q
+  fi
+}
+
+ensure_ssh_symlinks() {
+  mkdir -p /etc/ssh
+  ln -sf "$SSH_KEY_DIR/ssh_host_rsa_key"         /etc/ssh/ssh_host_rsa_key
+  ln -sf "$SSH_KEY_DIR/ssh_host_rsa_key.pub"     /etc/ssh/ssh_host_rsa_key.pub
+  ln -sf "$SSH_KEY_DIR/ssh_host_ed25519_key"     /etc/ssh/ssh_host_ed25519_key
+  ln -sf "$SSH_KEY_DIR/ssh_host_ed25519_key.pub" /etc/ssh/ssh_host_ed25519_key.pub
+}
+
+ensure_password_auth() {
+  mkdir -p /etc/ssh/sshd_config.d
+  printf 'PasswordAuthentication yes\n' > "$SSHD_DROPIN"
+}
+
+ensure_dev_user() {
+  if ! id "$DEV_USER" >/dev/null 2>&1; then
+    useradd -m -s /bin/bash \
+      -G sudo,audio,video,dialout,gpio,i2c,spi "$DEV_USER"
+  fi
+  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$DEV_USER" > "$SUDOERS_DROPIN"
+  chmod 0440 "$SUDOERS_DROPIN"
+}
+
+cmd_enable() {
+  # Read the new password from stdin (single line).
+  local password
+  IFS= read -r password || true
+  if [[ -z "$password" ]]; then
+    echo "digits-devmode: enable requires a password on stdin" >&2
+    exit 2
+  fi
+  if [[ "${#password}" -lt "$MIN_PASSWORD_LEN" ]]; then
+    echo "digits-devmode: password must be at least $MIN_PASSWORD_LEN characters" >&2
+    exit 2
+  fi
+
+  # All persistent rootfs changes happen in one rw window. The EXIT trap
+  # restores ro if any step fails under set -e, so a partial enable never
+  # leaves / writable, and the flag below is only set on full success.
+  trap restore_ro_on_exit EXIT
+  remount_rw; _need_ro=1
+  ensure_host_keys
+  ensure_ssh_symlinks
+  ensure_password_auth
+  ensure_dev_user
+  printf '%s:%s\n' "$DEV_USER" "$password" | chpasswd
+  passwd -u "$DEV_USER" >/dev/null 2>&1 || true
+  # Raspbian's regenerate_ssh_host_keys.service would ssh-keygen into the
+  # read-only /etc/ssh and pollute it; we supply our own keys, so mask it
+  # (matches the --dev image build). `enable` (not --now) writes the rootfs
+  # symlink while we still hold rw; the service is started after remount-ro.
+  systemctl mask regenerate_ssh_host_keys.service >/dev/null 2>&1 || true
+  systemctl unmask ssh.service >/dev/null 2>&1 || true
+  systemctl enable ssh.service
+  remount_ro; _need_ro=0
+  trap - EXIT
+
+  # Start outside the rw window (no rootfs writes) and confirm it actually
+  # came up before declaring success. The flag is written last, so the
+  # device only reports dev mode on once SSH is genuinely listening.
+  systemctl start ssh.service
+  systemctl is-active --quiet ssh.service
+  mkdir -p /data/digits
+  touch "$FLAG"
+  echo "digits-devmode: enabled"
+}
+
+cmd_disable() {
+  # Runtime teardown first (no rootfs writes): stop the listener and kill the
+  # dev user's live sessions so "off" actually ends SSH access immediately.
+  systemctl stop ssh.service >/dev/null 2>&1 || true
+  pkill -KILL -u "$DEV_USER" >/dev/null 2>&1 || true
+
+  # Persistent teardown inside the rw window. `systemctl disable` removes the
+  # boot-time wants-symlink under /etc, so it MUST run while the rootfs is rw
+  # (mirroring cmd_enable's `systemctl enable`); doing it before remount would
+  # silently fail and leave ssh.service enabled for the next boot. Also drop
+  # the standing-privilege artifacts so "off" leaves no passwordless-sudo grant
+  # or global password-auth setting on disk.
+  trap restore_ro_on_exit EXIT
+  remount_rw; _need_ro=1
+  systemctl disable ssh.service >/dev/null 2>&1 || true
+  passwd -l "$DEV_USER" >/dev/null 2>&1 || true
+  rm -f "$SUDOERS_DROPIN" "$SSHD_DROPIN"
+  remount_ro; _need_ro=0
+  trap - EXIT
+
+  rm -f "$FLAG"
+  echo "digits-devmode: disabled"
+}
+
+cmd_status() {
+  if [[ -f "$FLAG" ]] && systemctl is-active --quiet ssh.service; then
+    echo "enabled"
+  else
+    echo "disabled"
+  fi
+}
+
+case "${1:-}" in
+  enable)  cmd_enable ;;
+  disable) cmd_disable ;;
+  status)  cmd_status ;;
+  *)
+    echo "usage: digits-devmode {enable|disable|status}" >&2
+    exit 64
+    ;;
+esac

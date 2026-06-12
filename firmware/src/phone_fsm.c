@@ -5,13 +5,17 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "hardware/watchdog.h"
+#include "pico/bootrom.h"
+#include "pico/stdlib.h"
+#include "pico/time.h"
+
 #include "board.h"
 #include "hook.h"
 #include "keypad.h"
 #include "led.h"
 #include "phase.h"
 #include "ringer.h"
-#include "tone.h"
 #include "uart_proto.h"
 
 // fsm_led_set resolves the LED pattern from (phase, fsm_state). When the Pi
@@ -32,11 +36,6 @@ static void fsm_led_set(led_mode_t mode) {
     }
     led_set_mode(mode);
 }
-
-#include "hardware/watchdog.h"
-#include "pico/bootrom.h"
-#include "pico/stdlib.h"
-#include "pico/time.h"
 
 #define DIAL_DIGITS_REQUIRED 7
 #define DIAL_TIMEOUT_MS 15000        // 15s between digits before partial dial → off-hook timeout
@@ -115,7 +114,6 @@ static void set_state(phone_state_t next) {
     switch (s_state) {
         case PHONE_STATE_IDLE:
             fsm_led_set(LED_MODE_OFF);
-            tone_stop();
             ringer_stop();
             clear_dialing_buffer();
             break;
@@ -124,19 +122,16 @@ static void set_state(phone_state_t next) {
             fsm_led_set(LED_MODE_ON);
             ringer_stop();
             clear_dialing_buffer();
-            tone_play(TONE_DIAL);
             s_dial_tone_start_ms = now_ms();
             break;
 
         case PHONE_STATE_DIALING:
             fsm_led_set(LED_MODE_ON);
             ringer_stop();
-            tone_stop();
             s_dialing_start_ms = now_ms();
             break;
 
         case PHONE_STATE_RINGING:
-            tone_stop();
             fsm_led_set(LED_MODE_BLINK);
             ringer_start();
             uart_proto_send("RING:ACK");
@@ -144,14 +139,12 @@ static void set_state(phone_state_t next) {
 
         case PHONE_STATE_CONNECTED:
             ringer_stop();
-            tone_stop();
             fsm_led_set(LED_MODE_BREATHING);
             break;
 
         case PHONE_STATE_BUSY:
             ringer_stop();
             fsm_led_set(LED_MODE_ON);
-            tone_play(TONE_BUSY);
             break;
 
         default:
@@ -178,7 +171,7 @@ static void process_pi_command(const char *cmd) {
         set_state(PHONE_STATE_RINGING);
         ringer_start_pattern(pat);
     } else if (strcmp(cmd, "RING:TEST") == 0) {
-        // Direct hardware test — bypass FSM entirely.
+        // Direct hardware test: bypass FSM entirely.
         // Drives ringer + LED regardless of hook state.
         ringer_start();
         fsm_led_set(LED_MODE_BLINK);
@@ -214,12 +207,6 @@ static void process_pi_command(const char *cmd) {
         led_set_locked(true);
     } else if (strcmp(cmd, "LED:UNLOCK") == 0) {
         led_set_locked(false);
-    } else if (strcmp(cmd, "TONE:DIAL") == 0) {
-        tone_play(TONE_DIAL);
-    } else if (strcmp(cmd, "TONE:RINGBACK") == 0) {
-        tone_play(TONE_RINGBACK);
-    } else if (strcmp(cmd, "TONE:STOP") == 0) {
-        tone_stop();
     } else if (strcmp(cmd, "CALL:CONNECTED") == 0) {
         // Caller-side: Pi sends this after the WebRTC peer answers.
         // RINGING is accepted defensively; callees normally self-transition
@@ -417,8 +404,6 @@ static void process_key(char key) {
         return;
     }
 
-    tone_play_dtmf(key);
-
     char key_msg[8];
     snprintf(key_msg, sizeof(key_msg), "KEY:%c", key);
     uart_proto_send(key_msg);
@@ -433,7 +418,6 @@ static void process_key(char key) {
             char dial_msg[16];
             snprintf(dial_msg, sizeof(dial_msg), "DIAL:%s", s_digits);
             uart_proto_send(dial_msg);
-            tone_play(TONE_RINGBACK);
             s_dial_sent = true;
         }
     }
@@ -523,31 +507,25 @@ void phone_fsm_update(void) {
 
     process_key(keypad_scan());
 
-    if (s_state == PHONE_STATE_DIALING && !s_dial_sent && s_digits_len > 0) {
+    // Off-hook timeout in DIALING: fire regardless of accumulated digit count.
+    // s_dialing_start_ms is set on DIALING entry and is not reset per digit, so
+    // this bounds total time in DIALING before a completed DIAL. It covers the
+    // partial-dial case (some digits, never reached the required count) and the
+    // zero-digit case where the first key was '*' or '#' (a service-code or
+    // recovery prefix that does not increment s_digits_len), which would
+    // otherwise sit silently in DIALING until the handset is cradled. Preserves
+    // the Bellcore off-hook-timeout intent the DIAL_TONE path cites. Reuses the
+    // TIMEOUT:DIAL_TONE event so digitsd applies its existing off-hook
+    // permanent-signal treatment rather than seeing a new unhandled event.
+    if (s_state == PHONE_STATE_DIALING && !s_dial_sent) {
         if ((now_ms() - s_dialing_start_ms) >= DIAL_TIMEOUT_MS) {
+            uart_proto_send("TIMEOUT:DIAL_TONE");
             set_state(PHONE_STATE_BUSY);
         }
     }
 
     led_update();
-    tone_update();
     ringer_update();
-}
-
-void phone_fsm_reset(void) {
-    s_keytest_mode = false;
-    set_state(PHONE_STATE_IDLE);
-}
-
-void phone_fsm_set_keytest(bool enable) {
-    s_keytest_mode = enable;
-    if (enable) {
-        set_state(PHONE_STATE_IDLE);
-    }
-}
-
-bool phone_fsm_is_keytest(void) {
-    return s_keytest_mode;
 }
 
 phone_state_t phone_fsm_get_state(void) {

@@ -196,15 +196,7 @@ func (s *Store) MarkHeard(id int64) error {
 func (s *Store) Delete(id int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	metaPath := filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
-	if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+	return s.removeMessageLocked(id)
 }
 
 // BeginRecording opens a fresh Recorder. AppendFrame queues raw Opus payloads
@@ -215,21 +207,7 @@ func (s *Store) BeginRecording() (*Recorder, error) {
 	defer s.mu.Unlock()
 
 	id := s.opts.Now().UnixMilli()
-	framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	tmpPath := framesPath + ".tmp"
-
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
-	if err != nil {
-		return nil, fmt.Errorf("voicemail: open tmp: %w", err)
-	}
-	return &Recorder{
-		store:    s,
-		id:       id,
-		tmpPath:  tmpPath,
-		finalPath: framesPath,
-		file:     f,
-		maxFrames: framesForDuration(messageMaxDuration),
-	}, nil
+	return s.openRecorderLocked(id, s.framesPath(id), messageMaxDuration)
 }
 
 // ErrRecorderClosed is returned by Recorder.AppendFrame when the recorder has
@@ -373,8 +351,7 @@ type Player struct {
 
 // OpenPlayer returns a Player for the given message ID.
 func (s *Store) OpenPlayer(id int64) (*Player, error) {
-	path := filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
-	f, err := os.Open(path)
+	f, err := os.Open(s.framesPath(id))
 	if err != nil {
 		return nil, err
 	}
@@ -460,21 +437,24 @@ func (s *Store) DeleteGreeting() error {
 func (s *Store) BeginGreetingRecording() (*Recorder, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.openRecorderLocked(0, s.greetingPath(), greetingMaxDuration)
+}
 
-	finalPath := s.greetingPath()
+// openRecorderLocked opens the .tmp sibling of finalPath and wraps it in a
+// Recorder. Caller must hold s.mu.
+func (s *Store) openRecorderLocked(id int64, finalPath string, maxDuration time.Duration) (*Recorder, error) {
 	tmpPath := finalPath + ".tmp"
-
 	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("voicemail: open greeting tmp: %w", err)
+		return nil, fmt.Errorf("voicemail: open tmp %s: %w", tmpPath, err)
 	}
 	return &Recorder{
 		store:     s,
-		id:        0,
+		id:        id,
 		tmpPath:   tmpPath,
 		finalPath: finalPath,
 		file:      f,
-		maxFrames: framesForDuration(greetingMaxDuration),
+		maxFrames: framesForDuration(maxDuration),
 	}, nil
 }
 
@@ -482,6 +462,22 @@ func (s *Store) BeginGreetingRecording() (*Recorder, error) {
 
 func (s *Store) metaPath(id int64) string {
 	return filepath.Join(s.dir, fmt.Sprintf("%d.meta", id))
+}
+
+func (s *Store) framesPath(id int64) string {
+	return filepath.Join(s.dir, fmt.Sprintf("%d.frames", id))
+}
+
+// removeMessageLocked deletes a message's frames and metadata files,
+// tolerating either being already gone. Caller holds s.mu.
+func (s *Store) removeMessageLocked(id int64) error {
+	if err := os.Remove(s.framesPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Remove(s.metaPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func (s *Store) readMeta(id int64) (metaFile, error) {
@@ -540,12 +536,7 @@ func (s *Store) evictLocked() error {
 		return nil
 	}
 	for i := 0; i < excess; i++ {
-		framesPath := filepath.Join(s.dir, fmt.Sprintf("%d.frames", msgs[i].ID))
-		metaPath := s.metaPath(msgs[i].ID)
-		if err := os.Remove(framesPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Remove(metaPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := s.removeMessageLocked(msgs[i].ID); err != nil {
 			return err
 		}
 	}

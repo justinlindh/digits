@@ -1,4 +1,4 @@
-.PHONY: help server server-test pi-build pi-test firmware firmware-local fetch-tags stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
+.PHONY: help server server-test pi-build pi-test firmware firmware-local firmware-test fetch-tags stage-firmware image image-dev image-v2 image-v2-dev flash flash-v1 flash-v2 image-flash image-v2-flash clean
 
 # Refresh tags from origin so version derivation in firmware and pi-build
 # resolves to the latest published release, not whatever the local clone
@@ -36,6 +36,9 @@ firmware: fetch-tags ## Build Pico firmware (Docker, no host toolchain needed)
 
 firmware-local: ## Build Pico firmware on host (requires arm-none-eabi-gcc + Pico SDK)
 	$(MAKE) -C firmware build-local
+
+firmware-test: ## Run firmware host tests (native cmake + gcc, no Pico SDK needed)
+	$(MAKE) -C firmware test
 
 # Mirror firmware/Makefile's DIGITS_VERSION derivation so the .version file we
 # stage matches the version string the firmware reports over UART after boot.
@@ -82,7 +85,7 @@ flash: ## Flash newest image (use flash-v1 / flash-v2 to pick, or IMAGE=<path>)
 	if [ -n "$(SD)" ]; then \
 		SD_DEV="$(SD)"; \
 	else \
-		SD_DEV=$$(lsblk -d -n -o NAME,SIZE,TRAN,SUBSYSTEMS | awk '/(usb|mmc)/ && /[0-9]+\.?[0-9]*G/ { dev="/dev/"$$1; size=$$2+0; if (size >= 4 && size <= 64) print dev }' | head -1); \
+		SD_DEV=$$(lsblk -d -n -o NAME,SIZE,TRAN | awk '($$3 == "usb" || $$3 == "mmc") && $$2 ~ /G$$/ { size=$$2+0; if (size >= 4 && size <= 64) print "/dev/"$$1 }' | head -1); \
 		if [ -z "$$SD_DEV" ]; then echo "No SD card detected. Specify manually: make flash SD=/dev/sdX"; exit 1; fi; \
 	fi; \
 	if [ ! -e "$$SD_DEV" ]; then echo "ERROR: $$SD_DEV does not exist. Is the card inserted?"; exit 1; fi; \
@@ -90,7 +93,8 @@ flash: ## Flash newest image (use flash-v1 / flash-v2 to pick, or IMAGE=<path>)
 	echo "Flashing $$IMAGE -> $$SD_DEV"; \
 	lsblk "$$SD_DEV"; \
 	echo "WARNING: This will overwrite all data on $$SD_DEV."; \
-	read -r -p "Continue? [y/N] " ans; \
+	printf "Continue? [y/N] "; \
+	read -r ans; \
 	if [ "$$ans" != "y" ] && [ "$$ans" != "Y" ]; then echo "Aborted."; exit 1; fi; \
 	sudo umount "$$SD_DEV"* 2>/dev/null || true; \
 	gunzip -c "$$IMAGE" | sudo dd of="$$SD_DEV" bs=4M status=progress conv=fsync && \
@@ -102,13 +106,21 @@ flash-v1: flash ## Flash newest V1/prototype image
 flash-v2: IMAGE_GLOB = digits-pi-v2-*.img.gz
 flash-v2: flash ## Flash newest V2 carrier board image
 
-image-flash: image-dev flash-v1 ## Build V1 dev image and flash
+# Run build and flash as ordered sub-makes so `make -j` can't flash a stale or
+# partial image: the image must finish building before flash-v1/flash-v2 reads
+# the newest .img.gz. Listing them as plain prerequisites would let parallel
+# make run them concurrently.
+image-flash: ## Build V1 dev image and flash
+	$(MAKE) image-dev
+	$(MAKE) flash-v1
 
-image-v2-flash: image-v2-dev flash-v2 ## Build V2 dev image and flash
+image-v2-flash: ## Build V2 dev image and flash
+	$(MAKE) image-v2-dev
+	$(MAKE) flash-v2
 
 # ── Utilities ────────────────────────────────────────────────────────────────
 
-test: server-test pi-test ## Run all tests
+test: server-test pi-test firmware-test ## Run all tests
 
 clean: ## Clean build artifacts
 	$(MAKE) -C server clean

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -13,10 +14,118 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 )
+
+// devModeHelperPath is the privileged helper that performs the root-level work
+// of toggling developer mode (SSH host keys, the dev user, ssh.service). It is
+// invoked via the single sudoers allowlist entry in /etc/sudoers.d/digits-devmode.
+const devModeHelperPath = "/usr/local/bin/digits-devmode"
+
+// runDevModeHelper shells out to the privileged helper to enable or disable
+// developer mode. When enabling, the new SSH login password is piped on stdin
+// so it never appears in the process list.
+func runDevModeHelper(enable bool, password string) error {
+	sub := "disable"
+	if enable {
+		sub = "enable"
+	}
+	cmd := exec.Command("sudo", devModeHelperPath, sub)
+	if enable {
+		cmd.Stdin = strings.NewReader(password + "\n")
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("digits-devmode %s: %w: %s", sub, err, bytes.TrimSpace(out))
+	}
+	slog.Info("devmode: helper applied", "action", sub, "output", strings.TrimSpace(string(out)))
+	return nil
+}
+
+// devModeManager owns the lifecycle of the on-device dev web UI listener and
+// the privileged enable/disable transitions. It lets the daemon flip dev mode
+// at runtime (in response to a server command) without a restart.
+//
+// apply performs the privileged work; it is a field so tests can inject a stub
+// in place of the real sudo invocation.
+type devModeManager struct {
+	cfg   *devModeConfig
+	apply func(enable bool, password string) error
+	start func(*devModeConfig) (net.Listener, error)
+
+	mu sync.Mutex
+	ln net.Listener
+}
+
+func newDevModeManager(cfg *devModeConfig) *devModeManager {
+	return &devModeManager{cfg: cfg, apply: runDevModeHelper, start: startDevModeServer}
+}
+
+func (m *devModeManager) startListenerLocked() error {
+	if m.ln != nil {
+		return nil
+	}
+	ln, err := m.start(m.cfg)
+	if err != nil {
+		return err
+	}
+	m.ln = ln
+	return nil
+}
+
+func (m *devModeManager) stopListenerLocked() {
+	if m.ln != nil {
+		_ = m.ln.Close()
+		m.ln = nil
+	}
+}
+
+// EnsureListener starts the dev web UI if it is not already running. Used at
+// boot when the dev-mode flag is already present.
+func (m *devModeManager) EnsureListener() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.startListenerLocked()
+}
+
+// Enable runs the privileged helper to turn dev mode on (creating the dev user,
+// setting its SSH password, starting ssh.service) and then starts the dev web
+// UI listener. The lock is held across apply so concurrent dev_mode commands
+// can't run two helper processes that race on the rootfs remount.
+func (m *devModeManager) Enable(password string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.apply(true, password); err != nil {
+		return err
+	}
+	return m.startListenerLocked()
+}
+
+// Disable runs the privileged helper to turn dev mode off (stopping
+// ssh.service, locking the dev account, clearing the flag) and then stops the
+// dev web UI listener. The lock is held across apply for the same reason as
+// Enable: serialize the privileged transition.
+func (m *devModeManager) Disable() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.apply(false, ""); err != nil {
+		return err
+	}
+	m.stopListenerLocked()
+	return nil
+}
+
+// Close shuts down the listener without changing privileged state. Used on
+// daemon shutdown.
+func (m *devModeManager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopListenerLocked()
+}
 
 //go:embed devmode_static
 var devmodeStaticFS embed.FS

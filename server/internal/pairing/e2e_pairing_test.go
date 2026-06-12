@@ -67,11 +67,7 @@ func TestE2EPairingFlow(t *testing.T) {
 	t.Logf("Generated pairing code: %s", code)
 
 	// Step 2: Verify not yet paired
-	paired, err := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired before claim: %v", err)
-	}
-	if paired {
+	if isPaired(t, pairingStore, "e2e-test-hw-001") {
 		t.Fatal("phone should not be paired yet")
 	}
 
@@ -88,15 +84,11 @@ func TestE2EPairingFlow(t *testing.T) {
 	}
 
 	// Step 4: Verify paired
-	paired, err = pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	if err != nil {
-		t.Fatalf("IsPaired after claim: %v", err)
-	}
-	if !paired {
+	if !isPaired(t, pairingStore, "e2e-test-hw-001") {
 		t.Fatal("phone should be paired after claim")
 	}
 
-	// Step 5: Reuse same code — should fail
+	// Step 5: Reuse same code, which should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code, "5559877", "Reuse Attempt", "Reuse Attempt", hh.ID)
 	if !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("expected ErrInvalidCode on code reuse, got: %v", err)
@@ -108,21 +100,21 @@ func TestE2EPairingFlow(t *testing.T) {
 		t.Fatalf("GenerateCode 2: %v", err)
 	}
 
-	// Step 7: Try to claim with duplicate number — should fail
+	// Step 7: Try to claim with duplicate number, which should fail
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559876", "Dupe Number", "Dupe Number", hh.ID)
 	if !errors.Is(err, ErrNumberTaken) {
 		t.Fatalf("expected ErrNumberTaken for duplicate number, got: %v", err)
 	}
 
-	// Step 8: Claim second phone with unique number — should succeed
+	// Step 8: Claim second phone with unique number, which should succeed
 	_, _, err = pairingStore.ClaimDevice(context.Background(), code2, "5559877", "Living Room Phone", "Living Room Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("ClaimDevice (second phone): %v", err)
 	}
 
 	// Step 9: Verify both phones paired
-	paired1, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-001")
-	paired2, _ := pairingStore.IsPaired(context.Background(), "e2e-test-hw-002")
+	paired1 := isPaired(t, pairingStore, "e2e-test-hw-001")
+	paired2 := isPaired(t, pairingStore, "e2e-test-hw-002")
 	if !paired1 || !paired2 {
 		t.Fatalf("both phones should be paired: hw-001=%v, hw-002=%v", paired1, paired2)
 	}

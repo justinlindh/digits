@@ -110,8 +110,16 @@ spec:
             - -c
             - |
               cp /etc/redis/redis.conf /tmp/redis.conf
-              if [ "$(hostname)" != "{{ include "digits.fullname" . }}-redis-0" ]; then
-                echo "replicaof {{ include "digits.fullname" . }}-redis-0.{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local 6379" >> /tmp/redis.conf
+              # Query any already-running sentinel to discover the current master.
+              # This prevents redis-0 from re-asserting itself as master after a
+              # failover: if sentinel promoted redis-1, a restarted redis-0 must
+              # replicate from redis-1 rather than starting as a standalone master.
+              SENTINEL_SVC="{{ include "digits.fullname" . }}-redis-sentinel.{{ .Release.Namespace }}.svc.cluster.local"
+              MASTER=$(redis-cli -h "$SENTINEL_SVC" -p 26379 SENTINEL get-master-addr-by-name {{ .Values.redis.sentinelMasterName }} 2>/dev/null | head -1)
+              MY_FQDN="{{ include "digits.fullname" . }}-$(hostname | awk -F- '{print $NF}').{{ include "digits.fullname" . }}-redis-headless.{{ .Release.Namespace }}.svc.cluster.local"
+              if [ -n "$MASTER" ] && [ "$MASTER" != "$MY_FQDN" ]; then
+                MASTER_PORT=$(redis-cli -h "$SENTINEL_SVC" -p 26379 SENTINEL get-master-addr-by-name {{ .Values.redis.sentinelMasterName }} 2>/dev/null | tail -1)
+                echo "replicaof $MASTER ${MASTER_PORT:-6379}" >> /tmp/redis.conf
               fi
               exec redis-server /tmp/redis.conf
           volumeMounts:
@@ -149,11 +157,17 @@ spec:
             - sh
             - -c
             - |
-              cp /etc/redis/sentinel.conf /tmp/sentinel.conf
-              exec redis-sentinel /tmp/sentinel.conf
+              # Use a PVC-backed state file if one already exists (persists failover
+              # elections across restarts). Seed from the ConfigMap on first boot.
+              if [ ! -f /sentinel-state/sentinel.conf ]; then
+                cp /etc/redis/sentinel.conf /sentinel-state/sentinel.conf
+              fi
+              exec redis-sentinel /sentinel-state/sentinel.conf
           volumeMounts:
             - name: config
               mountPath: /etc/redis
+            - name: sentinel-state
+              mountPath: /sentinel-state
             - name: tmp
               mountPath: /tmp
           resources:
@@ -188,6 +202,17 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: sentinel-state
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Mi
+        {{- if .Values.redis.sentinelStorageClass }}
+        storageClassName: {{ .Values.redis.sentinelStorageClass }}
+        {{- end }}
 ---
 {{- if .Values.observability.enabled }}
 apiVersion: monitoring.coreos.com/v1

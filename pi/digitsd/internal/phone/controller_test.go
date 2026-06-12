@@ -48,7 +48,6 @@ type mockCallbacks struct {
 	playbackEnters           int
 	playbackExits            int
 	playbackKeys             []string
-	retrievalCodeReturn      string // "" defaults to "*98"
 }
 
 func (m *mockCallbacks) SendTone(name string) {
@@ -233,14 +232,6 @@ func (m *mockCallbacks) VoicemailKey(digit string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.playbackKeys = append(m.playbackKeys, digit)
-}
-func (m *mockCallbacks) VoicemailRetrievalCode() string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.retrievalCodeReturn == "" {
-		return "*98"
-	}
-	return m.retrievalCodeReturn
 }
 
 // Snapshot accessors — return copies under lock so test assertions are
@@ -2411,8 +2402,8 @@ func TestController_FinishGreetingAudition(t *testing.T) {
 	}
 }
 
-// TestRetrievalCodeIntercept verifies that dialing the configured retrieval
-// code (default *98) from off-hook DIALING enters VOICEMAIL_PLAYBACK and fires
+// TestRetrievalCodeIntercept verifies that dialing the fixed retrieval code
+// (*98) from off-hook DIALING enters VOICEMAIL_PLAYBACK and fires
 // VoicemailEnterPlayback exactly once, without initiating an outbound call.
 func TestRetrievalCodeIntercept(t *testing.T) {
 	cb := &mockCallbacks{

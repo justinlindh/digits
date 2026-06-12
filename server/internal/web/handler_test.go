@@ -105,40 +105,6 @@ func TestLinksPage_InviteFriendButton(t *testing.T) {
 	}
 }
 
-func TestAddPhoneViaHTMX(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
-	form := url.Values{"number": {"3140001"}, "name": {"Test Phone"}}
-	req := httptest.NewRequest(http.MethodPost, "/phones", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
-	req.AddCookie(cookie)
-	w := httptest.NewRecorder()
-	h.Router().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), "3140001") {
-		t.Errorf("response missing phone number")
-	}
-}
-
-func TestAddPhoneInvalidNumber(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
-	form := url.Values{"number": {"123"}, "name": {"Bad Phone"}}
-	req := httptest.NewRequest(http.MethodPost, "/phones", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("HX-Request", "true")
-	req.AddCookie(cookie)
-	w := httptest.NewRecorder()
-	h.Router().ServeHTTP(w, req)
-	// Should return the table with an error message (still 200 for htmx)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-}
-
 func TestDeletePhone(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
@@ -152,12 +118,14 @@ func TestDeletePhone(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/delete", nil)
-	req.Header.Set("HX-Request", "true")
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("expected redirect to /, got %q", loc)
 	}
 	// Line should be gone
 	if _, err := lineStore.GetByNumber(context.Background(), "3140001"); err == nil {
@@ -428,25 +396,6 @@ func TestPhoneRestartOnline(t *testing.T) {
 		}
 	default:
 		t.Fatal("device did not receive restart message")
-	}
-}
-
-func TestPhonesPage_FirmwareColumn(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	// Seed one line so the lines table renders (the Firmware column header
-	// only appears when .Lines is non-empty).
-	_, err := h.lineStore.Add(context.Background(), "2456390", "Test Line", hh.ID)
-	if err != nil {
-		t.Fatalf("add line: %v", err)
-	}
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
-	req.AddCookie(cookie)
-	w := httptest.NewRecorder()
-	h.Router().ServeHTTP(w, req)
-	body := w.Body.String()
-	if !strings.Contains(body, ">Firmware<") {
-		t.Errorf("phones table missing Firmware column header")
 	}
 }
 
@@ -1399,7 +1348,7 @@ func TestSettingsCRTModePost_Invalid(t *testing.T) {
 	}
 }
 
-func TestPhonesListShowsSilentBadgeWhenSilent(t *testing.T) {
+func TestOverviewShowsSilentBadgeWhenSilent(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
@@ -1408,29 +1357,29 @@ func TestPhonesListShowsSilentBadgeWhenSilent(t *testing.T) {
 		t.Fatalf("setup: got %d", w.Code)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /phones: got %d, body=%s", w.Code, w.Body.String())
+		t.Fatalf("GET /: got %d, body=%s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `class="phone-silent"`) {
-		t.Errorf("expected phone-silent badge in /phones HTML, body:\n%s", w.Body.String())
+		t.Errorf("expected phone-silent badge on Overview HTML, body:\n%s", w.Body.String())
 	}
 }
 
-func TestPhonesListOmitsSilentBadgeWhenNotSilent(t *testing.T) {
+func TestOverviewOmitsSilentBadgeWhenNotSilent(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie := addSessionCookie(t, authStore)
 	_ = setupVoiceStyleLine(t, h, database, authStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 	if strings.Contains(w.Body.String(), `phone-silent`) {
-		t.Errorf("unexpected silent badge in /phones HTML when silent mode off")
+		t.Errorf("unexpected silent badge on Overview HTML when silent mode off")
 	}
 }
 
@@ -1452,7 +1401,7 @@ func seedPairedHandsetForTest(t *testing.T, h *Handler, database *db.Database, h
 
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register(number, conn)
-	h.hub.UpdateDeviceInfo(number, "", "", fwVersion, "", "", false)
+	h.hub.UpdateDeviceInfo(number, signaling.DeviceInfoParams{FirmwareVersion: fwVersion})
 }
 
 // fakeReleasesForTest builds a fake GitHubReleases populated with the given
@@ -1492,7 +1441,7 @@ func seedLineWithoutDeviceInfoForTest(t *testing.T, database *db.Database, house
 	})
 }
 
-func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
+func TestOverviewOmitsUpdateChipForOfflineDevice(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
@@ -1503,7 +1452,7 @@ func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
 		"1.4.0": "<!-- groomed:v1 -->\nshould not appear for offline device",
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -1512,12 +1461,12 @@ func TestLineRowNotesSkippedForOfflineDevice(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	body := w.Body.String()
-	if strings.Contains(body, "should not appear for offline device") {
-		t.Errorf("offline device should not show release notes, but body contained them")
+	if strings.Contains(body, "update available") {
+		t.Errorf("offline device should not flag an update on the Overview, but body contained the chip")
 	}
 }
 
-func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
+func TestOverviewShowsUpdateAvailableChip(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
@@ -1531,7 +1480,7 @@ func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
 		"1.4.0": "<!-- groomed:v1 -->\nlatest release",
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -1540,14 +1489,8 @@ func TestLineRowPopulatesFirmwareUpdateNotes(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	body := w.Body.String()
-	if !strings.Contains(body, "latest release") {
-		t.Errorf("body missing latest note text:\n%s", body)
-	}
-	if !strings.Contains(body, "mid release") {
-		t.Errorf("body missing mid note text:\n%s", body)
-	}
-	if strings.Contains(body, "older release") {
-		t.Errorf("body should not show the 1.2.0 note text (device is on 1.2.0):\n%s", body)
+	if !strings.Contains(body, "update available") {
+		t.Errorf("body missing update-available chip:\n%s", body)
 	}
 	if strings.Contains(body, "<!-- groomed:v1 -->") {
 		t.Errorf("sentinel should be stripped before render")
@@ -1590,8 +1533,8 @@ func TestPairRedirectIncludesQueryParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bad Location header %q: %v", loc, err)
 	}
-	if parsed.Path != "/phones" {
-		t.Errorf("redirect path = %q, want /phones", parsed.Path)
+	if parsed.Path != "/" {
+		t.Errorf("redirect path = %q, want /", parsed.Path)
 	}
 	if got := parsed.Query().Get("paired"); got != "Front Porch" {
 		t.Errorf("paired param = %q, want %q", got, "Front Porch")
@@ -1602,7 +1545,7 @@ func TestPairBannerRendersOnQueryParam(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, _ := setupAuthedHousehold(t, h, database, authStore)
 
-	req := httptest.NewRequest(http.MethodGet, "/phones?paired=Kitchen&fw=1.4.0", nil)
+	req := httptest.NewRequest(http.MethodGet, "/?paired=Kitchen&fw=1.4.0", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -1750,33 +1693,13 @@ func TestPhoneNameEditGetReturnsForm(t *testing.T) {
 		t.Fatalf("expected maxlength attribute:\n%s", body)
 	}
 }
-
-func TestPhoneEditPostEmptyNameReturns400(t *testing.T) {
-	h, database, authStore := setupHandler(t)
-	cookie := addSessionCookie(t, authStore)
-	_ = setupVoiceStyleLine(t, h, database, authStore)
-
-	form := url.Values{"name": {"   "}}
-	req := httptest.NewRequest(http.MethodPost, "/phones/3140001/edit", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.AddCookie(cookie)
-	w := httptest.NewRecorder()
-	h.Router().ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 for empty name on list-view edit, got %d: %s", w.Code, w.Body.String())
-	}
-	if got := readLineName(t, database); got != "Test Phone" {
-		t.Fatalf("name should be unchanged after rejected POST, got %q", got)
-	}
-}
-func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
+func TestPhoneDetail_RendersLANIPWhenSet(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	_, conn := setupLineWithConn(t, h, database, hh, "3140042", "Kitchen")
 	conn.RemoteAddr = "192.168.1.42"
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140042", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
@@ -1786,28 +1709,28 @@ func TestPhonesPage_RendersLANIPWhenSet(t *testing.T) {
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "192.168.1.42") {
-		t.Errorf("phones page missing LAN IP %q in body", "192.168.1.42")
+		t.Errorf("phone detail page missing LAN IP %q in body", "192.168.1.42")
 	}
 }
 
-func TestPhonesPage_OmitsLANIPWhenEmpty(t *testing.T) {
+func TestPhoneDetail_OmitsLANIPWhenEmpty(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	_, conn := setupLineWithConn(t, h, database, hh, "3140043", "Hallway")
 	conn.RemoteAddr = ""
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140043", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 
 	body := w.Body.String()
-	if strings.Contains(body, `class="lines__ip`) {
-		t.Errorf("phones page rendered LAN IP markup despite empty RemoteAddr")
+	if strings.Contains(body, ">LAN IP<") {
+		t.Errorf("phone detail page rendered LAN IP section despite empty RemoteAddr")
 	}
 }
 
-func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
+func TestPhoneDetail_OmitsLANIPWhenOffline(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	// Add a line WITHOUT registering a Conn: phone is offline.
@@ -1820,14 +1743,14 @@ func TestPhonesPage_OmitsLANIPWhenOffline(t *testing.T) {
 		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/phones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140044", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.Router().ServeHTTP(w, req)
 
 	body := w.Body.String()
-	if strings.Contains(body, `class="lines__ip`) {
-		t.Errorf("phones page rendered LAN IP markup for offline phone")
+	if strings.Contains(body, ">LAN IP<") {
+		t.Errorf("phone detail page rendered LAN IP section for offline phone")
 	}
 }
 

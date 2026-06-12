@@ -23,6 +23,9 @@
 # downloads a known-good Raspberry Pi OS Lite image to /cache.
 set -euo pipefail
 
+# Local copies, intentionally not pi/image/lib/log.sh: this script is COPYed
+# into the Docker image as /entrypoint.sh and runs before the repo bind-mount
+# is in play for sourcing, so it cannot rely on the shared lib being present.
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
@@ -58,7 +61,24 @@ if [[ -z "$SOURCE_IMAGE" ]]; then
         info "Using cached base image: $SOURCE_IMAGE"
     else
         info "Downloading Raspberry Pi OS Lite (Bookworm arm64)..."
-        curl -L --progress-bar -o "$SOURCE_IMAGE" "$BASE_IMAGE_URL"
+        # Download to a temp path and only promote to the cached name on
+        # success. --fail makes curl exit non-zero on an HTTP error instead of
+        # writing the error page as the image; --show-error surfaces the
+        # reason under --progress-bar. Without this, a failed download was
+        # cached forever in the digits-image-cache volume and every later
+        # build reused the corrupt file.
+        DOWNLOAD_TMP="${SOURCE_IMAGE}.partial"
+        if ! curl -fL --show-error --progress-bar -o "$DOWNLOAD_TMP" "$BASE_IMAGE_URL"; then
+            rm -f "$DOWNLOAD_TMP"
+            die "Failed to download base image from $BASE_IMAGE_URL. Nothing was cached; re-run to retry. If a stale partial persists, clear the cache volume: docker volume rm digits-image-cache"
+        fi
+        # Sanity check: a real .img.xz is an XZ stream, not an HTML error page
+        # that slipped through (e.g. a 200 with a body). Guard before caching.
+        if [[ ! -s "$DOWNLOAD_TMP" ]] || ! xz -t "$DOWNLOAD_TMP" 2>/dev/null; then
+            rm -f "$DOWNLOAD_TMP"
+            die "Downloaded base image is empty or not a valid .xz archive. Nothing was cached; re-run to retry. If a stale file persists, clear the cache volume: docker volume rm digits-image-cache"
+        fi
+        mv "$DOWNLOAD_TMP" "$SOURCE_IMAGE"
     fi
 
     # Verify integrity (if hash is configured)
@@ -176,50 +196,79 @@ else
     info "Binaries ready in tools/build/"
 fi
 
-# ── firmware: host-staged, release download, or error ────────────────────────
+# ── firmware: release download vs host-staged ELF ────────────────────────────
 #
-# An image without firmware is a regression we don't ship. Priority:
-#   1. Host-staged ELF (make stage-firmware, or release mode put it there).
-#   2. FIRMWARE_TAG env var: download from that specific fw/v* release.
-#   3. Auto-detect: download from the latest fw/v* release on GitHub.
-#   4. Die if none of the above succeed.
-
-# An image without firmware is a regression we don't ship: prefer the
-# host-staged ELF (make stage-firmware), fall back to GitHub release,
-# die if neither is available.
+# An image without firmware is a regression we don't ship. The correct source
+# depends on the build mode, because the staged ELF at $FW_ELF persists in the
+# bind-mounted repo across builds: make stage-firmware writes it, and release
+# mode used to write it there too. Treating that staged ELF as top priority
+# regardless of mode was wrong: a plain `make image` after any `make image-dev`
+# would bundle stale local dev firmware into a "release" image, and an explicit
+# FIRMWARE_TAG was silently ignored whenever an ELF happened to exist.
+#
+#   Local build mode (BUILD_LOCAL set):
+#     The staged ELF is the freshly cross-compiled local firmware (the dev
+#     targets run `make stage-firmware` before launching the container). Use
+#     it. Fall back to a release download only if it is somehow missing.
+#
+#   Release mode (BUILD_LOCAL unset):
+#     1. FIRMWARE_TAG: download from that specific fw/v* release. This is
+#        unconditional, as CLAUDE.md documents: a stale staged ELF must never
+#        override an explicit pin.
+#     2. Otherwise: download from the latest fw/v* release on GitHub.
+#     The staged ELF is deliberately ignored so release images never inherit
+#     leftover dev firmware.
+#
+# In every case, die if no firmware can be obtained.
 FW_ELF=/digits/tools/build/firmware.elf
 FW_VER_FILE=/digits/tools/build/firmware.elf.version
-if [[ -f "$FW_ELF" ]]; then
-    if [[ -f "$FW_VER_FILE" ]]; then
-        info "Using host-staged Pico firmware ($(tr -d '[:space:]' < "$FW_VER_FILE"))"
-    else
-        info "Using host-staged Pico firmware (no version file)"
-    fi
-else
+
+fetch_firmware_release() {
+    # Resolve the fw/v* tag (explicit FIRMWARE_TAG, else latest), download the
+    # ELF to $FW_ELF, and record its version. Dies on any failure.
+    local fw_tag fw_version
     if [[ -n "${FIRMWARE_TAG:-}" ]]; then
         # Explicit firmware release tag supplied.
-        FW_TAG="${FIRMWARE_TAG}"
-        if ! gh release view "${FW_TAG}" --repo justinlindh/digits &>/dev/null; then
-            die "GitHub release '${FW_TAG}' not found. Check FIRMWARE_TAG and try again."
+        fw_tag="${FIRMWARE_TAG}"
+        if ! gh release view "${fw_tag}" --repo justinlindh/digits &>/dev/null; then
+            die "GitHub release '${fw_tag}' not found. Check FIRMWARE_TAG and try again."
         fi
     else
         # Auto-detect the latest fw/v* release.
         info "Resolving latest Pico firmware release from GitHub..."
-        FW_TAG=$(gh release list --repo justinlindh/digits --limit 50 --json tagName \
+        fw_tag=$(gh release list --repo justinlindh/digits --limit 50 --json tagName \
             --jq '[.[].tagName | select(startswith("fw/"))] | first' 2>/dev/null || true)
-        if [[ -z "$FW_TAG" ]]; then
-            die "Could not determine latest fw/v* release tag from GitHub. Run 'make stage-firmware' first or set FIRMWARE_TAG."
+        if [[ -z "$fw_tag" ]]; then
+            die "Could not determine latest fw/v* release tag from GitHub. Set FIRMWARE_TAG=fw/v<version>, or use BUILD_LOCAL=1 with a staged firmware."
         fi
     fi
 
-    FW_VERSION="${FW_TAG#fw/v}"
-    info "Downloading Pico firmware ${FW_VERSION} from GitHub release ${FW_TAG}..."
-    gh release download "${FW_TAG}" \
+    fw_version="${fw_tag#fw/v}"
+    info "Downloading Pico firmware ${fw_version} from GitHub release ${fw_tag}..."
+    gh release download "${fw_tag}" \
         --repo justinlindh/digits \
-        --pattern "firmware-${FW_VERSION}.elf" \
+        --pattern "firmware-${fw_version}.elf" \
         --output "$FW_ELF"
-    printf '%s\n' "$FW_VERSION" > "$FW_VER_FILE"
-    info "Firmware downloaded: tools/build/firmware.elf ($FW_VERSION)"
+    printf '%s\n' "$fw_version" > "$FW_VER_FILE"
+    info "Firmware downloaded: tools/build/firmware.elf ($fw_version)"
+}
+
+if [[ -n "${BUILD_LOCAL:-}" ]]; then
+    # Local build mode: prefer the freshly staged local ELF.
+    if [[ -f "$FW_ELF" ]]; then
+        if [[ -f "$FW_VER_FILE" ]]; then
+            info "Using host-staged Pico firmware ($(tr -d '[:space:]' < "$FW_VER_FILE"))"
+        else
+            info "Using host-staged Pico firmware (no version file)"
+        fi
+    else
+        info "No host-staged firmware found; falling back to GitHub release..."
+        fetch_firmware_release
+    fi
+else
+    # Release mode: an explicit FIRMWARE_TAG (or the latest release) wins over
+    # any stale staged ELF, so a clean release image never bundles dev firmware.
+    fetch_firmware_release
 fi
 [[ -f "$FW_ELF" ]] || die "Firmware ELF still missing at $FW_ELF after fetch"
 

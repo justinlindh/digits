@@ -1,0 +1,10 @@
+# Allow the digits service user to toggle developer mode (SSH + dev web UI) via
+# the digits-devmode helper, invoked by digitsd when the server sends a dev_mode
+# command.
+#
+# This is deliberately its own file, separate from digits-updater: it is NOT in
+# the digitsd OVERLAY_EXCLUDE list, so digitsd's asset extractor writes it on
+# update. That delivers the permission to devices that OTA-updated to a digitsd
+# carrying the helper but were flashed from an image predating it. (digits-updater
+# stays excluded because the extractor itself relies on it.)
+digits ALL=(root) NOPASSWD: /usr/local/bin/digits-devmode

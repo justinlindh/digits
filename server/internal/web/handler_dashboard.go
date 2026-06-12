@@ -12,6 +12,8 @@ import (
 type dashboardData struct {
 	chromeData
 	Lines              []lineRow
+	AllSilent          bool
+	PairSuccess        *pairSuccess
 	CallsTodayRecent   []callRow
 	CallsTodayTotalMin int
 	LinkedFamilies     []linkedFamilyRow
@@ -57,7 +59,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	active := h.tracker.Active(ctx)
 	hh := h.activeHousehold(r)
-	ld := h.buildLinesData(r, hh, "")
+	lineRows, allSilent := h.buildLineRows(r, hh)
 	loc := hh.Location()
 	now := time.Now().In(loc)
 
@@ -71,11 +73,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	// Build set of own line numbers for active-call resolution and for
 	// scoping call-history queries to this household.
-	ownLineByNumber := make(map[string]*lineRow, len(ld.Lines))
-	ownNumbers := make([]string, 0, len(ld.Lines))
-	for i := range ld.Lines {
-		ownLineByNumber[ld.Lines[i].Line.Number] = &ld.Lines[i]
-		ownNumbers = append(ownNumbers, ld.Lines[i].Line.Number)
+	ownLineByNumber := make(map[string]*lineRow, len(lineRows))
+	ownNumbers := make([]string, 0, len(lineRows))
+	for i := range lineRows {
+		ownLineByNumber[lineRows[i].Line.Number] = &lineRows[i]
+		ownNumbers = append(ownNumbers, lineRows[i].Line.Number)
 	}
 
 	// Build linked-family index for peer-name resolution.
@@ -117,7 +119,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// single session panel. Deterministic "first" by Lines order beats the
 	// silent "last" that a template-side scan would produce.
 	var activeLine, activePeer, activeElapsed string
-	for _, lr := range ld.Lines {
+	for _, lr := range lineRows {
 		if lr.OnCall {
 			activeLine = lr.Line.Name
 			activePeer = lr.OnCallPeerName
@@ -165,9 +167,21 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Post-pairing success flash: POST /phones/pair redirects here with the
+	// new handset's name so the banner renders next to the updated line list.
+	var paired *pairSuccess
+	if pairedName := r.URL.Query().Get("paired"); pairedName != "" {
+		paired = &pairSuccess{
+			Name:            pairedName,
+			FirmwareVersion: r.URL.Query().Get("fw"),
+		}
+	}
+
 	data := dashboardData{
 		chromeData:         h.newChromeDataWithHouseholds(r, "dashboard"),
-		Lines:              ld.Lines,
+		Lines:              lineRows,
+		AllSilent:          allSilent,
+		PairSuccess:        paired,
 		CallsTodayRecent:   callsTodayRecent,
 		CallsTodayTotalMin: (callsTodayTotalSec + 30) / 60, // +30 to round to nearest minute
 		LinkedFamilies:     linkedFamilies,
@@ -177,7 +191,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		ActiveElapsed:      activeElapsed,
 		Status: dashStatusVM{
 			ActiveCalls:    activeCount,
-			OnlineLines:    countOnline(ld.Lines),
+			OnlineLines:    countOnline(lineRows),
 			LinkedFamilies: len(linkedFamilies),
 			Now:            now,
 		},

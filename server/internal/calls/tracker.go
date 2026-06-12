@@ -16,14 +16,10 @@ import (
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
-// Call status values written to and read from the calls table. Must match the
+// CallStatusEnded is the terminal call status. The full status set written by
+// the SQL in this file is initiated/ringing/connected/ended and must match the
 // DB CHECK constraint defined in db.go.
-const (
-	CallStatusInitiated = "initiated"
-	CallStatusRinging   = "ringing"
-	CallStatusConnected = "connected"
-	CallStatusEnded     = "ended"
-)
+const CallStatusEnded = "ended"
 
 // role strings written to the conference_members table. Must match the DB
 // CHECK constraint defined in db.go and the wire constants in
@@ -96,8 +92,10 @@ type Tracker struct {
 	state       *CallState
 }
 
-// New returns a Tracker backed by d. Pass nil to operate without a database
-// (unit tests that expect no DB calls). Use the Set* methods to wire up
+// New returns a Tracker backed by d. Pass nil only for unit tests that
+// exercise the pure in-memory methods (Busy, Active, ClearByNumber, etc.);
+// any call to a DB-backed method (OnCallInitiated, OnCallEnded, GetCall,
+// etc.) on a nil-DB tracker will panic. Use the Set* methods to wire up
 // optional observers before the server begins accepting connections.
 func New(d *db.Database) *Tracker {
 	return &Tracker{
@@ -160,6 +158,16 @@ func callKey(a, b string) string {
 	return a + "→" + b
 }
 
+// sortedPair returns (a, b) in lexicographic order. Used to produce stable
+// caller/callee keys when reconstructing a 2-party call from a conference
+// drop, regardless of which member happens to be listed first.
+func sortedPair(a, b string) (string, string) {
+	if b < a {
+		return b, a
+	}
+	return a, b
+}
+
 func (t *Tracker) OnCallInitiated(ctx context.Context, from, to string) (int64, error) {
 	var id int64
 	if err := t.db.QueryRowContext(ctx,
@@ -203,7 +211,10 @@ func (t *Tracker) OnCallAnswered(ctx context.Context, caller, callee string) err
 		 )`,
 		caller, callee,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("update call answered: %w", err)
+	}
+	return nil
 }
 
 func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error {
@@ -248,10 +259,13 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 		 )`,
 		caller, callee, callee, caller,
 	)
+	if err != nil {
+		return fmt.Errorf("end call: %w", err)
+	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, caller, callee)
 	}
-	return err
+	return nil
 }
 
 // ClearByNumber removes all active calls involving the given number and ends
@@ -291,14 +305,16 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	}
 
 	// End any open calls in the database
-	if _, err := t.db.ExecContext(ctx,
-		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
+	if t.db != nil {
+		if _, err := t.db.ExecContext(ctx,
+			`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
 		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
 		 WHERE (caller = $1 OR callee = $1)
 		 AND status IN ('initiated', 'ringing', 'connected')`,
-		number,
-	); err != nil {
-		slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
+			number,
+		); err != nil {
+			slog.WarnContext(ctx, "clear calls on disconnect failed", "number", number, "err", err)
+		}
 	}
 	if obs != nil {
 		obs.OnCallEndedNotify(ctx, number, "")
@@ -569,7 +585,9 @@ func (t *Tracker) CreateConferencePersistent(ctx context.Context, host string, o
 		return nil
 	})
 	if txErr != nil {
-		_, _ = t.conferences.EndConference(ctx, conf.ID, "db_error")
+		if _, endErr := t.conferences.EndConference(ctx, conf.ID, "db_error"); endErr != nil {
+			slog.ErrorContext(ctx, "conference: failed to roll back in-memory state after DB error", "conf_id", conf.ID, "err", endErr)
+		}
 		return nil, txErr
 	}
 
@@ -705,6 +723,13 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		return nil, false, err
 	}
 
+	// Compute the sorted pair once. All three use sites (DB insert, active map,
+	// Redis state) must use identical ordering or they produce mismatched keys.
+	var pairA, pairB string
+	if len(remaining) == 2 {
+		pairA, pairB = sortedPair(remaining[0], remaining[1])
+	}
+
 	var continuationCallID int64
 	// DB failure past this point does not roll back the in-memory state
 	// (symmetric with EndConferencePersistent).
@@ -731,15 +756,10 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 			return fmt.Errorf("end remaining members: %w", err)
 		}
 		if len(remaining) == 2 {
-			// Sort for stable caller/callee ordering.
-			a, b := remaining[0], remaining[1]
-			if b < a {
-				a, b = b, a
-			}
 			if err := tx.QueryRowContext(ctx,
 				`INSERT INTO calls (caller, callee, status, originating_conference_id)
 				 VALUES ($1, $2, 'connected', $3) RETURNING id`,
-				a, b, confID,
+				pairA, pairB, confID,
 			).Scan(&continuationCallID); err != nil {
 				return fmt.Errorf("insert continuation call: %w", err)
 			}
@@ -754,22 +774,14 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	// tracker already removed them from its own memberIndex in DropMember.
 	t.mu.Lock()
 	if len(remaining) == 2 {
-		a, b := remaining[0], remaining[1]
-		if b < a {
-			a, b = b, a
-		}
-		t.active[callKey(a, b)] = &ActiveCall{ID: continuationCallID, Caller: a, Callee: b, StartedAt: time.Now()}
+		t.active[callKey(pairA, pairB)] = &ActiveCall{ID: continuationCallID, Caller: pairA, Callee: pairB, StartedAt: time.Now()}
 	}
 	h := t.health
 	s := t.state
 	t.mu.Unlock()
 
 	if s != nil && len(remaining) == 2 {
-		a, b := remaining[0], remaining[1]
-		if b < a {
-			a, b = b, a
-		}
-		s.OnCallInitiated(ctx, continuationCallID, a, b)
+		s.OnCallInitiated(ctx, continuationCallID, pairA, pairB)
 	}
 	if h != nil && ended {
 		h.EvictConference(confID)
@@ -782,28 +794,20 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 // if not found (callers should test Call.ID == 0).
 func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
 	var c Call
-	var answered, ended sql.NullTime
-	var forceEndedBy sql.NullString
+	var feb sql.NullString
 	err := t.db.QueryRowContext(ctx,
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id, force_ended_by
-		 FROM calls WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status, &c.StartedAt, &answered, &ended, &c.DurationS,
-		&c.EndReason, &c.OriginatingConferenceID, &forceEndedBy)
+		`SELECT `+callColumns+` FROM calls WHERE id = $1`, id,
+	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
+		&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
+		&c.EndReason, &c.OriginatingConferenceID, &feb)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Call{}, nil
 	}
 	if err != nil {
 		return Call{}, fmt.Errorf("get call: %w", err)
 	}
-	if answered.Valid {
-		c.AnsweredAt = &answered.Time
-	}
-	if ended.Valid {
-		c.EndedAt = &ended.Time
-	}
-	if forceEndedBy.Valid {
-		s := forceEndedBy.String
+	if feb.Valid {
+		s := feb.String
 		c.ForceEndedBy = &s
 	}
 	return c, nil

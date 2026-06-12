@@ -153,6 +153,16 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	sub := h.healthStore.SubscribeConference(confID)
 	defer sub.Close()
 
+	// Re-check liveness AFTER subscribing. SubscribeConference lazily
+	// creates the session, so if the conference ended on another pod
+	// between the ownership check and the Subscribe, the cross-pod evict
+	// has already passed and this session would never receive EndedKind.
+	if cur, err := h.tracker.GetConferenceByID(r.Context(), confID); err == nil && cur != nil && cur.EndedAt != nil {
+		_ = writeSSE(w, "ended", renderEndedConferenceFragment(""))
+		flusher.Flush()
+		return
+	}
+
 	// Initial snapshot.
 	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
@@ -276,8 +286,7 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
+	if !parseForm(w, r) {
 		return
 	}
 	kickedPhone := r.PostForm.Get("phone")
@@ -296,6 +305,10 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		http.NotFound(w, r)
+		return
+	}
 
 	// Audit first: if downstream teardown fails, the record still lands.
 	if err := h.tracker.RecordKick(r.Context(), confID, kickedPhone, user.ID); err != nil {

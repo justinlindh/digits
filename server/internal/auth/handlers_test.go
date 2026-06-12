@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/justinlindh/digits/server/internal/email"
+	"github.com/justinlindh/digits/server/internal/email/emailtest"
 )
 
 // minimalTemplate builds a trivial template that satisfies ExecuteTemplate("layout-v2.html", data).
@@ -25,10 +25,10 @@ func minimalTemplate(t *testing.T) *template.Template {
 	return tmpl
 }
 
-func newTestHandlers(t *testing.T) (*Handlers, *Store, *email.NoopSender) {
+func newTestHandlers(t *testing.T) (*Handlers, *Store, *emailtest.Sender) {
 	t.Helper()
 	s := testDB(t)
-	sender := email.NewNoopSender()
+	sender := emailtest.NewSender()
 	google := NewGoogleAuth("", "", "", "", s)
 	tmpl := minimalTemplate(t)
 	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false)
@@ -59,7 +59,7 @@ func TestHandleLoginPage(t *testing.T) {
 
 func TestHandleLoginPage_GoogleEnabled(t *testing.T) {
 	s := testDB(t)
-	sender := email.NewNoopSender()
+	sender := emailtest.NewSender()
 	google := NewGoogleAuth("client-id", "client-secret", "http://localhost/callback", "", s)
 	tmpl := minimalTemplate(t)
 	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, false)
@@ -253,7 +253,7 @@ func TestHandleLogout_WithSession(t *testing.T) {
 func newTestHandlersDevMode(t *testing.T) (*Handlers, *Store) {
 	t.Helper()
 	s := testDB(t)
-	sender := email.NewNoopSender()
+	sender := emailtest.NewSender()
 	google := NewGoogleAuth("", "", "", "", s)
 	tmpl := minimalTemplate(t)
 	h := NewHandlers(s, google, sender, "http://localhost", "", tmpl, true)

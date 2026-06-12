@@ -377,9 +377,10 @@ Bounds are package constants in `line/settings.go`, shared by the HTTP handler,
 | `ring_timeout_seconds` | 5 | 60 | 20 |
 
 Ring timeout is the only validated field. The message-storage cap and the
-retrieval code are no longer per-line settings: they are fixed in `digitsd` as
-the `VoicemailMaxStoredMessages` (50) and `VoicemailRetrievalCode` (`*98`)
-constants in `internal/config/config.go`.
+retrieval code are no longer per-line settings: the storage cap is the fixed
+`VoicemailMaxStoredMessages` (50) constant in `internal/config/config.go`,
+and the retrieval code is the fixed `voicemailRetrievalCode` (`*98`) constant
+in `internal/phone/controller.go`.
 
 ### Endpoints
 
@@ -405,11 +406,10 @@ to `/phones/{number}` for a plain form post.
 
 ### Web UI
 
-The voicemail UI lives entirely on the phone detail page,
-`/phones/{number}`. The `/phones` list view does not carry it. It is rendered
-by the `voicemail-section` partial (intercom and dialup themes) or
-`am-voicemail-section` partial (answering-machine theme) in
-`web/templates/phone-detail.html`:
+The voicemail settings UI lives on the phone detail page,
+`/phones/{number}`. It is rendered by the `voicemail-section` partial
+(intercom and dialup themes) or `am-voicemail-section` partial
+(answering-machine theme) in `web/templates/phone-detail.html`:
 
 - An enabled checkbox that `hx-post`s to `/voicemail-toggle` and swaps
   `#voicemail-section`.
@@ -417,7 +417,8 @@ by the `voicemail-section` partial (intercom and dialup themes) or
   voicemail is disabled the field is dimmed and the input is `disabled`.
 - An unheard-count badge ("N unheard" chip, or "MSG N" LED in the
   answering-machine theme) that renders only when voicemail is enabled and the
-  unheard count is greater than zero.
+  unheard count is greater than zero. The same badge also appears on the
+  line's card on the Overview page (`/`).
 
 The unheard count is not stored in the DB. It comes from
 `hub.LineVoicemailUnheard(number)`, the sum of per-handset counts the hub last
@@ -509,8 +510,9 @@ to dial tone.
 ## Limits and defaults
 
 The two server-pushed settings are defined in `internal/config/config.go`
-(`defaultVoicemail()`). The message-storage cap and retrieval code are fixed
-constants in the same file; the two recording caps are fixed constants in
+(`defaultVoicemail()`). The message-storage cap is a fixed constant in the
+same file; the retrieval code is a fixed constant in
+`internal/phone/controller.go`; the two recording caps are fixed constants in
 `internal/voicemail/store.go`.
 
 | Setting | Config field or constant | Default | Notes |
@@ -518,7 +520,7 @@ constants in the same file; the two recording caps are fixed constants in
 | Voicemail enabled | `Voicemail.Enabled` | `true` | Server-pushed; read live; off at boot means the store is never opened |
 | Ring timeout before auto-answer | `Voicemail.RingTimeout` | 20 s | Server-pushed; read live; `0` disables auto-answer |
 | Max stored messages | `VoicemailMaxStoredMessages` | 50 | Fixed constant; baked into the store at boot; FIFO eviction past the cap |
-| Retrieval code | `VoicemailRetrievalCode` | `*98` | Fixed constant |
+| Retrieval code | `voicemailRetrievalCode` | `*98` | Fixed constant in `phone/controller.go` |
 | Max message duration | `messageMaxDuration` | 10 min | Fixed in `store.go`, not configurable; a backstop for a caller who never hangs up |
 | Max greeting duration | `greetingMaxDuration` | 60 s | Fixed in `store.go`, not configurable |
 

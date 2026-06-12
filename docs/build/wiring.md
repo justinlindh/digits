@@ -210,11 +210,8 @@ These three MUST be OFF or audio has fade-in latency:
 | 39    | Headphone Gain Ramping Switch | off   |
 | 40    | Lineout Gain Ramping Switch | off     |
 
-Mixer state file: `/home/digits/digits_mixer.state`
-Restore script: `/home/digits/restore_mixer.sh`
-Systemd service: `digits-mixer.service` (runs on boot)
-
-Full mixer documentation: `pi/README-mixer.md`
+Mixer state file: `/data/digits_mixer.state`
+Restored on boot by `digitsd.service` (its `ExecStartPre` runs `alsactl restore`)
 
 ## Power Architecture
 
@@ -243,13 +240,12 @@ Full mixer documentation: `pi/README-mixer.md`
 
 | Service                    | Purpose                                   | Status   |
 |----------------------------|-------------------------------------------|----------|
-| `digitsd.service`          | Main daemon -- serial, tones, WebRTC, keepalive | Active |
-| `digits-mixer.service`    | Restore ALSA mixer state on boot          | Active   |
+| `digitsd.service`          | Main daemon -- serial, tones, mixer restore, WebRTC, keepalive | Active |
 | `digits-ap-check.service` | Boot-time check: AP mode vs normal boot   | Active (oneshot) |
 | `digits-ap.service`       | hostapd AP mode (setup only)              | Conditional |
 | `digits-dnsmasq-ap.service` | dnsmasq DHCP/DNS for AP mode            | Conditional |
 | `digits-setup.service`    | Captive portal web server (setup only)    | Conditional |
-| `digits-first-boot.service` | First-boot hostname/SSH key randomization | Conditional (oneshot) |
+| `digits-first-boot.service` | First-boot identity setup: stable hostname from Pi serial, fresh SSH host keys | Conditional (oneshot) |
 | `dtmf-uart.service`       | *(DISABLED)* -- replaced by digitsd       | Disabled |
 | `digits-dac-keepalive.service` | *(DISABLED)* -- moved into digitsd    | Disabled |
 
