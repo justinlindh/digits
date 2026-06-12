@@ -49,3 +49,30 @@ func TestApplyDeviceInfo(t *testing.T) {
 		t.Errorf("presence fields mismatch: %+v", presence)
 	}
 }
+
+func TestRouteExtensionSignaling(t *testing.T) {
+	relay := NewRelay(NewHub(), nil, nil, nil)
+	relay.extensions["hw-ext"] = &activeExtension{
+		HardwareID: "hw-ext",
+		LineNumber: "100",
+		PeerNumber: "200",
+	}
+
+	// Extension device to its remote peer.
+	if !relay.routeExtensionSignaling("100", &Message{HardwareID: "hw-ext", To: "200"}) {
+		t.Error("extension-to-peer message should be handled")
+	}
+	// Remote peer back to the extension device's line.
+	if !relay.routeExtensionSignaling("200", &Message{To: "100"}) {
+		t.Error("peer-to-extension message should be handled")
+	}
+	// Known hardware ID but mismatched target falls through to the reverse
+	// scan and, finding nothing, is not handled.
+	if relay.routeExtensionSignaling("100", &Message{HardwareID: "hw-ext", To: "999"}) {
+		t.Error("mismatched target should not be handled")
+	}
+	// Unrelated sender and target.
+	if relay.routeExtensionSignaling("300", &Message{To: "400"}) {
+		t.Error("unrelated message should not be handled")
+	}
+}
