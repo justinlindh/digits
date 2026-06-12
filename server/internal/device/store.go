@@ -17,6 +17,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
 // Device represents a physical handset paired to a line.
@@ -47,11 +48,28 @@ func NewStore(database *db.Database) *Store {
 	return &Store{db: database.DB}
 }
 
+// deviceColumns is the SELECT list for queries that scan into a Device via
+// scanDevice. Keep the order in sync with the scan there.
+const deviceColumns = `id, line_id, name, hardware_id, device_id, device_token,
+	pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at`
+
+// scanDevice materializes a Device from any row whose columns match
+// deviceColumns in order.
+func scanDevice(row dbutil.RowScanner) (Device, error) {
+	var d Device
+	if err := row.Scan(
+		&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
+		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
+	); err != nil {
+		return Device{}, fmt.Errorf("scan device: %w", err)
+	}
+	return d, nil
+}
+
 // ListByLine returns all devices associated with a given line.
 func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, line_id, name, hardware_id, device_id, device_token,
-			pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE line_id = $1
 		ORDER BY created_at
@@ -63,12 +81,9 @@ func (s *Store) ListByLine(ctx context.Context, lineID int64) ([]Device, error) 
 
 	var devices []Device
 	for rows.Next() {
-		var d Device
-		if err := rows.Scan(
-			&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan device: %w", err)
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, err
 		}
 		devices = append(devices, d)
 	}
@@ -83,8 +98,7 @@ func (s *Store) ListByLines(ctx context.Context, lineIDs []int64) (map[int64][]D
 		return nil, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, line_id, name, hardware_id, device_id, device_token,
-			pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at
+		SELECT `+deviceColumns+`
 		FROM devices
 		WHERE line_id = ANY($1)
 		ORDER BY created_at
@@ -96,12 +110,9 @@ func (s *Store) ListByLines(ctx context.Context, lineIDs []int64) (map[int64][]D
 
 	result := make(map[int64][]Device, len(lineIDs))
 	for rows.Next() {
-		var d Device
-		if err := rows.Scan(
-			&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
-			&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan device: %w", err)
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, err
 		}
 		if d.LineID != nil {
 			result[*d.LineID] = append(result[*d.LineID], d)

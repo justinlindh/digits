@@ -185,13 +185,7 @@ func (s *LinkStore) AreLinked(ctx context.Context, householdAID, householdBID st
 	return areLinked(ctx, s.db, householdAID, householdBID)
 }
 
-// rowQuerier is satisfied by both *sql.DB and *sql.Tx, so link checks can run
-// standalone or inside a transaction.
-type rowQuerier interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func areLinked(ctx context.Context, q rowQuerier, householdAID, householdBID string) (bool, error) {
+func areLinked(ctx context.Context, q dbutil.RowQuerier, householdAID, householdBID string) (bool, error) {
 	// Normalize
 	a, b := householdAID, householdBID
 	if a > b {
