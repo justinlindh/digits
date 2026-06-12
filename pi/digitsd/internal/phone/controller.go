@@ -630,11 +630,6 @@ func (c *Controller) onKey(digit string) {
 		c.state = StateADD_DIALING
 		c.digits = digit
 		c.cb.SendTone(ToneStop)
-		if len(c.digits) >= addDialDigitsRequired {
-			number := c.digits
-			c.digits = ""
-			c.dialThirdParty(number)
-		}
 	case StateADD_DIALING:
 		c.digits += digit
 		if len(c.digits) >= addDialDigitsRequired {
@@ -1000,14 +995,10 @@ func (c *Controller) onHookFlash(activePeer string) {
 	switch c.state {
 	case StateCONNECTED:
 		c.enterAddDialtone(activePeer)
-	case StateADD_DIALTONE, StateADD_DIALING:
+	case StateADD_DIALTONE, StateADD_DIALING, StateADD_CALLING, StateADD_INTERCEPT:
 		c.abortAdd()
-	case StateADD_CALLING:
-		c.abortAddCalling()
 	case StateADD_PRIVATE:
 		c.requestMerge()
-	case StateADD_INTERCEPT:
-		c.abortAdd()
 	case StateCONFERENCE_MERGED:
 		// No-op in v1 (no second add, no drop-last-party).
 		slog.Info("phone: HOOK:FLASH no-op (CONFERENCE_MERGED, v1)")
@@ -1036,20 +1027,6 @@ func (c *Controller) abortAdd() {
 	// dialThirdParty skip InitiateCall and so have no peer to tear down --
 	// TearDownPeer is idempotent on unknown phones, so calling it
 	// unconditionally here keeps abortAdd state-independent.
-	if c.addingPeer != "" {
-		c.cb.TearDownPeer(c.addingPeer)
-	}
-	if c.heldPeer != "" {
-		c.cb.UnmutePeer(c.heldPeer)
-	}
-	c.addingPeer = ""
-	c.heldPeer = ""
-	c.state = StateCONNECTED
-}
-
-func (c *Controller) abortAddCalling() {
-	slog.Info("phone: abortAddCalling -> CONNECTED", "held", c.heldPeer, "adding", c.addingPeer)
-	c.cb.SendTone(ToneStop)
 	if c.addingPeer != "" {
 		c.cb.TearDownPeer(c.addingPeer)
 	}
