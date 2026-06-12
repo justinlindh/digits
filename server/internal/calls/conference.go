@@ -75,6 +75,8 @@ func NewConferenceTracker() *ConferenceTracker {
 
 // SetConfState attaches a Redis-backed conference state helper to the tracker.
 func (ct *ConferenceTracker) SetConfState(cs *ConfState) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
 	ct.state = cs
 }
 

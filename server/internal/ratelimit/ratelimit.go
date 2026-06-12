@@ -17,6 +17,11 @@ type bucket struct {
 	lastReset time.Time
 }
 
+// evictInterval is how often stale buckets are swept. Eviction happens
+// lazily inside Allow rather than on a background goroutine, so a Limiter
+// holds no resources beyond its map.
+const evictInterval = 5 * time.Minute
+
 // Limiter is an in-memory IP-based rate limiter using a fixed-window token bucket.
 type Limiter struct {
 	mu             sync.Mutex
@@ -24,28 +29,20 @@ type Limiter struct {
 	limit          int
 	window         time.Duration
 	trustedProxies int
+	lastEvict      time.Time
 }
 
 // New creates a rate limiter that allows `limit` requests per `window` per IP.
 // trustedProxies is the reverse-proxy hop count used to resolve the client IP
-// from X-Forwarded-For (see httputil.ClientIP). It starts a background
-// goroutine that evicts stale entries every 5 minutes and runs for the
-// lifetime of the process.
+// from X-Forwarded-For (see httputil.ClientIP).
 func New(limit int, window time.Duration, trustedProxies int) *Limiter {
-	l := &Limiter{
+	return &Limiter{
 		buckets:        make(map[string]*bucket),
 		limit:          limit,
 		window:         window,
 		trustedProxies: trustedProxies,
+		lastEvict:      time.Now(),
 	}
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			l.evictExpired()
-		}
-	}()
-	return l
 }
 
 // Allow checks whether the given IP is within its rate limit.
@@ -54,6 +51,10 @@ func (l *Limiter) Allow(ip string) bool {
 	defer l.mu.Unlock()
 
 	now := time.Now()
+	if now.Sub(l.lastEvict) >= evictInterval {
+		l.evictExpiredLocked(now)
+		l.lastEvict = now
+	}
 	b, ok := l.buckets[ip]
 	if !ok || now.Sub(b.lastReset) >= l.window {
 		l.buckets[ip] = &bucket{tokens: l.limit - 1, lastReset: now}
@@ -66,10 +67,9 @@ func (l *Limiter) Allow(ip string) bool {
 	return true
 }
 
-func (l *Limiter) evictExpired() {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
+// evictExpiredLocked removes buckets whose window has lapsed. Callers must
+// hold l.mu.
+func (l *Limiter) evictExpiredLocked(now time.Time) {
 	for ip, b := range l.buckets {
 		if now.Sub(b.lastReset) >= l.window {
 			delete(l.buckets, ip)

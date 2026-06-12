@@ -6,18 +6,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
-// HouseholdLink status values written to and read from the household_links
-// table. Must match the DB CHECK constraint defined in db.go.
-const (
-	LinkStatusPending = "pending"
-	LinkStatusActive  = "active"
-	LinkStatusRevoked = "revoked"
-)
+// LinkStatusPending is the only link status compared in Go; the SQL in this
+// file also writes 'active' and 'revoked', matching the DB CHECK constraint
+// defined in db.go.
+const LinkStatusPending = "pending"
 
 const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const inviteCodeLength = 8
@@ -68,13 +66,17 @@ func NewLinkStore(db *sql.DB) *LinkStore {
 }
 
 // generateInviteCode returns an 8-character crypto-random alphanumeric string.
+// Each character is drawn with rand.Int rather than a byte modulo, so the
+// distribution over the 36-character alphabet is uniform.
 func generateInviteCode() (string, error) {
 	buf := make([]byte, inviteCodeLength)
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generate invite code: %w", err)
-	}
-	for i, b := range buf {
-		buf[i] = inviteCodeAlphabet[int(b)%len(inviteCodeAlphabet)]
+	alphabetLen := big.NewInt(int64(len(inviteCodeAlphabet)))
+	for i := range buf {
+		n, err := rand.Int(rand.Reader, alphabetLen)
+		if err != nil {
+			return "", fmt.Errorf("generate invite code: %w", err)
+		}
+		buf[i] = inviteCodeAlphabet[n.Int64()]
 	}
 	return string(buf), nil
 }
@@ -101,55 +103,64 @@ func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedBy
 }
 
 // AcceptInvite finds a pending invite by code, associates the accepting household,
-// normalizes ordering (a_id < b_id), and marks it active.
+// normalizes ordering (a_id < b_id), and marks it active. The whole operation
+// runs in a transaction with the invite row locked, so two racing accepts of
+// the same code serialize and the loser sees it as already used.
 func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acceptingHouseholdID string) (*HouseholdLink, error) {
-	// Fetch the pending invite
-	link, err := scanLink(s.db.QueryRowContext(ctx, `
-		SELECT `+linkColumns+`
-		FROM household_links
-		WHERE invite_code = $1 AND status = 'pending'
-	`, code))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.New("invite code not found or already used")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("lookup invite: %w", err)
-	}
+	var link *HouseholdLink
+	err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
+		var err error
+		link, err = scanLink(tx.QueryRowContext(ctx, `
+			SELECT `+linkColumns+`
+			FROM household_links
+			WHERE invite_code = $1 AND status = 'pending'
+			FOR UPDATE
+		`, code))
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("invite code not found or already used")
+		}
+		if err != nil {
+			return fmt.Errorf("lookup invite: %w", err)
+		}
 
-	// Prevent self-linking
-	if link.HouseholdAID == acceptingHouseholdID {
-		return nil, errors.New("cannot link a household to itself")
-	}
+		// Prevent self-linking
+		if link.HouseholdAID == acceptingHouseholdID {
+			return errors.New("cannot link a household to itself")
+		}
 
-	// Check not already linked
-	already, err := s.AreLinked(ctx, link.HouseholdAID, acceptingHouseholdID)
+		// Check not already linked
+		already, err := areLinked(ctx, tx, link.HouseholdAID, acceptingHouseholdID)
+		if err != nil {
+			return err
+		}
+		if already {
+			return errors.New("households are already linked")
+		}
+
+		// Normalize: a_id < b_id
+		aID := link.HouseholdAID
+		bID := acceptingHouseholdID
+		if aID > bID {
+			aID, bID = bID, aID
+		}
+
+		link, err = scanLink(tx.QueryRowContext(ctx, `
+			UPDATE household_links
+			SET household_a_id = $1,
+			    household_b_id = $2,
+			    status = 'active',
+			    accepted_by = $3,
+			    accepted_at = $4
+			WHERE id = $5
+			RETURNING `+linkColumns+`
+		`, aID, bID, acceptingUserID, time.Now(), link.ID))
+		if err != nil {
+			return fmt.Errorf("accept invite: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-	if already {
-		return nil, errors.New("households are already linked")
-	}
-
-	// Normalize: a_id < b_id
-	aID := link.HouseholdAID
-	bID := acceptingHouseholdID
-	if aID > bID {
-		aID, bID = bID, aID
-	}
-
-	now := time.Now()
-	link, err = scanLink(s.db.QueryRowContext(ctx, `
-		UPDATE household_links
-		SET household_a_id = $1,
-		    household_b_id = $2,
-		    status = 'active',
-		    accepted_by = $3,
-		    accepted_at = $4
-		WHERE id = $5
-		RETURNING `+linkColumns+`
-	`, aID, bID, acceptingUserID, now, link.ID))
-	if err != nil {
-		return nil, fmt.Errorf("accept invite: %w", err)
 	}
 	return link, nil
 }
@@ -171,13 +182,23 @@ func (s *LinkStore) GetLinkedHouseholds(ctx context.Context, householdID string)
 
 // AreLinked returns true if the two households have an active link.
 func (s *LinkStore) AreLinked(ctx context.Context, householdAID, householdBID string) (bool, error) {
+	return areLinked(ctx, s.db, householdAID, householdBID)
+}
+
+// rowQuerier is satisfied by both *sql.DB and *sql.Tx, so link checks can run
+// standalone or inside a transaction.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func areLinked(ctx context.Context, q rowQuerier, householdAID, householdBID string) (bool, error) {
 	// Normalize
 	a, b := householdAID, householdBID
 	if a > b {
 		a, b = b, a
 	}
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM household_links
 		WHERE household_a_id = $1 AND household_b_id = $2 AND status = 'active'
 	`, a, b).Scan(&count)

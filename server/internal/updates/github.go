@@ -128,8 +128,10 @@ func (g *GitHubReleases) ServeReleases() http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		// Encode has already started the response body, so a late http.Error
+		// would just corrupt it; log instead.
 		if err := json.NewEncoder(w).Encode(idx); err != nil {
-			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+			slog.ErrorContext(r.Context(), "failed to encode release index", "error", err)
 		}
 	}
 }
