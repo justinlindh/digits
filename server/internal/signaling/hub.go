@@ -59,7 +59,7 @@ type Conn struct {
 	DevMode         bool
 }
 
-// dashNotifier is the subset of *dashboard/events.Broadcaster the Hub uses
+// dashNotifier is the subset of *events.Broadcaster the Hub uses
 // to wake dashboard SSE subscribers when the set of online lines changes.
 // Optional; nil disables notifications.
 type dashNotifier interface {
