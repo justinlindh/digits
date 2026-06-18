@@ -462,6 +462,14 @@ func jsonError(ctx context.Context, w http.ResponseWriter, msg string, code int)
 	}
 }
 
+// writeJSON sets the JSON content type and encodes v to the response body with
+// an implicit 200 status. It is the success-path counterpart to jsonError;
+// callers log the returned error with their own request context.
+func writeJSON(w http.ResponseWriter, v any) error {
+	w.Header().Set("Content-Type", "application/json")
+	return json.NewEncoder(w).Encode(v)
+}
+
 func renderWith(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, name, data); err != nil {

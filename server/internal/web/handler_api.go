@@ -2,7 +2,6 @@ package web
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 
@@ -71,8 +70,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, map[string]any{
 		"total_users":      totalUsers,
 		"total_households": totalHouseholds,
 		"total_lines":      lineCount,
@@ -105,8 +103,7 @@ func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, map[string]any{
 		"total_lines":  len(lineRows),
 		"online_lines": onlineCount,
 		"active_calls": activeCount,
@@ -134,8 +131,7 @@ func (h *Handler) handleAPIActiveCalls(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(pairs); err != nil {
+	if err := writeJSON(w, pairs); err != nil {
 		slog.ErrorContext(r.Context(), "active calls: json encode failed", "err", err)
 	}
 }
@@ -152,15 +148,13 @@ func (h *Handler) handleAPINumberAvailable(w http.ResponseWriter, r *http.Reques
 		jsonError(r.Context(), w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]bool{"available": !exists}); err != nil {
+	if err := writeJSON(w, map[string]bool{"available": !exists}); err != nil {
 		slog.ErrorContext(r.Context(), "number available: json encode failed", "err", err)
 	}
 }
 
 func (h *Handler) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]string{
+	if err := writeJSON(w, map[string]string{
 		"version": version.Version,
 		"commit":  version.Commit,
 	}); err != nil {

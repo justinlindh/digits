@@ -387,8 +387,7 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 		}{online})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]bool{"online": online}); err != nil {
+	if err := writeJSON(w, map[string]bool{"online": online}); err != nil {
 		slog.ErrorContext(r.Context(), "encode online status failed", "err", err)
 	}
 }
@@ -757,14 +756,13 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	status := h.hub.GetUpdateStatus(number)
-	w.Header().Set("Content-Type", "application/json")
 	if status == nil {
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": ""}); err != nil {
+		if err := writeJSON(w, map[string]string{"status": ""}); err != nil {
 			slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 		}
 		return
 	}
-	if err := json.NewEncoder(w).Encode(status); err != nil {
+	if err := writeJSON(w, status); err != nil {
 		slog.ErrorContext(r.Context(), "update status: json encode failed", "err", err)
 	}
 }
@@ -890,8 +888,7 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 			break
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	if err := writeJSON(w, map[string]any{
 		"enabled":  enabled,
 		"ssh_user": "dev",
 	}); err != nil {
