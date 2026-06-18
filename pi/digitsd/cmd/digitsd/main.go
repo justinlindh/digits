@@ -270,6 +270,14 @@ func (d *daemonCallbacks) setFirmwareVersion(version, commit string) {
 	d.fwCom = commit
 }
 
+// autoUpdateAllowed reports whether an automatic update may run right now:
+// the line's auto-update setting is on AND the dev-mode skip-auto-update flag
+// is not present. Every place that decides to trigger an update gates on this
+// so the two-part policy stays in one spot.
+func (d *daemonCallbacks) autoUpdateAllowed() bool {
+	return d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath)
+}
+
 // sendSignal sends a signaling message and logs failures.
 func sendSignal(sig *sigclient.Client, msg *sigclient.Message) {
 	if err := sig.Send(msg); err != nil {
@@ -1891,7 +1899,7 @@ func main() {
 		fwVer, _ := cb.getFirmwareVersion()
 		runAutoUpdate(cb, effectiveServerURL, version.Version, fwVer, flashCapable.Load(), requeryFirmware)
 	}
-	if cb.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+	if cb.autoUpdateAllowed() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
 		go cb.triggerAutoUpdate()
 	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
