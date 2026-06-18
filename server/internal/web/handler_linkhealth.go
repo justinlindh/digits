@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -99,8 +98,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt, Caller: caller, Callee: callee}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := writeJSON(w, resp); err != nil {
 		slog.ErrorContext(r.Context(), "link_health encode failed", "call_id", callID, "err", err)
 	}
 }
