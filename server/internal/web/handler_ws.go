@@ -262,8 +262,7 @@ func (h *Handler) handleTestStartCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
+	_ = writeJSON(w, map[string]any{"id": id})
 }
 
 // handleTestStartConference is a DEV_MODE test-harness endpoint that seeds
@@ -305,8 +304,7 @@ func (h *Handler) handleTestStartConference(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"conf_id": conf.ID.String()})
+	_ = writeJSON(w, map[string]any{"conf_id": conf.ID.String()})
 }
 
 // handleDevSeedFirmware registers a fake hub entry for a line number with the
