@@ -43,15 +43,15 @@ func (h *Handler) handleChangelog(w http.ResponseWriter, r *http.Request) {
 
 	var data changelogData
 	if idx != nil {
-		data.Server = buildChangelogSection(idx, updates.ComponentServer, nil, h)
-		data.Software = buildChangelogSection(idx, updates.ComponentPi, lines, h)
-		data.Firmware = buildChangelogSection(idx, updates.ComponentFirmware, lines, h)
+		data.Server = h.buildChangelogSection(idx, updates.ComponentServer, nil)
+		data.Software = h.buildChangelogSection(idx, updates.ComponentPi, lines)
+		data.Firmware = h.buildChangelogSection(idx, updates.ComponentFirmware, lines)
 	}
 
 	renderWith(r.Context(), w, h.tmplChangelog, "changelog-content", data)
 }
 
-func buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []string, h *Handler) []changelogRelease {
+func (h *Handler) buildChangelogSection(idx *updates.ReleaseIndex, component string, lines []string) []changelogRelease {
 	releases := idx.SortedReleases(component)
 	out := make([]changelogRelease, 0, len(releases))
 
