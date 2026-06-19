@@ -84,7 +84,7 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Display-name resolution — same helpers as /calls page. No new data exposure.
+	// Display-name resolution: same helpers as /calls page. No new data exposure.
 	// Linked-household names are shown for peers that the user already sees in
 	// their call log; the underlying auth check does not grant read access to
 	// calls the user was not part of.

@@ -862,7 +862,7 @@ func (t *Tracker) RecentForPhones(ctx context.Context, phoneNumbers []string, li
 		return nil, nil
 	}
 
-	// Build IN clause — reuse same $1..$N placeholders for both caller and callee
+	// Build IN clause: reuse same $1..$N placeholders for both caller and callee
 	n := len(phoneNumbers)
 	ph := dbutil.Placeholders(n)
 	query := fmt.Sprintf(
