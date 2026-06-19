@@ -527,13 +527,8 @@ const conferenceSummaryColumns = `c.id, c.host_phone, c.originating_call_id, c.c
 
 const conferenceSummaryGroupBy = `c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason`
 
-// rowScanner is satisfied by both *sql.Row and *sql.Rows.
-type rowScanner interface {
-	Scan(dest ...any) error
-}
-
 // scanConferenceSummary scans one row selected with conferenceSummaryColumns.
-func scanConferenceSummary(row rowScanner) (ConferenceSummary, error) {
+func scanConferenceSummary(row dbutil.RowScanner) (ConferenceSummary, error) {
 	var cs ConferenceSummary
 	var endReason *string
 	var members pq.StringArray
