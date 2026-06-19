@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Ensure build tools
         run: |
           if ! command -v cmake >/dev/null || ! command -v gcc >/dev/null; then
