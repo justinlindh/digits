@@ -517,6 +517,39 @@ func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	return calls, rows.Err()
 }
 
+// conferenceSummaryColumns is the SELECT list for queries that scan into a
+// ConferenceSummary via scanConferenceSummary; conferenceSummaryGroupBy is the
+// matching GROUP BY list. Keep both in sync with the scan there.
+const conferenceSummaryColumns = `c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at,
+	c.end_reason,
+	COALESCE(EXTRACT(EPOCH FROM (c.ended_at - c.created_at))::INT, 0) AS duration_s,
+	array_agg(m.phone ORDER BY CASE WHEN m.phone = c.host_phone THEN 0 ELSE 1 END, m.phone) AS members`
+
+const conferenceSummaryGroupBy = `c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason`
+
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanConferenceSummary scans one row selected with conferenceSummaryColumns.
+func scanConferenceSummary(row rowScanner) (ConferenceSummary, error) {
+	var cs ConferenceSummary
+	var endReason *string
+	var members pq.StringArray
+	if err := row.Scan(
+		&cs.ID, &cs.Host, &cs.OriginatingCallID, &cs.CreatedAt, &cs.EndedAt,
+		&endReason, &cs.DurationS, &members,
+	); err != nil {
+		return cs, err
+	}
+	if endReason != nil {
+		cs.EndReason = *endReason
+	}
+	cs.Members = []string(members)
+	return cs, nil
+}
+
 // MarkForceEnded records which user force-ended a call. Returns nil error
 // even if no rows matched (idempotent against racing peer hangups).
 func (t *Tracker) MarkForceEnded(ctx context.Context, callID int64, userID string) error {
@@ -677,33 +710,20 @@ func (t *Tracker) RecordKick(ctx context.Context, confID uuid.UUID, kickedPhone,
 // GetConferenceByID returns a conference summary from the DB by ID. Returns
 // (nil, nil) if not found. Handles both active and ended conferences.
 func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*ConferenceSummary, error) {
-	const query = `
-		SELECT c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at,
-		       c.end_reason,
-		       COALESCE(EXTRACT(EPOCH FROM (c.ended_at - c.created_at))::INT, 0) AS duration_s,
-		       array_agg(m.phone ORDER BY CASE WHEN m.phone = c.host_phone THEN 0 ELSE 1 END, m.phone) AS members
+	query := fmt.Sprintf(`
+		SELECT %s
 		FROM conferences c
 		JOIN conference_members m ON m.conference_id = c.id
 		WHERE c.id = $1
-		GROUP BY c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason`
+		GROUP BY %s`, conferenceSummaryColumns, conferenceSummaryGroupBy)
 
-	var cs ConferenceSummary
-	var endReason *string
-	var members pq.StringArray
-	err := t.db.QueryRowContext(ctx, query, confID).Scan(
-		&cs.ID, &cs.Host, &cs.OriginatingCallID, &cs.CreatedAt, &cs.EndedAt,
-		&endReason, &cs.DurationS, &members,
-	)
+	cs, err := scanConferenceSummary(t.db.QueryRowContext(ctx, query, confID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get conference %s: %w", confID, err)
 	}
-	if endReason != nil {
-		cs.EndReason = *endReason
-	}
-	cs.Members = []string(members)
 	return &cs, nil
 }
 

@@ -199,19 +199,16 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 	limitIdx := len(args)
 
 	query := fmt.Sprintf(`
-		SELECT c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at,
-		       c.end_reason,
-		       COALESCE(EXTRACT(EPOCH FROM (c.ended_at - c.created_at))::INT, 0) AS duration_s,
-		       array_agg(m.phone ORDER BY CASE WHEN m.phone = c.host_phone THEN 0 ELSE 1 END, m.phone) AS members
+		SELECT %s
 		FROM conferences c
 		JOIN conference_members m ON m.conference_id = c.id
 		WHERE EXISTS (
 		  SELECT 1 FROM conference_members cm
 		  WHERE cm.conference_id = c.id AND cm.phone = ANY($1)
 		)%s
-		GROUP BY c.id, c.host_phone, c.originating_call_id, c.created_at, c.ended_at, c.end_reason
+		GROUP BY %s
 		ORDER BY c.created_at DESC, c.id DESC
-		LIMIT $%d`, cursorSQL, limitIdx)
+		LIMIT $%d`, conferenceSummaryColumns, cursorSQL, conferenceSummaryGroupBy, limitIdx)
 
 	rows, err := t.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -221,19 +218,10 @@ func (t *Tracker) recentConferencesForHistory(ctx context.Context, phones []stri
 
 	var confs []ConferenceSummary
 	for rows.Next() {
-		var cs ConferenceSummary
-		var endReason *string
-		var members pq.StringArray
-		if err := rows.Scan(
-			&cs.ID, &cs.Host, &cs.OriginatingCallID, &cs.CreatedAt, &cs.EndedAt,
-			&endReason, &cs.DurationS, &members,
-		); err != nil {
+		cs, err := scanConferenceSummary(rows)
+		if err != nil {
 			return nil, err
 		}
-		if endReason != nil {
-			cs.EndReason = *endReason
-		}
-		cs.Members = []string(members)
 		confs = append(confs, cs)
 	}
 	return confs, rows.Err()
