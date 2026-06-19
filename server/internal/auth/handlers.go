@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -95,16 +94,9 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Find or create user
-	user, err := h.store.GetUserByEmail(r.Context(), emailAddr)
-	if errors.Is(err, ErrUserNotFound) {
-		user, err = h.store.CreateUser(r.Context(), emailAddr, "", nil)
-		if err != nil {
-			http.Error(w, "failed to create user", http.StatusInternalServerError)
-			return
-		}
-	} else if err != nil {
-		slog.ErrorContext(r.Context(), "magic link verify: lookup user", "err", err)
+	user, _, err := h.store.GetOrCreateUserByEmail(r.Context(), emailAddr)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "magic link verify: get or create user", "err", err)
 		http.Error(w, "failed to look up user", http.StatusInternalServerError)
 		return
 	}
@@ -148,14 +140,13 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 
 	slog.InfoContext(r.Context(), "dev-session requested", "email", emailAddr)
 
-	// Find or create user (same pattern as HandleMagicLinkVerify)
-	user, err := h.store.GetUserByEmail(r.Context(), emailAddr)
-	if errors.Is(err, ErrUserNotFound) {
-		user, err = h.store.CreateUser(r.Context(), emailAddr, "", nil)
-		if err != nil {
-			http.Error(w, "failed to create user", http.StatusInternalServerError)
-			return
-		}
+	user, created, err := h.store.GetOrCreateUserByEmail(r.Context(), emailAddr)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "dev-session: get or create user", "err", err)
+		http.Error(w, "failed to look up user", http.StatusInternalServerError)
+		return
+	}
+	if created {
 		// Skip /welcome for fresh dev-session users so e2e tests don't have to
 		// click through the theme picker on every run. The picker can still be
 		// exercised locally by flipping theme_chosen back to false in SQL.
@@ -164,10 +155,6 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 		} else {
 			user.ThemeChosen = true
 		}
-	} else if err != nil {
-		slog.ErrorContext(r.Context(), "dev-session: lookup user", "err", err)
-		http.Error(w, "failed to look up user", http.StatusInternalServerError)
-		return
 	}
 
 	if err := h.store.UpdateLastLogin(r.Context(), user.ID); err != nil {

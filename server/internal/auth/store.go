@@ -111,6 +111,27 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 	return s.queryUser(ctx, `email = $1`, email)
 }
 
+// GetOrCreateUserByEmail returns the user for email, creating one (with an empty
+// name and no Google ID) if none exists. The bool reports whether a new user was
+// created. A lookup failure other than ErrUserNotFound is returned unchanged so
+// callers can tell a transient DB error apart from a missing user and avoid
+// silently creating a duplicate account.
+func (s *Store) GetOrCreateUserByEmail(ctx context.Context, email string) (*User, bool, error) {
+	user, err := s.GetUserByEmail(ctx, email)
+	switch {
+	case err == nil:
+		return user, false, nil
+	case errors.Is(err, ErrUserNotFound):
+		user, err = s.CreateUser(ctx, email, "", nil)
+		if err != nil {
+			return nil, false, err
+		}
+		return user, true, nil
+	default:
+		return nil, false, err
+	}
+}
+
 // GetUserByGoogleID looks up a user by their Google OAuth subject ID.
 func (s *Store) GetUserByGoogleID(ctx context.Context, googleID string) (*User, error) {
 	return s.queryUser(ctx, `google_id = $1`, googleID)
