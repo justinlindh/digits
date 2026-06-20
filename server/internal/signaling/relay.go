@@ -245,14 +245,14 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 			slog.InfoContext(ctx, "update_status", "number", from, "status", "success",
 				"detail", "device reconnected with "+msg.PiVersion)
 		}
-		return // No relay — server consumes this
+		return // No relay: server consumes this
 	case TypeUpdateStatus:
 		slog.InfoContext(ctx, "update_status", "number", from,
 			"status", msg.UpdateStatus, "detail", msg.UpdateDetail)
 		r.Hub.SetUpdateStatus(from, msg.UpdateStatus, msg.UpdateDetail)
-		return // No relay — server consumes this
+		return // No relay: server consumes this
 	case TypeRestart:
-		return // Server → device only; ignore if echoed back
+		return // Server to device only; ignore if echoed back
 	case TypeLinkHealth:
 		r.handleLinkHealth(ctx, from, msg)
 		return

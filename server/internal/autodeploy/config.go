@@ -69,8 +69,8 @@ func LoadConfig(path string) (Config, error) {
 		ComposeFile:    raw["COMPOSE_FILE"],
 		ComposeProject: raw["COMPOSE_PROJECT"],
 		ComposeEnvFile: raw["COMPOSE_ENV_FILE"],
-		Services:       splitFields(raw["SERVICES"]),
-		HealthURLs:     splitFields(raw["HEALTH_URLS"]),
+		Services:       strings.Fields(raw["SERVICES"]),
+		HealthURLs:     strings.Fields(raw["HEALTH_URLS"]),
 		GHCRUsername:   raw["GHCR_USERNAME"],
 		StateFile:      raw["STATE_FILE"],
 		SMTPHost:       raw["SMTP_HOST"],
@@ -152,5 +152,3 @@ func LoadConfig(path string) (Config, error) {
 	}
 	return c, nil
 }
-
-func splitFields(s string) []string { return strings.Fields(s) }

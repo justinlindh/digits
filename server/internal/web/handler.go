@@ -239,7 +239,7 @@ type Handler struct {
 	linkStore   *household.LinkStore
 	inviteStore *household.InviteStore
 	emailer     email.Sender
-	// Rate limiters. All four are Handler fields so Router() has a single
+	// Rate limiters. All are Handler fields so Router() has a single
 	// construction pattern; previously the magic-link verify and Google
 	// login limiters were instantiated inline inside Router(), which made
 	// them harder to spot and impossible to share across request types.
@@ -538,15 +538,15 @@ func (h *Handler) SetReleases(r *updates.GitHubReleases) {
 func (h *Handler) Router() http.Handler {
 	mux := http.NewServeMux()
 
-	// Static assets — no auth required. In DevMode, serve from disk so
+	// Static assets: no auth required. In DevMode, serve from disk so
 	// CSS/JS edits don't require a rebuild; otherwise serve the embedded
 	// FS so the production binary is self-contained.
 	mux.Handle("GET /static/", staticFileServer(h.cfg.DevMode, h.cfg.DevStaticDir))
 
-	// Health check — no auth required
+	// Health check: no auth required
 	mux.HandleFunc("GET /healthz", httputil.Healthz(version.Version))
 
-	// Public routes — no auth required
+	// Public routes: no auth required
 	mux.HandleFunc("GET /auth/login", h.authHandlers.HandleLoginPage)
 	mux.Handle("POST /auth/magic", h.authLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkRequest)))
 	mux.Handle("GET /auth/magic/{token}", h.magicVerifyLimiter.Middleware(http.HandlerFunc(h.authHandlers.HandleMagicLinkVerify)))
@@ -560,7 +560,7 @@ func (h *Handler) Router() http.Handler {
 	mux.HandleFunc("GET /internal/stats", h.handleInternalStats)
 	mux.Handle("GET /ws", h.wsLimiter.Middleware(http.HandlerFunc(h.handleWS)))
 
-	// Update release index endpoint (unauthenticated — phones fetch this)
+	// Update release index endpoint (unauthenticated; phones fetch this)
 	if h.releases != nil {
 		mux.HandleFunc("GET /api/updates/releases", h.releases.ServeReleases())
 		mux.HandleFunc("GET /api/release-audio/{component}/{version}", h.releases.ServeAudio())
@@ -586,7 +586,7 @@ func (h *Handler) Router() http.Handler {
 		mux.HandleFunc("POST /dev/seed-firmware", h.handleDevSeedFirmware)
 	}
 
-	// Protected routes — require valid session
+	// Protected routes: require valid session
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /", h.handleDashboard)
 	protected.HandleFunc("GET /connecting", h.handleConnecting)

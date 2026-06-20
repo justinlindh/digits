@@ -66,19 +66,16 @@ func (h *traceContextHandler) Enabled(ctx context.Context, level slog.Level) boo
 // canonical hex encoding (32 chars for trace, 16 for span) so they line
 // up with the values Tempo and Loki use for correlation queries.
 func (h *traceContextHandler) Handle(ctx context.Context, r slog.Record) error {
-	span := trace.SpanFromContext(ctx)
-	if span != nil {
-		sc := span.SpanContext()
-		// Only add the fields when a real, non-zero span context is
-		// present. SpanFromContext returns a noop span for callers that
-		// log outside a traced flow; that span has an all-zero context,
-		// and adding 32 zeros to every log line would be noise.
-		if sc.IsValid() {
-			r.AddAttrs(
-				slog.String("trace_id", sc.TraceID().String()),
-				slog.String("span_id", sc.SpanID().String()),
-			)
-		}
+	// Only add the fields when a real, non-zero span context is present.
+	// SpanFromContext returns a noop span (never nil) for callers that log
+	// outside a traced flow; that span has an all-zero context, and adding 32
+	// zeros to every log line would be noise.
+	sc := trace.SpanFromContext(ctx).SpanContext()
+	if sc.IsValid() {
+		r.AddAttrs(
+			slog.String("trace_id", sc.TraceID().String()),
+			slog.String("span_id", sc.SpanID().String()),
+		)
 	}
 	return h.inner.Handle(ctx, r)
 }

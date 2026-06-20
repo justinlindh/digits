@@ -227,7 +227,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("parse login template: %w", err)
 	}
 	if cfg.DevMode {
-		slog.Warn("dev mode enabled — magic link URLs will be logged to stdout")
+		slog.Warn("dev mode enabled: magic link URLs will be logged to stdout")
 	}
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, cfg.BaseURL, cfg.CookieDomain, loginTmpl, cfg.DevMode)
 

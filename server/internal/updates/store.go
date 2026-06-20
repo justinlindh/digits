@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Component selectors used by SortedReleases and RangeReleases.
@@ -17,14 +16,12 @@ const (
 
 // Release describes a single versioned artifact (Pi binary or firmware).
 type Release struct {
-	Version    string    `json:"version"`
-	Commit     string    `json:"commit,omitempty"`
-	SHA256     string    `json:"sha256,omitempty"`
-	URL        string    `json:"url"`
-	Date       string    `json:"date"`
-	Notes      string    `json:"notes,omitempty"`
-	AudioURL   string    `json:"audio_url,omitempty"`
-	ReleasedAt time.Time `json:"-"`
+	Version  string `json:"version"`
+	SHA256   string `json:"sha256,omitempty"`
+	URL      string `json:"url"`
+	Date     string `json:"date"`
+	Notes    string `json:"notes,omitempty"`
+	AudioURL string `json:"audio_url,omitempty"`
 }
 
 // ReleaseIndex is the structure served at /api/updates/releases.

@@ -1,6 +1,8 @@
-// Package autodeploy implements the automatic binary update loop for the
-// autodeploy command. It polls GitHub Releases for new pi/ tags, downloads
-// the matching arm64 binary, and hot-swaps the running signald process.
+// Package autodeploy implements the automatic update loop for the autodeploy
+// command. It polls GitHub Releases for new tags and, on a new release, drives
+// a Docker Compose deploy (login, pull, up, health-check verify) of the signald
+// stack, reverting to the previous version if the new release fails its health
+// check.
 package autodeploy
 
 import (

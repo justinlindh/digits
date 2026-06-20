@@ -13,7 +13,7 @@ func brandedWrap(content string) string {
 <body style="margin:0; padding:0; background-color:#0f1117; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 <table width="100%%" cellpadding="0" cellspacing="0" style="background-color:#0f1117; padding:40px 20px;">
 <tr><td align="center">
-<table width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%%.">
+<table width="480" cellpadding="0" cellspacing="0" style="max-width:480px; width:100%%">
 
 <!-- Header -->
 <tr><td style="padding:0 0 24px 0;">
