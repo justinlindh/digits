@@ -524,14 +524,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		if number == "" {
 			slog.Info("call_return: no calls available")
 			mixer.PlayOnce("call_return_none")
-			go func() {
-				time.Sleep(3 * time.Second)
-				if ctrl.State() != phone.StateCALL_RETURN {
-					return
-				}
-				ctrl.ResetToDialtone()
-				mixer.PlayLoop("tone_dial")
-			}()
+			d.scheduleCallReturnDialtoneReset()
 		} else {
 			slog.Info("call_return: announcing last caller", "number", number)
 			ctrl.SetCallReturnNumber(number)
@@ -550,16 +543,25 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 	case sigclient.TypeCallReturnCancelled:
 		slog.Info("call_return: retry cancelled by server")
 		mixer.PlayOnce("call_return_cancel")
-		go func() {
-			time.Sleep(3 * time.Second)
-			if ctrl.State() != phone.StateCALL_RETURN {
-				return
-			}
-			ctrl.ResetToDialtone()
-			mixer.PlayLoop("tone_dial")
-		}()
+		d.scheduleCallReturnDialtoneReset()
 
 	default:
 		slog.Warn("signal: unhandled message type", "type", msg.Type)
 	}
+}
+
+// scheduleCallReturnDialtoneReset returns the phone to dialtone a few seconds
+// after a terminal call-return announcement (no calls available, or retry
+// cancelled). Both outcomes play a short clip and then fall back to dialtone
+// the same way, but only if the user is still parked in CALL_RETURN: if they
+// hung up or dialed on in the meantime, the later state owns the audio path.
+func (d *daemonCallbacks) scheduleCallReturnDialtoneReset() {
+	go func() {
+		time.Sleep(3 * time.Second)
+		if d.ctrlSignal.State() != phone.StateCALL_RETURN {
+			return
+		}
+		d.ctrlSignal.ResetToDialtone()
+		d.mixer.PlayLoop("tone_dial")
+	}()
 }
