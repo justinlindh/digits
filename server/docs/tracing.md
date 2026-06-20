@@ -76,7 +76,7 @@ slow query can run `EXPLAIN` against the database directly.
 What `otelsql` still records:
 
 - `db.system: postgresql`
-- `db.name`: `digits` or `digits_admin`
+- `db.name`: the database from `DATABASE_URL` (`digits` in prod, `digits_test` under integration tests)
 - operation kind (connection, query, prepare) and duration
 - error attribute on failed calls
 
@@ -173,9 +173,8 @@ side by side. Routing:
   log records.
 
 The k8s deployment manifests in `homelab-k8s/manifests/digits/` set the
-env vars; the docker prod deployment is unchanged for now (the
-exporter stays disabled until cutover, per `CLAUDE.local.md`'s
-"Parallel k8s deployment" note).
+env vars; the docker prod deployment is unchanged for now, with the
+exporter staying disabled until the k8s cutover.
 
 ## Tests
 

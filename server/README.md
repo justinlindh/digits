@@ -310,19 +310,24 @@ cmd/signald/             Entry point -- wires all components
 
 internal/
   auth/                  User authentication (magic links, Google OAuth, sessions)
+  autodeploy/            GHCR pull + compose rollout for the prod autodeploy timer
   calls/                 Call lifecycle tracking and history
   config/                Environment variable config loading
   db/                    Postgres connection and schema migrations
   dbutil/                Database utilities
   device/                Physical device persistence and pairing
   email/                 SMTP email sender (magic link delivery)
+  events/                Dashboard event fan-out (in-memory and Redis pub/sub)
   household/             Household CRUD, membership, onboarding
   httputil/              HTTP helpers (healthz)
   line/                  Phone number CRUD, call authorization
   logging/               Structured logging setup (slog + tint)
+  metrics/               Prometheus metrics and privacy-safe route bucketing
   pairing/               Pairing code generation and claim flow
+  profiling/             Pyroscope continuous-profiling integration
   ratelimit/             IP-based token bucket rate limiter
   signaling/             WebSocket hub, message relay, protocol types
+  tracing/               OpenTelemetry trace setup and DB instrumentation
   turn/                  TURN credential generation (HMAC-SHA1)
   updates/               GitHub release index fetching and caching
   version/               Build-time version info

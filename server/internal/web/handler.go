@@ -365,7 +365,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	// parsePage closes over the layout + shared-partials file list so each
 	// page only names itself. Adding a new layout or partial touches one line.
 	parsePage := func(page string) (*template.Template, error) {
-		return template.New("").Funcs(funcMap).ParseFS(templateFS,
+		t, err := template.New("").Funcs(funcMap).ParseFS(templateFS,
 			"templates/_partials.html",
 			"templates/_changelog.html",
 			"templates/layout-v2.html",
@@ -373,19 +373,30 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 			"templates/layout-answering-machine.html",
 			"templates/"+page,
 		)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", page, err)
+		}
+		return t, nil
+	}
+	// parsePageWith parses a page and then folds in extra partials, so their
+	// {{template "..."}} references resolve inside the page's template tree.
+	parsePageWith := func(page string, partials ...string) (*template.Template, error) {
+		t, err := parsePage(page)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := t.ParseFS(templateFS, partials...); err != nil {
+			return nil, fmt.Errorf("parse partials %v into %s: %w", partials, page, err)
+		}
+		return t, nil
 	}
 
-	tmplDashboard, err := parsePage("dashboard.html")
+	tmplDashboard, err := parsePageWith("dashboard.html",
+		"templates/dnd-toggle.html",
+		"templates/_dashboard-am-status.html",
+	)
 	if err != nil {
 		return nil, err
-	}
-	if _, err := tmplDashboard.ParseFS(templateFS, "templates/dnd-toggle.html"); err != nil {
-		return nil, fmt.Errorf("parse dnd-toggle partial into dashboard: %w", err)
-	}
-	// Merge the AM status partial so {{template "dashboard-am-status"}} resolves
-	// inside the dashboard page.
-	if _, err := tmplDashboard.ParseFS(templateFS, "templates/_dashboard-am-status.html"); err != nil {
-		return nil, fmt.Errorf("parse dashboard-am-status partial into dashboard: %w", err)
 	}
 	tmplDashboardAMStatus, err := template.New("dashboard-am-status").Funcs(funcMap).ParseFS(templateFS, "templates/_dashboard-am-status.html")
 	if err != nil {
@@ -435,21 +446,13 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse conference-live-panel: %w", err)
 	}
-	tmplCallLiveDetail, err := parsePage("call-live-detail.html")
+	tmplCallLiveDetail, err := parsePageWith("call-live-detail.html", "templates/_call-live-panel.html")
 	if err != nil {
-		return nil, fmt.Errorf("parse call-live-detail: %w", err)
+		return nil, err
 	}
-	// Merge the panel partial so {{template "call-live-panel"}} resolves inside the detail page.
-	if _, err := tmplCallLiveDetail.ParseFS(templateFS, "templates/_call-live-panel.html"); err != nil {
-		return nil, fmt.Errorf("parse call-live-panel partial into detail: %w", err)
-	}
-	tmplConferenceLiveDetail, err := parsePage("conference-live-detail.html")
+	tmplConferenceLiveDetail, err := parsePageWith("conference-live-detail.html", "templates/_conference-live-panel.html")
 	if err != nil {
-		return nil, fmt.Errorf("parse conference-live-detail: %w", err)
-	}
-	// Merge the panel partial so {{template "conference-live-panel"}} resolves inside the detail page.
-	if _, err := tmplConferenceLiveDetail.ParseFS(templateFS, "templates/_conference-live-panel.html"); err != nil {
-		return nil, fmt.Errorf("parse conference-live-panel partial into detail: %w", err)
+		return nil, err
 	}
 	tmplChangelog, err := template.New("changelog").Funcs(funcMap).ParseFS(templateFS,
 		"templates/_partials.html",
