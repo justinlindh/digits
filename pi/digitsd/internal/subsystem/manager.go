@@ -186,11 +186,12 @@ func (m *Manager) logSummary(ctx context.Context) {
 // Disabled modules are excluded from the output layers; their names are also
 // excluded from the dep graph so that dependents can still resolve.
 func topoLayers(regs []Registration) ([][]Registration, error) {
-	// Build index of enabled modules by name.
-	enabled := make(map[string]bool, len(regs))
+	// Index enabled modules by name. Doubles as the enabled-membership set
+	// for dependency resolution: a name is enabled iff it has an entry here.
+	regByName := make(map[string]Registration, len(regs))
 	for _, r := range regs {
 		if !r.Disabled {
-			enabled[r.Module.Name()] = true
+			regByName[r.Module.Name()] = r
 		}
 	}
 
@@ -207,20 +208,12 @@ func topoLayers(regs []Registration) ([][]Registration, error) {
 			inDegree[name] = 0
 		}
 		for _, dep := range r.Deps {
-			if !enabled[dep] {
-				// disabled dep: ignore it
+			if _, ok := regByName[dep]; !ok {
+				// disabled (or unknown) dep: ignore it
 				continue
 			}
 			deps[dep] = append(deps[dep], name)
 			inDegree[name]++
-		}
-	}
-
-	// Collect enabled regs by name for layer construction.
-	regByName := make(map[string]Registration, len(regs))
-	for _, r := range regs {
-		if !r.Disabled {
-			regByName[r.Module.Name()] = r
 		}
 	}
 
