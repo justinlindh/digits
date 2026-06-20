@@ -713,14 +713,9 @@ func (h *Handler) applyLineSettings(w http.ResponseWriter, r *http.Request, ln *
 // settings via the registration push in relay.OnRegistered.
 func (h *Handler) pushLineSettings(number string, settings line.Settings) error {
 	err := h.hub.SendTo(number, &signaling.Message{
-		Type: signaling.TypeLineSettings,
-		To:   number,
-		LineSettings: &signaling.LineSettings{
-			VoiceStyle: settings.VoiceStyle,
-			SilentMode: settings.SilentMode,
-			AutoUpdate: settings.AutoUpdate,
-			Voicemail:  signaling.VoicemailFromLine(settings.Voicemail),
-		},
+		Type:         signaling.TypeLineSettings,
+		To:           number,
+		LineSettings: signaling.LineSettingsFromLine(settings),
 	})
 	if errors.Is(err, signaling.ErrNotConnected) {
 		return nil
