@@ -246,27 +246,22 @@ func (d *daemonCallbacks) AddMeshPeer(phone string, initiator bool) {
 
 	pm.OnConnectionState = d.meshReporterOnConnected(pm, phone)
 
-	if initiator {
-		// Initiator creates and sends the SDP offer to the peer.
-		offer, err := pm.CreateOffer()
-		if err != nil {
-			slog.Error("conference: create offer failed", "phone", phone, "err", err)
-			close(sdpSent)
-			return
-		}
-		sendSignal(sig, &sigclient.Message{
-			Type:   sigclient.TypeSDP,
-			To:     phone,
-			ConfID: confID,
-			SDP:    offer,
-		})
+	// Past the early return above, this is always the initiator path: create
+	// and send the SDP offer to the peer. The responder never reaches here.
+	offer, err := pm.CreateOffer()
+	if err != nil {
+		slog.Error("conference: create offer failed", "phone", phone, "err", err)
 		close(sdpSent)
-		slog.Info("conference: sent SDP offer to peer", "phone", phone, "conf_id", confID)
-	} else {
-		// Responder waits for the initiator's offer (handled in TypeSDP dispatch).
-		// Ungate ICE candidates immediately since we don't send an offer here.
-		close(sdpSent)
+		return
 	}
+	sendSignal(sig, &sigclient.Message{
+		Type:   sigclient.TypeSDP,
+		To:     phone,
+		ConfID: confID,
+		SDP:    offer,
+	})
+	close(sdpSent)
+	slog.Info("conference: sent SDP offer to peer", "phone", phone, "conf_id", confID)
 }
 
 func (d *daemonCallbacks) RemoveMeshPeer(phone string) {
