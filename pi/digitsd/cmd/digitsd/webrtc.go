@@ -15,7 +15,6 @@ import (
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
-	"github.com/justinlindh/digits/pi/digitsd/internal/devmode"
 	"github.com/justinlindh/digits/pi/digitsd/internal/phone"
 	sigclient "github.com/justinlindh/digits/pi/digitsd/internal/signal"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
@@ -388,7 +387,7 @@ func (d *daemonCallbacks) HangupCall() {
 		d.publishVoicemailState()
 	}
 
-	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateAllowed() {
 		slog.Info("auto-update: call ended, running deferred update")
 		if d.triggerAutoUpdate != nil {
 			go d.triggerAutoUpdate()

@@ -264,7 +264,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 
 	case sigclient.TypeReleaseAvailable:
 		slog.Info("signal: release_available", "pi", msg.LatestPiVersion, "fw", msg.LatestFWVersion)
-		if d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		if d.autoUpdateAllowed() {
 			go d.triggerAutoUpdate()
 		}
 
