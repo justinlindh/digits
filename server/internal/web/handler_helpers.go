@@ -390,7 +390,7 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 	cd := newChromeData(page, auth.UserFromContext(r.Context()), active)
 	cd.Households = households
 	if active != nil {
-		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID, nil)
+		cd.HasUpdates = h.hasPhoneUpdates(r.Context(), active.ID)
 		if h.lineStore != nil {
 			silent, err := h.lineStore.AllSilentByHousehold(r.Context(), active.ID)
 			if err != nil {
@@ -403,9 +403,8 @@ func (h *Handler) newChromeDataWithHouseholds(r *http.Request, page string) chro
 }
 
 // hasPhoneUpdates returns true if any phone in the household is behind the
-// latest pi or firmware release. If lineNumbers is non-nil, it skips the DB
-// lookup and uses the provided numbers directly.
-func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineNumbers []string) bool {
+// latest pi or firmware release.
+func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string) bool {
 	if h.releases == nil {
 		return false
 	}
@@ -418,18 +417,16 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string, lineN
 	if latestPi == "" && latestFw == "" {
 		return false
 	}
-	if lineNumbers == nil {
-		if h.lineStore == nil {
-			return false
-		}
-		lines, err := h.lineStore.ListByHousehold(ctx, householdID)
-		if err != nil {
-			return false
-		}
-		lineNumbers = make([]string, len(lines))
-		for i, l := range lines {
-			lineNumbers[i] = l.Number
-		}
+	if h.lineStore == nil {
+		return false
+	}
+	lines, err := h.lineStore.ListByHousehold(ctx, householdID)
+	if err != nil {
+		return false
+	}
+	lineNumbers := make([]string, len(lines))
+	for i, l := range lines {
+		lineNumbers[i] = l.Number
 	}
 	for _, number := range lineNumbers {
 		for _, info := range h.hub.AllDeviceInfo(number) {
