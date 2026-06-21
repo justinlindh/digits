@@ -156,7 +156,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	// between the ownership check and the Subscribe, the cross-pod evict
 	// has already passed and this session would never receive EndedKind.
 	if cur, err := h.tracker.GetConferenceByID(r.Context(), confID); err == nil && cur != nil && cur.EndedAt != nil {
-		_ = writeSSE(w, "ended", renderEndedConferenceFragment(""))
+		_ = writeSSE(w, sseEventEnded, renderEndedConferenceFragment(""))
 		flusher.Flush()
 		return
 	}
@@ -168,7 +168,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 		slog.ErrorContext(r.Context(), "SSE conference stream: initial render failed", "conf_id", confID, "err", err)
 		return
 	}
-	if werr := writeSSE(w, "sample", fragment); werr != nil {
+	if werr := writeSSE(w, sseEventSample, fragment); werr != nil {
 		return
 	}
 	flusher.Flush()
@@ -182,7 +182,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 			return
 		case ev, okEv := <-sub.C:
 			if !okEv {
-				_ = writeSSE(w, "ended", renderEndedConferenceFragment(""))
+				_ = writeSSE(w, sseEventEnded, renderEndedConferenceFragment(""))
 				flusher.Flush()
 				return
 			}
@@ -191,7 +191,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 				return
 			}
 		case <-heartbeat.C:
-			if err := writeSSE(w, "heartbeat", "{}"); err != nil {
+			if err := writeSSE(w, sseEventHeartbeat, "{}"); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -207,15 +207,15 @@ func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher
 		if err != nil {
 			return err
 		}
-		if err := writeSSE(w, "sample", fragment); err != nil {
+		if err := writeSSE(w, sseEventSample, fragment); err != nil {
 			return err
 		}
 	case calls.EndedKind:
-		if err := writeSSE(w, "ended", renderEndedConferenceFragment("")); err != nil {
+		if err := writeSSE(w, sseEventEnded, renderEndedConferenceFragment("")); err != nil {
 			return err
 		}
 	case calls.DisconnectKind:
-		if err := writeSSE(w, "disconnect", renderEndedConferenceFragment(ev.EndedBy)); err != nil {
+		if err := writeSSE(w, sseEventDisconnect, renderEndedConferenceFragment(ev.EndedBy)); err != nil {
 			return err
 		}
 	}
