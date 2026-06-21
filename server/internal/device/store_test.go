@@ -240,3 +240,126 @@ func TestReassign_NotFound(t *testing.T) {
 		t.Error("expected error for non-existent device")
 	}
 }
+
+func TestListByLines(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Batch Household")
+	lineA := createTestLine(t, database, "5550003331", hhID)
+	lineB := createTestLine(t, database, "5550003332", hhID)
+	lineC := createTestLine(t, database, "5550003333", hhID)
+
+	insertTestDevice(t, database, lineA, "hw-batch-a1")
+	insertTestDevice(t, database, lineA, "hw-batch-a2")
+	insertTestDevice(t, database, lineB, "hw-batch-b1")
+
+	got, err := s.ListByLines(context.Background(), []int64{lineA, lineB, lineC})
+	if err != nil {
+		t.Fatalf("ListByLines: %v", err)
+	}
+	if len(got[lineA]) != 2 {
+		t.Errorf("lineA = %d devices, want 2", len(got[lineA]))
+	}
+	if len(got[lineB]) != 1 {
+		t.Errorf("lineB = %d devices, want 1", len(got[lineB]))
+	}
+	// A line with no devices should be absent from the map, not present with an
+	// empty slice.
+	if _, ok := got[lineC]; ok {
+		t.Errorf("lineC should be absent from the map, got %v", got[lineC])
+	}
+}
+
+func TestListByLines_Empty(t *testing.T) {
+	s, _ := testStore(t)
+
+	got, err := s.ListByLines(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListByLines(nil): %v", err)
+	}
+	if got != nil {
+		t.Errorf("ListByLines(nil) = %v, want nil", got)
+	}
+}
+
+func TestUnpair(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Unpair Household")
+	lineID := createTestLine(t, database, "5550004441", hhID)
+	insertTestDevice(t, database, lineID, "hw-unpair-001")
+	pairTestDevice(t, database, "hw-unpair-001", "a-real-token")
+
+	// Sanity: device starts paired with a valid token.
+	paired, valid, err := s.AuthStatus(context.Background(), "hw-unpair-001", "a-real-token")
+	if err != nil {
+		t.Fatalf("AuthStatus before unpair: %v", err)
+	}
+	if !paired || !valid {
+		t.Fatalf("before unpair: paired=%v valid=%v, want both true", paired, valid)
+	}
+
+	if err := s.Unpair(context.Background(), "hw-unpair-001"); err != nil {
+		t.Fatalf("Unpair: %v", err)
+	}
+
+	// After unpair the device is no longer paired and the token is cleared.
+	paired, valid, err = s.AuthStatus(context.Background(), "hw-unpair-001", "a-real-token")
+	if err != nil {
+		t.Fatalf("AuthStatus after unpair: %v", err)
+	}
+	if paired || valid {
+		t.Errorf("after unpair: paired=%v valid=%v, want both false", paired, valid)
+	}
+}
+
+func TestUnpair_UnknownHardware(t *testing.T) {
+	s, _ := testStore(t)
+
+	// Unpairing a hardware ID with no device row is a no-op, not an error.
+	if err := s.Unpair(context.Background(), "hw-does-not-exist"); err != nil {
+		t.Errorf("Unpair for unknown hardware: %v", err)
+	}
+}
+
+func TestBoundLineNumber(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Bound Household")
+	lineID := createTestLine(t, database, "5550005551", hhID)
+	insertTestDevice(t, database, lineID, "hw-bound-001")
+	pairTestDevice(t, database, "hw-bound-001", "bound-token")
+
+	number, err := s.BoundLineNumber(context.Background(), "hw-bound-001")
+	if err != nil {
+		t.Fatalf("BoundLineNumber: %v", err)
+	}
+	if number != "5550005551" {
+		t.Errorf("BoundLineNumber = %q, want 5550005551", number)
+	}
+}
+
+func TestBoundLineNumber_Unpaired(t *testing.T) {
+	s, database := testStore(t)
+	hhID := createTestHousehold(t, database, "Unbound Household")
+	lineID := createTestLine(t, database, "5550006661", hhID)
+	// Device is assigned to a line but never paired (paired_at IS NULL).
+	insertTestDevice(t, database, lineID, "hw-unbound-001")
+
+	number, err := s.BoundLineNumber(context.Background(), "hw-unbound-001")
+	if err != nil {
+		t.Fatalf("BoundLineNumber: %v", err)
+	}
+	if number != "" {
+		t.Errorf("BoundLineNumber for unpaired device = %q, want empty", number)
+	}
+}
+
+func TestBoundLineNumber_UnknownHardware(t *testing.T) {
+	s, _ := testStore(t)
+
+	number, err := s.BoundLineNumber(context.Background(), "hw-nope")
+	if err != nil {
+		t.Fatalf("BoundLineNumber: %v", err)
+	}
+	if number != "" {
+		t.Errorf("BoundLineNumber for unknown hardware = %q, want empty", number)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/line"
 )
 
 func setupStore(t *testing.T) *Store {
@@ -67,6 +68,99 @@ func seedHousehold(t *testing.T, s *Store) string {
 		t.Fatalf("seed household: %v", err)
 	}
 	return id
+}
+
+// seedLine inserts a line in the given household and returns its ID.
+func seedLine(t *testing.T, s *Store, number, householdID string) int64 {
+	t.Helper()
+	var id int64
+	if err := s.db.QueryRow(
+		`INSERT INTO lines (number, household_id) VALUES ($1, $2) RETURNING id`,
+		number, householdID,
+	).Scan(&id); err != nil {
+		t.Fatalf("seed line %s: %v", number, err)
+	}
+	return id
+}
+
+func TestClaimDeviceToLine_Success(t *testing.T) {
+	s := setupStore(t)
+	hhID := seedHousehold(t, s)
+	lineID := seedLine(t, s, "5550200", hhID)
+	code, err := s.GenerateCode(context.Background(), "test-hw-claim-line-1")
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	token, hwID, err := s.ClaimDeviceToLine(context.Background(), code, lineID, "Den Phone", hhID)
+	if err != nil {
+		t.Fatalf("ClaimDeviceToLine: %v", err)
+	}
+	if len(token) != 64 {
+		t.Errorf("expected 64-char hex token, got %d chars", len(token))
+	}
+	if hwID != "test-hw-claim-line-1" {
+		t.Errorf("hardwareID = %q, want test-hw-claim-line-1", hwID)
+	}
+	if !isPaired(t, s, "test-hw-claim-line-1") {
+		t.Error("expected device to be paired after ClaimDeviceToLine")
+	}
+
+	// Device should now be bound to the existing line, not a freshly created one.
+	var boundLineID int64
+	if err := s.db.QueryRow(
+		`SELECT line_id FROM devices WHERE hardware_id = $1`, "test-hw-claim-line-1",
+	).Scan(&boundLineID); err != nil {
+		t.Fatalf("read bound line: %v", err)
+	}
+	if boundLineID != lineID {
+		t.Errorf("bound line = %d, want %d", boundLineID, lineID)
+	}
+}
+
+func TestClaimDeviceToLine_WrongHousehold(t *testing.T) {
+	s := setupStore(t)
+	ownerHH := seedHousehold(t, s)
+	lineID := seedLine(t, s, "5550201", ownerHH)
+	code, err := s.GenerateCode(context.Background(), "test-hw-claim-line-2")
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	// Claim against a different household than the one that owns the line.
+	otherHH := seedHousehold(t, s)
+	_, _, err = s.ClaimDeviceToLine(context.Background(), code, lineID, "Intruder Phone", otherHH)
+	if !errors.Is(err, ErrLineNotOwned) {
+		t.Errorf("expected ErrLineNotOwned, got %v", err)
+	}
+	if isPaired(t, s, "test-hw-claim-line-2") {
+		t.Error("device should not be paired when the line is not owned")
+	}
+}
+
+func TestClaimDeviceToLine_MissingLine(t *testing.T) {
+	s := setupStore(t)
+	hhID := seedHousehold(t, s)
+	code, err := s.GenerateCode(context.Background(), "test-hw-claim-line-3")
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	_, _, err = s.ClaimDeviceToLine(context.Background(), code, 999999, "Ghost Phone", hhID)
+	if !errors.Is(err, line.ErrNotFound) {
+		t.Errorf("expected line.ErrNotFound, got %v", err)
+	}
+}
+
+func TestClaimDeviceToLine_InvalidCode(t *testing.T) {
+	s := setupStore(t)
+	hhID := seedHousehold(t, s)
+	lineID := seedLine(t, s, "5550202", hhID)
+
+	_, _, err := s.ClaimDeviceToLine(context.Background(), "999999", lineID, "No Code Phone", hhID)
+	if !errors.Is(err, ErrInvalidCode) {
+		t.Errorf("expected ErrInvalidCode, got %v", err)
+	}
 }
 
 func TestGenerateCode_Returns6Digits(t *testing.T) {

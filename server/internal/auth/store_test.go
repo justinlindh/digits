@@ -75,6 +75,50 @@ func TestCreateAndGetUser(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateUserByEmail_Creates(t *testing.T) {
+	s := testDB(t)
+
+	u, created, err := s.GetOrCreateUserByEmail(context.Background(), "fresh@example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateUserByEmail: %v", err)
+	}
+	if !created {
+		t.Error("expected created=true for a brand-new email")
+	}
+	if u.Email != "fresh@example.com" {
+		t.Errorf("email = %q, want fresh@example.com", u.Email)
+	}
+	if u.Name != "" {
+		t.Errorf("name = %q, want empty for auto-created user", u.Name)
+	}
+	if u.GoogleID != nil {
+		t.Errorf("GoogleID = %v, want nil for auto-created user", u.GoogleID)
+	}
+}
+
+func TestGetOrCreateUserByEmail_ReturnsExisting(t *testing.T) {
+	s := testDB(t)
+
+	existing, err := s.CreateUser(context.Background(), "existing@example.com", "Existing User", nil)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	got, created, err := s.GetOrCreateUserByEmail(context.Background(), "existing@example.com")
+	if err != nil {
+		t.Fatalf("GetOrCreateUserByEmail: %v", err)
+	}
+	if created {
+		t.Error("expected created=false when the user already exists")
+	}
+	if got.ID != existing.ID {
+		t.Errorf("ID = %s, want existing %s", got.ID, existing.ID)
+	}
+	if got.Name != "Existing User" {
+		t.Errorf("name = %q, want Existing User (should not overwrite)", got.Name)
+	}
+}
+
 func TestGetUserByEmail_NotFound(t *testing.T) {
 	s := testDB(t)
 	_, err := s.GetUserByEmail(context.Background(), "nobody@example.com")
