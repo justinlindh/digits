@@ -29,7 +29,8 @@ func TestMessageNumberClips(t *testing.T) {
 	}
 }
 
-func TestSavedCountClips(t *testing.T) {
+func TestCountPhraseClips(t *testing.T) {
+	const singular, plural = "vm_saved_message", "vm_saved_messages"
 	tests := []struct {
 		name  string
 		count int
@@ -37,17 +38,17 @@ func TestSavedCountClips(t *testing.T) {
 	}{
 		{"zero yields no clips", 0, nil},
 		{"negative yields no clips", -1, nil},
-		{"one saved message is singular", 1, []string{"vm_you_have", "spoken_1", "vm_saved_message"}},
-		{"several saved messages are plural", 4, []string{"vm_you_have", "spoken_4", "vm_saved_messages"}},
-		{"highest digit clip", 9, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
-		{"above nine caps at 9", 10, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
-		{"well above nine caps at 9", 50, []string{"vm_you_have", "spoken_9", "vm_saved_messages"}},
+		{"one message is singular", 1, []string{"vm_you_have", "spoken_1", singular}},
+		{"several messages are plural", 4, []string{"vm_you_have", "spoken_4", plural}},
+		{"highest digit clip", 9, []string{"vm_you_have", "spoken_9", plural}},
+		{"above nine caps at 9", 10, []string{"vm_you_have", "spoken_9", plural}},
+		{"well above nine caps at 9", 50, []string{"vm_you_have", "spoken_9", plural}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := savedCountClips(tt.count)
+			got := countPhraseClips(tt.count, singular, plural)
 			if !slices.Equal(got, tt.want) {
-				t.Errorf("savedCountClips(%d) = %v, want %v", tt.count, got, tt.want)
+				t.Errorf("countPhraseClips(%d) = %v, want %v", tt.count, got, tt.want)
 			}
 		})
 	}

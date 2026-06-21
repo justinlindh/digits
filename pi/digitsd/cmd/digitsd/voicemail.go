@@ -38,21 +38,29 @@ func (d *daemonCallbacks) playAnnouncementSequence(tones ...string) {
 	}
 }
 
+// countPhraseClips composes "You have N <suffix>", choosing the singular clip
+// for a count of one and the plural clip otherwise. Counts above 9 are capped
+// at the "9" clip since there is no clip to voice the exact number. A
+// non-positive count yields no clips.
+func countPhraseClips(count int, singular, plural string) []string {
+	if count <= 0 {
+		return nil
+	}
+	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", min(count, 9))}
+	if count == 1 {
+		return append(seq, singular)
+	}
+	return append(seq, plural)
+}
+
 // announceMessageCount composes "You have N new message(s)" from individual
-// clips. Counts above 9 are capped at "9" in the spoken announcement since
-// there is no clip to voice the exact number.
+// clips, voicing "no messages" for an empty mailbox.
 func (d *daemonCallbacks) announceMessageCount(count int) {
 	if count <= 0 {
 		d.playAnnouncementSequence("vm_no_messages")
 		return
 	}
-	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", min(count, 9))}
-	if count == 1 {
-		seq = append(seq, "vm_new_message")
-	} else {
-		seq = append(seq, "vm_new_messages")
-	}
-	d.playAnnouncementSequence(seq...)
+	d.playAnnouncementSequence(countPhraseClips(count, "vm_new_message", "vm_new_messages")...)
 }
 
 // messageNumberClips returns the clip sequence for the spoken "Message N"
@@ -82,26 +90,10 @@ func (d *daemonCallbacks) announceMessageNumber(number int) {
 	d.playAnnouncementSequence(clips...)
 }
 
-// savedCountClips returns the clip sequence for "You have N saved message(s)",
-// announced when *98 retrieval crosses from the new messages into the saved
-// ones. It mirrors announceMessageCount: a non-positive count yields no clips,
-// and counts above 9 are capped at "9" in the spoken announcement since there
-// is no clip to voice the exact number.
-func savedCountClips(count int) []string {
-	if count <= 0 {
-		return nil
-	}
-	seq := []string{"vm_you_have", fmt.Sprintf("spoken_%d", min(count, 9))}
-	if count == 1 {
-		return append(seq, "vm_saved_message")
-	}
-	return append(seq, "vm_saved_messages")
-}
-
 // announceSavedCount speaks "You have N saved messages" at the transition
 // from the new-message phase into the saved-message review phase.
 func (d *daemonCallbacks) announceSavedCount(count int) {
-	clips := savedCountClips(count)
+	clips := countPhraseClips(count, "vm_saved_message", "vm_saved_messages")
 	if len(clips) == 0 {
 		return
 	}
