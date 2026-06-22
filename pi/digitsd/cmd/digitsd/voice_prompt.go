@@ -56,8 +56,7 @@ func voicePromptSession(events <-chan string, mixer *audio.Mixer, cfg voicePromp
 			}
 			if key != "" {
 				mixer.StopAll()
-				if tone := dtmfToneName(key); tone != "" {
-					mixer.PlayOnce(tone)
+				if playKeyTone(mixer, key) {
 					waitForOnceComplete(mixer, 500*time.Millisecond)
 				}
 				if cfg.OnKey != nil && cfg.OnKey(key) {
@@ -80,8 +79,7 @@ func voicePromptSession(events <-chan string, mixer *audio.Mixer, cfg voicePromp
 				if strings.HasPrefix(ev, "KEY:") {
 					key := ev[4:]
 					mixer.StopAll()
-					if tone := dtmfToneName(key); tone != "" {
-						mixer.PlayOnce(tone)
+					if playKeyTone(mixer, key) {
 						waitForOnceComplete(mixer, 500*time.Millisecond)
 					}
 					if cfg.OnKey != nil && cfg.OnKey(key) {

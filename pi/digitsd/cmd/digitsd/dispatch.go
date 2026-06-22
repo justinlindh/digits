@@ -111,12 +111,10 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			slog.Warn("dtmf: empty digit in message")
 			break
 		}
-		dtmfName := dtmfToneName(msg.Digit)
-		if dtmfName == "" {
+		if !playKeyTone(mixer, msg.Digit) {
 			slog.Warn("dtmf: unrecognized digit", "digit", msg.Digit)
 			break
 		}
-		mixer.PlayOnce(dtmfName)
 	case sigclient.TypeError:
 		slog.Warn("signal error", "error", msg.Error)
 		// ADD_CALLING: route through the controller so state transitions
