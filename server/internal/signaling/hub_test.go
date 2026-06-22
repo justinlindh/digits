@@ -522,3 +522,16 @@ func TestUpdateStatus_PerHardware(t *testing.T) {
 		t.Fatalf("hwB should survive clearing hwA")
 	}
 }
+
+func TestIsHardwareOnline(t *testing.T) {
+	h := NewHub()
+	if h.IsHardwareOnline("hw-absent") {
+		t.Fatal("absent hardware should be offline")
+	}
+	// Register a conn for hw-1
+	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-1"}
+	_ = h.Register("3140001", conn)
+	if !h.IsHardwareOnline("hw-1") {
+		t.Fatal("hw-1 should be online")
+	}
+}

@@ -979,6 +979,17 @@ func (h *Hub) IsOnline(number string) bool {
 	return h.Get(number) != nil
 }
 
+// IsHardwareOnline reports whether the device with this hardware id has an
+// active hub connection on this pod.
+func (h *Hub) IsHardwareOnline(hardwareID string) bool {
+	if hardwareID == "" {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.hwConns[hardwareID] != nil
+}
+
 func (h *Hub) LocalConnectionCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
