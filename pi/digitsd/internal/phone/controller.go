@@ -127,11 +127,9 @@ type Callbacks interface {
 	VoicemailKey(digit string)                                    // DTMF key during playback (7=delete, 9=mark heard, #=skip, *=replay)
 }
 
-// ContactChecker determines whether a number is in the local contact list.
+// ContactChecker reports whether a number is in the local contact list.
 // When nil, all numbers are allowed (backward compatibility).
-type ContactChecker interface {
-	IsContact(number string) bool
-}
+type ContactChecker func(number string) bool
 
 type Controller struct {
 	mu             sync.Mutex
@@ -666,7 +664,7 @@ func (c *Controller) onDial(number string) {
 
 	// Contact filter: if checker is set and number is not a contact,
 	// play rejection sequence (mimics unreachable number) instead of calling.
-	if c.contactChecker != nil && !c.contactChecker.IsContact(number) {
+	if c.contactChecker != nil && !c.contactChecker(number) {
 		slog.Info("phone: number not in contacts, rejecting", "number", number)
 		c.state = StateCALLING
 		c.cb.SendTone(ToneRingback)
@@ -753,7 +751,7 @@ func (c *Controller) dialThirdParty(number string) {
 	}
 
 	// Contact filter: reject if number is not in the allowed contact list.
-	if c.contactChecker != nil && !c.contactChecker.IsContact(number) {
+	if c.contactChecker != nil && !c.contactChecker(number) {
 		slog.Info("phone: dialThirdParty number not in contacts, rejecting", "number", number)
 		c.state = StateADD_INTERCEPT
 		c.cb.SendTone(ToneIntercept)
