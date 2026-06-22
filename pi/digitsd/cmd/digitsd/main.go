@@ -2250,10 +2250,7 @@ func main() {
 					pairingAnnouncementCancel = nil
 					mixer.StopAll()
 				}
-				dtmfName := dtmfToneName(key)
-				if dtmfName != "" {
-					mixer.PlayOnce(dtmfName)
-				}
+				playKeyTone(mixer, key)
 				// Forward DTMF to the remote peer if a call is connected.
 				state := ctrl.State()
 				if state == phone.StateCONNECTED {
@@ -2567,4 +2564,16 @@ func dtmfToneName(key string) string {
 	default:
 		return ""
 	}
+}
+
+// playKeyTone plays the keypad feedback beep for a pressed key and reports
+// whether a tone was played. Keys that map to no tone (anything but 0-9, *, #)
+// are a no-op and return false.
+func playKeyTone(mixer *audio.Mixer, key string) bool {
+	tone := dtmfToneName(key)
+	if tone == "" {
+		return false
+	}
+	mixer.PlayOnce(tone)
+	return true
 }
