@@ -2119,3 +2119,86 @@ func TestPhoneRestart_RejectsForeignHardware(t *testing.T) {
 		t.Fatalf("expected 400 for foreign hardware_id, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestPhoneOperator_SwapsPanel(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140020", "Study", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-study-a','hw-study-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-study-a', 'dev-study-a', 'Study A', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-study-b', 'dev-study-b', 'Study B', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-study-a"}
+	if err := h.hub.Register("3140020", connA); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-study-a", signaling.DeviceInfoParams{
+		PiVersion:       "3.1.0",
+		FirmwareVersion: "1.5.0",
+	})
+
+	connB := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-study-b"}
+	if err := h.hub.Register("3140020", connB); err != nil {
+		t.Fatalf("register conn B: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-study-b", signaling.DeviceInfoParams{
+		PiVersion:       "2.9.0",
+		FirmwareVersion: "1.4.0",
+	})
+
+	// Request the operator partial for device A.
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140020/operator?hardware_id=hw-study-a", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-study-a"`) {
+		t.Errorf("response missing data-hardware-id for hw-study-a")
+	}
+	if !strings.Contains(body, "3.1.0") {
+		t.Errorf("response missing device A Pi version 3.1.0")
+	}
+	if strings.Contains(body, "2.9.0") {
+		t.Errorf("response should not contain device B Pi version 2.9.0")
+	}
+
+	// Request the operator partial for device B.
+	req = httptest.NewRequest(http.MethodGet, "/phones/3140020/operator?hardware_id=hw-study-b", nil)
+	req.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for B, got %d: %s", w.Code, w.Body.String())
+	}
+	body = w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-study-b"`) {
+		t.Errorf("response missing data-hardware-id for hw-study-b")
+	}
+	if !strings.Contains(body, "2.9.0") {
+		t.Errorf("response missing device B Pi version 2.9.0")
+	}
+}
