@@ -1932,3 +1932,149 @@ func TestChangePhoneNumberDuplicate(t *testing.T) {
 		t.Error("original line should still exist")
 	}
 }
+
+func TestPhoneDetail_BuildsPerDeviceViews(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140010", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-a','hw-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	// Seed two devices: hw-a paired + online with a version, hw-b paired only.
+	var devAID, devBID int64
+	if err := database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-a', 'dev-a', 'Kitchen A', NOW())
+		RETURNING id
+	`, ln.ID).Scan(&devAID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if err := database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-b', 'dev-b', 'Kitchen B', NOW())
+		RETURNING id
+	`, ln.ID).Scan(&devBID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+	_ = devAID
+	_ = devBID
+
+	// Register hw-a as online with version info.
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-a"}
+	if err := h.hub.Register("3140010", connA); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-a", signaling.DeviceInfoParams{
+		FirmwareVersion: "1.2.0",
+		PiVersion:       "2.0.0",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140010", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Kitchen A") {
+		t.Errorf("page missing device A name 'Kitchen A'")
+	}
+	if !strings.Contains(body, "Kitchen B") {
+		t.Errorf("page missing device B name 'Kitchen B'")
+	}
+	if !strings.Contains(body, "2.0.0") {
+		t.Errorf("page missing selected device's Pi version '2.0.0'")
+	}
+}
+
+func TestPhoneRestart_TargetsHardware(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140011", "Porch", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = 'hw-porch'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-porch', 'dev-porch', 'Porch Phone', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-porch"}
+	if err := h.hub.Register("3140011", conn); err != nil {
+		t.Fatalf("register conn: %v", err)
+	}
+
+	form := url.Values{"mode": {"service"}, "hardware_id": {"hw-porch"}}
+	req := httptest.NewRequest("POST", "/phones/3140011/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, _ := signaling.ParseMessage(data)
+		if msg.Type != signaling.TypeRestart {
+			t.Fatalf("expected restart message, got %s", msg.Type)
+		}
+	default:
+		t.Fatal("device did not receive restart message")
+	}
+}
+
+func TestPhoneRestart_RejectsForeignHardware(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140012", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = 'hw-garage'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-garage', 'dev-garage', 'Garage Phone', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+
+	form := url.Values{"mode": {"service"}, "hardware_id": {"hw-other-household"}}
+	req := httptest.NewRequest("POST", "/phones/3140012/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for foreign hardware_id, got %d: %s", w.Code, w.Body.String())
+	}
+}

@@ -50,6 +50,29 @@ func updateNotes(idx *updates.ReleaseIndex, infos []signaling.DeviceInfoSnapshot
 	return pi, fw
 }
 
+// buildDeviceViews joins each paired device row to its live hub snapshot by
+// hardware id and returns the views plus the hardware id to select by default
+// (first online device, else the first device, else "").
+func (h *Handler) buildDeviceViews(devices []device.Device, infos []signaling.DeviceInfoSnapshot) (views []deviceView, selected string) {
+	byHW := make(map[string]*signaling.DeviceInfoSnapshot, len(infos))
+	for i := range infos {
+		byHW[infos[i].HardwareID] = &infos[i]
+	}
+	for _, d := range devices {
+		v := deviceView{Device: d, DeviceInfo: byHW[d.HardwareID]}
+		v.Online = h.hub.IsHardwareOnline(d.HardwareID)
+		v.LastSeenAt = d.LastSeenAt
+		views = append(views, v)
+		if selected == "" && v.Online {
+			selected = d.HardwareID
+		}
+	}
+	if selected == "" && len(devices) > 0 {
+		selected = devices[0].HardwareID
+	}
+	return views, selected
+}
+
 func validateLineName(raw string) (string, error) {
 	name := strings.TrimSpace(raw)
 	if name == "" {
@@ -270,11 +293,21 @@ func (h *Handler) handlePhonesPairPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?"+v.Encode(), http.StatusSeeOther)
 }
 
+// deviceView is one handset's per-device operator data for the detail page.
+type deviceView struct {
+	Device     device.Device
+	DeviceInfo *signaling.DeviceInfoSnapshot // nil if the device has not reported
+	Online     bool
+	LastSeenAt *time.Time
+}
+
 type lineDetailData struct {
 	chromeData
 	Line                  line.Line
 	Online                bool
 	Devices               []device.Device
+	DeviceViews           []deviceView
+	SelectedHardwareID    string
 	DeviceInfo            *signaling.DeviceInfoSnapshot
 	LastSeenAt            *time.Time
 	LatestPiVersion       string
@@ -339,12 +372,26 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allInfos := h.hub.AllDeviceInfo(number)
+	views, selected := h.buildDeviceViews(devices, allInfos)
 	var devInfo *signaling.DeviceInfoSnapshot
-	if len(allInfos) > 0 {
+	selOnline := online
+	for i := range views {
+		if views[i].Device.HardwareID == selected {
+			devInfo = views[i].DeviceInfo
+			selOnline = views[i].Online
+		}
+	}
+	// Fall back to the first hub snapshot when no paired device rows exist yet
+	// (device registered but not yet in the DB, or legacy connection without HW id).
+	if devInfo == nil && len(allInfos) > 0 {
 		devInfo = &allInfos[0]
 	}
 
-	piUpdateNotes, firmwareUpdateNotes := updateNotes(idx, allInfos, latestPi, latestFw)
+	var oneSnapshot []signaling.DeviceInfoSnapshot
+	if devInfo != nil {
+		oneSnapshot = []signaling.DeviceInfoSnapshot{*devInfo}
+	}
+	piUpdateNotes, firmwareUpdateNotes := updateNotes(idx, oneSnapshot, latestPi, latestFw)
 
 	var otherLines []line.Line
 	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
@@ -359,8 +406,10 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
 		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
 		Line:                  *ln,
-		Online:                online,
+		Online:                selOnline,
 		Devices:               devices,
+		DeviceViews:           views,
+		SelectedHardwareID:    selected,
 		DeviceInfo:            devInfo,
 		LastSeenAt:            lastSeenAt,
 		LatestPiVersion:       latestPi,
