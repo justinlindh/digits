@@ -1927,7 +1927,7 @@ func main() {
 	if err := contactsCache.Load(); err != nil {
 		slog.Warn("contacts: load failed", "path", contactsPath, "error", err)
 	} else if n := contactsCache.Count(); n > 0 {
-		ctrl.SetContactChecker(contactsCache)
+		ctrl.SetContactChecker(contactsCache.IsContact)
 		slog.Info("contacts: loaded safelist", "path", contactsPath, "count", n)
 	} else {
 		slog.Info("contacts: no local list, filter disabled", "path", contactsPath)

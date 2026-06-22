@@ -657,20 +657,20 @@ func TestController_BusySignal(t *testing.T) {
 	}
 }
 
-// mockContactChecker implements ContactChecker for testing.
-type mockContactChecker struct {
-	allowed map[string]bool
-}
-
-func (m *mockContactChecker) IsContact(number string) bool {
-	return m.allowed[number]
+// allowContacts builds a ContactChecker that admits only the given numbers.
+func allowContacts(numbers ...string) ContactChecker {
+	allowed := make(map[string]bool, len(numbers))
+	for _, n := range numbers {
+		allowed[n] = true
+	}
+	return func(number string) bool { return allowed[number] }
 }
 
 // Test: dialing an allowed contact proceeds normally
 func TestController_DialAllowedContact(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := newTestController(cb, "")
-	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5551234": true}})
+	c.SetContactChecker(allowContacts("5551234"))
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -689,7 +689,7 @@ func TestController_DialAllowedContact(t *testing.T) {
 func TestController_DialBlockedContact(t *testing.T) {
 	cb := &mockCallbacks{}
 	c := newTestController(cb, "")
-	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5559999": true}})
+	c.SetContactChecker(allowContacts("5559999"))
 
 	c.HandleEvent("HOOK:OFF")
 	c.HandleEvent("KEY:5")
@@ -1613,7 +1613,7 @@ func TestController_DialThirdPartyRejectsBlockedContact(t *testing.T) {
 	mock := &mockCallbacks{}
 	c := newTestController(mock, "5550001")
 	// Only 5550002 is allowed; 5550004 is blocked.
-	c.SetContactChecker(&mockContactChecker{allowed: map[string]bool{"5550002": true}})
+	c.SetContactChecker(allowContacts("5550002"))
 	c.setStateForTest(StateADD_DIALTONE)
 	c.setHeldPeerForTest("5550002")
 
