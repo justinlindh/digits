@@ -306,7 +306,10 @@ After SDP/ICE exchange, audio flows peer-to-peer via WebRTC DTLS-SRTP.
 ## Architecture
 
 ```
-cmd/signald/             Entry point -- wires all components
+cmd/
+  signald/               Entry point -- wires all components
+  autodeploy/            CLI for the prod autodeploy timer (GHCR pull + compose rollout)
+  devseed/               Local dev database seeder
 
 internal/
   auth/                  User authentication (magic links, Google OAuth, sessions)
