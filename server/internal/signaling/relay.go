@@ -240,9 +240,9 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 				"local_addr", msg.LocalAddr)
 		}
 		// If device reconnects after a rebooting update, mark it as success
-		if status := r.Hub.GetUpdateStatus(from); status != nil && status.Status == "rebooting" {
-			r.Hub.SetUpdateStatus(from, "success", "Updated to "+msg.PiVersion)
-			slog.InfoContext(ctx, "update_status", "number", from, "status", "success",
+		if status := r.Hub.GetUpdateStatus(from); status != nil && status.Status == UpdateStatusRebooting {
+			r.Hub.SetUpdateStatus(from, UpdateStatusSuccess, "Updated to "+msg.PiVersion)
+			slog.InfoContext(ctx, "update_status", "number", from, "status", UpdateStatusSuccess,
 				"detail", "device reconnected with "+msg.PiVersion)
 		}
 		return // No relay: server consumes this
