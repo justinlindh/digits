@@ -196,7 +196,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	// this session would never receive EndedKind. The DB status is
 	// authoritative; flip straight to the terminal state.
 	if cur, err := h.tracker.GetCall(r.Context(), callID); err == nil && cur.Status == calls.CallStatusEnded {
-		_ = writeSSE(w, "ended", renderEndedFragment(""))
+		_ = writeSSE(w, sseEventEnded, renderEndedFragment(""))
 		flusher.Flush()
 		return
 	}
@@ -211,7 +211,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 		case ev, ok := <-sub.C:
 			if !ok {
 				// Channel closed by Evict. Send one final ended event and return.
-				_ = writeSSE(w, "ended", renderEndedFragment(""))
+				_ = writeSSE(w, sseEventEnded, renderEndedFragment(""))
 				flusher.Flush()
 				return
 			}
@@ -220,7 +220,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 				return
 			}
 		case <-heartbeat.C:
-			if err := writeSSE(w, "heartbeat", "{}"); err != nil {
+			if err := writeSSE(w, sseEventHeartbeat, "{}"); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -249,6 +249,20 @@ func startSSE(w http.ResponseWriter, r *http.Request) (http.Flusher, bool) {
 	return flusher, true
 }
 
+// SSE event names emitted by the link-health streams. These are a wire
+// contract: the htmx sse-swap attributes in call-live-detail.html and
+// conference-live-detail.html subscribe to "sample", "ended", and "disconnect"
+// by these exact names, so a typo here silently breaks the client swap with no
+// compile error. The two stream handlers (2-party and conference) must agree on
+// the vocabulary, which is why it lives in one place. "heartbeat" keeps the
+// connection warm and has no client swap.
+const (
+	sseEventSample     = "sample"
+	sseEventEnded      = "ended"
+	sseEventDisconnect = "disconnect"
+	sseEventHeartbeat  = "heartbeat"
+)
+
 // writeSSE emits one SSE event frame: "event: <name>\ndata: <data>\n\n".
 func writeSSE(w io.Writer, event, data string) error {
 	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
@@ -276,7 +290,7 @@ func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher htt
 	if err != nil {
 		return err
 	}
-	if err := writeSSE(w, "sample", fragment); err != nil {
+	if err := writeSSE(w, sseEventSample, fragment); err != nil {
 		return err
 	}
 	flusher.Flush()
@@ -289,11 +303,11 @@ func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher htt
 func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool, error) {
 	switch ev.Kind {
 	case calls.EndedKind:
-		if err := writeSSE(w, "ended", renderEndedFragment("")); err != nil {
+		if err := writeSSE(w, sseEventEnded, renderEndedFragment("")); err != nil {
 			return true, err
 		}
 	case calls.DisconnectKind:
-		if err := writeSSE(w, "disconnect", renderEndedFragment(ev.EndedBy)); err != nil {
+		if err := writeSSE(w, sseEventDisconnect, renderEndedFragment(ev.EndedBy)); err != nil {
 			return true, err
 		}
 	default:
