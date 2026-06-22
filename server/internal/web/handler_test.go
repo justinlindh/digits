@@ -1996,6 +1996,47 @@ func TestPhoneDetail_BuildsPerDeviceViews(t *testing.T) {
 	}
 }
 
+func TestBuildDeviceViews_Selection(t *testing.T) {
+	h, _, _ := setupHandler(t)
+
+	devices := []device.Device{
+		{ID: 1, Name: "A", HardwareID: "hw-1"},
+		{ID: 2, Name: "B", HardwareID: "hw-2"},
+	}
+
+	// No device online: the first device is selected.
+	views, selected := h.buildDeviceViews(devices, nil)
+	if len(views) != 2 {
+		t.Fatalf("want 2 views, got %d", len(views))
+	}
+	if selected != "hw-1" {
+		t.Errorf("no devices online: want first device hw-1 selected, got %q", selected)
+	}
+
+	// hw-2 online: the online device is selected even though it is not first.
+	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-2"}
+	if err := h.hub.Register("3140099", conn); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	views, selected = h.buildDeviceViews(devices, nil)
+	if selected != "hw-2" {
+		t.Errorf("hw-2 online: want hw-2 selected, got %q", selected)
+	}
+	for _, v := range views {
+		if v.Device.HardwareID == "hw-2" && !v.Online {
+			t.Error("hw-2 view should be marked online")
+		}
+		if v.Device.HardwareID == "hw-1" && v.Online {
+			t.Error("hw-1 view should be offline")
+		}
+	}
+
+	// Empty device list: no selection.
+	if _, sel := h.buildDeviceViews(nil, nil); sel != "" {
+		t.Errorf("empty devices: want empty selection, got %q", sel)
+	}
+}
+
 func TestPhoneRestart_TargetsHardware(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)

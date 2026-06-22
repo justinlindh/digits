@@ -452,13 +452,16 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 
 	online := h.hub.IsHardwareOnline(hardwareID)
 
+	// Last-seen is sourced from this device's own row, not the line-level hub
+	// aggregate: on a multi-device line the line aggregate would show the most
+	// recently active sibling's time, which is wrong for the selected device.
+	// The throttled last-seen writer keeps the row fresh while the device is
+	// connected.
 	var lastSeenAt *time.Time
-	if online {
-		lastSeenAt = h.hub.LastSeenAt(ln.Number)
-	} else if h.deviceStore != nil {
+	if h.deviceStore != nil {
 		devices, _ := h.deviceStore.ListByLine(r.Context(), ln.ID)
 		for _, d := range devices {
-			if d.HardwareID == hardwareID && d.LastSeenAt != nil {
+			if d.HardwareID == hardwareID {
 				lastSeenAt = d.LastSeenAt
 				break
 			}
@@ -513,7 +516,8 @@ func (h *Handler) handlePhoneOperator(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	if h.requireLineOwnership(w, r, number) == nil {
+	ln := h.requireLineOwnership(w, r, number)
+	if ln == nil {
 		return
 	}
 	if !parseForm(w, r) {
@@ -524,7 +528,14 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	hwID := strings.TrimSpace(r.FormValue("hardware_id"))
 	var online bool
 	if hwID != "" && !isHTMX(r) {
-		online = h.hub.IsHardwareOnline(hwID)
+		// Validate the id belongs to this line before probing it, so this
+		// endpoint can't be used as an online oracle for other households'
+		// hardware. requireLineDevice returns the id unchanged when valid.
+		validHW, ok := h.requireLineDevice(w, r, ln)
+		if !ok {
+			return
+		}
+		online = h.hub.IsHardwareOnline(validHW)
 	} else {
 		online = h.hub.IsOnline(number)
 	}
@@ -1068,6 +1079,8 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
+	// hwID is "" only in requireLineDevice's no-device-rows fallback; there it
+	// means "no specific device to match", so fall back to a line-level scan.
 	enabled := false
 	for _, info := range h.hub.AllDeviceInfo(number) {
 		if (hwID == "" || info.HardwareID == hwID) && info.DevMode {
