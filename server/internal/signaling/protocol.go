@@ -41,6 +41,14 @@ const (
 	TypeVoicemailState = "voicemail_state" // Phone → Server: per-handset unheard voicemail count snapshot
 )
 
+// Update status values reported by phones during OTA updates. The full wire
+// vocabulary is downloading, applying, rebooting, success, failed (consumed by
+// the phone-detail UI); these are the values the server itself acts on.
+const (
+	UpdateStatusRebooting = "rebooting" // device is rebooting to apply an update
+	UpdateStatusSuccess   = "success"   // update applied, device reconnected
+)
+
 // Extension pickup types (POTS extension model: pick up a second handset mid-call)
 const (
 	TypeExtensionPickup  = "extension_pickup"  // Phone → Server: device is picking up during active call on its line
