@@ -412,3 +412,132 @@ func TestStore_Delete_NotFound(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestGetMembersWithUsers(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	ownerID := createTestUser(t, database, "members-owner@example.com")
+	memberID := createTestUser(t, database, "members-member@example.com")
+
+	h, err := s.Create(ctx, "Members Family", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.AddMember(ctx, memberID, h.ID, "member"); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	members, err := s.GetMembersWithUsers(ctx, h.ID)
+	if err != nil {
+		t.Fatalf("GetMembersWithUsers: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(members))
+	}
+
+	byEmail := make(map[string]MemberWithUser, len(members))
+	for _, m := range members {
+		byEmail[m.Email] = m
+	}
+	owner, ok := byEmail["members-owner@example.com"]
+	if !ok {
+		t.Fatal("owner missing from members")
+	}
+	if owner.Role != "admin" {
+		t.Errorf("owner role = %q, want admin", owner.Role)
+	}
+	if owner.UserID != ownerID {
+		t.Errorf("owner UserID = %q, want %q", owner.UserID, ownerID)
+	}
+	if member, ok := byEmail["members-member@example.com"]; !ok || member.Role != "member" {
+		t.Errorf("member entry = %+v, ok=%v, want role member", member, ok)
+	}
+}
+
+func TestIsMemberByEmail(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	ownerID := createTestUser(t, database, "Mixed.Case@Example.com")
+
+	h, err := s.Create(ctx, "Email Family", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Lookup is case-insensitive on both sides.
+	ok, err := s.IsMemberByEmail(ctx, h.ID, "mixed.case@example.com")
+	if err != nil {
+		t.Fatalf("IsMemberByEmail: %v", err)
+	}
+	if !ok {
+		t.Error("expected case-insensitive match for existing member")
+	}
+
+	ok, err = s.IsMemberByEmail(ctx, h.ID, "stranger@example.com")
+	if err != nil {
+		t.Fatalf("IsMemberByEmail: %v", err)
+	}
+	if ok {
+		t.Error("expected non-member to report false")
+	}
+}
+
+func TestCountHouseholds(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+
+	before, err := s.CountHouseholds(ctx)
+	if err != nil {
+		t.Fatalf("CountHouseholds: %v", err)
+	}
+
+	ownerID := createTestUser(t, database, "count-owner@example.com")
+	if _, err := s.Create(ctx, "Count A", ownerID); err != nil {
+		t.Fatalf("Create A: %v", err)
+	}
+	if _, err := s.Create(ctx, "Count B", ownerID); err != nil {
+		t.Fatalf("Create B: %v", err)
+	}
+
+	after, err := s.CountHouseholds(ctx)
+	if err != nil {
+		t.Fatalf("CountHouseholds: %v", err)
+	}
+	if after != before+2 {
+		t.Errorf("CountHouseholds = %d, want %d", after, before+2)
+	}
+}
+
+func TestSetCallHistoryEnabled(t *testing.T) {
+	s, database := testStore(t)
+	ctx := context.Background()
+	ownerID := createTestUser(t, database, "callhist-owner@example.com")
+
+	h, err := s.Create(ctx, "Call History Family", ownerID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	readFlag := func() bool {
+		t.Helper()
+		got, err := s.GetByID(ctx, h.ID)
+		if err != nil {
+			t.Fatalf("GetByID: %v", err)
+		}
+		return got.CallHistoryEnabled
+	}
+
+	if err := s.SetCallHistoryEnabled(ctx, h.ID, false); err != nil {
+		t.Fatalf("SetCallHistoryEnabled(false): %v", err)
+	}
+	if readFlag() {
+		t.Error("expected call_history_enabled to be false")
+	}
+
+	if err := s.SetCallHistoryEnabled(ctx, h.ID, true); err != nil {
+		t.Fatalf("SetCallHistoryEnabled(true): %v", err)
+	}
+	if !readFlag() {
+		t.Error("expected call_history_enabled to be true")
+	}
+}
