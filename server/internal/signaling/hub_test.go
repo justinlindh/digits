@@ -502,3 +502,23 @@ func TestSendToDoesNotInvokeDropHookOnSuccessfulSend(t *testing.T) {
 		t.Errorf("drop hook called %d times on successful send, want 0", drops)
 	}
 }
+
+func TestUpdateStatus_PerHardware(t *testing.T) {
+	h := NewHub()
+	h.SetUpdateStatus("hwA", "downloading", "10%")
+	h.SetUpdateStatus("hwB", "applying", "")
+
+	if got := h.GetUpdateStatus("hwA"); got == nil || got.Status != "downloading" {
+		t.Fatalf("hwA: got %+v", got)
+	}
+	if got := h.GetUpdateStatus("hwB"); got == nil || got.Status != "applying" {
+		t.Fatalf("hwB: got %+v", got)
+	}
+	h.ClearUpdateStatus("hwA")
+	if got := h.GetUpdateStatus("hwA"); got != nil {
+		t.Fatalf("hwA should be cleared, got %+v", got)
+	}
+	if got := h.GetUpdateStatus("hwB"); got == nil {
+		t.Fatalf("hwB should survive clearing hwA")
+	}
+}

@@ -240,16 +240,16 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 				"local_addr", msg.LocalAddr)
 		}
 		// If device reconnects after a rebooting update, mark it as success
-		if status := r.Hub.GetUpdateStatus(from); status != nil && status.Status == UpdateStatusRebooting {
-			r.Hub.SetUpdateStatus(from, UpdateStatusSuccess, "Updated to "+msg.PiVersion)
-			slog.InfoContext(ctx, "update_status", "number", from, "status", UpdateStatusSuccess,
-				"detail", "device reconnected with "+msg.PiVersion)
+		if status := r.Hub.GetUpdateStatus(msg.HardwareID); status != nil && status.Status == UpdateStatusRebooting {
+			r.Hub.SetUpdateStatus(msg.HardwareID, UpdateStatusSuccess, "Updated to "+msg.PiVersion)
+			slog.InfoContext(ctx, "update_status", "number", from, "hardware_id", msg.HardwareID,
+				"status", UpdateStatusSuccess, "detail", "device reconnected with "+msg.PiVersion)
 		}
 		return // No relay: server consumes this
 	case TypeUpdateStatus:
-		slog.InfoContext(ctx, "update_status", "number", from,
+		slog.InfoContext(ctx, "update_status", "number", from, "hardware_id", msg.HardwareID,
 			"status", msg.UpdateStatus, "detail", msg.UpdateDetail)
-		r.Hub.SetUpdateStatus(from, msg.UpdateStatus, msg.UpdateDetail)
+		r.Hub.SetUpdateStatus(msg.HardwareID, msg.UpdateStatus, msg.UpdateDetail)
 		return // No relay: server consumes this
 	case TypeRestart:
 		return // Server to device only; ignore if echoed back

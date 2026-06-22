@@ -22,11 +22,11 @@ func TestDeviceStateSetOnlineAndIsOnline(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	if ds.IsOnline(ctx, "5551234") {
+	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected device to be offline before SetOnline")
 	}
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-abc",
 		PiVersion:       "1.0.0",
@@ -36,7 +36,7 @@ func TestDeviceStateSetOnlineAndIsOnline(t *testing.T) {
 		RemoteAddr:      "192.168.1.10",
 	})
 
-	if !ds.IsOnline(ctx, "5551234") {
+	if !ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected device to be online after SetOnline")
 	}
 }
@@ -45,14 +45,14 @@ func TestDeviceStateSetOffline(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:      "pod-1",
 		HardwareID: "hw-abc",
 	})
 
-	ds.SetOffline(ctx, "5551234", "hw-abc")
+	ds.SetOffline(ctx, "hw-5551234", "hw-abc")
 
-	if ds.IsOnline(ctx, "5551234") {
+	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected device to be offline after SetOffline")
 	}
 }
@@ -84,7 +84,7 @@ func TestDeviceStateDeviceInfo(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-abc",
 		PiVersion:       "1.2.0",
@@ -94,7 +94,7 @@ func TestDeviceStateDeviceInfo(t *testing.T) {
 		RemoteAddr:      "10.0.0.5",
 	})
 
-	all := ds.AllDeviceInfo(ctx, "5551234")
+	all := ds.AllDeviceInfo(ctx, "hw-5551234")
 	if len(all) == 0 {
 		t.Fatal("expected a DeviceInfoSnapshot")
 	}
@@ -129,7 +129,7 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-abc",
 		PiVersion:       "1.0.0",
@@ -141,7 +141,7 @@ func TestDeviceStateUpdateDeviceInfo(t *testing.T) {
 		RemoteAddr: "192.168.1.50",
 	})
 
-	all := ds.AllDeviceInfo(ctx, "5551234")
+	all := ds.AllDeviceInfo(ctx, "hw-5551234")
 	if len(all) == 0 {
 		t.Fatal("expected a DeviceInfoSnapshot")
 	}
@@ -161,16 +161,16 @@ func TestDeviceStateTouchLastSeen(t *testing.T) {
 	ds, mr := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:      "pod-1",
 		HardwareID: "hw-abc",
 	})
 
 	mr.FastForward(60 * time.Second)
 
-	ds.TouchLastSeen(ctx, "5551234", "hw-abc")
+	ds.TouchLastSeen(ctx, "hw-5551234", "hw-abc")
 
-	ts := ds.LastSeenAt(ctx, "5551234")
+	ts := ds.LastSeenAt(ctx, "hw-5551234")
 	if ts == nil {
 		t.Fatal("expected non-nil LastSeenAt after TouchLastSeen")
 	}
@@ -194,9 +194,9 @@ func TestDeviceStateUpdateStatus(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetUpdateStatus(ctx, "5551234", "downloading", "50%")
+	ds.SetUpdateStatus(ctx, "hw-5551234", "downloading", "50%")
 
-	snap := ds.GetUpdateStatus(ctx, "5551234")
+	snap := ds.GetUpdateStatus(ctx, "hw-5551234")
 	if snap == nil {
 		t.Fatal("expected non-nil UpdateStatusSnapshot")
 	}
@@ -210,9 +210,9 @@ func TestDeviceStateUpdateStatus(t *testing.T) {
 		t.Error("UpdatedAt should not be zero")
 	}
 
-	ds.ClearUpdateStatus(ctx, "5551234")
+	ds.ClearUpdateStatus(ctx, "hw-5551234")
 
-	snap = ds.GetUpdateStatus(ctx, "5551234")
+	snap = ds.GetUpdateStatus(ctx, "hw-5551234")
 	if snap != nil {
 		t.Fatalf("expected nil after ClearUpdateStatus, got %+v", snap)
 	}
@@ -222,18 +222,18 @@ func TestDeviceStateTTLExpiry(t *testing.T) {
 	ds, mr := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:      "pod-1",
 		HardwareID: "hw-abc",
 	})
 
-	if !ds.IsOnline(ctx, "5551234") {
+	if !ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected online before expiry")
 	}
 
 	mr.FastForward(91 * time.Second)
 
-	if ds.IsOnline(ctx, "5551234") {
+	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("expected offline after TTL expiry")
 	}
 }
@@ -242,20 +242,20 @@ func TestDeviceStateAllDeviceInfoMultiDevice(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-aaa",
 		PiVersion:       "1.0.0",
 		FirmwareVersion: "0.5.0",
 	})
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID:           "pod-1",
 		HardwareID:      "hw-bbb",
 		PiVersion:       "1.2.0",
 		FirmwareVersion: "0.8.0",
 	})
 
-	infos := ds.AllDeviceInfo(ctx, "5551234")
+	infos := ds.AllDeviceInfo(ctx, "hw-5551234")
 	if len(infos) != 2 {
 		t.Fatalf("expected 2 devices, got %d", len(infos))
 	}
@@ -273,20 +273,20 @@ func TestDeviceStateSetOfflineRemovesOneDevice(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID: "pod-1", HardwareID: "hw-aaa", PiVersion: "1.0.0",
 	})
-	ds.SetOnline(ctx, "5551234", DevicePresence{
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{
 		PodID: "pod-1", HardwareID: "hw-bbb", PiVersion: "1.2.0",
 	})
 
-	ds.SetOffline(ctx, "5551234", "hw-aaa")
+	ds.SetOffline(ctx, "hw-5551234", "hw-aaa")
 
-	if !ds.IsOnline(ctx, "5551234") {
+	if !ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("line should still be online with one remaining device")
 	}
 
-	infos := ds.AllDeviceInfo(ctx, "5551234")
+	infos := ds.AllDeviceInfo(ctx, "hw-5551234")
 	if len(infos) != 1 {
 		t.Fatalf("expected 1 device after removing one, got %d", len(infos))
 	}
@@ -299,14 +299,14 @@ func TestDeviceStateEmptyHardwareIDSkipped(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()
 
-	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-1"})
+	ds.SetOnline(ctx, "hw-5551234", DevicePresence{PodID: "pod-1"})
 
-	if ds.IsOnline(ctx, "5551234") {
+	if ds.IsOnline(ctx, "hw-5551234") {
 		t.Fatal("device with empty hardware ID should not register in Redis")
 	}
 
-	ds.SetOffline(ctx, "5551234", "")
+	ds.SetOffline(ctx, "hw-5551234", "")
 
-	ds.TouchLastSeen(ctx, "5551234", "")
+	ds.TouchLastSeen(ctx, "hw-5551234", "")
 	ds.UpdateDeviceInfo(ctx, "", DevicePresence{PiVersion: "1.0.0"})
 }
