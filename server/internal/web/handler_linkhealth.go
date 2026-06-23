@@ -201,22 +201,39 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	streamSSE(r.Context(), w, flusher, sub, renderEndedFragment(""), func(ev calls.Event) error {
+		if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
+			slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// streamSSE runs the heartbeat/event select loop shared by the link-health
+// SSE streams (2-party calls and conferences). It forwards each subscription
+// event to onEvent, writes endedFragment when the subscription channel closes
+// (the cross-pod Evict path), and emits a heartbeat on every tick. It returns
+// when the client disconnects, the subscription closes, or onEvent reports a
+// write failure. Callers do their own pre-loop setup (initial snapshot,
+// subscribe ordering) because that part legitimately differs between the two
+// streams.
+func streamSSE(ctx context.Context, w io.Writer, flusher http.Flusher, sub *calls.Subscription, endedFragment string, onEvent func(ev calls.Event) error) {
 	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case ev, ok := <-sub.C:
 			if !ok {
 				// Channel closed by Evict. Send one final ended event and return.
-				_ = writeSSE(w, sseEventEnded, renderEndedFragment(""))
+				_ = writeSSE(w, sseEventEnded, endedFragment)
 				flusher.Flush()
 				return
 			}
-			if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
-				slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
+			if err := onEvent(ev); err != nil {
 				return
 			}
 		case <-heartbeat.C:
@@ -298,16 +315,18 @@ func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher htt
 }
 
 // writeTerminalEvent writes an SSE frame for an EndedKind or DisconnectKind
-// event using renderEndedFragment. Returns true if the event was a terminal
+// event, rendering the ended/disconnect body via renderEnded so the 2-party
+// and conference streams can share the same terminal-event handling while
+// keeping their own deck wording. Returns true if the event was a terminal
 // kind and was handled, false for SampleKind (which the caller handles).
-func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool, error) {
+func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event, renderEnded func(endedBy string) string) (bool, error) {
 	switch ev.Kind {
 	case calls.EndedKind:
-		if err := writeSSE(w, sseEventEnded, renderEndedFragment("")); err != nil {
+		if err := writeSSE(w, sseEventEnded, renderEnded("")); err != nil {
 			return true, err
 		}
 	case calls.DisconnectKind:
-		if err := writeSSE(w, sseEventDisconnect, renderEndedFragment(ev.EndedBy)); err != nil {
+		if err := writeSSE(w, sseEventDisconnect, renderEnded(ev.EndedBy)); err != nil {
 			return true, err
 		}
 	default:
@@ -318,7 +337,7 @@ func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool
 }
 
 func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
-	if handled, err := writeTerminalEvent(w, flusher, ev); handled {
+	if handled, err := writeTerminalEvent(w, flusher, ev, renderEndedFragment); handled {
 		return err
 	}
 	// SampleKind
