@@ -7,9 +7,9 @@ the operator (the listener is expected to be private; binding it to
 `127.0.0.1` is supported for single-node Docker deployments and is the
 recommended default for a host-network compose setup).
 
-The metric design is bound by the digits anti-surveillance pitch (see
-`docs/mission.md` and `docs/why-digits.md`). Reviewers should treat any
-new label as a privacy decision, not a routine refactor.
+The metric design is bound by the digits anti-surveillance pitch (see the
+repo-root `docs/mission.md` and `docs/why-digits.md`). Reviewers should treat
+any new label as a privacy decision, not a routine refactor.
 
 ## Listener config
 
