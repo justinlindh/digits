@@ -327,7 +327,6 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 	if ln == nil {
 		return
 	}
-	online := h.hub.IsOnline(number)
 
 	var devices []device.Device
 	if h.deviceStore != nil {
@@ -338,99 +337,34 @@ func (h *Handler) handlePhoneDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For online devices, use the real-time in-memory timestamp from the Hub.
-	// For offline devices, fall back to the last disconnect time from the DB.
-	var lastSeenAt *time.Time
-	if online {
-		lastSeenAt = h.hub.LastSeenAt(number)
-	} else {
-		for _, d := range devices {
-			if d.LastSeenAt != nil && (lastSeenAt == nil || d.LastSeenAt.After(*lastSeenAt)) {
-				lastSeenAt = d.LastSeenAt
-			}
-		}
-	}
-
-	var latestPi, latestFw string
-	var piReleases, fwReleases []updates.Release
-	var idx *updates.ReleaseIndex
-	if h.releases != nil {
-		idx = h.releases.ReleaseIndex()
-	}
-	if idx != nil {
-		latestPi = idx.Pi.Latest
-		latestFw = idx.Firmware.Latest
-		piReleases = idx.SortedReleases(updates.ComponentPi)
-		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
-	}
-
-	loc := hh.Location()
-
-	if lastSeenAt != nil {
-		t := lastSeenAt.In(loc)
-		lastSeenAt = &t
-	}
-
 	allInfos := h.hub.AllDeviceInfo(number)
 	views, selected := h.buildDeviceViews(devices, allInfos)
-	var devInfo *signaling.DeviceInfoSnapshot
-	selOnline := online
-	for i := range views {
-		if views[i].Device.HardwareID == selected {
-			devInfo = views[i].DeviceInfo
-			selOnline = views[i].Online
-		}
-	}
-	// Fall back to the first hub snapshot when no paired device rows exist yet
-	// (device registered but not yet in the DB, or legacy connection without HW id).
-	if devInfo == nil && len(allInfos) > 0 {
-		devInfo = &allInfos[0]
-	}
 
-	var oneSnapshot []signaling.DeviceInfoSnapshot
-	if devInfo != nil {
-		oneSnapshot = []signaling.DeviceInfoSnapshot{*devInfo}
-	}
-	piUpdateNotes, firmwareUpdateNotes := updateNotes(idx, oneSnapshot, latestPi, latestFw)
+	// The operator panel renders the selected device through the same builder
+	// the toggle-swap endpoint uses, so the initial page and a later swap show
+	// identical fields.
+	data := h.buildOperatorData(r, ln, hh, selected, devices, allInfos)
+	data.chromeData = h.newChromeDataWithHouseholds(r, "phones")
+	data.Devices = devices
+	data.DeviceViews = views
+	data.NumberError = r.URL.Query().Get("number_error")
 
-	var otherLines []line.Line
 	allLines, err := h.lineStore.ListByHousehold(r.Context(), hh.ID)
 	if err == nil {
 		for _, ol := range allLines {
 			if ol.ID != ln.ID {
-				otherLines = append(otherLines, ol)
+				data.OtherLines = append(data.OtherLines, ol)
 			}
 		}
 	}
 
-	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), lineDetailData{
-		chromeData:            h.newChromeDataWithHouseholds(r, "phones"),
-		Line:                  *ln,
-		Online:                selOnline,
-		Devices:               devices,
-		DeviceViews:           views,
-		SelectedHardwareID:    selected,
-		DeviceInfo:            devInfo,
-		LastSeenAt:            lastSeenAt,
-		LatestPiVersion:       latestPi,
-		LatestFirmwareVersion: latestFw,
-		PiReleases:            piReleases,
-		FWReleases:            fwReleases,
-		PiUpdateNotes:         piUpdateNotes,
-		FirmwareUpdateNotes:   firmwareUpdateNotes,
-		OtherLines:            otherLines,
-		NumberError:           r.URL.Query().Get("number_error"),
-		IsAdmin:               h.isHouseholdAdmin(r, hh.ID),
-	})
+	renderWith(r.Context(), w, h.tmplPhoneDetail, layoutFor(r), data)
 }
 
-// buildOperatorData assembles the per-device operator view for hardwareID.
-// It is shared between handlePhoneDetail (full page) and handlePhoneOperator
-// (partial swap) so a toggle swap produces identical fields to a full reload.
-func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *household.Household, hardwareID string) lineDetailData {
-	var latestPi, latestFw string
-	var piReleases, fwReleases []updates.Release
-	var idx *updates.ReleaseIndex
+// releaseData reads the cached release index and the per-component latest
+// versions and sorted release lists. Returns zero values when no index is
+// loaded.
+func (h *Handler) releaseData() (idx *updates.ReleaseIndex, latestPi, latestFw string, piReleases, fwReleases []updates.Release) {
 	if h.releases != nil {
 		idx = h.releases.ReleaseIndex()
 	}
@@ -440,8 +374,19 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 		piReleases = idx.SortedReleases(updates.ComponentPi)
 		fwReleases = idx.SortedReleases(updates.ComponentFirmware)
 	}
+	return idx, latestPi, latestFw, piReleases, fwReleases
+}
 
-	allInfos := h.hub.AllDeviceInfo(ln.Number)
+// buildOperatorData assembles the per-device operator view for hardwareID from
+// already-fetched device rows and hub snapshots. It is shared between
+// handlePhoneDetail (full page) and handlePhoneOperator (partial swap) so a
+// toggle swap produces identical fields to a full reload. An empty hardwareID
+// means no device rows exist yet (legacy/unpaired connection): fall back to the
+// first hub snapshot and the line-level online state so those connections still
+// render.
+func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *household.Household, hardwareID string, devices []device.Device, allInfos []signaling.DeviceInfoSnapshot) lineDetailData {
+	idx, latestPi, latestFw, piReleases, fwReleases := h.releaseData()
+
 	var devInfo *signaling.DeviceInfoSnapshot
 	for i := range allInfos {
 		if allInfos[i].HardwareID == hardwareID {
@@ -449,8 +394,11 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 			break
 		}
 	}
-
 	online := h.hub.IsHardwareOnline(hardwareID)
+	if hardwareID == "" && len(allInfos) > 0 {
+		devInfo = &allInfos[0]
+		online = h.hub.IsOnline(ln.Number)
+	}
 
 	// Last-seen is sourced from this device's own row, not the line-level hub
 	// aggregate: on a multi-device line the line aggregate would show the most
@@ -458,19 +406,14 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 	// The throttled last-seen writer keeps the row fresh while the device is
 	// connected.
 	var lastSeenAt *time.Time
-	if h.deviceStore != nil {
-		devices, _ := h.deviceStore.ListByLine(r.Context(), ln.ID)
-		for _, d := range devices {
-			if d.HardwareID == hardwareID {
-				lastSeenAt = d.LastSeenAt
-				break
-			}
+	for _, d := range devices {
+		if d.HardwareID == hardwareID {
+			lastSeenAt = d.LastSeenAt
+			break
 		}
 	}
-
-	loc := hh.Location()
 	if lastSeenAt != nil {
-		t := lastSeenAt.In(loc)
+		t := lastSeenAt.In(hh.Location())
 		lastSeenAt = &t
 	}
 
@@ -505,11 +448,12 @@ func (h *Handler) handlePhoneOperator(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, devices, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
-	data := h.buildOperatorData(r, ln, hh, hwID)
+	allInfos := h.hub.AllDeviceInfo(number)
+	data := h.buildOperatorData(r, ln, hh, hwID, devices, allInfos)
 	data.chromeData = h.newChromeDataWithHouseholds(r, "phones")
 	renderWith(r.Context(), w, h.tmplPhoneDetail, partialFor(r, "operator-panel", "am-operator-panel"), data)
 }
@@ -523,15 +467,15 @@ func (h *Handler) handlePhoneOnline(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	// Per-device online check when hardware_id is provided; line-level otherwise.
-	// The HTMX header-badge path stays line-level so the badge reflects any device on the line.
-	hwID := strings.TrimSpace(r.FormValue("hardware_id"))
+	// Per-device online check when a hardware_id is provided; line-level
+	// otherwise. The header-badge poll sends no hardware_id, so it stays
+	// line-level and reflects any device on the line.
 	var online bool
-	if hwID != "" && !isHTMX(r) {
+	if strings.TrimSpace(r.FormValue("hardware_id")) != "" {
 		// Validate the id belongs to this line before probing it, so this
 		// endpoint can't be used as an online oracle for other households'
 		// hardware. requireLineDevice returns the id unchanged when valid.
-		validHW, ok := h.requireLineDevice(w, r, ln)
+		validHW, _, ok := h.requireLineDevice(w, r, ln)
 		if !ok {
 			return
 		}
@@ -890,7 +834,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -916,7 +860,7 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -941,7 +885,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -960,7 +904,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -988,7 +932,7 @@ func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -1055,7 +999,7 @@ func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
 		msg.DevModePassword = pw
 	}
 
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -1075,7 +1019,7 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 	if !parseForm(w, r) {
 		return
 	}
-	hwID, ok := h.requireLineDevice(w, r, ln)
+	hwID, _, ok := h.requireLineDevice(w, r, ln)
 	if !ok {
 		return
 	}
@@ -1096,44 +1040,46 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// requireLineDevice resolves the hardware_id param to a device on this line.
-// When hardware_id is empty it defaults to the line's first device (the common
-// single-device case). Returns ("", true) when no device rows exist and no
-// hardware_id was requested: callers treat this as "send to line level" so
-// existing connections without DB rows continue to work. Returns ("", false)
-// after writing a 400 when a specific hardware_id was requested but not found.
-// Caller must already hold line ownership and have called parseForm.
-func (h *Handler) requireLineDevice(w http.ResponseWriter, r *http.Request, ln *line.Line) (hardwareID string, ok bool) {
+// requireLineDevice resolves the hardware_id param to a device on this line and
+// returns the line's device rows so callers can reuse them without a second
+// query. When hardware_id is empty it defaults to the line's first device (the
+// common single-device case). Returns ("", _, true) when no device rows exist
+// and no hardware_id was requested: callers treat this as "send to line level"
+// so existing connections without DB rows continue to work. Returns
+// ("", _, false) after writing a 400 when a specific hardware_id was requested
+// but not found. Caller must already hold line ownership and have called
+// parseForm.
+func (h *Handler) requireLineDevice(w http.ResponseWriter, r *http.Request, ln *line.Line) (hardwareID string, devices []device.Device, ok bool) {
 	want := strings.TrimSpace(r.FormValue("hardware_id"))
 	if h.deviceStore == nil {
 		if want != "" {
 			jsonError(r.Context(), w, "unknown device for line", http.StatusBadRequest)
-			return "", false
+			return "", nil, false
 		}
-		return "", true
+		return "", nil, true
 	}
 	devices, err := h.deviceStore.ListByLine(r.Context(), ln.ID)
 	if err != nil {
 		jsonError(r.Context(), w, "no devices on line", http.StatusBadRequest)
-		return "", false
+		return "", nil, false
 	}
 	if len(devices) == 0 {
 		if want != "" {
 			jsonError(r.Context(), w, "unknown device for line", http.StatusBadRequest)
-			return "", false
+			return "", devices, false
 		}
-		return "", true
+		return "", devices, true
 	}
 	if want == "" {
-		return devices[0].HardwareID, true
+		return devices[0].HardwareID, devices, true
 	}
 	for _, d := range devices {
 		if d.HardwareID == want {
-			return want, true
+			return want, devices, true
 		}
 	}
 	jsonError(r.Context(), w, "unknown device for line", http.StatusBadRequest)
-	return "", false
+	return "", devices, false
 }
 
 // sendDeviceCommandAndRespond pushes msg to a specific device by hardware id,
