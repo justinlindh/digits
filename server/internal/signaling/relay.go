@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,6 +73,19 @@ type ErrorObserver interface {
 	ObserveSignalingError(category string)
 }
 
+// MediaObserver counts media-negotiation events the relay can see as it relays
+// signaling: which ICE candidate types and transports flow between peers, and
+// whether ICE-server responses include TURN. Implemented by *metrics.Registry.
+// Like ErrorObserver, the interface lives here so internal/signaling does not
+// import internal/metrics; the metrics package validates the label values
+// against a fixed set so a malformed candidate can never widen the label space.
+// All arguments are derived from the parsed candidate, never from raw user
+// input, so no peer identity reaches a label.
+type MediaObserver interface {
+	ObserveICECandidate(candType, transport string)
+	ObserveICEServersIssued(turn bool)
+}
+
 // activeExtension tracks a device that picked up an extension phone during
 // an active call on its line. The extension device has its own WebRTC peer
 // connection to the remote party, running in parallel with the original
@@ -106,6 +120,11 @@ type Relay struct {
 	// unreachable, etc). nil disables instrumentation; production wires it
 	// in cmd/signald/main.go.
 	Errors ErrorObserver
+
+	// Metrics is optional. When set, media-negotiation counters (ICE
+	// candidate types/transports relayed, ICE-server issuance) are emitted.
+	// nil disables them; production wires it in cmd/signald/main.go.
+	Metrics MediaObserver
 
 	// GraceWindow is how long a 2-party call is held open after the last
 	// device on a line disconnects, before teardown. Defaults to
@@ -220,7 +239,7 @@ func (r *Relay) HandleMessage(ctx context.Context, from string, msg *Message) {
 	case TypeDTMF:
 		r.handleDTMF(ctx, from, msg)
 	case TypeRequestICE:
-		r.handleRequestICE(ctx, from)
+		r.handleRequestICE(ctx, from, msg.HardwareID)
 	case TypeDeviceInfo:
 		// msg.HardwareID is always set: the WS handler stamps it from
 		// conn.HardwareID and rejects registrations without a hardware_id.
@@ -329,7 +348,7 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			slog.ErrorContext(ctx, "failed to track call initiation", "err", err)
 			r.observeError("call_setup_failed")
 		} else {
-			attrs := []any{"call_id", callID, "from", from, "to", msg.To}
+			attrs := []any{"call_id", callID, "from", from, "to", msg.To, "hardware_id", msg.HardwareID}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
 			slog.InfoContext(ctx, "call initiated", attrs...)
 			setSpanCallID(ctx, callID)
@@ -415,16 +434,21 @@ func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 		}
 	}
 
+	var callID int64
 	if r.Tracker != nil {
 		if err := r.Tracker.OnCallAnswered(ctx, msg.To, from); err != nil {
 			slog.ErrorContext(ctx, "failed to track call answer", "err", err)
 		}
-		if callID := r.Tracker.CallIDForPair(ctx, msg.To, from); callID != 0 {
-			attrs := []any{"call_id", callID, "from", msg.To, "to", from}
+		if callID = r.Tracker.CallIDForPair(ctx, msg.To, from); callID != 0 {
+			attrs := []any{"call_id", callID, "from", msg.To, "to", from, "hardware_id", msg.HardwareID}
 			attrs = append(attrs, r.lineAttrs(ctx, from)...)
 			slog.InfoContext(ctx, "call answered", attrs...)
 			setSpanCallID(ctx, callID)
 		}
+	}
+	// Log the answer SDP relay with the same shape summary as the offer path.
+	if msg.SDP != "" {
+		r.logSDPRelay(ctx, from, msg, callID, msg.ConfID != "")
 	}
 	r.forward(ctx, msg)
 }
@@ -501,12 +525,17 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 // empty and omitted from the encoded message, so the wire format per type
 // is unchanged.
 func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Message) {
-	if msg.Extension && r.routeExtensionSignaling(from, msg) {
+	if msg.Extension && r.routeExtensionSignaling(ctx, from, msg) {
 		return
 	}
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(ctx, id, from, msg.To) {
+			var confCallID int64
+			if confCallID = r.Tracker.CallIDForPair(ctx, from, msg.To); confCallID != 0 {
+				setSpanCallID(ctx, confCallID)
+			}
+			r.logSignalingRelay(ctx, from, msg, confCallID, true)
 			_ = r.Hub.SendTo(msg.To, &Message{
 				Type:      msg.Type,
 				From:      from,
@@ -523,16 +552,116 @@ func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Me
 		r.observeError("invalid_message")
 		return
 	}
+	var callID int64
 	if r.Tracker != nil {
-		if callID := r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
-			slog.DebugContext(ctx, msg.Type+" forwarded", "call_id", callID, "from", from, "to", msg.To)
+		if callID = r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
 			setSpanCallID(ctx, callID)
 		}
 	}
+	r.logSignalingRelay(ctx, from, msg, callID, false)
 	r.forward(ctx, msg)
 }
 
-func (r *Relay) handleRequestICE(ctx context.Context, from string) {
+// logSignalingRelay emits structured observability for an SDP or ICE message
+// as it is relayed between peers. ICE candidates are logged at Debug (one line
+// per trickled candidate) with the parsed candidate type, transport, and
+// address:port, so an operator can see whether a phone is offering host,
+// srflx, or relay candidates without decoding the raw SDP attribute by hand.
+// SDP offers/answers are logged at Info with a content-free shape summary
+// (media-section and bundled-candidate counts, body size); the SDP body is
+// never logged because it carries DTLS fingerprints and ICE credentials.
+//
+// from/to/hardware_id/call_id are attached to every line so a relay event can
+// be attributed to a specific joined device on a multi-device line, not just
+// the line number. conf is true on the conference fast path; it adds conf_id.
+func (r *Relay) logSignalingRelay(ctx context.Context, from string, msg *Message, callID int64, conf bool) {
+	switch msg.Type {
+	case TypeICE:
+		// Empty Candidate is the end-of-candidates marker: nothing to count or
+		// log. Bail before any parsing on this per-trickled-candidate hot path.
+		if strings.TrimSpace(msg.Candidate) == "" {
+			return
+		}
+		debug := slog.Default().Enabled(ctx, slog.LevelDebug)
+		if r.Metrics == nil && !debug {
+			return
+		}
+		// Parse once: the metric needs the type/transport, and so does the log.
+		cand := ParseCandidate(msg.Candidate)
+		if r.Metrics != nil {
+			// Count every non-empty candidate. An unparseable one carries empty
+			// type/transport, which the metric's label allowlist collapses to
+			// other/other, so a rising malformed-candidate rate shows up on a
+			// dashboard, not only in Debug logs that are off by default.
+			r.Metrics.ObserveICECandidate(cand.Type, cand.Transport)
+		}
+		if !debug {
+			return
+		}
+		attrs := []any{
+			"from", from,
+			"to", msg.To,
+			"hardware_id", msg.HardwareID,
+		}
+		if callID != 0 {
+			attrs = append(attrs, "call_id", callID)
+		}
+		if conf {
+			attrs = append(attrs, "conf_id", msg.ConfID)
+		}
+		if cand.Parsed() {
+			attrs = append(attrs,
+				"cand_type", cand.Type,
+				"transport", cand.Transport,
+				"address", cand.Address,
+				"port", cand.Port)
+			if cand.RelatedAddress != "" {
+				attrs = append(attrs, "raddr", cand.RelatedAddress, "rport", cand.RelatedPort)
+			}
+			slog.DebugContext(ctx, "ice candidate relayed", attrs...)
+		} else {
+			// A non-empty but unparseable line is worth surfacing so a
+			// malformed-candidate bug is not silently relayed.
+			slog.DebugContext(ctx, "ice candidate relayed (unparsed)", attrs...)
+		}
+	case TypeSDP:
+		r.logSDPRelay(ctx, from, msg, callID, conf)
+	}
+}
+
+// logSDPRelay logs an SDP offer or answer at Info with a content-free shape
+// summary. Shared by the offer path (handleSignalingForward via
+// logSignalingRelay) and the answer path (handleAnswer), so both carry the
+// same from/to/hardware_id/call_id attribution and the SDP body is never
+// logged.
+func (r *Relay) logSDPRelay(ctx context.Context, from string, msg *Message, callID int64, conf bool) {
+	sum := SummarizeSDP(msg.SDP)
+	// An offer arrives as a "sdp" message and an answer as an "answer" message;
+	// normalize the wire type to the SDP role so offer/answer pairs read
+	// symmetrically.
+	kind := msg.Type
+	if kind == TypeSDP {
+		kind = "offer"
+	}
+	attrs := []any{
+		"from", from,
+		"to", msg.To,
+		"hardware_id", msg.HardwareID,
+		"sdp_kind", kind,
+		"m_lines", sum.MLines,
+		"embedded_candidates", sum.Candidates,
+		"sdp_bytes", sum.Bytes,
+	}
+	if callID != 0 {
+		attrs = append(attrs, "call_id", callID)
+	}
+	if conf {
+		attrs = append(attrs, "conf_id", msg.ConfID)
+	}
+	slog.InfoContext(ctx, "sdp relayed", attrs...)
+}
+
+func (r *Relay) handleRequestICE(ctx context.Context, from, hardwareID string) {
 	resp := &Message{Type: TypeICEServers}
 
 	// Always include a STUN server
@@ -541,6 +670,7 @@ func (r *Relay) handleRequestICE(ctx context.Context, from string) {
 	}
 	resp.Servers = append(resp.Servers, stunServer)
 
+	turnOffered := false
 	// Add TURN servers if configured
 	if r.TURNGen != nil && r.TURNDomain != "" {
 		creds := r.TURNGen.Generate(from)
@@ -554,6 +684,15 @@ func (r *Relay) handleRequestICE(ctx context.Context, from string) {
 			Credential: creds.Credential,
 		}
 		resp.Servers = append(resp.Servers, turnServers)
+		turnOffered = true
+	}
+
+	// Log whether TURN was issued (never the TURN username or credential). STUN
+	// is always included, so it carries no signal; turn=false is the one that
+	// matters, flagging a misconfigured pod handing out STUN only.
+	slog.InfoContext(ctx, "ice servers issued", "number", from, "hardware_id", hardwareID, "turn", turnOffered)
+	if r.Metrics != nil {
+		r.Metrics.ObserveICEServersIssued(turnOffered)
 	}
 
 	if err := r.Hub.SendTo(from, resp); err != nil {
@@ -695,7 +834,7 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 // routeExtensionSignaling routes SDP/ICE messages for extension connections.
 // Extension signaling is identified by the Extension flag on the message.
 // Returns true if the message was handled.
-func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
+func (r *Relay) routeExtensionSignaling(ctx context.Context, from string, msg *Message) bool {
 	// Resolve the target in one critical section, then send after unlock.
 	var toPeer string
 	var toHardware string
@@ -714,15 +853,26 @@ func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
 	}
 	r.extMu.Unlock()
 
-	switch {
-	case toPeer != "":
-		_ = r.Hub.SendTo(toPeer, msg)
-		return true
-	case toHardware != "":
-		_ = r.Hub.SendToHardware(toHardware, msg)
-		return true
+	if toPeer == "" && toHardware == "" {
+		return false
 	}
-	return false
+
+	// Extension legs carry their own SDP/ICE; log them like any other relayed
+	// signaling so a struggling extension media path is observable too.
+	var callID int64
+	if r.Tracker != nil {
+		if callID = r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
+			setSpanCallID(ctx, callID)
+		}
+	}
+	r.logSignalingRelay(ctx, from, msg, callID, false)
+
+	if toPeer != "" {
+		_ = r.Hub.SendTo(toPeer, msg)
+	} else {
+		_ = r.Hub.SendToHardware(toHardware, msg)
+	}
+	return true
 }
 
 // clearExtension removes a device from the active extension set and notifies

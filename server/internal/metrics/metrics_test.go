@@ -197,6 +197,49 @@ func TestObserveSignalingErrorUnknownCollapsesToOther(t *testing.T) {
 	}
 }
 
+func TestObserveICECandidate(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveICECandidate("relay", "tcp")
+	r.ObserveICECandidate("relay", "tcp")
+	r.ObserveICECandidate("host", "udp")
+
+	if got := testutil.ToFloat64(r.ICECandidates.WithLabelValues("relay", "tcp")); got != 2 {
+		t.Errorf("relay/tcp counter = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.ICECandidates.WithLabelValues("host", "udp")); got != 1 {
+		t.Errorf("host/udp counter = %v, want 1", got)
+	}
+}
+
+// A candidate type or transport outside the closed set must collapse to
+// "other" so a malformed candidate line (parsed from untrusted device input)
+// can never widen the label space or smuggle an address into a label.
+func TestObserveICECandidateUnknownCollapsesToOther(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveICECandidate("192.168.1.1", "sctp")
+
+	if got := testutil.ToFloat64(r.ICECandidates.WithLabelValues("other", "other")); got != 1 {
+		t.Errorf("other/other counter = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(r.ICECandidates.WithLabelValues("192.168.1.1", "sctp")); got != 0 {
+		t.Errorf("unknown labels leaked: got %v, want 0", got)
+	}
+}
+
+func TestObserveICEServersIssued(t *testing.T) {
+	r := New("test", "abc123")
+	r.ObserveICEServersIssued(true)
+	r.ObserveICEServersIssued(true)
+	r.ObserveICEServersIssued(false)
+
+	if got := testutil.ToFloat64(r.ICEServersIssued.WithLabelValues("true")); got != 2 {
+		t.Errorf("turn=true counter = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(r.ICEServersIssued.WithLabelValues("false")); got != 1 {
+		t.Errorf("turn=false counter = %v, want 1", got)
+	}
+}
+
 func TestBuildInfoLabel(t *testing.T) {
 	r := New("v1.2.3", "deadbeef")
 	if got := testutil.ToFloat64(r.BuildInfo.WithLabelValues("v1.2.3", "deadbeef")); got != 1 {
