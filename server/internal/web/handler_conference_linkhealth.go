@@ -183,24 +183,17 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 }
 
 func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher http.Flusher, conf *calls.ConferenceSummary, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
-	switch ev.Kind {
-	case calls.SampleKind:
-		snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
-		fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
-		if err != nil {
-			return err
-		}
-		if err := writeSSE(w, sseEventSample, fragment); err != nil {
-			return err
-		}
-	case calls.EndedKind:
-		if err := writeSSE(w, sseEventEnded, renderEndedConferenceFragment("")); err != nil {
-			return err
-		}
-	case calls.DisconnectKind:
-		if err := writeSSE(w, sseEventDisconnect, renderEndedConferenceFragment(ev.EndedBy)); err != nil {
-			return err
-		}
+	if handled, err := writeTerminalEvent(w, flusher, ev, renderEndedConferenceFragment); handled {
+		return err
+	}
+	// SampleKind
+	snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
+	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
+	if err != nil {
+		return err
+	}
+	if err := writeSSE(w, sseEventSample, fragment); err != nil {
+		return err
 	}
 	flusher.Flush()
 	return nil

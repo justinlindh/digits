@@ -315,16 +315,18 @@ func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher htt
 }
 
 // writeTerminalEvent writes an SSE frame for an EndedKind or DisconnectKind
-// event using renderEndedFragment. Returns true if the event was a terminal
+// event, rendering the ended/disconnect body via renderEnded so the 2-party
+// and conference streams can share the same terminal-event handling while
+// keeping their own deck wording. Returns true if the event was a terminal
 // kind and was handled, false for SampleKind (which the caller handles).
-func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool, error) {
+func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event, renderEnded func(endedBy string) string) (bool, error) {
 	switch ev.Kind {
 	case calls.EndedKind:
-		if err := writeSSE(w, sseEventEnded, renderEndedFragment("")); err != nil {
+		if err := writeSSE(w, sseEventEnded, renderEnded("")); err != nil {
 			return true, err
 		}
 	case calls.DisconnectKind:
-		if err := writeSSE(w, sseEventDisconnect, renderEndedFragment(ev.EndedBy)); err != nil {
+		if err := writeSSE(w, sseEventDisconnect, renderEnded(ev.EndedBy)); err != nil {
 			return true, err
 		}
 	default:
@@ -335,7 +337,7 @@ func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event) (bool
 }
 
 func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
-	if handled, err := writeTerminalEvent(w, flusher, ev); handled {
+	if handled, err := writeTerminalEvent(w, flusher, ev, renderEndedFragment); handled {
 		return err
 	}
 	// SampleKind
