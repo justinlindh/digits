@@ -152,3 +152,39 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 		t.Fatalf("expected timeout error, got: %v", err)
 	}
 }
+
+// A paired device whose stored number no longer matches its bound line (after
+// a move, join, or renumber) must not be rejected: rejecting strands it
+// offline in a reconnect loop. The bound number is authoritative, so the
+// server reconciles and registers the device under its real line.
+func TestWSRegister_PairedDevice_NumberMismatch_UsesBoundNumber(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      "1001", // stale / wrong number the device still thinks it has
+		HardwareID:  hwID,
+		DeviceToken: token,
+	})
+
+	// No error message: the connection is accepted, not rejected.
+	_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Fatal("expected no error message (connection accepted), but got one")
+	} else if !strings.Contains(err.Error(), "i/o timeout") {
+		t.Fatalf("expected timeout (accepted), got: %v", err)
+	}
+
+	// The device is online under its BOUND number, never under the stale one.
+	if !h.hub.IsOnline(number) {
+		t.Errorf("device should be online under its bound number %q", number)
+	}
+	if h.hub.IsOnline("1001") {
+		t.Error("device must not be registered under the stale claimed number 1001")
+	}
+}

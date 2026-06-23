@@ -121,12 +121,18 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if boundNumber != msg.Number {
-				slog.WarnContext(r.Context(), "ws register number mismatch",
+				// The device registered with a stale number: its line was
+				// moved, joined to another line, or renumbered, and the device
+				// still has the old number in its local config. The bound
+				// number is authoritative (the device can only ever land on
+				// the line it is actually paired to), so register it on its
+				// real line instead of rejecting. Rejecting would strand the
+				// device offline in a reconnect loop, unable to receive calls.
+				slog.InfoContext(r.Context(), "ws register reconciled to bound line",
 					"hardware_id", msg.HardwareID,
 					"claimed", msg.Number,
 					"bound", boundNumber)
-				wsReject(ws, "number does not match paired line")
-				return
+				msg.Number = boundNumber
 			}
 		}
 	}
