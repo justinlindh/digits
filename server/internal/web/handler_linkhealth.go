@@ -201,22 +201,39 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	streamSSE(r.Context(), w, flusher, sub, renderEndedFragment(""), func(ev calls.Event) error {
+		if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
+			slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
+			return err
+		}
+		return nil
+	})
+}
+
+// streamSSE runs the heartbeat/event select loop shared by the link-health
+// SSE streams (2-party calls and conferences). It forwards each subscription
+// event to onEvent, writes endedFragment when the subscription channel closes
+// (the cross-pod Evict path), and emits a heartbeat on every tick. It returns
+// when the client disconnects, the subscription closes, or onEvent reports a
+// write failure. Callers do their own pre-loop setup (initial snapshot,
+// subscribe ordering) because that part legitimately differs between the two
+// streams.
+func streamSSE(ctx context.Context, w io.Writer, flusher http.Flusher, sub *calls.Subscription, endedFragment string, onEvent func(ev calls.Event) error) {
 	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case ev, ok := <-sub.C:
 			if !ok {
 				// Channel closed by Evict. Send one final ended event and return.
-				_ = writeSSE(w, sseEventEnded, renderEndedFragment(""))
+				_ = writeSSE(w, sseEventEnded, endedFragment)
 				flusher.Flush()
 				return
 			}
-			if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
-				slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
+			if err := onEvent(ev); err != nil {
 				return
 			}
 		case <-heartbeat.C:
