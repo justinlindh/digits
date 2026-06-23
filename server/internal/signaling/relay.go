@@ -525,13 +525,17 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 // empty and omitted from the encoded message, so the wire format per type
 // is unchanged.
 func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Message) {
-	if msg.Extension && r.routeExtensionSignaling(from, msg) {
+	if msg.Extension && r.routeExtensionSignaling(ctx, from, msg) {
 		return
 	}
 	if msg.ConfID != "" {
 		id, err := uuid.Parse(msg.ConfID)
 		if err == nil && r.Tracker != nil && r.Tracker.Conferences().ConferenceContains(ctx, id, from, msg.To) {
-			r.logSignalingRelay(ctx, from, msg, 0, true)
+			var confCallID int64
+			if confCallID = r.Tracker.CallIDForPair(ctx, from, msg.To); confCallID != 0 {
+				setSpanCallID(ctx, confCallID)
+			}
+			r.logSignalingRelay(ctx, from, msg, confCallID, true)
 			_ = r.Hub.SendTo(msg.To, &Message{
 				Type:      msg.Type,
 				From:      from,
@@ -573,7 +577,23 @@ func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Me
 func (r *Relay) logSignalingRelay(ctx context.Context, from string, msg *Message, callID int64, conf bool) {
 	switch msg.Type {
 	case TypeICE:
+		// Empty Candidate is the end-of-candidates marker: nothing to count or
+		// log. Bail before any parsing on this per-trickled-candidate hot path.
+		if strings.TrimSpace(msg.Candidate) == "" {
+			return
+		}
+		debug := slog.Default().Enabled(ctx, slog.LevelDebug)
+		if r.Metrics == nil && !debug {
+			return
+		}
+		// Parse once: the metric needs the type/transport, and so does the log.
 		cand := ParseCandidate(msg.Candidate)
+		if r.Metrics != nil && cand.Parsed() {
+			r.Metrics.ObserveICECandidate(cand.Type, cand.Transport)
+		}
+		if !debug {
+			return
+		}
 		attrs := []any{
 			"from", from,
 			"to", msg.To,
@@ -595,16 +615,10 @@ func (r *Relay) logSignalingRelay(ctx context.Context, from string, msg *Message
 				attrs = append(attrs, "raddr", cand.RelatedAddress, "rport", cand.RelatedPort)
 			}
 			slog.DebugContext(ctx, "ice candidate relayed", attrs...)
-			if r.Metrics != nil {
-				r.Metrics.ObserveICECandidate(cand.Type, cand.Transport)
-			}
 		} else {
-			// Empty Candidate is the end-of-candidates marker; a non-empty but
-			// unparseable line is worth surfacing so a malformed-candidate bug
-			// is not silently relayed.
-			if strings.TrimSpace(msg.Candidate) != "" {
-				slog.DebugContext(ctx, "ice candidate relayed (unparsed)", attrs...)
-			}
+			// A non-empty but unparseable line is worth surfacing so a
+			// malformed-candidate bug is not silently relayed.
+			slog.DebugContext(ctx, "ice candidate relayed (unparsed)", attrs...)
 		}
 	case TypeSDP:
 		r.logSDPRelay(ctx, from, msg, callID, conf)
@@ -662,15 +676,10 @@ func (r *Relay) handleRequestICE(ctx context.Context, from, hardwareID string) {
 		turnOffered = true
 	}
 
-	// Log what kinds of servers were issued (never the TURN username or
-	// credential). transports lists the TURN URI schemes/transports offered so
-	// an operator can confirm UDP and TLS-TCP relay paths were handed out, and
-	// turn=false flags a misconfigured pod that is only handing out STUN.
-	attrs := []any{"number", from, "hardware_id", hardwareID, "stun", true, "turn", turnOffered}
-	if turnOffered {
-		attrs = append(attrs, "turn_transports", []string{"udp", "tcp", "tls"})
-	}
-	slog.InfoContext(ctx, "ice servers issued", attrs...)
+	// Log whether TURN was issued (never the TURN username or credential). STUN
+	// is always included, so it carries no signal; turn=false is the one that
+	// matters, flagging a misconfigured pod handing out STUN only.
+	slog.InfoContext(ctx, "ice servers issued", "number", from, "hardware_id", hardwareID, "turn", turnOffered)
 	if r.Metrics != nil {
 		r.Metrics.ObserveICEServersIssued(turnOffered)
 	}
@@ -814,7 +823,7 @@ func (r *Relay) handleExtensionPickup(ctx context.Context, from string, msg *Mes
 // routeExtensionSignaling routes SDP/ICE messages for extension connections.
 // Extension signaling is identified by the Extension flag on the message.
 // Returns true if the message was handled.
-func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
+func (r *Relay) routeExtensionSignaling(ctx context.Context, from string, msg *Message) bool {
 	// Resolve the target in one critical section, then send after unlock.
 	var toPeer string
 	var toHardware string
@@ -833,15 +842,26 @@ func (r *Relay) routeExtensionSignaling(from string, msg *Message) bool {
 	}
 	r.extMu.Unlock()
 
-	switch {
-	case toPeer != "":
-		_ = r.Hub.SendTo(toPeer, msg)
-		return true
-	case toHardware != "":
-		_ = r.Hub.SendToHardware(toHardware, msg)
-		return true
+	if toPeer == "" && toHardware == "" {
+		return false
 	}
-	return false
+
+	// Extension legs carry their own SDP/ICE; log them like any other relayed
+	// signaling so a struggling extension media path is observable too.
+	var callID int64
+	if r.Tracker != nil {
+		if callID = r.Tracker.CallIDForPair(ctx, from, msg.To); callID != 0 {
+			setSpanCallID(ctx, callID)
+		}
+	}
+	r.logSignalingRelay(ctx, from, msg, callID, false)
+
+	if toPeer != "" {
+		_ = r.Hub.SendTo(toPeer, msg)
+	} else {
+		_ = r.Hub.SendToHardware(toHardware, msg)
+	}
+	return true
 }
 
 // clearExtension removes a device from the active extension set and notifies

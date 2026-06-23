@@ -194,16 +194,23 @@ var validErrorCategories = map[string]struct{}{
 	"send_buffer_full":  {},
 }
 
+// sanitizeLabel collapses any value outside the closed allowlist to "other", so
+// a caller can never widen the label space or smuggle a free-form string (or any
+// PII it might carry) into a label value.
+func sanitizeLabel(val string, allowed map[string]struct{}) string {
+	if _, ok := allowed[val]; !ok {
+		return "other"
+	}
+	return val
+}
+
 // ObserveSignalingError records one signaling error, partitioned by category.
 // The category is a plain string because the sole caller (internal/signaling)
 // cannot import this package without forming an import cycle, so it reports
 // categories as string literals. Unknown categories collapse to "other" so a
 // caller can never smuggle a free-form string into a label value.
 func (r *Registry) ObserveSignalingError(category string) {
-	if _, ok := validErrorCategories[category]; !ok {
-		category = "other"
-	}
-	r.SignalingErrors.WithLabelValues(category).Inc()
+	r.SignalingErrors.WithLabelValues(sanitizeLabel(category, validErrorCategories)).Inc()
 }
 
 // validCandidateTypes and validTransports are the closed label sets for the
@@ -226,23 +233,16 @@ var validTransports = map[string]struct{}{
 // ObserveICECandidate records one relayed ICE candidate, partitioned by type
 // and transport. Unrecognized values collapse to "other".
 func (r *Registry) ObserveICECandidate(candType, transport string) {
-	if _, ok := validCandidateTypes[candType]; !ok {
-		candType = "other"
-	}
-	if _, ok := validTransports[transport]; !ok {
-		transport = "other"
-	}
-	r.ICECandidates.WithLabelValues(candType, transport).Inc()
+	r.ICECandidates.WithLabelValues(
+		sanitizeLabel(candType, validCandidateTypes),
+		sanitizeLabel(transport, validTransports),
+	).Inc()
 }
 
 // ObserveICEServersIssued records one ICE-server response handed to a device,
 // partitioned by whether TURN was included.
 func (r *Registry) ObserveICEServersIssued(turn bool) {
-	label := "false"
-	if turn {
-		label = "true"
-	}
-	r.ICEServersIssued.WithLabelValues(label).Inc()
+	r.ICEServersIssued.WithLabelValues(strconv.FormatBool(turn)).Inc()
 }
 
 // Middleware returns an http.Handler middleware that records request count
