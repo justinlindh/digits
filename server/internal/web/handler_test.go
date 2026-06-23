@@ -2202,3 +2202,68 @@ func TestPhoneOperator_SwapsPanel(t *testing.T) {
 		t.Errorf("response missing device B Pi version 2.9.0")
 	}
 }
+
+func TestPhoneOperator_AMTheme(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeAnsweringMachine); err != nil {
+		t.Fatalf("set AM theme: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom)
+	})
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140021", "Attic", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-attic-a','hw-attic-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-attic-a', 'dev-attic-a', 'Attic A', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-attic-b', 'dev-attic-b', 'Attic B', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-a"}
+	if err := h.hub.Register("3140021", conn); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-attic-a", signaling.DeviceInfoParams{
+		PiVersion:       "4.0.0",
+		FirmwareVersion: "1.8.0",
+	})
+
+	// The AM operator partial is served when the user's theme is answering-machine.
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140021/operator?hardware_id=hw-attic-a", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-attic-a"`) {
+		t.Errorf("AM operator response missing data-hardware-id for hw-attic-a")
+	}
+	if !strings.Contains(body, "4.0.0") {
+		t.Errorf("AM operator response missing device A Pi version 4.0.0")
+	}
+}

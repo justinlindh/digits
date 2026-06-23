@@ -1110,137 +1110,23 @@
       {{template "am-voicemail-section" .}}
     </section>
 
-    {{template "am-software-update-section" .}}
-
-    {{if .Online}}
+    {{if gt (len .DeviceViews) 1}}
     <section class="am-plate am-handset__plate am-handset__plate--wide">
-      <span class="am-plate__label">Device controls</span>
-      <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
-        <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
-          <span class="am-key__symbol">&#x266A;</span>
-          <span class="am-key__label">Ring test</span>
-        </button>
-        <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
-          <span class="am-key__symbol">&#x21BB;</span>
-          <span class="am-key__label">Restart service</span>
-        </button>
-        <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
-          <span class="am-key__symbol">&#x23FB;</span>
-          <span class="am-key__label">Reboot device</span>
-        </button>
-      </div>
-      <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-ring-test-text" class="am-led">Ringing...</span>
-        </div>
-      </div>
-      <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
-        <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
-        <div class="am-handset__actions-row" style="gap: 8px;">
-          <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Confirm</span>
-          </button>
-          <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-restart-text" class="am-led">Sending command...</span>
-        </div>
-      </div>
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-        <div id="am-recovery-default">
-          <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x26A0;</span>
-            <span class="am-key__label">Recovery mode</span>
-          </button>
-          <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
-        </div>
-        <div id="am-recovery-confirm" class="hidden">
-          <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
-          <div class="am-handset__actions-row" style="gap: 8px;">
-            <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Confirm</span>
-            </button>
-            <button type="button" onclick="amCancelRecovery()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
-          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-            <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-            <span id="am-recovery-text" class="am-led">Sending reset command...</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    {{if .IsAdmin}}
-    <section class="am-plate am-handset__plate am-handset__plate--wide">
-      <span class="am-plate__label">Developer mode</span>
-      {{if and .DeviceInfo .DeviceInfo.DevMode}}
-      <div id="am-devmode-on-default">
-        <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
-          <span class="am-key__symbol">&#x26D4;</span>
-          <span class="am-key__label">Disable dev mode</span>
-        </button>
-        <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
-      </div>
-      <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
-        <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
-        <div class="am-handset__actions-row" style="gap: 8px;">
-          <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Confirm</span>
-          </button>
-          <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      {{else}}
-      <div id="am-devmode-off-default">
-        <button type="button" onclick="amShowDevModeEnable()" class="am-key">
-          <span class="am-key__symbol">&#x1F527;</span>
-          <span class="am-key__label">Enable dev mode</span>
-        </button>
-        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
-      </div>
-      <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
-        <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-        <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
-        <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
-        <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
-          <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Enable</span>
-          </button>
-          <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      {{end}}
-      <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-devmode-text" class="am-led">Sending command...</span>
-        </div>
+      <span class="am-plate__label">Handset</span>
+      <div class="seg-radio" id="device-toggle" role="tablist" style="margin-top: 8px;">
+        {{range .DeviceViews}}
+        <label class="seg-radio__opt">
+          <input type="radio" name="device_toggle" value="{{.Device.HardwareID}}"
+                 {{if eq .Device.HardwareID $.SelectedHardwareID}}checked{{end}}
+                 hx-get="/phones/{{$.Line.Number}}/operator?hardware_id={{.Device.HardwareID}}"
+                 hx-target="#operator-panel" hx-swap="outerHTML">
+          <span class="seg-radio__label">{{if .Device.Name}}{{.Device.Name}}{{else}}Unnamed{{end}}</span>
+        </label>
+        {{end}}
       </div>
     </section>
     {{end}}
-    {{end}}
+    {{template "am-operator-panel" .}}
 
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
       <span class="am-plate__label">Actions</span>
@@ -1352,11 +1238,17 @@
     var phoneNumber = {{.Line.Number}};
     var pollers = {pi: null, fw: null};
 
+    function selectedHardwareID() {
+      var p = document.getElementById('operator-panel');
+      return p ? (p.getAttribute('data-hardware-id') || '') : '';
+    }
+
     window.amTriggerComponentUpdate = function(prefix, paramName) {
       var btn = document.getElementById(prefix + '-install-btn');
       var radio = document.querySelector('input[name="' + paramName + '"]:checked');
       var body = new URLSearchParams();
       if (radio) body.append(paramName, radio.value);
+      body.append('hardware_id', selectedHardwareID());
       amStartUpdate(prefix, btn, body);
     };
 
@@ -1389,7 +1281,7 @@
       pollers[prefix] = setInterval(function() {
         attempts++;
         if (attempts > 120) { clearInterval(pollers[prefix]); amShowResult(prefix, 'failed', 'Timed out, please retry'); return; }
-        fetch('/phones/' + phoneNumber + '/update-status')
+        fetch('/phones/' + phoneNumber + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(function(data) {
           if (!data.status) return;
@@ -1433,9 +1325,12 @@
       lamp.classList.add('am-lamp--on-amber');
       text.classList.remove('am-led--green', 'am-led--red');
       text.textContent = 'Ringing...';
+      var rtBody = new URLSearchParams();
+      rtBody.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/ring-test', {
         method: 'POST',
-        headers: {'Accept': 'application/json'}
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: rtBody.toString()
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -1497,6 +1392,7 @@
       text.classList.remove('am-led--green', 'am-led--red');
       text.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
       var body = new URLSearchParams({mode: mode});
+      body.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/restart', {
         method: 'POST',
         headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1520,7 +1416,7 @@
         amRestartPollTimer = setInterval(function() {
           attempts++;
           if (attempts > maxAttempts) { clearInterval(amRestartPollTimer); amShowRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
-          fetch('/phones/' + phoneNumber + '/online')
+          fetch('/phones/' + phoneNumber + '/online?hardware_id=' + encodeURIComponent(selectedHardwareID()))
           .then(function(r) { return r.json(); })
           .then(function(data) {
             if (!data.online) { sawOffline = true; document.getElementById('am-restart-text').textContent = 'Waiting for device to reconnect...'; }
@@ -1556,7 +1452,13 @@
       var lamp = document.getElementById('am-recovery-lamp');
       var text = document.getElementById('am-recovery-text');
       progress.classList.remove('hidden');
-      fetch('/phones/' + phoneNumber + '/factory-reset', { method: 'POST', headers: {'Accept': 'application/json'} })
+      var frBody = new URLSearchParams();
+      frBody.append('hardware_id', selectedHardwareID());
+      fetch('/phones/' + phoneNumber + '/factory-reset', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: frBody.toString()
+      })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         lamp.classList.remove('am-lamp--on-amber');
@@ -1632,6 +1534,7 @@
       amSendDevMode(new URLSearchParams({enabled: 'false'}), false);
     };
     function amSendDevMode(body, target) {
+      body.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/dev-mode', {
         method: 'POST',
         headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1651,7 +1554,7 @@
       amDevModePollTimer = setInterval(function() {
         attempts++;
         if (attempts > 15) { clearInterval(amDevModePollTimer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
-        fetch('/phones/' + phoneNumber + '/dev-mode-status')
+        fetch('/phones/' + phoneNumber + '/dev-mode-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.enabled === target) {
@@ -2155,4 +2058,140 @@
 </div>
 {{end}}
 
-{{define "am-operator-panel"}}{{end}}
+{{define "am-operator-panel"}}
+<div id="operator-panel" data-hardware-id="{{.SelectedHardwareID}}">
+
+  {{template "am-software-update-section" .}}
+
+  {{if .Online}}
+  <section class="am-plate am-handset__plate am-handset__plate--wide">
+    <span class="am-plate__label">Device controls</span>
+    <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
+      <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
+        <span class="am-key__symbol">&#x266A;</span>
+        <span class="am-key__label">Ring test</span>
+      </button>
+      <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
+        <span class="am-key__symbol">&#x21BB;</span>
+        <span class="am-key__label">Restart service</span>
+      </button>
+      <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
+        <span class="am-key__symbol">&#x23FB;</span>
+        <span class="am-key__label">Reboot device</span>
+      </button>
+    </div>
+    <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-ring-test-text" class="am-led">Ringing...</span>
+      </div>
+    </div>
+    <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
+      <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
+      <div class="am-handset__actions-row" style="gap: 8px;">
+        <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Confirm</span>
+        </button>
+        <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-restart-text" class="am-led">Sending command...</span>
+      </div>
+    </div>
+    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+      <div id="am-recovery-default">
+        <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x26A0;</span>
+          <span class="am-key__label">Recovery mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
+      </div>
+      <div id="am-recovery-confirm" class="hidden">
+        <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
+          </button>
+          <button type="button" onclick="amCancelRecovery()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
+        </div>
+      </div>
+      <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-recovery-text" class="am-led">Sending reset command...</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {{if .IsAdmin}}
+  <section class="am-plate am-handset__plate am-handset__plate--wide">
+    <span class="am-plate__label">Developer mode</span>
+    {{if and .DeviceInfo .DeviceInfo.DevMode}}
+    <div id="am-devmode-on-default">
+      <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+        <span class="am-key__symbol">&#x26D4;</span>
+        <span class="am-key__label">Disable dev mode</span>
+      </button>
+      <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+    </div>
+    <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
+      <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+      <div class="am-handset__actions-row" style="gap: 8px;">
+        <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Confirm</span>
+        </button>
+        <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    {{else}}
+    <div id="am-devmode-off-default">
+      <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+        <span class="am-key__symbol">&#x1F527;</span>
+        <span class="am-key__label">Enable dev mode</span>
+      </button>
+      <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
+    </div>
+    <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
+      <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
+      <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+      <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
+      <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
+        <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Enable</span>
+        </button>
+        <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    {{end}}
+    <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-devmode-text" class="am-led">Sending command...</span>
+      </div>
+    </div>
+  </section>
+  {{end}}
+  {{end}}
+
+</div>
+{{end}}
