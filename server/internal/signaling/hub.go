@@ -979,11 +979,19 @@ func (h *Hub) IsOnline(number string) bool {
 	return h.Get(number) != nil
 }
 
-// IsHardwareOnline reports whether the device with this hardware id has an
-// active hub connection on this pod.
+// IsHardwareOnline reports whether the device with this hardware id is
+// connected. When a shared device-state store is configured it answers
+// cross-pod from Redis, matching IsOnline and AllDeviceInfo; otherwise it
+// falls back to this pod's local connection map.
 func (h *Hub) IsHardwareOnline(hardwareID string) bool {
 	if hardwareID == "" {
 		return false
+	}
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.IsHardwareOnline(context.Background(), hardwareID)
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()

@@ -41,6 +41,34 @@ func TestDeviceStateSetOnlineAndIsOnline(t *testing.T) {
 	}
 }
 
+func TestDeviceStateIsHardwareOnline(t *testing.T) {
+	ds, _ := newTestDeviceState(t)
+	ctx := context.Background()
+
+	if ds.IsHardwareOnline(ctx, "hw-abc") {
+		t.Fatal("expected hardware to be offline before SetOnline")
+	}
+
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-1", HardwareID: "hw-abc"})
+	ds.SetOnline(ctx, "5551234", DevicePresence{PodID: "pod-2", HardwareID: "hw-def"})
+
+	if !ds.IsHardwareOnline(ctx, "hw-abc") {
+		t.Fatal("hw-abc should be online after SetOnline")
+	}
+	if !ds.IsHardwareOnline(ctx, "hw-def") {
+		t.Fatal("hw-def should be online after SetOnline")
+	}
+
+	// One device going offline does not affect its sibling, even cross-pod.
+	ds.SetOffline(ctx, "5551234", "hw-abc")
+	if ds.IsHardwareOnline(ctx, "hw-abc") {
+		t.Fatal("hw-abc should be offline after SetOffline")
+	}
+	if !ds.IsHardwareOnline(ctx, "hw-def") {
+		t.Fatal("hw-def should still be online")
+	}
+}
+
 func TestDeviceStateSetOffline(t *testing.T) {
 	ds, _ := newTestDeviceState(t)
 	ctx := context.Background()

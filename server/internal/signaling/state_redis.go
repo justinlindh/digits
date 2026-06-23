@@ -105,6 +105,19 @@ func (s *DeviceState) IsOnline(ctx context.Context, number string) bool {
 	return n > 0
 }
 
+// IsHardwareOnline reports whether the device with this hardware id is
+// connected to any pod. The per-device presence hash exists exactly while the
+// device is connected (SetOnline writes it, SetOffline deletes it, heartbeats
+// refresh its TTL), so its existence is the cross-pod online signal.
+func (s *DeviceState) IsHardwareOnline(ctx context.Context, hardwareID string) bool {
+	n, err := s.client.Exists(ctx, deviceKeyPrefix+hardwareID).Result()
+	if err != nil {
+		slog.ErrorContext(ctx, "redis: IsHardwareOnline failed", "hardware_id", hardwareID, "err", err)
+		return false
+	}
+	return n > 0
+}
+
 func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 	var numbers []string
 	pattern := lineDevicesPrefix + "*"

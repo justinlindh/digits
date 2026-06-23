@@ -404,12 +404,17 @@ func (h *Handler) buildOperatorData(r *http.Request, ln *line.Line, hh *househol
 	// aggregate: on a multi-device line the line aggregate would show the most
 	// recently active sibling's time, which is wrong for the selected device.
 	// The throttled last-seen writer keeps the row fresh while the device is
-	// connected.
+	// connected. The empty-id fallback (legacy/unpaired connection with no row)
+	// has no per-device row, so it uses the line-level last-seen.
 	var lastSeenAt *time.Time
-	for _, d := range devices {
-		if d.HardwareID == hardwareID {
-			lastSeenAt = d.LastSeenAt
-			break
+	if hardwareID == "" {
+		lastSeenAt = h.hub.LastSeenAt(ln.Number)
+	} else {
+		for _, d := range devices {
+			if d.HardwareID == hardwareID {
+				lastSeenAt = d.LastSeenAt
+				break
+			}
 		}
 	}
 	if lastSeenAt != nil {
