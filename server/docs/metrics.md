@@ -66,6 +66,32 @@ All metric names are prefixed with `digits_signald_`.
 No peer identity, phone number, call ID, conference ID, or content is
 included in any signaling-error label.
 
+### Signaling media (signald only)
+
+The relay sees both ends' media negotiation as it forwards SDP and ICE
+between peers, so it counts two things. Both use closed label sets defined
+in code (`internal/metrics/metrics.go`), identical in spirit to
+`signaling_errors_total`: any value outside the set collapses to `other`,
+and the relay parses candidates from untrusted device input, so it can
+never widen the label space or smuggle an identifier into a label.
+
+- `digits_signald_ice_candidates_relayed_total{cand_type, transport}`
+  (counter): ICE candidates relayed between peers. `cand_type` is the
+  closed set `host`, `srflx`, `prflx`, `relay`; `transport` is `udp` or
+  `tcp`. Anything else (including an unparseable candidate) collapses to
+  `other`, so a malformed-candidate spike is visible on a dashboard. A
+  rising `relay` share signals direct and reflexive paths are failing and
+  media is falling back to TURN. The candidate address and port are never
+  labels.
+- `digits_signald_ice_servers_issued_total{turn}` (counter): ICE-server
+  responses handed to devices, partitioned only by whether TURN was
+  included. `turn="false"` means the pod issued STUN only, which usually
+  indicates a TURN misconfiguration. No device identity, TURN username, or
+  credential is recorded.
+
+No peer identity, phone number, call ID, candidate address, or TURN
+credential is included in any signaling-media label.
+
 ### Build info
 
 - `digits_<svc>_build_info{version, commit}` (gauge, always 1): allows a
