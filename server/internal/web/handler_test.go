@@ -2241,13 +2241,21 @@ func TestPhoneOperator_AMTheme(t *testing.T) {
 		t.Fatalf("seed device B: %v", err)
 	}
 
-	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-a"}
-	if err := h.hub.Register("3140021", conn); err != nil {
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-a"}
+	if err := h.hub.Register("3140021", connA); err != nil {
 		t.Fatalf("register conn A: %v", err)
 	}
 	h.hub.UpdateDeviceInfoByHardware("hw-attic-a", signaling.DeviceInfoParams{
 		PiVersion:       "4.0.0",
 		FirmwareVersion: "1.8.0",
+	})
+	connB := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-b"}
+	if err := h.hub.Register("3140021", connB); err != nil {
+		t.Fatalf("register conn B: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-attic-b", signaling.DeviceInfoParams{
+		PiVersion:       "2.9.0",
+		FirmwareVersion: "1.5.0",
 	})
 
 	// The AM operator partial is served when the user's theme is answering-machine.
@@ -2265,5 +2273,8 @@ func TestPhoneOperator_AMTheme(t *testing.T) {
 	}
 	if !strings.Contains(body, "4.0.0") {
 		t.Errorf("AM operator response missing device A Pi version 4.0.0")
+	}
+	if strings.Contains(body, "2.9.0") {
+		t.Errorf("AM operator response for device A leaked device B Pi version 2.9.0")
 	}
 }
