@@ -1113,7 +1113,7 @@
     {{if gt (len .DeviceViews) 1}}
     <section class="am-plate am-handset__plate am-handset__plate--wide">
       <span class="am-plate__label">Handset</span>
-      <div class="seg-radio" id="device-toggle" role="tablist" style="margin-top: 8px;">
+      <div class="seg-radio" id="device-toggle" role="tablist" style="margin-top: 8px; align-self: flex-start;">
         {{range .DeviceViews}}
         <label class="seg-radio__opt">
           <input type="radio" name="device_toggle" value="{{.Device.HardwareID}}"
