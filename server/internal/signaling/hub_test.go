@@ -502,3 +502,36 @@ func TestSendToDoesNotInvokeDropHookOnSuccessfulSend(t *testing.T) {
 		t.Errorf("drop hook called %d times on successful send, want 0", drops)
 	}
 }
+
+func TestUpdateStatus_PerHardware(t *testing.T) {
+	h := NewHub()
+	h.SetUpdateStatus("hwA", "downloading", "10%")
+	h.SetUpdateStatus("hwB", "applying", "")
+
+	if got := h.GetUpdateStatus("hwA"); got == nil || got.Status != "downloading" {
+		t.Fatalf("hwA: got %+v", got)
+	}
+	if got := h.GetUpdateStatus("hwB"); got == nil || got.Status != "applying" {
+		t.Fatalf("hwB: got %+v", got)
+	}
+	h.ClearUpdateStatus("hwA")
+	if got := h.GetUpdateStatus("hwA"); got != nil {
+		t.Fatalf("hwA should be cleared, got %+v", got)
+	}
+	if got := h.GetUpdateStatus("hwB"); got == nil {
+		t.Fatalf("hwB should survive clearing hwA")
+	}
+}
+
+func TestIsHardwareOnline(t *testing.T) {
+	h := NewHub()
+	if h.IsHardwareOnline("hw-absent") {
+		t.Fatal("absent hardware should be offline")
+	}
+	// Register a conn for hw-1
+	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-1"}
+	_ = h.Register("3140001", conn)
+	if !h.IsHardwareOnline("hw-1") {
+		t.Fatal("hw-1 should be online")
+	}
+}

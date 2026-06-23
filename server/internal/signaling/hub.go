@@ -74,7 +74,7 @@ type Hub struct {
 	mu           sync.RWMutex
 	conns        map[string][]*Conn               // phone number -> connections (multiple devices per line)
 	hwConns      map[string]*Conn                 // hardware ID -> connection
-	updateStatus map[string]*UpdateStatusSnapshot // phone number -> last update status
+	updateStatus map[string]*UpdateStatusSnapshot // hardware id -> last update status
 	// voicemailUnheard tracks the per-handset unheard-voicemail count last
 	// reported by each device. Outer key is the phone number; inner key is
 	// the originating handset's hardware ID. Per-handset because voicemail
@@ -467,10 +467,6 @@ func (h *Hub) RekeyNumber(oldNumber, newNumber string) {
 		h.conns[newNumber] = cs
 		delete(h.conns, oldNumber)
 	}
-	if us, ok := h.updateStatus[oldNumber]; ok {
-		h.updateStatus[newNumber] = us
-		delete(h.updateStatus, oldNumber)
-	}
 	if vm, ok := h.voicemailUnheard[oldNumber]; ok {
 		h.voicemailUnheard[newNumber] = vm
 		delete(h.voicemailUnheard, oldNumber)
@@ -760,10 +756,10 @@ func (h *Hub) AllDeviceInfo(number string) []DeviceInfoSnapshot {
 	return snapshots
 }
 
-// SetUpdateStatus stores the latest update status for a phone.
-func (h *Hub) SetUpdateStatus(number, status, detail string) {
+// SetUpdateStatus stores the latest update status for a device identified by hardware ID.
+func (h *Hub) SetUpdateStatus(hardwareID, status, detail string) {
 	h.mu.Lock()
-	h.updateStatus[number] = &UpdateStatusSnapshot{
+	h.updateStatus[hardwareID] = &UpdateStatusSnapshot{
 		Status:    status,
 		Detail:    detail,
 		UpdatedAt: time.Now(),
@@ -771,31 +767,31 @@ func (h *Hub) SetUpdateStatus(number, status, detail string) {
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.SetUpdateStatus(context.Background(), number, status, detail)
+		ds.SetUpdateStatus(context.Background(), hardwareID, status, detail)
 	}
 }
 
-// GetUpdateStatus returns the latest update status for a phone, or nil.
-func (h *Hub) GetUpdateStatus(number string) *UpdateStatusSnapshot {
+// GetUpdateStatus returns the latest update status for a device by hardware ID, or nil.
+func (h *Hub) GetUpdateStatus(hardwareID string) *UpdateStatusSnapshot {
 	h.mu.RLock()
 	ds := h.state
 	h.mu.RUnlock()
 	if ds != nil {
-		return ds.GetUpdateStatus(context.Background(), number)
+		return ds.GetUpdateStatus(context.Background(), hardwareID)
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	return h.updateStatus[number]
+	return h.updateStatus[hardwareID]
 }
 
-// ClearUpdateStatus removes update status for a phone.
-func (h *Hub) ClearUpdateStatus(number string) {
+// ClearUpdateStatus removes update status for a device by hardware ID.
+func (h *Hub) ClearUpdateStatus(hardwareID string) {
 	h.mu.Lock()
-	delete(h.updateStatus, number)
+	delete(h.updateStatus, hardwareID)
 	ds := h.state
 	h.mu.Unlock()
 	if ds != nil {
-		ds.ClearUpdateStatus(context.Background(), number)
+		ds.ClearUpdateStatus(context.Background(), hardwareID)
 	}
 }
 
@@ -981,6 +977,25 @@ func (h *Hub) IsOnline(number string) bool {
 		return ds.IsOnline(context.Background(), number)
 	}
 	return h.Get(number) != nil
+}
+
+// IsHardwareOnline reports whether the device with this hardware id is
+// connected. When a shared device-state store is configured it answers
+// cross-pod from Redis, matching IsOnline and AllDeviceInfo; otherwise it
+// falls back to this pod's local connection map.
+func (h *Hub) IsHardwareOnline(hardwareID string) bool {
+	if hardwareID == "" {
+		return false
+	}
+	h.mu.RLock()
+	ds := h.state
+	h.mu.RUnlock()
+	if ds != nil {
+		return ds.IsHardwareOnline(context.Background(), hardwareID)
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.hwConns[hardwareID] != nil
 }
 
 func (h *Hub) LocalConnectionCount() int {

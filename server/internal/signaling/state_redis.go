@@ -105,6 +105,19 @@ func (s *DeviceState) IsOnline(ctx context.Context, number string) bool {
 	return n > 0
 }
 
+// IsHardwareOnline reports whether the device with this hardware id is
+// connected to any pod. The per-device presence hash exists exactly while the
+// device is connected (SetOnline writes it, SetOffline deletes it, heartbeats
+// refresh its TTL), so its existence is the cross-pod online signal.
+func (s *DeviceState) IsHardwareOnline(ctx context.Context, hardwareID string) bool {
+	n, err := s.client.Exists(ctx, deviceKeyPrefix+hardwareID).Result()
+	if err != nil {
+		slog.ErrorContext(ctx, "redis: IsHardwareOnline failed", "hardware_id", hardwareID, "err", err)
+		return false
+	}
+	return n > 0
+}
+
 func (s *DeviceState) OnlineNumbers(ctx context.Context) []string {
 	var numbers []string
 	pattern := lineDevicesPrefix + "*"
@@ -269,8 +282,8 @@ func (s *DeviceState) LastSeenAt(ctx context.Context, number string) *time.Time 
 	return &latest
 }
 
-func (s *DeviceState) SetUpdateStatus(ctx context.Context, number, status, detail string) {
-	key := updateStatusPrefix + number
+func (s *DeviceState) SetUpdateStatus(ctx context.Context, hardwareID, status, detail string) {
+	key := updateStatusPrefix + hardwareID
 	now := strconv.FormatInt(time.Now().Unix(), 10)
 
 	fields := map[string]any{
@@ -283,15 +296,15 @@ func (s *DeviceState) SetUpdateStatus(ctx context.Context, number, status, detai
 	pipe.HSet(ctx, key, fields)
 	pipe.Expire(ctx, key, updateStatusTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		slog.ErrorContext(ctx, "redis: SetUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: SetUpdateStatus failed", "hardware_id", hardwareID, "err", err)
 	}
 }
 
-func (s *DeviceState) GetUpdateStatus(ctx context.Context, number string) *UpdateStatusSnapshot {
-	key := updateStatusPrefix + number
+func (s *DeviceState) GetUpdateStatus(ctx context.Context, hardwareID string) *UpdateStatusSnapshot {
+	key := updateStatusPrefix + hardwareID
 	vals, err := s.client.HGetAll(ctx, key).Result()
 	if err != nil {
-		slog.ErrorContext(ctx, "redis: GetUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: GetUpdateStatus failed", "hardware_id", hardwareID, "err", err)
 		return nil
 	}
 	if len(vals) == 0 {
@@ -312,10 +325,10 @@ func (s *DeviceState) GetUpdateStatus(ctx context.Context, number string) *Updat
 	}
 }
 
-func (s *DeviceState) ClearUpdateStatus(ctx context.Context, number string) {
-	key := updateStatusPrefix + number
+func (s *DeviceState) ClearUpdateStatus(ctx context.Context, hardwareID string) {
+	key := updateStatusPrefix + hardwareID
 	if err := s.client.Del(ctx, key).Err(); err != nil {
-		slog.ErrorContext(ctx, "redis: ClearUpdateStatus failed", "number", number, "err", err)
+		slog.ErrorContext(ctx, "redis: ClearUpdateStatus failed", "hardware_id", hardwareID, "err", err)
 	}
 }
 

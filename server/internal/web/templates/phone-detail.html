@@ -128,292 +128,22 @@
 
     </div>
 
-    <!-- Right: operator service panel (collapsed by default) -->
+    <!-- Right: operator service panel -->
     <div class="stack-md">
-
-      <!-- Hardware & firmware: visible by default, but quieter styling -->
-      <section class="panel">
-        <header class="panel__head">
-          <h2 class="panel__title">Hardware &amp; firmware</h2>
-        </header>
-        <div class="panel__body">
-          <div id="auto-update-section" style="margin-bottom: 12px;">
-            {{template "auto-update-section" .}}
-          </div>
-          {{if .DeviceInfo}}
-          <div class="stack-md" style="margin-bottom: 12px;">
-            <div>
-              <div class="field__label" style="margin-bottom: 4px;">Pi software</div>
-              <div class="hstack hstack--wrap" style="gap: 8px;">
-                <span class="num" style="font-size: 13.5px; color: var(--ink);">
-                  {{if .DeviceInfo.PiVersion}}{{.DeviceInfo.PiVersion}}{{else}}<span class="muted italic">unknown</span>{{end}}
-                </span>
-                {{if .DeviceInfo.PiCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.PiCommit}}</span>{{end}}
-                {{if and .LatestPiVersion (ne .DeviceInfo.PiVersion .LatestPiVersion)}}
-                  {{if .PiUpdateNotes}}
-                  <details class="update-details" style="display: inline-block;">
-                    <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</summary>
-                    <div class="update-notes">
-                      {{range .PiUpdateNotes}}
-                        <article class="update-note">
-                          <span class="update-note__version">pi {{.Version}}</span>
-                          {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-                        </article>
-                      {{end}}
-                    </div>
-                  </details>
-                  {{else}}
-                  <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</span>
-                  {{end}}
-                {{else if .LatestPiVersion}}
-                  <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
-                {{end}}
-              </div>
-            </div>
-            <div>
-              <div class="field__label" style="margin-bottom: 4px;">Firmware</div>
-              <div class="hstack hstack--wrap" style="gap: 8px;">
-                <span class="num" style="font-size: 13.5px; color: var(--ink);">
-                  {{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="muted italic">unknown</span>{{end}}
-                </span>
-                {{if .DeviceInfo.FirmwareCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.FirmwareCommit}}</span>{{end}}
-                {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
-                  {{if .FirmwareUpdateNotes}}
-                  <details class="update-details" style="display: inline-block;">
-                    <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</summary>
-                    <div class="update-notes">
-                      {{range .FirmwareUpdateNotes}}
-                        <article class="update-note">
-                          <span class="update-note__version">fw {{.Version}}</span>
-                          {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
-                        </article>
-                      {{end}}
-                    </div>
-                  </details>
-                  {{else}}
-                  <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</span>
-                  {{end}}
-                {{else if .LatestFirmwareVersion}}
-                  <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
-                {{end}}
-              </div>
-            </div>
-            {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
-            <div>
-              <div class="field__label" style="margin-bottom: 4px;">LAN IP</div>
-              <div class="hstack hstack--wrap" style="gap: 8px;">
-                <span class="num" style="font-size: 13.5px; color: var(--ink);">{{.DeviceInfo.RemoteAddr}}</span>
-              </div>
-            </div>
-            {{if .DeviceInfo.DevMode}}
-            <div>
-              <div class="field__label" style="margin-bottom: 4px;">Dev mode</div>
-              <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="chip chip--live" style="text-decoration: none;">
-                <span class="chip__dot"></span>Admin panel &#x2197;
-              </a>
-            </div>
-            {{end}}
-            {{end}}
-            {{if $.LastSeenAt}}
-            <div>
-              <div class="field__label" style="margin-bottom: 4px;">Last check-in</div>
-              <div style="font-size: 13px; color: var(--ink);">{{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</div>
-            </div>
-            {{end}}
-          </div>
-
-          {{if .Online}}
-          <!-- Pi Software update -->
-          <details class="disclosure" style="margin-bottom: 10px;">
-            <summary>Update Pi software</summary>
-            <div class="panel__body">
-              {{if .PiReleases}}
-              <div class="stack-sm" style="max-height: 200px; overflow-y: auto;">
-                {{range .PiReleases}}
-                <label class="radio-card">
-                  <input type="radio" name="target_pi_version" value="{{.Version}}"
-                         {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}checked{{end}}{{end}}>
-                  <div class="radio-card__title">
-                    <span class="radio-card__indicator"></span>
-                    <span class="num" style="font-size: 14px;">{{.Version}}</span>
-                    {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}
-                    <span class="chip chip--live"><span class="chip__dot"></span>latest</span>
-                    {{end}}{{end}}
-                    {{if $.DeviceInfo.PiVersion}}{{if eq .Version $.DeviceInfo.PiVersion}}
-                    <span class="chip chip--on"><span class="chip__dot"></span>installed</span>
-                    {{end}}{{end}}
-                    {{if .Date}}<span class="radio-card__meta">{{.Date}}</span>{{end}}
-                  </div>
-                </label>
-                {{end}}
-              </div>
-              <button type="button" id="pi-install-btn" onclick="triggerComponentUpdate('pi', 'target_pi_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install Pi software</button>
-              <div id="pi-update-progress" class="hidden" style="margin-top: 10px;">
-                <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-                  <div id="pi-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-                  <span id="pi-progress-text" style="font-size: 13px; color: var(--ink);">Sending update command...</span>
-                </div>
-              </div>
-              {{else}}
-              <p class="muted" style="font-size: 13px; margin: 0;">No Pi releases available.</p>
-              {{end}}
-            </div>
-          </details>
-
-          <!-- Firmware update -->
-          <details class="disclosure">
-            <summary>Update firmware</summary>
-            <div class="panel__body">
-              {{if .FWReleases}}
-              <div class="stack-sm" style="max-height: 200px; overflow-y: auto;">
-                {{range .FWReleases}}
-                <label class="radio-card">
-                  <input type="radio" name="target_fw_version" value="{{.Version}}"
-                         {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}checked{{end}}{{end}}>
-                  <div class="radio-card__title">
-                    <span class="radio-card__indicator"></span>
-                    <span class="num" style="font-size: 14px;">{{.Version}}</span>
-                    {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}
-                    <span class="chip chip--live"><span class="chip__dot"></span>latest</span>
-                    {{end}}{{end}}
-                    {{if $.DeviceInfo.FirmwareVersion}}{{if eq .Version $.DeviceInfo.FirmwareVersion}}
-                    <span class="chip chip--on"><span class="chip__dot"></span>installed</span>
-                    {{end}}{{end}}
-                    {{if .Date}}<span class="radio-card__meta">{{.Date}}</span>{{end}}
-                  </div>
-                </label>
-                {{end}}
-              </div>
-              <button type="button" id="fw-install-btn" onclick="triggerComponentUpdate('fw', 'target_fw_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install firmware</button>
-              <div id="fw-update-progress" class="hidden" style="margin-top: 10px;">
-                <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-                  <div id="fw-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-                  <span id="fw-progress-text" style="font-size: 13px; color: var(--ink);">Sending update command...</span>
-                </div>
-              </div>
-              {{else}}
-              <p class="muted" style="font-size: 13px; margin: 0;">No firmware releases available.</p>
-              {{end}}
-            </div>
-          </details>
-          {{end}}
-
-          {{else}}
-            {{if .Online}}
-            <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report: device is online but hasn't reported version info yet.</p>
-            <form method="POST" action="/phones/{{.Line.Number}}/update">
-              <button type="submit" class="btn btn--primary">Check for updates</button>
-            </form>
-            {{else}}
-            <p class="muted" style="font-size: 13px; margin: 0;">Device is offline.</p>
-            {{if $.LastSeenAt}}
-            <p class="muted" style="font-size: 12.5px; margin: 6px 0 0;">Last seen {{$.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}.</p>
-            {{end}}
-            {{end}}
-          {{end}}
-        </div>
-      </section>
-
-      {{if .Online}}
-      <!-- Device controls: Restart / Reboot / Recovery -->
-      <section class="panel">
-        <header class="panel__head">
-          <h2 class="panel__title">Device controls</h2>
-        </header>
-        <div class="panel__body">
-
-          <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
-            <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
-            <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
-            <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
-          </div>
-
-          <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
-            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-              <div id="ring-test-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-              <span id="ring-test-text" style="font-size: 13px; color: var(--ink);">Ringing...</span>
-            </div>
-          </div>
-
-          <div id="restart-confirm" class="hidden">
-            <p id="restart-confirm-text" style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;"></p>
-            <div class="hstack" style="gap: 8px;">
-              <button type="button" id="restart-confirm-btn" onclick="doRestart()" class="btn btn--primary">Confirm</button>
-              <button type="button" onclick="cancelRestartConfirm()" class="btn">Cancel</button>
-            </div>
-          </div>
-
-          <div id="restart-progress" class="hidden">
-            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-              <div id="restart-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-              <span id="restart-status" style="font-size: 13px; color: var(--ink);">Sending command...</span>
-            </div>
-          </div>
-
-          <!-- Recovery mode -->
-          <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-            <div id="factory-reset-default">
-              <button type="button" onclick="showFactoryResetConfirm()" class="btn btn--danger">Recovery mode</button>
-              <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
-            </div>
-            <div id="factory-reset-confirm" class="hidden">
-              <p style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
-              <div class="hstack" style="gap: 8px;">
-                <button type="button" onclick="doFactoryReset()" class="btn btn--danger">Confirm</button>
-                <button type="button" onclick="cancelFactoryReset()" class="btn">Cancel</button>
-              </div>
-            </div>
-            <div id="factory-reset-progress" class="hidden">
-              <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-                <div id="factory-reset-spinner" style="width: 14px; height: 14px; border: 2px solid var(--rust); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-                <span id="factory-reset-text" style="font-size: 13px; color: var(--ink);">Sending reset command...</span>
-              </div>
-            </div>
-          </div>
-
-          {{if .IsAdmin}}
-          <!-- Developer mode -->
-          <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-            {{if and .DeviceInfo .DeviceInfo.DevMode}}
-            <div id="devmode-on-default">
-              <button type="button" onclick="showDevModeDisableConfirm()" class="btn btn--danger">Disable developer mode</button>
-              <p class="muted" style="font-size: 12px; margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
-            </div>
-            <div id="devmode-disable-confirm" class="hidden">
-              <p style="font-size: 13.5px; color: var(--ink); margin: 8px 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
-              <div class="hstack" style="gap: 8px;">
-                <button type="button" onclick="doDevModeDisable()" class="btn btn--danger">Confirm</button>
-                <button type="button" onclick="cancelDevModeDisable()" class="btn">Cancel</button>
-              </div>
-            </div>
-            {{else}}
-            <div id="devmode-off-default">
-              <button type="button" onclick="showDevModeEnableForm()" class="btn">Enable developer mode</button>
-              <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
-            </div>
-            <div id="devmode-enable-form" class="hidden">
-              <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
-              <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
-              <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
-              <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
-              <div class="hstack" style="gap: 8px; margin-top: 10px;">
-                <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
-                <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
-              </div>
-            </div>
-            {{end}}
-            <div id="devmode-progress" class="hidden" style="margin-top: 10px;">
-              <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
-                <div id="devmode-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
-                <span id="devmode-text" style="font-size: 13px; color: var(--ink);">Sending command...</span>
-              </div>
-            </div>
-          </div>
-          {{end}}
-
-        </div>
-      </section>
+      {{if gt (len .DeviceViews) 1}}
+      <div class="seg-radio" id="device-toggle" role="tablist" style="margin-bottom: 8px;">
+        {{range .DeviceViews}}
+        <label class="seg-radio__opt">
+          <input type="radio" name="device_toggle" value="{{.Device.HardwareID}}"
+                 {{if eq .Device.HardwareID $.SelectedHardwareID}}checked{{end}}
+                 hx-get="/phones/{{$.Line.Number}}/operator?hardware_id={{.Device.HardwareID}}"
+                 hx-target="#operator-panel" hx-swap="outerHTML">
+          <span class="seg-radio__label">{{if .Device.Name}}{{.Device.Name}}{{else}}Unnamed{{end}}</span>
+        </label>
+        {{end}}
+      </div>
       {{end}}
+      {{template "operator-panel" .}}
     </div>
   </div>
 
@@ -514,6 +244,11 @@
   var devModePollTimer = null;
   var restartMode = null;
 
+  function selectedHardwareID() {
+    var p = document.getElementById('operator-panel');
+    return p ? (p.getAttribute('data-hardware-id') || '') : '';
+  }
+
   function doRingTest() {
     var btn = document.getElementById('ring-test-btn');
     var status = document.getElementById('ring-test-status');
@@ -524,9 +259,12 @@
     spinner.classList.remove('hidden');
     text.textContent = 'Ringing...';
     text.style.color = 'var(--ink)';
+    var body = new URLSearchParams();
+    body.append('hardware_id', selectedHardwareID());
     fetch('/phones/' + phoneNumber + '/ring-test', {
       method: 'POST',
-      headers: {'Accept': 'application/json'}
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: body.toString()
     })
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -554,6 +292,7 @@
     var radio = document.querySelector('input[name="' + paramName + '"]:checked');
     var body = new URLSearchParams();
     if (radio) body.append(paramName, radio.value);
+    body.append('hardware_id', selectedHardwareID());
     startUpdate(prefix, btn, body);
   }
 
@@ -585,7 +324,7 @@
     window[timerVar] = setInterval(function() {
       attempts++;
       if (attempts > 120) { clearInterval(window[timerVar]); showResult(prefix, 'failed', 'Timed out; please retry'); return; }
-      fetch('/phones/' + phoneNumber + '/update-status')
+      fetch('/phones/' + phoneNumber + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (!data.status) return;
@@ -645,6 +384,7 @@
     status.style.color = 'var(--ink)';
     document.getElementById('restart-spinner').classList.remove('hidden');
     var body = new URLSearchParams({mode: mode});
+    body.append('hardware_id', selectedHardwareID());
     fetch('/phones/' + phoneNumber + '/restart', {
       method: 'POST',
       headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -667,7 +407,7 @@
       restartPollTimer = setInterval(function() {
         attempts++;
         if (attempts > maxAttempts) { clearInterval(restartPollTimer); showRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
-        fetch('/phones/' + phoneNumber + '/online')
+        fetch('/phones/' + phoneNumber + '/online?hardware_id=' + encodeURIComponent(selectedHardwareID()))
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (!data.online) { sawOffline = true; document.getElementById('restart-status').textContent = 'Waiting for device to reconnect...'; }
@@ -694,7 +434,13 @@
   function doFactoryReset() {
     document.getElementById('factory-reset-confirm').classList.add('hidden');
     document.getElementById('factory-reset-progress').classList.remove('hidden');
-    fetch('/phones/' + phoneNumber + '/factory-reset', { method: 'POST', headers: {'Accept': 'application/json'} })
+    var frBody = new URLSearchParams();
+    frBody.append('hardware_id', selectedHardwareID());
+    fetch('/phones/' + phoneNumber + '/factory-reset', {
+      method: 'POST',
+      headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: frBody.toString()
+    })
     .then(function(r) { return r.json(); })
     .then(function(data) {
       var spinner = document.getElementById('factory-reset-spinner');
@@ -763,6 +509,7 @@
     sendDevMode(new URLSearchParams({enabled: 'false'}), false);
   }
   function sendDevMode(body, target) {
+    body.append('hardware_id', selectedHardwareID());
     fetch('/phones/' + phoneNumber + '/dev-mode', {
       method: 'POST',
       headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -782,7 +529,7 @@
     devModePollTimer = setInterval(function() {
       attempts++;
       if (attempts > 15) { clearInterval(devModePollTimer); devModeError('Timed out waiting for the device to apply the change.'); return; }
-      fetch('/phones/' + phoneNumber + '/dev-mode-status')
+      fetch('/phones/' + phoneNumber + '/dev-mode-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
       .then(function(r) { return r.json(); })
       .then(function(d) {
         if (d.enabled === target) {
@@ -1363,137 +1110,23 @@
       {{template "am-voicemail-section" .}}
     </section>
 
-    {{template "am-software-update-section" .}}
-
-    {{if .Online}}
-    <section class="am-plate am-handset__plate am-handset__plate--wide">
-      <span class="am-plate__label">Device controls</span>
-      <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
-        <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
-          <span class="am-key__symbol">&#x266A;</span>
-          <span class="am-key__label">Ring test</span>
-        </button>
-        <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
-          <span class="am-key__symbol">&#x21BB;</span>
-          <span class="am-key__label">Restart service</span>
-        </button>
-        <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
-          <span class="am-key__symbol">&#x23FB;</span>
-          <span class="am-key__label">Reboot device</span>
-        </button>
-      </div>
-      <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-ring-test-text" class="am-led">Ringing...</span>
-        </div>
-      </div>
-      <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
-        <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
-        <div class="am-handset__actions-row" style="gap: 8px;">
-          <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Confirm</span>
-          </button>
-          <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-restart-text" class="am-led">Sending command...</span>
-        </div>
-      </div>
-      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
-        <div id="am-recovery-default">
-          <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x26A0;</span>
-            <span class="am-key__label">Recovery mode</span>
-          </button>
-          <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
-        </div>
-        <div id="am-recovery-confirm" class="hidden">
-          <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
-          <div class="am-handset__actions-row" style="gap: 8px;">
-            <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
-              <span class="am-key__symbol">&#x2713;</span>
-              <span class="am-key__label">Confirm</span>
-            </button>
-            <button type="button" onclick="amCancelRecovery()" class="am-key">
-              <span class="am-key__symbol">&#x2715;</span>
-              <span class="am-key__label">Cancel</span>
-            </button>
-          </div>
-        </div>
-        <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
-          <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-            <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-            <span id="am-recovery-text" class="am-led">Sending reset command...</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    {{if .IsAdmin}}
-    <section class="am-plate am-handset__plate am-handset__plate--wide">
-      <span class="am-plate__label">Developer mode</span>
-      {{if and .DeviceInfo .DeviceInfo.DevMode}}
-      <div id="am-devmode-on-default">
-        <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
-          <span class="am-key__symbol">&#x26D4;</span>
-          <span class="am-key__label">Disable dev mode</span>
-        </button>
-        <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
-      </div>
-      <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
-        <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
-        <div class="am-handset__actions-row" style="gap: 8px;">
-          <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Confirm</span>
-          </button>
-          <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      {{else}}
-      <div id="am-devmode-off-default">
-        <button type="button" onclick="amShowDevModeEnable()" class="am-key">
-          <span class="am-key__symbol">&#x1F527;</span>
-          <span class="am-key__label">Enable dev mode</span>
-        </button>
-        <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
-      </div>
-      <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
-        <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
-        <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
-        <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
-        <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
-          <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
-            <span class="am-key__symbol">&#x2713;</span>
-            <span class="am-key__label">Enable</span>
-          </button>
-          <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
-            <span class="am-key__symbol">&#x2715;</span>
-            <span class="am-key__label">Cancel</span>
-          </button>
-        </div>
-      </div>
-      {{end}}
-      <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
-        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
-          <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
-          <span id="am-devmode-text" class="am-led">Sending command...</span>
-        </div>
+    {{if gt (len .DeviceViews) 1}}
+    <section class="am-plate am-handset__plate am-handset__plate--wide" style="width: fit-content; justify-self: start;">
+      <span class="am-plate__label">Handset</span>
+      <div class="seg-radio" id="device-toggle" role="tablist" style="margin-top: 8px; align-self: flex-start; width: fit-content;">
+        {{range .DeviceViews}}
+        <label class="seg-radio__opt">
+          <input type="radio" name="device_toggle" value="{{.Device.HardwareID}}"
+                 {{if eq .Device.HardwareID $.SelectedHardwareID}}checked{{end}}
+                 hx-get="/phones/{{$.Line.Number}}/operator?hardware_id={{.Device.HardwareID}}"
+                 hx-target="#operator-panel" hx-swap="outerHTML">
+          <span class="seg-radio__label">{{if .Device.Name}}{{.Device.Name}}{{else}}Unnamed{{end}}</span>
+        </label>
+        {{end}}
       </div>
     </section>
     {{end}}
-    {{end}}
+    {{template "am-operator-panel" .}}
 
     <section class="am-plate am-handset__plate am-handset__plate--wide am-handset__plate--danger am-handset__actions">
       <span class="am-plate__label">Actions</span>
@@ -1605,11 +1238,17 @@
     var phoneNumber = {{.Line.Number}};
     var pollers = {pi: null, fw: null};
 
+    function selectedHardwareID() {
+      var p = document.getElementById('operator-panel');
+      return p ? (p.getAttribute('data-hardware-id') || '') : '';
+    }
+
     window.amTriggerComponentUpdate = function(prefix, paramName) {
       var btn = document.getElementById(prefix + '-install-btn');
       var radio = document.querySelector('input[name="' + paramName + '"]:checked');
       var body = new URLSearchParams();
       if (radio) body.append(paramName, radio.value);
+      body.append('hardware_id', selectedHardwareID());
       amStartUpdate(prefix, btn, body);
     };
 
@@ -1642,7 +1281,7 @@
       pollers[prefix] = setInterval(function() {
         attempts++;
         if (attempts > 120) { clearInterval(pollers[prefix]); amShowResult(prefix, 'failed', 'Timed out, please retry'); return; }
-        fetch('/phones/' + phoneNumber + '/update-status')
+        fetch('/phones/' + phoneNumber + '/update-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(function(data) {
           if (!data.status) return;
@@ -1686,9 +1325,12 @@
       lamp.classList.add('am-lamp--on-amber');
       text.classList.remove('am-led--green', 'am-led--red');
       text.textContent = 'Ringing...';
+      var rtBody = new URLSearchParams();
+      rtBody.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/ring-test', {
         method: 'POST',
-        headers: {'Accept': 'application/json'}
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: rtBody.toString()
       })
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -1750,6 +1392,7 @@
       text.classList.remove('am-led--green', 'am-led--red');
       text.textContent = mode === 'reboot' ? 'Sending reboot command...' : 'Sending restart command...';
       var body = new URLSearchParams({mode: mode});
+      body.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/restart', {
         method: 'POST',
         headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1773,7 +1416,7 @@
         amRestartPollTimer = setInterval(function() {
           attempts++;
           if (attempts > maxAttempts) { clearInterval(amRestartPollTimer); amShowRestartResult('failed', 'Timed out waiting for device to come back online'); return; }
-          fetch('/phones/' + phoneNumber + '/online')
+          fetch('/phones/' + phoneNumber + '/online?hardware_id=' + encodeURIComponent(selectedHardwareID()))
           .then(function(r) { return r.json(); })
           .then(function(data) {
             if (!data.online) { sawOffline = true; document.getElementById('am-restart-text').textContent = 'Waiting for device to reconnect...'; }
@@ -1809,7 +1452,13 @@
       var lamp = document.getElementById('am-recovery-lamp');
       var text = document.getElementById('am-recovery-text');
       progress.classList.remove('hidden');
-      fetch('/phones/' + phoneNumber + '/factory-reset', { method: 'POST', headers: {'Accept': 'application/json'} })
+      var frBody = new URLSearchParams();
+      frBody.append('hardware_id', selectedHardwareID());
+      fetch('/phones/' + phoneNumber + '/factory-reset', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
+        body: frBody.toString()
+      })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         lamp.classList.remove('am-lamp--on-amber');
@@ -1885,6 +1534,7 @@
       amSendDevMode(new URLSearchParams({enabled: 'false'}), false);
     };
     function amSendDevMode(body, target) {
+      body.append('hardware_id', selectedHardwareID());
       fetch('/phones/' + phoneNumber + '/dev-mode', {
         method: 'POST',
         headers: {'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -1904,7 +1554,7 @@
       amDevModePollTimer = setInterval(function() {
         attempts++;
         if (attempts > 15) { clearInterval(amDevModePollTimer); amDevModeError('Timed out waiting for the device to apply the change.'); return; }
-        fetch('/phones/' + phoneNumber + '/dev-mode-status')
+        fetch('/phones/' + phoneNumber + '/dev-mode-status?hardware_id=' + encodeURIComponent(selectedHardwareID()))
         .then(function(r) { return r.json(); })
         .then(function(d) {
           if (d.enabled === target) {
@@ -2116,4 +1766,432 @@
     {{end}}
   {{end}}
 </section>
+{{end}}
+
+{{define "operator-panel"}}
+<div id="operator-panel" data-hardware-id="{{.SelectedHardwareID}}">
+
+  <!-- Hardware and firmware -->
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Hardware &amp; firmware</h2>
+    </header>
+    <div class="panel__body">
+      <div id="auto-update-section" style="margin-bottom: 12px;">
+        {{template "auto-update-section" .}}
+      </div>
+      {{if .DeviceInfo}}
+      <div class="stack-md" style="margin-bottom: 12px;">
+        <div>
+          <div class="field__label" style="margin-bottom: 4px;">Pi software</div>
+          <div class="hstack hstack--wrap" style="gap: 8px;">
+            <span class="num" style="font-size: 13.5px; color: var(--ink);">
+              {{if .DeviceInfo.PiVersion}}{{.DeviceInfo.PiVersion}}{{else}}<span class="muted italic">unknown</span>{{end}}
+            </span>
+            {{if .DeviceInfo.PiCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.PiCommit}}</span>{{end}}
+            {{if and .LatestPiVersion (ne .DeviceInfo.PiVersion .LatestPiVersion)}}
+              {{if .PiUpdateNotes}}
+              <details class="update-details" style="display: inline-block;">
+                <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</summary>
+                <div class="update-notes">
+                  {{range .PiUpdateNotes}}
+                    <article class="update-note">
+                      <span class="update-note__version">pi {{.Version}}</span>
+                      {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+                    </article>
+                  {{end}}
+                </div>
+              </details>
+              {{else}}
+              <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestPiVersion}} available</span>
+              {{end}}
+            {{else if .LatestPiVersion}}
+              <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
+            {{end}}
+          </div>
+        </div>
+        <div>
+          <div class="field__label" style="margin-bottom: 4px;">Firmware</div>
+          <div class="hstack hstack--wrap" style="gap: 8px;">
+            <span class="num" style="font-size: 13.5px; color: var(--ink);">
+              {{if .DeviceInfo.FirmwareVersion}}{{.DeviceInfo.FirmwareVersion}}{{else}}<span class="muted italic">unknown</span>{{end}}
+            </span>
+            {{if .DeviceInfo.FirmwareCommit}}<span class="num muted" style="font-size: 12px;">{{.DeviceInfo.FirmwareCommit}}</span>{{end}}
+            {{if and .LatestFirmwareVersion (ne .DeviceInfo.FirmwareVersion .LatestFirmwareVersion)}}
+              {{if .FirmwareUpdateNotes}}
+              <details class="update-details" style="display: inline-block;">
+                <summary class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</summary>
+                <div class="update-notes">
+                  {{range .FirmwareUpdateNotes}}
+                    <article class="update-note">
+                      <span class="update-note__version">fw {{.Version}}</span>
+                      {{if .Notes}}{{renderNotes .Notes}}{{else}}<p class="update-note__empty">Notes not available yet.</p>{{end}}
+                    </article>
+                  {{end}}
+                </div>
+              </details>
+              {{else}}
+              <span class="chip chip--warn"><span class="chip__dot"></span>{{.LatestFirmwareVersion}} available</span>
+              {{end}}
+            {{else if .LatestFirmwareVersion}}
+              <span class="chip chip--on"><span class="chip__dot"></span>up to date</span>
+            {{end}}
+          </div>
+        </div>
+        {{if and .Online .DeviceInfo .DeviceInfo.RemoteAddr}}
+        <div>
+          <div class="field__label" style="margin-bottom: 4px;">LAN IP</div>
+          <div class="hstack hstack--wrap" style="gap: 8px;">
+            <span class="num" style="font-size: 13.5px; color: var(--ink);">{{.DeviceInfo.RemoteAddr}}</span>
+          </div>
+        </div>
+        {{if .DeviceInfo.DevMode}}
+        <div>
+          <div class="field__label" style="margin-bottom: 4px;">Dev mode</div>
+          <a href="http://{{.DeviceInfo.RemoteAddr}}:8080" target="_blank" rel="noopener" class="chip chip--live" style="text-decoration: none;">
+            <span class="chip__dot"></span>Admin panel &#x2197;
+          </a>
+        </div>
+        {{end}}
+        {{end}}
+        {{if .LastSeenAt}}
+        <div>
+          <div class="field__label" style="margin-bottom: 4px;">Last check-in</div>
+          <div style="font-size: 13px; color: var(--ink);">{{.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}</div>
+        </div>
+        {{end}}
+      </div>
+
+      {{if .Online}}
+      <!-- Pi software update -->
+      <details class="disclosure" style="margin-bottom: 10px;">
+        <summary>Update Pi software</summary>
+        <div class="panel__body">
+          {{if .PiReleases}}
+          <div class="stack-sm" style="max-height: 200px; overflow-y: auto;">
+            {{range .PiReleases}}
+            <label class="radio-card">
+              <input type="radio" name="target_pi_version" value="{{.Version}}"
+                     {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}checked{{end}}{{end}}>
+              <div class="radio-card__title">
+                <span class="radio-card__indicator"></span>
+                <span class="num" style="font-size: 14px;">{{.Version}}</span>
+                {{if $.LatestPiVersion}}{{if eq .Version $.LatestPiVersion}}
+                <span class="chip chip--live"><span class="chip__dot"></span>latest</span>
+                {{end}}{{end}}
+                {{if $.DeviceInfo.PiVersion}}{{if eq .Version $.DeviceInfo.PiVersion}}
+                <span class="chip chip--on"><span class="chip__dot"></span>installed</span>
+                {{end}}{{end}}
+                {{if .Date}}<span class="radio-card__meta">{{.Date}}</span>{{end}}
+              </div>
+            </label>
+            {{end}}
+          </div>
+          <button type="button" id="pi-install-btn" onclick="triggerComponentUpdate('pi', 'target_pi_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install Pi software</button>
+          <div id="pi-update-progress" class="hidden" style="margin-top: 10px;">
+            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+              <div id="pi-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+              <span id="pi-progress-text" style="font-size: 13px; color: var(--ink);">Sending update command...</span>
+            </div>
+          </div>
+          {{else}}
+          <p class="muted" style="font-size: 13px; margin: 0;">No Pi releases available.</p>
+          {{end}}
+        </div>
+      </details>
+
+      <!-- Firmware update -->
+      <details class="disclosure">
+        <summary>Update firmware</summary>
+        <div class="panel__body">
+          {{if .FWReleases}}
+          <div class="stack-sm" style="max-height: 200px; overflow-y: auto;">
+            {{range .FWReleases}}
+            <label class="radio-card">
+              <input type="radio" name="target_fw_version" value="{{.Version}}"
+                     {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}checked{{end}}{{end}}>
+              <div class="radio-card__title">
+                <span class="radio-card__indicator"></span>
+                <span class="num" style="font-size: 14px;">{{.Version}}</span>
+                {{if $.LatestFirmwareVersion}}{{if eq .Version $.LatestFirmwareVersion}}
+                <span class="chip chip--live"><span class="chip__dot"></span>latest</span>
+                {{end}}{{end}}
+                {{if $.DeviceInfo.FirmwareVersion}}{{if eq .Version $.DeviceInfo.FirmwareVersion}}
+                <span class="chip chip--on"><span class="chip__dot"></span>installed</span>
+                {{end}}{{end}}
+                {{if .Date}}<span class="radio-card__meta">{{.Date}}</span>{{end}}
+              </div>
+            </label>
+            {{end}}
+          </div>
+          <button type="button" id="fw-install-btn" onclick="triggerComponentUpdate('fw', 'target_fw_version')" class="btn btn--primary" style="width: 100%; margin-top: 10px;">Install firmware</button>
+          <div id="fw-update-progress" class="hidden" style="margin-top: 10px;">
+            <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+              <div id="fw-progress-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+              <span id="fw-progress-text" style="font-size: 13px; color: var(--ink);">Sending update command...</span>
+            </div>
+          </div>
+          {{else}}
+          <p class="muted" style="font-size: 13px; margin: 0;">No firmware releases available.</p>
+          {{end}}
+        </div>
+      </details>
+      {{end}}
+
+      {{else}}
+        {{if .Online}}
+        <p class="muted" style="font-size: 13px; margin: 0 0 10px;">Waiting for version report: device is online but hasn't reported version info yet.</p>
+        <form method="POST" action="/phones/{{.Line.Number}}/update">
+          <button type="submit" class="btn btn--primary">Check for updates</button>
+        </form>
+        {{else}}
+        <p class="muted" style="font-size: 13px; margin: 0;">Device is offline.</p>
+        {{if .LastSeenAt}}
+        <p class="muted" style="font-size: 12.5px; margin: 6px 0 0;">Last seen {{.LastSeenAt.Format "Jan 2, 2006 3:04 PM"}}.</p>
+        {{end}}
+        {{end}}
+      {{end}}
+    </div>
+  </section>
+
+  {{if .Online}}
+  <!-- Device controls: Restart / Reboot / Recovery -->
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">Device controls</h2>
+    </header>
+    <div class="panel__body">
+
+      <div id="restart-buttons" class="hstack hstack--wrap" style="gap: 8px;">
+        <button type="button" id="ring-test-btn" onclick="doRingTest()" class="btn">Ring test</button>
+        <button type="button" onclick="showRestartConfirm('service')" class="btn">Restart service</button>
+        <button type="button" onclick="showRestartConfirm('reboot')" class="btn">Reboot device</button>
+      </div>
+
+      <div id="ring-test-status" class="hidden" style="margin-bottom: 10px;">
+        <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+          <div id="ring-test-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+          <span id="ring-test-text" style="font-size: 13px; color: var(--ink);">Ringing...</span>
+        </div>
+      </div>
+
+      <div id="restart-confirm" class="hidden">
+        <p id="restart-confirm-text" style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;"></p>
+        <div class="hstack" style="gap: 8px;">
+          <button type="button" id="restart-confirm-btn" onclick="doRestart()" class="btn btn--primary">Confirm</button>
+          <button type="button" onclick="cancelRestartConfirm()" class="btn">Cancel</button>
+        </div>
+      </div>
+
+      <div id="restart-progress" class="hidden">
+        <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+          <div id="restart-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+          <span id="restart-status" style="font-size: 13px; color: var(--ink);">Sending command...</span>
+        </div>
+      </div>
+
+      <!-- Recovery mode -->
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+        <div id="factory-reset-default">
+          <button type="button" onclick="showFactoryResetConfirm()" class="btn btn--danger">Recovery mode</button>
+          <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
+        </div>
+        <div id="factory-reset-confirm" class="hidden">
+          <p style="font-size: 13.5px; color: var(--ink); margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
+          <div class="hstack" style="gap: 8px;">
+            <button type="button" onclick="doFactoryReset()" class="btn btn--danger">Confirm</button>
+            <button type="button" onclick="cancelFactoryReset()" class="btn">Cancel</button>
+          </div>
+        </div>
+        <div id="factory-reset-progress" class="hidden">
+          <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+            <div id="factory-reset-spinner" style="width: 14px; height: 14px; border: 2px solid var(--rust); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span id="factory-reset-text" style="font-size: 13px; color: var(--ink);">Sending reset command...</span>
+          </div>
+        </div>
+      </div>
+
+      {{if .IsAdmin}}
+      <!-- Developer mode -->
+      <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+        {{if and .DeviceInfo .DeviceInfo.DevMode}}
+        <div id="devmode-on-default">
+          <button type="button" onclick="showDevModeDisableConfirm()" class="btn btn--danger">Disable developer mode</button>
+          <p class="muted" style="font-size: 12px; margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code class="num">{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+        </div>
+        <div id="devmode-disable-confirm" class="hidden">
+          <p style="font-size: 13.5px; color: var(--ink); margin: 8px 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+          <div class="hstack" style="gap: 8px;">
+            <button type="button" onclick="doDevModeDisable()" class="btn btn--danger">Confirm</button>
+            <button type="button" onclick="cancelDevModeDisable()" class="btn">Cancel</button>
+          </div>
+        </div>
+        {{else}}
+        <div id="devmode-off-default">
+          <button type="button" onclick="showDevModeEnableForm()" class="btn">Enable developer mode</button>
+          <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
+        </div>
+        <div id="devmode-enable-form" class="hidden">
+          <label for="devmode-password" class="field__label" style="display: block; margin: 8px 0 4px;">SSH password</label>
+          <input type="password" id="devmode-password" class="field__input" autocomplete="new-password" maxlength="72" aria-describedby="devmode-pw-hint devmode-pw-error" oninput="clearDevModePwError()" style="max-width: 280px;" placeholder="At least 8 characters">
+          <span id="devmode-pw-hint" class="muted" style="display: block; font-size: 11px; margin-top: 4px;">8 to 72 characters. Used to log in as <code>dev</code> over SSH.</span>
+          <span id="devmode-pw-error" class="hidden" style="display: block; font-size: 11px; margin-top: 4px; color: var(--rust);">Password must be 8 to 72 characters.</span>
+          <div class="hstack" style="gap: 8px; margin-top: 10px;">
+            <button type="button" onclick="doDevModeEnable()" class="btn btn--primary">Enable</button>
+            <button type="button" onclick="cancelDevModeEnable()" class="btn">Cancel</button>
+          </div>
+        </div>
+        {{end}}
+        <div id="devmode-progress" class="hidden" style="margin-top: 10px;">
+          <div class="hstack" style="gap: 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; background: var(--paper-2);">
+            <div id="devmode-spinner" style="width: 14px; height: 14px; border: 2px solid var(--brass); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+            <span id="devmode-text" style="font-size: 13px; color: var(--ink);">Sending command...</span>
+          </div>
+        </div>
+      </div>
+      {{end}}
+
+    </div>
+  </section>
+  {{end}}
+
+</div>
+{{end}}
+
+{{define "am-operator-panel"}}
+<div id="operator-panel" data-hardware-id="{{.SelectedHardwareID}}">
+
+  {{template "am-software-update-section" .}}
+
+  {{if .Online}}
+  <section class="am-plate am-handset__plate am-handset__plate--wide">
+    <span class="am-plate__label">Device controls</span>
+    <div id="am-ctrl-buttons" class="am-handset__actions-row" style="gap: 8px; flex-wrap: wrap;">
+      <button type="button" id="am-ring-test-btn" onclick="amDoRingTest()" class="am-key">
+        <span class="am-key__symbol">&#x266A;</span>
+        <span class="am-key__label">Ring test</span>
+      </button>
+      <button type="button" onclick="amShowRestartConfirm('service')" class="am-key">
+        <span class="am-key__symbol">&#x21BB;</span>
+        <span class="am-key__label">Restart service</span>
+      </button>
+      <button type="button" onclick="amShowRestartConfirm('reboot')" class="am-key">
+        <span class="am-key__symbol">&#x23FB;</span>
+        <span class="am-key__label">Reboot device</span>
+      </button>
+    </div>
+    <div id="am-ring-test-status" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-ring-test-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-ring-test-text" class="am-led">Ringing...</span>
+      </div>
+    </div>
+    <div id="am-restart-confirm" class="hidden" style="margin-top: 10px;">
+      <p id="am-restart-confirm-text" class="am-hint" style="margin: 0 0 10px;"></p>
+      <div class="am-handset__actions-row" style="gap: 8px;">
+        <button type="button" id="am-restart-confirm-btn" onclick="amDoRestart()" class="am-key am-key--accent">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Confirm</span>
+        </button>
+        <button type="button" onclick="amCancelRestartConfirm()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    <div id="am-restart-progress" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-restart-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-restart-text" class="am-led">Sending command...</span>
+      </div>
+    </div>
+    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule-soft);">
+      <div id="am-recovery-default">
+        <button type="button" onclick="amShowRecoveryConfirm()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x26A0;</span>
+          <span class="am-key__label">Recovery mode</span>
+        </button>
+        <p class="am-hint" style="margin: 6px 0 0;">Reboots the device into recovery mode. Connect to the device's recovery Wi-Fi network to try again or perform a factory reset.</p>
+      </div>
+      <div id="am-recovery-confirm" class="hidden">
+        <p class="am-hint" style="margin: 0 0 10px;">The device will reboot into recovery mode. You'll need to connect to its recovery Wi-Fi network to choose an action. Continue?</p>
+        <div class="am-handset__actions-row" style="gap: 8px;">
+          <button type="button" onclick="amDoRecovery()" class="am-key am-key--red">
+            <span class="am-key__symbol">&#x2713;</span>
+            <span class="am-key__label">Confirm</span>
+          </button>
+          <button type="button" onclick="amCancelRecovery()" class="am-key">
+            <span class="am-key__symbol">&#x2715;</span>
+            <span class="am-key__label">Cancel</span>
+          </button>
+        </div>
+      </div>
+      <div id="am-recovery-progress" class="hidden" style="margin-top: 10px;">
+        <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+          <span id="am-recovery-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+          <span id="am-recovery-text" class="am-led">Sending reset command...</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {{if .IsAdmin}}
+  <section class="am-plate am-handset__plate am-handset__plate--wide">
+    <span class="am-plate__label">Developer mode</span>
+    {{if and .DeviceInfo .DeviceInfo.DevMode}}
+    <div id="am-devmode-on-default">
+      <button type="button" onclick="amShowDevModeDisable()" class="am-key am-key--red">
+        <span class="am-key__symbol">&#x26D4;</span>
+        <span class="am-key__label">Disable dev mode</span>
+      </button>
+      <p class="am-hint" style="margin: 6px 0 0;">SSH is enabled. Log in as <code>dev</code>{{if .DeviceInfo.RemoteAddr}} at <code>{{.DeviceInfo.RemoteAddr}}</code>{{end}} with the password you set.</p>
+    </div>
+    <div id="am-devmode-disable-confirm" class="hidden" style="margin-top: 10px;">
+      <p class="am-hint" style="margin: 0 0 10px;">Turning developer mode off stops SSH and ends any active SSH session. Continue?</p>
+      <div class="am-handset__actions-row" style="gap: 8px;">
+        <button type="button" onclick="amDoDevModeDisable()" class="am-key am-key--red">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Confirm</span>
+        </button>
+        <button type="button" onclick="amCancelDevModeDisable()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    {{else}}
+    <div id="am-devmode-off-default">
+      <button type="button" onclick="amShowDevModeEnable()" class="am-key">
+        <span class="am-key__symbol">&#x1F527;</span>
+        <span class="am-key__label">Enable dev mode</span>
+      </button>
+      <p class="am-hint" style="margin: 6px 0 0;">Enables SSH (user <code>dev</code>) and the on-device admin panel. You'll set an SSH password.</p>
+    </div>
+    <div id="am-devmode-enable-form" class="hidden" style="margin-top: 10px;">
+      <label for="am-devmode-password" class="am-hint" style="display: block; margin: 0 0 4px;">SSH password (8 to 72 characters)</label>
+      <input type="password" id="am-devmode-password" autocomplete="new-password" maxlength="72" aria-describedby="am-devmode-pw-error" oninput="amClearDevModePwError()" class="field__input" style="max-width: 280px;" placeholder="At least 8 characters">
+      <span id="am-devmode-pw-error" class="hidden am-hint" style="display: block; margin: 4px 0 0; color: var(--rust);">Password must be 8 to 72 characters.</span>
+      <div class="am-handset__actions-row" style="gap: 8px; margin-top: 10px;">
+        <button type="button" onclick="amDoDevModeEnable()" class="am-key am-key--accent">
+          <span class="am-key__symbol">&#x2713;</span>
+          <span class="am-key__label">Enable</span>
+        </button>
+        <button type="button" onclick="amCancelDevModeEnable()" class="am-key">
+          <span class="am-key__symbol">&#x2715;</span>
+          <span class="am-key__label">Cancel</span>
+        </button>
+      </div>
+    </div>
+    {{end}}
+    <div id="am-devmode-progress" class="hidden" style="margin-top: 10px;">
+      <div class="am-well" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px;">
+        <span id="am-devmode-lamp" class="am-lamp am-lamp--on-amber" aria-hidden="true"></span>
+        <span id="am-devmode-text" class="am-led">Sending command...</span>
+      </div>
+    </div>
+  </section>
+  {{end}}
+  {{end}}
+
+</div>
 {{end}}

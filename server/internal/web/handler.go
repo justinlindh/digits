@@ -617,6 +617,7 @@ func (h *Handler) Router() http.Handler {
 	protected.HandleFunc("POST /phones/{number}/ring-test", h.handlePhoneRingTest)
 	protected.HandleFunc("POST /phones/{number}/dev-mode", h.handlePhoneDevMode)
 	protected.HandleFunc("GET /phones/{number}/dev-mode-status", h.handlePhoneDevModeStatus)
+	protected.HandleFunc("GET /phones/{number}/operator", h.handlePhoneOperator)
 	protected.HandleFunc("GET /calls", h.handleCalls)
 	protected.HandleFunc("GET /settings", h.handleSettings)
 	protected.HandleFunc("POST /settings/household", h.handleSettingsHouseholdPost)

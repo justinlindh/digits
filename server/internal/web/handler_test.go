@@ -1932,3 +1932,349 @@ func TestChangePhoneNumberDuplicate(t *testing.T) {
 		t.Error("original line should still exist")
 	}
 }
+
+func TestPhoneDetail_BuildsPerDeviceViews(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140010", "Kitchen", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-a','hw-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	// Seed two devices: hw-a paired + online with a version, hw-b paired only.
+	var devAID, devBID int64
+	if err := database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-a', 'dev-a', 'Kitchen A', NOW())
+		RETURNING id
+	`, ln.ID).Scan(&devAID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if err := database.DB.QueryRow(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-b', 'dev-b', 'Kitchen B', NOW())
+		RETURNING id
+	`, ln.ID).Scan(&devBID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+	_ = devAID
+	_ = devBID
+
+	// Register hw-a as online with version info.
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-a"}
+	if err := h.hub.Register("3140010", connA); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-a", signaling.DeviceInfoParams{
+		FirmwareVersion: "1.2.0",
+		PiVersion:       "2.0.0",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140010", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Kitchen A") {
+		t.Errorf("page missing device A name 'Kitchen A'")
+	}
+	if !strings.Contains(body, "Kitchen B") {
+		t.Errorf("page missing device B name 'Kitchen B'")
+	}
+	if !strings.Contains(body, "2.0.0") {
+		t.Errorf("page missing selected device's Pi version '2.0.0'")
+	}
+}
+
+func TestBuildDeviceViews_Selection(t *testing.T) {
+	h, _, _ := setupHandler(t)
+
+	devices := []device.Device{
+		{ID: 1, Name: "A", HardwareID: "hw-1"},
+		{ID: 2, Name: "B", HardwareID: "hw-2"},
+	}
+
+	// No device online: the first device is selected.
+	views, selected := h.buildDeviceViews(devices, nil)
+	if len(views) != 2 {
+		t.Fatalf("want 2 views, got %d", len(views))
+	}
+	if selected != "hw-1" {
+		t.Errorf("no devices online: want first device hw-1 selected, got %q", selected)
+	}
+
+	// hw-2 online: the online device is selected even though it is not first.
+	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-2"}
+	if err := h.hub.Register("3140099", conn); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	views, selected = h.buildDeviceViews(devices, nil)
+	if selected != "hw-2" {
+		t.Errorf("hw-2 online: want hw-2 selected, got %q", selected)
+	}
+	for _, v := range views {
+		if v.Device.HardwareID == "hw-2" && !v.Online {
+			t.Error("hw-2 view should be marked online")
+		}
+		if v.Device.HardwareID == "hw-1" && v.Online {
+			t.Error("hw-1 view should be offline")
+		}
+	}
+
+	// Empty device list: no selection.
+	if _, sel := h.buildDeviceViews(nil, nil); sel != "" {
+		t.Errorf("empty devices: want empty selection, got %q", sel)
+	}
+}
+
+func TestPhoneRestart_TargetsHardware(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140011", "Porch", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = 'hw-porch'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-porch', 'dev-porch', 'Porch Phone', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+
+	conn := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-porch"}
+	if err := h.hub.Register("3140011", conn); err != nil {
+		t.Fatalf("register conn: %v", err)
+	}
+
+	form := url.Values{"mode": {"service"}, "hardware_id": {"hw-porch"}}
+	req := httptest.NewRequest("POST", "/phones/3140011/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case data := <-conn.Send:
+		msg, _ := signaling.ParseMessage(data)
+		if msg.Type != signaling.TypeRestart {
+			t.Fatalf("expected restart message, got %s", msg.Type)
+		}
+	default:
+		t.Fatal("device did not receive restart message")
+	}
+}
+
+func TestPhoneRestart_RejectsForeignHardware(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140012", "Garage", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = 'hw-garage'")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-garage', 'dev-garage', 'Garage Phone', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+
+	form := url.Values{"mode": {"service"}, "hardware_id": {"hw-other-household"}}
+	req := httptest.NewRequest("POST", "/phones/3140012/restart", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for foreign hardware_id, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPhoneOperator_SwapsPanel(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140020", "Study", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-study-a','hw-study-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-study-a', 'dev-study-a', 'Study A', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-study-b', 'dev-study-b', 'Study B', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-study-a"}
+	if err := h.hub.Register("3140020", connA); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-study-a", signaling.DeviceInfoParams{
+		PiVersion:       "3.1.0",
+		FirmwareVersion: "1.5.0",
+	})
+
+	connB := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-study-b"}
+	if err := h.hub.Register("3140020", connB); err != nil {
+		t.Fatalf("register conn B: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-study-b", signaling.DeviceInfoParams{
+		PiVersion:       "2.9.0",
+		FirmwareVersion: "1.4.0",
+	})
+
+	// Request the operator partial for device A.
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140020/operator?hardware_id=hw-study-a", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-study-a"`) {
+		t.Errorf("response missing data-hardware-id for hw-study-a")
+	}
+	if !strings.Contains(body, "3.1.0") {
+		t.Errorf("response missing device A Pi version 3.1.0")
+	}
+	if strings.Contains(body, "2.9.0") {
+		t.Errorf("response should not contain device B Pi version 2.9.0")
+	}
+
+	// Request the operator partial for device B.
+	req = httptest.NewRequest(http.MethodGet, "/phones/3140020/operator?hardware_id=hw-study-b", nil)
+	req.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for B, got %d: %s", w.Code, w.Body.String())
+	}
+	body = w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-study-b"`) {
+		t.Errorf("response missing data-hardware-id for hw-study-b")
+	}
+	if !strings.Contains(body, "2.9.0") {
+		t.Errorf("response missing device B Pi version 2.9.0")
+	}
+}
+
+func TestPhoneOperator_AMTheme(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
+
+	user, err := authStore.GetUserByEmail(context.Background(), "test@example.com")
+	if err != nil {
+		t.Fatalf("get test user: %v", err)
+	}
+	if err := authStore.SetTheme(context.Background(), user.ID, auth.ThemeAnsweringMachine); err != nil {
+		t.Fatalf("set AM theme: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom)
+	})
+
+	lineStore := line.NewStore(database)
+	ln, err := lineStore.Add(context.Background(), "3140021", "Attic", hh.ID)
+	if err != nil {
+		t.Fatalf("add line: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id IN ('hw-attic-a','hw-attic-b')")
+		_, _ = database.DB.Exec("DELETE FROM lines WHERE id = $1", ln.ID)
+	})
+
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-attic-a', 'dev-attic-a', 'Attic A', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device A: %v", err)
+	}
+	if _, err := database.DB.Exec(`
+		INSERT INTO devices (line_id, hardware_id, device_id, name, paired_at)
+		VALUES ($1, 'hw-attic-b', 'dev-attic-b', 'Attic B', NOW())
+	`, ln.ID); err != nil {
+		t.Fatalf("seed device B: %v", err)
+	}
+
+	connA := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-a"}
+	if err := h.hub.Register("3140021", connA); err != nil {
+		t.Fatalf("register conn A: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-attic-a", signaling.DeviceInfoParams{
+		PiVersion:       "4.0.0",
+		FirmwareVersion: "1.8.0",
+	})
+	connB := &signaling.Conn{Send: make(chan []byte, 10), HardwareID: "hw-attic-b"}
+	if err := h.hub.Register("3140021", connB); err != nil {
+		t.Fatalf("register conn B: %v", err)
+	}
+	h.hub.UpdateDeviceInfoByHardware("hw-attic-b", signaling.DeviceInfoParams{
+		PiVersion:       "2.9.0",
+		FirmwareVersion: "1.5.0",
+	})
+
+	// The AM operator partial is served when the user's theme is answering-machine.
+	req := httptest.NewRequest(http.MethodGet, "/phones/3140021/operator?hardware_id=hw-attic-a", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.Router().ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-hardware-id="hw-attic-a"`) {
+		t.Errorf("AM operator response missing data-hardware-id for hw-attic-a")
+	}
+	if !strings.Contains(body, "4.0.0") {
+		t.Errorf("AM operator response missing device A Pi version 4.0.0")
+	}
+	if strings.Contains(body, "2.9.0") {
+		t.Errorf("AM operator response for device A leaked device B Pi version 2.9.0")
+	}
+}
