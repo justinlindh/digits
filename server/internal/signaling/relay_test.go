@@ -1446,3 +1446,104 @@ func TestHandleCallOfflineAndIdleReturnsNotConnected(t *testing.T) {
 		t.Fatal("caller did not receive any message")
 	}
 }
+
+// fakeMediaObserver records ICE candidate and ICE-server issuance events so
+// tests can assert the relay reports media-negotiation telemetry derived from
+// the parsed candidate, never from raw user input.
+type fakeMediaObserver struct {
+	candidates [][2]string // (cand_type, transport) pairs
+	turnIssued []bool
+}
+
+func (f *fakeMediaObserver) ObserveICECandidate(candType, transport string) {
+	f.candidates = append(f.candidates, [2]string{candType, transport})
+}
+
+func (f *fakeMediaObserver) ObserveICEServersIssued(turn bool) {
+	f.turnIssued = append(f.turnIssued, turn)
+}
+
+func TestRelayObservesICECandidateOnForward(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	obs := &fakeMediaObserver{}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.Metrics = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+
+	// Establish an active call so the forward is permitted.
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:      TypeICE,
+		To:        "3140002",
+		Candidate: "candidate:1 1 udp 1686052607 203.0.113.7 49152 typ srflx raddr 192.168.1.42 rport 54321",
+	})
+
+	if len(obs.candidates) != 1 {
+		t.Fatalf("expected 1 candidate observation, got %v", obs.candidates)
+	}
+	if obs.candidates[0] != [2]string{"srflx", "udp"} {
+		t.Fatalf("expected srflx/udp, got %v", obs.candidates[0])
+	}
+	// The candidate must still be relayed verbatim to the peer.
+	select {
+	case data := <-conn2.Send:
+		msg, _ := ParseMessage(data)
+		if msg.Type != TypeICE || msg.Candidate == "" {
+			t.Fatalf("peer did not receive the ice candidate: %+v", msg)
+		}
+	default:
+		t.Fatal("peer did not receive the ice candidate")
+	}
+}
+
+func TestRelayDoesNotObserveUnparseableCandidate(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	obs := &fakeMediaObserver{}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.Metrics = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send
+
+	// An end-of-candidates marker (empty candidate) must not be counted.
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:      TypeICE,
+		To:        "3140002",
+		Candidate: "",
+	})
+
+	if len(obs.candidates) != 0 {
+		t.Fatalf("empty candidate should not be observed, got %v", obs.candidates)
+	}
+}
+
+func TestRelayObservesICEServersIssued(t *testing.T) {
+	hub := NewHub()
+	obs := &fakeMediaObserver{}
+	relay := NewRelay(hub, newMockTracker(), nil, nil)
+	relay.Metrics = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+
+	// No TURN configured: should report turn=false.
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeRequestICE, HardwareID: "hw-1"})
+
+	if len(obs.turnIssued) != 1 || obs.turnIssued[0] != false {
+		t.Fatalf("expected one turn=false issuance, got %v", obs.turnIssued)
+	}
+	// Drain the ice-servers response.
+	<-conn1.Send
+}

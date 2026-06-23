@@ -14,6 +14,11 @@
 //   - Active calls (a gauge of in-flight calls, count only).
 //   - Signaling errors by category (e.g. turn_alloc_failed, ice_timeout).
 //     The category is a fixed enum; no peer identity, number, or content.
+//   - ICE candidates relayed, labeled by candidate type (host/srflx/prflx/
+//     relay) and transport (udp/tcp). Both labels are fixed enums derived
+//     from the parsed candidate; no address, port, or peer identity.
+//   - ICE-server responses issued, labeled only by whether TURN was included.
+//     No device identity and never the TURN username or credential.
 //   - Build info as a static gauge labeled with the version and short commit.
 //   - Go runtime and process collectors (goroutines, GC pauses, memory, fd
 //     count) provided by promhttp / collectors. Same data the Go runtime
@@ -52,8 +57,10 @@ type Registry struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
 
-	SignalingErrors *prometheus.CounterVec
-	BuildInfo       *prometheus.GaugeVec
+	SignalingErrors  *prometheus.CounterVec
+	ICECandidates    *prometheus.CounterVec
+	ICEServersIssued *prometheus.CounterVec
+	BuildInfo        *prometheus.GaugeVec
 }
 
 // New builds a Registry with all metrics registered. Callers wire live-state
@@ -101,6 +108,24 @@ func New(version, commit string) *Registry {
 		},
 		[]string{"category"},
 	)
+	r.ICECandidates = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "ice_candidates_relayed_total",
+			Help:      "ICE candidates relayed between peers, partitioned by candidate type (host/srflx/prflx/relay) and transport (udp/tcp). A rising relay share signals that direct and reflexive paths are failing and media is falling back to TURN. No peer identity is recorded.",
+		},
+		[]string{"cand_type", "transport"},
+	)
+	r.ICEServersIssued = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "digits",
+			Subsystem: serviceName,
+			Name:      "ice_servers_issued_total",
+			Help:      "ICE-server responses handed to devices, partitioned by whether TURN was included. turn=\"false\" means the pod issued STUN only, which usually indicates a TURN misconfiguration. No device identity or credential is recorded.",
+		},
+		[]string{"turn"},
+	)
 	r.BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "digits",
@@ -116,6 +141,8 @@ func New(version, commit string) *Registry {
 		r.HTTPRequestsTotal,
 		r.HTTPRequestDuration,
 		r.SignalingErrors,
+		r.ICECandidates,
+		r.ICEServersIssued,
 		r.BuildInfo,
 	)
 
@@ -177,6 +204,45 @@ func (r *Registry) ObserveSignalingError(category string) {
 		category = "other"
 	}
 	r.SignalingErrors.WithLabelValues(category).Inc()
+}
+
+// validCandidateTypes and validTransports are the closed label sets for the
+// ICE-candidate counter. As with validErrorCategories, anything outside the
+// set collapses to "other" so a malformed candidate line (which the relay
+// parses from untrusted device input) can never widen the label space or
+// smuggle a value into a label.
+var validCandidateTypes = map[string]struct{}{
+	"host":  {},
+	"srflx": {},
+	"prflx": {},
+	"relay": {},
+}
+
+var validTransports = map[string]struct{}{
+	"udp": {},
+	"tcp": {},
+}
+
+// ObserveICECandidate records one relayed ICE candidate, partitioned by type
+// and transport. Unrecognized values collapse to "other".
+func (r *Registry) ObserveICECandidate(candType, transport string) {
+	if _, ok := validCandidateTypes[candType]; !ok {
+		candType = "other"
+	}
+	if _, ok := validTransports[transport]; !ok {
+		transport = "other"
+	}
+	r.ICECandidates.WithLabelValues(candType, transport).Inc()
+}
+
+// ObserveICEServersIssued records one ICE-server response handed to a device,
+// partitioned by whether TURN was included.
+func (r *Registry) ObserveICEServersIssued(turn bool) {
+	label := "false"
+	if turn {
+		label = "true"
+	}
+	r.ICEServersIssued.WithLabelValues(label).Inc()
 }
 
 // Middleware returns an http.Handler middleware that records request count

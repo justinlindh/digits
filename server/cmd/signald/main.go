@@ -185,6 +185,7 @@ func run(ctx context.Context) error {
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
 	relay.Errors = mreg
+	relay.Metrics = mreg
 	tracker.SetCallEndObserver(relay)
 	hub.SetReconnectHook(relay.HandleRemoteReconnect)
 	hub.SetDropHook(func() { mreg.ObserveSignalingError("send_buffer_full") })
