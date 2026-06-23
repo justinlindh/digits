@@ -62,7 +62,13 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	renderWith(r.Context(), w, h.tmplSettings, layoutFor(r), data)
 }
 
-func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
+// handleHouseholdAdminPost shares the boilerplate between the simple
+// household-admin settings handlers: require an admin session, parse the form,
+// persist via save. On any failure it redirects back to /settings; on success
+// it redirects to /settings?saved=1 so the page can flash a confirmation. op
+// names the operation for the error log. This mirrors handleUserPrefPost for
+// the user-level preference handlers.
+func (h *Handler) handleHouseholdAdminPost(w http.ResponseWriter, r *http.Request, op string, save func(ctx context.Context, hh *household.Household) error) {
 	_, hh, ok := h.requireHouseholdAdmin(w, r)
 	if !ok {
 		return
@@ -70,32 +76,29 @@ func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Req
 	if !parseForm(w, r) {
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("name"))
-	if name != "" {
-		if err := h.householdStore.UpdateName(r.Context(), hh.ID, name); err != nil {
-			slog.ErrorContext(r.Context(), "update household name failed", "household_id", hh.ID, "err", err)
-			http.Redirect(w, r, "/settings", http.StatusSeeOther)
-			return
-		}
-	}
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
-}
-
-func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
-	_, hh, ok := h.requireHouseholdAdmin(w, r)
-	if !ok {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	enabled := r.FormValue("enabled") == "true"
-	if err := h.householdStore.SetCallHistoryEnabled(r.Context(), hh.ID, enabled); err != nil {
-		slog.ErrorContext(r.Context(), "set call history failed", "err", err)
+	if err := save(r.Context(), hh); err != nil {
+		slog.ErrorContext(r.Context(), op+" failed", "err", err, "household_id", hh.ID)
 		http.Redirect(w, r, "/settings", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+}
+
+func (h *Handler) handleSettingsHouseholdPost(w http.ResponseWriter, r *http.Request) {
+	h.handleHouseholdAdminPost(w, r, "update household name", func(ctx context.Context, hh *household.Household) error {
+		name := strings.TrimSpace(r.FormValue("name"))
+		if name == "" {
+			return nil
+		}
+		return h.householdStore.UpdateName(ctx, hh.ID, name)
+	})
+}
+
+func (h *Handler) handleSettingsCallHistory(w http.ResponseWriter, r *http.Request) {
+	h.handleHouseholdAdminPost(w, r, "set call history", func(ctx context.Context, hh *household.Household) error {
+		enabled := r.FormValue("enabled") == "true"
+		return h.householdStore.SetCallHistoryEnabled(ctx, hh.ID, enabled)
+	})
 }
 
 func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Request) {
@@ -134,22 +137,13 @@ func (h *Handler) handleSettingsDoNotDisturb(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) handleSettingsTimezone(w http.ResponseWriter, r *http.Request) {
-	_, hh, ok := h.requireHouseholdAdmin(w, r)
-	if !ok {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	tz := strings.TrimSpace(r.FormValue("timezone"))
-	if tz != "" {
-		if err := h.householdStore.SetTimezone(r.Context(), hh.ID, tz); err != nil {
-			slog.ErrorContext(r.Context(), "set timezone failed", "err", err)
-			http.Redirect(w, r, "/settings", http.StatusSeeOther)
-			return
+	h.handleHouseholdAdminPost(w, r, "set timezone", func(ctx context.Context, hh *household.Household) error {
+		tz := strings.TrimSpace(r.FormValue("timezone"))
+		if tz == "" {
+			return nil
 		}
-	}
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+		return h.householdStore.SetTimezone(ctx, hh.ID, tz)
+	})
 }
 
 // handleUserPrefPost shares the boilerplate between the theme/CRT/appearance
