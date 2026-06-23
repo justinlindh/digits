@@ -588,7 +588,11 @@ func (r *Relay) logSignalingRelay(ctx context.Context, from string, msg *Message
 		}
 		// Parse once: the metric needs the type/transport, and so does the log.
 		cand := ParseCandidate(msg.Candidate)
-		if r.Metrics != nil && cand.Parsed() {
+		if r.Metrics != nil {
+			// Count every non-empty candidate. An unparseable one carries empty
+			// type/transport, which the metric's label allowlist collapses to
+			// other/other, so a rising malformed-candidate rate shows up on a
+			// dashboard, not only in Debug logs that are off by default.
 			r.Metrics.ObserveICECandidate(cand.Type, cand.Transport)
 		}
 		if !debug {
@@ -632,11 +636,18 @@ func (r *Relay) logSignalingRelay(ctx context.Context, from string, msg *Message
 // logged.
 func (r *Relay) logSDPRelay(ctx context.Context, from string, msg *Message, callID int64, conf bool) {
 	sum := SummarizeSDP(msg.SDP)
+	// An offer arrives as a "sdp" message and an answer as an "answer" message;
+	// normalize the wire type to the SDP role so offer/answer pairs read
+	// symmetrically.
+	kind := msg.Type
+	if kind == TypeSDP {
+		kind = "offer"
+	}
 	attrs := []any{
 		"from", from,
 		"to", msg.To,
 		"hardware_id", msg.HardwareID,
-		"sdp_kind", msg.Type,
+		"sdp_kind", kind,
 		"m_lines", sum.MLines,
 		"embedded_candidates", sum.Candidates,
 		"sdp_bytes", sum.Bytes,

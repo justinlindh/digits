@@ -1529,6 +1529,38 @@ func TestRelayDoesNotObserveUnparseableCandidate(t *testing.T) {
 	}
 }
 
+func TestRelayObservesMalformedCandidateAsOther(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	obs := &fakeMediaObserver{}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.Metrics = obs
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send
+
+	// A non-empty but unparseable candidate is still counted so a
+	// malformed-candidate spike is visible on a dashboard. The relay passes the
+	// empty parsed type/transport through; the metrics registry's label
+	// allowlist collapses those to other/other (see metrics_test.go).
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:      TypeICE,
+		To:        "3140002",
+		Candidate: "totally not a candidate line",
+	})
+
+	if len(obs.candidates) != 1 {
+		t.Fatalf("expected 1 candidate observation, got %v", obs.candidates)
+	}
+	if obs.candidates[0] != [2]string{"", ""} {
+		t.Fatalf("expected empty type/transport for malformed candidate, got %v", obs.candidates[0])
+	}
+}
+
 func TestRelayObservesICEServersIssued(t *testing.T) {
 	hub := NewHub()
 	obs := &fakeMediaObserver{}
