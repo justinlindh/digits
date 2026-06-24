@@ -515,7 +515,11 @@ var ErrSendTimeout = errors.New("send timed out: buffer full")
 // phones on the line. A line's devices can be spread across pods, so SendTo
 // always both delivers to local connections AND, when Redis is configured,
 // publishes for cross-pod delivery. The Redis subscriber filters out our own
-// pod's envelope, so local devices are never double-sent.
+// pod's envelope, so local devices are never double-sent. Publishing is
+// unconditional rather than gated on per-line presence: a presence read per
+// send would add a TOCTOU window (a device can connect on another pod between
+// the check and the send) to shave a single missed map lookup off an already
+// cheap call-signaling path, so the gate is deliberately omitted.
 // Returns ErrNotConnected only when no devices are connected locally AND
 // Redis is not configured.
 func (h *Hub) SendTo(number string, msg *Message) error {
