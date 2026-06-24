@@ -372,6 +372,35 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			}()
 		}
 
+	case sigclient.TypeLineRenumber:
+		// The server reconciled our register to a different bound line: our
+		// stored number is stale (line moved, joined, or renumbered). Persist
+		// the authoritative number and restart to re-register under it. Without
+		// this the server would reconcile on every reconnect forever and we'd
+		// never learn our real line. No-op when the number is empty or already
+		// matches so a redundant/echoed message can't trigger a restart loop.
+		if msg.Number == "" || d.cfg == nil || msg.Number == d.cfg.PhoneNumber {
+			break
+		}
+		slog.Info("signal: line renumber", "old", d.cfg.PhoneNumber, "new", msg.Number)
+		// Persist to disk before committing the change in memory. If Save fails
+		// we revert so in-memory state never diverges from disk: the daemon
+		// stays on its old number (the server reconciles again next connect)
+		// rather than running half-applied until the next reload.
+		oldNumber := d.cfg.PhoneNumber
+		d.cfg.PhoneNumber = msg.Number
+		if err := d.cfg.Save(); err != nil {
+			d.cfg.PhoneNumber = oldNumber
+			slog.Warn("signal: line renumber -- failed to save config", "error", err)
+			break
+		}
+		d.number = msg.Number
+		slog.Info("signal: restarting to re-register on corrected line", "number", msg.Number, "config", d.cfg.Path())
+		go func() {
+			time.Sleep(1 * time.Second)
+			d.reexecProcess() // systemd restarts; we re-register with the saved number
+		}()
+
 	case sigclient.TypeRestart:
 		mode := msg.RestartMode
 		slog.Info("received restart command", "mode", mode)

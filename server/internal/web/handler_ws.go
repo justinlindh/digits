@@ -77,6 +77,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	// bound line number is authoritative: a device cannot register as a
 	// line it is not paired to.
 	isPaired := false
+	// reconciledNumber is set to the bound line number when a paired device
+	// registered with a stale number. After the connection is wired up we push
+	// it back so the device persists the correction and stops re-claiming the
+	// stale number on every reconnect.
+	reconciledNumber := ""
 	if h.pairingStore != nil {
 		paired, tokenValid, err := h.deviceStore.AuthStatus(r.Context(), msg.HardwareID, msg.DeviceToken)
 		if err != nil {
@@ -133,6 +138,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 					"claimed", msg.Number,
 					"bound", boundNumber)
 				msg.Number = boundNumber
+				reconciledNumber = boundNumber
 			}
 		}
 	}
@@ -142,6 +148,17 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		HardwareID: msg.HardwareID,
 		Send:       make(chan []byte, wsSendBuf),
 		LastSeen:   time.Now(),
+	}
+	// Self-heal a stale-number register: tell the device its real line number
+	// so digitsd persists it and registers correctly next time. Enqueued before
+	// Register so the conn is not yet visible to hub fan-out: nothing else can
+	// contend for the freshly created buffer, so this send never blocks. The
+	// write pump below drains it once it starts.
+	if reconciledNumber != "" {
+		conn.Send <- mustMarshal(&signaling.Message{
+			Type:   signaling.TypeLineRenumber,
+			Number: reconciledNumber,
+		})
 	}
 	if err := h.hub.Register(msg.Number, conn); err != nil {
 		wsReject(ws, "server shutting down")

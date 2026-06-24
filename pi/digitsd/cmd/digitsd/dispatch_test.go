@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/justinlindh/digits/pi/digitsd/internal/audio"
 	"github.com/justinlindh/digits/pi/digitsd/internal/config"
@@ -364,5 +365,91 @@ func TestDispatchRouting_DTMFGatedByState(t *testing.T) {
 	d.handleSignal(&sigclient.Message{Type: sigclient.TypeDTMF, From: "3140001", Digit: "5"})
 	if _, ok := fc.lastSignal(); ok {
 		t.Errorf("DTMF while idle should not reach the controller")
+	}
+}
+
+// TestDispatchRouting_LineRenumberPersistsAndRestarts is the self-heal path: a
+// line_renumber message with a number that differs from the stored one must
+// write the new number to config (so the next register stops claiming the
+// stale one) and request a restart to re-register.
+func TestDispatchRouting_LineRenumberPersistsAndRestarts(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	cfg.PhoneNumber = "2451234" // stale number the device still claims
+
+	fc := &fakeController{}
+	d := newDispatchDaemon(t, fc)
+	d.cfg = cfg
+	d.number = "2451234"
+
+	restarted := make(chan struct{})
+	d.reexec = func() { close(restarted) }
+
+	d.handleSignal(&sigclient.Message{Type: sigclient.TypeLineRenumber, Number: "2456390"})
+
+	// In-memory state updated synchronously.
+	if d.number != "2456390" {
+		t.Errorf("d.number = %q, want %q", d.number, "2456390")
+	}
+	if d.cfg.PhoneNumber != "2456390" {
+		t.Errorf("cfg.PhoneNumber = %q, want %q", d.cfg.PhoneNumber, "2456390")
+	}
+
+	// The corrected number was persisted to disk: reload from the same path
+	// and confirm it survives a restart.
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if reloaded.PhoneNumber != "2456390" {
+		t.Errorf("persisted PhoneNumber = %q, want %q", reloaded.PhoneNumber, "2456390")
+	}
+
+	// The restart fires from a 1s-delayed goroutine; wait for it.
+	select {
+	case <-restarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected a restart to re-register, none requested")
+	}
+}
+
+// TestDispatchRouting_LineRenumberNoopWhenUnchanged confirms a redundant
+// line_renumber (same number we already have, or empty) neither rewrites
+// config nor restarts: that guard is what prevents a restart loop if the
+// server echoes the message after the device has already self-healed.
+func TestDispatchRouting_LineRenumberNoopWhenUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		incoming string
+		current  string
+	}{
+		{"same number", "2456390", "2456390"},
+		{"empty number", "", "2456390"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgPath := filepath.Join(t.TempDir(), "config.json")
+			cfg, err := config.Load(cfgPath)
+			if err != nil {
+				t.Fatalf("config.Load: %v", err)
+			}
+			cfg.PhoneNumber = tc.current
+
+			fc := &fakeController{}
+			d := newDispatchDaemon(t, fc)
+			d.cfg = cfg
+			d.number = tc.current
+			d.reexec = func() { t.Error("no-op renumber must not request a restart") }
+
+			d.handleSignal(&sigclient.Message{Type: sigclient.TypeLineRenumber, Number: tc.incoming})
+
+			if d.cfg.PhoneNumber != tc.current {
+				t.Errorf("cfg.PhoneNumber = %q, want unchanged %q", d.cfg.PhoneNumber, tc.current)
+			}
+			// Give any errant restart goroutine a moment to fire.
+			time.Sleep(50 * time.Millisecond)
+		})
 	}
 }

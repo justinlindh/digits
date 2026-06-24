@@ -68,6 +68,12 @@ const (
 	// new release is available. Carries LatestPiVersion and LatestFWVersion.
 	TypeReleaseAvailable = "release_available"
 
+	// TypeLineRenumber is sent by the server when a register reconcile detects
+	// this device claimed a stale line number. Carries the authoritative line
+	// number in the Number field. The device persists it to config and
+	// re-registers so it stops claiming the stale number. Server -> Phone only.
+	TypeLineRenumber = "line_renumber"
+
 	// TypeLinkHealth is sent by the phone to the server with a per-call
 	// quality telemetry snapshot. Phone → Server only.
 	TypeLinkHealth = "link_health"

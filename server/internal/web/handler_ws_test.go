@@ -156,7 +156,9 @@ func TestWSRegister_PairedDevice_CorrectToken(t *testing.T) {
 // A paired device whose stored number no longer matches its bound line (after
 // a move, join, or renumber) must not be rejected: rejecting strands it
 // offline in a reconnect loop. The bound number is authoritative, so the
-// server reconciles and registers the device under its real line.
+// server reconciles and registers the device under its real line. It then
+// self-heals the drift by pushing the corrected number back so the device
+// persists it and stops re-claiming the stale one on the next register.
 func TestWSRegister_PairedDevice_NumberMismatch_UsesBoundNumber(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	srv := httptest.NewServer(h.Router())
@@ -172,12 +174,22 @@ func TestWSRegister_PairedDevice_NumberMismatch_UsesBoundNumber(t *testing.T) {
 		DeviceToken: token,
 	})
 
-	// No error message: the connection is accepted, not rejected.
+	// The connection is accepted (not rejected with an error), and the server
+	// immediately pushes the corrected line number so the device self-heals.
+	msg := recvMsg(t, ws)
+	if msg.Type != signaling.TypeLineRenumber {
+		t.Fatalf("expected %q message, got %q (error=%q)", signaling.TypeLineRenumber, msg.Type, msg.Error)
+	}
+	if msg.Number != number {
+		t.Errorf("renumber carried %q, want bound number %q", msg.Number, number)
+	}
+
+	// Nothing else follows: the renumber is sent exactly once, not on a loop.
 	_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	if _, _, err := ws.ReadMessage(); err == nil {
-		t.Fatal("expected no error message (connection accepted), but got one")
+		t.Fatal("expected no further message after the single renumber, but got one")
 	} else if !strings.Contains(err.Error(), "i/o timeout") {
-		t.Fatalf("expected timeout (accepted), got: %v", err)
+		t.Fatalf("expected timeout after renumber, got: %v", err)
 	}
 
 	// The device is online under its BOUND number, never under the stale one.
@@ -186,5 +198,31 @@ func TestWSRegister_PairedDevice_NumberMismatch_UsesBoundNumber(t *testing.T) {
 	}
 	if h.hub.IsOnline("1001") {
 		t.Error("device must not be registered under the stale claimed number 1001")
+	}
+}
+
+// A paired device that registers with the correct number must NOT receive a
+// renumber message: the self-heal push fires only on an actual reconcile, so
+// the common case stays silent.
+func TestWSRegister_PairedDevice_CorrectNumber_NoRenumber(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      number, // correct number: no drift to heal
+		HardwareID:  hwID,
+		DeviceToken: token,
+	})
+
+	_ = ws.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	if _, _, err := ws.ReadMessage(); err == nil {
+		t.Fatal("expected no message for a correctly-numbered register, but got one")
+	} else if !strings.Contains(err.Error(), "i/o timeout") {
+		t.Fatalf("expected timeout (no renumber), got: %v", err)
 	}
 }
