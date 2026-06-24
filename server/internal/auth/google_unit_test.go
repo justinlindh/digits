@@ -1,5 +1,3 @@
-//go:build integration
-
 package auth
 
 import (
@@ -8,9 +6,14 @@ import (
 	"testing"
 )
 
+// These tests exercise the OAuth state/CSRF guards and the login redirect.
+// None of these code paths touch the Store, so they run in the fast unit tier
+// with a nil store rather than requiring Postgres. Keeping them out of the
+// integration tier means the CSRF protection is verified on every push, not
+// only in the integration job.
+
 func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
-	s := testDB(t)
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", s)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/login", nil)
 	w := httptest.NewRecorder()
@@ -46,8 +49,7 @@ func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
 }
 
 func TestGoogleAuth_HandleCallback_MissingStateCookie(t *testing.T) {
-	s := testDB(t)
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", s)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc&code=xyz", nil)
 	w := httptest.NewRecorder()
@@ -59,8 +61,7 @@ func TestGoogleAuth_HandleCallback_MissingStateCookie(t *testing.T) {
 }
 
 func TestGoogleAuth_HandleCallback_StateMismatch(t *testing.T) {
-	s := testDB(t)
-	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", s)
+	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc&code=xyz", nil)
 	req.AddCookie(&http.Cookie{Name: "oauth_state", Value: "different-state"})
