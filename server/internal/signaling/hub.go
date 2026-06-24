@@ -509,6 +509,23 @@ func (h *Hub) ConnectionCount(number string) int {
 // buffer does not drain within the deadline.
 var ErrSendTimeout = errors.New("send timed out: buffer full")
 
+// publishFallback routes msg to the target across pods via Redis when no
+// local connection was found, returning nil once published. In
+// single-instance mode (no Redis bridge) there is nowhere else to deliver, so
+// it returns ErrNotConnected. label and target form both the envelope target
+// and the wrapped error ("<label> <target>: not connected").
+func (h *Hub) publishFallback(bridge redisPubSub, targetType, target, label string, msg *Message) error {
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: targetType,
+			Target:     target,
+			Message:    msg,
+		})
+		return nil
+	}
+	return fmt.Errorf("%s %s: %w", label, target, ErrNotConnected)
+}
+
 // SendTo marshals msg and sends it to every device on the given line number.
 // This is the POTS extension model: a ring reaches all phones on the line.
 // Returns ErrNotConnected only when no devices are connected locally AND
@@ -524,15 +541,7 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	bridge := h.redis
 	if len(conns) == 0 {
 		h.mu.RUnlock()
-		if bridge != nil {
-			bridge.Publish(context.Background(), &Envelope{
-				TargetType: "number",
-				Target:     number,
-				Message:    msg,
-			})
-			return nil
-		}
-		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+		return h.publishFallback(bridge, "number", number, "phone", msg)
 	}
 	dropHook := h.dropHook
 	for _, conn := range conns {
@@ -585,15 +594,7 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 			h.mu.RUnlock()
 			// No local conn: fall back to cross-pod delivery via Redis,
 			// best-effort, exactly as SendTo does.
-			if bridge != nil {
-				bridge.Publish(context.Background(), &Envelope{
-					TargetType: "number",
-					Target:     number,
-					Message:    msg,
-				})
-				return nil
-			}
-			return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+			return h.publishFallback(bridge, "number", number, "phone", msg)
 		}
 		pending := false
 		for _, conn := range conns {
@@ -638,16 +639,7 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 		return err
 	}
 
-	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "hardware",
-			Target:     hardwareID,
-			Message:    msg,
-		})
-		return nil
-	}
-
-	return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
+	return h.publishFallback(bridge, "hardware", hardwareID, "hardware", msg)
 }
 
 // Broadcast marshals msg and sends it to every connected device without
