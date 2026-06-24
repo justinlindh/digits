@@ -112,7 +112,12 @@ func TestSendToPublishesToRedisWhenNotLocal(t *testing.T) {
 	}
 }
 
-func TestSendToLocalFastPathSkipsRedis(t *testing.T) {
+// TestSendToAlsoPublishesToRedisWithLocalConn guards against the cross-pod
+// fan-out regression where SendTo delivered only to local connections and
+// skipped Redis whenever any device for the line was connected locally. A
+// line's devices can be spread across pods, so SendTo must both deliver
+// locally AND publish so peers on other pods ring too.
+func TestSendToAlsoPublishesToRedisWithLocalConn(t *testing.T) {
 	hub := NewHub()
 	fake := newFakeRedis()
 	hub.redis = fake
@@ -125,14 +130,21 @@ func TestSendToLocalFastPathSkipsRedis(t *testing.T) {
 		t.Fatalf("SendTo local should succeed: %v", err)
 	}
 
-	if len(fake.publishedEnvelopes()) != 0 {
-		t.Errorf("expected 0 published envelopes (local fast path), got %d", len(fake.publishedEnvelopes()))
-	}
-
 	select {
 	case <-conn.Send:
 	default:
 		t.Error("local connection should have received the message")
+	}
+
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("expected 1 published envelope for cross-pod delivery, got %d", len(envs))
+	}
+	if envs[0].TargetType != "number" {
+		t.Errorf("TargetType = %q, want %q", envs[0].TargetType, "number")
+	}
+	if envs[0].Target != "3140001" {
+		t.Errorf("Target = %q, want %q", envs[0].Target, "3140001")
 	}
 }
 

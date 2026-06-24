@@ -436,6 +436,38 @@ func TestSendToWithTimeoutFallsBackToRedis(t *testing.T) {
 	}
 }
 
+// TestSendToWithTimeoutPublishesToRedisWithLocalConn guards the cross-pod
+// regression: when a sibling device for the line is connected locally,
+// SendToWithTimeout must still publish so the in-call peer on another pod
+// receives the ICE-restart. It both delivers locally and publishes.
+func TestSendToWithTimeoutPublishesToRedisWithLocalConn(t *testing.T) {
+	hub := NewHub()
+	fake := newFakeRedis()
+	hub.SetRedis(fake)
+
+	conn := &Conn{Send: make(chan []byte, 10), HardwareID: "hw-local"}
+	_ = hub.Register("3140002", conn)
+
+	err := hub.SendToWithTimeout("3140002", &Message{Type: TypeICERestart, From: "3140001", To: "3140002"}, time.Second)
+	if err != nil {
+		t.Fatalf("SendToWithTimeout returned error, want nil: %v", err)
+	}
+
+	select {
+	case <-conn.Send:
+	default:
+		t.Error("local connection should have received the message")
+	}
+
+	envs := fake.publishedEnvelopes()
+	if len(envs) != 1 {
+		t.Fatalf("published %d envelopes, want 1 for cross-pod delivery", len(envs))
+	}
+	if envs[0].TargetType != "number" || envs[0].Target != "3140002" {
+		t.Fatalf("unexpected envelope: %+v", envs[0])
+	}
+}
+
 // TestSendToWithTimeoutNoPanicOnConcurrentUnregister verifies the panic-safety
 // fix: closing a conn's Send channel (via Unregister) while a
 // SendToWithTimeout is retrying against a full buffer must not send on a
