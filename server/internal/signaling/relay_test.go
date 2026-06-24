@@ -689,6 +689,72 @@ func TestRelayICERestartRejectedWithoutCall(t *testing.T) {
 	}
 }
 
+func TestRelayDTMFForwardedDuringCall(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+
+	// Establish an active call first.
+	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140002"})
+	<-conn2.Send // drain ring
+
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:  TypeDTMF,
+		To:    "3140002",
+		Digit: "5",
+	})
+
+	select {
+	case data := <-conn2.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeDTMF {
+			t.Fatalf("expected dtmf, got %s", msg.Type)
+		}
+		if msg.From != "3140001" {
+			t.Fatalf("expected from 3140001, got %s", msg.From)
+		}
+		if msg.Digit != "5" {
+			t.Fatalf("expected digit 5, got %q", msg.Digit)
+		}
+	default:
+		t.Fatal("phone 2 did not receive dtmf")
+	}
+}
+
+func TestRelayDTMFDroppedWithoutCall(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	relay := NewRelay(hub, tracker, nil, nil)
+
+	conn1 := &Conn{Send: make(chan []byte, 10)}
+	conn2 := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn1)
+	_ = hub.Register("3140002", conn2)
+
+	// No active call: DTMF must not be relayed.
+	relay.HandleMessage(context.Background(), "3140001", &Message{
+		Type:  TypeDTMF,
+		To:    "3140002",
+		Digit: "5",
+	})
+
+	select {
+	case data := <-conn2.Send:
+		msg, _ := ParseMessage(data)
+		t.Fatalf("target should not receive dtmf without an active call, got: %+v", msg)
+	default:
+		// correct: dropped
+	}
+}
+
 func TestRelayOnDisconnectClearsActiveCalls(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
