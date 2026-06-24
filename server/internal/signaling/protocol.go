@@ -38,6 +38,8 @@ const (
 
 	TypeReleaseAvailable = "release_available" // Server → All: new release detected
 
+	TypeLineRenumber = "line_renumber" // Server → Phone: persist corrected line number after a register reconcile
+
 	TypeVoicemailState = "voicemail_state" // Phone → Server: per-handset unheard voicemail count snapshot
 )
 
