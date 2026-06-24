@@ -509,10 +509,15 @@ func (h *Hub) ConnectionCount(number string) int {
 // buffer does not drain within the deadline.
 var ErrSendTimeout = errors.New("send timed out: buffer full")
 
-// SendTo marshals msg and sends it to every device on the given line number.
-// This is the POTS extension model: a ring reaches all phones on the line.
+// SendTo marshals msg and sends it to every device on the given line number,
+// wherever each device's WebSocket happens to be terminated. This is the POTS
+// extension model: a ring (and every other line-targeted message) reaches all
+// phones on the line. A line's devices can be spread across pods, so SendTo
+// always both delivers to local connections AND, when Redis is configured,
+// publishes for cross-pod delivery. The Redis subscriber filters out our own
+// pod's envelope, so local devices are never double-sent.
 // Returns ErrNotConnected only when no devices are connected locally AND
-// Redis cannot deliver.
+// Redis is not configured.
 func (h *Hub) SendTo(number string, msg *Message) error {
 	data, err := msg.Marshal()
 	if err != nil {
@@ -522,18 +527,6 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	h.mu.RLock()
 	conns := h.conns[number]
 	bridge := h.redis
-	if len(conns) == 0 {
-		h.mu.RUnlock()
-		if bridge != nil {
-			bridge.Publish(context.Background(), &Envelope{
-				TargetType: "number",
-				Target:     number,
-				Message:    msg,
-			})
-			return nil
-		}
-		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
-	}
 	dropHook := h.dropHook
 	for _, conn := range conns {
 		select {
@@ -547,6 +540,19 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 		}
 	}
 	h.mu.RUnlock()
+
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "number",
+			Target:     number,
+			Message:    msg,
+		})
+		return nil
+	}
+
+	if len(conns) == 0 {
+		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
+	}
 	return nil
 }
 
@@ -554,7 +560,7 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 // re-offer a message to a device whose send buffer was full.
 const sendRetryInterval = 20 * time.Millisecond
 
-// SendToWithTimeout delivers msg to every local device on number, retrying
+// SendToWithTimeout delivers msg to every device on number, retrying local
 // buffer-full devices until the buffer drains or the timeout elapses. Each
 // send is attempted under the read lock inside a non-blocking select, so a
 // concurrent Unregister (which closes conn.Send under the write lock) can
@@ -563,15 +569,29 @@ const sendRetryInterval = 20 * time.Millisecond
 // prevents re-sending to a device that already accepted the message while a
 // sibling's buffer was still full.
 //
-// When no local device is connected the message is published to Redis for
-// cross-pod delivery, mirroring SendTo, so reliable callers (ICE-restart)
-// reach peers on other pods. Returns ErrSendTimeout if any device's buffer
-// stays full for the whole timeout, ErrNotConnected if there is neither a
-// local conn nor a Redis bridge.
+// A line's devices can be spread across pods, so when Redis is configured the
+// message is always published once up front for cross-pod delivery (best
+// effort, mirroring SendTo) so reliable callers (ICE-restart) reach peers on
+// other pods even when a sibling device is connected locally. The Redis
+// subscriber filters out our own pod's envelope, so local devices are not
+// double-sent. Returns ErrSendTimeout if any local device's buffer stays full
+// for the whole timeout, ErrNotConnected if there is neither a local conn nor
+// a Redis bridge.
 func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Duration) error {
 	data, err := msg.Marshal()
 	if err != nil {
 		return err
+	}
+
+	h.mu.RLock()
+	bridge := h.redis
+	h.mu.RUnlock()
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: "number",
+			Target:     number,
+			Message:    msg,
+		})
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -579,18 +599,12 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 	for {
 		h.mu.RLock()
 		conns := h.conns[number]
-		bridge := h.redis
 		dropHook := h.dropHook
 		if len(conns) == 0 {
 			h.mu.RUnlock()
-			// No local conn: fall back to cross-pod delivery via Redis,
-			// best-effort, exactly as SendTo does.
+			// No local conn: Redis (published above, if configured) is the only
+			// delivery path. Without it there is nowhere to send.
 			if bridge != nil {
-				bridge.Publish(context.Background(), &Envelope{
-					TargetType: "number",
-					Target:     number,
-					Message:    msg,
-				})
 				return nil
 			}
 			return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
