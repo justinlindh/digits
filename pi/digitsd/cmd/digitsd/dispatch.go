@@ -383,12 +383,18 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 			break
 		}
 		slog.Info("signal: line renumber", "old", d.cfg.PhoneNumber, "new", msg.Number)
+		// Persist to disk before committing the change in memory. If Save fails
+		// we revert so in-memory state never diverges from disk: the daemon
+		// stays on its old number (the server reconciles again next connect)
+		// rather than running half-applied until the next reload.
+		oldNumber := d.cfg.PhoneNumber
 		d.cfg.PhoneNumber = msg.Number
-		d.number = msg.Number
 		if err := d.cfg.Save(); err != nil {
+			d.cfg.PhoneNumber = oldNumber
 			slog.Warn("signal: line renumber -- failed to save config", "error", err)
 			break
 		}
+		d.number = msg.Number
 		slog.Info("signal: restarting to re-register on corrected line", "number", msg.Number, "config", d.cfg.Path())
 		go func() {
 			time.Sleep(1 * time.Second)
