@@ -1474,45 +1474,23 @@ func (d *daemonCallbacks) evaluateLED() {
 // playVoicemailGreeting blocks the caller goroutine until the outgoing
 // greeting has finished playing. Tries the user's recorded greeting first;
 // falls back to the embedded default WAV on os.ErrNotExist (no custom
-// recorded) or any decode error.
+// recorded) or any decode error. If even the default tone failed to load
+// (e.g. asset missing on disk), logs a warning and returns immediately so
+// the auto-answer path still proceeds to the beep + recording.
 func (d *daemonCallbacks) playVoicemailGreeting(pipeline *audio.Pipeline) {
-	if d.playCustomGreeting(pipeline) {
-		return
-	}
-	d.playDefaultGreeting(pipeline)
-}
-
-// playDefaultGreeting injects the embedded "voicemail_greeting" WAV samples
-// into the pipeline's beep slot and sleeps for the playback duration plus a
-// small tail. If the tone failed to load (e.g. asset missing on disk), logs
-// a warning and returns immediately so the auto-answer path still proceeds
-// to the beep + recording.
-func (d *daemonCallbacks) playDefaultGreeting(pipeline *audio.Pipeline) {
-	samples := d.mixer.ToneSamples("voicemail_greeting")
-	if samples == nil {
-		slog.Warn("voicemail: default greeting tone not loaded, skipping")
-		return
+	samples, ok := d.decodeCustomGreeting()
+	if !ok {
+		samples = d.mixer.ToneSamples("voicemail_greeting")
+		if samples == nil {
+			slog.Warn("voicemail: default greeting tone not loaded, skipping")
+			return
+		}
 	}
 	pipeline.PlayGreetingSamples(samples)
-	// Pipeline drains the buffer at 48kHz regardless of the WAV's authored
+	// Pipeline drains the buffer at 48kHz regardless of the source's authored
 	// sample rate. Sleep matches that drain so the subsequent beep doesn't
 	// step on the greeting tail.
 	time.Sleep(greetingPlaybackDuration(len(samples)))
-}
-
-// playCustomGreeting opens the user's recorded greeting, decodes every Opus
-// frame into a flat PCM buffer, injects it into the pipeline's beep slot, and
-// sleeps for the playback duration. Returns true when a custom greeting played
-// to completion; false on no-greeting (caller should fall back to default),
-// decoder init failure, or empty buffer.
-func (d *daemonCallbacks) playCustomGreeting(pipeline *audio.Pipeline) bool {
-	samples, ok := d.decodeCustomGreeting()
-	if !ok {
-		return false
-	}
-	pipeline.PlayGreetingSamples(samples)
-	time.Sleep(greetingPlaybackDuration(len(samples)))
-	return true
 }
 
 // decodeCustomGreeting opens the user's recorded greeting and decodes every
