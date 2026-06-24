@@ -149,6 +149,17 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 		Send:       make(chan []byte, wsSendBuf),
 		LastSeen:   time.Now(),
 	}
+	// Self-heal a stale-number register: tell the device its real line number
+	// so digitsd persists it and registers correctly next time. Enqueued before
+	// Register so the conn is not yet visible to hub fan-out: nothing else can
+	// contend for the freshly created buffer, so this send never blocks. The
+	// write pump below drains it once it starts.
+	if reconciledNumber != "" {
+		conn.Send <- mustMarshal(&signaling.Message{
+			Type:   signaling.TypeLineRenumber,
+			Number: reconciledNumber,
+		})
+	}
 	if err := h.hub.Register(msg.Number, conn); err != nil {
 		wsReject(ws, "server shutting down")
 		return
@@ -156,15 +167,6 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	if isPaired {
 		h.relay.OnRegistered(r.Context(), msg.Number)
 		h.relay.OnReconnect(r.Context(), msg.Number, msg.HardwareID)
-	}
-	// Self-heal a stale-number register: tell the device its real line number
-	// so digitsd persists it and registers correctly next time. Enqueued on the
-	// buffered Send channel; the write pump below drains it once it starts.
-	if reconciledNumber != "" {
-		conn.Send <- mustMarshal(&signaling.Message{
-			Type:   signaling.TypeLineRenumber,
-			Number: reconciledNumber,
-		})
 	}
 	number := msg.Number
 	ctx := r.Context()
