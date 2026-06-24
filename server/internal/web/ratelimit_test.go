@@ -25,7 +25,7 @@ func setupRateLimitTestServer(t *testing.T) *httptest.Server {
 	t.Cleanup(func() { _ = database.Close() })
 
 	deps, _ := testDeps(t, database)
-	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
+	h, err := NewHandler(deps, HandlerConfig{})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

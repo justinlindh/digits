@@ -60,7 +60,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 		AuthStore:    authStore,
 		AuthHandlers: authHandlers,
 		GoogleAuth:   googleAuth,
-	}, HandlerConfig{Addr: ":0"})
+	}, HandlerConfig{})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

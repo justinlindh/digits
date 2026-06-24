@@ -256,7 +256,6 @@ func run(ctx context.Context) error {
 		Emailer:        emailSender,
 		Metrics:        mreg,
 	}, web.HandlerConfig{
-		Addr:              cfg.Addr,
 		BaseURL:           cfg.BaseURL,
 		AdminSecret:       cfg.AdminSecret,
 		DevMode:           cfg.DevMode,

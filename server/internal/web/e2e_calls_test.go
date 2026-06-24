@@ -49,7 +49,7 @@ func setupCallsTestServer(t *testing.T) callsTestEnv {
 	t.Cleanup(func() { _ = database.Close() })
 
 	deps, authStore := testDeps(t, database)
-	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
+	h, err := NewHandler(deps, HandlerConfig{})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

@@ -60,7 +60,7 @@ func setupHandler(t *testing.T) (*Handler, *db.Database, *auth.Store) {
 	t.Cleanup(func() { _ = database.Close() })
 
 	deps, authStore := testDeps(t, database)
-	h, err := NewHandler(deps, HandlerConfig{Addr: ":8443"})
+	h, err := NewHandler(deps, HandlerConfig{})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -92,7 +92,7 @@ func setupTestServer(t *testing.T) (*httptest.Server, *db.Database, *line.Store,
 
 	deps, authStore := testDeps(t, database)
 	deps.PairingStore = nil
-	h, err := NewHandler(deps, HandlerConfig{Addr: ":0"})
+	h, err := NewHandler(deps, HandlerConfig{})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}

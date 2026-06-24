@@ -302,7 +302,6 @@ func toSegments(val, perSegment, badThreshold, warnThreshold float32) segDesc {
 // HandlerConfig carries Handler behavior knobs that are not collaborator
 // dependencies (those live in Deps).
 type HandlerConfig struct {
-	Addr string
 	// BaseURL is the public origin for the app (e.g. https://app.digits.family).
 	// Used for WebSocket origin checks and outgoing magic-link URLs.
 	BaseURL string
