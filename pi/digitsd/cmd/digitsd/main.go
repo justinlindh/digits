@@ -253,6 +253,23 @@ type daemonCallbacks struct {
 	// to seed server-side state.
 	publishVMMu   sync.Mutex
 	publishVMLast int64
+
+	// reexec restarts the process so it re-registers from a freshly saved
+	// config (used by the line-renumber self-heal path). Nil in production,
+	// where reexecProcess does the os.Exit; tests inject a recorder to assert
+	// the restart was requested without killing the test binary.
+	reexec func()
+}
+
+// reexecProcess exits so systemd restarts digitsd, which re-registers using
+// the current on-disk config. Indirected through d.reexec so tests can
+// substitute a no-op recorder.
+func (d *daemonCallbacks) reexecProcess() {
+	if d.reexec != nil {
+		d.reexec()
+		return
+	}
+	os.Exit(0)
 }
 
 // getFirmwareVersion returns the current firmware version and commit under mu.
