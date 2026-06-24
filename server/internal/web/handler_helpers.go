@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -115,6 +116,19 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 		}
 	}
 	return lines, households[0], true
+}
+
+// parseCallID reads the "id" path value and parses it as a positive call ID.
+// On a malformed or non-positive value it writes 404 (the same response the
+// ownership check gives a nonexistent call) and returns (0, false), so call
+// handlers can guard with a single `if !ok { return }`.
+func parseCallID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	callID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || callID <= 0 {
+		http.NotFound(w, r)
+		return 0, false
+	}
+	return callID, true
 }
 
 // requireCallEndpointOwnership verifies the authenticated user owns either

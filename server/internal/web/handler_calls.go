@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/justinlindh/digits/server/internal/calls"
 )
@@ -97,10 +96,8 @@ type callLiveDetailData struct {
 // NOT 404'd here; they render in terminal state with the last-known samples
 // from DB fallback, making the URL useful as a postmortem surface.
 func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	callID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || callID <= 0 {
-		http.NotFound(w, r)
+	callID, ok := parseCallID(w, r)
+	if !ok {
 		return
 	}
 	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)

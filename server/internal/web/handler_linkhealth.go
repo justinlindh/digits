@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -73,10 +72,8 @@ func samplesToWindow(samples []calls.Sample) ([]LinkHealthSample, *LinkHealthSam
 }
 
 func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	callID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || callID <= 0 {
-		http.NotFound(w, r)
+	callID, ok := parseCallID(w, r)
+	if !ok {
 		return
 	}
 	call, ownedLines, primaryHH, ok := h.requireCallEndpointOwnership(w, r, callID)
@@ -156,10 +153,8 @@ const sseHeartbeatInterval = 15 * time.Second
 // Auth: same as the JSON endpoint (direct-endpoint-ownership). Ended calls
 // return 404 before any stream bytes are written.
 func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	callID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || callID <= 0 {
-		http.NotFound(w, r)
+	callID, ok := parseCallID(w, r)
+	if !ok {
 		return
 	}
 	call, ownedLines, _, ok := h.requireCallEndpointOwnership(w, r, callID)
@@ -392,10 +387,8 @@ func renderEndedConferenceFragment(endedBy string) string {
 // Idempotent: calling against an already-ended call returns 200 without
 // overwriting the audit column.
 func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	callID, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || callID <= 0 {
-		http.NotFound(w, r)
+	callID, ok := parseCallID(w, r)
+	if !ok {
 		return
 	}
 	call, _, _, ok := h.requireCallEndpointOwnership(w, r, callID)
