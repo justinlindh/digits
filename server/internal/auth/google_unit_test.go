@@ -11,6 +11,11 @@ import (
 // with a nil store rather than requiring Postgres. Keeping them out of the
 // integration tier means the CSRF protection is verified on every push, not
 // only in the integration job.
+//
+// The nil store is safe only because the state check precedes any store access
+// in HandleCallback (and HandleLogin never touches the store). Preserve that
+// ordering: a store call inserted before the state check would turn these into
+// nil-pointer panics instead of clean assertions.
 
 func TestGoogleAuth_HandleLogin_SetsStateCookie(t *testing.T) {
 	g := NewGoogleAuth("test-client-id", "test-secret", "http://localhost/callback", "", nil)

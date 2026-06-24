@@ -512,8 +512,8 @@ var ErrSendTimeout = errors.New("send timed out: buffer full")
 // publishFallback routes msg to the target across pods via Redis when no
 // local connection was found, returning nil once published. In
 // single-instance mode (no Redis bridge) there is nowhere else to deliver, so
-// it returns ErrNotConnected. label and target form both the envelope target
-// and the wrapped error ("<label> <target>: not connected").
+// it returns ErrNotConnected. target is the envelope target; label and target
+// together form the wrapped error ("<label> <target>: not connected").
 func (h *Hub) publishFallback(bridge redisPubSub, targetType, target, label string, msg *Message) error {
 	if bridge != nil {
 		bridge.Publish(context.Background(), &Envelope{
