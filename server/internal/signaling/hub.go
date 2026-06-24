@@ -509,6 +509,23 @@ func (h *Hub) ConnectionCount(number string) int {
 // buffer does not drain within the deadline.
 var ErrSendTimeout = errors.New("send timed out: buffer full")
 
+// publishFallback routes msg to the target across pods via Redis when no
+// local connection was found, returning nil once published. In
+// single-instance mode (no Redis bridge) there is nowhere else to deliver, so
+// it returns ErrNotConnected. target is the envelope target; label and target
+// together form the wrapped error ("<label> <target>: not connected").
+func (h *Hub) publishFallback(bridge redisPubSub, targetType, target, label string, msg *Message) error {
+	if bridge != nil {
+		bridge.Publish(context.Background(), &Envelope{
+			TargetType: targetType,
+			Target:     target,
+			Message:    msg,
+		})
+		return nil
+	}
+	return fmt.Errorf("%s %s: %w", label, target, ErrNotConnected)
+}
+
 // SendTo marshals msg and sends it to every device on the given line number,
 // wherever each device's WebSocket happens to be terminated. This is the POTS
 // extension model: a ring (and every other line-targeted message) reaches all
@@ -545,15 +562,12 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	}
 	h.mu.RUnlock()
 
+	// Always publish for cross-pod delivery, even when a local device received
+	// the message: a line's devices can live on other pods. publishFallback
+	// publishes and returns nil when Redis is configured.
 	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "number",
-			Target:     number,
-			Message:    msg,
-		})
-		return nil
+		return h.publishFallback(bridge, "number", number, "phone", msg)
 	}
-
 	if len(conns) == 0 {
 		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
 	}
@@ -656,16 +670,7 @@ func (h *Hub) SendToHardware(hardwareID string, msg *Message) error {
 		return err
 	}
 
-	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "hardware",
-			Target:     hardwareID,
-			Message:    msg,
-		})
-		return nil
-	}
-
-	return fmt.Errorf("hardware %s: %w", hardwareID, ErrNotConnected)
+	return h.publishFallback(bridge, "hardware", hardwareID, "hardware", msg)
 }
 
 // Broadcast marshals msg and sends it to every connected device without

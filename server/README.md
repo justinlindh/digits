@@ -250,7 +250,7 @@ See `.env.example` for a starter config file.
 | `/api/active-calls`     | Active calls list                        |
 | `/internal/stats`       | Internal stats (requires `ADMIN_SECRET`) |
 
-The UI uses htmx for partial updates and Tailwind CSS for styling. Three themes ship: `intercom` (default), `dialup`, and `answering-machine`; the per-user choice lives on `users.theme`.
+The UI uses htmx for partial updates and hand-written custom CSS for styling (`digits.css` plus per-theme overrides in `internal/web/static/`). Three themes ship: `intercom` (default), `dialup`, and `answering-machine`; the per-user choice lives on `users.theme`.
 
 ## WebSocket Protocol
 
