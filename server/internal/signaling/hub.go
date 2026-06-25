@@ -720,7 +720,7 @@ func sendToConn(conn *Conn, msg *Message, label, id string) error {
 	case conn.Send <- data:
 		return nil
 	default:
-		return fmt.Errorf("send buffer full for %s %s", label, id)
+		return fmt.Errorf("%s %s: send buffer full", label, id)
 	}
 }
 
