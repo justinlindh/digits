@@ -113,3 +113,49 @@ func TestParseCandidateOddTrailingTokens(t *testing.T) {
 		t.Errorf("raddr/rport mismatch with trailing odd token: %q/%q", got.RelatedAddress, got.RelatedPort)
 	}
 }
+
+func TestSummarizeSDP(t *testing.T) {
+	tests := []struct {
+		name           string
+		sdp            string
+		wantMLines     int
+		wantCandidates int
+	}{
+		{name: "empty", sdp: "", wantMLines: 0, wantCandidates: 0},
+		{
+			name:       "single audio m-line, LF",
+			sdp:        "v=0\no=- 0 0 IN IP4 0.0.0.0\nm=audio 9 UDP/TLS/RTP/SAVPF 111\n",
+			wantMLines: 1,
+		},
+		{
+			name:       "CRLF line endings",
+			sdp:        "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n",
+			wantMLines: 1,
+		},
+		{
+			name:           "bundled candidates",
+			sdp:            "m=audio 9 UDP/TLS/RTP/SAVPF 111\na=candidate:1 1 udp 2 192.0.2.1 5000 typ host\na=candidate:2 1 udp 1 198.51.100.1 5000 typ srflx\n",
+			wantMLines:     1,
+			wantCandidates: 2,
+		},
+		{
+			name:       "multiple m-lines",
+			sdp:        "m=audio 9 UDP/TLS/RTP/SAVPF 111\nm=video 9 UDP/TLS/RTP/SAVPF 96\n",
+			wantMLines: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SummarizeSDP(tt.sdp)
+			if got.MLines != tt.wantMLines {
+				t.Errorf("MLines = %d, want %d", got.MLines, tt.wantMLines)
+			}
+			if got.Candidates != tt.wantCandidates {
+				t.Errorf("Candidates = %d, want %d", got.Candidates, tt.wantCandidates)
+			}
+			if got.Bytes != len(tt.sdp) {
+				t.Errorf("Bytes = %d, want %d", got.Bytes, len(tt.sdp))
+			}
+		})
+	}
+}
