@@ -144,11 +144,7 @@ func (h *Hub) PublishReconnect(number, hardwareID string) {
 	if bridge == nil {
 		return
 	}
-	bridge.Publish(context.Background(), &Envelope{
-		TargetType: "reconnect",
-		Target:     number,
-		Message:    &Message{HardwareID: hardwareID},
-	})
+	h.publish(bridge, "reconnect", number, &Message{HardwareID: hardwareID})
 }
 
 // SetDeviceState attaches a DeviceState to the hub, enabling cluster-wide
@@ -509,6 +505,19 @@ func (h *Hub) ConnectionCount(number string) int {
 // buffer does not drain within the deadline.
 var ErrSendTimeout = errors.New("send timed out: buffer full")
 
+// publish sends msg to the target across pods via Redis. bridge must be
+// non-nil. It centralizes Envelope construction so every cross-pod send path
+// (the always-publish line/broadcast paths and the publishFallback no-local-
+// conn path) frames messages identically; callers decide whether and when to
+// publish.
+func (h *Hub) publish(bridge redisPubSub, targetType, target string, msg *Message) {
+	bridge.Publish(context.Background(), &Envelope{
+		TargetType: targetType,
+		Target:     target,
+		Message:    msg,
+	})
+}
+
 // publishFallback routes msg to the target across pods via Redis when no
 // local connection was found, returning nil once published. In
 // single-instance mode (no Redis bridge) there is nowhere else to deliver, so
@@ -516,11 +525,7 @@ var ErrSendTimeout = errors.New("send timed out: buffer full")
 // together form the wrapped error ("<label> <target>: not connected").
 func (h *Hub) publishFallback(bridge redisPubSub, targetType, target, label string, msg *Message) error {
 	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: targetType,
-			Target:     target,
-			Message:    msg,
-		})
+		h.publish(bridge, targetType, target, msg)
 		return nil
 	}
 	return fmt.Errorf("%s %s: %w", label, target, ErrNotConnected)
@@ -563,10 +568,10 @@ func (h *Hub) SendTo(number string, msg *Message) error {
 	h.mu.RUnlock()
 
 	// Always publish for cross-pod delivery, even when a local device received
-	// the message: a line's devices can live on other pods. publishFallback
-	// publishes and returns nil when Redis is configured.
+	// the message: a line's devices can live on other pods.
 	if bridge != nil {
-		return h.publishFallback(bridge, "number", number, "phone", msg)
+		h.publish(bridge, "number", number, msg)
+		return nil
 	}
 	if len(conns) == 0 {
 		return fmt.Errorf("phone %s: %w", number, ErrNotConnected)
@@ -605,11 +610,7 @@ func (h *Hub) SendToWithTimeout(number string, msg *Message, timeout time.Durati
 	bridge := h.redis
 	h.mu.RUnlock()
 	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "number",
-			Target:     number,
-			Message:    msg,
-		})
+		h.publish(bridge, "number", number, msg)
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -697,10 +698,7 @@ func (h *Hub) Broadcast(msg *Message) {
 	h.mu.RUnlock()
 
 	if bridge != nil {
-		bridge.Publish(context.Background(), &Envelope{
-			TargetType: "broadcast",
-			Message:    msg,
-		})
+		h.publish(bridge, "broadcast", "", msg)
 	}
 }
 
