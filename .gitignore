@@ -5,7 +5,6 @@ tools/build/
 artifacts/*
 
 # Compiled binaries
-pi/digitsd/digitsd
 server/bin/
 
 # rnnoise test binaries (keep lib/ and rnnoise.h)

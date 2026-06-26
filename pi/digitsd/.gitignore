@@ -1,4 +1,10 @@
 bin/
 digitsd-arm64
+# Host build output. Leading slash anchors this to the module root so it
+# matches only ./digitsd, not the cmd/digitsd/ source package. (A bare
+# `digitsd` here, or `pi/digitsd/digitsd` in the repo-root .gitignore, makes
+# ripgrep/fd/editor search silently prune cmd/digitsd/ when searching from
+# this directory, even though git itself does not ignore it.)
+/digitsd
 internal/assets/embed/*
 !internal/assets/embed/.gitkeep
