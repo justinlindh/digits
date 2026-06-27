@@ -12,7 +12,7 @@ import (
 func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 	if h.cfg.AdminSecret == "" ||
 		subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Admin-Secret")), []byte(h.cfg.AdminSecret)) != 1 {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		jsonError(r.Context(), w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
