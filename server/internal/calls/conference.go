@@ -205,8 +205,8 @@ func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, p
 	m.LeftReason = reason
 	delete(ct.memberIndex, phone)
 
-	for p := range conf.Members {
-		if conf.Members[p].LeftAt == nil {
+	for p, m := range conf.Members {
+		if m.LeftAt == nil {
 			remaining = append(remaining, p)
 		}
 	}

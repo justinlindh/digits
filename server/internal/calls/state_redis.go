@@ -33,6 +33,9 @@ func NewCallState(client redis.UniversalClient) *CallState {
 	return &CallState{client: client}
 }
 
+// OnCallInitiated records caller and callee as participants in callID, each
+// pointing at the other with a safety-net TTL. Redis errors are logged and
+// swallowed; the call still proceeds in memory on the originating pod.
 func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, callee string) {
 	now := time.Now()
 
@@ -59,6 +62,8 @@ func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, c
 	}
 }
 
+// OnCallEnded removes the membership link between caller and callee and prunes
+// either hash key if it is left empty. Redis errors are logged and swallowed.
 func (s *CallState) OnCallEnded(ctx context.Context, caller, callee string) {
 	pipe := s.client.Pipeline()
 	pipe.HDel(ctx, callKeyPrefix+caller, callee)
@@ -73,6 +78,10 @@ func (s *CallState) OnCallEnded(ctx context.Context, caller, callee string) {
 	s.deleteIfEmpty(ctx, callKeyPrefix+callee)
 }
 
+// ClearByNumber removes number from every call it participates in, including
+// the back-references held by its peers, and prunes any keys left empty. Used
+// to reset a phone's call state on disconnect. Redis errors are logged and
+// swallowed.
 func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 	key := callKeyPrefix + number
 	entries, err := s.client.HGetAll(ctx, key).Result()
@@ -100,6 +109,8 @@ func (s *CallState) ClearByNumber(ctx context.Context, number string) {
 	}
 }
 
+// Busy reports whether number is currently in any call. On a Redis error it
+// logs and returns false, so an outage fails open rather than blocking calls.
 func (s *CallState) Busy(ctx context.Context, number string) bool {
 	n, err := s.client.Exists(ctx, callKeyPrefix+number).Result()
 	if err != nil {
@@ -109,6 +120,9 @@ func (s *CallState) Busy(ctx context.Context, number string) bool {
 	return n > 0
 }
 
+// PeerOf returns one peer number sharing a call with number, or "" if there is
+// none. With multiple peers (conference) the choice is arbitrary; use AllPeersOf
+// when every peer matters. Redis errors are logged and return "".
 func (s *CallState) PeerOf(ctx context.Context, number string) string {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
@@ -121,6 +135,8 @@ func (s *CallState) PeerOf(ctx context.Context, number string) string {
 	return ""
 }
 
+// AllPeersOf returns every number sharing a call with number. Redis errors are
+// logged and return nil.
 func (s *CallState) AllPeersOf(ctx context.Context, number string) []string {
 	keys, err := s.client.HKeys(ctx, callKeyPrefix+number).Result()
 	if err != nil {
@@ -130,6 +146,8 @@ func (s *CallState) AllPeersOf(ctx context.Context, number string) []string {
 	return keys
 }
 
+// InCall reports whether a and b are participants in the same call. On a Redis
+// error it logs and returns false.
 func (s *CallState) InCall(ctx context.Context, a, b string) bool {
 	exists, err := s.client.HExists(ctx, callKeyPrefix+a, b).Result()
 	if err != nil {
@@ -139,6 +157,9 @@ func (s *CallState) InCall(ctx context.Context, a, b string) bool {
 	return exists
 }
 
+// CallIDFor returns the ID of a call number is participating in and whether one
+// was found. With multiple peers any one call ID may be returned. Redis errors
+// are logged and return (0, false).
 func (s *CallState) CallIDFor(ctx context.Context, number string) (int64, bool) {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
@@ -155,6 +176,8 @@ func (s *CallState) CallIDFor(ctx context.Context, number string) (int64, bool) 
 	return 0, false
 }
 
+// CallIDForPair returns the ID of the call shared by a and b, checking the link
+// in both directions, or 0 if they are not in a call together or on any error.
 func (s *CallState) CallIDForPair(ctx context.Context, a, b string) int64 {
 	raw, err := s.client.HGet(ctx, callKeyPrefix+a, b).Result()
 	if err == nil {
@@ -175,6 +198,9 @@ func (s *CallState) CallIDForPair(ctx context.Context, a, b string) int64 {
 	return 0
 }
 
+// CanAddAsHost reports whether number may host a conference: it must be in
+// exactly one call and be the caller of it. Redis errors are logged and return
+// false.
 func (s *CallState) CanAddAsHost(ctx context.Context, number string) bool {
 	entries, err := s.client.HGetAll(ctx, callKeyPrefix+number).Result()
 	if err != nil {
@@ -194,6 +220,9 @@ func (s *CallState) CanAddAsHost(ctx context.Context, number string) bool {
 	return false
 }
 
+// Active scans all call keys and returns one ActiveCall per distinct call ID,
+// de-duplicating the two-sided membership entries. Keys that error mid-scan are
+// skipped; a scan error is logged and the partial result is returned.
 func (s *CallState) Active(ctx context.Context) []ActiveCall {
 	seen := make(map[int64]bool)
 	var calls []ActiveCall
