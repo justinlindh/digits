@@ -205,15 +205,8 @@ func (g *GitHubReleases) fetch(ctx context.Context) (*ReleaseIndex, error) {
 			AudioURL: findAudioAsset(rel.Assets),
 		}
 
-		var ci *ComponentIndex
-		switch component {
-		case ComponentPi:
-			ci = &idx.Pi
-		case ComponentFirmware:
-			ci = &idx.Firmware
-		case ComponentServer:
-			ci = &idx.Server
-		default:
+		ci := idx.Component(component)
+		if ci == nil {
 			continue
 		}
 
@@ -321,20 +314,13 @@ func (g *GitHubReleases) ServeAudio() http.HandlerFunc {
 			return
 		}
 
-		var m map[string]*Release
-		switch component {
-		case ComponentPi:
-			m = idx.Pi.Releases
-		case ComponentFirmware:
-			m = idx.Firmware.Releases
-		case ComponentServer:
-			m = idx.Server.Releases
-		default:
+		ci := idx.Component(component)
+		if ci == nil {
 			http.NotFound(w, r)
 			return
 		}
 
-		rel, ok := m[version]
+		rel, ok := ci.Releases[version]
 		if !ok || rel.AudioURL == "" {
 			http.NotFound(w, r)
 			return
