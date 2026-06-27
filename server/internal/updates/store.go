@@ -37,20 +37,31 @@ type ComponentIndex struct {
 	Releases map[string]*Release `json:"releases"`
 }
 
-// SortedReleases returns releases for the given component sorted newest-first.
-// Returns nil for unknown components.
-func (idx *ReleaseIndex) SortedReleases(component string) []Release {
-	var m map[string]*Release
+// Component returns the ComponentIndex for the given component selector, or
+// nil for an unrecognized one. It is the single place that maps a component
+// string to its field on the index; lookups and the release fetch all route
+// through it so a new component is wired up in exactly one switch.
+func (idx *ReleaseIndex) Component(component string) *ComponentIndex {
 	switch component {
 	case ComponentPi:
-		m = idx.Pi.Releases
+		return &idx.Pi
 	case ComponentFirmware:
-		m = idx.Firmware.Releases
+		return &idx.Firmware
 	case ComponentServer:
-		m = idx.Server.Releases
+		return &idx.Server
 	default:
 		return nil
 	}
+}
+
+// SortedReleases returns releases for the given component sorted newest-first.
+// Returns nil for unknown components.
+func (idx *ReleaseIndex) SortedReleases(component string) []Release {
+	ci := idx.Component(component)
+	if ci == nil {
+		return nil
+	}
+	m := ci.Releases
 	releases := make([]Release, 0, len(m))
 	for _, r := range m {
 		releases = append(releases, *r)
