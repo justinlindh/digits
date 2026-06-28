@@ -30,7 +30,9 @@ func (e *escapeHTMLRenderer) renderRawHTML(
 	n := node.(*gast.RawHTML)
 	for i := range n.Segments.Len() {
 		seg := n.Segments.At(i)
-		_, _ = w.WriteString(template.HTMLEscapeString(string(seg.Value(source))))
+		if _, err := w.WriteString(template.HTMLEscapeString(string(seg.Value(source)))); err != nil {
+			return gast.WalkStop, err
+		}
 	}
 	return gast.WalkSkipChildren, nil
 }
@@ -44,11 +46,15 @@ func (e *escapeHTMLRenderer) renderHTMLBlock(
 	n := node.(*gast.HTMLBlock)
 	for i := range n.Lines().Len() {
 		line := n.Lines().At(i)
-		_, _ = w.WriteString(template.HTMLEscapeString(string(line.Value(source))))
+		if _, err := w.WriteString(template.HTMLEscapeString(string(line.Value(source)))); err != nil {
+			return gast.WalkStop, err
+		}
 	}
 	if n.HasClosure() {
 		closure := n.ClosureLine
-		_, _ = w.WriteString(template.HTMLEscapeString(string(closure.Value(source))))
+		if _, err := w.WriteString(template.HTMLEscapeString(string(closure.Value(source)))); err != nil {
+			return gast.WalkStop, err
+		}
 	}
 	return gast.WalkContinue, nil
 }
