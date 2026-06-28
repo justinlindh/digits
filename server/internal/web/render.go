@@ -30,7 +30,7 @@ func (e *escapeHTMLRenderer) renderRawHTML(
 	n := node.(*gast.RawHTML)
 	for i := range n.Segments.Len() {
 		seg := n.Segments.At(i)
-		if _, err := w.WriteString(template.HTMLEscapeString(string(seg.Value(source)))); err != nil {
+		if err := writeEscaped(w, seg.Value(source)); err != nil {
 			return gast.WalkStop, err
 		}
 	}
@@ -46,17 +46,25 @@ func (e *escapeHTMLRenderer) renderHTMLBlock(
 	n := node.(*gast.HTMLBlock)
 	for i := range n.Lines().Len() {
 		line := n.Lines().At(i)
-		if _, err := w.WriteString(template.HTMLEscapeString(string(line.Value(source)))); err != nil {
+		if err := writeEscaped(w, line.Value(source)); err != nil {
 			return gast.WalkStop, err
 		}
 	}
 	if n.HasClosure() {
 		closure := n.ClosureLine
-		if _, err := w.WriteString(template.HTMLEscapeString(string(closure.Value(source)))); err != nil {
+		if err := writeEscaped(w, closure.Value(source)); err != nil {
 			return gast.WalkStop, err
 		}
 	}
 	return gast.WalkContinue, nil
+}
+
+// writeEscaped HTML-escapes raw markup and writes it to w. The raw-HTML and
+// HTML-block renderers share it to keep untrusted release-note markup visible
+// but inert, and to propagate the rare BufWriter write error uniformly.
+func writeEscaped(w util.BufWriter, raw []byte) error {
+	_, err := w.WriteString(template.HTMLEscapeString(string(raw)))
+	return err
 }
 
 // notesMD is the markdown renderer for release notes. Raw HTML is escaped
