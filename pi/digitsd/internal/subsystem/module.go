@@ -41,10 +41,6 @@ type Module interface {
 	Shutdown(ctx context.Context) error
 }
 
-// IsReady is a convenience wrapper so callers that hold a Module can write
-// `subsystem.IsReady(m)` to match the natural "is X ready?" reading order.
-func IsReady(m Module) bool { return m.IsReady() }
-
 // Registration declares a module and how the Manager should treat it.
 // The zero value is the common case: enabled, not required, no deps. Set
 // Disabled to register a module that the Manager should skip but still report
