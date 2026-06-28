@@ -1178,7 +1178,7 @@ func main() {
 		// serial subsystem has brought the Pico up (flashing it if needed), so
 		// the phase byte the firmware wrote when * was held is readable here.
 		// Setup mode is pre-pairing, so pass an empty device token.
-		if subsystem.IsReady(serial) {
+		if serial.IsReady() {
 			if sp := serial.Port(); sp != nil {
 				if phase, err := queryPicoPhase(sp); err != nil {
 					slog.Error("setup: phase query failed, proceeding without panic-button check", "error", err)

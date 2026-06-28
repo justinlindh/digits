@@ -37,7 +37,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		slog.Warn("setup: failed to clear boot counter", "error", err)
 	}
 
-	if serial != nil && subsystem.IsReady(serial) {
+	if serial != nil && serial.IsReady() {
 		serial.Port().StateSet("SETUP")
 	}
 
@@ -111,7 +111,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "verifying"}) //nolint:errcheck
 
-		if serial != nil && subsystem.IsReady(serial) {
+		if serial != nil && serial.IsReady() {
 			serial.Port().LED("LOCK")
 			serial.Port().LED("CONNECTING")
 		}
@@ -124,14 +124,14 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 					state.verifying = false
 					state.lastAttempt = &wifi.VerifyResult{Error: fmt.Sprintf("internal error: %v", r)}
 					state.mu.Unlock()
-					if serial != nil && subsystem.IsReady(serial) {
+					if serial != nil && serial.IsReady() {
 						serial.Port().LED("UNLOCK")
 					}
 				}
 			}()
 
 			slog.Info("setup: verifying WiFi credentials", "ssid", req.SSID)
-			if audio != nil && subsystem.IsReady(audio) {
+			if audio != nil && audio.IsReady() {
 				audio.Mixer().PlayOnce("wifi_connecting")
 				waitForOnceComplete(audio.Mixer(), 5*time.Second)
 			}
@@ -154,20 +154,20 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 
 			if result.Connected && result.Error == "" {
 				slog.Info("setup: WiFi configured, rebooting")
-				if serial != nil && subsystem.IsReady(serial) {
+				if serial != nil && serial.IsReady() {
 					serial.Port().LED("UNLOCK")
 					serial.Port().LED("ON")
 				}
-				if audio != nil && subsystem.IsReady(audio) {
+				if audio != nil && audio.IsReady() {
 					audio.Mixer().PlayOnce("wifi_connected")
 					waitForOnceComplete(audio.Mixer(), 10*time.Second)
 				}
 				doReboot()
 			} else {
-				if serial != nil && subsystem.IsReady(serial) {
+				if serial != nil && serial.IsReady() {
 					serial.Port().LED("UNLOCK")
 				}
-				if audio != nil && subsystem.IsReady(audio) {
+				if audio != nil && audio.IsReady() {
 					audio.Mixer().PlayOnce("wifi_failed")
 				}
 			}
@@ -178,7 +178,7 @@ func runSetupMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audi
 
 	// Voice prompt loop: when the user picks up the handset, play setup
 	// instructions on a timer, similar to recovery's voice menu.
-	if serial != nil && subsystem.IsReady(serial) && audio != nil && subsystem.IsReady(audio) {
+	if serial != nil && serial.IsReady() && audio != nil && audio.IsReady() {
 		go setupVoiceLoop(serial, audio)
 	}
 
