@@ -500,7 +500,7 @@ func (d *daemonCallbacks) handleSignal(msg *sigclient.Message) {
 		}
 
 		au := msg.LineSettings.AutoUpdate
-		if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+		if devmode.IsSet(devmode.DefaultSkipAutoUpdatePath) {
 			slog.Info("line_settings: ignoring server auto_update push (dev-mode skip flag)", "server_wants", au)
 		} else if au != d.autoUpdateEnabled.Load() {
 			d.autoUpdateEnabled.Store(au)

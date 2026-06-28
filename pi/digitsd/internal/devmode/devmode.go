@@ -9,24 +9,25 @@ import (
 	"path/filepath"
 )
 
-// Default paths on the device data partition.
+// Default paths on the device data partition. The path identifies the flag;
+// IsSet and Set work on any of them.
 const (
 	DefaultFlagPath           = "/data/digits/dev-mode"
 	DefaultSkipFWReflashPath  = "/data/digits/skip-fw-reflash"
 	DefaultSkipAutoUpdatePath = "/data/digits/skip-auto-update"
 )
 
-// flagSet reports whether a flag file exists at path.
-func flagSet(path string) bool {
+// IsSet reports whether the flag file at path exists.
+func IsSet(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
-// setFlag creates or removes a flag file. When set is true the file is
-// created (parent dirs included); when false the file is removed. Removing
-// a file that does not exist is not an error.
-func setFlag(path string, set bool) error {
-	if set {
+// Set creates or removes the flag file at path. When on is true the file is
+// created (parent dirs included); when false it is removed. Removing a file
+// that does not exist is not an error.
+func Set(path string, on bool) error {
+	if on {
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			return err
 		}
@@ -38,15 +39,3 @@ func setFlag(path string, set bool) error {
 	}
 	return err
 }
-
-// Public API -- each flag gets its own named accessor so call sites are
-// grep-friendly. The underlying check is identical (presence of a flat file
-// at the given path).
-
-func Enabled(path string) bool                       { return flagSet(path) }
-func Enable(path string) error                       { return setFlag(path, true) }
-func Disable(path string) error                      { return setFlag(path, false) }
-func SkipFWReflash(path string) bool                 { return flagSet(path) }
-func SetSkipFWReflash(path string, skip bool) error  { return setFlag(path, skip) }
-func SkipAutoUpdate(path string) bool                { return flagSet(path) }
-func SetSkipAutoUpdate(path string, skip bool) error { return setFlag(path, skip) }

@@ -125,7 +125,7 @@ func TestDevModeStatusHandler(t *testing.T) {
 			}
 		},
 	}
-	_ = devmode.Enable(cfg.FlagPath)
+	_ = devmode.Set(cfg.FlagPath, true)
 
 	h := devModeStatusHandler(cfg)
 	req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
@@ -191,7 +191,7 @@ func TestDevModeToggleHandler_DevMode(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("enable: status code = %d, want 200", w.Code)
 	}
-	if !devmode.Enabled(cfg.FlagPath) {
+	if !devmode.IsSet(cfg.FlagPath) {
 		t.Error("dev-mode flag not created")
 	}
 
@@ -205,7 +205,7 @@ func TestDevModeToggleHandler_DevMode(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("disable: status code = %d, want 200", w.Code)
 	}
-	if devmode.Enabled(cfg.FlagPath) {
+	if devmode.IsSet(cfg.FlagPath) {
 		t.Error("dev-mode flag not removed")
 	}
 }
@@ -228,7 +228,7 @@ func TestDevModeToggleHandler_FWReflash(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want 200", w.Code)
 	}
-	if !devmode.SkipFWReflash(cfg.SkipFWReflashPath) {
+	if !devmode.IsSet(cfg.SkipFWReflashPath) {
 		t.Error("skip-fw-reflash flag not created")
 	}
 }
@@ -251,7 +251,7 @@ func TestDevModeToggleHandler_AutoUpdate(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status code = %d, want 200", w.Code)
 	}
-	if !devmode.SkipAutoUpdate(cfg.SkipAutoUpdatePath) {
+	if !devmode.IsSet(cfg.SkipAutoUpdatePath) {
 		t.Error("skip-auto-update flag not created")
 	}
 }

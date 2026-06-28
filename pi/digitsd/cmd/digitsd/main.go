@@ -292,7 +292,7 @@ func (d *daemonCallbacks) setFirmwareVersion(version, commit string) {
 // is not present. Every place that decides to trigger an update gates on this
 // so the two-part policy stays in one spot.
 func (d *daemonCallbacks) autoUpdateAllowed() bool {
-	return d.autoUpdateEnabled.Load() && !devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath)
+	return d.autoUpdateEnabled.Load() && !devmode.IsSet(devmode.DefaultSkipAutoUpdatePath)
 }
 
 // sendSignal sends a signaling message and logs failures.
@@ -1422,7 +1422,7 @@ func main() {
 	if postOk && fwVersion != "" {
 		bundled := readBundledFirmwareVersion()
 		needsReflash := firmwareNeedsReflash(fwVersion, bundled)
-		skipReflash := devmode.SkipFWReflash(devmode.DefaultSkipFWReflashPath)
+		skipReflash := devmode.IsSet(devmode.DefaultSkipFWReflashPath)
 		if needsReflash && skipReflash {
 			slog.Info("firmware reflash: skip flag present, keeping current Pico firmware",
 				"pico", fwVersion, "bundled", bundled)
@@ -1919,7 +1919,7 @@ func main() {
 	if cb.autoUpdateAllowed() {
 		slog.Info("auto-update: enabled, checking for updates on startup")
 		go cb.triggerAutoUpdate()
-	} else if devmode.SkipAutoUpdate(devmode.DefaultSkipAutoUpdatePath) {
+	} else if devmode.IsSet(devmode.DefaultSkipAutoUpdatePath) {
 		slog.Info("auto-update: suppressed by dev-mode skip flag")
 	}
 
@@ -2042,7 +2042,7 @@ func main() {
 	}
 	cb.devMode = newDevModeManager(devCfg)
 	defer cb.devMode.Close()
-	if devmode.Enabled(devmode.DefaultFlagPath) {
+	if devmode.IsSet(devmode.DefaultFlagPath) {
 		slog.Info("devmode: flag present, starting dev-mode web UI")
 		if err := cb.devMode.EnsureListener(); err != nil {
 			slog.Warn("devmode: failed to start web UI", "error", err)
@@ -2488,7 +2488,7 @@ func requestICEServers(sig *sigclient.Client) {
 
 func sendDeviceInfo(sig *sigclient.Client, fwVersion, fwCommit string) {
 	localAddr := primaryLocalAddr()
-	devModeOn := devmode.Enabled(devmode.DefaultFlagPath)
+	devModeOn := devmode.IsSet(devmode.DefaultFlagPath)
 	if err := sig.Send(&sigclient.Message{
 		Type:            sigclient.TypeDeviceInfo,
 		PiVersion:       version.Version,

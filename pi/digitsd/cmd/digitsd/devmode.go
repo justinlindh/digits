@@ -211,9 +211,9 @@ func devModeStatusHandler(cfg *devModeConfig) http.HandlerFunc {
 			"online":             status.Online,
 			"phone_number":       status.PhoneNumber,
 			"config_auto_update": status.ConfigAutoUpdate,
-			"dev_mode":           devmode.Enabled(cfg.FlagPath),
-			"skip_fw_reflash":    devmode.SkipFWReflash(cfg.SkipFWReflashPath),
-			"skip_auto_update":   devmode.SkipAutoUpdate(cfg.SkipAutoUpdatePath),
+			"dev_mode":           devmode.IsSet(cfg.FlagPath),
+			"skip_fw_reflash":    devmode.IsSet(cfg.SkipFWReflashPath),
+			"skip_auto_update":   devmode.IsSet(cfg.SkipAutoUpdatePath),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
@@ -238,15 +238,11 @@ func devModeToggleHandler(cfg *devModeConfig) http.HandlerFunc {
 		var err error
 		switch req.Name {
 		case "devmode":
-			if req.Enabled {
-				err = devmode.Enable(cfg.FlagPath)
-			} else {
-				err = devmode.Disable(cfg.FlagPath)
-			}
+			err = devmode.Set(cfg.FlagPath, req.Enabled)
 		case "fw_reflash":
-			err = devmode.SetSkipFWReflash(cfg.SkipFWReflashPath, req.Enabled)
+			err = devmode.Set(cfg.SkipFWReflashPath, req.Enabled)
 		case "auto_update":
-			err = devmode.SetSkipAutoUpdate(cfg.SkipAutoUpdatePath, req.Enabled)
+			err = devmode.Set(cfg.SkipAutoUpdatePath, req.Enabled)
 		default:
 			http.Error(w, "unknown toggle: "+req.Name, http.StatusBadRequest)
 			return
