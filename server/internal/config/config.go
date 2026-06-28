@@ -69,39 +69,39 @@ func Load() *Config {
 		WSRateLimitPerMin: 30,
 		TrustedProxies:    1,
 	}
-	StringEnv("SIGNALD_ADDR", &c.Addr)
-	StringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
-	StringEnv("DATABASE_URL", &c.DatabaseURL)
-	StringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
-	StringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
-	BoolEnv("SIGNALD_TURN_ENABLED", &c.TURNEnabled)
-	StringEnv("SIGNALD_TURN_SECRET", &c.TURNSecret)
-	StringEnv("SIGNALD_TURN_DOMAIN", &c.TURNDomain)
+	stringEnv("SIGNALD_ADDR", &c.Addr)
+	stringEnv("SIGNALD_METRICS_ADDR", &c.MetricsAddr)
+	stringEnv("DATABASE_URL", &c.DatabaseURL)
+	stringEnv("SIGNALD_TLS_CERT", &c.TLSCert)
+	stringEnv("SIGNALD_TLS_KEY", &c.TLSKey)
+	boolEnv("SIGNALD_TURN_ENABLED", &c.TURNEnabled)
+	stringEnv("SIGNALD_TURN_SECRET", &c.TURNSecret)
+	stringEnv("SIGNALD_TURN_DOMAIN", &c.TURNDomain)
 	// Auth
-	StringEnv("GOOGLE_CLIENT_ID", &c.GoogleClientID)
-	StringEnv("GOOGLE_CLIENT_SECRET", &c.GoogleClientSecret)
-	StringEnv("GOOGLE_REDIRECT_URL", &c.GoogleRedirectURL)
-	StringEnv("BASE_URL", &c.BaseURL)
-	StringEnv("COOKIE_DOMAIN", &c.CookieDomain)
+	stringEnv("GOOGLE_CLIENT_ID", &c.GoogleClientID)
+	stringEnv("GOOGLE_CLIENT_SECRET", &c.GoogleClientSecret)
+	stringEnv("GOOGLE_REDIRECT_URL", &c.GoogleRedirectURL)
+	stringEnv("BASE_URL", &c.BaseURL)
+	stringEnv("COOKIE_DOMAIN", &c.CookieDomain)
 	// Email
-	StringEnv("SMTP_HOST", &c.SMTPHost)
-	StringEnv("SMTP_PORT", &c.SMTPPort)
-	StringEnv("SMTP_USER", &c.SMTPUser)
-	StringEnv("SMTP_PASS", &c.SMTPPass)
-	StringEnv("SMTP_FROM", &c.SMTPFrom)
+	stringEnv("SMTP_HOST", &c.SMTPHost)
+	stringEnv("SMTP_PORT", &c.SMTPPort)
+	stringEnv("SMTP_USER", &c.SMTPUser)
+	stringEnv("SMTP_PASS", &c.SMTPPass)
+	stringEnv("SMTP_FROM", &c.SMTPFrom)
 	// Admin
-	StringEnv("ADMIN_SECRET", &c.AdminSecret)
+	stringEnv("ADMIN_SECRET", &c.AdminSecret)
 	// Dev
-	BoolEnv("DEV_MODE", &c.DevMode)
-	OneEnv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED", &c.LinkHealthFlushDisabled)
+	boolEnv("DEV_MODE", &c.DevMode)
+	oneEnv("SIGNALD_LINK_HEALTH_FLUSH_DISABLED", &c.LinkHealthFlushDisabled)
 	// Redis
-	StringEnv("REDIS_URL", &c.RedisURL)
+	stringEnv("REDIS_URL", &c.RedisURL)
 	// Rate limits
-	IntEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
-	IntEnv("SIGNALD_TRUSTED_PROXIES", &c.TrustedProxies)
+	intEnv("SIGNALD_WS_RATE_LIMIT", &c.WSRateLimitPerMin)
+	intEnv("SIGNALD_TRUSTED_PROXIES", &c.TrustedProxies)
 	// Release index
-	OneEnv("TEST_FAKE_UPDATES", &c.FakeUpdates)
-	StringEnv("GITHUB_REPO", &c.GitHubRepo)
-	StringEnv("GITHUB_TOKEN", &c.GitHubToken)
+	oneEnv("TEST_FAKE_UPDATES", &c.FakeUpdates)
+	stringEnv("GITHUB_REPO", &c.GitHubRepo)
+	stringEnv("GITHUB_TOKEN", &c.GitHubToken)
 	return c
 }
