@@ -1162,7 +1162,7 @@ func (f *fakeErrorObserver) ObserveSignalingError(category string) {
 	f.seen = append(f.seen, category)
 }
 
-func TestRelayObservesPeerUnreachableOnOfflineCall(t *testing.T) {
+func TestRelayDoesNotErrorOnOfflineCall(t *testing.T) {
 	hub := NewHub()
 	obs := &fakeErrorObserver{}
 	relay := NewRelay(hub, nil, nil, nil)
@@ -1172,8 +1172,22 @@ func TestRelayObservesPeerUnreachableOnOfflineCall(t *testing.T) {
 	_ = hub.Register("3140001", conn1)
 	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeCall, To: "3140099"})
 
-	if len(obs.seen) != 1 || obs.seen[0] != "peer_unreachable" {
-		t.Fatalf("expected peer_unreachable, got %v", obs.seen)
+	// Dialing an offline or unregistered number is normal user behavior. The
+	// caller is told it didn't connect, but nothing is counted as an error.
+	select {
+	case data := <-conn1.Send:
+		msg, err := ParseMessage(data)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		if msg.Type != TypeError || msg.Error != "phone not connected" {
+			t.Fatalf("expected 'phone not connected' error, got %s/%q", msg.Type, msg.Error)
+		}
+	default:
+		t.Fatal("caller did not receive a not-connected reply")
+	}
+	if len(obs.seen) != 0 {
+		t.Fatalf("dialing an unreachable number must not be recorded as an error, got %v", obs.seen)
 	}
 }
 
@@ -1196,18 +1210,29 @@ func TestRelayObservesAuthFailedWhenAuthorizerDenies(t *testing.T) {
 	}
 }
 
-func TestRelayObservesInvalidMessageOnICERestartWithoutCall(t *testing.T) {
-	hub := NewHub()
-	obs := &fakeErrorObserver{}
-	relay := NewRelay(hub, newMockTracker(), nil, nil)
-	relay.Errors = obs
+func TestRelayDoesNotErrorOnSignalingWithoutCall(t *testing.T) {
+	// Stray control/media for a call that isn't active (raced past teardown or
+	// trailing a dial to an unreachable number) is normal and must not be
+	// recorded as a signaling error.
+	for _, msg := range []*Message{
+		{Type: TypeICERestart, To: "3140002"},
+		{Type: TypeDTMF, To: "3140002", Digit: "5"},
+		{Type: TypeAnswer, To: "3140002"},
+		{Type: TypeSDP, To: "3140002", SDP: "v=0\r\n"},
+		{Type: TypeICE, To: "3140002", Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"},
+	} {
+		hub := NewHub()
+		obs := &fakeErrorObserver{}
+		relay := NewRelay(hub, newMockTracker(), nil, nil)
+		relay.Errors = obs
 
-	conn1 := &Conn{Send: make(chan []byte, 10)}
-	_ = hub.Register("3140001", conn1)
-	relay.HandleMessage(context.Background(), "3140001", &Message{Type: TypeICERestart, To: "3140002"})
+		conn1 := &Conn{Send: make(chan []byte, 10)}
+		_ = hub.Register("3140001", conn1)
+		relay.HandleMessage(context.Background(), "3140001", msg)
 
-	if len(obs.seen) != 1 || obs.seen[0] != "invalid_message" {
-		t.Fatalf("expected invalid_message, got %v", obs.seen)
+		if len(obs.seen) != 0 {
+			t.Fatalf("%s without active call must not be an error, got %v", msg.Type, obs.seen)
+		}
 	}
 }
 

@@ -312,7 +312,9 @@ func (r *Relay) handleCall(ctx context.Context, from string, msg *Message) {
 			_ = r.Hub.SendTo(from, &Message{Type: TypeBusy, From: msg.To})
 			return
 		}
-		r.observeError("peer_unreachable")
+		// Dialing a phone that is offline or unregistered is normal user
+		// behavior, not a signaling fault: just tell the caller it didn't
+		// connect. It must not count toward signaling_errors_total.
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "phone not connected"})
 		return
 	}
@@ -380,8 +382,9 @@ func (r *Relay) inCallOrConference(ctx context.Context, from, to string) bool {
 
 func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "dtmf without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
+		// Stray control/media for a call that isn't active (raced past teardown,
+		// or trailing a dial to an unreachable number) is normal, not an error.
+		slog.DebugContext(ctx, "dtmf without active call", "from", from, "to", msg.To)
 		return
 	}
 	r.forward(ctx, msg)
@@ -397,8 +400,9 @@ const iceRestartDeliveryTimeout = 2 * time.Second
 
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
+		// Recovery raced past call teardown: tell the client there's no call to
+		// restart, but don't count it as a signaling fault.
+		slog.DebugContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
 		return
 	}
@@ -418,8 +422,9 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, "answer without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
+		// Answer landing after the caller already hung up is a benign race, not
+		// an error.
+		slog.DebugContext(ctx, "answer without active call", "from", from, "to", msg.To)
 		return
 	}
 
@@ -548,8 +553,10 @@ func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Me
 		}
 	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
-		slog.WarnContext(ctx, msg.Type+" without active call", "from", from, "to", msg.To)
-		r.observeError("invalid_message")
+		// SDP/ICE for a call that isn't active: the peer was never reachable
+		// (dialed an offline or unregistered number) or the call already ended
+		// and candidates are still trickling in. Both are normal, not errors.
+		slog.DebugContext(ctx, msg.Type+" without active call", "from", from, "to", msg.To)
 		return
 	}
 	var callID int64
