@@ -1213,13 +1213,61 @@ func TestRelayObservesAuthFailedWhenAuthorizerDenies(t *testing.T) {
 func TestRelayDoesNotErrorOnSignalingWithoutCall(t *testing.T) {
 	// Stray control/media for a call that isn't active (raced past teardown or
 	// trailing a dial to an unreachable number) is normal and must not be
-	// recorded as a signaling error.
+	// recorded as a signaling error. Where a client-facing reply is part of the
+	// contract (ice_restart), it must still be delivered.
+	for _, tc := range []struct {
+		msg          *Message
+		wantReplyErr string // "" means no reply expected
+	}{
+		{&Message{Type: TypeICERestart, To: "3140002"}, "no active call"},
+		{&Message{Type: TypeDTMF, To: "3140002", Digit: "5"}, ""},
+		{&Message{Type: TypeAnswer, To: "3140002"}, ""},
+		{&Message{Type: TypeSDP, To: "3140002", SDP: "v=0\r\n"}, ""},
+		{&Message{Type: TypeICE, To: "3140002", Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"}, ""},
+	} {
+		hub := NewHub()
+		obs := &fakeErrorObserver{}
+		relay := NewRelay(hub, newMockTracker(), nil, nil)
+		relay.Errors = obs
+
+		conn1 := &Conn{Send: make(chan []byte, 10)}
+		_ = hub.Register("3140001", conn1)
+		relay.HandleMessage(context.Background(), "3140001", tc.msg)
+
+		if len(obs.seen) != 0 {
+			t.Fatalf("%s without active call must not be an error, got %v", tc.msg.Type, obs.seen)
+		}
+
+		select {
+		case data := <-conn1.Send:
+			reply, err := ParseMessage(data)
+			if err != nil {
+				t.Fatalf("%s: parse reply: %v", tc.msg.Type, err)
+			}
+			if tc.wantReplyErr == "" {
+				t.Fatalf("%s without active call should send no reply, got %+v", tc.msg.Type, reply)
+			}
+			if reply.Type != TypeError || reply.Error != tc.wantReplyErr {
+				t.Fatalf("%s: expected error reply %q, got %s/%q", tc.msg.Type, tc.wantReplyErr, reply.Type, reply.Error)
+			}
+		default:
+			if tc.wantReplyErr != "" {
+				t.Fatalf("%s without active call should reply %q, got nothing", tc.msg.Type, tc.wantReplyErr)
+			}
+		}
+	}
+}
+
+func TestRelayObservesInvalidMessageOnEmptyDestination(t *testing.T) {
+	// A relay message with no destination is malformed, a genuine fault. It is
+	// counted as invalid_message and dropped before the active-call guard, so it
+	// is not shadowed into that guard's benign drop.
 	for _, msg := range []*Message{
-		{Type: TypeICERestart, To: "3140002"},
-		{Type: TypeDTMF, To: "3140002", Digit: "5"},
-		{Type: TypeAnswer, To: "3140002"},
-		{Type: TypeSDP, To: "3140002", SDP: "v=0\r\n"},
-		{Type: TypeICE, To: "3140002", Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"},
+		{Type: TypeICERestart},
+		{Type: TypeDTMF, Digit: "5"},
+		{Type: TypeAnswer},
+		{Type: TypeSDP, SDP: "v=0\r\n"},
+		{Type: TypeICE, Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"},
 	} {
 		hub := NewHub()
 		obs := &fakeErrorObserver{}
@@ -1230,8 +1278,8 @@ func TestRelayDoesNotErrorOnSignalingWithoutCall(t *testing.T) {
 		_ = hub.Register("3140001", conn1)
 		relay.HandleMessage(context.Background(), "3140001", msg)
 
-		if len(obs.seen) != 0 {
-			t.Fatalf("%s without active call must not be an error, got %v", msg.Type, obs.seen)
+		if len(obs.seen) != 1 || obs.seen[0] != "invalid_message" {
+			t.Fatalf("%s with empty destination: expected invalid_message, got %v", msg.Type, obs.seen)
 		}
 	}
 }

@@ -380,7 +380,24 @@ func (r *Relay) inCallOrConference(ctx context.Context, from, to string) bool {
 	return false
 }
 
+// rejectNoDest reports a relay message that names no destination and returns
+// true if the caller should stop. An empty To is a malformed message
+// (invalid_message): a genuine fault, distinct from a valid destination with
+// no active call. It is checked before the active-call guard so it is counted
+// rather than collapsing into that guard's benign drop.
+func (r *Relay) rejectNoDest(ctx context.Context, from string, msg *Message) bool {
+	if msg.To != "" {
+		return false
+	}
+	slog.WarnContext(ctx, "no destination for message", "type", msg.Type, "from", from)
+	r.observeError("invalid_message")
+	return true
+}
+
 func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
+	if r.rejectNoDest(ctx, from, msg) {
+		return
+	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
 		// Stray control/media for a call that isn't active (raced past teardown,
 		// or trailing a dial to an unreachable number) is normal, not an error.
@@ -399,16 +416,14 @@ func (r *Relay) handleDTMF(ctx context.Context, from string, msg *Message) {
 const iceRestartDeliveryTimeout = 2 * time.Second
 
 func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message) {
+	if r.rejectNoDest(ctx, from, msg) {
+		return
+	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
 		// Recovery raced past call teardown: tell the client there's no call to
 		// restart, but don't count it as a signaling fault.
 		slog.DebugContext(ctx, "ice_restart without active call", "from", from, "to", msg.To)
 		_ = r.Hub.SendTo(from, &Message{Type: TypeError, Error: "no active call"})
-		return
-	}
-	if msg.To == "" {
-		slog.WarnContext(ctx, "no destination for ice_restart", "from", from)
-		r.observeError("invalid_message")
 		return
 	}
 	// Bounded retry so the offer is not silently dropped when the peer's send
@@ -421,6 +436,9 @@ func (r *Relay) handleICERestart(ctx context.Context, from string, msg *Message)
 }
 
 func (r *Relay) handleAnswer(ctx context.Context, from string, msg *Message) {
+	if r.rejectNoDest(ctx, from, msg) {
+		return
+	}
 	if !r.inCallOrConference(ctx, from, msg.To) {
 		// Answer landing after the caller already hung up is a benign race, not
 		// an error.
@@ -530,6 +548,9 @@ func (r *Relay) endActiveCallsAsHangup(ctx context.Context, number string) {
 // empty and omitted from the encoded message, so the wire format per type
 // is unchanged.
 func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Message) {
+	if r.rejectNoDest(ctx, from, msg) {
+		return
+	}
 	if msg.Extension && r.routeExtensionSignaling(ctx, from, msg) {
 		return
 	}
@@ -1007,12 +1028,9 @@ func (r *Relay) HandleRemoteReconnect(number, hardwareID string) {
 	r.cancelGraceLocal(number, hardwareID)
 }
 
+// forward sends msg to msg.To. Callers must reject an empty destination first
+// (see rejectNoDest); forward assumes a non-empty To.
 func (r *Relay) forward(ctx context.Context, msg *Message) {
-	if msg.To == "" {
-		slog.WarnContext(ctx, "no destination for message", "type", msg.Type, "from", msg.From)
-		r.observeError("invalid_message")
-		return
-	}
 	if err := r.Hub.SendTo(msg.To, msg); err != nil {
 		slog.ErrorContext(ctx, "forward failed", "to", msg.To, "err", err)
 		r.observeError("relay_delivery")
