@@ -47,6 +47,23 @@ func UserFromContext(ctx context.Context) *User {
 	return u
 }
 
+// setSessionCookie writes the session cookie that authenticates subsequent
+// requests. secure controls the Secure attribute: the production login paths
+// pass true, while the dev-session path derives it from the request scheme so
+// plain HTTP localhost still works.
+func setSessionCookie(w http.ResponseWriter, domain, token string, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Domain:   domain,
+		Path:     "/",
+		MaxAge:   int(SessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 // clearSessionCookie emits expiring Set-Cookie headers for both the
 // domain-scoped cookie (current config) and the host-scoped cookie (no Domain
 // attribute). Early sessions set without an explicit Domain stick around under
