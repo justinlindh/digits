@@ -1,6 +1,7 @@
 package web
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,11 +151,11 @@ func TestUpdateNotes(t *testing.T) {
 		}
 		pi, fw := updateNotes(idx, infos, "3.3.0", "1.3.0")
 		// Oldest Pi is 3.1.0, so notes span (3.1.0, 3.3.0]: 3.2.0 and 3.3.0.
-		if got := versions(pi); !equal(got, []string{"3.3.0", "3.2.0"}) {
+		if got := versions(pi); !slices.Equal(got, []string{"3.3.0", "3.2.0"}) {
 			t.Errorf("pi notes: got %v, want [3.3.0 3.2.0]", got)
 		}
 		// Oldest firmware is 1.1.0, so notes span (1.1.0, 1.3.0]: 1.2.0 and 1.3.0.
-		if got := versions(fw); !equal(got, []string{"1.3.0", "1.2.0"}) {
+		if got := versions(fw); !slices.Equal(got, []string{"1.3.0", "1.2.0"}) {
 			t.Errorf("fw notes: got %v, want [1.3.0 1.2.0]", got)
 		}
 	})
@@ -174,16 +175,4 @@ func versions(rs []updates.Release) []string {
 		out[i] = r.Version
 	}
 	return out
-}
-
-func equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
