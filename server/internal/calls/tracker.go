@@ -59,16 +59,6 @@ type ActiveCall struct {
 	StartedAt time.Time
 }
 
-// healthLifecycle is the subset of *HealthStore that Tracker drives for
-// per-session lifecycle. Init/Evict handle 2-party calls; InitConference/
-// EvictConference handle 3-way conferences.
-type healthLifecycle interface {
-	Init(callID int64)
-	Evict(callID int64)
-	InitConference(confID uuid.UUID)
-	EvictConference(confID uuid.UUID)
-}
-
 // dashNotifier is the subset of *dashboard/events.Broadcaster the Tracker
 // uses to wake dashboard SSE subscribers when active-call count changes.
 // Optional; nil disables notifications.
@@ -90,7 +80,7 @@ type Tracker struct {
 	mu          sync.Mutex
 	active      map[string]*ActiveCall // "caller→callee" → call
 	conferences *ConferenceTracker
-	health      healthLifecycle
+	health      *HealthStore
 	dashEvents  dashNotifier
 	callEndObs  callEndObserver
 	state       *CallState
@@ -114,7 +104,7 @@ func (t *Tracker) Conferences() *ConferenceTracker {
 
 // SetHealthStore registers an optional health store for per-call lifecycle
 // management. Safe to call once at startup; subsequent calls overwrite.
-func (t *Tracker) SetHealthStore(h healthLifecycle) {
+func (t *Tracker) SetHealthStore(h *HealthStore) {
 	t.mu.Lock()
 	t.health = h
 	t.mu.Unlock()
