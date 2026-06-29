@@ -556,7 +556,7 @@ func (r *Relay) handleSignalingForward(ctx context.Context, from string, msg *Me
 		// SDP/ICE for a call that isn't active: the peer was never reachable
 		// (dialed an offline or unregistered number) or the call already ended
 		// and candidates are still trickling in. Both are normal, not errors.
-		slog.DebugContext(ctx, msg.Type+" without active call", "from", from, "to", msg.To)
+		slog.DebugContext(ctx, "signaling without active call", "type", msg.Type, "from", from, "to", msg.To)
 		return
 	}
 	var callID int64
