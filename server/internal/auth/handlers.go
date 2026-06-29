@@ -111,16 +111,7 @@ func (h *Handlers) HandleMagicLinkVerify(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    sessionToken,
-		Domain:   h.cookieDomain,
-		Path:     "/",
-		MaxAge:   int(SessionTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, h.cookieDomain, sessionToken, true)
 
 	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
 }
@@ -168,16 +159,8 @@ func (h *Handlers) HandleDevSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dev-only: derive Secure from request scheme so plain HTTP localhost still works.
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    sessionToken,
-		Domain:   h.cookieDomain,
-		Path:     "/",
-		MaxAge:   int(SessionTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
-		SameSite: http.SameSiteLaxMode,
-	})
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	setSessionCookie(w, h.cookieDomain, sessionToken, secure)
 
 	http.Redirect(w, r, LoginRedirectFor(user), http.StatusSeeOther)
 }

@@ -144,14 +144,18 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 
 // UpdateLastLogin sets last_login_at to now for the given user.
 func (s *Store) UpdateLastLogin(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET last_login_at = NOW() WHERE id = $1`, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET last_login_at = NOW() WHERE id = $1`, userID); err != nil {
+		return fmt.Errorf("update last login: %w", err)
+	}
+	return nil
 }
 
 // LinkGoogleID associates a Google OAuth subject ID with an existing user.
 func (s *Store) LinkGoogleID(ctx context.Context, userID, googleID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET google_id = $1 WHERE id = $2`, googleID, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET google_id = $1 WHERE id = $2`, googleID, userID); err != nil {
+		return fmt.Errorf("link google id: %w", err)
+	}
+	return nil
 }
 
 // SetTheme updates the user's selected webapp theme.
@@ -159,16 +163,20 @@ func (s *Store) SetTheme(ctx context.Context, userID string, theme Theme) error 
 	if !theme.Valid() {
 		return fmt.Errorf("invalid theme: %q", theme)
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET theme = $1 WHERE id = $2`, theme, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET theme = $1 WHERE id = $2`, theme, userID); err != nil {
+		return fmt.Errorf("set theme: %w", err)
+	}
+	return nil
 }
 
 // MarkThemeChosen marks the welcome theme picker as completed. One-shot:
 // once true, the welcome gate releases and later /settings/theme changes
 // don't toggle it back.
 func (s *Store) MarkThemeChosen(ctx context.Context, userID string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET theme_chosen = TRUE WHERE id = $1`, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET theme_chosen = TRUE WHERE id = $1`, userID); err != nil {
+		return fmt.Errorf("mark theme chosen: %w", err)
+	}
+	return nil
 }
 
 // SetThemeAndMarkChosen flips both theme and theme_chosen in one UPDATE and
@@ -195,8 +203,10 @@ func (s *Store) SetCRTMode(ctx context.Context, userID string, mode CRTMode) err
 	if !mode.Valid() {
 		return fmt.Errorf("invalid crt mode: %q", mode)
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET crt_mode = $1 WHERE id = $2`, mode, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET crt_mode = $1 WHERE id = $2`, mode, userID); err != nil {
+		return fmt.Errorf("set crt mode: %w", err)
+	}
+	return nil
 }
 
 // SetAppearance updates the user's selected intercom appearance (day/night).
@@ -204,8 +214,10 @@ func (s *Store) SetAppearance(ctx context.Context, userID string, appearance App
 	if !appearance.Valid() {
 		return fmt.Errorf("invalid appearance: %q", appearance)
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE users SET appearance = $1 WHERE id = $2`, appearance, userID)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET appearance = $1 WHERE id = $2`, appearance, userID); err != nil {
+		return fmt.Errorf("set appearance: %w", err)
+	}
+	return nil
 }
 
 // sessionColumns lists every sessions-table column scanned into Session.
@@ -263,8 +275,10 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, er
 // DeleteSession removes a session by its raw token (used for logout).
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
 	hash := device.HashToken(token)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, hash)
-	return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, hash); err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
 }
 
 // DeleteUser deletes the user row. FK CASCADE handles sessions and household_members.
@@ -356,10 +370,12 @@ func (s *Store) CountUsers(ctx context.Context) (int, error) {
 // CleanupExpired removes expired sessions and used/expired magic links.
 func (s *Store) CleanupExpired(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at < NOW()`); err != nil {
-		return err
+		return fmt.Errorf("cleanup expired sessions: %w", err)
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE expires_at < NOW() OR used = TRUE`)
-	return err
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM magic_links WHERE expires_at < NOW() OR used = TRUE`); err != nil {
+		return fmt.Errorf("cleanup expired magic links: %w", err)
+	}
+	return nil
 }
 
 // SetActiveHousehold updates the active_household_id on the user's current session.

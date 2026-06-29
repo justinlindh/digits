@@ -163,16 +163,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     CookieName,
-		Value:    sessionToken,
-		Domain:   g.cookieDomain,
-		Path:     "/",
-		MaxAge:   int(SessionTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, g.cookieDomain, sessionToken, true)
 
 	http.Redirect(w, r, safeReturnTo(returnTo, user), http.StatusSeeOther)
 }
