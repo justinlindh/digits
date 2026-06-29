@@ -186,7 +186,6 @@ func (r *Registry) RegisterCallsGauge(read func() float64) {
 var validErrorCategories = map[string]struct{}{
 	"turn_alloc_failed": {},
 	"ice_timeout":       {},
-	"peer_unreachable":  {},
 	"call_setup_failed": {},
 	"auth_failed":       {},
 	"invalid_message":   {},

@@ -50,13 +50,15 @@ All metric names are prefixed with `digits_signald_`.
 ### Signaling errors (signald only)
 
 - `digits_signald_signaling_errors_total{category}` (counter): signaling
-  errors observed by the relay. `category` is a closed set defined in code
+  errors observed by the relay. The set counts genuine server-side faults
+  only: normal user behavior, such as dialing a phone that is offline or
+  unregistered (and the SDP/ICE/DTMF that trails such a dial), is not an
+  error and is not counted. `category` is a closed set defined in code
   (see `internal/metrics/metrics.go`):
-  - `peer_unreachable`: a CALL was sent to a phone not connected.
   - `auth_failed`: the call authorizer denied the call.
   - `call_setup_failed`: the tracker failed to record a call initiation.
-  - `invalid_message`: the relay received a malformed or out-of-context
-    message (e.g. `ICE_RESTART` with no active call).
+  - `invalid_message`: the relay received a malformed message (e.g. one with
+    no destination).
   - `relay_delivery`: a forward to a peer's WebSocket failed.
   - `turn_alloc_failed`, `ice_timeout`: reserved for future use.
   - Any value not in the closed set collapses to `other`. The relay
