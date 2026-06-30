@@ -108,7 +108,7 @@ func TestLinksPage_InviteFriendButton(t *testing.T) {
 func TestDeletePhone(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	_, err := lineStore.Add(context.Background(), "3140001", "Test Phone", hh.ID)
 	if err != nil {
 		t.Fatalf("add test line: %v", err)
@@ -136,7 +136,7 @@ func TestDeletePhone(t *testing.T) {
 func TestConvertLineToExtension(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 
 	srcLn, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestConvertLineToExtension(t *testing.T) {
 		t.Error("source line should have been deleted")
 	}
 
-	devStore := device.NewStore(database)
+	devStore := device.NewStore(database.DB)
 	devices, err := devStore.ListByLine(context.Background(), tgtLn.ID)
 	if err != nil {
 		t.Fatalf("list target devices: %v", err)
@@ -190,7 +190,7 @@ func TestConvertLineToExtension(t *testing.T) {
 func TestConvertLineToSelfRejected(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 
 	ln, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
 	if err != nil {
@@ -552,7 +552,7 @@ func setupVoiceStyleLine(t *testing.T, h *Handler, database *db.Database, authSt
 	if err != nil {
 		t.Fatalf("create household: %v", err)
 	}
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	if _, err := lineStore.Add(context.Background(), "3140001", "Test Phone", hh.ID); err != nil {
 		t.Fatalf("add line: %v", err)
 	}
@@ -1734,7 +1734,7 @@ func TestPhoneDetail_OmitsLANIPWhenOffline(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 	// Add a line WITHOUT registering a Conn: phone is offline.
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140044", "Garage", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
@@ -1859,7 +1859,7 @@ func TestDashboard_DoesNotRenderLANIP(t *testing.T) {
 func TestChangePhoneNumber(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 
 	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
 	if err != nil {
@@ -1899,7 +1899,7 @@ func TestChangePhoneNumber(t *testing.T) {
 func TestChangePhoneNumberDuplicate(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 
 	_, err := lineStore.Add(context.Background(), "3140001", "Kitchen", hh.ID)
 	if err != nil {
@@ -1937,7 +1937,7 @@ func TestPhoneDetail_BuildsPerDeviceViews(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140010", "Kitchen", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
@@ -2041,7 +2041,7 @@ func TestPhoneRestart_TargetsHardware(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140011", "Porch", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
@@ -2090,7 +2090,7 @@ func TestPhoneRestart_RejectsForeignHardware(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140012", "Garage", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
@@ -2124,7 +2124,7 @@ func TestPhoneOperator_SwapsPanel(t *testing.T) {
 	h, database, authStore := setupHandler(t)
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140020", "Study", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)
@@ -2218,7 +2218,7 @@ func TestPhoneOperator_AMTheme(t *testing.T) {
 		_ = authStore.SetTheme(context.Background(), user.ID, auth.ThemeIntercom)
 	})
 
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "3140021", "Attic", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)

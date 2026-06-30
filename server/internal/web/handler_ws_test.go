@@ -226,3 +226,97 @@ func TestWSRegister_PairedDevice_CorrectNumber_NoRenumber(t *testing.T) {
 		t.Fatalf("expected timeout (no renumber), got: %v", err)
 	}
 }
+
+// An unknown device (no paired row) that registers must be issued a pairing
+// code and parked under its unpaired hardware-ID key, never under the line
+// number it claimed. This is the first-contact handshake every new device goes
+// through; parking it under the unpaired prefix lets it receive the eventual
+// TypePaired via SendToHardware without displacing a real line's connection.
+func TestWSRegister_UnpairedDevice_GetsPairingCode(t *testing.T) {
+	h, database, _ := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID := fmt.Sprintf("test-hw-unpaired-%d", time.Now().UnixNano())
+	number := fmt.Sprintf("88%05d", time.Now().UnixNano()%100000)
+	t.Cleanup(func() {
+		_, _ = database.DB.Exec("DELETE FROM devices WHERE hardware_id = $1", hwID)
+	})
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:       signaling.TypeRegister,
+		Number:     number,
+		HardwareID: hwID,
+	})
+
+	msg := recvMsg(t, ws)
+	if msg.Type != signaling.TypePairingCode {
+		t.Fatalf("expected %q, got %q (error=%q)", signaling.TypePairingCode, msg.Type, msg.Error)
+	}
+	if msg.PairingCode == "" {
+		t.Error("pairing code message carried an empty code")
+	}
+	if msg.PairingCodeTTL != int(pairing.CodeTTL.Seconds()) {
+		t.Errorf("PairingCodeTTL = %d, want %d", msg.PairingCodeTTL, int(pairing.CodeTTL.Seconds()))
+	}
+
+	// The device is parked under the unpaired prefix, not the claimed number.
+	waitForRegister(t, h.hub, signaling.UnpairedPrefix+hwID)
+	if h.hub.IsOnline(number) {
+		t.Errorf("unpaired device must not be online under claimed number %q", number)
+	}
+}
+
+// A paired device clears its own server-side pairing by sending a repair
+// message (the *#0* service code) before reboot. After repair the stored token
+// and paired_at are gone, so the device's next token-less register is treated
+// as a fresh pair-up instead of being rejected for a missing token.
+func TestWSRegister_RepairUnpairsDevice(t *testing.T) {
+	h, database, authStore := setupHandler(t)
+	srv := httptest.NewServer(h.Router())
+	defer srv.Close()
+
+	hwID, number, token := setupPairedDevice(t, database, h.pairingStore, h.householdStore, authStore)
+
+	// Precondition: the device is paired and its token validates.
+	paired, valid, err := h.deviceStore.AuthStatus(context.Background(), hwID, token)
+	if err != nil {
+		t.Fatalf("auth status before repair: %v", err)
+	}
+	if !paired || !valid {
+		t.Fatalf("device should be paired with a valid token before repair (paired=%v valid=%v)", paired, valid)
+	}
+
+	ws := dialWS(t, srv)
+	sendMsg(t, ws, signaling.Message{
+		Type:        signaling.TypeRegister,
+		Number:      number,
+		HardwareID:  hwID,
+		DeviceToken: token,
+	})
+	// Register runs in the read goroutine; wait for it so the read pump is live
+	// to receive the repair message that follows.
+	waitForRegister(t, h.hub, number)
+
+	sendMsg(t, ws, signaling.Message{
+		Type:       signaling.TypeRepair,
+		HardwareID: hwID,
+	})
+
+	// Unpair runs in the read pump; poll until the device row reflects it.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		stillPaired, _, err := h.deviceStore.AuthStatus(context.Background(), hwID, token)
+		if err != nil {
+			t.Fatalf("auth status after repair: %v", err)
+		}
+		if !stillPaired {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("device still paired 2s after repair message")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

@@ -71,7 +71,7 @@ func TestCanCall_SameHousehold(t *testing.T) {
 	auth, database := testAuthorizer(t)
 	householdID := createTestHousehold(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "1000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCanCall_LinkedHouseholds(t *testing.T) {
 	houseB := createTestHousehold(t, database)
 	userID := createAuthTestUser(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "2000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestCanCall_UnlinkedHouseholds(t *testing.T) {
 	houseA := createTestHousehold(t, database)
 	houseB := createTestHousehold(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "3000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestCanCall_UnknownCaller(t *testing.T) {
 	auth, database := testAuthorizer(t)
 	householdID := createTestHousehold(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "4000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestCanCall_UnknownCallee(t *testing.T) {
 	auth, database := testAuthorizer(t)
 	householdID := createTestHousehold(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "4100001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestCanCall_RevokedLink(t *testing.T) {
 	houseB := createTestHousehold(t, database)
 	userID := createAuthTestUser(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "5000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestCanCall_PendingLink(t *testing.T) {
 	houseB := createTestHousehold(t, database)
 	userID := createAuthTestUser(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "6000001", "Alice", houseA); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestCanCall_SameNumber(t *testing.T) {
 	auth, database := testAuthorizer(t)
 	householdID := createTestHousehold(t, database)
 
-	store := NewStore(database)
+	store := NewStore(database.DB)
 	if _, err := store.Add(context.Background(), "7000001", "Alice", householdID); err != nil {
 		t.Fatalf("Add Alice: %v", err)
 	}

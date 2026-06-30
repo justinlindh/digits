@@ -104,8 +104,8 @@ func run(ctx context.Context) error {
 	defer func() { _ = database.Close() }()
 
 	// Core stores
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
+	lineStore := line.NewStore(database.DB)
+	deviceStore := device.NewStore(database.DB)
 	hub := signaling.NewHub()
 
 	// Redis pub/sub for multi-replica signaling. When REDIS_URL is set,

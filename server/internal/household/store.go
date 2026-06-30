@@ -201,8 +201,10 @@ func (s *Store) IsMemberByEmail(ctx context.Context, householdID, email string) 
 // CountHouseholds returns the total number of households.
 func (s *Store) CountHouseholds(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households`).Scan(&count)
-	return count, err
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM households`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count households: %w", err)
+	}
+	return count, nil
 }
 
 // UpdateName changes the name of a household.
@@ -253,11 +255,13 @@ func (s *Store) RemoveMember(ctx context.Context, userID, householdID string) er
 // MemberCount returns the number of members in a household.
 func (s *Store) MemberCount(ctx context.Context, householdID string) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx,
+	if err := s.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM household_members WHERE household_id = $1`,
 		householdID,
-	).Scan(&count)
-	return count, err
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("member count: %w", err)
+	}
+	return count, nil
 }
 
 // SetCallHistoryEnabled toggles call history for a household.
