@@ -24,7 +24,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
-	s := NewStore(database)
+	s := NewStore(database.DB)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM devices")
 		_, _ = database.DB.Exec("DELETE FROM lines")

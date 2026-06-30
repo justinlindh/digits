@@ -24,12 +24,11 @@ type linksData struct {
 }
 
 type linkRow struct {
-	ID             string
-	OtherHousehold string
-	InviteCode     string
-	Status         string
-	CreatedAt      time.Time
-	AcceptedAt     *time.Time
+	ID         string
+	InviteCode string
+	Status     string
+	CreatedAt  time.Time
+	AcceptedAt *time.Time
 }
 
 func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {

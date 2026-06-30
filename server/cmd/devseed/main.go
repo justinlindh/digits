@@ -152,7 +152,7 @@ func main() {
 		auth:  auth.NewStore(database.DB),
 		house: household.NewStore(database.DB),
 		link:  household.NewLinkStore(database.DB),
-		line:  line.NewStore(database),
+		line:  line.NewStore(database.DB),
 		db:    database.DB,
 	}
 

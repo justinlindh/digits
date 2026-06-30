@@ -20,6 +20,18 @@ const LinkStatusPending = "pending"
 const inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 const inviteCodeLength = 8
 
+// Link operation failures, named to match invite.go's sentinel pattern so the
+// package is internally consistent and the strings live in one place. The
+// handler surfaces the message text to the user via the /links?error= query
+// param, so the wording is UI copy and must stay user-readable.
+var (
+	ErrInviteCodeUsed   = errors.New("invite code not found or already used")
+	ErrSelfLink         = errors.New("cannot link a household to itself")
+	ErrAlreadyLinked    = errors.New("households are already linked")
+	ErrLinkNotRevocable = errors.New("link not found or already revoked")
+	ErrLinkNotFound     = errors.New("link not found")
+)
+
 // linkColumns is the SELECT/RETURNING list for queries that scan into a
 // HouseholdLink. Field order must stay aligned with the destination order in
 // scanLink below.
@@ -117,7 +129,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 			FOR UPDATE
 		`, code))
 		if errors.Is(err, sql.ErrNoRows) {
-			return errors.New("invite code not found or already used")
+			return ErrInviteCodeUsed
 		}
 		if err != nil {
 			return fmt.Errorf("lookup invite: %w", err)
@@ -125,7 +137,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 
 		// Prevent self-linking
 		if link.HouseholdAID == acceptingHouseholdID {
-			return errors.New("cannot link a household to itself")
+			return ErrSelfLink
 		}
 
 		// Check not already linked
@@ -134,7 +146,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 			return err
 		}
 		if already {
-			return errors.New("households are already linked")
+			return ErrAlreadyLinked
 		}
 
 		// Normalize: a_id < b_id
@@ -213,7 +225,7 @@ func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID stri
 		RETURNING id
 	`, time.Now(), revokedByUserID, linkID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("link not found or already revoked")
+		return ErrLinkNotRevocable
 	}
 	if err != nil {
 		return fmt.Errorf("revoke link: %w", err)
@@ -228,7 +240,7 @@ func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, err
 		FROM household_links WHERE id = $1
 	`, id))
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errors.New("link not found")
+		return nil, ErrLinkNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get link by id: %w", err)
@@ -265,8 +277,10 @@ func scanLinks(rows *sql.Rows) ([]HouseholdLink, error) {
 // CountActiveLinks returns the total number of active household links.
 func (s *LinkStore) CountActiveLinks(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_links WHERE status = 'active'`).Scan(&count)
-	return count, err
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM household_links WHERE status = 'active'`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active links: %w", err)
+	}
+	return count, nil
 }
 
 // NumberConflict represents a phone number that exists in both households.

@@ -16,7 +16,6 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
@@ -43,9 +42,9 @@ type Store struct {
 	db *sql.DB
 }
 
-// NewStore creates a new device Store backed by the given database.
-func NewStore(database *db.Database) *Store {
-	return &Store{db: database.DB}
+// NewStore creates a new device Store backed by an existing *sql.DB.
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 // deviceColumns is the SELECT list for queries that scan into a Device via

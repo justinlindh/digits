@@ -17,7 +17,6 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
@@ -106,9 +105,9 @@ type Store struct {
 	db *sql.DB
 }
 
-// NewStore wraps a *db.Database.
-func NewStore(database *db.Database) *Store {
-	return &Store{db: database.DB}
+// NewStore wraps an existing *sql.DB.
+func NewStore(db *sql.DB) *Store {
+	return &Store{db: db}
 }
 
 // Add inserts a new line for the given household and returns it. The initial
@@ -386,19 +385,4 @@ func (s *Store) AllSilentByHousehold(ctx context.Context, householdID string) (b
 		return false, fmt.Errorf("all silent by household: %w", err)
 	}
 	return total > 0 && total == silentCount, nil
-}
-
-// GetHouseholdIDByNumber returns the household UUID for the given phone number.
-func (s *Store) GetHouseholdIDByNumber(ctx context.Context, number string) (string, error) {
-	var householdID string
-	err := s.db.QueryRowContext(ctx,
-		`SELECT household_id FROM lines WHERE number = $1`, number,
-	).Scan(&householdID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNotFound
-	}
-	if err != nil {
-		return "", fmt.Errorf("get household id by number: %w", err)
-	}
-	return householdID, nil
 }

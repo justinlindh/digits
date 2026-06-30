@@ -132,7 +132,7 @@ func TestHandleAccountDeletePost(t *testing.T) {
 	cookie, hh := setupAuthedHousehold(t, h, database, authStore)
 
 	// Add a line so we can verify it's cleaned up.
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), "555-0099", "Delete Test", hh.ID)
 	if err != nil {
 		t.Fatalf("add line: %v", err)

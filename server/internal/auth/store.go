@@ -363,8 +363,10 @@ func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, st
 // CountUsers returns the total number of user accounts.
 func (s *Store) CountUsers(ctx context.Context) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
-	return count, err
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count users: %w", err)
+	}
+	return count, nil
 }
 
 // CleanupExpired removes expired sessions and used/expired magic links.

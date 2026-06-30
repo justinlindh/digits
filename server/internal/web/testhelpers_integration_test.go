@@ -126,8 +126,8 @@ func waitForRegister(t *testing.T, hub *signaling.Hub, number string) {
 // can swap the field for their own instance.
 func testDeps(t *testing.T, database *db.Database) (Deps, *auth.Store) {
 	t.Helper()
-	lineStore := line.NewStore(database)
-	deviceStore := device.NewStore(database)
+	lineStore := line.NewStore(database.DB)
+	deviceStore := device.NewStore(database.DB)
 	hub := signaling.NewHub()
 	tracker := calls.New(database)
 	healthStore := calls.NewHealthStore(database, calls.WithFlushDisabled())
@@ -226,7 +226,7 @@ func setupAuthedHousehold(t *testing.T, h *Handler, database *db.Database, authS
 // so callers can assert push payloads via conn.Send.
 func setupLineWithConn(t *testing.T, h *Handler, database *db.Database, hh *household.Household, number, name string) (*line.Line, *signaling.Conn) {
 	t.Helper()
-	lineStore := line.NewStore(database)
+	lineStore := line.NewStore(database.DB)
 	ln, err := lineStore.Add(context.Background(), number, name, hh.ID)
 	if err != nil {
 		t.Fatalf("add line %s: %v", number, err)

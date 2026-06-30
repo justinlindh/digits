@@ -23,7 +23,7 @@ func testStore(t *testing.T) (*Store, *db.Database) {
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
-	s := NewStore(database)
+	s := NewStore(database.DB)
 	t.Cleanup(func() {
 		_, _ = database.DB.Exec("DELETE FROM lines")
 		_, _ = database.DB.Exec("DELETE FROM household_members")
@@ -347,29 +347,6 @@ func TestStoreSettingsDefaultAndUpdate(t *testing.T) {
 	}
 	if got.Settings.VoiceStyle != VoiceStyleCopper {
 		t.Errorf("empty json should fall through to default, got %q", got.Settings.VoiceStyle)
-	}
-}
-
-func TestGetHouseholdIDByNumber(t *testing.T) {
-	s, database := testStore(t)
-	householdID := createTestHousehold(t, database)
-
-	if _, err := s.Add(context.Background(), "5550001", "HHTest", householdID); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-
-	got, err := s.GetHouseholdIDByNumber(context.Background(), "5550001")
-	if err != nil {
-		t.Fatalf("GetHouseholdIDByNumber: %v", err)
-	}
-	if got != householdID {
-		t.Errorf("HouseholdID = %q, want %q", got, householdID)
-	}
-
-	// Non-existent number should return error
-	_, err = s.GetHouseholdIDByNumber(context.Background(), "0000000")
-	if err == nil {
-		t.Error("expected error for non-existent number, got nil")
 	}
 }
 
