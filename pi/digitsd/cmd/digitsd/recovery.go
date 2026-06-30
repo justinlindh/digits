@@ -157,6 +157,20 @@ func (rs *recoveryState) snapshot() map[string]any {
 	}
 }
 
+// recoverySession bundles the dependencies that every recovery primitive
+// needs: the Pico serial port, the audio mixer, the shared recoveryState, and
+// the debug log. runRecoveryMode builds one and the route handlers, voice
+// loop, key handler, and factory-reset sequence hang off it as methods so the
+// quartet does not have to be threaded through every signature. Any of sp or
+// mixer may be nil when the corresponding subsystem failed to come up; the
+// methods guard for that the same way the standalone functions did.
+type recoverySession struct {
+	sp    *phone.SerialPort
+	mixer *audio.Mixer
+	state *recoveryState
+	dbg   *debugLog
+}
+
 func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, audioMod *subsystem.AudioModule) {
 	slog.Info("digitsd: entering recovery mode", "pid", os.Getpid())
 
@@ -188,9 +202,11 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 	}
 	dbg.add("init", fmt.Sprintf("tones_loaded=%d serial=%v audio=%v", toneCount, sp != nil, mixer != nil))
 
+	sess := &recoverySession{sp: sp, mixer: mixer, state: state, dbg: dbg}
+
 	// Mount recovery-specific routes on the web module's mux.
 	mux := web.Mux()
-	mountRecoveryRoutes(mux, state, mixer, sp, dbg)
+	sess.mountRoutes(mux)
 
 	// Honor an app/service-code triggered factory reset. triggerFactoryReset
 	// (normal mode) writes AutoFactoryResetFlag, sets the boot counter to its
@@ -204,25 +220,25 @@ func runRecoveryMode(web *subsystem.WebModule, serial *subsystem.SerialModule, a
 		slog.Info("recovery: auto-factory-reset flag set, running factory reset without menu")
 		_ = os.Remove(bootcount.AutoFactoryResetFlag)
 		if state.startReset() {
-			doRecoveryFactoryReset(sp, mixer, state, dbg)
+			sess.doFactoryReset()
 		}
-		// doRecoveryFactoryReset reboots on success. If it returned, the reset
-		// failed; fall through to the menu so the user can retry or inspect.
+		// doFactoryReset reboots on success. If it returned, the reset failed;
+		// fall through to the menu so the user can retry or inspect.
 	}
 
 	// Run voice menu event loop (only if serial and audio are available).
 	if sp != nil && mixer != nil {
-		runRecoveryVoiceLoop(sp, mixer, state, dbg)
+		sess.runVoiceLoop()
 	} else {
 		slog.Warn("recovery: serial or audio unavailable, voice menu disabled")
 		select {}
 	}
 }
 
-// mountRecoveryRoutes registers recovery-specific HTTP handlers on the
-// web module's shared mux. The web module itself handles /status (subsystem
-// statuses) and /log/raw (formatted log tail).
-func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.Mixer, sp *phone.SerialPort, dbg *debugLog) {
+// mountRoutes registers recovery-specific HTTP handlers on the web module's
+// shared mux. The web module itself handles /status (subsystem statuses) and
+// /log/raw (formatted log tail).
+func (s *recoverySession) mountRoutes(mux *http.ServeMux) {
 	staticFS, err := fs.Sub(recoveryStaticFS, "recovery_static")
 	if err != nil {
 		slog.Error("recovery web: embed sub", "error", err)
@@ -246,15 +262,15 @@ func mountRecoveryRoutes(mux *http.ServeMux, state *recoveryState, mixer *audio.
 	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		resp := map[string]any{
-			"events": dbg.snapshot(),
+			"events": s.dbg.snapshot(),
 		}
-		if mixer != nil {
-			resp["mixer_active"] = mixer.Active()
-			resp["once_playing"] = mixer.OncePlaying()
-			resp["tone_names"] = mixer.ToneNames()
+		if s.mixer != nil {
+			resp["mixer_active"] = s.mixer.Active()
+			resp["once_playing"] = s.mixer.OncePlaying()
+			resp["tone_names"] = s.mixer.ToneNames()
 		}
-		if sp != nil {
-			resp["serial_ok"] = sp.Ping() == nil
+		if s.sp != nil {
+			resp["serial_ok"] = s.sp.Ping() == nil
 		}
 		json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	})
@@ -272,7 +288,7 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 
 	mux.HandleFunc("/action", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(state.snapshot()) //nolint:errcheck
+		json.NewEncoder(w).Encode(s.state.snapshot()) //nolint:errcheck
 	})
 
 	mux.HandleFunc("/try-again", func(w http.ResponseWriter, r *http.Request) {
@@ -280,10 +296,10 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		state.startTryAgain()
-		dbg.add("action", "try-again via web")
+		s.state.startTryAgain()
+		s.dbg.add("action", "try-again via web")
 		clearRecoveryBootState()
-		clearRecoveryPhase(sp)
+		clearRecoveryPhase(s.sp)
 		w.WriteHeader(http.StatusOK)
 		go doReboot()
 	})
@@ -293,92 +309,92 @@ setTimeout(poll,2000)}poll()</script></body></html>`)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !state.startReset() {
+		if !s.state.startReset() {
 			http.Error(w, "factory reset already in progress", http.StatusConflict)
 			return
 		}
-		dbg.add("action", "factory-reset via web")
+		s.dbg.add("action", "factory-reset via web")
 		w.WriteHeader(http.StatusOK)
-		go func() { doRecoveryFactoryReset(sp, mixer, state, dbg) }()
+		go func() { s.doFactoryReset() }()
 	})
 }
 
-// runRecoveryVoiceLoop runs the voice menu on the phone handset using the
-// shared voicePromptLoop, wiring in recovery-specific key handling.
-func runRecoveryVoiceLoop(sp *phone.SerialPort, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) {
-	events := sp.Events()
-	dbg.add("loop", "waiting for HOOK:OFF")
+// runVoiceLoop runs the voice menu on the phone handset using the shared
+// voicePromptLoop, wiring in recovery-specific key handling.
+func (s *recoverySession) runVoiceLoop() {
+	events := s.sp.Events()
+	s.dbg.add("loop", "waiting for HOOK:OFF")
 
 	cfg := voicePromptConfig{
 		Clip:           "recovery_menu",
 		ReplayInterval: 0, // no pause between replays; timeout is inside waitForKeyOrHangup
 		OnKey: func(key string) bool {
-			return recoveryHandleKey(sp, key, events, mixer, state, dbg)
+			return s.handleKey(key, events)
 		},
 	}
-	voicePromptLoop(events, mixer, cfg)
+	voicePromptLoop(events, s.mixer, cfg)
 }
 
-// recoveryHandleKey processes a key press during the recovery voice menu.
-// Returns true to end the session (e.g. after triggering an action).
-func recoveryHandleKey(sp *phone.SerialPort, key string, events <-chan string, mixer *audio.Mixer, state *recoveryState, dbg *debugLog) bool {
+// handleKey processes a key press during the recovery voice menu. Returns true
+// to end the session (e.g. after triggering an action).
+func (s *recoverySession) handleKey(key string, events <-chan string) bool {
 	switch key {
 	case "1":
-		dbg.add("action", "key 1: restarting")
-		state.startTryAgain()
+		s.dbg.add("action", "key 1: restarting")
+		s.state.startTryAgain()
 		slog.Info("recovery: restart triggered via keypad")
-		mixer.PlayOnce("restarting")
-		waitForOnceComplete(mixer, 5*time.Second)
+		s.mixer.PlayOnce("restarting")
+		waitForOnceComplete(s.mixer, 5*time.Second)
 		clearRecoveryBootState()
-		clearRecoveryPhase(sp)
+		clearRecoveryPhase(s.sp)
 		doReboot()
 		return true
 
 	case "2":
-		dbg.add("action", "key 2: awaiting factory reset confirmation")
-		mixer.PlayOnce("confirm_factory_reset")
+		s.dbg.add("action", "key 2: awaiting factory reset confirmation")
+		s.mixer.PlayOnce("confirm_factory_reset")
 		confirm, hungUp := waitForKeyOrHangup(events, 15*time.Second)
 		if hungUp {
-			mixer.StopAll()
+			s.mixer.StopAll()
 			return true
 		}
 		if confirm != "" {
-			dbg.add("action", fmt.Sprintf("confirm key=%s, stopping all audio", confirm))
-			mixer.StopAll()
+			s.dbg.add("action", fmt.Sprintf("confirm key=%s, stopping all audio", confirm))
+			s.mixer.StopAll()
 			if tone := dtmfToneName(confirm); tone != "" {
-				dbg.add("audio", fmt.Sprintf("PlayOnce %s", tone))
-				mixer.PlayOnce(tone)
-				waitForOnceComplete(mixer, 500*time.Millisecond)
+				s.dbg.add("audio", fmt.Sprintf("PlayOnce %s", tone))
+				s.mixer.PlayOnce(tone)
+				waitForOnceComplete(s.mixer, 500*time.Millisecond)
 			}
 		}
 		if confirm != "2" {
-			dbg.add("action", "factory reset not confirmed, replaying menu")
+			s.dbg.add("action", "factory reset not confirmed, replaying menu")
 			return false
 		}
-		if !state.startReset() {
-			dbg.add("action", "factory reset already in progress")
+		if !s.state.startReset() {
+			s.dbg.add("action", "factory reset already in progress")
 			return true
 		}
 		slog.Info("recovery: factory reset triggered via keypad")
-		doRecoveryFactoryReset(sp, mixer, state, dbg)
+		s.doFactoryReset()
 		return true
 
 	default:
-		dbg.add("action", fmt.Sprintf("unknown key=%s, replaying menu", key))
+		s.dbg.add("action", fmt.Sprintf("unknown key=%s, replaying menu", key))
 		return false
 	}
 }
 
-// doRecoveryFactoryReset performs the full factory reset sequence.
-func doRecoveryFactoryReset(sp *phone.SerialPort, mixer *audio.Mixer, rs *recoveryState, dbg *debugLog) {
-	dbg.add("reset", "starting factory reset")
+// doFactoryReset performs the full factory reset sequence.
+func (s *recoverySession) doFactoryReset() {
+	s.dbg.add("reset", "starting factory reset")
 	slog.Info("recovery: starting factory reset")
-	rs.setStatus("Starting factory reset...")
+	s.state.setStatus("Starting factory reset...")
 
 	playOnce := func(name string) {
-		if mixer != nil {
-			mixer.PlayOnce(name)
-			waitForOnceComplete(mixer, 10*time.Second)
+		if s.mixer != nil {
+			s.mixer.PlayOnce(name)
+			waitForOnceComplete(s.mixer, 10*time.Second)
 		}
 	}
 
@@ -388,25 +404,25 @@ func doRecoveryFactoryReset(sp *phone.SerialPort, mixer *audio.Mixer, rs *recove
 	rootfsImg := "/rootfs.img.zst"
 	if _, err := os.Stat(rootfsImg); err != nil {
 		slog.Error("recovery: rootfs.img.zst not found", "path", rootfsImg, "error", err)
-		rs.setFailed("rootfs image not found")
+		s.state.setFailed("rootfs image not found")
 		playOnce("error_tone")
 		return
 	}
 
-	rs.setStatus("Restoring rootfs (this takes a few minutes)...")
+	s.state.setStatus("Restoring rootfs (this takes a few minutes)...")
 	slog.Info("recovery: decompressing rootfs to /dev/mmcblk0p2")
 	cmd := exec.Command("sh", "-c", fmt.Sprintf("zstd -d -c %s | dd of=/dev/mmcblk0p2 bs=4M conv=fsync", rootfsImg))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		slog.Error("recovery: rootfs restore failed", "error", err)
-		rs.setFailed(fmt.Sprintf("rootfs restore failed: %v", err))
+		s.state.setFailed(fmt.Sprintf("rootfs restore failed: %v", err))
 		playOnce("error_tone")
 		return
 	}
 	slog.Info("recovery: rootfs restored")
 
-	rs.setStatus("Formatting data partition...")
+	s.state.setStatus("Formatting data partition...")
 	playOnce("formatting_data")
 
 	// Flush and close the crash log before unmounting /data.
@@ -424,16 +440,16 @@ func doRecoveryFactoryReset(sp *phone.SerialPort, mixer *audio.Mixer, rs *recove
 	mkfs.Stderr = os.Stderr
 	if err := mkfs.Run(); err != nil {
 		slog.Error("recovery: mkfs.ext4 failed", "error", err)
-		rs.setFailed(fmt.Sprintf("data format failed: %v", err))
+		s.state.setFailed(fmt.Sprintf("data format failed: %v", err))
 		playOnce("error_tone")
 		return
 	}
 
-	rs.setStatus("Restoring default data...")
+	s.state.setStatus("Restoring default data...")
 	slog.Info("recovery: mounting /data")
 	if err := syscall.Mount("/dev/mmcblk0p4", "/data", "ext4", 0, ""); err != nil {
 		slog.Error("recovery: mount /data failed", "error", err)
-		rs.setFailed(fmt.Sprintf("data mount failed: %v", err))
+		s.state.setFailed(fmt.Sprintf("data mount failed: %v", err))
 		playOnce("error_tone")
 		return
 	}
@@ -451,10 +467,10 @@ func doRecoveryFactoryReset(sp *phone.SerialPort, mixer *audio.Mixer, rs *recove
 		slog.Info("recovery: no data skeleton found, skipping", "path", skeletonPath)
 	}
 
-	rs.setStatus("Factory reset complete. Rebooting...")
+	s.state.setStatus("Factory reset complete. Rebooting...")
 	slog.Info("recovery: factory reset complete")
-	if sp != nil {
-		sp.StateSet("SETUP")
+	if s.sp != nil {
+		s.sp.StateSet("SETUP")
 	}
 	playOnce("reset_complete")
 
