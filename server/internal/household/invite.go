@@ -72,6 +72,8 @@ func scanInvite(row dbutil.RowScanner) (*HouseholdInvite, error) {
 	return inv, nil
 }
 
+// CreateInvite issues a pending invite for email to join householdID and
+// returns it with a freshly generated token and expiry.
 func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invitedByUserID string) (*HouseholdInvite, error) {
 	token, err := generateInviteToken()
 	if err != nil {
@@ -104,6 +106,8 @@ func (s *InviteStore) GetByID(ctx context.Context, id string) (*HouseholdInvite,
 	return inv, nil
 }
 
+// GetByToken looks up an invite by its token, returning ErrInviteNotFound
+// when no row matches.
 func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdInvite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		SELECT `+inviteColumns+` FROM household_invites WHERE token = $1
@@ -117,6 +121,8 @@ func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdI
 	return inv, nil
 }
 
+// AcceptInvite marks a pending, unexpired invite as accepted and returns it.
+// It returns ErrInviteExpiredOrUsed when no matching pending invite exists.
 func (s *InviteStore) AcceptInvite(ctx context.Context, token string) (*HouseholdInvite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		UPDATE household_invites
@@ -134,6 +140,8 @@ func (s *InviteStore) AcceptInvite(ctx context.Context, token string) (*Househol
 	return inv, nil
 }
 
+// CancelInvite marks a pending invite as cancelled. It returns
+// ErrInviteNotPending when the invite is missing or no longer pending.
 func (s *InviteStore) CancelInvite(ctx context.Context, inviteID string) error {
 	var id string
 	err := s.db.QueryRowContext(ctx, `
@@ -150,6 +158,8 @@ func (s *InviteStore) CancelInvite(ctx context.Context, inviteID string) error {
 	return nil
 }
 
+// GetPendingForHousehold returns the household's pending, unexpired invites,
+// newest first.
 func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]*HouseholdInvite, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inviteColumns+`
@@ -172,6 +182,8 @@ func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID st
 	return invites, rows.Err()
 }
 
+// IsPendingForHouseholdEmail reports whether a pending, unexpired invite
+// already exists for email in householdID.
 func (s *InviteStore) IsPendingForHouseholdEmail(ctx context.Context, householdID, email string) (bool, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var count int

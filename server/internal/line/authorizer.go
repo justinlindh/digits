@@ -18,6 +18,9 @@ func NewAuthorizer(database *db.Database) *Authorizer {
 	return &Authorizer{db: database.DB}
 }
 
+// CanCall reports whether fromNumber is permitted to call toNumber, which is
+// true when both lines share a household or their households have an active
+// link.
 func (a *Authorizer) CanCall(ctx context.Context, fromNumber, toNumber string) (bool, error) {
 	var allowed bool
 	err := a.db.QueryRowContext(ctx, `
