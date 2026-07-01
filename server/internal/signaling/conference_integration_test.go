@@ -362,7 +362,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	if countType(cMsgs, signaling.TypeConferenceEnd) != 1 {
 		t.Fatalf("C: expected 1 ConferenceEnd, got %d (msgs: %v)", countType(cMsgs, signaling.TypeConferenceEnd), cMsgs)
 	}
-	// Disconnect path ends the conference for all — no ConferenceLeave expected.
+	// Disconnect path ends the conference for all: no ConferenceLeave expected.
 	if countType(aMsgs, signaling.TypeConferenceLeave) != 0 {
 		t.Errorf("A: expected 0 ConferenceLeave on disconnect (endConference path), got %d", countType(aMsgs, signaling.TypeConferenceLeave))
 	}

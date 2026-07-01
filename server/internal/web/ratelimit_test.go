@@ -38,13 +38,13 @@ func TestMagicLinkRateLimited(t *testing.T) {
 	srv := setupRateLimitTestServer(t)
 
 	client := &http.Client{
-		// Don't follow redirects — we care about the immediate response code
+		// Don't follow redirects: we care about the immediate response code
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
 
-	// Send 5 requests — all should succeed (2xx or 3xx redirect, not 429)
+	// Send 5 requests: all should succeed (2xx or 3xx redirect, not 429)
 	for i := 1; i <= 5; i++ {
 		resp, err := client.Post(srv.URL+"/auth/magic", "application/x-www-form-urlencoded",
 			strings.NewReader("email=test@example.com"))

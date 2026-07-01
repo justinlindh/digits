@@ -94,7 +94,7 @@ func newLHEnv(t *testing.T) lhSetup {
 	env := setupCallsTestServer(t)
 	db := env.database.DB
 
-	// Register cleanup IMMEDIATELY — before any partial setup can fail.
+	// Register cleanup IMMEDIATELY, before any partial setup can fail.
 	// All DELETEs are idempotent against missing rows.
 	t.Cleanup(func() {
 		_, _ = db.Exec("DELETE FROM call_link_health WHERE call_id IN (SELECT id FROM calls WHERE caller IN ($1,$2,$3) OR callee IN ($1,$2,$3))", numA, numB, numC)
@@ -312,7 +312,7 @@ func TestLinkHealth_LinkedHouseholdStillGets404(t *testing.T) {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	// Call is between B and C — A is NOT an endpoint owner.
+	// Call is between B and C: A is NOT an endpoint owner.
 	callID, err := s.env.tracker.OnCallInitiated(context.Background(), s.numB, s.numC)
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
@@ -364,7 +364,7 @@ func TestLinkHealth_UnauthenticatedRedirectsOr401(t *testing.T) {
 		t.Fatalf("OnCallInitiated: %v", err)
 	}
 
-	// Unauthenticated client — no jar, no redirect-following.
+	// Unauthenticated client: no jar, no redirect-following.
 	client := &http.Client{
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse

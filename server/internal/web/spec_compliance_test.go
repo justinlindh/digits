@@ -152,7 +152,7 @@ func TestSpecFamilies(t *testing.T) {
 	}
 	seedLinkedFamily(t, h, database, authStore, hh.ID, user.ID, "Grandma Lindh", "2180042", "Grandma")
 
-	// Default view — no postcard yet.
+	// Default view: no postcard yet.
 	req := httptest.NewRequest(http.MethodGet, "/links", nil)
 	req.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -194,7 +194,7 @@ func TestSpecFamilies(t *testing.T) {
 		t.Errorf("Families page still shows old 'Generate invite code' CTA")
 	}
 
-	// Postcard view — pass ?created= so the postcard is gated in.
+	// Postcard view: pass ?created= so the postcard is gated in.
 	req2 := httptest.NewRequest(http.MethodGet, "/links?created=DEMO-123", nil)
 	req2.AddCookie(cookie)
 	w2 := httptest.NewRecorder()
