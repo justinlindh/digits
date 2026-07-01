@@ -24,7 +24,7 @@ import (
 func setupAuthTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	// Open a sql.DB lazily — no Ping, so no real connection is required.
+	// Open a sql.DB lazily: no Ping, so no real connection is required.
 	// Tests that don't trigger DB operations (no-cookie redirect, login page render)
 	// work fine without a live database.
 	rawDB, err := sql.Open("postgres", "postgres://test:test@localhost/testdb?sslmode=disable")
@@ -50,7 +50,7 @@ func setupAuthTestServer(t *testing.T) *httptest.Server {
 	authHandlers := auth.NewHandlers(authStore, googleAuth, emailSender, "http://localhost", "", loginTmpl, false)
 
 	hub := signaling.NewHub()
-	tracker := calls.New(nil) // nil DB — no DB calls expected in these tests
+	tracker := calls.New(nil) // nil DB: no DB calls expected in these tests
 	relay := signaling.NewRelay(hub, tracker, nil, nil)
 
 	h, err := NewHandler(Deps{

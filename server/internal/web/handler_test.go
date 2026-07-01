@@ -595,7 +595,7 @@ func TestPhoneVoiceStyleEmptyReturns400(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for empty voice_style, got %d: %s", w.Code, w.Body.String())
 	}
-	// Must not have written anything — default is copper on insert.
+	// Must not have written anything: default is copper on insert.
 	if got := read(); got != "copper" {
 		t.Fatalf("expected voice_style untouched (copper), got %q", got)
 	}
@@ -910,7 +910,7 @@ func TestPhoneVoiceStyleNoOpSkipsPush(t *testing.T) {
 	conn := &signaling.Conn{Send: make(chan []byte, 10)}
 	_ = h.hub.Register("3140001", conn)
 
-	// Line defaults to copper on insert — saving copper again must be a no-op.
+	// Line defaults to copper on insert: saving copper again must be a no-op.
 	if w := postVoiceStyle(t, h, cookie, "copper", false); w.Code != http.StatusSeeOther {
 		t.Fatalf("save failed: %d %s", w.Code, w.Body.String())
 	}

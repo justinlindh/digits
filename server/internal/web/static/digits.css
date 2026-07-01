@@ -1,5 +1,5 @@
 /* =========================================================================
-   Digits — design system stylesheet
+   Digits: design system stylesheet
    Direction C (home intercom / soft domestic hardware) reinterpreted for an
    app surface. Warm paper, walnut, brass spice. App-grade density, not
    marketing-page generosity.
@@ -643,7 +643,7 @@ hr { border: 0; border-top: 1px solid var(--rule); margin: 0; }
 }
 .dnd-toggle__label { font-size: 13px; color: var(--ink-muted); white-space: nowrap; }
 
-/* --------- Chip / state badge (used sparingly — prefer dot) --------- */
+/* --------- Chip / state badge (used sparingly, prefer dot) --------- */
 
 .chip {
   display: inline-flex;
@@ -1924,7 +1924,7 @@ details.disclosure > *:not(summary) { border-top: 1px solid var(--rule-soft); }
 }
 
 /* =========================================================================
-   Call-live observation deck — intercom theme
+   Call-live observation deck: intercom theme
    ========================================================================= */
 
 .deck { display: flex; flex-direction: column; gap: 18px; }

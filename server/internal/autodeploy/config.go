@@ -84,12 +84,12 @@ func LoadConfig(path string) (Config, error) {
 	// box with public GHCR images (no token needed) doesn't have to invent
 	// an empty placeholder file just to satisfy config loading.
 	for _, r := range []struct {
-		name, pathKey string
-		dst           *string
+		pathKey string
+		dst     *string
 	}{
-		{"GHCR_TOKEN", "GHCR_TOKEN_FILE", &c.GHCRToken},
-		{"SMTP_PASS", "SMTP_PASS_FILE", &c.SMTPPass},
-		{"GITHUB_TOKEN", "GITHUB_TOKEN_FILE", &c.GitHubToken},
+		{"GHCR_TOKEN_FILE", &c.GHCRToken},
+		{"SMTP_PASS_FILE", &c.SMTPPass},
+		{"GITHUB_TOKEN_FILE", &c.GitHubToken},
 	} {
 		p := raw[r.pathKey]
 		if p == "" {

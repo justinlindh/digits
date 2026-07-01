@@ -264,7 +264,7 @@ func TestCreateInvite_NoDuplicateLinks(t *testing.T) {
 		t.Fatalf("AcceptInvite: %v", err)
 	}
 
-	// Now hA tries to create another invite — hB then tries to accept from a different direction
+	// Now hA tries to create another invite, hB then tries to accept from a different direction
 	// The real duplicate prevention is in AcceptInvite via AreLinked check.
 	// Create a new invite from hB (now it can create a pending one since no pending exists for hB)
 	invite2, err := store.CreateInvite(context.Background(), hB, userB)

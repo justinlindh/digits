@@ -202,7 +202,7 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	// T3: another 2-party call (reuse same numbers — OK since earlier calls are ended)
+	// T3: another 2-party call (reuse same numbers, OK since earlier calls are ended)
 	_, err = tr.OnCallInitiated(context.Background(), "7773001", "7773002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated T3: %v", err)
@@ -211,7 +211,7 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 		t.Fatalf("OnCallEnded T3: %v", err)
 	}
 
-	// Suppress "declared and not used" — id1 is referenced only for clarity.
+	// Suppress "declared and not used": id1 is referenced only for clarity.
 	_ = id1
 
 	entries, err := tr.RecentHistoryForPhones(context.Background(), []string{"7773001", "7773002", "7773003"}, nil, 10)

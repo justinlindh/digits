@@ -114,7 +114,7 @@ func TestLoadConfigOptionalTokenFileUnreadable(t *testing.T) {
 		t.Skip("skipping: root bypasses file permissions")
 	}
 	// A file that exists but cannot be read (permission denied, etc) is a
-	// real config problem, not an "optional unset" — must still error.
+	// real config problem, not an "optional unset": must still error.
 	dir := t.TempDir()
 	tokenPath := filepath.Join(dir, "tok")
 	if err := os.WriteFile(tokenPath, []byte("ghp_x"), 0o000); err != nil {

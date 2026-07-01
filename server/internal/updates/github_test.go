@@ -175,7 +175,7 @@ func TestGitHubReleases_APIError(t *testing.T) {
 }
 
 func TestClassifyAssets_SHA256NotPickedAsBinary(t *testing.T) {
-	// GitHub doesn't guarantee asset order — .sha256 might come last and
+	// GitHub doesn't guarantee asset order: .sha256 might come last and
 	// its name also contains "aarch64", so it must be explicitly skipped.
 	assets := []ghAsset{
 		{Name: "digitsd-1.0.0-aarch64.sha256", BrowserDownloadURL: "https://example.com/digitsd.sha256"},

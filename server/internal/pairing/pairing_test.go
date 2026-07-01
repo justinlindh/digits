@@ -21,7 +21,7 @@ func setupStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set — skipping DB tests")
+		t.Skip("TEST_DATABASE_URL not set, skipping DB tests")
 	}
 	database, err := db.Open(dsn)
 	if err != nil {

@@ -327,7 +327,7 @@ func TestCallsPageRenders3WayConference(t *testing.T) {
 	// pre-merge calls should be excluded.
 	// Note: the mobile layout uses "→" for 2-party calls; conference rows do not.
 	if strings.Contains(body, "→") {
-		t.Errorf("expected no 2-party arrow (→) in body — merged legs should be hidden\nbody snippet: %s", truncate(body, 800))
+		t.Errorf("expected no 2-party arrow (→) in body: merged legs should be hidden\nbody snippet: %s", truncate(body, 800))
 	}
 
 	t.Logf("✓ /calls page renders 3-way conference with chip--conf and all participant numbers")

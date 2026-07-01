@@ -20,7 +20,7 @@ The tests use Playwright's [storageState](https://playwright.dev/docs/auth) to s
 an authenticated session between test files. The `auth.setup.ts` project runs first
 and writes `.auth/user.json` (gitignored).
 
-### Option A — Session cookie (fastest)
+### Option A: Session cookie (fastest)
 
 If you have a valid `digits_session` cookie from a running dev server:
 
@@ -28,7 +28,7 @@ If you have a valid `digits_session` cookie from a running dev server:
 E2E_SESSION_COOKIE=<cookie-value> make e2e
 ```
 
-### Option B — Magic link token
+### Option B: Magic link token
 
 1. Start the server with `DEV_MODE=true` (it logs magic link URLs to stdout).
 2. POST a magic link request:
@@ -42,7 +42,7 @@ E2E_SESSION_COOKIE=<cookie-value> make e2e
    E2E_MAGIC_TOKEN=<token> make e2e
    ```
 
-### Option C — No auth (public pages only)
+### Option C: No auth (public pages only)
 
 Run without any auth env vars. Tests that require an authenticated session
 will skip themselves gracefully. Public-page tests (login page, healthz) still run.

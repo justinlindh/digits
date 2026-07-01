@@ -1,5 +1,5 @@
 /* =========================================================================
-   Digits — dial-up online service 1997 theme
+   Digits: dial-up online service 1997 theme
    Companion to digits.css (direction C). Imitates the dial-up client client:
    title bar, menu bar, toolbar, Keyword bar, CHANNELS sidebar, status bar,
    chunky 3D bevels, Tahoma/MS Sans Serif, dial-up blue + yellow palette.
@@ -1502,7 +1502,7 @@ details.disclosure > *:not(summary) { border-top: 1px dotted var(--dialup-chrome
 }
 .neighborhood__line:last-child { border-bottom: 0; }
 
-/* The template emits .lines__dot before the line name — already styled
+/* The template emits .lines__dot before the line name, already styled
    elsewhere. Just ensure it reads as a clear lead-in here. */
 .neighborhood__line .lines__dot { flex-shrink: 0; }
 
@@ -2134,7 +2134,7 @@ body.crt-all .crt__brand::after {
 }
 
 /* Narrow viewports: shrink the bezel rings so the inner content has room.
-   Drop the 4:3 aspect-ratio on /connecting — at ~360px wide the forced 4:3
+   Drop the 4:3 aspect-ratio on /connecting: at ~360px wide the forced 4:3
    leaves only ~248px of height, which clips the Connect + Skip controls
    out of view with the screen's overflow: hidden. Let content size it. */
 @media (max-width: 640px) {
@@ -2547,7 +2547,7 @@ body.dialup .phone-silent__text {
 .changelog__empty { color: gray; font-style: italic; font-size: 12px; }
 
 /* =========================================================================
-   Call-live observation deck — dialup theme (MODEM CONNECTED)
+   Call-live observation deck: dialup theme (MODEM CONNECTED)
    ========================================================================= */
 
 .deck {
@@ -2703,7 +2703,7 @@ body.dialup .phone-silent__text {
   font-size: 11px;
 }
 
-/* MODEM CONNECTED status lamp — dialup-only ornament, black terminal panel
+/* MODEM CONNECTED status lamp: dialup-only ornament, black terminal panel
    at the top of the deck. The CONNECTED text is static via ::before so no
    template change is needed. */
 .deck::before {

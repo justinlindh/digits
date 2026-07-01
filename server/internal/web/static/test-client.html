@@ -166,7 +166,7 @@
             case 'ring':
                 pendingCaller = msg.from;
                 setStatus('📞 Incoming call from ' + msg.from, 'ringing');
-                log('RING from ' + msg.from + ' — click Answer to pick up');
+                log('RING from ' + msg.from + ': click Answer to pick up');
                 startRinging();
                 break;
 
@@ -182,7 +182,7 @@
                         pc._pendingOffer = true;
                     }
                 } else if (!pc && msg.sdp) {
-                    // Incoming offer before we created PC — store it
+                    // Incoming offer before we created PC: store it
                     pendingOffer = msg.sdp;
                     pendingCaller = msg.from;
                 }
@@ -288,17 +288,17 @@
                 log('Microphone acquired');
                 document.getElementById('audioStatus').textContent = '🎤 Mic active';
             } else {
-                // No getUserMedia (insecure context) — add receive-only transceiver
+                // No getUserMedia (insecure context): add receive-only transceiver
                 pc.addTransceiver('audio', { direction: 'recvonly' });
                 log('⚠️ No mic access (HTTPS required). Receive-only mode.');
                 log('TIP: chrome://flags/#unsafely-treat-insecure-origin-as-secure → add this URL → relaunch');
-                document.getElementById('audioStatus').textContent = '🔇 No mic (HTTP) — receive only';
+                document.getElementById('audioStatus').textContent = '🔇 No mic (HTTP): receive only';
             }
         } catch (e) {
             // getUserMedia exists but was denied or failed
             pc.addTransceiver('audio', { direction: 'recvonly' });
-            log('Mic error: ' + e + ' — falling back to receive-only');
-            document.getElementById('audioStatus').textContent = '🔇 Mic denied — receive only';
+            log('Mic error: ' + e + ', falling back to receive-only');
+            document.getElementById('audioStatus').textContent = '🔇 Mic denied: receive only';
         }
     }
 
