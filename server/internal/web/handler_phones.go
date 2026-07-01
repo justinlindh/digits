@@ -698,8 +698,8 @@ func (h *Handler) handlePhoneQuietHoursPost(w http.ResponseWriter, r *http.Reque
 
 // handlePhoneVoicemailPost accepts a form submission with the full voicemail
 // configuration for the line. Every field is validated server-side before
-// any DB write: out-of-range ints and malformed retrieval codes
-// return 400 with a friendly message so the form can surface it. On success
+// any DB write: an out-of-range ring timeout returns 400 with a friendly
+// message so the form can surface it. On success
 // the new settings are persisted and pushed to the device (if connected),
 // then either the voicemail-section partial is swapped (htmx) or the user
 // is redirected back to the phone detail page (regular form post).
@@ -733,7 +733,7 @@ func (h *Handler) handlePhoneVoicemailPost(w http.ResponseWriter, r *http.Reques
 // are preserved through Normalize, which backfills defaults when the row
 // was created before voicemail existed. Path is intentionally separate
 // from the full-form POST so a checkbox-only round-trip does not have to
-// resubmit the timing/code fields.
+// resubmit the ring-timeout field.
 func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
 	ln := h.requireLineOwnership(w, r, number)
@@ -748,8 +748,7 @@ func (h *Handler) handlePhoneVoicemailTogglePost(w http.ResponseWriter, r *http.
 // parseClampedInt reads form field `name`, parses it as an integer, and
 // requires it to fall in [lo, hi]. On any failure it writes a 400 with a
 // friendly message naming the field and the allowed range, then returns
-// (0, false). Helper for handlePhoneVoicemailPost so the three numeric
-// validations don't repeat the same boilerplate.
+// (0, false). Helper for handlePhoneVoicemailPost's ring-timeout validation.
 func parseClampedInt(w http.ResponseWriter, r *http.Request, name string, lo, hi int) (int, bool) {
 	raw := strings.TrimSpace(r.FormValue(name))
 	v, err := strconv.Atoi(raw)

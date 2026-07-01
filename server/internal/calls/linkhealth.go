@@ -469,7 +469,7 @@ func (sr *sessionRings) broadcastLocked(ev Event) {
 	}
 }
 
-// flushInterval is how often the background flusher runs. See spec §2.
+// flushInterval is how often the background flusher runs.
 const flushInterval = 10 * time.Second
 
 // FlushOnce walks every tracked call and writes one row per (endpoint) for
