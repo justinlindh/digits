@@ -1091,6 +1091,26 @@ func (d *daemonCallbacks) closeMixerSourceLocked() {
 	d.voicemailMixerCh = nil
 }
 
+// newPlaybackSessionLocked builds a playback session for an already-open
+// player and installs it as the current session. It is the counterpart to
+// teardownPlaybackLocked: every session is created with its own cancelable
+// context and stored in d.voicemailPlayback here, so that invariant lives in
+// one place rather than being re-spelled at each open site. Caller must hold
+// voicemailMu and have already torn down any prior session.
+func (d *daemonCallbacks) newPlaybackSessionLocked(id int64, number int, saved bool, player *voicemail.Player) *voicemailPlaybackSession {
+	ctx, cancel := context.WithCancel(context.Background())
+	sess := &voicemailPlaybackSession{
+		ctx:    ctx,
+		cancel: cancel,
+		id:     id,
+		number: number,
+		saved:  saved,
+		player: player,
+	}
+	d.voicemailPlayback = sess
+	return sess
+}
+
 // teardownPlaybackLocked cancels the current playback goroutine, closes its
 // player, and clears the session pointer. Caller must hold voicemailMu.
 // Returns the prior session (or nil if there was none) so the caller can
@@ -1133,17 +1153,8 @@ func (d *daemonCallbacks) openNextUnheardLocked(store *voicemail.Store, afterID 
 			slog.Warn("voicemail: open player failed, skipping", "id", m.ID, "error", err)
 			continue
 		}
-		ctx, cancel := context.WithCancel(context.Background())
 		d.voicemailMessageSeq++
-		sess := &voicemailPlaybackSession{
-			ctx:    ctx,
-			cancel: cancel,
-			id:     m.ID,
-			number: d.voicemailMessageSeq,
-			player: player,
-		}
-		d.voicemailPlayback = sess
-		return sess, nil
+		return d.newPlaybackSessionLocked(m.ID, d.voicemailMessageSeq, false, player), nil
 	}
 	return nil, nil
 }
@@ -1183,16 +1194,7 @@ func (d *daemonCallbacks) openNextSavedLocked(store *voicemail.Store) *voicemail
 			slog.Warn("voicemail: open saved player failed, skipping", "id", id, "error", err)
 			continue
 		}
-		ctx, cancel := context.WithCancel(context.Background())
-		sess := &voicemailPlaybackSession{
-			ctx:    ctx,
-			cancel: cancel,
-			id:     id,
-			saved:  true,
-			player: player,
-		}
-		d.voicemailPlayback = sess
-		return sess
+		return d.newPlaybackSessionLocked(id, 0, true, player)
 	}
 }
 
@@ -1207,17 +1209,7 @@ func (d *daemonCallbacks) reopenLocked(store *voicemail.Store, id int64, number 
 	if err != nil {
 		return nil, fmt.Errorf("reopen message %d: %w", id, err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	sess := &voicemailPlaybackSession{
-		ctx:    ctx,
-		cancel: cancel,
-		id:     id,
-		number: number,
-		saved:  saved,
-		player: player,
-	}
-	d.voicemailPlayback = sess
-	return sess, nil
+	return d.newPlaybackSessionLocked(id, number, saved, player), nil
 }
 
 // transitionToSavedPhase announces the saved-message count and begins playing
