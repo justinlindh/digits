@@ -9,7 +9,7 @@ import (
 
 func TestLastInboundCaller(t *testing.T) {
 	d := setupTestDB(t)
-	tracker := New(d)
+	tracker := New(d.DB)
 	ctx := context.Background()
 
 	// No calls yet: should return empty string.
@@ -58,7 +58,7 @@ func TestLastInboundCaller(t *testing.T) {
 
 func TestLastInboundCallerExcludesMerged(t *testing.T) {
 	d := setupTestDB(t)
-	tracker := New(d)
+	tracker := New(d.DB)
 	ctx := context.Background()
 
 	// Insert a call that will be "merged to conference" (excluded).

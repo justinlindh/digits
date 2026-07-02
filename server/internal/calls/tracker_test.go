@@ -33,7 +33,7 @@ func setupTestDB(t *testing.T) *db.Database {
 
 func TestCallLifecycle(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 
 	// Initiate
 	_, err := tr.OnCallInitiated(context.Background(), "3140001", "3140002")
@@ -68,7 +68,7 @@ func TestCallLifecycle(t *testing.T) {
 
 func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 	id, err := tr.OnCallInitiated(context.Background(), "555-1111", "555-2222")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
@@ -86,7 +86,7 @@ func TestOnCallInitiatedReturnsCallID(t *testing.T) {
 
 func TestActiveCalls(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 
 	_, _ = tr.OnCallInitiated(context.Background(), "3140001", "3140002")
 	_ = tr.OnCallAnswered(context.Background(), "3140001", "3140002")

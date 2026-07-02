@@ -31,7 +31,7 @@ func insertCall(t *testing.T, d *db.Database, caller, callee string) int64 {
 
 func TestFlusherWritesLatestPerEndpoint(t *testing.T) {
 	d := setupTestDB(t)
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	callID := insertCall(t, d, "555-1111", "555-2222")
 	s.Init(callID)
 	loss1 := float32(0.1)
@@ -71,7 +71,7 @@ func TestFlusherWritesLatestPerEndpoint(t *testing.T) {
 
 func TestReadbackFromDB(t *testing.T) {
 	d := setupTestDB(t)
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	callID := insertCall(t, d, "555-3333", "555-4444")
 	s.Init(callID)
 	loss := float32(0.5)
@@ -156,7 +156,7 @@ func TestWriteSample2PartyPostV20(t *testing.T) {
 		t.Fatalf("seed call: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	loss := float32(1.5)
 	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss, ConnType: "host"}
 
@@ -230,7 +230,7 @@ func TestWriteSampleConferencePostV20(t *testing.T) {
 		t.Fatalf("seed conference: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	jitter := float32(4.2)
 	sample := Sample{TS: time.Unix(0, 1), JitterMs: &jitter}
 
@@ -300,7 +300,7 @@ func TestWriteSampleConferenceIdempotent(t *testing.T) {
 		t.Fatalf("seed conference: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	loss := float32(2.0)
 	sample := Sample{TS: time.Unix(0, 1), LossPct: &loss}
 
@@ -343,7 +343,7 @@ func TestWriteSampleConferenceRejectsEmptyPeer(t *testing.T) {
 		t.Fatalf("seed conference: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	err := s.writeSample(context.Background(),
 		SessionKey{ConfID: confID},
 		endpointKey{From: "+15555550001", Peer: ""},
@@ -383,7 +383,7 @@ func TestReadbackEdgeFromDB(t *testing.T) {
 		t.Fatalf("seed conference: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	s.InitConference(confID)
 
 	base := time.Unix(0, 0)
@@ -485,7 +485,7 @@ func TestFlushOnceWritesConferenceRows(t *testing.T) {
 		t.Fatalf("seed conference: %v", err)
 	}
 
-	s := NewHealthStore(d)
+	s := NewHealthStore(d.DB)
 	s.InitConference(confID)
 
 	loss := float32(1.1)
@@ -550,10 +550,10 @@ func TestFlusherSkipsRemoteSamples(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	a := NewHealthStore(d)
+	a := NewHealthStore(d.DB)
 	a.SetRedis(clientA, "pod-a")
 	go a.RunRedis(ctx)
-	b := NewHealthStore(d)
+	b := NewHealthStore(d.DB)
 	b.SetRedis(clientB, "pod-b")
 	go b.RunRedis(ctx)
 	time.Sleep(100 * time.Millisecond)

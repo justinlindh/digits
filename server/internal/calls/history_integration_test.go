@@ -16,7 +16,7 @@ import (
 // one Call entry.
 func TestRecentHistoryForPhones_PureCall(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	_, err := tr.OnCallInitiated(context.Background(), "7770001", "7770002")
 	if err != nil {
@@ -49,7 +49,7 @@ func TestRecentHistoryForPhones_PureCall(t *testing.T) {
 // and correct duration, and the merged pre-merge legs do NOT appear.
 func TestRecentHistoryForPhones_ThreeWayHappy(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	callID, err := tr.OnCallInitiated(context.Background(), "7771001", "7771002")
 	if err != nil {
@@ -110,7 +110,7 @@ func TestRecentHistoryForPhones_ThreeWayHappy(t *testing.T) {
 // the result is 1 Conference + 1 continuation Call (the survivor pair).
 func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	callID, err := tr.OnCallInitiated(context.Background(), "7772001", "7772002")
 	if err != nil {
@@ -170,7 +170,7 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 // across a mix of call and conference entries.
 func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	// T1: 2-party call
 	id1, err := tr.OnCallInitiated(context.Background(), "7773001", "7773002")
@@ -244,7 +244,7 @@ func TestRecentHistoryForPhones_MixedTimeline(t *testing.T) {
 // the cursor in the merged timeline order.
 func TestRecentHistoryForPhones_CursorPagination_CallsOnly(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	// Insert 5 plain calls between phones A and B, ended in order so
 	// started_at increases monotonically.
@@ -288,7 +288,7 @@ func TestRecentHistoryForPhones_CursorPagination_CallsOnly(t *testing.T) {
 // call legs do not appear in the results.
 func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	callID, err := tr.OnCallInitiated(context.Background(), "7774001", "7774002")
 	if err != nil {
@@ -327,7 +327,7 @@ func TestRecentHistoryForPhones_MergedLegsExcluded(t *testing.T) {
 // past the call so the next page starts with the conference.
 func TestRecentHistoryForPhones_CursorTieBreak(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	// 3-way merge yields a Call (the originating leg, marked merged) plus a
 	// Conference. The originating call is excluded from history (filtered
@@ -401,7 +401,7 @@ func TestRecentHistoryForPhones_CursorTieBreak(t *testing.T) {
 // merged DESC order).
 func TestRecentHistoryForPhones_ConfCursorExcludesSameTimeCall(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 
 	now := time.Now().UTC().Round(time.Microsecond)
 

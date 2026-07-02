@@ -26,7 +26,7 @@ func (f *fakeNotifier) Count() int32 { return f.count.Load() }
 
 func TestTracker_SetDashboardEvents_OptionalAndOverwritable(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 	// nil notifier must be accepted without panic.
 	tr.SetDashboardEvents(nil)
 	n := &fakeNotifier{}
@@ -40,7 +40,7 @@ func TestTracker_SetDashboardEvents_OptionalAndOverwritable(t *testing.T) {
 // ON CALL counter, so a missed Notify here means a stale UI in production.
 func TestTracker_NotifiesOnLifecycle(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 	n := &fakeNotifier{}
 	tr.SetDashboardEvents(n)
 
@@ -70,7 +70,7 @@ func TestTracker_NotifiesOnLifecycle(t *testing.T) {
 
 func TestTracker_NotifiesOnClearByNumber(t *testing.T) {
 	d := setupTestDB(t)
-	tr := New(d)
+	tr := New(d.DB)
 	n := &fakeNotifier{}
 	tr.SetDashboardEvents(n)
 

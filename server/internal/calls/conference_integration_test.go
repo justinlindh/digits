@@ -25,7 +25,7 @@ func (f *fakeHealthLifecycle) EvictConference(id uuid.UUID) { f.confEvicts = app
 func TestTrackerBusyWithConference_Integration(t *testing.T) {
 	d := openTestDB(t)
 
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	id, err := tr.OnCallInitiated(context.Background(), "5550001", "5550002")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
@@ -61,7 +61,7 @@ func TestTrackerBusyWithConference_Integration(t *testing.T) {
 func TestConferencePersistence_Integration(t *testing.T) {
 	d := openTestDB(t)
 
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	callID, err := tr.OnCallInitiated(context.Background(), "5550010", "5550011")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
@@ -111,7 +111,7 @@ func TestConferencePersistence_Integration(t *testing.T) {
 func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 	d := openTestDB(t)
 
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	callID, _ := tr.OnCallInitiated(context.Background(), "5550100", "5550101")
 	// Simulate add-leg before merge.
 	_, _ = tr.OnCallInitiated(context.Background(), "5550100", "5550102")
@@ -155,7 +155,7 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 
 func TestConferenceLifecycleHooks(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	h := &fakeHealthLifecycle{}
 	tr.SetHealthStore(h)
 
@@ -211,7 +211,7 @@ func TestConferenceLifecycleHooks(t *testing.T) {
 
 func TestDropMemberFiresEvictConference(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	h := &fakeHealthLifecycle{}
 	tr.SetHealthStore(h)
 
@@ -250,7 +250,7 @@ func TestDropMemberFiresEvictConference(t *testing.T) {
 func TestCreateConferenceEvictsActiveEntries_Integration(t *testing.T) {
 	d := openTestDB(t)
 
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	callID, err := tr.OnCallInitiated(context.Background(), "5550200", "5550201")
 	if err != nil {
 		t.Fatalf("OnCallInitiated: %v", err)
@@ -379,7 +379,7 @@ func TestConferenceKicksSchemaV22_Integration(t *testing.T) {
 
 func TestRecordKick_Integration(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	ctx := context.Background()
 
 	if _, err := tr.OnCallInitiated(ctx, "+15555550101", "+15555550102"); err != nil {
@@ -434,7 +434,7 @@ func TestRecordKick_Integration(t *testing.T) {
 
 func TestGetConferenceByID_Integration(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	ctx := context.Background()
 
 	// Seed two calls, create a conference.

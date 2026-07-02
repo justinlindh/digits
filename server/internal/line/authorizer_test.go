@@ -33,7 +33,7 @@ func testAuthorizer(t *testing.T) (*Authorizer, *db.Database) {
 		_, _ = database.DB.Exec("DELETE FROM users")
 		_ = database.Close()
 	})
-	return NewAuthorizer(database), database
+	return NewAuthorizer(database.DB), database
 }
 
 // createAuthTestUser inserts a minimal user and returns its UUID.

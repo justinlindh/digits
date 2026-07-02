@@ -18,7 +18,7 @@ import (
 // explicitly.
 func TestRenameNumber_Integration(t *testing.T) {
 	d := openTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	ctx := context.Background()
 
 	const (
