@@ -15,6 +15,12 @@ const (
 	// before considering the connection dead. Must be greater than the
 	// server's ping interval (30s).
 	pingTimeout = 45 * time.Second
+
+	// writeTimeout bounds how long any write to the connection may block.
+	// Without it, a half-open TCP connection (WiFi drop / AP restart) with a
+	// full send buffer would block WriteMessage until the kernel TCP
+	// retransmit timeout (minutes), freezing the daemon's main select loop.
+	writeTimeout = 10 * time.Second
 )
 
 // Client connects to a signald WebSocket server and manages message I/O.
@@ -67,7 +73,9 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("signal: marshal register: %w", err)
 	}
 	c.mu.Lock()
-	err = conn.WriteMessage(websocket.TextMessage, data)
+	if err = conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err == nil {
+		err = conn.WriteMessage(websocket.TextMessage, data)
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("signal: send register: %w", err)
@@ -82,7 +90,7 @@ func (c *Client) Connect() error {
 		if err := c.conn.SetReadDeadline(time.Now().Add(pingTimeout)); err != nil {
 			slog.Warn("signal: set read deadline on ping", "error", err)
 		}
-		return c.conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(10*time.Second))
+		return c.conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(writeTimeout))
 	})
 
 	go c.readPump()
@@ -125,6 +133,9 @@ func (c *Client) Send(msg *Message) error {
 	defer c.mu.Unlock()
 	if c.conn == nil {
 		return fmt.Errorf("signal: not connected")
+	}
+	if err := c.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return fmt.Errorf("signal: set write deadline: %w", err)
 	}
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
 		return fmt.Errorf("signal: write: %w", err)
