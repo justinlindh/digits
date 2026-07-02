@@ -754,11 +754,6 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 	}
 }
 
-// OnDisconnect cleans up any active calls or conference membership for a
-// phone that disconnected. With multiple devices per line, only tear down
-// the call when the last device on that line disconnects. OnDisconnect
-// runs before Unregister (LIFO defer order in handler_ws.go), so the
-// departing conn is still counted; >1 means siblings remain.
 // OnConnClosed is the disconnect entry point for a websocket read loop. It
 // runs OnDisconnect only when conn is still the hub's current connection for
 // its line. A device that reconnects with the same hardware_id replaces its
@@ -777,6 +772,11 @@ func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
 	r.OnDisconnect(ctx, conn.Number, conn.HardwareID)
 }
 
+// OnDisconnect cleans up any active calls or conference membership for a
+// phone that disconnected. With multiple devices per line, only tear down
+// the call when the last device on that line disconnects. OnDisconnect
+// runs before Unregister (LIFO defer order in handler_ws.go), so the
+// departing conn is still counted; >1 means siblings remain.
 func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID string) {
 	// Clear any extension state for this specific device, regardless of
 	// whether other devices remain on the line.
