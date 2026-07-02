@@ -754,6 +754,24 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 	}
 }
 
+// OnConnClosed is the disconnect entry point for a websocket read loop. It
+// runs OnDisconnect only when conn is still the hub's current connection for
+// its line. A device that reconnects with the same hardware_id replaces its
+// previous conn in place, and the new conn's OnReconnect runs before the old
+// conn's read loop unwinds. Without this guard the old loop would call
+// OnDisconnect, see the (new) sibling as the sole remaining connection, and
+// start a grace timer that nothing cancels, tearing the reconnected call down
+// when the window expires.
+func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
+	if conn == nil {
+		return
+	}
+	if !r.Hub.ConnIsCurrent(conn) {
+		return
+	}
+	r.OnDisconnect(ctx, conn.Number, conn.HardwareID)
+}
+
 // OnDisconnect cleans up any active calls or conference membership for a
 // phone that disconnected. With multiple devices per line, only tear down
 // the call when the last device on that line disconnects. OnDisconnect

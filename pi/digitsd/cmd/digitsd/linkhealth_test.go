@@ -15,9 +15,9 @@ func (r *recordingSig) Send(m *sigclient.Message) error {
 	return nil
 }
 
-func TestBuildMeshLinkHealthSend_StampsPeer(t *testing.T) {
+func TestBuildLinkHealthSend_StampsPeer(t *testing.T) {
 	rs := &recordingSig{}
-	send := buildMeshLinkHealthSend(rs, "+15555550123")
+	send := buildLinkHealthSend(rs, "+15555550123")
 
 	loss := float32(1.25)
 	s := owebrtc.Sample{
@@ -45,5 +45,25 @@ func TestBuildMeshLinkHealthSend_StampsPeer(t *testing.T) {
 	}
 	if rs.last.LinkHealth.LossPct == nil || *rs.last.LinkHealth.LossPct != 1.25 {
 		t.Fatalf("LossPct not preserved")
+	}
+}
+
+// The 2-party call path passes peer="" so the message carries no remote-peer
+// stamp; the rest of the payload maps through identically to the mesh case.
+func TestBuildLinkHealthSend_EmptyPeerForTwoParty(t *testing.T) {
+	rs := &recordingSig{}
+	send := buildLinkHealthSend(rs, "")
+
+	if err := send(owebrtc.Sample{TS: time.UnixMilli(1714000000000), ConnType: "host"}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if rs.last == nil || rs.last.LinkHealth == nil {
+		t.Fatal("no link_health message sent")
+	}
+	if rs.last.LinkHealth.Peer != "" {
+		t.Fatalf("Peer: got %q want empty", rs.last.LinkHealth.Peer)
+	}
+	if rs.last.LinkHealth.ConnType != "host" {
+		t.Fatalf("ConnType not preserved: got %q", rs.last.LinkHealth.ConnType)
 	}
 }

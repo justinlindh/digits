@@ -12,7 +12,6 @@ import (
 
 type WiFiAPConfig struct {
 	SSID          string
-	UseSystemd    bool
 	HostapdPath   string
 	DnsmasqPath   string
 	InterfaceWait time.Duration
@@ -48,14 +47,8 @@ func (w *WiFiAPModule) Init(ctx context.Context) error {
 	}
 	unblockWifi()
 
-	var initErr error
-	if w.cfg.UseSystemd {
-		initErr = w.initSystemd()
-	} else {
-		initErr = w.initDirect()
-	}
-	if initErr != nil {
-		return initErr
+	if err := w.initDirect(); err != nil {
+		return err
 	}
 	w.ready = true
 	return nil
@@ -103,25 +96,9 @@ func (w *WiFiAPModule) initDirect() error {
 	return nil
 }
 
-func (w *WiFiAPModule) initSystemd() error {
-	for _, svc := range []string{"hostapd", "dnsmasq"} {
-		if err := exec.Command("systemctl", "start", svc).Run(); err != nil {
-			return fmt.Errorf("start %s: %w", svc, err)
-		}
-	}
-	slog.Info("subsystem wifi-ap: AP started via systemd", "ssid", w.cfg.SSID)
-	return nil
-}
-
 func (w *WiFiAPModule) Teardown() error {
-	if w.cfg.UseSystemd {
-		for _, svc := range []string{"hostapd", "dnsmasq"} {
-			_ = exec.Command("systemctl", "stop", svc).Run()
-		}
-	} else {
-		_ = exec.Command("killall", "hostapd").Run()
-		_ = exec.Command("killall", "dnsmasq").Run()
-	}
+	_ = exec.Command("killall", "hostapd").Run()
+	_ = exec.Command("killall", "dnsmasq").Run()
 	return nil
 }
 

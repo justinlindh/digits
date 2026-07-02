@@ -233,6 +233,12 @@ func (p *Pipeline) Stop() {
 	close(p.stop)
 	p.wg.Wait()
 
+	// Safe to close now: captureLoop is the sole sender on outPCM and it has
+	// returned (it is registered in p.wg, and p.wg.Wait above blocks until it
+	// exits). Closing unblocks consumers that range over OutFrames so they do
+	// not leak a goroutine per completed call.
+	close(p.outPCM)
+
 	if p.capture != nil {
 		p.capture.Close()
 		p.capture = nil

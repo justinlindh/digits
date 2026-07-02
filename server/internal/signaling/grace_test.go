@@ -124,6 +124,66 @@ func TestOnDisconnectHoldsInCall2Party(t *testing.T) {
 	}
 }
 
+// A device that reconnects with the same hardware_id while its previous
+// connection is still registered must not have its live call torn down. The
+// new conn replaces the old in place and runs OnReconnect (which finds no
+// timer yet); then the old conn's read loop unwinds. OnConnClosed must notice
+// the old conn was superseded and skip teardown, so no orphaned grace timer is
+// left to expire and hang up the reconnected call.
+func TestOnConnClosedSkipsTeardownForSupersededReconnect(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = time.Hour // a wrongly-started timer would not fire during the test
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	oldConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", oldConn)
+	newConn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", newConn) // replaces oldConn in place
+
+	// New conn's register path: cancels any pending timer (there is none yet).
+	relay.OnReconnect(context.Background(), "3140001", "hw-1")
+
+	// Old conn's read loop finally unwinds and reports the disconnect.
+	relay.OnConnClosed(context.Background(), oldConn)
+
+	if relay.cancelGraceLocal("3140001", "hw-1") {
+		t.Fatal("an orphaned grace timer was started for a reconnected device")
+	}
+	if len(tracker.ended) != 0 {
+		t.Fatalf("OnCallEnded called %v; the reconnected call must be left intact", tracker.ended)
+	}
+}
+
+// A genuine last-device disconnect (conn still current, not superseded) must
+// still hold the call open with a grace timer. Guards against the reconnect
+// fix over-suppressing normal teardown.
+func TestOnConnClosedHoldsCallForGenuineDisconnect(t *testing.T) {
+	hub := NewHub()
+	tracker := newMockTracker()
+	tracker.peers = map[string]string{"3140001": "3140002"}
+	relay := NewRelay(hub, tracker, nil, nil)
+	relay.GraceWindow = time.Hour
+
+	peer := &Conn{Send: make(chan []byte, 10)}
+	_ = hub.Register("3140002", peer)
+
+	// OnConnClosed runs before Unregister, so the departing conn is still the
+	// hub's current conn for its line: teardown proceeds into the grace path.
+	conn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 10)}
+	_ = hub.Register("3140001", conn)
+
+	relay.OnConnClosed(context.Background(), conn)
+
+	if !relay.cancelGraceLocal("3140001", "hw-1") {
+		t.Fatal("expected a grace timer for a genuine in-call disconnect")
+	}
+}
+
 func TestOnDisconnectIdlePhoneClearsImmediately(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()

@@ -214,7 +214,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump (blocks until disconnect)
 	defer h.hub.Unregister(number, conn)
-	defer h.relay.OnDisconnect(ctx, number, conn.HardwareID)
+	defer h.relay.OnConnClosed(ctx, conn)
 	defer func() {
 		if msg.HardwareID != "" && h.deviceStore != nil {
 			if err := h.deviceStore.TouchLastSeen(ctx, msg.HardwareID); err != nil {

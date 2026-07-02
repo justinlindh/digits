@@ -1054,11 +1054,10 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 		ToneDir:         *toneDir,
 		GPCLK0Retrigger: gpclk0.Retrigger,
 	})
-	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module.
-	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
-		SSID:       "Digits-Setup",
-		UseSystemd: true,
-	})
+	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module,
+	// so this registration is Disabled below: it exists only so the module
+	// shows up as "wifi-ap: disabled" on the setup-mode status page.
+	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Setup"})
 
 	regs := []subsystem.Registration{
 		{Module: gpclk0, Required: true},
@@ -1728,16 +1727,12 @@ func main() {
 			}
 		}
 		pip.Stop()
-		// Drain any frames buffered between deadline and Stop
-		for {
-			select {
-			case frame := <-pip.OutFrames():
-				recorded = append(recorded, frame...)
-			default:
-				goto drained
-			}
+		// Drain any frames buffered before Stop closed the channel. Ranging
+		// over the now-closed OutFrames yields the remaining buffered frames
+		// and then returns.
+		for frame := range pip.OutFrames() {
+			recorded = append(recorded, frame...)
 		}
-	drained:
 
 		var maxAmp int32
 		for _, s := range recorded {

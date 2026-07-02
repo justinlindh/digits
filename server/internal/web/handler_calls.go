@@ -105,8 +105,8 @@ func (h *Handler) handleCallLiveDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
-	callerEp, calleeEp, err := h.buildCallEndpoints(r.Context(), call, linkedIndex, ownedLines)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForCall(r.Context(), ownedLines)}
+	callerEp, calleeEp, err := h.buildCallEndpoints(r.Context(), call, nr)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "call-live: build endpoints failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
