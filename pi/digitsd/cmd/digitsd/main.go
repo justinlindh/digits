@@ -1728,16 +1728,12 @@ func main() {
 			}
 		}
 		pip.Stop()
-		// Drain any frames buffered between deadline and Stop
-		for {
-			select {
-			case frame := <-pip.OutFrames():
-				recorded = append(recorded, frame...)
-			default:
-				goto drained
-			}
+		// Drain any frames buffered before Stop closed the channel. Ranging
+		// over the now-closed OutFrames yields the remaining buffered frames
+		// and then returns.
+		for frame := range pip.OutFrames() {
+			recorded = append(recorded, frame...)
 		}
-	drained:
 
 		var maxAmp int32
 		for _, s := range recorded {
