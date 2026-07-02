@@ -493,6 +493,12 @@ END $$;`,
 		// that no code ever read or wrote. Its CREATE is gone from v1 above
 		// so fresh databases never get it; this drop covers existing ones.
 		`DROP TABLE IF EXISTS settings`,
+		// v31: index the append-only calls table on caller and callee. Call
+		// history and *69 lookups filter on these columns and sort by
+		// started_at DESC; without indexes they degrade to full sequential
+		// scans as the table grows.
+		`CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller, started_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_calls_callee ON calls(callee, started_at DESC)`,
 	}
 	for _, m := range migrations {
 		if _, err := d.DB.Exec(m); err != nil {
