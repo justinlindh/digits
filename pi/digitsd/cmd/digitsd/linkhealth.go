@@ -37,15 +37,17 @@ func (d *daemonCallbacks) meshReporterOnConnected(pm *owebrtc.PeerManager, peerP
 		}
 		rctx, cancel := context.WithCancel(context.Background())
 		d.meshReporterCancels[peerPhone] = cancel
-		reporter := owebrtc.NewReporter(pm, buildMeshLinkHealthSend(d.sig, peerPhone), d.linkHealthInterval)
+		reporter := owebrtc.NewReporter(pm, buildLinkHealthSend(d.sig, peerPhone), d.linkHealthInterval)
 		go reporter.Run(rctx)
 	}
 }
 
-// buildMeshLinkHealthSend returns an owebrtc.Reporter send callback that
-// emits a link_health signaling message stamped with the given remote
-// peer phone. Every other field is copied through from the sample.
-func buildMeshLinkHealthSend(sig sigSender, peer string) func(owebrtc.Sample) error {
+// buildLinkHealthSend returns an owebrtc.Reporter send callback that emits a
+// link_health signaling message from a sample. peer names the remote endpoint
+// for a mesh (conference) edge; pass "" for a 2-party call, where the server
+// reads the empty Peer as the single-peer case. Every other field is copied
+// through from the sample.
+func buildLinkHealthSend(sig sigSender, peer string) func(owebrtc.Sample) error {
 	return func(s owebrtc.Sample) error {
 		payload := &sigclient.LinkHealthPayload{
 			TS:       s.TS.UnixMilli(),
