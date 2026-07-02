@@ -829,19 +829,9 @@ func (d *daemonCallbacks) handleConnectionStateChange(pm *owebrtc.PeerManager, s
 			sig := d.sig
 			interval := d.linkHealthInterval
 			d.mu.Unlock()
-			send := func(s owebrtc.Sample) error {
-				payload := &sigclient.LinkHealthPayload{
-					TS:       s.TS.UnixMilli(),
-					LossPct:  s.LossPct,
-					JitterMs: s.JitterMs,
-					RttMs:    s.RttMs,
-					ConnType: s.ConnType,
-					BytesIn:  s.BytesIn,
-					BytesOut: s.BytesOut,
-				}
-				return sig.Send(&sigclient.Message{Type: sigclient.TypeLinkHealth, LinkHealth: payload})
-			}
-			reporter := owebrtc.NewReporter(pm, send, interval)
+			// 2-party call: no remote-peer stamp (empty Peer). Same payload
+			// mapping as the mesh reporter.
+			reporter := owebrtc.NewReporter(pm, buildLinkHealthSend(sig, ""), interval)
 			go reporter.Run(rctx)
 		} else {
 			d.mu.Unlock()
