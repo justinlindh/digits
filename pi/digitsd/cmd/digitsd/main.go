@@ -1054,11 +1054,10 @@ func setupRegistrations() ([]subsystem.Registration, *subsystem.WebModule, *subs
 		ToneDir:         *toneDir,
 		GPCLK0Retrigger: gpclk0.Retrigger,
 	})
-	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module.
-	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{
-		SSID:       "Digits-Setup",
-		UseSystemd: true,
-	})
+	// AP is managed by digits-dnsmasq-ap.service (systemd), not our module,
+	// so this registration is Disabled below: it exists only so the module
+	// shows up as "wifi-ap: disabled" on the setup-mode status page.
+	wifiAP := subsystem.NewWiFiAPModule(subsystem.WiFiAPConfig{SSID: "Digits-Setup"})
 
 	regs := []subsystem.Registration{
 		{Module: gpclk0, Required: true},
