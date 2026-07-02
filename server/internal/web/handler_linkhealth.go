@@ -85,9 +85,9 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	// Linked-household names are shown for peers that the user already sees in
 	// their call log; the underlying auth check does not grant read access to
 	// calls the user was not part of.
-	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForHousehold(r.Context(), primaryHH)}
 
-	caller, callee, err := h.buildCallEndpoints(r.Context(), call, linkedIndex, ownedLines)
+	caller, callee, err := h.buildCallEndpoints(r.Context(), call, nr)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "link_health: build endpoints failed", "call_id", callID, "err", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -104,24 +104,22 @@ func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 // values for a 2-party call in one go. The same caller/callee pair is needed
 // by the JSON endpoint, the live-detail page, and the SSE sample frame; this
 // helper keeps the duplicated nil-error short-circuit out of all three.
-func (h *Handler) buildCallEndpoints(ctx context.Context, call calls.Call, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, LinkHealthEndpointResp, error) {
-	caller, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, linkedIndex, ownedLines)
+func (h *Handler) buildCallEndpoints(ctx context.Context, call calls.Call, nr nameResolver) (LinkHealthEndpointResp, LinkHealthEndpointResp, error) {
+	caller, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Caller, nr)
 	if err != nil {
 		return LinkHealthEndpointResp{}, LinkHealthEndpointResp{}, fmt.Errorf("caller: %w", err)
 	}
-	callee, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, linkedIndex, ownedLines)
+	callee, err := h.buildLinkHealthEndpoint(ctx, call.ID, call.Callee, nr)
 	if err != nil {
 		return LinkHealthEndpointResp{}, LinkHealthEndpointResp{}, fmt.Errorf("callee: %w", err)
 	}
 	return caller, callee, nil
 }
 
-func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, linkedIndex map[string]string, ownedLines map[string]*line.Line) (LinkHealthEndpointResp, error) {
+func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, number string, nr nameResolver) (LinkHealthEndpointResp, error) {
 	out := LinkHealthEndpointResp{Number: number, Window: []LinkHealthSample{}}
 
-	// Display name resolution: owned line first (non-empty name only), then
-	// linked-index for peer names, then bare number as fallback.
-	out.DisplayName = resolveMemberDisplayName(number, ownedLines, linkedIndex)
+	out.DisplayName = nr.display(number)
 
 	if windowMem := h.healthStore.Window(callID, number); len(windowMem) > 0 {
 		out.Window, out.Latest = samplesToWindow(windowMem)
@@ -175,9 +173,9 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	// change mid-call (household membership changes don't retroactively
 	// apply to a live call), and buildLinkedFamilies + buildLinkedLineIndex
 	// together issue DB queries we don't want on the per-sample hot path.
-	linkedIndex := h.linkedIndexForCall(r.Context(), ownedLines)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForCall(r.Context(), ownedLines)}
 
-	if err := h.writeSampleEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex); err != nil {
+	if err := h.writeSampleEvent(r.Context(), w, flusher, call, nr); err != nil {
 		slog.DebugContext(r.Context(), "SSE stream: initial snapshot write failed", "call_id", callID, "err", err)
 		return
 	}
@@ -197,7 +195,7 @@ func (h *Handler) handleCallLinkHealthStream(w http.ResponseWriter, r *http.Requ
 	}
 
 	streamSSE(r.Context(), w, flusher, sub, renderEndedFragment(""), func(ev calls.Event) error {
-		if err := h.writeEvent(r.Context(), w, flusher, call, ownedLines, linkedIndex, ev); err != nil {
+		if err := h.writeEvent(r.Context(), w, flusher, call, nr, ev); err != nil {
 			slog.DebugContext(r.Context(), "SSE stream: write failed; client gone", "call_id", callID, "err", err)
 			return err
 		}
@@ -293,8 +291,8 @@ func writeSSE(w io.Writer, event, data string) error {
 // writeSampleEvent renders the call-live panel for both endpoints and emits
 // it as a "sample" SSE frame. Used for the initial stream snapshot and for
 // every subsequent SampleKind event; the two are the same frame.
-func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string) error {
-	callerEp, calleeEp, err := h.buildCallEndpoints(ctx, call, linkedIndex, ownedLines)
+func (h *Handler) writeSampleEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, nr nameResolver) error {
+	callerEp, calleeEp, err := h.buildCallEndpoints(ctx, call, nr)
 	if err != nil {
 		return err
 	}
@@ -331,12 +329,12 @@ func writeTerminalEvent(w io.Writer, flusher http.Flusher, ev calls.Event, rende
 	return true, nil
 }
 
-func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+func (h *Handler) writeEvent(ctx context.Context, w io.Writer, flusher http.Flusher, call calls.Call, nr nameResolver, ev calls.Event) error {
 	if handled, err := writeTerminalEvent(w, flusher, ev, renderEndedFragment); handled {
 		return err
 	}
 	// SampleKind
-	return h.writeSampleEvent(ctx, w, flusher, call, ownedLines, linkedIndex)
+	return h.writeSampleEvent(ctx, w, flusher, call, nr)
 }
 
 // linkedIndexForCall builds the linked-families index for display-name

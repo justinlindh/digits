@@ -15,7 +15,6 @@ import (
 
 	"github.com/justinlindh/digits/server/internal/auth"
 	"github.com/justinlindh/digits/server/internal/calls"
-	"github.com/justinlindh/digits/server/internal/line"
 )
 
 // ConferenceLinkHealthEdge is the per-directed-edge section of
@@ -57,9 +56,9 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForHousehold(r.Context(), primaryHH)}
 
-	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
+	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, nr)
 
 	if err := writeJSON(w, resp); err != nil {
 		slog.ErrorContext(r.Context(), "conference_link_health encode failed", "conf_id", confID, "err", err)
@@ -69,12 +68,12 @@ func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Requ
 // buildConferenceLinkHealthResp builds the response in-memory (or via DB
 // readback for an ended conference). Always emits all N*(N-1) edges,
 // even if an edge has no samples yet.
-func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls.ConferenceSummary, ownedLines map[string]*line.Line, linkedIndex map[string]string) ConferenceLinkHealthResp {
+func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls.ConferenceSummary, nr nameResolver) ConferenceLinkHealthResp {
 	members := make([]ConferenceMemberInfo, 0, len(conf.Members))
 	for _, m := range conf.Members {
 		members = append(members, ConferenceMemberInfo{
 			Number:      m,
-			DisplayName: resolveMemberDisplayName(m, ownedLines, linkedIndex),
+			DisplayName: nr.display(m),
 			IsHost:      m == conf.Host,
 		})
 	}
@@ -144,7 +143,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 		return
 	}
 
-	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForHousehold(r.Context(), primaryHH)}
 
 	// Subscribe FIRST so samples arriving between the initial snapshot and
 	// the select loop are buffered rather than silently dropped.
@@ -162,7 +161,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	}
 
 	// Initial snapshot.
-	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
+	snapshot := h.buildConferenceLinkHealthResp(r.Context(), conf, nr)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "SSE conference stream: initial render failed", "conf_id", confID, "err", err)
@@ -174,7 +173,7 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	flusher.Flush()
 
 	streamSSE(r.Context(), w, flusher, sub, renderEndedConferenceFragment(""), func(ev calls.Event) error {
-		if err := h.writeConferenceEvent(r.Context(), w, flusher, conf, ownedLines, linkedIndex, ev); err != nil {
+		if err := h.writeConferenceEvent(r.Context(), w, flusher, conf, nr, ev); err != nil {
 			slog.DebugContext(r.Context(), "SSE conference stream: write failed", "conf_id", confID, "err", err)
 			return err
 		}
@@ -182,12 +181,12 @@ func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *htt
 	})
 }
 
-func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher http.Flusher, conf *calls.ConferenceSummary, ownedLines map[string]*line.Line, linkedIndex map[string]string, ev calls.Event) error {
+func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher http.Flusher, conf *calls.ConferenceSummary, nr nameResolver, ev calls.Event) error {
 	if handled, err := writeTerminalEvent(w, flusher, ev, renderEndedConferenceFragment); handled {
 		return err
 	}
 	// SampleKind
-	snapshot := h.buildConferenceLinkHealthResp(ctx, conf, ownedLines, linkedIndex)
+	snapshot := h.buildConferenceLinkHealthResp(ctx, conf, nr)
 	fragment, err := h.renderConferenceLinkHealthPanel(snapshot)
 	if err != nil {
 		return err
@@ -228,8 +227,8 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 	}
 	user := auth.UserFromContext(r.Context())
 
-	linkedIndex := h.linkedIndexForHousehold(r.Context(), primaryHH)
-	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, ownedLines, linkedIndex)
+	nr := nameResolver{ownedLines: ownedLines, linkedIndex: h.linkedIndexForHousehold(r.Context(), primaryHH)}
+	resp := h.buildConferenceLinkHealthResp(r.Context(), conf, nr)
 
 	_, isHostHH := ownedLines[conf.Host]
 	data := conferenceLiveDetailData{

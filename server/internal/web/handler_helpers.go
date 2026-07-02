@@ -240,14 +240,23 @@ func (h *Handler) requireConferenceHostOwnership(w http.ResponseWriter, r *http.
 	return conf, ownedLines, primaryHH, true
 }
 
-// resolveMemberDisplayName picks the best label for a member phone.
-// Priority: owned-line name (only if non-empty), linked-index peer name,
-// bare number fallback.
-func resolveMemberDisplayName(number string, ownedLines map[string]*line.Line, linkedIndex map[string]string) string {
-	if ln, ok := ownedLines[number]; ok && ln != nil && ln.Name != "" {
+// nameResolver labels a phone number for display. It bundles the two maps
+// (the user's owned lines and the linked-families index) that the link-health
+// handlers always compute together and thread down to their build/render
+// helpers purely to name endpoints. Construct one at the top of a handler and
+// pass it down instead of the two maps.
+type nameResolver struct {
+	ownedLines  map[string]*line.Line
+	linkedIndex map[string]string
+}
+
+// display picks the best label for a member phone. Priority: owned-line name
+// (only if non-empty), linked-index peer name, bare number fallback.
+func (nr nameResolver) display(number string) string {
+	if ln, ok := nr.ownedLines[number]; ok && ln != nil && ln.Name != "" {
 		return ln.Name
 	}
-	if name := resolvePeerName(number, linkedIndex); name != "" {
+	if name := resolvePeerName(number, nr.linkedIndex); name != "" {
 		return name
 	}
 	return number
