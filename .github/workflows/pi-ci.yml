@@ -5,10 +5,16 @@ on:
     branches: [main]
     paths:
       - 'pi/digitsd/**'
+      - 'pi/image/rootfs-overlay/**'
+      - 'pi/tones/**'
+      - 'pi/mixer-state/**'
       - '.github/workflows/pi-ci.yml'
   pull_request:
     paths:
       - 'pi/digitsd/**'
+      - 'pi/image/rootfs-overlay/**'
+      - 'pi/tones/**'
+      - 'pi/mixer-state/**'
       - '.github/workflows/pi-ci.yml'
 
 permissions:
