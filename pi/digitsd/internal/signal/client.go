@@ -160,8 +160,11 @@ func (c *Client) Close() error {
 	if c.conn == nil {
 		return nil
 	}
-	// Send a clean close frame
-	_ = c.conn.WriteMessage(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	// Send a clean close frame. WriteControl carries its own deadline, so a
+	// half-open connection cannot block this write (and the main loop, which
+	// calls Close inline) until the kernel TCP retransmit timeout.
+	_ = c.conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+		time.Now().Add(writeTimeout))
 	return c.conn.Close()
 }
