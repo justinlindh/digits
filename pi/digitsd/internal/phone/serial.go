@@ -287,6 +287,12 @@ func isUnsolicitedEvent(line string) bool {
 		return true
 	case strings.HasPrefix(line, "KEY:"):
 		return true
+	case line == "DIAL:RESET:OK":
+		// Ack for the fire-and-forget DIAL:RESET command, not a dialed
+		// number. It shares the DIAL: prefix but must not be forwarded as an
+		// unsolicited event, or it reaches onDial as if the user dialed
+		// "RESET:OK". Handled as a fire-and-forget ack below instead.
+		return false
 	case strings.HasPrefix(line, "DIAL:"):
 		return true
 	case strings.HasPrefix(line, "FSM:"):
@@ -297,10 +303,10 @@ func isUnsolicitedEvent(line string) bool {
 }
 
 // isFireAndForgetAck returns true for protocol acks the Pico emits in
-// response to fire-and-forget commands (HOOK:FLASH:ON/OFF, CALL:CONNECTED).
-// These have no waiting consumer on the Pi side. Without this filter they
-// fall through to the events channel and trigger spurious "unhandled event"
-// warnings for every call.
+// response to fire-and-forget commands (HOOK:FLASH:ON/OFF, CALL:CONNECTED,
+// DIAL:RESET). These have no waiting consumer on the Pi side. Without this
+// filter they fall through to the events channel and trigger spurious
+// "unhandled event" warnings for every call.
 func isFireAndForgetAck(line string) bool {
 	switch line {
 	case "HOOK:FLASH:ON", "HOOK:FLASH:OFF":
@@ -308,6 +314,8 @@ func isFireAndForgetAck(line string) bool {
 	case "CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED":
 		return true
 	case "STATE:SET:OK":
+		return true
+	case "DIAL:RESET:OK":
 		return true
 	default:
 		return false
@@ -322,7 +330,7 @@ func isKnownResponsePrefix(line string) bool {
 	switch {
 	case line == "PONG":
 		return true
-	case line == "RST:OK", line == "REBOOT:OK", line == "DIAL:RESET:OK":
+	case line == "RST:OK", line == "REBOOT:OK":
 		return true
 	case line == "RING:ACK", line == "RING:TEST:ACK", line == "RING:DONE":
 		return true

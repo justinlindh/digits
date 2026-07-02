@@ -44,6 +44,9 @@ func TestIsUnsolicitedEvent(t *testing.T) {
 		"RST:OK",
 		"STATE:IDLE",
 		"MODE:KEYTEST", "MODE:NORMAL",
+		// Ack for the fire-and-forget DIAL:RESET command. Shares the DIAL:
+		// prefix but must not be classified as an unsolicited dialed number.
+		"DIAL:RESET:OK",
 	}
 	for _, msg := range commandResponses {
 		if isUnsolicitedEvent(msg) {
@@ -56,6 +59,9 @@ func TestIsFireAndForgetAck(t *testing.T) {
 	acks := []string{
 		"HOOK:FLASH:ON", "HOOK:FLASH:OFF",
 		"CALL:CONNECTED:ACK", "CALL:CONNECTED:IGNORED",
+		// DIAL:RESET is sent fire-and-forget, so its ack has no waiting
+		// consumer and must be dropped here rather than routed as an event.
+		"DIAL:RESET:OK",
 	}
 	for _, msg := range acks {
 		if !isFireAndForgetAck(msg) {
