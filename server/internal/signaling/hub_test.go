@@ -34,6 +34,42 @@ func TestUnregisterRemovesMatchingConnection(t *testing.T) {
 	}
 }
 
+func TestConnIsCurrent(t *testing.T) {
+	hub := NewHub()
+	number := "3140001"
+
+	if hub.ConnIsCurrent(nil) {
+		t.Fatal("nil conn must not be current")
+	}
+
+	conn := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 1)}
+	if hub.ConnIsCurrent(conn) {
+		t.Fatal("unregistered conn must not be current")
+	}
+
+	_ = hub.Register(number, conn)
+	if !hub.ConnIsCurrent(conn) {
+		t.Fatal("registered conn should be current")
+	}
+
+	// A reconnect from the same hardware_id replaces the old conn in place.
+	// The displaced conn is no longer current; the replacement is.
+	replacement := &Conn{HardwareID: "hw-1", Send: make(chan []byte, 1)}
+	_ = hub.Register(number, replacement)
+	if hub.ConnIsCurrent(conn) {
+		t.Fatal("conn displaced by a same-hardware reconnect must not be current")
+	}
+	if !hub.ConnIsCurrent(replacement) {
+		t.Fatal("replacement conn should be current")
+	}
+
+	// After the replacement unregisters, it is no longer current either.
+	hub.Unregister(number, replacement)
+	if hub.ConnIsCurrent(replacement) {
+		t.Fatal("unregistered replacement must not be current")
+	}
+}
+
 func TestIsOnlineReturnsFalseForUnpaired(t *testing.T) {
 	hub := NewHub()
 	conn := &Conn{Send: make(chan []byte, 10)}

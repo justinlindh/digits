@@ -759,6 +759,24 @@ func (r *Relay) OnRegistered(ctx context.Context, number string) {
 // the call when the last device on that line disconnects. OnDisconnect
 // runs before Unregister (LIFO defer order in handler_ws.go), so the
 // departing conn is still counted; >1 means siblings remain.
+// OnConnClosed is the disconnect entry point for a websocket read loop. It
+// runs OnDisconnect only when conn is still the hub's current connection for
+// its line. A device that reconnects with the same hardware_id replaces its
+// previous conn in place, and the new conn's OnReconnect runs before the old
+// conn's read loop unwinds. Without this guard the old loop would call
+// OnDisconnect, see the (new) sibling as the sole remaining connection, and
+// start a grace timer that nothing cancels, tearing the reconnected call down
+// when the window expires.
+func (r *Relay) OnConnClosed(ctx context.Context, conn *Conn) {
+	if conn == nil {
+		return
+	}
+	if !r.Hub.ConnIsCurrent(conn) {
+		return
+	}
+	r.OnDisconnect(ctx, conn.Number, conn.HardwareID)
+}
+
 func (r *Relay) OnDisconnect(ctx context.Context, number string, hardwareID string) {
 	// Clear any extension state for this specific device, regardless of
 	// whether other devices remain on the line.

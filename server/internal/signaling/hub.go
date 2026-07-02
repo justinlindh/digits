@@ -501,6 +501,26 @@ func (h *Hub) ConnectionCount(number string) int {
 	return len(h.conns[number])
 }
 
+// ConnIsCurrent reports whether conn is still the hub's registered connection
+// on its line, compared by identity. When a device reconnects with the same
+// hardware_id, Register replaces the previous conn in place, so the displaced
+// conn is no longer current even before its read loop runs Unregister.
+// Disconnect handling uses this to avoid tearing down a line that a newer
+// connection already owns.
+func (h *Hub) ConnIsCurrent(conn *Conn) bool {
+	if conn == nil {
+		return false
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, c := range h.conns[conn.Number] {
+		if c == conn {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrSendTimeout is returned by SendToWithTimeout when the target's send
 // buffer does not drain within the deadline.
 var ErrSendTimeout = errors.New("send timed out: buffer full")
