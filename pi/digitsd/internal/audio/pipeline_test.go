@@ -1,6 +1,40 @@
 package audio
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// TestPipeline_StopClosesOutFrames locks in the contract that Stop closes the
+// output channel so a `for range OutFrames()` consumer drains buffered frames
+// and then exits, instead of blocking forever and leaking its goroutine.
+func TestPipeline_StopClosesOutFrames(t *testing.T) {
+	p := NewPipeline(PipelineConfig{})
+
+	// Frames a consumer would still see buffered when a call ends.
+	p.outPCM <- []int16{1, 2, 3}
+	p.outPCM <- []int16{4, 5, 6}
+
+	p.Stop()
+
+	done := make(chan int, 1)
+	go func() {
+		n := 0
+		for range p.OutFrames() {
+			n++
+		}
+		done <- n
+	}()
+
+	select {
+	case n := <-done:
+		if n != 2 {
+			t.Fatalf("drained %d buffered frames, want 2", n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("range over OutFrames did not terminate: Stop left the channel open")
+	}
+}
 
 func TestMaybeMute_ZerosWhenMuted(t *testing.T) {
 	frame := []int16{1, 2, 3, 4, 5}
