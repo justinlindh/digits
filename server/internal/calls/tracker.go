@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
-	"github.com/justinlindh/digits/server/internal/db"
 	"github.com/justinlindh/digits/server/internal/dbutil"
 )
 
@@ -92,14 +91,14 @@ type Tracker struct {
 	state       *CallState
 }
 
-// New returns a Tracker backed by d. Pass nil only for unit tests that
+// New returns a Tracker backed by db. Pass nil only for unit tests that
 // exercise the pure in-memory methods (Busy, Active, ClearByNumber, etc.);
 // any call to a DB-backed method (OnCallInitiated, OnCallEnded, GetCall,
 // etc.) on a nil-DB tracker will panic. Use the Set* methods to wire up
 // optional observers before the server begins accepting connections.
-func New(d *db.Database) *Tracker {
+func New(db *sql.DB) *Tracker {
 	return &Tracker{
-		db:          unwrapDB(d),
+		db:          db,
 		active:      make(map[string]*ActiveCall),
 		conferences: NewConferenceTracker(),
 	}
@@ -142,16 +141,6 @@ func (t *Tracker) SetCallEndObserver(obs callEndObserver) {
 	t.mu.Lock()
 	t.callEndObs = obs
 	t.mu.Unlock()
-}
-
-// unwrapDB extracts the *sql.DB from a *db.Database, returning nil when d is
-// nil. Used by constructors that need to store *sql.DB while accepting nil for
-// unit tests that expect no DB calls.
-func unwrapDB(d *db.Database) *sql.DB {
-	if d == nil {
-		return nil
-	}
-	return d.DB
 }
 
 func callKey(a, b string) string {

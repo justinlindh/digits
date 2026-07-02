@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/justinlindh/digits/server/internal/db"
 )
 
 // EventKind tags the type of telemetry event delivered to subscribers.
@@ -157,9 +156,9 @@ func WithFlushDisabled() HealthStoreOption {
 // NewHealthStore creates a HealthStore. Pass a nil database to operate in
 // memory-only mode (no DB flushes). Functional options adjust behavior; see
 // WithFlushDisabled.
-func NewHealthStore(d *db.Database, opts ...HealthStoreOption) *HealthStore {
+func NewHealthStore(db *sql.DB, opts ...HealthStoreOption) *HealthStore {
 	s := &HealthStore{
-		db:       unwrapDB(d),
+		db:       db,
 		sessions: make(map[SessionKey]*sessionRings),
 		now:      time.Now,
 	}

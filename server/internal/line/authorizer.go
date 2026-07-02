@@ -3,8 +3,6 @@ package line
 import (
 	"context"
 	"database/sql"
-
-	"github.com/justinlindh/digits/server/internal/db"
 )
 
 // Authorizer checks whether a call between two line numbers is permitted based
@@ -13,9 +11,9 @@ type Authorizer struct {
 	db *sql.DB
 }
 
-// NewAuthorizer returns an Authorizer backed by database.
-func NewAuthorizer(database *db.Database) *Authorizer {
-	return &Authorizer{db: database.DB}
+// NewAuthorizer returns an Authorizer backed by db.
+func NewAuthorizer(db *sql.DB) *Authorizer {
+	return &Authorizer{db: db}
 }
 
 // CanCall reports whether fromNumber is permitted to call toNumber, which is

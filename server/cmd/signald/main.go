@@ -127,7 +127,7 @@ func run(ctx context.Context) error {
 		slog.Info("redis pub/sub enabled for multi-replica signaling")
 	}
 
-	tracker := calls.New(database)
+	tracker := calls.New(database.DB)
 	if redisBridge != nil {
 		rc := redisBridge.Client()
 		podID := redisBridge.PodID()
@@ -166,7 +166,7 @@ func run(ctx context.Context) error {
 		healthOpts = append(healthOpts, calls.WithFlushDisabled())
 		slog.Warn("link-health flusher disabled via SIGNALD_LINK_HEALTH_FLUSH_DISABLED")
 	}
-	healthStore := calls.NewHealthStore(database, healthOpts...)
+	healthStore := calls.NewHealthStore(database.DB, healthOpts...)
 	tracker.SetHealthStore(healthStore)
 	if redisBridge != nil {
 		healthStore.SetRedis(redisBridge.Client(), redisBridge.PodID())
@@ -182,7 +182,7 @@ func run(ctx context.Context) error {
 	defer func() { <-healthDone }() // wait for final flush before DB close unwinds
 
 	// Relay and TURN
-	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
+	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database.DB), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
 	relay.Errors = mreg
 	relay.Metrics = mreg

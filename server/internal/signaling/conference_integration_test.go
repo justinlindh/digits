@@ -77,7 +77,7 @@ func countType(msgs []*signaling.Message, typ string) int {
 
 func TestConferenceLifecycle_Integration(t *testing.T) {
 	d := openSignalingTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	hub := signaling.NewHub()
 	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
 
@@ -228,7 +228,7 @@ func TestConferenceLifecycle_Integration(t *testing.T) {
 // hook-on causes the server to end both calls and notify both peers.
 func TestHangupDuringADDCalling_Integration(t *testing.T) {
 	d := openSignalingTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	hub := signaling.NewHub()
 	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
 
@@ -305,7 +305,7 @@ func TestHangupDuringADDCalling_Integration(t *testing.T) {
 // continuation calls row is created (unlike the hangup/dropMember path).
 func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 	d := openSignalingTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	hub := signaling.NewHub()
 	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
 
@@ -392,7 +392,7 @@ func TestDisconnectNonHostConferenceParticipant_Integration(t *testing.T) {
 
 func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testing.T) {
 	d := openSignalingTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	hub := signaling.NewHub()
 	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
 
@@ -450,7 +450,7 @@ func TestKickMember_SendsConferenceEndToKickedAndRemaining_Integration(t *testin
 // members receive ConferenceEnd, and IsBusy returns false for them.
 func TestDisconnectConferenceParticipant_Integration(t *testing.T) {
 	d := openSignalingTestDB(t)
-	tr := calls.New(d)
+	tr := calls.New(d.DB)
 	hub := signaling.NewHub()
 	r := signaling.NewRelay(hub, tr, alwaysAllow{}, nil)
 
