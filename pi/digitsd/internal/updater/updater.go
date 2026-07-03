@@ -269,32 +269,38 @@ func (u *Updater) ApplyPiUpdate(stagedBinary, expectedVersion string) error {
 		return fmt.Errorf("remount rw: %w", err)
 	}
 
+	tmpDst := u.cfg.BinaryPath + ".tmp"
+
+	// remountRO restores the read-only rootfs on the error paths below; a
+	// failure to remount is logged, never fatal. Every early return past the
+	// remount,rw must call this so the rootfs is not left writable.
+	remountRO := func(when string) {
+		if err := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); err != nil {
+			slog.Warn("updater: failed to remount ro "+when, "error", err)
+		}
+	}
+	// removeTmp discards a partial tmp binary; failures are logged, not fatal.
+	removeTmp := func(when string) {
+		if err := exec.Command("sudo", "rm", "-f", tmpDst).Run(); err != nil {
+			slog.Warn("updater: failed to remove tmp binary "+when, "error", err)
+		}
+	}
+
 	// Copy staged binary via sudo using tmp+mv to avoid "text file busy" on the
 	// running executable. Direct cp fails because the kernel won't let you
 	// overwrite an open binary.
-	tmpDst := u.cfg.BinaryPath + ".tmp"
 	if err := exec.Command("sudo", "cp", stagedBinary, tmpDst).Run(); err != nil {
-		if rmErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); rmErr != nil {
-			slog.Warn("updater: failed to remount ro after copy failure", "error", rmErr)
-		}
+		remountRO("after copy failure")
 		return fmt.Errorf("copy binary: %w", err)
 	}
 	if err := exec.Command("sudo", "chmod", "0755", tmpDst).Run(); err != nil {
-		if rmErr := exec.Command("sudo", "rm", "-f", tmpDst).Run(); rmErr != nil {
-			slog.Warn("updater: failed to remove tmp binary after chmod failure", "error", rmErr)
-		}
-		if roErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); roErr != nil {
-			slog.Warn("updater: failed to remount ro after chmod failure", "error", roErr)
-		}
+		removeTmp("after chmod failure")
+		remountRO("after chmod failure")
 		return fmt.Errorf("chmod binary: %w", err)
 	}
 	if err := exec.Command("sudo", "mv", tmpDst, u.cfg.BinaryPath).Run(); err != nil {
-		if rmErr := exec.Command("sudo", "rm", "-f", tmpDst).Run(); rmErr != nil {
-			slog.Warn("updater: failed to remove tmp binary after rename failure", "error", rmErr)
-		}
-		if roErr := exec.Command("sudo", "mount", "-o", "remount,ro", "/").Run(); roErr != nil {
-			slog.Warn("updater: failed to remount ro after rename failure", "error", roErr)
-		}
+		removeTmp("after rename failure")
+		remountRO("after rename failure")
 		return fmt.Errorf("rename binary: %w", err)
 	}
 	_ = os.Remove(stagedBinary)
