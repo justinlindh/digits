@@ -177,8 +177,9 @@ func (m *mockTracker) EndConferencePersistent(ctx context.Context, id uuid.UUID,
 	return err
 }
 
-func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, bool, error) {
-	return m.conferences.DropMember(ctx, id, phone, reason)
+func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, error) {
+	remaining, _, err := m.conferences.DropMember(ctx, id, phone, reason)
+	return remaining, err
 }
 
 func (m *mockTracker) LastInboundCaller(ctx context.Context, number string) (string, error) {

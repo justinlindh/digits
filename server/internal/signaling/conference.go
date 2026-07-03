@@ -128,7 +128,7 @@ func (r *Relay) dropMemberFromConference(ctx context.Context, confID uuid.UUID, 
 			others = append(others, p)
 		}
 	}
-	remaining, _, err := r.Tracker.DropMemberPersistent(ctx, confID, phone, reason)
+	remaining, err := r.Tracker.DropMemberPersistent(ctx, confID, phone, reason)
 	if err != nil {
 		slog.ErrorContext(ctx, "drop member", "err", err)
 		return

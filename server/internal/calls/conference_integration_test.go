@@ -117,12 +117,9 @@ func TestDropMemberCreatesContinuationCall_Integration(t *testing.T) {
 	_, _ = tr.OnCallInitiated(context.Background(), "5550100", "5550102")
 	conf, _ := tr.CreateConferencePersistent(context.Background(), "5550100", callID, []string{"5550101", "5550102"})
 
-	remaining, ended, err := tr.DropMemberPersistent(context.Background(), conf.ID, "5550101", "hangup")
+	remaining, err := tr.DropMemberPersistent(context.Background(), conf.ID, "5550101", "hangup")
 	if err != nil {
 		t.Fatalf("DropMemberPersistent: %v", err)
-	}
-	if !ended {
-		t.Fatalf("expected conference ended")
 	}
 	if len(remaining) != 2 {
 		t.Fatalf("expected 2 remaining, got %d", len(remaining))
@@ -234,14 +231,13 @@ func TestDropMemberFiresEvictConference(t *testing.T) {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
-	_, ended, err := tr.DropMemberPersistent(ctx, conf.ID, m3, "kick")
+	_, err = tr.DropMemberPersistent(ctx, conf.ID, m3, "kick")
 	if err != nil {
 		t.Fatalf("DropMemberPersistent: %v", err)
 	}
-	if !ended {
-		t.Fatal("v1 DropMember should end the conference (3 -> 2 terminates)")
-	}
 
+	// v1 ends the conference on any drop (3 -> 2 terminates), which evicts it
+	// from the health tracker.
 	if len(h.confEvicts) != 1 || h.confEvicts[0] != conf.ID {
 		t.Fatalf("EvictConference from DropMember: got %v want [%s]", h.confEvicts, conf.ID)
 	}

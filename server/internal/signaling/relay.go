@@ -49,7 +49,7 @@ type CallTracker interface {
 	CallIDForPair(ctx context.Context, a, b string) int64
 	CallIDFor(ctx context.Context, number string) (int64, bool)
 	EndConferencePersistent(ctx context.Context, confID uuid.UUID, reason string) error
-	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error)
+	DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, err error)
 	LastInboundCaller(ctx context.Context, number string) (string, error)
 }
 

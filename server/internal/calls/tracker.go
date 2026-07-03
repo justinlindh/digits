@@ -716,15 +716,17 @@ func (t *Tracker) GetConferenceByID(ctx context.Context, confID uuid.UUID) (*Con
 // and (for the 2 surviving members) inserts a fresh calls row stamped with
 // originating_conference_id so Busy() and call history stay consistent after the
 // conference ends but the surviving pair's PC continues as a regular 2-party call.
-func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
+func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, err error) {
 	// Bail early with a useful error if the phone has no active conference.
 	if t.conferences.ConferenceByPhone(ctx, phone) == nil {
-		return nil, false, fmt.Errorf("phone %s is not in any active conference", phone)
+		return nil, fmt.Errorf("phone %s is not in any active conference", phone)
 	}
 
-	remaining, ended, err = t.conferences.DropMember(ctx, confID, phone, reason)
+	// v1: any drop ends the conference, so ended is always true here. It gates
+	// the health eviction below but is not surfaced to callers.
+	remaining, ended, err := t.conferences.DropMember(ctx, confID, phone, reason)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	// Compute the sorted pair once. All three use sites (DB insert, active map,
@@ -770,7 +772,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		}
 		return nil
 	}); txErr != nil {
-		return nil, false, txErr
+		return nil, txErr
 	}
 
 	// Register the surviving pair in the 2-party active map so Busy() and
@@ -791,7 +793,7 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		h.EvictConference(confID)
 	}
 	slog.InfoContext(ctx, "conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
-	return remaining, ended, nil
+	return remaining, nil
 }
 
 // GetCall returns the call row by id. Returns zero-value Call and nil error

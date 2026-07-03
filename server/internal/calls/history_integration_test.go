@@ -125,12 +125,9 @@ func TestRecentHistoryForPhones_MemberLeave(t *testing.T) {
 		t.Fatalf("CreateConferencePersistent: %v", err)
 	}
 
-	remaining, ended, err := tr.DropMemberPersistent(context.Background(), conf.ID, "7772003", "hangup")
+	remaining, err := tr.DropMemberPersistent(context.Background(), conf.ID, "7772003", "hangup")
 	if err != nil {
 		t.Fatalf("DropMemberPersistent: %v", err)
-	}
-	if !ended {
-		t.Fatal("expected conference ended after drop")
 	}
 	if len(remaining) != 2 {
 		t.Fatalf("expected 2 remaining, got %d", len(remaining))
