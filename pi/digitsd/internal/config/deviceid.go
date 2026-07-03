@@ -37,34 +37,16 @@ func loadOrCreateDeviceIDAt(path string) (string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	// Write to a temp file and rename onto the target so the replace is
-	// atomic (no power-loss window where device-id is missing) and so
-	// it works even if the existing file is owned by another user:
-	// rename only needs write permission on the parent directory. Legacy
-	// images provisioned /data/digits/device-id as root while digitsd
-	// runs as the digits user, so plain os.WriteFile would hit EACCES.
-	tmp, err := os.CreateTemp(dir, "device-id.*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("create temp device id: %w", err)
-	}
-	tmpPath := tmp.Name()
-	if _, err := tmp.WriteString(id + "\n"); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("write temp device id: %w", err)
-	}
-	if err := tmp.Chmod(0644); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("chmod temp device id: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("close temp device id: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return "", fmt.Errorf("rename device id into place: %w", err)
+	// atomicWrite fsyncs the temp file and the parent directory before and
+	// after the rename, so a power cut mid-write cannot leave a device-id
+	// with un-flushed (NUL-filled) contents that the load path would reject
+	// and regenerate, silently changing the device identity. The temp+rename
+	// also lets us replace a file owned by another user: rename needs only
+	// write permission on the parent directory. Legacy images provisioned
+	// /data/digits/device-id as root while digitsd runs as the digits user,
+	// so a plain in-place write would hit EACCES.
+	if err := atomicWrite(path, []byte(id+"\n"), 0644); err != nil {
+		return "", fmt.Errorf("write device id: %w", err)
 	}
 
 	return id, nil
