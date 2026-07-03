@@ -558,7 +558,7 @@ func (h *Handler) handlePhoneNamePost(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneNumberPost(w http.ResponseWriter, r *http.Request) {
 	oldNumber := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, oldNumber)
+	ln := h.requireLineOwnershipAdmin(w, r, oldNumber)
 	if ln == nil {
 		return
 	}
@@ -831,7 +831,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, number)
+	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -901,7 +901,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, number)
+	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -922,7 +922,7 @@ func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request
 
 func (h *Handler) handlePhoneRestart(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, number)
+	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -981,7 +981,7 @@ func validateDevModePassword(pw string) error {
 // signaling channel.
 func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, number)
+	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -1129,7 +1129,7 @@ func (h *Handler) respondPhoneCommandResult(w http.ResponseWriter, r *http.Reque
 
 func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	ln, _ := h.requireLineOwnershipAdmin(w, r, number)
+	ln := h.requireLineOwnershipAdmin(w, r, number)
 	if ln == nil {
 		return
 	}
@@ -1143,7 +1143,7 @@ func (h *Handler) handlePhoneDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePhoneConvert(w http.ResponseWriter, r *http.Request) {
 	number := r.PathValue("number")
-	srcLn, _ := h.requireLineOwnershipAdmin(w, r, number)
+	srcLn := h.requireLineOwnershipAdmin(w, r, number)
 	if srcLn == nil {
 		return
 	}
