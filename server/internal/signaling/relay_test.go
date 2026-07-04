@@ -178,7 +178,7 @@ func (m *mockTracker) EndConferencePersistent(ctx context.Context, id uuid.UUID,
 }
 
 func (m *mockTracker) DropMemberPersistent(ctx context.Context, id uuid.UUID, phone, reason string) ([]string, error) {
-	remaining, _, err := m.conferences.DropMember(ctx, id, phone, reason)
+	remaining, err := m.conferences.DropMember(ctx, id, phone, reason)
 	return remaining, err
 }
 

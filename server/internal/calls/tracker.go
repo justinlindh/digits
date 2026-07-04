@@ -722,9 +722,8 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 		return nil, fmt.Errorf("phone %s is not in any active conference", phone)
 	}
 
-	// v1: any drop ends the conference, so ended is always true here. It gates
-	// the health eviction below but is not surfaced to callers.
-	remaining, ended, err := t.conferences.DropMember(ctx, confID, phone, reason)
+	// v1: any drop ends the conference (see DropMember).
+	remaining, err = t.conferences.DropMember(ctx, confID, phone, reason)
 	if err != nil {
 		return nil, err
 	}
@@ -789,10 +788,10 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 	if s != nil && len(remaining) == 2 {
 		s.OnCallInitiated(ctx, continuationCallID, pairA, pairB)
 	}
-	if h != nil && ended {
+	if h != nil {
 		h.EvictConference(confID)
 	}
-	slog.InfoContext(ctx, "conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining, "ended", ended)
+	slog.InfoContext(ctx, "conference: drop persisted", "conf_id", confID.String(), "dropped", phone, "reason", reason, "remaining", remaining)
 	return remaining, nil
 }
 
