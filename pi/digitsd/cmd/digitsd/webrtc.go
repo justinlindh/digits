@@ -384,7 +384,7 @@ func (d *daemonCallbacks) HangupCall() {
 		d.evaluateLED()
 		// Same finalize pushes a fresh count to the server so the
 		// owner-side web UI badge updates without polling.
-		d.publishVoicemailState()
+		d.publishVoicemailState(false)
 	}
 
 	if d.pendingAutoUpdate.CompareAndSwap(true, false) && d.autoUpdateAllowed() {

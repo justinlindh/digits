@@ -171,7 +171,7 @@ func (d *daemonCallbacks) VoicemailPickup() {
 	// Fired off the main goroutine so it can take d.mu inside
 	// publishVoicemailState once this function's defer Unlock runs.
 	if savedPartial {
-		go d.publishVoicemailState()
+		go d.publishVoicemailState(false)
 	}
 
 	if d.callPeer == "" {
@@ -506,7 +506,7 @@ func (d *daemonCallbacks) VoicemailRecordEnded() {
 	// At-cap finalize already ran in the OnTrack loop before VoicemailRecordEnded
 	// was scheduled, so HangupCall's finalizedVoicemail branch did not fire and
 	// did not publish. Publish here so the server learns about the new message.
-	d.publishVoicemailState()
+	d.publishVoicemailState(false)
 }
 
 func (d *daemonCallbacks) VoicemailEnabled() (bool, time.Duration) {
@@ -1025,7 +1025,7 @@ func (d *daemonCallbacks) VoicemailKey(digit string) {
 	// not hold the playback mutex. Dedup inside publishVoicemailState makes
 	// this a no-op when the unheard count did not actually change.
 	if mutated {
-		d.publishVoicemailState()
+		d.publishVoicemailState(false)
 	}
 
 	if openErr != nil {
@@ -1405,7 +1405,7 @@ func (d *daemonCallbacks) voicemailAdvanceFromEOF(sess *voicemailPlaybackSession
 	}
 	// Publish after voicemailMu release; dedup makes redundant calls cheap.
 	if mutated {
-		d.publishVoicemailState()
+		d.publishVoicemailState(false)
 	}
 	if openErr != nil {
 		slog.Error("voicemail: open next after EOF failed", "from_id", sess.id, "error", openErr)
