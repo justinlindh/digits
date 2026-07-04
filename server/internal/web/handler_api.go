@@ -85,23 +85,7 @@ func (h *Handler) handleInternalStats(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleAPIStatus(w http.ResponseWriter, r *http.Request) {
 	hh := h.activeHousehold(r)
 	lineRows, _ := h.buildLineRows(r, hh)
-
-	nums := make(map[string]bool, len(lineRows))
-	var onlineCount int
-	for _, row := range lineRows {
-		nums[row.Line.Number] = true
-		if row.Online {
-			onlineCount++
-		}
-	}
-
-	allActive := h.tracker.Active(r.Context())
-	var activeCount int
-	for _, a := range allActive {
-		if nums[a.Caller] || nums[a.Callee] {
-			activeCount++
-		}
-	}
+	onlineCount, activeCount := h.countLineActivity(r.Context(), lineRows)
 
 	if err := writeJSON(w, map[string]any{
 		"total_lines":  len(lineRows),

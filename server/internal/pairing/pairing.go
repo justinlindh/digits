@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,8 +18,8 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
-	"github.com/justinlindh/digits/server/internal/device"
 	"github.com/justinlindh/digits/server/internal/line"
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 const (
@@ -129,11 +128,11 @@ func bindDeviceToLine(ctx context.Context, tx *sql.Tx, deviceID, lineID int64, t
 // operation rolls back, leaving the device claimable with a fresh code.
 // Returns (deviceToken, hardwareID, error).
 func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, deviceName, householdID string) (string, string, error) {
-	token, err := randomHex(32)
+	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", "", fmt.Errorf("generate device token: %w", err)
 	}
-	tokenHash := device.HashToken(token)
+	tokenHash := tokens.Hash(token)
 
 	var hardwareID string
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
@@ -171,11 +170,11 @@ func (s *Store) ClaimDevice(ctx context.Context, code, lineNumber, lineName, dev
 // Unlike ClaimDevice, no new line is created. The line must exist and belong
 // to the given household. Returns (deviceToken, hardwareID, error).
 func (s *Store) ClaimDeviceToLine(ctx context.Context, code string, lineID int64, deviceName, householdID string) (string, string, error) {
-	token, err := randomHex(32)
+	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", "", fmt.Errorf("generate device token: %w", err)
 	}
-	tokenHash := device.HashToken(token)
+	tokenHash := tokens.Hash(token)
 
 	var hardwareID string
 	if err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
@@ -225,14 +224,6 @@ func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
 func isUniqueViolation(err error) bool {
 	var pqErr *pq.Error
 	return errors.As(err, &pqErr) && pqErr.Code == "23505"
-}
-
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // randomCode generates a cryptographically random numeric code of the given length.

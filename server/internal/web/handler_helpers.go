@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -129,6 +131,50 @@ func parseCallID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 		return 0, false
 	}
 	return callID, true
+}
+
+// parseConfID reads the "uuid" path value and parses it as a conference UUID.
+// On a malformed value it writes 404 (the same response an ownership check
+// gives a nonexistent conference) and returns (uuid.Nil, false), so conference
+// handlers can guard with a single `if !ok { return }`. Mirrors parseCallID.
+func parseConfID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	confID, err := uuid.Parse(r.PathValue("uuid"))
+	if err != nil {
+		http.NotFound(w, r)
+		return uuid.Nil, false
+	}
+	return confID, true
+}
+
+// countLineActivity tallies how many of the given line rows are online and how
+// many are endpoints of a currently-active call. Only the household's own lines
+// count, matching the dashboard and status-API scoping rule; it lives here so
+// that rule is expressed once. Uses tracker.Active for the active-call snapshot.
+func (h *Handler) countLineActivity(ctx context.Context, rows []lineRow) (online, active int) {
+	own := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		own[row.Line.Number] = true
+		if row.Online {
+			online++
+		}
+	}
+	for _, a := range h.tracker.Active(ctx) {
+		if own[a.Caller] || own[a.Callee] {
+			active++
+		}
+	}
+	return online, active
+}
+
+// renderFragment executes a named template against data and returns the HTML
+// with the trailing newline trimmed. The htmx panel/status handlers share it so
+// the buffer-execute-trim dance and its wrapped error live in one place.
+func renderFragment(t *template.Template, name string, data any) (string, error) {
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", fmt.Errorf("render %s: %w", name, err)
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
 // requireCallEndpointOwnership verifies the authenticated user owns either
@@ -340,10 +386,12 @@ func (h *Handler) activeHousehold(r *http.Request) *household.Household {
 	return active
 }
 
-// requireHouseholdAdmin checks that the requesting user holds the "admin" role
-// in the active household. Returns (user, household, true) on success. On
-// failure it writes an appropriate redirect or 403 and returns (nil, nil, false).
-func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, *household.Household, bool) {
+// requireHouseholdMember resolves the authenticated user and their active
+// household, writing the standard onboarding redirects on failure: /auth/login
+// when unauthenticated, /onboard when the user has no active household. Returns
+// (user, household, true) on success. It centralizes the two-step gate that
+// every household-scoped page handler opens with.
+func (h *Handler) requireHouseholdMember(w http.ResponseWriter, r *http.Request) (*auth.User, *household.Household, bool) {
 	user := auth.UserFromContext(r.Context())
 	if user == nil {
 		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
@@ -352,6 +400,17 @@ func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) 
 	hh := h.activeHousehold(r)
 	if hh == nil {
 		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+		return nil, nil, false
+	}
+	return user, hh, true
+}
+
+// requireHouseholdAdmin checks that the requesting user holds the "admin" role
+// in the active household. Returns (user, household, true) on success. On
+// failure it writes an appropriate redirect or 403 and returns (nil, nil, false).
+func (h *Handler) requireHouseholdAdmin(w http.ResponseWriter, r *http.Request) (*auth.User, *household.Household, bool) {
+	user, hh, ok := h.requireHouseholdMember(w, r)
+	if !ok {
 		return nil, nil, false
 	}
 	role, err := h.householdStore.GetRole(r.Context(), user.ID, hh.ID)

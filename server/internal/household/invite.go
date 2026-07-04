@@ -2,15 +2,14 @@ package household
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 const inviteTTL = 7 * 24 * time.Hour
@@ -53,11 +52,11 @@ func NewInviteStore(db *sql.DB) *InviteStore {
 }
 
 func generateInviteToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
+	tok, err := tokens.RandomHex(32)
+	if err != nil {
 		return "", fmt.Errorf("generate invite token: %w", err)
 	}
-	return hex.EncodeToString(b), nil
+	return tok, nil
 }
 
 const inviteColumns = `id, household_id, email, invited_by, token, status, created_at, accepted_at, expires_at`

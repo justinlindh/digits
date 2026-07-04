@@ -1,14 +1,12 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,9 +44,8 @@ type ConferenceLinkHealthResp struct {
 }
 
 func (h *Handler) handleConferenceLinkHealth(w http.ResponseWriter, r *http.Request) {
-	confID, err := uuid.Parse(r.PathValue("uuid"))
-	if err != nil {
-		http.NotFound(w, r)
+	confID, ok := parseConfID(w, r)
+	if !ok {
 		return
 	}
 	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
@@ -124,9 +121,8 @@ func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid
 // Auth: same as the JSON endpoint (requireConferenceOwnership). Ended
 // conferences return 404 before any stream bytes are written.
 func (h *Handler) handleConferenceLinkHealthStream(w http.ResponseWriter, r *http.Request) {
-	confID, err := uuid.Parse(r.PathValue("uuid"))
-	if err != nil {
-		http.NotFound(w, r)
+	confID, ok := parseConfID(w, r)
+	if !ok {
 		return
 	}
 	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
@@ -199,11 +195,7 @@ func (h *Handler) writeConferenceEvent(ctx context.Context, w io.Writer, flusher
 }
 
 func (h *Handler) renderConferenceLinkHealthPanel(resp ConferenceLinkHealthResp) (string, error) {
-	var buf bytes.Buffer
-	if err := h.tmplConferenceLivePanel.ExecuteTemplate(&buf, "conference-live-panel", resp); err != nil {
-		return "", fmt.Errorf("render conference-live-panel: %w", err)
-	}
-	return strings.TrimRight(buf.String(), "\n"), nil
+	return renderFragment(h.tmplConferenceLivePanel, "conference-live-panel", resp)
 }
 
 // conferenceLiveDetailData is the render payload for conference-live-detail.html.
@@ -216,9 +208,8 @@ type conferenceLiveDetailData struct {
 // handleConferenceLiveDetail renders the observation deck for a conference.
 // Ended conferences render in terminal state (no SSE wiring, no kick button).
 func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Request) {
-	confID, err := uuid.Parse(r.PathValue("uuid"))
-	if err != nil {
-		http.NotFound(w, r)
+	confID, ok := parseConfID(w, r)
+	if !ok {
 		return
 	}
 	conf, ownedLines, primaryHH, ok := h.requireConferenceOwnership(w, r, confID)
@@ -245,9 +236,8 @@ func (h *Handler) handleConferenceLiveDetail(w http.ResponseWriter, r *http.Requ
 // cascades to the remaining pair), and fans out a DisconnectKind event
 // to observer SSE streams.
 func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
-	confID, err := uuid.Parse(r.PathValue("uuid"))
-	if err != nil {
-		http.NotFound(w, r)
+	confID, ok := parseConfID(w, r)
+	if !ok {
 		return
 	}
 	conf, _, _, ok := h.requireConferenceHostOwnership(w, r, confID)
