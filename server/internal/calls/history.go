@@ -144,8 +144,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 	limitIdx := len(args)
 
 	query := fmt.Sprintf(
-		`SELECT id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
-		        end_reason, originating_conference_id
+		`SELECT `+callColumns+`
 		 FROM calls
 		 WHERE (caller IN (%s) OR callee IN (%s))
 		   AND (end_reason IS NULL OR end_reason != 'merged_to_conference')%s
@@ -159,17 +158,7 @@ func (t *Tracker) recentCallsForHistory(ctx context.Context, phones []string, cu
 	}
 	defer func() { _ = rows.Close() }()
 
-	var out []Call
-	for rows.Next() {
-		var c Call
-		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID); err != nil {
-			return nil, err
-		}
-		out = append(out, c)
-	}
-	return out, rows.Err()
+	return scanCallRows(rows)
 }
 
 // recentConferencesForHistory returns conferences where any of the phones is
