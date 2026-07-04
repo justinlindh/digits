@@ -1,11 +1,8 @@
 package web
 
 import (
-	"bytes"
-	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/auth"
@@ -88,26 +85,7 @@ func (h *Handler) writeDashStatus(w http.ResponseWriter, flusher http.Flusher, r
 // LINES·ONLINE; FAMILIES is the count of accepted household links.
 func (h *Handler) computeDashStatus(r *http.Request, hh *household.Household) dashStatusVM {
 	lineRows, _ := h.buildLineRows(r, hh)
-
-	ownNums := make(map[string]struct{}, len(lineRows))
-	onlineCount := 0
-	for _, l := range lineRows {
-		ownNums[l.Line.Number] = struct{}{}
-		if l.Online {
-			onlineCount++
-		}
-	}
-
-	activeCount := 0
-	for _, pair := range h.tracker.Active(r.Context()) {
-		if _, ok := ownNums[pair.Caller]; ok {
-			activeCount++
-			continue
-		}
-		if _, ok := ownNums[pair.Callee]; ok {
-			activeCount++
-		}
-	}
+	onlineCount, activeCount := h.countLineActivity(r.Context(), lineRows)
 
 	var householdID string
 	if hh != nil {
@@ -126,9 +104,5 @@ func (h *Handler) computeDashStatus(r *http.Request, hh *household.Household) da
 }
 
 func (h *Handler) renderDashStatus(vm dashStatusVM) (string, error) {
-	var buf bytes.Buffer
-	if err := h.tmplDashboardAMStatus.ExecuteTemplate(&buf, "dashboard-am-status", vm); err != nil {
-		return "", fmt.Errorf("render dashboard-am-status: %w", err)
-	}
-	return strings.TrimRight(buf.String(), "\n"), nil
+	return renderFragment(h.tmplDashboardAMStatus, "dashboard-am-status", vm)
 }

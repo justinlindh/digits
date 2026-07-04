@@ -32,15 +32,8 @@ type linkRow struct {
 }
 
 func (h *Handler) handleLinksGet(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-
-	myHousehold := h.activeHousehold(r)
-	if myHousehold == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	_, myHousehold, ok := h.requireHouseholdMember(w, r)
+	if !ok {
 		return
 	}
 
@@ -90,14 +83,8 @@ func (h *Handler) handleLinksInvitePost(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) handleLinksAcceptPost(w http.ResponseWriter, r *http.Request) {
-	user := auth.UserFromContext(r.Context())
-	if user == nil {
-		http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
-		return
-	}
-	myHousehold := h.activeHousehold(r)
-	if myHousehold == nil {
-		http.Redirect(w, r, "/onboard", http.StatusSeeOther)
+	user, myHousehold, ok := h.requireHouseholdMember(w, r)
+	if !ok {
 		return
 	}
 

@@ -334,79 +334,62 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		return t, nil
 	}
 
-	tmplDashboard, err := parsePageWith("dashboard.html",
-		"templates/dnd-toggle.html",
-		"templates/_dashboard-am-status.html",
-	)
-	if err != nil {
-		return nil, err
+	// page and fragment record the first parse failure in perr so the long
+	// run of template assignments below stays flat instead of repeating an
+	// error check after every parse. perr is checked once at the end.
+	var perr error
+	page := func(p string, extra ...string) *template.Template {
+		if perr != nil {
+			return nil
+		}
+		var t *template.Template
+		var err error
+		if len(extra) == 0 {
+			t, err = parsePage(p)
+		} else {
+			t, err = parsePageWith(p, extra...)
+		}
+		if err != nil {
+			perr = err
+		}
+		return t
 	}
-	tmplDashboardAMStatus, err := template.New("dashboard-am-status").Funcs(funcMap).ParseFS(templateFS, "templates/_dashboard-am-status.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse dashboard-am-status: %w", err)
+	// fragment parses standalone partials into their own named template tree
+	// (used for htmx responses that render a partial without a page layout).
+	fragment := func(name string, files ...string) *template.Template {
+		if perr != nil {
+			return nil
+		}
+		paths := make([]string, len(files))
+		for i, f := range files {
+			paths[i] = "templates/" + f
+		}
+		t, err := template.New(name).Funcs(funcMap).ParseFS(templateFS, paths...)
+		if err != nil {
+			perr = fmt.Errorf("parse %s: %w", name, err)
+		}
+		return t
 	}
-	tmplPhones, err := parsePage("phones.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplCalls, err := parsePage("calls.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplSettings, err := parsePage("settings.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplOnboard, err := parsePage("onboard.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplPhoneDetail, err := parsePage("phone-detail.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplLinks, err := parsePage("links.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplConnecting, err := parsePage("connecting.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplWelcome, err := parsePage("welcome.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplInvite, err := parsePage("invite.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplCallLivePanel, err := template.New("call-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_call-live-panel.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse call-live-panel: %w", err)
-	}
-	tmplConferenceLivePanel, err := template.New("conference-live-panel").Funcs(funcMap).ParseFS(templateFS, "templates/_conference-live-panel.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse conference-live-panel: %w", err)
-	}
-	tmplCallLiveDetail, err := parsePageWith("call-live-detail.html", "templates/_call-live-panel.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplConferenceLiveDetail, err := parsePageWith("conference-live-detail.html", "templates/_conference-live-panel.html")
-	if err != nil {
-		return nil, err
-	}
-	tmplChangelog, err := template.New("changelog").Funcs(funcMap).ParseFS(templateFS,
-		"templates/_partials.html",
-		"templates/_changelog.html",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("parse changelog: %w", err)
-	}
-	tmplActiveCalls, err := template.New("active-calls").Funcs(funcMap).ParseFS(templateFS, "templates/_active-calls.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse active-calls: %w", err)
+
+	tmplDashboard := page("dashboard.html", "templates/dnd-toggle.html", "templates/_dashboard-am-status.html")
+	tmplDashboardAMStatus := fragment("dashboard-am-status", "_dashboard-am-status.html")
+	tmplPhones := page("phones.html")
+	tmplCalls := page("calls.html")
+	tmplSettings := page("settings.html")
+	tmplOnboard := page("onboard.html")
+	tmplPhoneDetail := page("phone-detail.html")
+	tmplLinks := page("links.html")
+	tmplConnecting := page("connecting.html")
+	tmplWelcome := page("welcome.html")
+	tmplInvite := page("invite.html")
+	tmplCallLivePanel := fragment("call-live-panel", "_call-live-panel.html")
+	tmplConferenceLivePanel := fragment("conference-live-panel", "_conference-live-panel.html")
+	tmplCallLiveDetail := page("call-live-detail.html", "templates/_call-live-panel.html")
+	tmplConferenceLiveDetail := page("conference-live-detail.html", "templates/_conference-live-panel.html")
+	tmplChangelog := fragment("changelog", "_partials.html", "_changelog.html")
+	tmplActiveCalls := fragment("active-calls", "_active-calls.html")
+	if perr != nil {
+		return nil, perr
 	}
 
 	u := websocket.Upgrader{

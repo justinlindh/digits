@@ -1,7 +1,6 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"html"
@@ -351,12 +350,8 @@ func (h *Handler) linkedIndexForCall(ctx context.Context, ownedLines map[string]
 // renderLinkHealthPanel executes the _call-live-panel.html template against
 // a LinkHealthResp and returns the rendered HTML.
 func (h *Handler) renderLinkHealthPanel(call calls.Call, caller, callee LinkHealthEndpointResp) (string, error) {
-	var buf bytes.Buffer
 	data := LinkHealthResp{CallID: call.ID, StartedAt: call.StartedAt, Caller: caller, Callee: callee}
-	if err := h.tmplCallLivePanel.ExecuteTemplate(&buf, "call-live-panel", data); err != nil {
-		return "", fmt.Errorf("render call-live-panel: %w", err)
-	}
-	return strings.TrimRight(buf.String(), "\n"), nil
+	return renderFragment(h.tmplCallLivePanel, "call-live-panel", data)
 }
 
 // renderEndedFragment returns the small HTML shown when a call ends.
