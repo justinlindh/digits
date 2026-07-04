@@ -12,11 +12,22 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
 	"github.com/justinlindh/digits/server/internal/device"
 )
+
+// normalizeEmail canonicalizes an address for storage and lookup by trimming
+// surrounding whitespace and lowercasing. Every email-keyed store method funnels
+// through this so a magic-link request for "John@Example.com" resolves to the
+// same account as a Google login for "john@example.com" instead of silently
+// creating a duplicate (the users.email UNIQUE constraint is case-sensitive).
+// Matches the normalization the household invite flow already applies.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 // ErrUserNotFound is returned by GetUserBy* when no matching row exists.
 // Callers that want find-or-create semantics must check for this explicitly
@@ -83,6 +94,7 @@ func scanUser(row dbutil.RowScanner) (*User, error) {
 
 // CreateUser inserts a new user record and returns it.
 func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *string) (*User, error) {
+	email = normalizeEmail(email)
 	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3) RETURNING `+userColumns,
 		email, name, googleID,
@@ -106,9 +118,11 @@ func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*Us
 	return u, nil
 }
 
-// GetUserByEmail looks up a user by email address.
+// GetUserByEmail looks up a user by email address. The address is normalized
+// (trimmed and lowercased) so lookups are case-insensitive and match the form
+// CreateUser persisted.
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	return s.queryUser(ctx, `email = $1`, email)
+	return s.queryUser(ctx, `email = $1`, normalizeEmail(email))
 }
 
 // GetOrCreateUserByEmail returns the user for email, creating one (with an empty
@@ -330,7 +344,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Dura
 	hash := device.HashToken(token)
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
-		email, hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
+		normalizeEmail(email), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
 	)
 	if err != nil {
 		return "", fmt.Errorf("create magic link: %w", err)
