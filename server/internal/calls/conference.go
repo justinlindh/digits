@@ -186,19 +186,19 @@ func (ct *ConferenceTracker) ConferenceContains(ctx context.Context, confID uuid
 	return false
 }
 
-// DropMember removes a single member. Returns the remaining member list and
-// whether the conference ended as a result. In v1, any drop ends the conference
-// (we cap at exactly 3, so dropping to 2 terminates).
-func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, ended bool, err error) {
+// DropMember removes a single member and returns the remaining member list.
+// In v1, any drop ends the conference (we cap at exactly 3, so dropping to 2
+// terminates), so the caller can treat every successful drop as terminal.
+func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, phone, reason string) (remaining []string, err error) {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	conf, ok := ct.active[confID]
 	if !ok {
-		return nil, false, ErrConferenceNotFound
+		return nil, ErrConferenceNotFound
 	}
 	m, ok := conf.Members[phone]
 	if !ok {
-		return nil, false, fmt.Errorf("phone %s not in conference", phone)
+		return nil, fmt.Errorf("phone %s not in conference", phone)
 	}
 	now := time.Now()
 	m.LeftAt = &now
@@ -224,7 +224,7 @@ func (ct *ConferenceTracker) DropMember(ctx context.Context, confID uuid.UUID, p
 		ct.state.End(ctx, confID, remaining)
 	}
 
-	return remaining, true, nil
+	return remaining, nil
 }
 
 // Snapshot returns a copy of the active conference with the given ID, or nil

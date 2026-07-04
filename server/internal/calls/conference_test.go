@@ -53,12 +53,9 @@ func TestConferenceTracker_DropMemberEndsConference(t *testing.T) {
 	ct := NewConferenceTracker()
 	conf, _ := ct.CreateConference(context.Background(), "5550001", 42, []string{"5550002", "5550003"})
 
-	remaining, ended, err := ct.DropMember(context.Background(), conf.ID, "5550002", "hangup")
+	remaining, err := ct.DropMember(context.Background(), conf.ID, "5550002", "hangup")
 	if err != nil {
 		t.Fatalf("drop: %v", err)
-	}
-	if !ended {
-		t.Fatalf("expected conference to end after a drop (v1 caps at 3)")
 	}
 	if len(remaining) != 2 {
 		t.Fatalf("expected 2 remaining members, got %d", len(remaining))
