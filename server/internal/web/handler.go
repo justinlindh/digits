@@ -323,12 +323,19 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	}
 	// parsePageWith parses a page and then folds in extra partials, so their
 	// {{template "..."}} references resolve inside the page's template tree.
+	// Partials are named bare (e.g. "_call-live-panel.html"); the "templates/"
+	// prefix is applied here so callers use the same convention as parsePage
+	// and fragment.
 	parsePageWith := func(page string, partials ...string) (*template.Template, error) {
 		t, err := parsePage(page)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := t.ParseFS(templateFS, partials...); err != nil {
+		paths := make([]string, len(partials))
+		for i, p := range partials {
+			paths[i] = "templates/" + p
+		}
+		if _, err := t.ParseFS(templateFS, paths...); err != nil {
 			return nil, fmt.Errorf("parse partials %v into %s: %w", partials, page, err)
 		}
 		return t, nil
@@ -371,7 +378,7 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 		return t
 	}
 
-	tmplDashboard := page("dashboard.html", "templates/dnd-toggle.html", "templates/_dashboard-am-status.html")
+	tmplDashboard := page("dashboard.html", "dnd-toggle.html", "_dashboard-am-status.html")
 	tmplDashboardAMStatus := fragment("dashboard-am-status", "_dashboard-am-status.html")
 	tmplPhones := page("phones.html")
 	tmplCalls := page("calls.html")
@@ -384,8 +391,8 @@ func NewHandler(deps Deps, cfg HandlerConfig) (*Handler, error) {
 	tmplInvite := page("invite.html")
 	tmplCallLivePanel := fragment("call-live-panel", "_call-live-panel.html")
 	tmplConferenceLivePanel := fragment("conference-live-panel", "_conference-live-panel.html")
-	tmplCallLiveDetail := page("call-live-detail.html", "templates/_call-live-panel.html")
-	tmplConferenceLiveDetail := page("conference-live-detail.html", "templates/_conference-live-panel.html")
+	tmplCallLiveDetail := page("call-live-detail.html", "_call-live-panel.html")
+	tmplConferenceLiveDetail := page("conference-live-detail.html", "_conference-live-panel.html")
 	tmplChangelog := fragment("changelog", "_partials.html", "_changelog.html")
 	tmplActiveCalls := fragment("active-calls", "_active-calls.html")
 	if perr != nil {

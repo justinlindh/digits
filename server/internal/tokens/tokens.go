@@ -1,9 +1,10 @@
 // Package tokens provides the shared token hashing and random-token generation
-// used by the auth, device, and pairing packages. It lives on its own so those
-// packages do not have to import one another (previously auth and pairing
-// depended on the device package solely for its token hasher, and each
-// re-implemented the same random-hex generator). The name is plural so it never
-// collides with the ubiquitous `token` local variable in its callers.
+// used by the auth, device, pairing, and household packages. It lives on its
+// own so those packages do not have to import one another (previously auth and
+// pairing depended on the device package solely for its token hasher, and
+// several packages re-implemented the same random-hex generator). The name is
+// plural so it never collides with the ubiquitous `token` local variable in its
+// callers.
 package tokens
 
 import (
