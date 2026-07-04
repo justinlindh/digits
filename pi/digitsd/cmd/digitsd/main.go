@@ -509,11 +509,16 @@ func publishVoicemailStateOnce(sender sigSender, store *voicemail.Store, last *i
 	return true
 }
 
-// publishVoicemailState is the change-driven wrapper used by mutation triggers
-// (recording finalize, MarkHeard, delete). Snapshots the current store,
-// serializes against concurrent callers via publishVMMu, and dedups against
-// publishVMLast so a no-op mutation does not produce a redundant wire message.
-func (d *daemonCallbacks) publishVoicemailState() {
+// publishVoicemailState snapshots the current store, serializes against
+// concurrent callers via publishVMMu, and publishes the unheard count.
+//
+// force=false is the change-driven path used by mutation triggers (recording
+// finalize, MarkHeard, delete): it dedups against publishVMLast so a no-op
+// mutation does not produce a redundant wire message. force=true is the
+// (re)connect path: it sends the current count unconditionally so the server
+// can seed its per-phone cache on every fresh WS session, even when the local
+// count has not changed since the previous publish.
+func (d *daemonCallbacks) publishVoicemailState(force bool) {
 	d.mu.Lock()
 	store := d.voicemailStore
 	sig := d.sig
@@ -521,22 +526,7 @@ func (d *daemonCallbacks) publishVoicemailState() {
 
 	d.publishVMMu.Lock()
 	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(sig, store, &d.publishVMLast, false)
-}
-
-// publishVoicemailStateInitial is the (re)connect wrapper. It sends the
-// current unheard count unconditionally so the server can seed its per-phone
-// cache on every fresh WS session, even when the local count has not changed
-// since the previous publish.
-func (d *daemonCallbacks) publishVoicemailStateInitial() {
-	d.mu.Lock()
-	store := d.voicemailStore
-	sig := d.sig
-	d.mu.Unlock()
-
-	d.publishVMMu.Lock()
-	defer d.publishVMMu.Unlock()
-	publishVoicemailStateOnce(sig, store, &d.publishVMLast, true)
+	publishVoicemailStateOnce(sig, store, &d.publishVMLast, force)
 }
 
 // setVoicemailConfig replaces the local voicemail config under d.mu and
@@ -2058,7 +2048,7 @@ func main() {
 		slog.Warn("signald connect failed, will retry", "error", err)
 	} else {
 		sendDeviceInfo(sig, fwVersion, fwCommit)
-		cb.publishVoicemailStateInitial()
+		cb.publishVoicemailState(true)
 		requestICEServers(sig)
 	}
 
@@ -2355,7 +2345,7 @@ func main() {
 				slog.Info("firmware capability", "version", fwVersion, "flash_capable", hookFlash)
 				sp.SetFlashEnabled(hookFlash)
 				sendDeviceInfo(sig, fwVersion, fwCommit)
-				cb.publishVoicemailStateInitial()
+				cb.publishVoicemailState(true)
 			} else {
 				slog.Info("pico: firmware version unchanged", "version", fwVersion, "commit", fwCommit)
 			}
@@ -2454,7 +2444,7 @@ func reconnectLoop(
 		}
 
 		sendDeviceInfo(sig, fwVersion, fwCommit)
-		cb.publishVoicemailState()
+		cb.publishVoicemailState(false)
 		requestICEServers(sig)
 		done <- sig
 		return
