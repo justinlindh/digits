@@ -238,8 +238,7 @@ func (t *Tracker) OnCallEnded(ctx context.Context, caller, callee string) error 
 	}
 
 	_, err := t.db.ExecContext(ctx,
-		`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
-		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
+		`UPDATE calls SET `+endCallSetClause+`
 		 WHERE id = (
 		   SELECT id FROM calls
 		   WHERE ((caller = $1 AND callee = $2) OR (caller = $3 AND callee = $4))
@@ -296,8 +295,7 @@ func (t *Tracker) ClearByNumber(ctx context.Context, number string) {
 	// End any open calls in the database
 	if t.db != nil {
 		if _, err := t.db.ExecContext(ctx,
-			`UPDATE calls SET status = 'ended', ended_at = CURRENT_TIMESTAMP,
-		 duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT
+			`UPDATE calls SET `+endCallSetClause+`
 		 WHERE (caller = $1 OR callee = $1)
 		 AND status IN ('initiated', 'ringing', 'connected')`,
 			number,
@@ -486,6 +484,13 @@ func (t *Tracker) Active(ctx context.Context) []ActiveCall {
 // scanCallRows. Keep the order in sync with the scan there.
 const callColumns = `id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
 	end_reason, originating_conference_id, force_ended_by`
+
+// endCallSetClause is the UPDATE SET list that marks a call ended and stamps
+// its duration from the answer time (or the start time, for a call that rang
+// but never answered). Shared by the normal-hangup and disconnect-sweep
+// teardown paths so the duration expression cannot drift between them.
+const endCallSetClause = `status = 'ended', ended_at = CURRENT_TIMESTAMP,
+	duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT`
 
 func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	var calls []Call
