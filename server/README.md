@@ -92,6 +92,7 @@ Visit `http://localhost:8443` for the web UI. New users are prompted to create a
 | `BASE_URL`     | `https://app.digits.family`      | Public base URL for links and OAuth   |
 | `ADMIN_SECRET` | (required)                       | Shared secret for internal stats API  |
 | `SIGNALD_TRUSTED_PROXIES` | `1`                   | Reverse-proxy hops between signald and clients, used to resolve the real client IP from `X-Forwarded-For` for rate limiting. The default fits one proxy in front (Caddy or Traefik). Set to `0` when signald is exposed directly; raise it when another proxy (CDN, load balancer) sits in front of yours. |
+| `SIGNALD_WS_RATE_LIMIT` | `30`                  | WebSocket upgrade rate limit per client IP per minute. Raise it for load testing or when many devices share one egress IP. |
 
 ### TLS (optional)
 
