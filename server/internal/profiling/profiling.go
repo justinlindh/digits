@@ -14,11 +14,7 @@
 //   - CPU profile (pprof "profile") at the SDK default rate (100 Hz).
 //   - Allocation profile ("alloc_objects", "alloc_space",
 //     "inuse_objects", "inuse_space").
-//   - Goroutine profile ("goroutines"), mutex profile ("mutex_count",
-//     "mutex_duration"), and block profile ("block_count",
-//     "block_duration"). Mutex/block sampling is gated behind explicit
-//     runtime.SetMutexProfileFraction / runtime.SetBlockProfileRate
-//     calls in Init so a build that hasn't opted in pays no extra cost.
+//   - Goroutine profile ("goroutines").
 //
 // Label set (closed):
 //
@@ -45,10 +41,8 @@
 package profiling
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/grafana/pyroscope-go"
 )
@@ -75,11 +69,6 @@ type Config struct {
 	// merges in service / version / hostname automatically; Tags is for
 	// operator-supplied extras (e.g. environment, region).
 	Tags map[string]string
-	// Mutex / block profile rates. Zero leaves them disabled (Go default).
-	// Setting them here keeps the rate selection at the cmd boundary, so
-	// a goroutine somewhere can't quietly turn block profiling on.
-	MutexProfileFraction int
-	BlockProfileRate     int
 }
 
 // NewConfig builds a Config from env vars. Reads:
@@ -116,8 +105,8 @@ func noop() error { return nil }
 
 // Init starts the Pyroscope profiler with cfg. When ServerAddress is
 // empty, Init is a no-op and returns a no-op stop closure. Otherwise it
-// configures CPU + alloc + goroutine + (optionally) mutex/block
-// profiling and pushes to the configured server.
+// configures CPU + alloc + goroutine profiling and pushes to the
+// configured server.
 //
 // CAUTION: Init must be called exactly once per process. Re-calling
 // installs a second profiler; the first one's HTTP push goroutine is
@@ -125,16 +114,6 @@ func noop() error { return nil }
 func Init(cfg Config, version string) (Stop, error) {
 	if cfg.ServerAddress == "" {
 		return noop, nil
-	}
-
-	// Apply runtime knobs explicitly, never implicitly. Mutex/block
-	// profiling has measurable overhead and is not free; gating it on an
-	// explicit non-zero rate makes the cost visible at the call site.
-	if cfg.MutexProfileFraction > 0 {
-		runtime.SetMutexProfileFraction(cfg.MutexProfileFraction)
-	}
-	if cfg.BlockProfileRate > 0 {
-		runtime.SetBlockProfileRate(cfg.BlockProfileRate)
 	}
 
 	host, _ := os.Hostname() //nolint:errcheck // empty hostname acceptable
@@ -153,9 +132,8 @@ func Init(cfg Config, version string) (Stop, error) {
 		tags[k] = v
 	}
 
-	// Default profile types: CPU, alloc objects, alloc space, inuse
-	// objects, inuse space, goroutines. Mutex / block are appended only
-	// when their rate was set above.
+	// Profile types: CPU, alloc objects, alloc space, inuse objects,
+	// inuse space, goroutines.
 	types := []pyroscope.ProfileType{
 		pyroscope.ProfileCPU,
 		pyroscope.ProfileAllocObjects,
@@ -163,18 +141,6 @@ func Init(cfg Config, version string) (Stop, error) {
 		pyroscope.ProfileInuseObjects,
 		pyroscope.ProfileInuseSpace,
 		pyroscope.ProfileGoroutines,
-	}
-	if cfg.MutexProfileFraction > 0 {
-		types = append(types,
-			pyroscope.ProfileMutexCount,
-			pyroscope.ProfileMutexDuration,
-		)
-	}
-	if cfg.BlockProfileRate > 0 {
-		types = append(types,
-			pyroscope.ProfileBlockCount,
-			pyroscope.ProfileBlockDuration,
-		)
 	}
 
 	prof, err := pyroscope.Start(pyroscope.Config{
@@ -195,20 +161,9 @@ func Init(cfg Config, version string) (Stop, error) {
 	}
 
 	return func() error {
-		var errs []error
 		if err := prof.Stop(); err != nil {
-			errs = append(errs, err)
+			return fmt.Errorf("stop pyroscope: %w", err)
 		}
-		// Reset mutex/block fractions to zero on shutdown so a test that
-		// re-uses the runtime (rare, but guarded) starts from a clean
-		// state. Not strictly necessary for production where the process
-		// is exiting anyway.
-		if cfg.MutexProfileFraction > 0 {
-			runtime.SetMutexProfileFraction(0)
-		}
-		if cfg.BlockProfileRate > 0 {
-			runtime.SetBlockProfileRate(0)
-		}
-		return errors.Join(errs...)
+		return nil
 	}, nil
 }
