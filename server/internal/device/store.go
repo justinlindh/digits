@@ -1,15 +1,13 @@
 // Package device manages physical handsets paired to lines. Store handles
 // the read paths and side-effecting mutations (heartbeat, unpair, reassign)
 // while the pairing package owns device row creation and the pairing-code
-// lifecycle. HashToken is shared with the auth and pairing packages.
+// lifecycle. Token hashing lives in the shared internal/tokens package.
 package device
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 // Device represents a physical handset paired to a line.
@@ -169,17 +168,11 @@ func (s *Store) TouchLastSeen(ctx context.Context, hardwareID string) error {
 	return nil
 }
 
-// HashToken returns the SHA-256 hex hash of a plaintext device token.
-func HashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
-}
-
 // AuthStatus returns the pairing and token status for a device.
 // Returns (paired, tokenValid, error).
 // If the device doesn't exist, returns (false, false, nil).
-// If paired and token is provided, validates it against the stored hash.
-func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paired bool, tokenValid bool, err error) {
+// If paired and plaintextToken is provided, validates it against the stored hash.
+func (s *Store) AuthStatus(ctx context.Context, hardwareID, plaintextToken string) (paired bool, tokenValid bool, err error) {
 	var pairedAt sql.NullTime
 	var storedHash sql.NullString
 	err = s.db.QueryRowContext(ctx,
@@ -195,10 +188,10 @@ func (s *Store) AuthStatus(ctx context.Context, hardwareID, token string) (paire
 	if !pairedAt.Valid {
 		return false, false, nil
 	}
-	if token == "" || !storedHash.Valid {
+	if plaintextToken == "" || !storedHash.Valid {
 		return true, false, nil
 	}
-	candidate := HashToken(token)
+	candidate := tokens.Hash(plaintextToken)
 	valid := subtle.ConstantTimeCompare([]byte(candidate), []byte(storedHash.String)) == 1
 	return true, valid, nil
 }

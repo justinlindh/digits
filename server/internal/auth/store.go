@@ -7,16 +7,14 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
-	"github.com/justinlindh/digits/server/internal/device"
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 // normalizeEmail canonicalizes an address for storage and lookup by trimming
@@ -250,11 +248,11 @@ func scanSession(row dbutil.RowScanner) (*Session, error) {
 // CreateSession generates a random token, stores its SHA-256 hash, and returns
 // the raw token (which must be given to the client) and the session record.
 func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Duration) (string, *Session, error) {
-	token, err := randomToken(32)
+	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", nil, err
 	}
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO sessions (user_id, token_hash, expires_at)
 		 VALUES ($1, $2, $3)
@@ -270,7 +268,7 @@ func (s *Store) CreateSession(ctx context.Context, userID string, ttl time.Durat
 
 // ValidateSession looks up a session by its raw token and checks it hasn't expired.
 func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, error) {
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions
 		 WHERE token_hash = $1 AND expires_at > NOW()`,
@@ -288,7 +286,7 @@ func (s *Store) ValidateSession(ctx context.Context, token string) (*Session, er
 
 // DeleteSession removes a session by its raw token (used for logout).
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, hash); err != nil {
 		return fmt.Errorf("delete session: %w", err)
 	}
@@ -316,7 +314,7 @@ func (s *Store) DeleteUser(ctx context.Context, userID string) error {
 // expiry in a single UPDATE ... RETURNING query, eliminating the TOCTOU window
 // between a separate validate-then-refresh pair.
 func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl time.Duration) (*Session, error) {
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	row := s.db.QueryRowContext(ctx,
 		`UPDATE sessions SET expires_at = $1
 		 WHERE token_hash = $2 AND expires_at > NOW()
@@ -337,11 +335,11 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 // Returns the raw token to embed in the email link. returnTo is an optional
 // path to redirect to after authentication; pass "" to use the default.
 func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Duration, returnTo string) (string, error) {
-	token, err := randomToken(32)
+	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", err
 	}
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
 		normalizeEmail(email), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
@@ -356,7 +354,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Dura
 // Returns the associated email and optional returnTo path on success.
 // Returns an error if the token is invalid, expired, or has already been used.
 func (s *Store) ValidateMagicLink(ctx context.Context, token string) (string, string, error) {
-	hash := device.HashToken(token)
+	hash := tokens.Hash(token)
 	var email string
 	var returnTo sql.NullString
 	err := s.db.QueryRowContext(ctx,
@@ -396,7 +394,7 @@ func (s *Store) CleanupExpired(ctx context.Context) error {
 
 // SetActiveHousehold updates the active_household_id on the user's current session.
 func (s *Store) SetActiveHousehold(ctx context.Context, sessionToken string, householdID string) error {
-	hash := device.HashToken(sessionToken)
+	hash := tokens.Hash(sessionToken)
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET active_household_id = $1 WHERE token_hash = $2 AND expires_at > NOW()`,
 		householdID, hash,
@@ -410,7 +408,7 @@ func (s *Store) SetActiveHousehold(ctx context.Context, sessionToken string, hou
 // ActiveHouseholdID returns the active_household_id from the current session,
 // or empty string if not set.
 func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) (string, error) {
-	hash := device.HashToken(sessionToken)
+	hash := tokens.Hash(sessionToken)
 	var id sql.NullString
 	err := s.db.QueryRowContext(ctx,
 		`SELECT active_household_id FROM sessions WHERE token_hash = $1 AND expires_at > NOW()`,
@@ -423,13 +421,4 @@ func (s *Store) ActiveHouseholdID(ctx context.Context, sessionToken string) (str
 		return "", err
 	}
 	return id.String, nil
-}
-
-// randomToken generates a cryptographically random hex string of the given byte length.
-func randomToken(bytes int) (string, error) {
-	b := make([]byte, bytes)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }

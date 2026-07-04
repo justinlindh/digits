@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/db"
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 // testStore opens a connection to the test database and returns a Store.
@@ -149,7 +150,7 @@ func pairTestDevice(t *testing.T, database *db.Database, hardwareID, plaintextTo
 	t.Helper()
 	_, err := database.DB.Exec(
 		`UPDATE devices SET device_token = $1, paired_at = NOW() WHERE hardware_id = $2`,
-		HashToken(plaintextToken), hardwareID,
+		tokens.Hash(plaintextToken), hardwareID,
 	)
 	if err != nil {
 		t.Fatalf("pairTestDevice(%s): %v", hardwareID, err)

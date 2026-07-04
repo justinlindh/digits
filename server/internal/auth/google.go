@@ -10,6 +10,8 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 // GoogleAuth handles Google OAuth2 login flow.
@@ -42,7 +44,7 @@ func (g *GoogleAuth) Enabled() bool {
 
 // HandleLogin redirects to Google consent screen.
 func (g *GoogleAuth) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	state, err := randomToken(16)
+	state, err := tokens.RandomHex(16)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "auth: failed to generate oauth state token", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
