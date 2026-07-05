@@ -15,9 +15,8 @@ import (
 // as a keep-alive so proxies don't close idle streams.
 const dashTickInterval = 15 * time.Second
 
-// sseEventStatus names the single SSE event this stream emits. The
-// dashboard.html sse-swap attribute subscribes by this exact name, so a typo
-// here silently breaks the client swap with no compile error.
+// sseEventStatus is the event name the dashboard.html sse-swap subscribes to;
+// keep the two in sync.
 const sseEventStatus = "status"
 
 // handleDashboardStream opens an SSE stream for the AM-theme top-row
