@@ -23,7 +23,7 @@ func TestMagicLinkEmailContainsBranding(t *testing.T) {
 
 func TestAllEmailsHaveFooter(t *testing.T) {
 	_, body := MagicLinkEmail("https://example.com/link")
-	if !strings.Contains(body, "A phone for real conversations") {
+	if !strings.Contains(body, "a phone for real conversations") {
 		t.Fatal("email missing footer tagline")
 	}
 }

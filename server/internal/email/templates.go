@@ -27,7 +27,7 @@ func brandedWrap(content string) string {
 
 <!-- Footer -->
 <tr><td style="padding:24px 0 0 0; text-align:center;">
-  <p style="color:#484f58; font-size:12px; margin:0;">Digits &#8212; A phone for real conversations</p>
+  <p style="color:#484f58; font-size:12px; margin:0;">Digits: a phone for real conversations</p>
   <p style="color:#484f58; font-size:11px; margin:4px 0 0 0;">No screens. No surveillance. Just voice.</p>
 </td></tr>
 
