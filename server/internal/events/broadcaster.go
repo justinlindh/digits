@@ -103,12 +103,7 @@ func (b *Broadcaster) Notify() {
 	b.mu.Lock()
 	client := b.client
 	podID := b.podID
-	for ch := range b.subs {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-	}
+	b.wakeLocalLocked()
 	b.mu.Unlock()
 
 	if client != nil {
@@ -123,6 +118,12 @@ func (b *Broadcaster) Notify() {
 func (b *Broadcaster) notifyLocal() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.wakeLocalLocked()
+}
+
+// wakeLocalLocked does a best-effort non-blocking send to every local
+// subscriber. Callers must hold b.mu.
+func (b *Broadcaster) wakeLocalLocked() {
 	for ch := range b.subs {
 		select {
 		case ch <- struct{}{}:

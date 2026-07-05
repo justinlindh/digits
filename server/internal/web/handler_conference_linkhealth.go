@@ -287,6 +287,5 @@ func (h *Handler) handleConferenceKick(w http.ResponseWriter, r *http.Request) {
 	// state with attribution before the evict cascade closes the channel.
 	h.healthStore.NotifyDisconnectedConference(confID, userDisplayLabel(user))
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{}`))
+	writeEmptyJSON(w)
 }
