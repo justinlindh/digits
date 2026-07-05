@@ -184,7 +184,6 @@ func run(ctx context.Context) error {
 	// Relay and TURN
 	relay := signaling.NewRelay(hub, tracker, line.NewAuthorizer(database), signaling.NewLineStoreAdapter(lineStore))
 	relay.HealthStore = healthStore
-	relay.Errors = mreg
 	relay.Metrics = mreg
 	tracker.SetCallEndObserver(relay)
 	hub.SetReconnectHook(relay.HandleRemoteReconnect)

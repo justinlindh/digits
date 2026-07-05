@@ -64,24 +64,18 @@ type HealthRecorder interface {
 	RecordEdge(confID uuid.UUID, from, peer string, sample calls.Sample)
 }
 
-// ErrorObserver counts signaling errors by category. Implemented
-// by *metrics.Registry; the interface lives here so internal/signaling does
-// not import internal/metrics directly. Categories are defined as untyped
-// strings on this surface so the relay package stays independent; the
-// metrics package validates them by exposing only a fixed set of constants.
-type ErrorObserver interface {
+// MetricsObserver counts the events the relay can see as it routes signaling:
+// categorized signaling errors, and media-negotiation events (which ICE
+// candidate types and transports flow between peers, and whether ICE-server
+// responses include TURN). Implemented by *metrics.Registry; the interface
+// lives here so internal/signaling does not import internal/metrics directly.
+// Categories and label values are untyped strings on this surface so the relay
+// package stays independent; the metrics package validates them by exposing
+// only a fixed set of constants, so a malformed value can never widen the
+// label space. Media arguments are derived from the parsed candidate, never
+// from raw user input, so no peer identity reaches a label.
+type MetricsObserver interface {
 	ObserveSignalingError(category string)
-}
-
-// MediaObserver counts media-negotiation events the relay can see as it relays
-// signaling: which ICE candidate types and transports flow between peers, and
-// whether ICE-server responses include TURN. Implemented by *metrics.Registry.
-// Like ErrorObserver, the interface lives here so internal/signaling does not
-// import internal/metrics; the metrics package validates the label values
-// against a fixed set so a malformed candidate can never widen the label space.
-// All arguments are derived from the parsed candidate, never from raw user
-// input, so no peer identity reaches a label.
-type MediaObserver interface {
 	ObserveICECandidate(candType, transport string)
 	ObserveICEServersIssued(turn bool)
 }
@@ -115,16 +109,12 @@ type Relay struct {
 	CallAuthorizer CallAuthorizer
 	LineStore      LineStore
 	HealthStore    HealthRecorder
-	// Errors is optional. When set, signaling-error counters are emitted
-	// for the cases the relay can categorize cleanly (auth failed, peer
-	// unreachable, etc). nil disables instrumentation; production wires it
-	// in cmd/signald/main.go.
-	Errors ErrorObserver
-
-	// Metrics is optional. When set, media-negotiation counters (ICE
-	// candidate types/transports relayed, ICE-server issuance) are emitted.
-	// nil disables them; production wires it in cmd/signald/main.go.
-	Metrics MediaObserver
+	// Metrics is optional. When set, the relay emits signaling-error counters
+	// for the cases it can categorize cleanly (auth failed, peer unreachable,
+	// etc) and media-negotiation counters (ICE candidate types/transports
+	// relayed, ICE-server issuance). nil disables instrumentation; production
+	// wires it in cmd/signald/main.go.
+	Metrics MetricsObserver
 
 	// GraceWindow is how long a 2-party call is held open after the last
 	// device on a line disconnects, before teardown. Defaults to
@@ -155,12 +145,12 @@ func graceKey(number, hardwareID string) string {
 	return number + "\x00" + hardwareID
 }
 
-// observeError is a nil-safe pass-through to the ErrorObserver.
+// observeError is a nil-safe pass-through to the MetricsObserver.
 // Centralizing it here means a missing observer never panics, and there is
 // only one place to look when reviewing what categories the relay emits.
 func (r *Relay) observeError(category string) {
-	if r.Errors != nil {
-		r.Errors.ObserveSignalingError(category)
+	if r.Metrics != nil {
+		r.Metrics.ObserveSignalingError(category)
 	}
 }
 
