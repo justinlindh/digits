@@ -94,7 +94,7 @@ func (ct *ConferenceTracker) CreateConference(ctx context.Context, host string, 
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 
-	if 1+len(addedMembers) != 3 {
+	if len(addedMembers) != 2 {
 		return nil, ErrInvalidConferenceSize
 	}
 	if _, ok := ct.memberIndex[host]; ok {

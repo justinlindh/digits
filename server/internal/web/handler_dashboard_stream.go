@@ -15,6 +15,11 @@ import (
 // as a keep-alive so proxies don't close idle streams.
 const dashTickInterval = 15 * time.Second
 
+// sseEventStatus names the single SSE event this stream emits. The
+// dashboard.html sse-swap attribute subscribes by this exact name, so a typo
+// here silently breaks the client swap with no compile error.
+const sseEventStatus = "status"
+
 // handleDashboardStream opens an SSE stream for the AM-theme top-row
 // counters and clock. Sends one initial "status" event with the current
 // snapshot, then a fresh snapshot on every Notify from the dashboard
@@ -72,7 +77,7 @@ func (h *Handler) writeDashStatus(w http.ResponseWriter, flusher http.Flusher, r
 		slog.ErrorContext(r.Context(), "dashboard SSE: render failed", "err", err)
 		return err
 	}
-	if err := writeSSE(w, "status", fragment); err != nil {
+	if err := writeSSE(w, sseEventStatus, fragment); err != nil {
 		return err
 	}
 	flusher.Flush()
