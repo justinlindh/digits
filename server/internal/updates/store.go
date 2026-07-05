@@ -2,12 +2,12 @@
 package updates
 
 import (
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-// Component selectors used by SortedReleases and RangeReleases.
+// Component selectors identifying which artifact a release describes.
 const (
 	ComponentPi       = "pi"
 	ComponentFirmware = "firmware"
@@ -66,8 +66,8 @@ func (idx *ReleaseIndex) SortedReleases(component string) []Release {
 	for _, r := range m {
 		releases = append(releases, *r)
 	}
-	sort.Slice(releases, func(i, j int) bool {
-		return CompareSemver(releases[i].Version, releases[j].Version) > 0
+	slices.SortFunc(releases, func(a, b Release) int {
+		return CompareSemver(b.Version, a.Version)
 	})
 	return releases
 }
@@ -99,7 +99,7 @@ func (idx *ReleaseIndex) RangeReleases(component, fromVersion, toVersion string)
 func CompareSemver(a, b string) int {
 	partsA := strings.SplitN(a, ".", 3)
 	partsB := strings.SplitN(b, ".", 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		var pa, pb string
 		if i < len(partsA) {
 			pa = partsA[i]
