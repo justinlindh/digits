@@ -255,13 +255,6 @@ func (r *Recorder) AppendFrame(payload []byte) (atCap bool, err error) {
 	return false, nil
 }
 
-// Frames returns the number of frames written so far. For tests and cap checks.
-func (r *Recorder) Frames() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.frames
-}
-
 // Finalize closes the temp file, fsyncs, renames to the canonical path,
 // writes the metadata file, and applies retention. If no frames were written,
 // the temp file is discarded instead and (0, nil) returned.
@@ -396,17 +389,6 @@ func (p *Player) Close() error {
 // greetingPath returns the absolute path to the greeting frames file.
 func (s *Store) greetingPath() string {
 	return filepath.Join(s.dir, greetingFile)
-}
-
-// HasGreeting reports whether a custom greeting has been recorded.
-func (s *Store) HasGreeting() bool {
-	_, err := os.Stat(s.greetingPath())
-	return err == nil
-}
-
-// GreetingPath returns the absolute path where the greeting is (or would be) stored.
-func (s *Store) GreetingPath() string {
-	return s.greetingPath()
 }
 
 // OpenGreeting returns a Player for the recorded greeting. Returns an

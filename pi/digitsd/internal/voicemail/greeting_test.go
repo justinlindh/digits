@@ -5,10 +5,18 @@ import (
 	"testing"
 )
 
-func TestHasGreeting_NoFile(t *testing.T) {
+// hasGreeting reports whether a greeting file exists on disk. Production code
+// never asks this directly (it relies on OpenGreeting's os.ErrNotExist), so
+// the check lives here as a white-box test helper rather than on the Store.
+func hasGreeting(s *Store) bool {
+	_, err := os.Stat(s.greetingPath())
+	return err == nil
+}
+
+func TestGreetingAbsentInitially(t *testing.T) {
 	s := newTestStore(t, Options{})
-	if s.HasGreeting() {
-		t.Error("HasGreeting should be false with no greeting file")
+	if hasGreeting(s) {
+		t.Error("greeting should not exist with no greeting file")
 	}
 }
 
@@ -29,11 +37,11 @@ func TestGreetingRecordAndCheck(t *testing.T) {
 		t.Fatalf("Finalize: %v", err)
 	}
 
-	if !s.HasGreeting() {
-		t.Error("HasGreeting should be true after recording")
+	if !hasGreeting(s) {
+		t.Error("greeting should exist after recording")
 	}
 
-	path := s.GreetingPath()
+	path := s.greetingPath()
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("greeting file should exist at %s: %v", path, err)
 	}
@@ -69,8 +77,8 @@ func TestGreetingRecordOverwritesPrevious(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !s.HasGreeting() {
-		t.Error("HasGreeting should be true")
+	if !hasGreeting(s) {
+		t.Error("greeting should exist")
 	}
 
 	// Only one greeting file should exist.
@@ -103,15 +111,15 @@ func TestDeleteGreeting(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !s.HasGreeting() {
+	if !hasGreeting(s) {
 		t.Fatal("greeting should exist before delete")
 	}
 
 	if err := s.DeleteGreeting(); err != nil {
 		t.Fatalf("DeleteGreeting: %v", err)
 	}
-	if s.HasGreeting() {
-		t.Error("HasGreeting should be false after delete")
+	if hasGreeting(s) {
+		t.Error("greeting should not exist after delete")
 	}
 }
 
