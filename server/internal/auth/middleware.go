@@ -8,7 +8,7 @@ import (
 
 type contextKey string
 
-const UserContextKey contextKey = "user"
+const userContextKey contextKey = "user"
 
 const (
 	CookieName   = "digits_session"
@@ -36,14 +36,19 @@ func (s *Store) RequireAuth(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
 			return
 		}
-		ctx := context.WithValue(r.Context(), UserContextKey, user)
+		ctx := ContextWithUser(r.Context(), user)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+// ContextWithUser returns a copy of ctx carrying the authenticated user.
+func ContextWithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, userContextKey, u)
+}
+
 // UserFromContext extracts the authenticated user from context.
 func UserFromContext(ctx context.Context) *User {
-	u, _ := ctx.Value(UserContextKey).(*User)
+	u, _ := ctx.Value(userContextKey).(*User)
 	return u
 }
 

@@ -10,7 +10,7 @@ import (
 
 func TestLimiterAllowsUnderLimit(t *testing.T) {
 	lim := New(5, time.Minute, 1)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !lim.Allow("1.2.3.4") {
 			t.Fatalf("request %d should be allowed", i+1)
 		}
@@ -19,7 +19,7 @@ func TestLimiterAllowsUnderLimit(t *testing.T) {
 
 func TestLimiterBlocksOverLimit(t *testing.T) {
 	lim := New(3, time.Minute, 1)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		lim.Allow("1.2.3.4")
 	}
 	if lim.Allow("1.2.3.4") {

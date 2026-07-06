@@ -60,7 +60,7 @@ func TestStaticFileServer_DevServesFromDisk(t *testing.T) {
 func TestStaticFileServer_DTMFWavsEmbedded(t *testing.T) {
 	h := staticFileServer(false, "")
 
-	for d := 0; d < 10; d++ {
+	for d := range 10 {
 		path := fmt.Sprintf("/static/audio/dtmf/dtmf_%d.wav", d)
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()

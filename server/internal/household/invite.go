@@ -33,9 +33,9 @@ var ErrInviteExpiredOrUsed = errors.New("invite not found, expired, or already u
 
 var ErrInviteNotPending = errors.New("invite not found or not pending")
 
-// HouseholdInvite represents an email invitation to join a household. The
+// Invite represents an email invitation to join a household. The
 // one-time Token is emailed to the recipient and redeemed at accept time.
-type HouseholdInvite struct {
+type Invite struct {
 	ID          string
 	HouseholdID string
 	Email       string
@@ -68,8 +68,8 @@ func generateInviteToken() (string, error) {
 
 const inviteColumns = `id, household_id, email, invited_by, token, status, created_at, accepted_at, expires_at`
 
-func scanInvite(row dbutil.RowScanner) (*HouseholdInvite, error) {
-	inv := &HouseholdInvite{}
+func scanInvite(row dbutil.RowScanner) (*Invite, error) {
+	inv := &Invite{}
 	err := row.Scan(&inv.ID, &inv.HouseholdID, &inv.Email, &inv.InvitedBy,
 		&inv.Token, &inv.Status, &inv.CreatedAt, &inv.AcceptedAt, &inv.ExpiresAt)
 	if err != nil {
@@ -80,7 +80,7 @@ func scanInvite(row dbutil.RowScanner) (*HouseholdInvite, error) {
 
 // CreateInvite issues a pending invite for email to join householdID and
 // returns it with a freshly generated token and expiry.
-func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invitedByUserID string) (*HouseholdInvite, error) {
+func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invitedByUserID string) (*Invite, error) {
 	token, err := generateInviteToken()
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invi
 }
 
 // GetByID looks up an invite by its ID.
-func (s *InviteStore) GetByID(ctx context.Context, id string) (*HouseholdInvite, error) {
+func (s *InviteStore) GetByID(ctx context.Context, id string) (*Invite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		SELECT `+inviteColumns+` FROM household_invites WHERE id = $1
 	`, id))
@@ -114,7 +114,7 @@ func (s *InviteStore) GetByID(ctx context.Context, id string) (*HouseholdInvite,
 
 // GetByToken looks up an invite by its token, returning ErrInviteNotFound
 // when no row matches.
-func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdInvite, error) {
+func (s *InviteStore) GetByToken(ctx context.Context, token string) (*Invite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		SELECT `+inviteColumns+` FROM household_invites WHERE token = $1
 	`, token))
@@ -129,7 +129,7 @@ func (s *InviteStore) GetByToken(ctx context.Context, token string) (*HouseholdI
 
 // AcceptInvite marks a pending, unexpired invite as accepted and returns it.
 // It returns ErrInviteExpiredOrUsed when no matching pending invite exists.
-func (s *InviteStore) AcceptInvite(ctx context.Context, token string) (*HouseholdInvite, error) {
+func (s *InviteStore) AcceptInvite(ctx context.Context, token string) (*Invite, error) {
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		UPDATE household_invites
 		SET status = 'accepted', accepted_at = NOW()
@@ -166,7 +166,7 @@ func (s *InviteStore) CancelInvite(ctx context.Context, inviteID string) error {
 
 // GetPendingForHousehold returns the household's pending, unexpired invites,
 // newest first.
-func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]*HouseholdInvite, error) {
+func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]*Invite, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inviteColumns+`
 		FROM household_invites
@@ -177,7 +177,7 @@ func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID st
 		return nil, fmt.Errorf("get pending invites: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var invites []*HouseholdInvite
+	var invites []*Invite
 	for rows.Next() {
 		inv, err := scanInvite(rows)
 		if err != nil {

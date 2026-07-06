@@ -278,7 +278,7 @@ func writeSSE(w io.Writer, event, data string) error {
 		return err
 	}
 	// Each line of data must be prefixed per the SSE spec.
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		if _, err := fmt.Fprintf(w, "data: %s\n", line); err != nil {
 			return err
 		}

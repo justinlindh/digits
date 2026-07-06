@@ -783,7 +783,7 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	check := func(label, userID string, wantOK bool, wantCode int) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, "/conference/live/"+confID.String(), nil)
-		ctx2 := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"})
+		ctx2 := auth.ContextWithUser(req.Context(), &auth.User{ID: userID, Email: "x", Name: "x"})
 		req = req.WithContext(ctx2)
 		rec := httptest.NewRecorder()
 		_, _, _, ok := h.requireConferenceOwnership(rec, req, confID)
@@ -815,7 +815,7 @@ func TestRequireConferenceOwnership(t *testing.T) {
 	// Unknown conference ID returns 404.
 	unknownID := uuid.New()
 	req := httptest.NewRequest(http.MethodGet, "/conference/live/"+unknownID.String(), nil)
-	reqCtx := context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: env.userA.ID, Email: "x", Name: "x"})
+	reqCtx := auth.ContextWithUser(req.Context(), &auth.User{ID: env.userA.ID, Email: "x", Name: "x"})
 	req = req.WithContext(reqCtx)
 	rec := httptest.NewRecorder()
 	_, _, _, ok := h.requireConferenceOwnership(rec, req, unknownID)
@@ -972,7 +972,7 @@ func TestRequireConferenceHostOwnership(t *testing.T) {
 	check := func(label, userID string, wantOK bool, wantCode int) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodPost, "/api/conference/"+confID.String()+"/kick", nil)
-		req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: userID, Email: "x", Name: "x"}))
+		req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: userID, Email: "x", Name: "x"}))
 		rec := httptest.NewRecorder()
 		_, _, _, ok := env.env.handler.requireConferenceHostOwnership(rec, req, confID)
 		if ok != wantOK {
@@ -1001,7 +1001,7 @@ func TestRequireConferenceHostOwnership(t *testing.T) {
 
 	// Unknown UUID.
 	req := httptest.NewRequest(http.MethodPost, "/api/conference/"+uuid.New().String()+"/kick", nil)
-	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &auth.User{ID: env.userA.ID, Email: "x", Name: "x"}))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{ID: env.userA.ID, Email: "x", Name: "x"}))
 	rec := httptest.NewRecorder()
 	_, _, _, ok := env.env.handler.requireConferenceHostOwnership(rec, req, uuid.New())
 	if ok {

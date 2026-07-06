@@ -1,7 +1,6 @@
 package events
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -15,8 +14,7 @@ func TestBroadcasterRedisNotifyCrossPod(t *testing.T) {
 	clientB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = clientA.Close(); _ = clientB.Close() })
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	bA := New()
 	bA.SetRedis(clientA, "pod-a")
@@ -45,8 +43,7 @@ func TestBroadcasterRedisNoSelfEcho(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	b := New()
 	b.SetRedis(client, "pod-self")

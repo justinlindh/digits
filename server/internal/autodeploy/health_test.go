@@ -25,9 +25,9 @@ func TestPollHealthMatches(t *testing.T) {
 }
 
 func TestPollHealthEventuallyMatches(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := atomic.AddInt32(&hits, 1)
+		n := hits.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if n < 3 {
 			_, _ = fmt.Fprint(w, `{"status":"ok","version":"1.9.0"}`)
@@ -60,9 +60,9 @@ func TestPollHealthTimeout(t *testing.T) {
 }
 
 func TestPollHealth5xxKeepsPolling(t *testing.T) {
-	var hits int32
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt32(&hits, 1) < 2 {
+		if hits.Add(1) < 2 {
 			http.Error(w, "boom", 500)
 			return
 		}

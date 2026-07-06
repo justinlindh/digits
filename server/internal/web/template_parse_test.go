@@ -20,7 +20,6 @@ func TestTemplatePagesParse(t *testing.T) {
 		"links.html",
 	}
 	for _, page := range pages {
-		page := page
 		t.Run(page, func(t *testing.T) {
 			_, err := template.New("").Funcs(funcMap).ParseFS(templateFS,
 				"templates/_partials.html",

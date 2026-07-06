@@ -25,7 +25,7 @@ type settingsData struct {
 	Saved          bool
 	Error          string
 	Members        []settingsMember
-	PendingInvites []*household.HouseholdInvite
+	PendingInvites []*household.Invite
 }
 
 func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {

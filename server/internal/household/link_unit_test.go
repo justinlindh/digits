@@ -3,7 +3,7 @@ package household
 import "testing"
 
 func TestGenerateInviteCode_UppercaseAlphanumericOnly(t *testing.T) {
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		code, err := generateInviteCode()
 		if err != nil {
 			t.Fatalf("generateInviteCode: %v", err)
