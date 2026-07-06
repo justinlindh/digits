@@ -1151,23 +1151,36 @@ func TestHandleLinkHealth_2WayPath_UnchangedBehavior(t *testing.T) {
 	}
 }
 
-// fakeErrorObserver records every category passed to ObserveSignalingError.
-// Tests assert against the slice rather than a counter so the order of
+// fakeMetricsObserver records every event passed to the MetricsObserver.
+// Error categories are kept as a slice rather than a counter so the order of
 // observations is also verifiable; ordering matters when we want to confirm
-// the relay's first error wins instead of doubling up.
-type fakeErrorObserver struct {
-	seen []string
+// the relay's first error wins instead of doubling up. Candidate and
+// ICE-server events are recorded so tests can assert the relay reports
+// media-negotiation telemetry derived from the parsed candidate, never from
+// raw user input.
+type fakeMetricsObserver struct {
+	seen       []string    // signaling-error categories
+	candidates [][2]string // (cand_type, transport) pairs
+	turnIssued []bool
 }
 
-func (f *fakeErrorObserver) ObserveSignalingError(category string) {
+func (f *fakeMetricsObserver) ObserveSignalingError(category string) {
 	f.seen = append(f.seen, category)
+}
+
+func (f *fakeMetricsObserver) ObserveICECandidate(candType, transport string) {
+	f.candidates = append(f.candidates, [2]string{candType, transport})
+}
+
+func (f *fakeMetricsObserver) ObserveICEServersIssued(turn bool) {
+	f.turnIssued = append(f.turnIssued, turn)
 }
 
 func TestRelayDoesNotErrorOnOfflineCall(t *testing.T) {
 	hub := NewHub()
-	obs := &fakeErrorObserver{}
+	obs := &fakeMetricsObserver{}
 	relay := NewRelay(hub, nil, nil, nil)
-	relay.Errors = obs
+	relay.Metrics = obs
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	_ = hub.Register("3140001", conn1)
@@ -1194,10 +1207,10 @@ func TestRelayDoesNotErrorOnOfflineCall(t *testing.T) {
 
 func TestRelayObservesAuthFailedWhenAuthorizerDenies(t *testing.T) {
 	hub := NewHub()
-	obs := &fakeErrorObserver{}
+	obs := &fakeMetricsObserver{}
 	authorizer := &mockCallAuthorizer{allowed: map[[2]string]bool{}}
 	relay := NewRelay(hub, newMockTracker(), authorizer, nil)
-	relay.Errors = obs
+	relay.Metrics = obs
 
 	conn1 := &Conn{Send: make(chan []byte, 10)}
 	conn2 := &Conn{Send: make(chan []byte, 10)}
@@ -1227,9 +1240,9 @@ func TestRelayDoesNotErrorOnSignalingWithoutCall(t *testing.T) {
 		{&Message{Type: TypeICE, To: "3140002", Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"}, ""},
 	} {
 		hub := NewHub()
-		obs := &fakeErrorObserver{}
+		obs := &fakeMetricsObserver{}
 		relay := NewRelay(hub, newMockTracker(), nil, nil)
-		relay.Errors = obs
+		relay.Metrics = obs
 
 		conn1 := &Conn{Send: make(chan []byte, 10)}
 		_ = hub.Register("3140001", conn1)
@@ -1271,9 +1284,9 @@ func TestRelayObservesInvalidMessageOnEmptyDestination(t *testing.T) {
 		{Type: TypeICE, Candidate: "candidate:1 1 udp 1 1.2.3.4 5 typ host"},
 	} {
 		hub := NewHub()
-		obs := &fakeErrorObserver{}
+		obs := &fakeMetricsObserver{}
 		relay := NewRelay(hub, newMockTracker(), nil, nil)
-		relay.Errors = obs
+		relay.Metrics = obs
 
 		conn1 := &Conn{Send: make(chan []byte, 10)}
 		_ = hub.Register("3140001", conn1)
@@ -1587,26 +1600,10 @@ func TestHandleCallOfflineAndIdleReturnsNotConnected(t *testing.T) {
 	}
 }
 
-// fakeMediaObserver records ICE candidate and ICE-server issuance events so
-// tests can assert the relay reports media-negotiation telemetry derived from
-// the parsed candidate, never from raw user input.
-type fakeMediaObserver struct {
-	candidates [][2]string // (cand_type, transport) pairs
-	turnIssued []bool
-}
-
-func (f *fakeMediaObserver) ObserveICECandidate(candType, transport string) {
-	f.candidates = append(f.candidates, [2]string{candType, transport})
-}
-
-func (f *fakeMediaObserver) ObserveICEServersIssued(turn bool) {
-	f.turnIssued = append(f.turnIssued, turn)
-}
-
 func TestRelayObservesICECandidateOnForward(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	obs := &fakeMediaObserver{}
+	obs := &fakeMetricsObserver{}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.Metrics = obs
 
@@ -1646,7 +1643,7 @@ func TestRelayObservesICECandidateOnForward(t *testing.T) {
 func TestRelayDoesNotObserveUnparseableCandidate(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	obs := &fakeMediaObserver{}
+	obs := &fakeMetricsObserver{}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.Metrics = obs
 
@@ -1672,7 +1669,7 @@ func TestRelayDoesNotObserveUnparseableCandidate(t *testing.T) {
 func TestRelayObservesMalformedCandidateAsOther(t *testing.T) {
 	hub := NewHub()
 	tracker := newMockTracker()
-	obs := &fakeMediaObserver{}
+	obs := &fakeMetricsObserver{}
 	relay := NewRelay(hub, tracker, nil, nil)
 	relay.Metrics = obs
 
@@ -1703,7 +1700,7 @@ func TestRelayObservesMalformedCandidateAsOther(t *testing.T) {
 
 func TestRelayObservesICEServersIssued(t *testing.T) {
 	hub := NewHub()
-	obs := &fakeMediaObserver{}
+	obs := &fakeMetricsObserver{}
 	relay := NewRelay(hub, newMockTracker(), nil, nil)
 	relay.Metrics = obs
 
