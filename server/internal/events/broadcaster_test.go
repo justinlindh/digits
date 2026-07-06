@@ -65,7 +65,7 @@ func TestBroadcaster_NotifyCoalescesWhenBufferFull(t *testing.T) {
 	// Subsequent Notifies must not block; they coalesce into the existing pending wake.
 	done := make(chan struct{})
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			b.Notify()
 		}
 		close(done)
@@ -87,30 +87,28 @@ func TestBroadcaster_NotifyCoalescesWhenBufferFull(t *testing.T) {
 
 func TestBroadcaster_ConcurrentSubscribeNotifyUnsubscribe(t *testing.T) {
 	b := events.New()
-	var received int64
+	var received atomic.Int64
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 32 {
+		wg.Go(func() {
 			ch, unsub := b.Subscribe()
 			defer unsub()
 			deadline := time.After(200 * time.Millisecond)
 			for {
 				select {
 				case <-ch:
-					atomic.AddInt64(&received, 1)
+					received.Add(1)
 				case <-deadline:
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	notifyDone := make(chan struct{})
 	go func() {
 		defer close(notifyDone)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			b.Notify()
 			time.Sleep(time.Millisecond)
 		}
@@ -118,7 +116,7 @@ func TestBroadcaster_ConcurrentSubscribeNotifyUnsubscribe(t *testing.T) {
 
 	wg.Wait()
 	<-notifyDone
-	if atomic.LoadInt64(&received) == 0 {
+	if received.Load() == 0 {
 		t.Fatal("expected at least one delivered notification under concurrency")
 	}
 }

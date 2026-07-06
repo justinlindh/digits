@@ -27,12 +27,12 @@ const (
 type State struct {
 	LastDeployedTag       string        `json:"last_deployed_tag,omitempty"`
 	LastDeployedCommitSHA string        `json:"last_deployed_commit_sha,omitempty"`
-	LastDeployedAt        time.Time     `json:"last_deployed_at,omitempty"`
+	LastDeployedAt        time.Time     `json:"last_deployed_at,omitzero"`
 	LastAttemptTag        string        `json:"last_attempt_tag,omitempty"`
 	LastAttemptStatus     AttemptStatus `json:"last_attempt_status,omitempty"`
 	LastAttemptError      string        `json:"last_attempt_error,omitempty"`
-	LastAttemptAt         time.Time     `json:"last_attempt_at,omitempty"`
-	LastEmailAt           time.Time     `json:"last_email_at,omitempty"`
+	LastAttemptAt         time.Time     `json:"last_attempt_at,omitzero"`
+	LastEmailAt           time.Time     `json:"last_email_at,omitzero"`
 	LastEmailErrorClass   string        `json:"last_email_error_class,omitempty"`
 	GitHubETag            string        `json:"github_etag,omitempty"`
 }

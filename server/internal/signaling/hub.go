@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -513,12 +514,7 @@ func (h *Hub) ConnIsCurrent(conn *Conn) bool {
 	}
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	for _, c := range h.conns[conn.Number] {
-		if c == conn {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(h.conns[conn.Number], conn)
 }
 
 // ErrSendTimeout is returned by SendToWithTimeout when the target's send

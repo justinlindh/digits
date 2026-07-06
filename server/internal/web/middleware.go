@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -17,10 +18,8 @@ const hstsHeader = "max-age=31536000; includeSubDomains"
 // gate also passes its own redirect target (and any other gate's target it
 // needs to defer to) as `extra` so a redirect-to-self can't loop.
 func isGateExempt(path string, extra ...string) bool {
-	for _, p := range extra {
-		if path == p {
-			return true
-		}
+	if slices.Contains(extra, path) {
+		return true
 	}
 	if strings.HasPrefix(path, "/auth/") {
 		return true
@@ -84,8 +83,8 @@ func rootDomainRedirect(appURL string, next http.Handler) http.Handler {
 		return next
 	}
 	appHost := appURL
-	if i := strings.Index(appURL, "://"); i >= 0 {
-		appHost = appURL[i+3:]
+	if _, after, ok := strings.Cut(appURL, "://"); ok {
+		appHost = after
 	}
 	if i := strings.Index(appHost, "/"); i >= 0 {
 		appHost = appHost[:i]

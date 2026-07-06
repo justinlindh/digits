@@ -99,7 +99,7 @@ func (idx *ReleaseIndex) RangeReleases(component, fromVersion, toVersion string)
 func CompareSemver(a, b string) int {
 	partsA := strings.SplitN(a, ".", 3)
 	partsB := strings.SplitN(b, ".", 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		var pa, pb string
 		if i < len(partsA) {
 			pa = partsA[i]

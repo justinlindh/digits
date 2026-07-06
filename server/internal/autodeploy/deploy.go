@@ -55,8 +55,7 @@ func (e *stepError) Error() string { return string(e.Step) + ": " + e.Err.Error(
 func (e *stepError) Unwrap() error { return e.Err }
 
 func stepOf(err error) Step {
-	var se *stepError
-	if errors.As(err, &se) {
+	if se, ok := errors.AsType[*stepError](err); ok {
 		return se.Step
 	}
 	return ""

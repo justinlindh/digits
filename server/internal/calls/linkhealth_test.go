@@ -78,7 +78,7 @@ func TestHealthStoreRecordAndLatest(t *testing.T) {
 func TestHealthStoreRingWraparound(t *testing.T) {
 	s := NewHealthStore(nil)
 	s.Init(1)
-	for i := 0; i < 80; i++ {
+	for i := range 80 {
 		s.Record(1, "A", sample(int64(i), float32(i)))
 	}
 	win := s.Window(1, "A")
@@ -117,11 +117,11 @@ func TestHealthStoreConcurrentWritersSameRing(t *testing.T) {
 	var wg sync.WaitGroup
 	const writers = 4
 	const samplesPerWriter = 500
-	for w := 0; w < writers; w++ {
+	for w := range writers {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
-			for i := 0; i < samplesPerWriter; i++ {
+			for i := range samplesPerWriter {
 				s.Record(1, "A", sample(int64(w)*100000+int64(i), float32(i)))
 			}
 		}(w)
@@ -148,7 +148,7 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 		s.Init(id)
 	}
 	var wg sync.WaitGroup
-	for w := 0; w < 8; w++ {
+	for w := range 8 {
 		wg.Add(1)
 		go func(w int) {
 			defer wg.Done()
@@ -157,7 +157,7 @@ func TestHealthStoreConcurrentCallsAndEndpoints(t *testing.T) {
 			if w%2 == 1 {
 				endpoint = "B"
 			}
-			for i := 0; i < 500; i++ {
+			for i := range 500 {
 				s.Record(callID, endpoint, sample(int64(i), float32(i)))
 			}
 		}(w)
@@ -280,7 +280,7 @@ func TestHealthStoreSubscribeDropsOnFullBuffer(t *testing.T) {
 	defer sub.Close()
 
 	loss := float32(0.5)
-	for i := 0; i < 64; i++ {
+	for range 64 {
 		s.Record(1, "A", Sample{TS: time.Now(), LossPct: &loss})
 	}
 

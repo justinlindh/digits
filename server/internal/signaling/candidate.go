@@ -27,7 +27,7 @@ type SDPSummary struct {
 // substring of the input, so the result is safe to log at Info.
 func SummarizeSDP(sdp string) SDPSummary {
 	s := SDPSummary{Bytes: len(sdp)}
-	for _, line := range strings.Split(sdp, "\n") {
+	for line := range strings.SplitSeq(sdp, "\n") {
 		line = strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(line, "m="):

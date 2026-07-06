@@ -91,7 +91,7 @@ func TestMiddlewareCountsAndTimes(t *testing.T) {
 	defer srv.Close()
 
 	// Drive three requests; vary status to exercise the status label.
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		resp, err := http.Get(srv.URL + "/api/status")
 		if err != nil {
 			t.Fatal(err)

@@ -20,7 +20,7 @@ const linkHealthChannel = "digits:linkhealth"
 // redisPublisher is the subset of redis.UniversalClient the HealthStore
 // uses. Narrowed for testability.
 type redisPublisher interface {
-	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
+	Publish(ctx context.Context, channel string, message any) *redis.IntCmd
 	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
 }
 

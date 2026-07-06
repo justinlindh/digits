@@ -6,7 +6,7 @@ import (
 )
 
 func TestGenerateInviteToken_ValidHex(t *testing.T) {
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		tok, err := generateInviteToken()
 		if err != nil {
 			t.Fatalf("generateInviteToken: %v", err)

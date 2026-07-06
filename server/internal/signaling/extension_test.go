@@ -201,7 +201,7 @@ func drainOne(t *testing.T, ch <-chan []byte) *Message {
 // drainN reads exactly n messages from ch. Fails if fewer are available.
 func drainN(t *testing.T, ch <-chan []byte, n int) {
 	t.Helper()
-	for i := 0; i < n; i++ {
+	for i := range n {
 		select {
 		case <-ch:
 		default:
