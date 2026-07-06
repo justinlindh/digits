@@ -142,30 +142,23 @@ type HealthStore struct {
 	podID  string
 }
 
-// HealthStoreOption configures a HealthStore at construction time.
-type HealthStoreOption func(*HealthStore)
-
-// WithFlushDisabled causes HealthStore.Run to skip periodic DB flushes
-// and final shutdown flush. Ingest (Record/Init/Evict) and in-memory
-// reads (Latest/Window) remain fully operational. Intended for DB
-// maintenance windows; the in-memory rings still bound memory usage.
-func WithFlushDisabled() HealthStoreOption {
-	return func(s *HealthStore) { s.flushDisabled = true }
-}
-
 // NewHealthStore creates a HealthStore. Pass a nil database to operate in
-// memory-only mode (no DB flushes). Functional options adjust behavior; see
-// WithFlushDisabled.
-func NewHealthStore(db *sql.DB, opts ...HealthStoreOption) *HealthStore {
-	s := &HealthStore{
+// memory-only mode (no DB flushes). Call DisableFlush before Run to also
+// skip flushing when a database is present.
+func NewHealthStore(db *sql.DB) *HealthStore {
+	return &HealthStore{
 		db:       db,
 		sessions: make(map[SessionKey]*sessionRings),
 		now:      time.Now,
 	}
-	for _, o := range opts {
-		o(s)
-	}
-	return s
+}
+
+// DisableFlush causes HealthStore.Run to skip periodic DB flushes and the
+// final shutdown flush. Ingest (Record/Init/Evict) and in-memory reads
+// (Latest/Window) remain fully operational. Intended for DB maintenance
+// windows; the in-memory rings still bound memory usage. Call before Run.
+func (s *HealthStore) DisableFlush() {
+	s.flushDisabled = true
 }
 
 // getOrCreateSession returns the rings entry for key, creating it if absent,

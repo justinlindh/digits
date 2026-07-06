@@ -217,12 +217,13 @@ func TestHealthStoreSweepSparesActiveAndSubscribed(t *testing.T) {
 	}
 }
 
-func TestHealthStoreFlushDisabledOption(t *testing.T) {
-	// With FlushDisabled, Run returns when ctx is canceled without
-	// attempting any DB writes. Since NewHealthStore(nil, ...) is also
-	// a valid construction (nil DB), use that to avoid needing a DB
-	// in this unit test.
-	s := NewHealthStore(nil, WithFlushDisabled())
+func TestHealthStoreDisableFlush(t *testing.T) {
+	// With flush disabled, Run returns when ctx is canceled without
+	// attempting any DB writes. NewHealthStore(nil) is also a valid
+	// construction (nil DB), so use it to avoid needing a DB in this
+	// unit test.
+	s := NewHealthStore(nil)
+	s.DisableFlush()
 	if !s.flushDisabled {
 		t.Fatal("expected flushDisabled == true")
 	}
