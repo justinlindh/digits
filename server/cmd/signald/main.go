@@ -161,12 +161,11 @@ func run(ctx context.Context) error {
 	tracker.SetDashboardEvents(dashEvents)
 
 	// Link-health store with its own lifecycle; flusher runs until ctx is cancelled.
-	var healthOpts []calls.HealthStoreOption
+	healthStore := calls.NewHealthStore(database.DB)
 	if cfg.LinkHealthFlushDisabled {
-		healthOpts = append(healthOpts, calls.WithFlushDisabled())
+		healthStore.DisableFlush()
 		slog.Warn("link-health flusher disabled via SIGNALD_LINK_HEALTH_FLUSH_DISABLED")
 	}
-	healthStore := calls.NewHealthStore(database.DB, healthOpts...)
 	tracker.SetHealthStore(healthStore)
 	if redisBridge != nil {
 		healthStore.SetRedis(redisBridge.Client(), redisBridge.PodID())
