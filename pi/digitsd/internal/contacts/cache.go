@@ -14,18 +14,20 @@ type Entry struct {
 	Name   string `json:"name"`
 }
 
-// Cache is a thread-safe in-memory contact list loaded from a JSON file.
+// Cache is a thread-safe in-memory safelist of contact numbers loaded from a
+// JSON file. Only the set of numbers is retained; the display names in the
+// file are for humans reading contacts.json and are not used in memory.
 type Cache struct {
-	mu       sync.RWMutex
-	contacts map[string]string // number → name
-	path     string            // file path to load from (empty = always empty cache)
+	mu      sync.RWMutex
+	numbers map[string]struct{} // set of allowed numbers
+	path    string              // file path to load from (empty = always empty cache)
 }
 
 // NewCache creates a new Cache. If path is non-empty, Load will read that file.
 func NewCache(path string) *Cache {
 	return &Cache{
-		contacts: make(map[string]string),
-		path:     path,
+		numbers: make(map[string]struct{}),
+		path:    path,
 	}
 }
 
@@ -33,7 +35,7 @@ func NewCache(path string) *Cache {
 func (c *Cache) IsContact(number string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	_, ok := c.contacts[number]
+	_, ok := c.numbers[number]
 	return ok
 }
 
@@ -41,7 +43,7 @@ func (c *Cache) IsContact(number string) bool {
 func (c *Cache) Count() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return len(c.contacts)
+	return len(c.numbers)
 }
 
 // Load reads the contact list from the configured file path.
@@ -61,12 +63,12 @@ func (c *Cache) Load() error {
 	if err := json.Unmarshal(data, &entries); err != nil {
 		return err
 	}
-	contacts := make(map[string]string, len(entries))
+	numbers := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
-		contacts[e.Number] = e.Name
+		numbers[e.Number] = struct{}{}
 	}
 	c.mu.Lock()
-	c.contacts = contacts
+	c.numbers = numbers
 	c.mu.Unlock()
 	return nil
 }
