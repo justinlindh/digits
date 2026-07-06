@@ -102,8 +102,7 @@ Applied to every span as part of the OTel resource:
 
 Pushed by the Pyroscope Go SDK to `PYROSCOPE_SERVER_ADDRESS`. Profile
 types: CPU, alloc objects, alloc space, inuse objects, inuse space,
-goroutines. Mutex / block profiling is off by default and gated behind
-explicit non-zero `MutexProfileFraction` / `BlockProfileRate` config.
+goroutines. Mutex and block profiling are not collected.
 
 Label set is closed:
 
