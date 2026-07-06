@@ -109,7 +109,7 @@ func TestOldestVersions(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fw, pi := oldestVersions(tc.infos)
+			pi, fw := oldestVersions(tc.infos)
 			if fw != tc.wantFw || pi != tc.wantPi {
 				t.Errorf("oldestVersions: got fw=%q pi=%q, want fw=%q pi=%q", fw, pi, tc.wantFw, tc.wantPi)
 			}

@@ -137,8 +137,7 @@ func (g *GoogleAuth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		case errors.Is(err, ErrUserNotFound):
 			// New user
-			googleID := info.ID
-			user, err = g.store.CreateUser(r.Context(), info.Email, info.Name, &googleID)
+			user, err = g.store.CreateUser(r.Context(), info.Email, info.Name, &info.ID)
 			if err != nil {
 				http.Error(w, "failed to create user", http.StatusInternalServerError)
 				return

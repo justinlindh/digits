@@ -14,6 +14,13 @@ import (
 
 const inviteTTL = 7 * 24 * time.Hour
 
+// normalizeEmail lower-cases and trims an address so invite lookups and
+// writes compare consistently. Matches the normalization the auth package
+// applies to login addresses.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
 // InviteStatusPending is the only invite status compared in Go; the SQL in
 // this file also writes 'accepted' and 'cancelled', matching the DB CHECK
 // constraint defined in db.go.
@@ -78,7 +85,7 @@ func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invi
 	if err != nil {
 		return nil, err
 	}
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = normalizeEmail(email)
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		INSERT INTO household_invites (household_id, email, invited_by, token, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
@@ -184,7 +191,7 @@ func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID st
 // IsPendingForHouseholdEmail reports whether a pending, unexpired invite
 // already exists for email in householdID.
 func (s *InviteStore) IsPendingForHouseholdEmail(ctx context.Context, householdID, email string) (bool, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = normalizeEmail(email)
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM household_invites

@@ -226,9 +226,7 @@ type Handler struct {
 	inviteStore *household.InviteStore
 	emailer     email.Sender
 	// Rate limiters. All are Handler fields so Router() has a single
-	// construction pattern; previously the magic-link verify and Google
-	// login limiters were instantiated inline inside Router(), which made
-	// them harder to spot and impossible to share across request types.
+	// construction pattern and limiters can be shared across request types.
 	authLimiter        *ratelimit.Limiter // POST /auth/magic (magic link request)
 	magicVerifyLimiter *ratelimit.Limiter // GET  /auth/magic/{token}
 	googleLoginLimiter *ratelimit.Limiter // GET  /auth/google/login
@@ -274,7 +272,7 @@ type HandlerConfig struct {
 
 // Deps bundles the stores, hub, and other collaborators the web Handler
 // depends on. Named fields prevent a silent swap between same-typed
-// parameters (the previous 16-arg positional NewHandler made that easy).
+// parameters.
 type Deps struct {
 	LineStore      *line.Store
 	DeviceStore    *device.Store

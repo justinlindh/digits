@@ -155,7 +155,7 @@ func New(version, commit string) *Registry {
 func (r *Registry) registerScrapeGauge(name, help string, read func() float64) {
 	g := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Namespace: "digits",
-		Subsystem: "signald",
+		Subsystem: serviceName,
 		Name:      name,
 		Help:      help,
 	}, read)
@@ -245,7 +245,7 @@ func (r *Registry) ObserveICEServersIssued(turn bool) {
 }
 
 // Middleware returns an http.Handler middleware that records request count
-// and duration into the registry. It calls routeOf to bucket the path into
+// and duration into the registry. It calls RouteOf to bucket the path into
 // a coarse route group; that function is the privacy boundary, so it lives
 // in this package and is exported for tests.
 func (r *Registry) Middleware(next http.Handler) http.Handler {

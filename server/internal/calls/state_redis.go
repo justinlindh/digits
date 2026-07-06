@@ -16,6 +16,13 @@ const (
 	callTTL = 30 * time.Minute
 )
 
+// callEntry.Role values for a 2-party call. Written by OnCallInitiated and
+// read back by Active/CanAddAsHost, so the writer and readers must agree.
+const (
+	roleCaller = "caller"
+	roleCallee = "callee"
+)
+
 type callEntry struct {
 	ID        int64     `json:"id"`
 	Role      string    `json:"role"`
@@ -39,12 +46,12 @@ func NewCallState(client redis.UniversalClient) *CallState {
 func (s *CallState) OnCallInitiated(ctx context.Context, callID int64, caller, callee string) {
 	now := time.Now()
 
-	callerEntry, err := json.Marshal(callEntry{ID: callID, Role: "caller", StartedAt: now})
+	callerEntry, err := json.Marshal(callEntry{ID: callID, Role: roleCaller, StartedAt: now})
 	if err != nil {
 		slog.ErrorContext(ctx, "redis: marshal caller entry failed", "err", err)
 		return
 	}
-	calleeEntry, err := json.Marshal(callEntry{ID: callID, Role: "callee", StartedAt: now})
+	calleeEntry, err := json.Marshal(callEntry{ID: callID, Role: roleCallee, StartedAt: now})
 	if err != nil {
 		slog.ErrorContext(ctx, "redis: marshal callee entry failed", "err", err)
 		return
@@ -215,7 +222,7 @@ func (s *CallState) CanAddAsHost(ctx context.Context, number string) bool {
 		if err := json.Unmarshal([]byte(raw), &e); err != nil {
 			return false
 		}
-		return e.Role == "caller"
+		return e.Role == roleCaller
 	}
 	return false
 }
@@ -248,7 +255,7 @@ func (s *CallState) Active(ctx context.Context) []ActiveCall {
 			seen[e.ID] = true
 
 			var caller, callee string
-			if e.Role == "caller" {
+			if e.Role == roleCaller {
 				caller = number
 				callee = peer
 			} else {

@@ -113,8 +113,7 @@ func (h *Handler) ownedLinesForUser(ctx context.Context, user *auth.User) (map[s
 			return nil, nil, false
 		}
 		for i := range hhLines {
-			ln := hhLines[i]
-			lines[ln.Number] = &ln
+			lines[hhLines[i].Number] = &hhLines[i]
 		}
 	}
 	return lines, households[0], true
@@ -506,12 +505,8 @@ func (h *Handler) hasPhoneUpdates(ctx context.Context, householdID string) bool 
 	if err != nil {
 		return false
 	}
-	lineNumbers := make([]string, len(lines))
-	for i, l := range lines {
-		lineNumbers[i] = l.Number
-	}
-	for _, number := range lineNumbers {
-		for _, info := range h.hub.AllDeviceInfo(number) {
+	for _, l := range lines {
+		for _, info := range h.hub.AllDeviceInfo(l.Number) {
 			if latestPi != "" && info.PiVersion != "" && updates.CompareSemver(info.PiVersion, latestPi) < 0 {
 				return true
 			}
@@ -547,6 +542,13 @@ func jsonError(ctx context.Context, w http.ResponseWriter, msg string, code int)
 func writeJSON(w http.ResponseWriter, v any) error {
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(v)
+}
+
+// writeEmptyJSON writes an empty JSON object with an implicit 200 status, for
+// endpoints whose success response carries no body beyond acknowledgement.
+func writeEmptyJSON(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("{}"))
 }
 
 func renderWith(ctx context.Context, w http.ResponseWriter, t *template.Template, name string, data any) {

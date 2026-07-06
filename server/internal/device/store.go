@@ -24,7 +24,6 @@ type Device struct {
 	LineID               *int64
 	Name                 string
 	HardwareID           string
-	DeviceID             string
 	DeviceToken          *string
 	PairingCode          *string
 	PairingCodeExpiresAt *time.Time
@@ -48,7 +47,7 @@ func NewStore(db *sql.DB) *Store {
 
 // deviceColumns is the SELECT list for queries that scan into a Device via
 // scanDevice. Keep the order in sync with the scan there.
-const deviceColumns = `id, line_id, name, hardware_id, device_id, device_token,
+const deviceColumns = `id, line_id, name, hardware_id, device_token,
 	pairing_code, pairing_code_expires_at, paired_at, created_at, last_seen_at`
 
 // scanDevice materializes a Device from any row whose columns match
@@ -56,7 +55,7 @@ const deviceColumns = `id, line_id, name, hardware_id, device_id, device_token,
 func scanDevice(row dbutil.RowScanner) (Device, error) {
 	var d Device
 	if err := row.Scan(
-		&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceID, &d.DeviceToken,
+		&d.ID, &d.LineID, &d.Name, &d.HardwareID, &d.DeviceToken,
 		&d.PairingCode, &d.PairingCodeExpiresAt, &d.PairedAt, &d.CreatedAt, &d.LastSeenAt,
 	); err != nil {
 		return Device{}, fmt.Errorf("scan device: %w", err)

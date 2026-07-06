@@ -196,7 +196,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			Now:            now,
 		},
 	}
-	renderWith(r.Context(), w, h.tmplDashboard, layoutFor(r), data)
+	renderWith(ctx, w, h.tmplDashboard, layoutFor(r), data)
 }
 
 func countOnline(lines []lineRow) int {

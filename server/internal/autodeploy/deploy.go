@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -228,16 +229,14 @@ func (d *Deployer) deployVersion(ctx context.Context, version string, healthTime
 		"--env-file", d.Cfg.ComposeEnvFile,
 	}
 
-	pullArgs := append(append([]string{}, composeArgs...), "pull")
-	pullArgs = append(pullArgs, d.Cfg.Services...)
+	pullArgs := slices.Concat(composeArgs, []string{"pull"}, d.Cfg.Services)
 	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: pullArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {
 		return &stepError{Step: StepPull, Err: err}
 	}
 
-	upArgs := append(append([]string{}, composeArgs...), "up", "-d", "--wait")
-	upArgs = append(upArgs, d.Cfg.Services...)
+	upArgs := slices.Concat(composeArgs, []string{"up", "-d", "--wait"}, d.Cfg.Services)
 	if err := d.Runner.Run(ctx, RunSpec{
 		Name: "docker", Args: upArgs, Dir: d.Cfg.ComposeDir, Env: env,
 	}); err != nil {

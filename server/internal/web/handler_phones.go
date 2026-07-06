@@ -20,7 +20,7 @@ import (
 
 const maxLineNameRunes = 50
 
-func oldestVersions(infos []signaling.DeviceInfoSnapshot) (fw, pi string) {
+func oldestVersions(infos []signaling.DeviceInfoSnapshot) (pi, fw string) {
 	for _, info := range infos {
 		if info.FirmwareVersion != "" && (fw == "" || updates.CompareSemver(info.FirmwareVersion, fw) < 0) {
 			fw = info.FirmwareVersion
@@ -40,7 +40,7 @@ func updateNotes(idx *updates.ReleaseIndex, infos []signaling.DeviceInfoSnapshot
 	if idx == nil {
 		return nil, nil
 	}
-	oldestFw, oldestPi := oldestVersions(infos)
+	oldestPi, oldestFw := oldestVersions(infos)
 	if latestPi != "" && oldestPi != "" && updates.CompareSemver(oldestPi, latestPi) < 0 {
 		pi = idx.RangeReleases(updates.ComponentPi, oldestPi, latestPi)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -99,16 +100,7 @@ func (cs *ConfState) Contains(ctx context.Context, confID uuid.UUID, phoneA, pho
 		slog.ErrorContext(ctx, "redis: ConfState.Contains unmarshal failed", "confID", confID, "err", err)
 		return false
 	}
-	hasA, hasB := false, false
-	for _, m := range rc.Members {
-		if m == phoneA {
-			hasA = true
-		}
-		if m == phoneB {
-			hasB = true
-		}
-	}
-	return hasA && hasB
+	return slices.Contains(rc.Members, phoneA) && slices.Contains(rc.Members, phoneB)
 }
 
 // RemoveMember deletes a single member's key from Redis.

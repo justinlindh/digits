@@ -392,8 +392,7 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 	// Idempotency: if the call already ended, just return 200 without
 	// touching the audit column.
 	if call.Status == calls.CallStatusEnded {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("{}"))
+		writeEmptyJSON(w)
 		return
 	}
 
@@ -427,6 +426,5 @@ func (h *Handler) handleCallDisconnect(w http.ResponseWriter, r *http.Request) {
 		// when the next peer hangup arrives or during the daily cleanup.
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte("{}"))
+	writeEmptyJSON(w)
 }
