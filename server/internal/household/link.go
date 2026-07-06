@@ -33,15 +33,15 @@ var (
 )
 
 // linkColumns is the SELECT/RETURNING list for queries that scan into a
-// HouseholdLink. Field order must stay aligned with the destination order in
+// Link. Field order must stay aligned with the destination order in
 // scanLink below.
 const linkColumns = `id, household_a_id, household_b_id, status, invite_code, invited_by,
 	accepted_by, created_at, accepted_at, revoked_at, revoked_by`
 
-// scanLink materializes a HouseholdLink from any row whose columns match
+// scanLink materializes a Link from any row whose columns match
 // linkColumns in order.
-func scanLink(row dbutil.RowScanner) (*HouseholdLink, error) {
-	l := &HouseholdLink{}
+func scanLink(row dbutil.RowScanner) (*Link, error) {
+	l := &Link{}
 	if err := row.Scan(
 		&l.ID, &l.HouseholdAID, &l.HouseholdBID, &l.Status, &l.InviteCode,
 		&l.InvitedBy, &l.AcceptedBy, &l.CreatedAt, &l.AcceptedAt,
@@ -52,8 +52,8 @@ func scanLink(row dbutil.RowScanner) (*HouseholdLink, error) {
 	return l, nil
 }
 
-// HouseholdLink represents a link (invitation or active connection) between two households.
-type HouseholdLink struct {
+// Link represents a link (invitation or active connection) between two households.
+type Link struct {
 	ID           string
 	HouseholdAID string
 	HouseholdBID *string // NULL while invite is pending
@@ -97,7 +97,7 @@ func generateInviteCode() (string, error) {
 // household_b_id is NULL until the invite is accepted.
 // Multiple pending invites per household are allowed; duplicate-link
 // prevention happens in AcceptInvite via AreLinked.
-func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedByUserID string) (*HouseholdLink, error) {
+func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedByUserID string) (*Link, error) {
 	code, err := generateInviteCode()
 	if err != nil {
 		return nil, err
@@ -118,8 +118,8 @@ func (s *LinkStore) CreateInvite(ctx context.Context, fromHouseholdID, invitedBy
 // normalizes ordering (a_id < b_id), and marks it active. The whole operation
 // runs in a transaction with the invite row locked, so two racing accepts of
 // the same code serialize and the loser sees it as already used.
-func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acceptingHouseholdID string) (*HouseholdLink, error) {
-	var link *HouseholdLink
+func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acceptingHouseholdID string) (*Link, error) {
+	var link *Link
 	err := dbutil.WithTx(ctx, s.db, func(tx *sql.Tx) error {
 		var err error
 		link, err = scanLink(tx.QueryRowContext(ctx, `
@@ -178,7 +178,7 @@ func (s *LinkStore) AcceptInvite(ctx context.Context, code, acceptingUserID, acc
 }
 
 // GetLinkedHouseholds returns all active links where householdID is either a or b.
-func (s *LinkStore) GetLinkedHouseholds(ctx context.Context, householdID string) ([]HouseholdLink, error) {
+func (s *LinkStore) GetLinkedHouseholds(ctx context.Context, householdID string) ([]Link, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+linkColumns+`
 		FROM household_links
@@ -234,7 +234,7 @@ func (s *LinkStore) RevokeLink(ctx context.Context, linkID, revokedByUserID stri
 }
 
 // GetByID returns a link by its ID.
-func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, error) {
+func (s *LinkStore) GetByID(ctx context.Context, id string) (*Link, error) {
 	link, err := scanLink(s.db.QueryRowContext(ctx, `
 		SELECT `+linkColumns+`
 		FROM household_links WHERE id = $1
@@ -249,7 +249,7 @@ func (s *LinkStore) GetByID(ctx context.Context, id string) (*HouseholdLink, err
 }
 
 // GetPendingForHousehold returns all pending invites where householdID is the inviting household.
-func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]HouseholdLink, error) {
+func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID string) ([]Link, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+linkColumns+`
 		FROM household_links
@@ -262,8 +262,8 @@ func (s *LinkStore) GetPendingForHousehold(ctx context.Context, householdID stri
 	return scanLinks(rows)
 }
 
-func scanLinks(rows *sql.Rows) ([]HouseholdLink, error) {
-	var links []HouseholdLink
+func scanLinks(rows *sql.Rows) ([]Link, error) {
+	var links []Link
 	for rows.Next() {
 		l, err := scanLink(rows)
 		if err != nil {
