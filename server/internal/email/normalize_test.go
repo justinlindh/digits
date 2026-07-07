@@ -1,8 +1,8 @@
-package auth
+package email
 
 import "testing"
 
-func TestNormalizeEmail(t *testing.T) {
+func TestNormalize(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
@@ -17,8 +17,8 @@ func TestNormalizeEmail(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := normalizeEmail(tc.in); got != tc.want {
-				t.Errorf("normalizeEmail(%q) = %q, want %q", tc.in, got, tc.want)
+			if got := Normalize(tc.in); got != tc.want {
+				t.Errorf("Normalize(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
 	}
