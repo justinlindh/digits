@@ -199,7 +199,7 @@ func (h *Handler) handleHouseholdInvitePost(w http.ResponseWriter, r *http.Reque
 		http.Redirect(w, r, "/settings?error=invalid+email", http.StatusSeeOther)
 		return
 	}
-	inviteEmail := strings.ToLower(addr.Address)
+	inviteEmail := emailpkg.Normalize(addr.Address)
 
 	isMember, err := h.householdStore.IsMemberByEmail(r.Context(), hh.ID, inviteEmail)
 	if err != nil {
