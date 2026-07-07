@@ -481,7 +481,7 @@ func (t *Tracker) Active(ctx context.Context) []ActiveCall {
 }
 
 // callColumns is the SELECT list for queries that scan into a Call via
-// scanCallRows. Keep the order in sync with the scan there.
+// scanCallRow. Keep the order in sync with the scan there.
 const callColumns = `id, caller, callee, status, started_at, answered_at, ended_at, duration_s,
 	end_reason, originating_conference_id, force_ended_by`
 
@@ -492,19 +492,30 @@ const callColumns = `id, caller, callee, status, started_at, answered_at, ended_
 const endCallSetClause = `status = 'ended', ended_at = CURRENT_TIMESTAMP,
 	duration_s = EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(answered_at, started_at)))::INT`
 
+// scanCallRow scans one row selected with callColumns into a Call. Shared by
+// scanCallRows (result-set loop) and GetCall (single row) so the column order
+// has a single authority.
+func scanCallRow(row dbutil.RowScanner) (Call, error) {
+	var c Call
+	var feb sql.NullString
+	if err := row.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
+		&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
+		&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
+		return Call{}, err
+	}
+	if feb.Valid {
+		s := feb.String
+		c.ForceEndedBy = &s
+	}
+	return c, nil
+}
+
 func scanCallRows(rows *sql.Rows) ([]Call, error) {
 	var calls []Call
 	for rows.Next() {
-		var c Call
-		var feb sql.NullString
-		if err := rows.Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-			&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-			&c.EndReason, &c.OriginatingConferenceID, &feb); err != nil {
+		c, err := scanCallRow(rows)
+		if err != nil {
 			return nil, err
-		}
-		if feb.Valid {
-			s := feb.String
-			c.ForceEndedBy = &s
 		}
 		calls = append(calls, c)
 	}
@@ -803,22 +814,13 @@ func (t *Tracker) DropMemberPersistent(ctx context.Context, confID uuid.UUID, ph
 // GetCall returns the call row by id. Returns zero-value Call and nil error
 // if not found (callers should test Call.ID == 0).
 func (t *Tracker) GetCall(ctx context.Context, id int64) (Call, error) {
-	var c Call
-	var feb sql.NullString
-	err := t.db.QueryRowContext(ctx,
-		`SELECT `+callColumns+` FROM calls WHERE id = $1`, id,
-	).Scan(&c.ID, &c.Caller, &c.Callee, &c.Status,
-		&c.StartedAt, &c.AnsweredAt, &c.EndedAt, &c.DurationS,
-		&c.EndReason, &c.OriginatingConferenceID, &feb)
+	c, err := scanCallRow(t.db.QueryRowContext(ctx,
+		`SELECT `+callColumns+` FROM calls WHERE id = $1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Call{}, nil
 	}
 	if err != nil {
 		return Call{}, fmt.Errorf("get call: %w", err)
-	}
-	if feb.Valid {
-		s := feb.String
-		c.ForceEndedBy = &s
 	}
 	return c, nil
 }
