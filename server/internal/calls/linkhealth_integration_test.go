@@ -83,7 +83,7 @@ func TestReadbackFromDB(t *testing.T) {
 	// Simulate post-restart: drop in-memory state.
 	s.Evict(callID)
 
-	got, err := s.Readback(context.Background(), callID, "555-3333", RingCapacity)
+	got, err := s.Readback(context.Background(), callID, "555-3333")
 	if err != nil {
 		t.Fatalf("Readback: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestReadbackEdgeFromDB(t *testing.T) {
 	}
 
 	got, err := s.ReadbackEdge(context.Background(), confID,
-		"+15555550001", "+15555550002", 10)
+		"+15555550001", "+15555550002")
 	if err != nil {
 		t.Fatalf("ReadbackEdge: %v", err)
 	}
