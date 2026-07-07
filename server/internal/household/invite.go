@@ -5,21 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
+	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/tokens"
 )
 
 const inviteTTL = 7 * 24 * time.Hour
-
-// normalizeEmail lower-cases and trims an address so invite lookups and
-// writes compare consistently. Matches the normalization the auth package
-// applies to login addresses.
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
 
 // InviteStatusPending is the only invite status compared in Go; the SQL in
 // this file also writes 'accepted' and 'cancelled', matching the DB CHECK
@@ -80,17 +73,17 @@ func scanInvite(row dbutil.RowScanner) (*Invite, error) {
 
 // CreateInvite issues a pending invite for email to join householdID and
 // returns it with a freshly generated token and expiry.
-func (s *InviteStore) CreateInvite(ctx context.Context, householdID, email, invitedByUserID string) (*Invite, error) {
+func (s *InviteStore) CreateInvite(ctx context.Context, householdID, addr, invitedByUserID string) (*Invite, error) {
 	token, err := generateInviteToken()
 	if err != nil {
 		return nil, err
 	}
-	email = normalizeEmail(email)
+	addr = email.Normalize(addr)
 	inv, err := scanInvite(s.db.QueryRowContext(ctx, `
 		INSERT INTO household_invites (household_id, email, invited_by, token, expires_at)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING `+inviteColumns,
-		householdID, email, invitedByUserID, token, time.Now().Add(inviteTTL),
+		householdID, addr, invitedByUserID, token, time.Now().Add(inviteTTL),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("create invite: %w", err)
@@ -190,13 +183,13 @@ func (s *InviteStore) GetPendingForHousehold(ctx context.Context, householdID st
 
 // IsPendingForHouseholdEmail reports whether a pending, unexpired invite
 // already exists for email in householdID.
-func (s *InviteStore) IsPendingForHouseholdEmail(ctx context.Context, householdID, email string) (bool, error) {
-	email = normalizeEmail(email)
+func (s *InviteStore) IsPendingForHouseholdEmail(ctx context.Context, householdID, addr string) (bool, error) {
+	addr = email.Normalize(addr)
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM household_invites
 		WHERE household_id = $1 AND email = $2 AND status = 'pending' AND expires_at > NOW()
-	`, householdID, email).Scan(&count)
+	`, householdID, addr).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("check pending invite: %w", err)
 	}
