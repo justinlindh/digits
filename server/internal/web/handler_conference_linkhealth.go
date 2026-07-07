@@ -97,17 +97,15 @@ func (h *Handler) buildConferenceLinkHealthResp(ctx context.Context, conf *calls
 func (h *Handler) buildConferenceLinkHealthEdge(ctx context.Context, confID uuid.UUID, from, peer string) ConferenceLinkHealthEdge {
 	out := ConferenceLinkHealthEdge{From: from, Peer: peer, Window: []LinkHealthSample{}}
 
-	if windowMem := h.healthStore.WindowEdge(confID, from, peer); len(windowMem) > 0 {
-		out.Window, out.Latest = samplesToWindow(windowMem)
-		return out
-	}
-	dbSamples, err := h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
+	window, latest, err := resolveWindow(h.healthStore.WindowEdge(confID, from, peer), func() ([]calls.Sample, error) {
+		return h.healthStore.ReadbackEdge(ctx, confID, from, peer, calls.RingCapacity)
+	})
 	if err != nil {
 		slog.WarnContext(ctx, "ReadbackEdge failed; serving empty window",
 			"conf_id", confID, "from", from, "peer", peer, "err", err)
 		return out
 	}
-	out.Window, out.Latest = samplesToWindow(dbSamples)
+	out.Window, out.Latest = window, latest
 	return out
 }
 

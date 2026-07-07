@@ -70,6 +70,26 @@ func samplesToWindow(samples []calls.Sample) ([]LinkHealthSample, *LinkHealthSam
 	return window, &latest
 }
 
+// resolveWindow returns the sample window and most-recent sample for one
+// endpoint or edge: the live in-memory ring when it holds samples, otherwise a
+// DB readback. mem is the ring snapshot the caller already fetched; readback is
+// invoked only on a ring miss. The caller decides how to treat a readback
+// error (the 2-party path fails the whole response; the conference path
+// degrades a single edge to an empty window), so the error is returned rather
+// than handled here.
+func resolveWindow(mem []calls.Sample, readback func() ([]calls.Sample, error)) ([]LinkHealthSample, *LinkHealthSample, error) {
+	if len(mem) > 0 {
+		window, latest := samplesToWindow(mem)
+		return window, latest, nil
+	}
+	dbSamples, err := readback()
+	if err != nil {
+		return []LinkHealthSample{}, nil, err
+	}
+	window, latest := samplesToWindow(dbSamples)
+	return window, latest, nil
+}
+
 func (h *Handler) handleCallLinkHealth(w http.ResponseWriter, r *http.Request) {
 	callID, ok := parseCallID(w, r)
 	if !ok {
@@ -120,16 +140,13 @@ func (h *Handler) buildLinkHealthEndpoint(ctx context.Context, callID int64, num
 
 	out.DisplayName = nr.display(number)
 
-	if windowMem := h.healthStore.Window(callID, number); len(windowMem) > 0 {
-		out.Window, out.Latest = samplesToWindow(windowMem)
-		return out, nil
-	}
-
-	dbSamples, err := h.healthStore.Readback(ctx, callID, number, calls.RingCapacity)
+	window, latest, err := resolveWindow(h.healthStore.Window(callID, number), func() ([]calls.Sample, error) {
+		return h.healthStore.Readback(ctx, callID, number, calls.RingCapacity)
+	})
 	if err != nil {
 		return out, fmt.Errorf("readback %d/%s: %w", callID, number, err)
 	}
-	out.Window, out.Latest = samplesToWindow(dbSamples)
+	out.Window, out.Latest = window, latest
 	return out, nil
 }
 
