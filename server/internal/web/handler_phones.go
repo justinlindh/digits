@@ -830,15 +830,7 @@ func (h *Handler) pushLineSettings(number string, settings line.Settings) error 
 }
 
 func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnershipAdmin(w, r, number)
-	if ln == nil {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	hwID, _, ok := h.requireLineDevice(w, r, ln)
+	number, hwID, ok := h.requireDeviceCommand(w, r, true)
 	if !ok {
 		return
 	}
@@ -856,15 +848,7 @@ func (h *Handler) handlePhoneUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	hwID, _, ok := h.requireLineDevice(w, r, ln)
+	_, hwID, ok := h.requireDeviceCommand(w, r, false)
 	if !ok {
 		return
 	}
@@ -881,15 +865,7 @@ func (h *Handler) handlePhoneUpdateStatus(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	hwID, _, ok := h.requireLineDevice(w, r, ln)
+	number, hwID, ok := h.requireDeviceCommand(w, r, false)
 	if !ok {
 		return
 	}
@@ -900,15 +876,7 @@ func (h *Handler) handlePhoneRingTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handlePhoneFactoryReset(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnershipAdmin(w, r, number)
-	if ln == nil {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	hwID, _, ok := h.requireLineDevice(w, r, ln)
+	number, hwID, ok := h.requireDeviceCommand(w, r, true)
 	if !ok {
 		return
 	}
@@ -1015,15 +983,7 @@ func (h *Handler) handlePhoneDevMode(w http.ResponseWriter, r *http.Request) {
 // boolean and the fixed SSH username; the LAN IP is rendered in owner-scope
 // HTML on page reload, never in JSON (see DeviceInfoSnapshot.RemoteAddr).
 func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Request) {
-	number := r.PathValue("number")
-	ln := h.requireLineOwnership(w, r, number)
-	if ln == nil {
-		return
-	}
-	if !parseForm(w, r) {
-		return
-	}
-	hwID, _, ok := h.requireLineDevice(w, r, ln)
+	number, hwID, ok := h.requireDeviceCommand(w, r, false)
 	if !ok {
 		return
 	}
@@ -1042,6 +1002,33 @@ func (h *Handler) handlePhoneDevModeStatus(w http.ResponseWriter, r *http.Reques
 	}); err != nil {
 		slog.ErrorContext(r.Context(), "dev mode status: json encode failed", "number", number, "err", err)
 	}
+}
+
+// requireDeviceCommand runs the shared preamble for device-command handlers:
+// resolve the line number, check ownership (admin scope when adminOnly is set,
+// member scope otherwise), parse the form, and resolve the target device. On
+// any failure it has already written the response and returns ok=false, so the
+// caller returns immediately. Handlers that must validate a form field before
+// the device lookup (to preserve error precedence) inline these steps instead.
+func (h *Handler) requireDeviceCommand(w http.ResponseWriter, r *http.Request, adminOnly bool) (number, hardwareID string, ok bool) {
+	number = r.PathValue("number")
+	var ln *line.Line
+	if adminOnly {
+		ln = h.requireLineOwnershipAdmin(w, r, number)
+	} else {
+		ln = h.requireLineOwnership(w, r, number)
+	}
+	if ln == nil {
+		return "", "", false
+	}
+	if !parseForm(w, r) {
+		return "", "", false
+	}
+	hardwareID, _, ok = h.requireLineDevice(w, r, ln)
+	if !ok {
+		return "", "", false
+	}
+	return number, hardwareID, true
 }
 
 // requireLineDevice resolves the hardware_id param to a device on this line and
