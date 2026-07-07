@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -464,6 +465,19 @@ func (sr *sessionRings) broadcastLocked(ev Event) {
 // flushInterval is how often the background flusher runs.
 const flushInterval = 10 * time.Second
 
+// sessionKeys returns a snapshot of the live session keys, taken under the
+// top-level lock so callers can iterate without holding it during per-session
+// work (DB flushes, idle sweeps).
+func (s *HealthStore) sessionKeys() []SessionKey {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys := make([]SessionKey, 0, len(s.sessions))
+	for k := range s.sessions {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // FlushOnce walks every tracked call and writes one row per (endpoint) for
 // any endpoint with samples newer than its lastFlushed timestamp. Exported
 // for tests; production use goes through Run.
@@ -471,14 +485,8 @@ func (s *HealthStore) FlushOnce(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	// Snapshot session keys under the top-level lock to avoid holding it while
-	// doing DB I/O.
-	s.mu.Lock()
-	keys := make([]SessionKey, 0, len(s.sessions))
-	for k := range s.sessions {
-		keys = append(keys, k)
-	}
-	s.mu.Unlock()
+	// Snapshot session keys to avoid holding the top-level lock during DB I/O.
+	keys := s.sessionKeys()
 
 	var errs []error
 	for _, k := range keys {
@@ -642,12 +650,7 @@ func (s *HealthStore) sweepIdleSessions() {
 	cutoff := now.Add(-idleSessionTTL)
 	stuckCutoff := now.Add(-subscribedSessionTTL)
 
-	s.mu.Lock()
-	keys := make([]SessionKey, 0, len(s.sessions))
-	for k := range s.sessions {
-		keys = append(keys, k)
-	}
-	s.mu.Unlock()
+	keys := s.sessionKeys()
 
 	for _, k := range keys {
 		s.mu.Lock()
@@ -751,8 +754,6 @@ func (s *HealthStore) readbackSession(ctx context.Context, where string, args []
 		return nil, fmt.Errorf("readback rows: %w", err)
 	}
 	// Reverse to oldest-first to match in-memory Window ordering.
-	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
-		out[i], out[j] = out[j], out[i]
-	}
+	slices.Reverse(out)
 	return out, nil
 }

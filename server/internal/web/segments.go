@@ -29,9 +29,7 @@ func toSegments(val, perSegment, badThreshold, warnThreshold float32) segDesc {
 	if val > 0 && lit == 0 {
 		lit = 1
 	}
-	if lit > segmentCount {
-		lit = segmentCount
-	}
+	lit = min(lit, segmentCount)
 	sev := ""
 	switch {
 	case val >= badThreshold:

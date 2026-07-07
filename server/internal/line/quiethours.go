@@ -2,6 +2,7 @@ package line
 
 import (
 	"regexp"
+	"slices"
 	"time"
 )
 
@@ -35,12 +36,7 @@ func AllDays() [7]bool {
 
 // anyDay reports whether at least one weekday is selected.
 func (q QuietHours) anyDay() bool {
-	for _, d := range q.Days {
-		if d {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(q.Days[:], true)
 }
 
 // validQuietTime reports whether s is a well-formed "HH:MM" 24-hour time.
