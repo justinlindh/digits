@@ -331,6 +331,7 @@ internal/
   profiling/             Pyroscope continuous-profiling integration
   ratelimit/             IP-based token bucket rate limiter
   signaling/             WebSocket hub, message relay, protocol types
+  tokens/                Shared token hashing (device, session, pairing)
   tracing/               OpenTelemetry trace setup and DB instrumentation
   turn/                  TURN credential generation (HMAC-SHA1)
   updates/               GitHub release index fetching and caching
@@ -409,4 +410,4 @@ cd ~/src/digits/server && ./deploy.sh --local-build signald
 
 - Authentication is required -- magic link emails or Google OAuth.
 - Rate limiting is applied to auth and pairing endpoints.
-- TURN credentials are time-limited (24h) and use HMAC-SHA1.
+- TURN credentials are time-limited (2h) and use HMAC-SHA1.

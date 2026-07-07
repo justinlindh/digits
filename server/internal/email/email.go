@@ -17,6 +17,17 @@ type Sender interface {
 	Send(to, subject, htmlBody string) error
 }
 
+// Normalize canonicalizes an address for storage, lookup, and comparison by
+// trimming surrounding whitespace and lowercasing. Every email-keyed path
+// (magic-link login, Google login, household invites) funnels through this so
+// "John@Example.com" and "john@example.com" resolve to the same account
+// instead of silently diverging (the users.email UNIQUE constraint is
+// case-sensitive). Keeping it here means the login and invite flows cannot
+// drift out of lockstep.
+func Normalize(address string) string {
+	return strings.ToLower(strings.TrimSpace(address))
+}
+
 // SMTPSender sends email via SMTP.
 type SMTPSender struct {
 	host string

@@ -69,10 +69,11 @@ const (
 )
 
 // Conference member role constants. These match the DB CHECK constraint in
-// db.go and the wire representation in ConferenceMemberInfo.Role.
+// db.go and the wire representation in ConferenceMemberInfo.Role. Unexported:
+// only this package populates the role field.
 const (
-	RoleHost  = "host"
-	RoleAdded = "added"
+	roleHost  = "host"
+	roleAdded = "added"
 )
 
 // LineSettings is the wire-format copy of server/internal/line.Settings used

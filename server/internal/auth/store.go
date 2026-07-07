@@ -10,22 +10,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/justinlindh/digits/server/internal/dbutil"
+	"github.com/justinlindh/digits/server/internal/email"
 	"github.com/justinlindh/digits/server/internal/tokens"
 )
-
-// normalizeEmail canonicalizes an address for storage and lookup by trimming
-// surrounding whitespace and lowercasing. Every email-keyed store method funnels
-// through this so a magic-link request for "John@Example.com" resolves to the
-// same account as a Google login for "john@example.com" instead of silently
-// creating a duplicate (the users.email UNIQUE constraint is case-sensitive).
-// Matches the normalization the household invite flow already applies.
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
 
 // ErrUserNotFound is returned by GetUserBy* when no matching row exists.
 // Callers that want find-or-create semantics must check for this explicitly
@@ -91,11 +81,11 @@ func scanUser(row dbutil.RowScanner) (*User, error) {
 }
 
 // CreateUser inserts a new user record and returns it.
-func (s *Store) CreateUser(ctx context.Context, email, name string, googleID *string) (*User, error) {
-	email = normalizeEmail(email)
+func (s *Store) CreateUser(ctx context.Context, addr, name string, googleID *string) (*User, error) {
+	addr = email.Normalize(addr)
 	row := s.db.QueryRowContext(ctx,
 		`INSERT INTO users (email, name, google_id) VALUES ($1, $2, $3) RETURNING `+userColumns,
-		email, name, googleID,
+		addr, name, googleID,
 	)
 	u, err := scanUser(row)
 	if err != nil {
@@ -119,8 +109,8 @@ func (s *Store) queryUser(ctx context.Context, whereClause string, arg any) (*Us
 // GetUserByEmail looks up a user by email address. The address is normalized
 // (trimmed and lowercased) so lookups are case-insensitive and match the form
 // CreateUser persisted.
-func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
-	return s.queryUser(ctx, `email = $1`, normalizeEmail(email))
+func (s *Store) GetUserByEmail(ctx context.Context, addr string) (*User, error) {
+	return s.queryUser(ctx, `email = $1`, email.Normalize(addr))
 }
 
 // GetOrCreateUserByEmail returns the user for email, creating one (with an empty
@@ -334,7 +324,7 @@ func (s *Store) ValidateAndRefreshSession(ctx context.Context, token string, ttl
 // CreateMagicLink generates a single-use login token for passwordless email auth.
 // Returns the raw token to embed in the email link. returnTo is an optional
 // path to redirect to after authentication; pass "" to use the default.
-func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Duration, returnTo string) (string, error) {
+func (s *Store) CreateMagicLink(ctx context.Context, addr string, ttl time.Duration, returnTo string) (string, error) {
 	token, err := tokens.RandomHex(32)
 	if err != nil {
 		return "", err
@@ -342,7 +332,7 @@ func (s *Store) CreateMagicLink(ctx context.Context, email string, ttl time.Dura
 	hash := tokens.Hash(token)
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO magic_links (email, token_hash, expires_at, return_to) VALUES ($1, $2, $3, $4)`,
-		normalizeEmail(email), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
+		email.Normalize(addr), hash, time.Now().Add(ttl), sql.NullString{String: returnTo, Valid: returnTo != ""},
 	)
 	if err != nil {
 		return "", fmt.Errorf("create magic link: %w", err)

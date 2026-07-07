@@ -48,37 +48,31 @@ func (r *Relay) handleConferenceMerge(ctx context.Context, host string, msg *Mes
 
 	// 4. Notify all three members of the membership snapshot.
 	members := []ConferenceMemberInfo{
-		{Phone: host, Role: RoleHost},
-		{Phone: held, Role: RoleAdded},
-		{Phone: active, Role: RoleAdded},
+		{Phone: host, Role: roleHost},
+		{Phone: held, Role: roleAdded},
+		{Phone: active, Role: roleAdded},
 	}
 	memberMsg := &Message{Type: TypeConferenceMember, ConfID: conf.ID.String(), Members: members}
 	for _, m := range members {
-		if err := r.Hub.SendTo(m.Phone, memberMsg); err != nil {
-			slog.WarnContext(ctx, "conference: ConferenceMember send failed", "conf_id", conf.ID.String(), "to", m.Phone, "err", err)
-		}
+		r.sendConf(ctx, m.Phone, memberMsg, "ConferenceMember")
 	}
 	slog.InfoContext(ctx, "conference: ConferenceMember broadcast", "conf_id", conf.ID.String(), "members", len(members))
 
 	// 5. Instruct held and active peers to open a peer connection to each other.
 	//    Deterministic tiebreak: numerically smaller phone number is the initiator.
 	heldIsInitiator := held < active
-	if err := r.Hub.SendTo(held, &Message{
+	r.sendConf(ctx, held, &Message{
 		Type:      TypeConferenceConnect,
 		ConfID:    conf.ID.String(),
 		Peer:      active,
 		Initiator: heldIsInitiator,
-	}); err != nil {
-		slog.WarnContext(ctx, "conference: ConferenceConnect send failed", "conf_id", conf.ID.String(), "to", held, "err", err)
-	}
-	if err := r.Hub.SendTo(active, &Message{
+	}, "ConferenceConnect")
+	r.sendConf(ctx, active, &Message{
 		Type:      TypeConferenceConnect,
 		ConfID:    conf.ID.String(),
 		Peer:      held,
 		Initiator: !heldIsInitiator,
-	}); err != nil {
-		slog.WarnContext(ctx, "conference: ConferenceConnect send failed", "conf_id", conf.ID.String(), "to", active, "err", err)
-	}
+	}, "ConferenceConnect")
 	slog.InfoContext(ctx, "conference: ConferenceConnect dispatched", "conf_id", conf.ID.String(), "held", held, "active", active, "held_is_initiator", heldIsInitiator)
 }
 
@@ -88,6 +82,16 @@ func (r *Relay) sendRejection(host, confID, reason string) {
 		ConfID: confID,
 		Reason: reason,
 	})
+}
+
+// sendConf delivers a conference control message to one member. A failed send
+// is expected (the member may have just disconnected) and is logged as a
+// non-fatal warning with a stable shape; what names the message for the log
+// line (e.g. "ConferenceEnd").
+func (r *Relay) sendConf(ctx context.Context, phone string, msg *Message, what string) {
+	if err := r.Hub.SendTo(phone, msg); err != nil {
+		slog.WarnContext(ctx, "conference: "+what+" send failed", "conf_id", msg.ConfID, "to", phone, "err", err)
+	}
 }
 
 func (r *Relay) endConference(ctx context.Context, confID uuid.UUID, reason string) {
@@ -103,13 +107,11 @@ func (r *Relay) endConference(ctx context.Context, confID uuid.UUID, reason stri
 		slog.ErrorContext(ctx, "end conference persist", "err", err)
 	}
 	for p := range conf.Members {
-		if err := r.Hub.SendTo(p, &Message{
+		r.sendConf(ctx, p, &Message{
 			Type:   TypeConferenceEnd,
 			ConfID: confID.String(),
 			Reason: reason,
-		}); err != nil {
-			slog.WarnContext(ctx, "conference: ConferenceEnd send failed", "conf_id", confID.String(), "to", p, "err", err)
-		}
+		}, "ConferenceEnd")
 	}
 	slog.InfoContext(ctx, "conference: ConferenceEnd broadcast", "conf_id", confID.String(), "reason", reason)
 }
@@ -135,26 +137,22 @@ func (r *Relay) dropMemberFromConference(ctx context.Context, confID uuid.UUID, 
 	}
 
 	for _, p := range others {
-		if err := r.Hub.SendTo(p, &Message{
+		r.sendConf(ctx, p, &Message{
 			Type:   TypeConferenceLeave,
 			ConfID: confID.String(),
 			Peer:   phone,
 			Reason: reason,
-		}); err != nil {
-			slog.WarnContext(ctx, "conference: ConferenceLeave send failed", "conf_id", confID.String(), "to", p, "err", err)
-		}
+		}, "ConferenceLeave")
 	}
 	slog.InfoContext(ctx, "conference: ConferenceLeave broadcast", "conf_id", confID.String(), "left", phone, "notified", others)
 	// v1: any drop ends the conference; notify remaining members explicitly so
 	// client controllers know to fully tear down (not just drop the leaver).
 	for _, p := range remaining {
-		if err := r.Hub.SendTo(p, &Message{
+		r.sendConf(ctx, p, &Message{
 			Type:   TypeConferenceEnd,
 			ConfID: confID.String(),
 			Reason: "member_left",
-		}); err != nil {
-			slog.WarnContext(ctx, "conference: ConferenceEnd send failed", "conf_id", confID.String(), "to", p, "err", err)
-		}
+		}, "ConferenceEnd")
 	}
 	slog.InfoContext(ctx, "conference: ConferenceEnd broadcast after drop", "conf_id", confID.String(), "remaining", remaining)
 }
@@ -174,12 +172,10 @@ func (r *Relay) KickMember(ctx context.Context, confID uuid.UUID, kickedPhone, r
 	// drop cascade reassigns the surviving pair to a continuation call.
 	// Non-member or unregistered phones get a no-op send; the caller is
 	// responsible for pre-validating membership.
-	if err := r.Hub.SendTo(kickedPhone, &Message{
+	r.sendConf(ctx, kickedPhone, &Message{
 		Type:   TypeConferenceEnd,
 		ConfID: confID.String(),
 		Reason: reason,
-	}); err != nil {
-		slog.WarnContext(ctx, "conference: kick ConferenceEnd send to kicked phone failed", "conf_id", confID.String(), "phone", kickedPhone, "err", err)
-	}
+	}, "kick ConferenceEnd")
 	r.dropMemberFromConference(ctx, confID, kickedPhone, reason)
 }
