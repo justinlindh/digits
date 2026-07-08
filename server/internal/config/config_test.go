@@ -106,6 +106,34 @@ func TestOneEnv(t *testing.T) {
 	})
 }
 
+func TestIntEnv(t *testing.T) {
+	t.Run("sets value when env var is a valid integer", func(t *testing.T) {
+		t.Setenv("TEST_INT_VAR", "42")
+		got := 1
+		intEnv("TEST_INT_VAR", &got)
+		if got != 42 {
+			t.Errorf("got %d, want 42", got)
+		}
+	})
+
+	t.Run("keeps default when env var is not a valid integer", func(t *testing.T) {
+		t.Setenv("TEST_INT_BAD", "not-a-number")
+		got := 7
+		intEnv("TEST_INT_BAD", &got)
+		if got != 7 {
+			t.Errorf("expected default 7 to be unchanged, got %d", got)
+		}
+	})
+
+	t.Run("keeps default when env var is unset", func(t *testing.T) {
+		got := 7
+		intEnv("TEST_INT_UNSET_XYZ", &got)
+		if got != 7 {
+			t.Errorf("expected default 7 for unset var, got %d", got)
+		}
+	})
+}
+
 func TestLoadDefaults(t *testing.T) {
 	c := Load()
 
