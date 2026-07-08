@@ -39,6 +39,7 @@ import (
 	"github.com/justinlindh/digits/pi/digitsd/internal/voicemail"
 	"github.com/justinlindh/digits/pi/digitsd/internal/watchdog"
 	owebrtc "github.com/justinlindh/digits/pi/digitsd/internal/webrtc"
+	"github.com/justinlindh/digits/pi/digitsd/internal/wifi"
 	"github.com/justinlindh/digits/pi/digitsd/internal/wififallback"
 )
 
@@ -1664,11 +1665,11 @@ func main() {
 			// write access to /data and so cannot unlink the flag directly.
 			// The digits-updater sudoers entry grants NOPASSWD on rm -f for
 			// this exact path.
-			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", phone.WifiConfiguredFlag).CombinedOutput()
+			out, err := exec.Command("sudo", "/usr/bin/rm", "-f", wifi.ConfiguredFlagPath).CombinedOutput()
 			if err != nil {
-				slog.Warn("service code setup: remove wifi flag failed", "path", phone.WifiConfiguredFlag, "error", err, "output", strings.TrimSpace(string(out)))
+				slog.Warn("service code setup: remove wifi flag failed", "path", wifi.ConfiguredFlagPath, "error", err, "output", strings.TrimSpace(string(out)))
 			} else {
-				slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", phone.WifiConfiguredFlag)
+				slog.Info("service code setup: removed wifi flag -- Pi will boot into AP mode", "path", wifi.ConfiguredFlagPath)
 			}
 			// Spoken cue + 200ms ALSA-teardown pad so the tail of "...mode"
 			// isn't clipped by systemd shutdown.

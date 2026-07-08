@@ -55,10 +55,6 @@ type ServiceCodeHandler struct {
 // Must be >= the longest service code (currently *#873283# = 9 chars).
 const bufferMaxLen = 9
 
-// WifiConfiguredFlag is the sentinel file that indicates Wi-Fi has been
-// provisioned. Its absence triggers AP mode on next boot.
-const WifiConfiguredFlag = "/data/wifi-configured"
-
 // NewServiceCodeHandler creates a new handler with no callbacks set.
 func NewServiceCodeHandler() *ServiceCodeHandler {
 	return &ServiceCodeHandler{}

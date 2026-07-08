@@ -77,9 +77,13 @@ func (systemMounter) RemountRO() error {
 const (
 	backupDir          = "/data/wifi"
 	operationalDir     = "/etc/NetworkManager/system-connections"
-	wifiConfiguredFlag = "/data/wifi-configured"
 	legacyConnFilename = "digits-wifi.nmconnection"
 )
+
+// ConfiguredFlagPath is the sentinel file that indicates Wi-Fi has been
+// provisioned. CommitToOperational writes it; its absence triggers AP mode on
+// next boot, and the *#SETUP# service code removes it to re-trigger setup.
+const ConfiguredFlagPath = "/data/wifi-configured"
 
 // uuidForSSID returns a UUID-shaped string derived from the SSID so
 // reconfiguring the same SSID overwrites the previous file rather than
@@ -182,7 +186,7 @@ func commitWithDeps(backupPath string, fs fileSystem, m mounter) error {
 		}
 	}
 
-	if err := fs.WriteFile(wifiConfiguredFlag, []byte("1\n"), 0600); err != nil {
+	if err := fs.WriteFile(ConfiguredFlagPath, []byte("1\n"), 0600); err != nil {
 		return fmt.Errorf("write flag: %w", err)
 	}
 
