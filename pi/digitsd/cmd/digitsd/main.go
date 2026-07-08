@@ -928,14 +928,6 @@ func resyncPicoState(sp picoStateResyncer, deviceToken string) {
 	sp.StateSet(picoStateForToken(deviceToken))
 }
 
-// playPairingAnnouncement queues one full pairing-voice sequence on mixer:
-// silence pad, welcome, the code digits, and the "expires in N minute(s)"
-// tail. code and expiresAt are passed explicitly (not read from cb) so the
-// caller controls the cross-goroutine read: the announcement runs from a
-// goroutine spawned on HOOK:OFF and reading cb.pairingCode there would race
-// the dispatcher's TypePairingCode handler. minutesLeft is computed from the
-// server-reported expiry on each call so a long-listening user hears an
-// accurate countdown that matches when the server actually invalidates it.
 // pairingAnnouncementClips returns the ordered mixer clip names for one pairing
 // announcement: silence pad, welcome, the code digits, "expires in", the minute
 // count, and the singular/plural unit. minutesLeft is capped at 9 because the
@@ -959,6 +951,14 @@ func pairingAnnouncementClips(code string, minutesLeft int) []string {
 	return append(clips, "pairing_expires_prefix", fmt.Sprintf("spoken_%d", minutesLeft), unitClip)
 }
 
+// playPairingAnnouncement queues one full pairing-voice sequence on mixer:
+// silence pad, welcome, the code digits, and the "expires in N minute(s)"
+// tail. code and expiresAt are passed explicitly (not read from cb) so the
+// caller controls the cross-goroutine read: the announcement runs from a
+// goroutine spawned on HOOK:OFF and reading cb.pairingCode there would race
+// the dispatcher's TypePairingCode handler. minutesLeft is computed from the
+// server-reported expiry on each call so a long-listening user hears an
+// accurate countdown that matches when the server actually invalidates it.
 func playPairingAnnouncement(mixer *audio.Mixer, code string, expiresAt time.Time) {
 	minutesLeft := int(math.Ceil(time.Until(expiresAt).Minutes()))
 	for _, clip := range pairingAnnouncementClips(code, minutesLeft) {
