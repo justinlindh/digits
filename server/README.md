@@ -30,12 +30,12 @@ Requires Go 1.26+.
 
 ## Local development
 
-For iterating on the web UI you can spin up a disposable Postgres in Docker, seed a signed-in dialup-themed user, and run host-native `signald` against it with one command.
+For iterating on the web UI you can spin up a disposable Postgres in Docker, seed a signed-in dialup-themed scenario, and run host-native `signald` against it with one command. The default seed is comprehensive: a primary dialup user plus linked households, each with multiple phone lines, and one outstanding pending invite, so the dashboard, `/links`, and the pending-invite row all render without hand-wiring fixtures. Pass `-minimal` to `cmd/devseed` for just the primary user.
 
 ```bash
 cd server/
-make dev-up         # start local Postgres, seed dev user, run signald
-make dev-seed       # re-seed the dev user (no-op if already present)
+make dev-up         # start local Postgres, seed dev scenario, run signald
+make dev-seed       # re-seed (idempotent; fills in whatever is missing)
 make dev-down       # stop signald, remove DB container + volume
 make dev-logs       # tail the user-db container logs
 ```
@@ -283,6 +283,12 @@ Phone A                    Server                    Phone B
 After SDP/ICE exchange, audio flows peer-to-peer via WebRTC DTLS-SRTP.
 
 ### Message Types
+
+The table below covers the core call-signaling subset. It is not exhaustive:
+DTMF, pairing repair, `call_return` (`*69`), voicemail, line renumbering,
+extension pickup, conference, and device-management messages all ride the same
+WebSocket. `internal/signaling/protocol.go` is the authoritative list of every
+message type.
 
 | Type              | Direction      | Key Fields                            | Purpose                              |
 |-------------------|----------------|---------------------------------------|--------------------------------------|
