@@ -1,3 +1,9 @@
+// Command signald is the Digits signaling server: a WebRTC signaling relay
+// that brokers SDP/ICE exchange between phones so they can establish
+// peer-to-peer encrypted audio. Audio never touches the server. Alongside
+// signaling it manages households, device pairing, authentication, call
+// history, and serves the embedded web UI. All wiring lives here; the real
+// logic is in the internal packages.
 package main
 
 import (
